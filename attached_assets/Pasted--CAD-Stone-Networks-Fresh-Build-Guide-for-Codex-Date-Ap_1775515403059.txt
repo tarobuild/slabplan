@@ -1,0 +1,780 @@
+# CAD Stone Networks — Fresh Build Guide for Codex
+
+**Date:** April 6, 2026
+**What this is:** Complete build instructions for a construction management tool for a ~5 person marble/stone installation company. This is an INTERNAL-ONLY tool — no clients will ever use it.
+**Start from scratch.** Do not reference any previous build. Follow this document exactly.
+
+---
+
+## Tech Stack (use exactly these)
+
+- **Frontend:** React 18 + TypeScript, Tailwind CSS + shadcn/ui component library, Zustand for state management, Axios for HTTP
+- **Backend:** Node.js + Express.js, Drizzle ORM, PostgreSQL (Neon)
+- **Auth:** Email/password with JWT (access token in memory, refresh token in httpOnly cookie)
+- **Real-time:** Socket.IO
+- **File Storage:** Local filesystem or S3-compatible storage
+- **Deployment:** Replit
+
+---
+
+## CRITICAL DESIGN RULES (read before writing any UI code)
+
+These rules are non-negotiable. The previous build failed because it ignored all of them.
+
+1. **Use shadcn/ui components everywhere.** Buttons, inputs, selects, dialogs, tables, tabs, toasts, dropdowns, badges, cards — all from shadcn/ui. Do not hand-roll UI components.
+
+2. **Clean, modern SaaS design.** White content backgrounds. Light gray page backgrounds (#F9FAFB). Crisp 1px borders (#E5E7EB). Subtle shadows. 8px border-radius max. Think Linear, Notion, or Google Workspace — NOT rounded blobs with beige backgrounds.
+
+3. **ALL creation forms are modals.** Create Job = modal. Create Lead = modal. New Schedule Item = modal. New Daily Log = modal. New Folder = modal. NEVER show a create form permanently inline on the page.
+
+4. **Information-dense layouts.** Tables should show real data columns. Pages should not have excessive whitespace or oversized cards. Content should be compact and professional.
+
+5. **Color palette:**
+   - Primary Blue: #2563EB (buttons, links, active states)
+   - Success Green: #16A34A
+   - Warning Yellow: #F59E0B
+   - Danger Red: #DC2626
+   - Neutral Gray: #6B7280
+   - Borders: #E5E7EB
+   - Page background: #F9FAFB
+   - Card background: #FFFFFF
+
+6. **Typography:** System font stack or Inter. 14px body text. No ALL-CAPS letter-spaced section labels.
+
+7. **Every list/table needs:** Search bar, sort controls, pagination, empty states.
+
+8. **Every destructive action needs:** Confirmation dialog.
+
+9. **Toast notifications:** Top-right corner, auto-dismiss 4s. Success (green), Error (red), Info (blue), Warning (yellow). Show for: saves, deletes, uploads, errors.
+
+---
+
+## App Structure & Navigation
+
+### Top Navigation Bar (always visible)
+- **Left:** "CAD Stone Networks" logo/text (links to /dashboard)
+- **Center:** Global search bar (searches jobs, leads, files, schedule items)
+- **Right:** User avatar + name dropdown → Profile, Settings, Logout
+
+### Left Sidebar
+**When NOT inside a job (Dashboard, Sales pages):**
+- Dashboard
+- Jobs
+- Sales
+- Settings
+
+**When inside a job (/jobs/:id/*):**
+- ← Back to Jobs
+- [Job Name] (header, with status badge)
+- Summary
+- Files
+  - Documents
+  - Photos
+  - Videos
+- Schedule
+- Daily Logs
+
+### Routes
+```
+/login
+/register
+/dashboard
+/jobs                        — Jobs list
+/jobs/:id                    — Job detail (Summary tab)
+/jobs/:id/files/documents    — Documents section
+/jobs/:id/files/photos       — Photos section
+/jobs/:id/files/videos       — Videos section
+/jobs/:id/schedule           — Schedule
+/jobs/:id/daily-logs         — Daily Logs list
+/sales/leads                 — Lead Opportunities list
+/settings                    — User profile settings
+```
+
+---
+
+## Feature 1: Dashboard (/dashboard)
+
+### Layout
+- **Page title:** "Dashboard"
+- **4 stat cards** in a row (clickable, navigate to their section):
+  - Active Jobs (count) → /jobs
+  - Open Leads (count) → /sales/leads
+  - Open Schedule Items (count)
+  - My Daily Logs (count)
+- **Quick actions row:** "+ New Job" button, "+ New Lead" button, "+ Daily Log" button
+- **Recent Activity feed:** List of recent actions across all features (file uploads, job updates, lead changes, schedule changes). Show: icon, description, user, timestamp. Example: "John Doe uploaded Invoice.pdf to Kitchen Remodel — 2 hours ago"
+
+---
+
+## Feature 2: Jobs
+
+### Jobs List Page (/jobs)
+- **Toolbar:** Search bar (left), "+ Create Job" button (right, opens modal)
+- **Table** (full-width, shadcn/ui Table component):
+  - Columns: Checkbox, Job Title (blue link → /jobs/:id), Location (city, state), Type, Status (badge), Created Date, Contract Price
+  - **Entire row is clickable** → navigates to /jobs/:id
+  - Status badges: Open (blue), Closed (gray), Archived (light gray)
+- **Bottom:** Pagination ("Showing 1-10 of 42")
+- **Empty state:** Icon + "No jobs yet" + "Create your first job to get started." + Create Job button
+
+### Create Job Modal
+Open from "+ Create Job" button. shadcn/ui Dialog component.
+
+**Fields:**
+- Title (required, text input)
+- Job Type (select: Countertops, Backsplash, Flooring, Custom)
+- Street Address (text input)
+- City (text input)
+- State (2-char text or select)
+- Zip Code (text input)
+- Contract Price (currency input with $ prefix)
+- Projected Start Date (date picker)
+- Projected Completion Date (date picker)
+
+**Footer:** Cancel button, Create button (primary blue)
+
+### Job Detail Page (/jobs/:id)
+- **Header:** Job title (large), status badge, "Edit" button
+- **Breadcrumb:** Jobs > [Job Title]
+- **Tabs** (shadcn/ui Tabs): Summary, Files, Schedule, Daily Logs
+
+#### Summary Tab
+Editable form showing all job fields (same as create, plus: Actual Start, Actual Completion, Work Days multi-checkbox for Mon-Sun, Created By display). "Save Changes" button at bottom.
+
+#### Files Tab → see Feature 3
+
+#### Schedule Tab → see Feature 5
+
+#### Daily Logs Tab → see Feature 6
+
+---
+
+## Feature 3: Files & Cloud Storage (per job)
+
+When the Files tab is selected on a job detail page, show sub-tabs: **Documents**, **Photos**, **Videos**.
+
+### Common Elements (all 3 sections)
+- **Grid/List view toggle** (two icon buttons: grid icon = Tile view, list icon = Table view)
+- **Sort controls:** "Sort by" dropdown (Name A-Z, Name Z-A, Date Modified newest/oldest, Date Added newest/oldest)
+- **Select All checkbox** (in table header)
+- **Breadcrumb:** Files > [Folder Name] > [Subfolder Name]
+
+### Documents Section
+
+**Root view (no folder selected):**
+- Title: "Documents"
+- Toolbar: Help (?), Settings gear, Activity clock, Share icon, Filter funnel, "More actions" dropdown (Folder info, View trash, Delete), "New" split button (main: Create Folder, dropdown: Folder, Word doc, Excel spreadsheet, From global docs), "+ Upload" button (primary)
+- View toggle + Sort controls
+- **Content area:** Shows folder cards (tile view) or folder rows (table view)
+- **Global Documents folder** always present at root (cannot be deleted/renamed)
+
+**Folder card (tile view):**
+```
+┌─────────────────┐
+│  📁 Icon        │
+│  Folder Name    │
+│  "..." menu     │
+└─────────────────┘
+```
+Click card → enter folder. "..." menu → Copy share link, Folder info, Rename, Download (.zip), View permissions, Make a copy, Move to folder, Delete (red).
+
+**Folder row (table view):**
+| ☐ | Name (link) | Modified | Added | Contents (count) | ... |
+
+**Inside a folder:**
+- Breadcrumb updates: Documents > Folder Name
+- Full toolbar appears: Help, Settings, Activity, Share, Filter, "More actions", "New" split button, "+ Upload" button
+- Shows files AND subfolders
+- Each file row: Checkbox, filename (with icon by type), uploaded by, modified date, size, "..." menu (Download, Preview, Copy share link, Rename, Delete)
+
+**Create Folder modal (shadcn/ui Dialog):**
+- Title: "Create Folder"
+- Fields: Folder name (required text), Parent folder (dropdown, optional)
+- Footer: Cancel, Create
+
+**File upload:**
+- Click "+ Upload" → native file picker (accept: .pdf, .docx, .xlsx, .pptx, .txt, images)
+- Show progress bar during upload
+- Success toast on complete
+- Drag-and-drop: support dropping files onto folder view
+
+### Photos Section
+- Same patterns as Documents but:
+  - Flat folder structure (no nested subfolders)
+  - Photo uploads only (.jpg, .png, .gif, .webp)
+  - Grid view shows photo thumbnails (not folder icons)
+  - Inside folder: "+ Add photos" button
+  - NO Global Photos folder
+
+### Videos Section
+- Same patterns as Documents but:
+  - Video uploads only (.mp4, .mov, .avi, .webm)
+  - Grid view shows video thumbnails with play icon + duration
+  - Inside folder: "+ Add video" button
+  - **Global Videos** folder at root (like Global Documents)
+
+### Filter Sidebar (slides in from right)
+- File type checkboxes (PDF, Word, Excel, Images, Video, Other)
+- Date range (From/To date pickers)
+- Uploaded by (user select)
+- "Clear all" link + "Apply" button
+
+### Activity Log (clock icon → modal)
+- Timeline of recent file actions: "[User] uploaded [file] — 2 hours ago"
+- Pagination: 20 items, "Load more" button
+
+### Trash (from "More actions" → "View trash")
+- Modal showing deleted items (last 30 days)
+- Each item: filename, type, deleted by, date, Restore button, Permanently Delete button
+- "Empty trash" button (red, with confirmation)
+
+---
+
+## Feature 4: CRM / Sales & Lead Opportunities
+
+### Lead Opportunities List (/sales/leads)
+- **Page title:** "Lead Opportunities"
+- **Toolbar:**
+  - Left: Help (?), Settings gear, Export icon, Filter funnel (with active count badge)
+  - Right: "+ Lead Opportunity" button (primary, opens modal)
+- **Table** (full-width):
+  - Columns: Checkbox, Title (blue link), Created Date, Client Contact, Status (badge), Age (days since created), Confidence (% with small progress bar), Est. Revenue Min ($)
+  - Status badges: Open (blue), In Negotiation (yellow), Won (green), Lost (gray), Archived (light gray)
+  - Click title → opens lead detail side panel
+- **Bottom bar:** View filter dropdown (All, Open, Won, Lost), "..." menu (Export CSV, Import, Delete selected), Pagination
+- **Revenue summary row:** "Total Estimated Revenue: $X"
+- **Empty state:** "No leads yet — Create your first lead opportunity." + button
+
+### Create Lead Modal (shadcn/ui Dialog, wide ~700px)
+**Two-column layout:**
+
+Left column:
+- Title (required text)
+- Street Address (text)
+- City (text)
+- State (text/select)
+- Zip Code (text)
+- Confidence (slider 0-100% with number input)
+- Projected Sales Date (date picker)
+- Status (select: Open, In Negotiation, Won, Lost, Archived)
+
+Right column:
+- Client Contact (search/select existing OR "New Contact" button)
+- Salespeople (multi-select users with chips)
+- Project Type (select: None, Countertops, Backsplash, Flooring, Custom)
+- Estimated Revenue Min (currency input)
+- Estimated Revenue Max (currency input)
+- Lead Source (text/tag input)
+- Tags (text/tag input)
+
+Bottom (full width):
+- Notes (textarea, rich text optional)
+
+Footer: Cancel, Create
+
+### Lead Detail Side Panel (slides in from right, ~500px)
+Opens when clicking a lead title in the table. shadcn/ui Sheet component.
+
+**Header:** Lead title, Status badge, Close (X) button
+
+**Tabs:** General, Activities, Proposals
+
+#### General Tab (scrollable)
+- **Contact Information section:**
+  - Empty state: "Add a client contact" with "New Contact" and "Choose Existing" buttons
+  - Populated: Contact card (name, email, phone, address) with "..." menu (Edit, Remove)
+- **Fields** (all editable):
+  - Title (text input)
+  - Address (street, city, state, zip)
+  - Confidence (slider 0-100%)
+  - Projected sales date (date picker)
+  - Salespeople (multi-select chips)
+  - Tags (tag pills with add/remove)
+  - Estimated revenue (min/max currency)
+  - Lead source (text)
+  - Status (select dropdown)
+  - Project type (select dropdown)
+  - Notes (rich text editor with toolbar: Bold, Italic, Underline, Lists)
+  - Attachments (file upload section with Add button, file list with download/delete)
+
+#### Activities Tab
+- List of lead activities (calls, meetings, emails)
+- "+ Lead Activity" button
+- Empty state: "Log calls and appointments with your potential clients."
+
+#### Proposals Tab
+- Proposals list or empty state
+- "Convert to a Job for full proposal features"
+
+**Bottom action bar:**
+- Left: "Created by [User] on [Date]"
+- Center: "..." menu (Edit, Duplicate, Convert to job, Delete)
+- Right: "Cancel" button, "+ Job" button (converts lead to job), "Save" button (primary blue)
+
+### Add Client Contact Modal
+**Fields:** First name, Last name, Display name (required), Street address, City, State, Zip, Phone, Cell Phone, Primary email (required), Label
+**Footer:** Cancel, Save
+
+---
+
+## Feature 5: Schedule (per job)
+
+### Schedule Page (inside Job detail → Schedule tab)
+
+**View mode toggle** (3 buttons): Calendar, List, Gantt
+
+**Toolbar:** Help (?), Settings gear, Activity clock, "Schedule Offline" toggle switch, "More Actions" dropdown (Import from templates, Track conflicts, Notify assigned users, Delete all items, Export to PDF), Filter button, "+ New Schedule Item" button (primary blue)
+
+### Calendar View (default)
+- **Top controls:** Granularity dropdown (Month/Week/Day/Agenda), "Today" button, Left arrow, "April 2026" (month/year display), Right arrow
+- **Grid:** Standard calendar layout (Sun-Sat columns)
+  - Today's cell: blue circle on date number
+  - Weekend cells: light gray background, "Non-workday" label
+  - Schedule items shown as color-coded pills/bars in cells
+  - Click pill → open schedule item detail
+- Use a calendar library (e.g., react-big-calendar or FullCalendar) — do not build from scratch
+
+### List View
+- Table columns: Task name (link), Assigned to, Start date, End date, Duration, Progress (%), Status, Actions (...)
+- Click task name → open detail modal
+- Empty state: "No schedule items — Add a schedule item."
+
+### Gantt View
+- Left panel: Task list (name, start, duration, end)
+- Right panel: Timeline grid with colored bars
+- Today marker (vertical red line)
+- Zoom controls (+/-)
+- Use a Gantt library (e.g., frappe-gantt or dhtmlx-gantt) — do not build from scratch
+- Empty state: "Balance multiple projects with Schedule" + "Add a Schedule item" button
+
+### Create Schedule Item Modal
+**Tabs:** Schedule Item Details, Related Items
+
+**Schedule Item Details tab:**
+- Title (required text)
+- Display Color (color select dropdown with swatches: Red, Blue, Green, Yellow, Orange, Purple, Gray)
+- Assignees (multi-select users)
+- Start Date (required date picker)
+- Work Days (required number input, label "business days")
+- End Date (auto-calculated: start + work days, skipping weekends. Can be manually overridden)
+- Hourly toggle (switch — when ON, show Start Time and End Time fields)
+- Progress (slider 0-100% with number input)
+- Reminder (select: None, 1 day before, 3 days before, 1 week before)
+- Notes (textarea)
+
+**Related Items tab:**
+- Predecessors section: "Add predecessor" button → search/select existing tasks. Dependency type select (Finish-to-Start, Start-to-Start, Finish-to-Finish, Start-to-Finish). Lag/Lead days number input.
+- Tags section: tag input
+
+**Footer:** Cancel, Save (primary blue)
+
+---
+
+## Feature 6: Daily Logs (per job)
+
+### Daily Logs List (inside Job detail → Daily Logs tab)
+
+**Toolbar:** Help (?), Settings gear, Print icon, Filter button (with badge count), "+ Daily Log" button (primary, opens full-page modal)
+
+**Cards/list view** (vertical stack of daily log cards):
+```
+┌─────────────────────────────────────┐
+│ Title                        [Date] │
+│ Created by: User Name    [✏️ 📎 🔗] │
+│ Preview of notes (2-3 lines)  [...] │
+│ [Tag1] [Tag2]                       │
+└─────────────────────────────────────┘
+```
+Click card → open for viewing/editing.
+
+**Filter sidebar** (slides from right):
+- Shared with (select: All, Internal only, Shared with subs, Shared with client, Private)
+- Keywords (search text)
+- Created by (user select)
+- Date range (from/to pickers)
+- Tags (tag checkboxes)
+- "Clear all" + "Apply" buttons
+
+**Pagination:** "1-10 of 45" with page controls
+
+**Empty state:** "No daily logs yet — Create a daily log to capture site progress, observations, and weather conditions." + button
+
+### Create Daily Log Modal (large, ~900px wide)
+**Two-column layout:**
+
+**Left column (40%):**
+- Job (pre-filled dropdown, shows current job)
+- Date (required date picker, default: today)
+- Title (text input, optional)
+- Tags (tag input: "Add tags")
+- **Permissions section (heading: "Share"):**
+  - ☐ Internal Users (checked by default)
+  - ☐ Subs/Vendors
+  - ☐ Client
+  - ☐ Private
+- **Notify users:** Multi-select user field with chips
+
+**Right column (60%):**
+- **Attachments:** "Add" file upload button, "Create new doc" button. File list below.
+- **Notes:** Large textarea (placeholder: "Document today's work, observations, and important details..."). Minimum 200px height.
+- **Weather section:**
+  - ☐ "Include Weather Conditions" (checked by default)
+  - When checked, auto-fetch weather data from OpenWeatherMap API based on job location:
+    - Condition: "Sunny" / "Cloudy" / etc.
+    - Temp High: 72°F
+    - Temp Low: 58°F
+    - Wind Speed: 12 mph
+    - Humidity: 45%
+    - Precipitation: 0.00 in
+  - Display as read-only data card
+  - ☐ "Include Weather Notes" (optional textarea for manual observations)
+
+**Bottom bar (fixed):**
+- Left: Info icon: "Daily logs are auto-saved as drafts"
+- Right: "Save as Draft" button (secondary), "Publish" button (primary blue)
+
+**Publish behavior:** Sets published_at timestamp, sends notifications to selected users, shows success toast.
+
+---
+
+## Feature 7: Settings (/settings)
+
+Simple profile page:
+- Full Name (text input)
+- Email (text input, read-only or editable)
+- Role (display only: admin, project_manager, crew_member)
+- "Save Changes" button
+
+---
+
+## Database Schema
+
+Create ALL of these tables. Use Drizzle ORM migrations.
+
+```sql
+-- Users
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  full_name VARCHAR(255) NOT NULL,
+  role VARCHAR(50) NOT NULL DEFAULT 'crew_member',
+  avatar_url VARCHAR(500),
+  phone VARCHAR(20),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP
+);
+
+-- Jobs (Projects)
+CREATE TABLE jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title VARCHAR(255) NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'open',
+  street_address VARCHAR(255),
+  city VARCHAR(100),
+  state VARCHAR(2),
+  zip_code VARCHAR(10),
+  contract_price DECIMAL(12, 2),
+  job_type VARCHAR(100),
+  work_days JSON,
+  projected_start DATE,
+  projected_completion DATE,
+  actual_start DATE,
+  actual_completion DATE,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP
+);
+
+-- Folders
+CREATE TABLE folders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title VARCHAR(255) NOT NULL,
+  job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
+  parent_folder_id UUID REFERENCES folders(id) ON DELETE CASCADE,
+  media_type VARCHAR(50) NOT NULL,
+  viewing_permissions JSON,
+  uploading_permissions JSON,
+  is_global BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP,
+  UNIQUE(job_id, title, parent_folder_id, media_type)
+);
+
+-- Files
+CREATE TABLE files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  folder_id UUID REFERENCES folders(id) ON DELETE CASCADE,
+  filename VARCHAR(255) NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  file_url VARCHAR(500),
+  file_size BIGINT,
+  mime_type VARCHAR(100),
+  uploaded_by UUID REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP
+);
+
+-- Leads
+CREATE TABLE leads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title VARCHAR(255) NOT NULL,
+  street_address VARCHAR(255),
+  city VARCHAR(100),
+  state VARCHAR(2),
+  zip_code VARCHAR(10),
+  confidence INT DEFAULT 0,
+  projected_sales_date DATE,
+  estimated_revenue_min DECIMAL(12, 2),
+  estimated_revenue_max DECIMAL(12, 2),
+  status VARCHAR(50) NOT NULL DEFAULT 'open',
+  project_type VARCHAR(100),
+  notes TEXT,
+  lead_source VARCHAR(255),
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP
+);
+
+-- Lead Contacts
+CREATE TABLE lead_contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+  first_name VARCHAR(100),
+  last_name VARCHAR(100),
+  display_name VARCHAR(255) NOT NULL,
+  street_address VARCHAR(255),
+  city VARCHAR(100),
+  state VARCHAR(2),
+  zip_code VARCHAR(10),
+  phone VARCHAR(20),
+  cell_phone VARCHAR(20),
+  email VARCHAR(255) NOT NULL,
+  label VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP
+);
+
+-- Lead Salespeople
+CREATE TABLE lead_salespeople (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(lead_id, user_id)
+);
+
+-- Lead Tags
+CREATE TABLE lead_tags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+  tag_name VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(lead_id, tag_name)
+);
+
+-- Lead Sources
+CREATE TABLE lead_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+  source_name VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(lead_id, source_name)
+);
+
+-- Lead Attachments
+CREATE TABLE lead_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+  file_id UUID REFERENCES files(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(lead_id, file_id)
+);
+
+-- Schedule Items
+CREATE TABLE schedule_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  display_color VARCHAR(50) NOT NULL DEFAULT 'blue',
+  start_date DATE NOT NULL,
+  work_days INT NOT NULL,
+  end_date DATE NOT NULL,
+  is_hourly BOOLEAN DEFAULT FALSE,
+  start_time TIME,
+  end_time TIME,
+  progress INT DEFAULT 0,
+  reminder VARCHAR(100) DEFAULT 'none',
+  notes TEXT,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP
+);
+
+-- Schedule Item Assignees
+CREATE TABLE schedule_item_assignees (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  schedule_item_id UUID REFERENCES schedule_items(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(schedule_item_id, user_id)
+);
+
+-- Daily Logs
+CREATE TABLE daily_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
+  log_date DATE NOT NULL,
+  title VARCHAR(255),
+  notes TEXT NOT NULL,
+  weather_data JSON,
+  include_weather BOOLEAN DEFAULT TRUE,
+  include_weather_notes BOOLEAN DEFAULT FALSE,
+  weather_notes TEXT,
+  share_internal_users BOOLEAN DEFAULT TRUE,
+  share_subs_vendors BOOLEAN DEFAULT FALSE,
+  share_client BOOLEAN DEFAULT FALSE,
+  is_private BOOLEAN DEFAULT FALSE,
+  created_by UUID REFERENCES users(id),
+  published_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP
+);
+
+-- Daily Log Attachments
+CREATE TABLE daily_log_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  daily_log_id UUID REFERENCES daily_logs(id) ON DELETE CASCADE,
+  file_id UUID REFERENCES files(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(daily_log_id, file_id)
+);
+
+-- Daily Log Tags
+CREATE TABLE daily_log_tags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  daily_log_id UUID REFERENCES daily_logs(id) ON DELETE CASCADE,
+  tag_name VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(daily_log_id, tag_name)
+);
+
+-- Activity Log
+CREATE TABLE activity_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_type VARCHAR(100) NOT NULL,
+  entity_id UUID NOT NULL,
+  action VARCHAR(100) NOT NULL,
+  user_id UUID REFERENCES users(id),
+  metadata JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+## API Endpoints (implement all of these)
+
+### Auth
+- POST /api/auth/register — { email, password, full_name } → user + tokens
+- POST /api/auth/login — { email, password } → user + tokens
+- POST /api/auth/logout — clear refresh token
+- POST /api/auth/refresh — refresh token → new access token
+- POST /api/auth/forgot-password — { email } → send reset email
+- POST /api/auth/reset-password — { token, newPassword } → reset
+
+### Jobs
+- GET /api/jobs — list (paginated, filterable by status, sortable)
+- POST /api/jobs — create job
+- GET /api/jobs/:id — get job detail
+- PUT /api/jobs/:id — update job
+- DELETE /api/jobs/:id — soft delete
+
+### Folders
+- GET /api/jobs/:jobId/folders?mediaType=document&parentId= — list folders
+- POST /api/jobs/:jobId/folders — create folder
+- PUT /api/folders/:id — update folder (rename, permissions)
+- DELETE /api/folders/:id — soft delete folder + contents
+- POST /api/folders/:id/copy — duplicate folder
+- PUT /api/folders/:id/move — move folder to different parent
+
+### Files
+- GET /api/folders/:id/files — list files in folder (paginated, sortable)
+- POST /api/folders/:id/files — upload file (multipart/form-data)
+- GET /api/files/:id/download — download file
+- DELETE /api/files/:id — soft delete file
+
+### Leads
+- GET /api/leads — list (paginated, filterable, sortable, searchable)
+- POST /api/leads — create lead
+- GET /api/leads/:id — get lead with contacts, tags, sources, attachments
+- PUT /api/leads/:id — update lead
+- DELETE /api/leads/:id — soft delete
+- POST /api/leads/:id/contacts — add client contact
+- PUT /api/leads/:id/contacts/:contactId — update contact
+- DELETE /api/leads/:id/contacts/:contactId — remove contact
+- POST /api/leads/:id/attachments — upload attachment
+- DELETE /api/leads/:id/attachments/:attachmentId — remove attachment
+- POST /api/leads/:id/convert-to-job — convert lead to job (copy data, set status=won)
+
+### Schedule
+- GET /api/jobs/:jobId/schedule — list schedule items (filterable by date range)
+- POST /api/jobs/:jobId/schedule — create schedule item
+- GET /api/schedule-items/:id — get schedule item with assignees
+- PUT /api/schedule-items/:id — update schedule item
+- DELETE /api/schedule-items/:id — soft delete
+
+### Daily Logs
+- GET /api/jobs/:jobId/daily-logs — list (paginated, filterable)
+- POST /api/jobs/:jobId/daily-logs — create daily log (draft)
+- GET /api/daily-logs/:id — get daily log with attachments, tags, weather
+- PUT /api/daily-logs/:id — update daily log
+- DELETE /api/daily-logs/:id — soft delete
+- POST /api/daily-logs/:id/publish — publish log (set published_at, send notifications)
+- POST /api/daily-logs/:id/attachments — upload attachment
+
+### Users
+- GET /api/users — list users (for assignment dropdowns)
+- GET /api/users/me — current user profile
+- PUT /api/users/me — update profile
+
+### Activity Log
+- GET /api/activity?entityType=file&entityId= — get activity log entries
+
+---
+
+## Build Order
+
+Build in this exact order. Each step should be fully functional before moving to the next.
+
+1. **Project setup:** React + Express + Drizzle + PostgreSQL connection. Run all migrations. Set up shadcn/ui.
+2. **Auth:** Register, Login, Logout pages. JWT middleware. Protected routes.
+3. **Layout shell:** Top nav, sidebar, routing structure.
+4. **Dashboard:** Stat cards, quick actions, activity feed.
+5. **Jobs:** List page with table, Create modal, Detail page with Summary tab.
+6. **Files — Documents:** Folder CRUD, file upload/download, grid/list toggle, breadcrumb nav, Global Documents folder, toolbar actions.
+7. **Files — Photos:** Photo folders, photo upload, thumbnail grid.
+8. **Files — Videos:** Video folders, video upload, Global Videos folder.
+9. **Sales/CRM:** Lead list table, Create modal, Detail side panel with all tabs, Contact management, lead-to-job conversion.
+10. **Schedule:** Calendar view (use react-big-calendar or similar), List view, Gantt view (use frappe-gantt or similar), Schedule item CRUD modal.
+11. **Daily Logs:** Log list with cards, Create modal with weather integration (OpenWeatherMap API), publish/draft workflow, filter sidebar.
+12. **Polish:** Toast notifications everywhere, confirmation dialogs on deletes, loading skeletons, error boundaries, empty states on every list, keyboard accessibility.
+
+---
+
+## Seed Data
+
+After building, seed the database with realistic test data (NOT random strings like "mnnq1ir5"):
+
+- 3 users: "Cruz Martinez" (admin), "Maria Garcia" (project_manager), "Jake Thompson" (crew_member)
+- 5 jobs: "Smith Kitchen Remodel" (Denver), "Johnson Master Bath" (Boulder), "Park Place Lobby" (Aurora), "Riverside Condos Unit 4B" (Lakewood), "Chen Outdoor Kitchen" (Littleton)
+- 3 leads: "Williams Fireplace Surround" (open, 60%), "Davis Full Home Renovation" (in_negotiation, 80%), "Brown Office Reception" (won, 100%)
+- Sample schedule items, daily logs, and file folders for first 2 jobs

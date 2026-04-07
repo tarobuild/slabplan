@@ -190,6 +190,8 @@ type ContactForm = {
 }
 
 type EditForm = CreateForm & {
+  streetAddress: string
+  zipCode: string
   tags: string
   sources: string
   contactDisplayName: string
@@ -314,8 +316,10 @@ export default function LeadsPage() {
           title: lead.title,
           status: lead.status,
           projectType: lead.projectType ?? "",
+          streetAddress: lead.streetAddress ?? "",
           city: lead.city ?? "",
           state: lead.state ?? "",
+          zipCode: lead.zipCode ?? "",
           estimatedRevenueMin: lead.estimatedRevenueMin ?? "",
           estimatedRevenueMax: lead.estimatedRevenueMax ?? "",
           confidence: lead.confidence != null ? String(lead.confidence) : "",
@@ -352,8 +356,10 @@ export default function LeadsPage() {
         title: editForm.title,
         status: editForm.status,
         projectType: editForm.projectType || null,
+        streetAddress: editForm.streetAddress || null,
         city: editForm.city || null,
         state: editForm.state || null,
+        zipCode: editForm.zipCode || null,
         estimatedRevenueMin: editForm.estimatedRevenueMin || null,
         estimatedRevenueMax: editForm.estimatedRevenueMax || null,
         confidence: editForm.confidence ? Number(editForm.confidence) : 0,
@@ -870,7 +876,6 @@ export default function LeadsPage() {
         }}
       >
         <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col p-0 gap-0">
-          {/* Sheet header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB]">
             <SheetHeader className="space-y-0 text-left">
               <SheetTitle className="text-base font-semibold text-slate-900">
@@ -915,7 +920,6 @@ export default function LeadsPage() {
             </div>
           </div>
 
-          {/* Sheet body */}
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
             {loadingDetail ? (
               <div className="space-y-3">
@@ -926,7 +930,6 @@ export default function LeadsPage() {
             ) : leadDetail && editForm ? (
               <>
                 {isEditing ? (
-                  /* ─── Edit Mode ─── */
                   <div className="space-y-5">
                     <div className="space-y-1.5">
                       <Label>Title *</Label>
@@ -968,6 +971,15 @@ export default function LeadsPage() {
                         />
                       </div>
 
+                      <div className="col-span-2 space-y-1.5">
+                        <Label>Street Address</Label>
+                        <Input
+                          value={editForm.streetAddress}
+                          onChange={setEditField("streetAddress")}
+                          placeholder="123 Main St"
+                        />
+                      </div>
+
                       <div className="space-y-1.5">
                         <Label>City</Label>
                         <Input
@@ -977,14 +989,24 @@ export default function LeadsPage() {
                         />
                       </div>
 
-                      <div className="space-y-1.5">
-                        <Label>State</Label>
-                        <Input
-                          value={editForm.state}
-                          onChange={setEditField("state")}
-                          placeholder="TX"
-                          maxLength={2}
-                        />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <Label>State</Label>
+                          <Input
+                            value={editForm.state}
+                            onChange={setEditField("state")}
+                            placeholder="TX"
+                            maxLength={2}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Zip Code</Label>
+                          <Input
+                            value={editForm.zipCode}
+                            onChange={setEditField("zipCode")}
+                            placeholder="78701"
+                          />
+                        </div>
                       </div>
 
                       <div className="space-y-1.5">
@@ -1049,6 +1071,15 @@ export default function LeadsPage() {
                           placeholder="roofing, residential"
                         />
                       </div>
+
+                      <div className="space-y-1.5">
+                        <Label>Sources (comma-separated)</Label>
+                        <Input
+                          value={editForm.sources}
+                          onChange={setEditField("sources")}
+                          placeholder="referral, web"
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-1.5">
@@ -1099,9 +1130,7 @@ export default function LeadsPage() {
                     </div>
                   </div>
                 ) : (
-                  /* ─── Read-only Mode ─── */
                   <div className="space-y-6">
-                    {/* Core details */}
                     <div className="grid grid-cols-2 gap-x-6 gap-y-0">
                       <DetailRow
                         icon={<Building2 className="size-4" />}
@@ -1110,9 +1139,15 @@ export default function LeadsPage() {
                       />
                       <DetailRow
                         icon={<MapPin className="size-4" />}
-                        label="Location"
+                        label="Address"
                         value={
-                          [leadDetail.city, leadDetail.state].filter(Boolean).join(", ") || null
+                          [
+                            leadDetail.streetAddress,
+                            [leadDetail.city, leadDetail.state].filter(Boolean).join(", "),
+                            leadDetail.zipCode,
+                          ]
+                            .filter(Boolean)
+                            .join(", ") || null
                         }
                       />
                       <DetailRow
@@ -1182,7 +1217,6 @@ export default function LeadsPage() {
 
                     <Separator />
 
-                    {/* Contact info */}
                     <div>
                       <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
                         <User className="size-3.5" />
@@ -1226,7 +1260,6 @@ export default function LeadsPage() {
                       )}
                     </div>
 
-                    {/* Additional contacts */}
                     {leadDetail.contacts.length > 1 && (
                       <div>
                         <p className="text-xs text-slate-400 mb-2">

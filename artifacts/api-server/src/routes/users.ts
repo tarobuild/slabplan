@@ -1,11 +1,37 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { toPublicUser } from "../lib/auth";
 import { HttpError, asyncHandler } from "../lib/http";
 
 const router: IRouter = Router();
+
+const updateProfileSchema = z.object({
+  fullName: z.string().trim().min(2).max(255).optional(),
+  email: z.string().trim().email().max(255).optional(),
+  phone: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value) => {
+      if (typeof value !== "string") {
+        return null;
+      }
+
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }),
+  avatarUrl: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value) => {
+      if (typeof value !== "string") {
+        return null;
+      }
+
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }),
+});
 
 async function findActiveUserById(id: string) {
   const [user] = await db
@@ -54,23 +80,33 @@ router.put(
       throw new HttpError(404, "User not found.");
     }
 
-    const fullName =
-      typeof req.body.fullName === "string" && req.body.fullName.trim().length >= 2
-        ? req.body.fullName.trim()
-        : user.fullName;
-    const phone =
-      typeof req.body.phone === "string" ? req.body.phone.trim() || null : user.phone;
-    const avatarUrl =
-      typeof req.body.avatarUrl === "string"
-        ? req.body.avatarUrl.trim() || null
-        : user.avatarUrl;
+    const body = updateProfileSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid profile payload.", body.error.flatten());
+    }
+
+    const email = body.data.email?.toLowerCase() ?? user.email;
+
+    if (email !== user.email) {
+      const [existing] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.email, email), ne(users.id, user.id), isNull(users.deletedAt)))
+        .limit(1);
+
+      if (existing) {
+        throw new HttpError(409, "That email address is already in use.");
+      }
+    }
 
     const [updated] = await db
       .update(users)
       .set({
-        fullName,
-        phone,
-        avatarUrl,
+        fullName: body.data.fullName ?? user.fullName,
+        email,
+        phone: body.data.phone ?? user.phone,
+        avatarUrl: body.data.avatarUrl ?? user.avatarUrl,
         updatedAt: new Date(),
       })
       .where(eq(users.id, user.id))

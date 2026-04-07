@@ -51,6 +51,14 @@ export default defineConfig({
           "http://127.0.0.1:3000",
         changeOrigin: true,
       },
+      "/socket.io": {
+        target:
+          process.env.API_PROXY_TARGET ??
+          process.env.VITE_API_PROXY_TARGET ??
+          "http://127.0.0.1:3000",
+        changeOrigin: true,
+        ws: true,
+      },
     },
     fs: {
       strict: true,

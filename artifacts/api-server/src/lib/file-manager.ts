@@ -21,6 +21,7 @@ import {
   resolveAbsolutePathFromFileUrl,
   writeUploadedBuffer,
 } from "./storage";
+import { emitRealtimeEvent } from "./realtime";
 
 export const documentExtensions = [
   ".pdf",
@@ -274,20 +275,56 @@ export async function writeActivity(params: {
   description: string;
   extra?: Record<string, unknown>;
 }) {
-  await db.insert(activityLog).values({
+  const [jobRecord, userRecord] = await Promise.all([
+    db
+      .select({
+        title: jobs.title,
+      })
+      .from(jobs)
+      .where(eq(jobs.id, params.jobId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({
+        fullName: users.fullName,
+      })
+      .from(users)
+      .where(eq(users.id, params.userId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+  ]);
+
+  const metadata = {
+    description: params.description,
+    jobId: params.jobId,
+    jobTitle: jobRecord?.title ?? null,
+    mediaType: params.mediaType ?? null,
+    folderId: params.folderId ?? null,
+    fileId: params.fileId ?? null,
+    ...params.extra,
+  };
+
+  const [created] = await db.insert(activityLog).values({
     entityType: params.entityType,
     entityId: params.entityId,
     action: params.action,
     userId: params.userId,
-    metadata: {
-      description: params.description,
-      jobId: params.jobId,
-      mediaType: params.mediaType ?? null,
-      folderId: params.folderId ?? null,
-      fileId: params.fileId ?? null,
-      ...params.extra,
-    },
+    metadata,
+  }).returning({
+    id: activityLog.id,
+    entityType: activityLog.entityType,
+    entityId: activityLog.entityId,
+    action: activityLog.action,
+    metadata: activityLog.metadata,
+    createdAt: activityLog.createdAt,
   });
+
+  emitRealtimeEvent("activity:created", {
+    ...created,
+    userName: userRecord?.fullName ?? null,
+  });
+
+  return created;
 }
 
 export async function listFoldersForJob(params: {
@@ -831,6 +868,14 @@ export async function saveUploadedFiles(params: {
       fileId: file.id,
       description: `Uploaded ${file.originalName}`,
     });
+
+    emitRealtimeEvent("file:uploaded", {
+      jobId: folder.jobId,
+      folderId: folder.id,
+      fileId: file.id,
+      mediaType: folder.mediaType,
+      originalName: file.originalName,
+    });
   }
 
   return {
@@ -1054,9 +1099,12 @@ export async function emptyTrash(params: {
 }
 
 export async function getActivityEntries(params: {
-  jobId: string;
+  jobId?: string | null;
   mediaType?: string | null;
   folderId?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  page?: number;
   limit?: number;
 }) {
   const rows = await db
@@ -1076,22 +1124,44 @@ export async function getActivityEntries(params: {
   const filtered = rows.filter((row) => {
     const metadata = (row.metadata ?? {}) as Record<string, unknown>;
 
-    if (metadata.jobId !== params.jobId) {
-      return false;
-    }
+    if (params.entityType || params.entityId) {
+      if (params.entityType && row.entityType !== params.entityType) {
+        return false;
+      }
 
-    if (params.mediaType && metadata.mediaType !== params.mediaType) {
-      return false;
-    }
+      if (params.entityId && row.entityId !== params.entityId) {
+        return false;
+      }
+    } else if (params.jobId) {
+      if (metadata.jobId !== params.jobId) {
+        return false;
+      }
 
-    if (params.folderId && metadata.folderId !== params.folderId) {
-      return false;
+      if (params.mediaType && metadata.mediaType !== params.mediaType) {
+        return false;
+      }
+
+      if (params.folderId && metadata.folderId !== params.folderId) {
+        return false;
+      }
     }
 
     return true;
   });
 
-  return filtered.slice(0, params.limit ?? 20);
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 20;
+  const offset = (page - 1) * limit;
+
+  return {
+    entries: filtered.slice(offset, offset + limit),
+    pagination: {
+      page,
+      limit,
+      totalItems: filtered.length,
+      totalPages: Math.max(1, Math.ceil(filtered.length / limit)),
+    },
+  };
 }
 
 export async function streamFolderZip(params: {

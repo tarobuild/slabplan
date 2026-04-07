@@ -168,4 +168,62 @@
     color: hsl(var(--muted-foreground));
     pointer-events: none;
   }
+
+  .cadstone-richtext .tiptap {
+    min-height: 180px;
+    outline: none;
+  }
+
+  .cadstone-richtext .tiptap p.is-editor-empty:first-child::before {
+    color: hsl(var(--muted-foreground));
+    content: "Write your notes…";
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .cadstone-richtext .tiptap ul,
+  .cadstone-richtext .tiptap ol {
+    margin: 0.75rem 0;
+    padding-left: 1.25rem;
+  }
+
+  .cadstone-richtext .tiptap strong {
+    font-weight: 600;
+  }
+
+  .cadstone-schedule-calendar .rbc-calendar {
+    font-size: 14px;
+  }
+
+  .cadstone-schedule-calendar .rbc-toolbar button {
+    border-color: #E5E7EB;
+    border-radius: 8px;
+  }
+
+  .cadstone-schedule-calendar .rbc-off-range-bg,
+  .cadstone-schedule-calendar .cadstone-weekend {
+    background: #F8FAFC;
+  }
+
+  .cadstone-schedule-calendar .rbc-today {
+    background: rgba(37, 99, 235, 0.08);
+  }
+
+  .cadstone-schedule-calendar .rbc-agenda-view table.rbc-agenda-table,
+  .cadstone-schedule-calendar .rbc-time-view,
+  .cadstone-schedule-calendar .rbc-month-view {
+    border-color: #E5E7EB;
+  }
+
+  .cadstone-schedule-calendar .rbc-header,
+  .cadstone-schedule-calendar .rbc-time-header-content,
+  .cadstone-schedule-calendar .rbc-time-content {
+    border-color: #E5E7EB;
+  }
+
+  .cadstone-gantt .gantt-container {
+    border-radius: 8px;
+    overflow: auto;
+  }
 }

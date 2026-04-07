@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { files, folders, jobs, type NewJob, users } from "@workspace/db/schema";
 import { ensureSystemFolders, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
+import { emitRealtimeEvent } from "../lib/realtime";
 
 const router: IRouter = Router();
 
@@ -289,6 +290,15 @@ router.put(
       jobId: updated.id,
       description: `Updated job ${updated.title}`,
     });
+
+    if (existing.status !== updated.status) {
+      emitRealtimeEvent("job:status-changed", {
+        id: updated.id,
+        title: updated.title,
+        previousStatus: existing.status,
+        status: updated.status,
+      });
+    }
 
     const hydrated = await findJobById(updated.id);
 

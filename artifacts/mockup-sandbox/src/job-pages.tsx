@@ -104,6 +104,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Table,
@@ -1862,9 +1863,18 @@ function FileManagerPage({ mediaType }: { mediaType: MediaType }) {
             }}
           >
             {loading ? (
-              <div className="flex items-center justify-center gap-3 py-12 text-sm text-slate-500">
-                <Spinner className="size-5 text-blue-600" />
-                Loading {config.label.toLowerCase()}…
+              <div className="space-y-4 py-4">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <Card key={index} className="border-[#E5E7EB] bg-white shadow-none">
+                      <CardContent className="space-y-3 p-4">
+                        <Skeleton className="h-28 w-full rounded-lg" />
+                        <Skeleton className="h-4 w-2/3" />
+                        <Skeleton className="h-3 w-1/2" />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               </div>
             ) : visibleFolders.length === 0 && files.length === 0 ? (
               <EmptyPanel
@@ -2546,6 +2556,7 @@ function FileManagerPage({ mediaType }: { mediaType: MediaType }) {
 
 export function JobsPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [jobs, setJobs] = useState<JobRecord[]>([])
   const [pagination, setPagination] = useState<PaginationMeta>({
     page: 1,
@@ -2601,6 +2612,14 @@ export function JobsPage() {
       active = false
     }
   }, [pagination.page, pagination.pageSize, search, status])
+
+  useEffect(() => {
+    if (searchParams.get("create") !== "1") {
+      return
+    }
+
+    setCreateOpen(true)
+  }, [searchParams])
 
   const allSelected = jobs.length > 0 && jobs.every((job) => selectedJobIds.includes(job.id))
   const someSelected = jobs.some((job) => selectedJobIds.includes(job.id)) && !allSelected
@@ -2697,7 +2716,20 @@ export function JobsPage() {
 
       <CardContent className="space-y-6 p-6">
         {loading ? (
-          <EmptyPanel title="Loading jobs" description="Fetching the latest job roster from the API." />
+          <div className="space-y-4">
+            <div className="overflow-hidden rounded-lg border border-[#E5E7EB] bg-white">
+              <div className="space-y-3 p-4">
+                <Skeleton className="h-10 w-full" />
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <Skeleton key={index} className="h-12 w-full" />
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-9 w-40" />
+            </div>
+          </div>
         ) : jobs.length === 0 ? (
           <EmptyPanel
             title="No jobs found"
@@ -2852,7 +2884,18 @@ export function JobsPage() {
         )}
       </CardContent>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(nextOpen) => {
+          setCreateOpen(nextOpen)
+
+          if (!nextOpen && searchParams.get("create") === "1") {
+            const next = new URLSearchParams(searchParams)
+            next.delete("create")
+            setSearchParams(next, { replace: true })
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto border-[#E5E7EB] bg-white sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Create Job</DialogTitle>
@@ -2888,9 +2931,11 @@ export function JobsPage() {
 }
 
 export function JobSummaryPage() {
+  const navigate = useNavigate()
   const { job, setJob } = useOutletContext<JobShellContext>()
   const [values, setValues] = useState<JobFormValues>(() => createJobFormValues(job))
   const [saving, setSaving] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   useEffect(() => {
     setValues(createJobFormValues(job))
@@ -2937,10 +2982,20 @@ export function JobSummaryPage() {
         title="Summary"
         description="Edit the core job record, address details, financials, and projected dates."
         actions={
-          <Button onClick={() => void saveChanges()} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-            Save Changes
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-red-200 text-red-600 hover:text-red-700"
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete Job
+            </Button>
+            <Button onClick={() => void saveChanges()} disabled={saving}>
+              {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+              Save Changes
+            </Button>
+          </>
         }
       />
 
@@ -2986,6 +3041,33 @@ export function JobSummaryPage() {
           showActualDates
         />
       </CardContent>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent className="border-[#E5E7EB] bg-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete job?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This archives the job and moves its folders and files out of active views.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-[#E5E7EB]">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                try {
+                  await api.delete(`/jobs/${job.id}`)
+                  toast.success("Job deleted.")
+                  navigate("/jobs")
+                } catch {
+                  toast.error("Unable to delete this job.")
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }
@@ -3001,4 +3083,3 @@ export function FilesPhotosPage() {
 export function FilesVideosPage() {
   return <FileManagerPage mediaType="video" />
 }
-

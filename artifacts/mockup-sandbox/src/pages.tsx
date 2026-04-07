@@ -1,11 +1,16 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { formatDistanceToNow } from "date-fns"
 import { useForm } from "react-hook-form"
+import { io } from "socket.io-client"
 import {
   ArrowLeft,
   BriefcaseBusiness,
+  CalendarDays,
+  ClipboardList,
   FolderKanban,
   LayoutDashboard,
   Logs,
+  Plus,
   Search,
   Settings,
   UserCircle2,
@@ -52,6 +57,14 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -67,6 +80,8 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Table,
@@ -119,6 +134,31 @@ type AuthLocationState = {
   }
 }
 
+type DashboardStats = {
+  activeJobs: number
+  openLeads: number
+  openScheduleItems: number
+  myDailyLogs: number
+}
+
+type ActivityEntry = {
+  id: string
+  entityType: string
+  entityId: string
+  action: string
+  metadata: Record<string, unknown> | null
+  createdAt: string
+  userName: string | null
+}
+
+type SearchResult = {
+  id: string
+  type: "job" | "lead" | "file" | "schedule"
+  title: string
+  subtitle: string
+  href: string
+}
+
 function useAuthBootstrap() {
   useEffect(() => {
     void bootstrapAuth()
@@ -156,6 +196,46 @@ function formatDate(value: string | null) {
     day: "numeric",
     year: "numeric",
   }).format(new Date(value))
+}
+
+function formatRelativeTimestamp(value: string) {
+  return `${formatDistanceToNow(new Date(value), { addSuffix: false })} ago`
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat("en-US").format(value)
+}
+
+function searchGroupLabel(type: SearchResult["type"]) {
+  if (type === "job") {
+    return "Jobs"
+  }
+
+  if (type === "lead") {
+    return "Leads"
+  }
+
+  if (type === "file") {
+    return "Files"
+  }
+
+  return "Schedule"
+}
+
+function activityIconClass(action: string) {
+  if (action.includes("deleted")) {
+    return "border-red-200 bg-red-50 text-red-600"
+  }
+
+  if (action.includes("published") || action.includes("won")) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-600"
+  }
+
+  if (action.includes("uploaded")) {
+    return "border-amber-200 bg-amber-50 text-amber-600"
+  }
+
+  return "border-blue-200 bg-blue-50 text-blue-600"
 }
 
 function statusBadgeClass(status: string) {
@@ -248,9 +328,99 @@ function PageHeading({
 function AppHeader() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
 
   if (!user) {
     return null
+  }
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([])
+      setOpen(false)
+      setLoading(false)
+      setHighlightedIndex(0)
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      setLoading(true)
+
+      void api
+        .get<{ results: SearchResult[] }>("/search", {
+          params: {
+            q: query.trim(),
+            limit: 10,
+          },
+        })
+        .then((response) => {
+          setResults(response.data.results)
+          setOpen(true)
+          setHighlightedIndex(0)
+        })
+        .catch(() => {
+          setResults([])
+          setOpen(true)
+        })
+        .finally(() => {
+          setLoading(false)
+        })
+    }, 200)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [query])
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!wrapperRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown)
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown)
+    }
+  }, [])
+
+  const groupedResults = useMemo(() => {
+    return results.reduce<Array<{ label: string; items: SearchResult[] }>>((groups, result) => {
+      const label = searchGroupLabel(result.type)
+      const existing = groups.find((group) => group.label === label)
+
+      if (existing) {
+        existing.items.push(result)
+        return groups
+      }
+
+      groups.push({
+        label,
+        items: [result],
+      })
+
+      return groups
+    }, [])
+  }, [results])
+
+  const flattenedResults = useMemo(() => {
+    return groupedResults.flatMap((group) => group.items)
+  }, [groupedResults])
+
+  const activeResult = flattenedResults[highlightedIndex] ?? null
+
+  const openResult = (result: SearchResult) => {
+    setQuery("")
+    setResults([])
+    setOpen(false)
+    navigate(result.href)
   }
 
   return (
@@ -265,13 +435,101 @@ function AppHeader() {
         </Button>
 
         <div className="hidden flex-1 md:flex">
-          <div className="relative w-full max-w-2xl">
+          <div ref={wrapperRef} className="relative w-full max-w-2xl">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
             <Input
               type="search"
               placeholder="Search jobs, leads, files, and schedule items"
+              value={query}
+              onFocus={() => {
+                if (query.trim()) {
+                  setOpen(true)
+                }
+              }}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (!open || flattenedResults.length === 0) {
+                  return
+                }
+
+                if (event.key === "ArrowDown") {
+                  event.preventDefault()
+                  setHighlightedIndex((current) => (current + 1) % flattenedResults.length)
+                }
+
+                if (event.key === "ArrowUp") {
+                  event.preventDefault()
+                  setHighlightedIndex((current) =>
+                    current === 0 ? flattenedResults.length - 1 : current - 1,
+                  )
+                }
+
+                if (event.key === "Enter" && activeResult) {
+                  event.preventDefault()
+                  openResult(activeResult)
+                }
+
+                if (event.key === "Escape") {
+                  setOpen(false)
+                }
+              }}
               className="h-10 border-[#E5E7EB] bg-[#F9FAFB] pl-9 text-sm shadow-none"
             />
+
+            {open ? (
+              <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-xl">
+                {loading ? (
+                  <div className="space-y-3 p-4">
+                    {Array.from({ length: 4 }).map((_, index) => (
+                      <div key={index} className="space-y-2">
+                        <Skeleton className="h-3 w-20" />
+                        <Skeleton className="h-10 w-full" />
+                      </div>
+                    ))}
+                  </div>
+                ) : results.length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-slate-500">
+                    No matches found for “{query.trim()}”.
+                  </div>
+                ) : (
+                  <div className="max-h-[28rem] overflow-y-auto py-2">
+                    {groupedResults.map((group) => (
+                      <div key={group.label} className="px-2 pb-2">
+                        <div className="px-2 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          {group.label}
+                        </div>
+                        <div className="space-y-1">
+                          {group.items.map((result) => {
+                            const resultIndex = flattenedResults.findIndex((item) => item.id === result.id)
+                            const isActive = resultIndex === highlightedIndex
+
+                            return (
+                              <button
+                                key={`${result.type}-${result.id}`}
+                                type="button"
+                                className={cn(
+                                  "flex w-full flex-col rounded-lg px-3 py-2 text-left transition",
+                                  isActive ? "bg-blue-50 text-blue-700" : "hover:bg-[#F9FAFB]",
+                                )}
+                                onMouseEnter={() => setHighlightedIndex(resultIndex)}
+                                onClick={() => openResult(result)}
+                              >
+                                <span className="text-sm font-medium text-slate-900">
+                                  {result.title}
+                                </span>
+                                <span className="text-xs text-slate-500">
+                                  {result.subtitle}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -906,52 +1164,326 @@ export function RegisterPage() {
 }
 
 export function DashboardPage() {
-  const cards = [
+  const navigate = useNavigate()
+  const accessToken = useAuthStore((state) => state.accessToken)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const [jobs, setJobs] = useState<JobRecord[]>([])
+  const [loadingStats, setLoadingStats] = useState(true)
+  const [loadingActivity, setLoadingActivity] = useState(true)
+  const [jobPickerOpen, setJobPickerOpen] = useState(false)
+  const [selectedJobId, setSelectedJobId] = useState("")
+
+  const loadStatsAndJobs = async () => {
+    setLoadingStats(true)
+
+    try {
+      const [statsResponse, jobsResponse] = await Promise.all([
+        api.get<{ stats: DashboardStats }>("/dashboard/stats"),
+        api.get<{ jobs: JobRecord[] }>("/jobs", {
+          params: {
+            page: 1,
+            pageSize: 100,
+            status: "open",
+          },
+        }),
+      ])
+
+      setStats(statsResponse.data.stats)
+      setJobs(jobsResponse.data.jobs)
+      setSelectedJobId((current) => current || jobsResponse.data.jobs[0]?.id || "")
+    } catch {
+      toast.error("Unable to load dashboard stats.")
+    } finally {
+      setLoadingStats(false)
+    }
+  }
+
+  const loadActivity = async (silent = false) => {
+    if (!silent) {
+      setLoadingActivity(true)
+    }
+
+    try {
+      const response = await api.get<{
+        entries: ActivityEntry[]
+      }>("/activity", {
+        params: {
+          page: 1,
+          limit: 20,
+        },
+      })
+
+      setActivity(response.data.entries)
+    } catch {
+      toast.error("Unable to load recent activity.")
+    } finally {
+      setLoadingActivity(false)
+    }
+  }
+
+  useEffect(() => {
+    void Promise.all([loadStatsAndJobs(), loadActivity()])
+  }, [])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void loadActivity(true)
+    }, 30_000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!accessToken) {
+      return
+    }
+
+    const socket = io("/", {
+      auth: {
+        token: accessToken,
+      },
+      transports: ["websocket", "polling"],
+    })
+
+    socket.on("activity:created", (entry: ActivityEntry) => {
+      setActivity((current) => {
+        if (current.some((item) => item.id === entry.id)) {
+          return current
+        }
+
+        return [entry, ...current].slice(0, 20)
+      })
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [accessToken])
+
+  const firstOpenJobId = jobs[0]?.id ?? null
+  const statCards = [
     {
-      title: "Dashboard",
-      description:
-        "The stats and activity feed land in the next task. The shell, routing, and auth flow are ready now.",
-      href: "/jobs",
+      title: "Active Jobs",
+      value: stats?.activeJobs ?? 0,
+      description: "Open work across the company",
+      icon: BriefcaseBusiness,
+      onClick: () => navigate("/jobs"),
     },
     {
-      title: "Jobs",
-      description: "Seeded jobs are available so you can exercise the job-context sidebar today.",
-      href: "/jobs",
+      title: "Open Leads",
+      value: stats?.openLeads ?? 0,
+      description: "Pipeline opportunities still in motion",
+      icon: Users,
+      onClick: () => navigate("/sales/leads"),
     },
     {
-      title: "Sales",
-      description: "Lead placeholders are wired to the backend with the foundation schema in place.",
-      href: "/sales/leads",
+      title: "Open Schedule Items",
+      value: stats?.openScheduleItems ?? 0,
+      description: "Upcoming and active work still on the board",
+      icon: CalendarDays,
+      onClick: () => navigate(firstOpenJobId ? `/jobs/${firstOpenJobId}/schedule` : "/jobs"),
     },
     {
-      title: "Settings",
-      description: "Profile settings are connected to `/api/users/me` for account updates.",
-      href: "/settings",
+      title: "My Daily Logs",
+      value: stats?.myDailyLogs ?? 0,
+      description: "Drafts and published logs tied to your account",
+      icon: ClipboardList,
+      onClick: () =>
+        navigate(firstOpenJobId ? `/jobs/${firstOpenJobId}/daily-logs` : "/jobs"),
     },
   ]
 
   return (
-    <Card className="border-[#E5E7EB] shadow-sm">
+    <>
+      <Card className="border-[#E5E7EB] shadow-sm">
       <PageHeading
         title="Dashboard"
-        description="Foundation phase complete: authenticated shell, seeded records, and placeholder routes."
+        description="Live counts, quick actions, and the latest project activity across the Cadstone workspace."
       />
-      <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
-        {cards.map((card) => (
-          <Card key={card.title} className="border-[#E5E7EB] shadow-none">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{card.title}</CardTitle>
-              <CardDescription>{card.description}</CardDescription>
+        <CardContent className="space-y-6 p-6">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {loadingStats
+              ? Array.from({ length: 4 }).map((_, index) => (
+                  <Card key={index} className="border-[#E5E7EB] shadow-none">
+                    <CardContent className="space-y-3 p-5">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-3 w-full" />
+                    </CardContent>
+                  </Card>
+                ))
+              : statCards.map((card) => (
+                  <button
+                    key={card.title}
+                    type="button"
+                    className="rounded-xl text-left"
+                    onClick={card.onClick}
+                  >
+                    <Card className="h-full border-[#E5E7EB] shadow-none transition hover:border-blue-200 hover:bg-blue-50/40">
+                      <CardContent className="space-y-3 p-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-slate-600">{card.title}</p>
+                          <div className="rounded-full border border-blue-200 bg-blue-50 p-2 text-blue-700">
+                            <card.icon className="size-4" />
+                          </div>
+                        </div>
+                        <div className="text-3xl font-semibold text-slate-950">
+                          {formatCount(card.value)}
+                        </div>
+                        <p className="text-sm text-slate-500">{card.description}</p>
+                      </CardContent>
+                    </Card>
+                  </button>
+                ))}
+          </div>
+
+          <Card className="border-[#E5E7EB] shadow-none">
+            <CardHeader className="border-b border-[#E5E7EB] pb-4">
+              <CardTitle className="text-base">Quick Actions</CardTitle>
+              <CardDescription>
+                Jump straight into the highest-frequency creation flows.
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button variant="outline" className="w-full border-[#E5E7EB]" asChild>
-                <Link to={card.href}>Open {card.title}</Link>
+            <CardContent className="flex flex-wrap gap-3 p-5">
+              <Button type="button" onClick={() => navigate("/jobs?create=1")}>
+                <Plus className="size-4" />
+                New Job
+              </Button>
+              <Button type="button" variant="outline" className="border-[#E5E7EB]" onClick={() => navigate("/sales/leads?create=1")}>
+                <Plus className="size-4" />
+                New Lead
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-[#E5E7EB]"
+                onClick={() => {
+                  if (jobs.length === 0) {
+                    toast.info("Create a job before starting a daily log.")
+                    navigate("/jobs?create=1")
+                    return
+                  }
+
+                  if (jobs.length === 1) {
+                    navigate(`/jobs/${jobs[0].id}/daily-logs?create=1`)
+                    return
+                  }
+
+                  setJobPickerOpen(true)
+                }}
+              >
+                <Plus className="size-4" />
+                Daily Log
               </Button>
             </CardContent>
           </Card>
-        ))}
-      </CardContent>
-    </Card>
+
+          <Card className="border-[#E5E7EB] shadow-none">
+            <CardHeader className="border-b border-[#E5E7EB] pb-4">
+              <CardTitle className="text-base">Recent Activity</CardTitle>
+              <CardDescription>
+                The last 20 activity events across jobs, leads, files, schedule items, and daily logs.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loadingActivity ? (
+                <div className="space-y-4 p-5">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="flex items-start gap-3">
+                      <Skeleton className="size-10 rounded-full" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-3/4" />
+                        <Skeleton className="h-3 w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : activity.length === 0 ? (
+                <EmptyState
+                  title="No recent activity"
+                  description="Activity will appear here as jobs, files, leads, schedule items, and daily logs change."
+                />
+              ) : (
+                <div className="divide-y divide-[#E5E7EB]">
+                  {activity.map((entry) => {
+                    const description =
+                      typeof entry.metadata?.description === "string"
+                        ? entry.metadata.description
+                        : "Activity recorded"
+                    const jobTitle =
+                      typeof entry.metadata?.jobTitle === "string"
+                        ? entry.metadata.jobTitle
+                        : null
+
+                    return (
+                      <div key={entry.id} className="flex items-start gap-3 px-5 py-4">
+                        <div className={cn("rounded-full border p-2", activityIconClass(entry.action))}>
+                          <Logs className="size-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-slate-900">{description}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {(entry.userName || "Unknown user") +
+                              (jobTitle ? ` • ${jobTitle}` : "") +
+                              ` • ${formatRelativeTimestamp(entry.createdAt)}`}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </CardContent>
+      </Card>
+
+      <Dialog open={jobPickerOpen} onOpenChange={setJobPickerOpen}>
+        <DialogContent className="border-[#E5E7EB] bg-white">
+          <DialogHeader>
+            <DialogTitle>Create Daily Log</DialogTitle>
+            <DialogDescription>
+              Pick the job that should receive the new daily log draft.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-900">Job</label>
+            <Select value={selectedJobId} onValueChange={setSelectedJobId}>
+              <SelectTrigger className="border-[#E5E7EB]">
+                <SelectValue placeholder="Select a job" />
+              </SelectTrigger>
+              <SelectContent>
+                {jobs.map((job) => (
+                  <SelectItem key={job.id} value={job.id}>
+                    {job.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" className="border-[#E5E7EB]" onClick={() => setJobPickerOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!selectedJobId}
+              onClick={() => {
+                setJobPickerOpen(false)
+                navigate(`/jobs/${selectedJobId}/daily-logs?create=1`)
+              }}
+            >
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -1282,26 +1814,50 @@ export function SalesLeadsPage() {
 
 export function SettingsPage() {
   const user = useAuthStore((state) => state.user)
+  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const form = useForm({
     defaultValues: {
       fullName: "",
+      email: "",
       phone: "",
       avatarUrl: "",
     },
   })
 
   useEffect(() => {
-    if (!user) {
-      return
-    }
+    let active = true
 
-    form.reset({
-      fullName: user.fullName,
-      phone: user.phone || "",
-      avatarUrl: user.avatarUrl || "",
-    })
-  }, [form, user])
+    void api
+      .get<{ user: AuthUser }>("/users/me")
+      .then((response) => {
+        if (!active) {
+          return
+        }
+
+        form.reset({
+          fullName: response.data.user.fullName,
+          email: response.data.user.email,
+          phone: response.data.user.phone || "",
+          avatarUrl: response.data.user.avatarUrl || "",
+        })
+        updateAuthUser(response.data.user)
+      })
+      .catch(() => {
+        if (active) {
+          toast.error("Unable to load your profile.")
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [form])
 
   if (!user) {
     return <RouteLoadingScreen />
@@ -1311,94 +1867,130 @@ export function SettingsPage() {
     <Card className="border-[#E5E7EB] shadow-sm">
       <PageHeading
         title="Settings"
-        description="Profile updates are persisted through the protected `/api/users/me` endpoint."
+        description="Manage your Cadstone profile details and keep account information current."
       />
       <CardContent className="p-6">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <Form {...form}>
-            <form
-              className="space-y-4"
-              onSubmit={form.handleSubmit(async (values) => {
-                setSubmitting(true)
+          {loading ? (
+            <Card className="border-[#E5E7EB] shadow-none">
+              <CardContent className="space-y-4 p-6">
+                <Skeleton className="h-5 w-32" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-36" />
+              </CardContent>
+            </Card>
+          ) : (
+            <Form {...form}>
+              <form
+                className="space-y-4"
+                onSubmit={form.handleSubmit(async (values) => {
+                  setSubmitting(true)
 
-                try {
-                  const { data } = await api.put<{ user: AuthUser }>("/users/me", values)
-                  updateAuthUser(data.user)
-                  toast.success("Profile updated.")
-                } catch {
-                  toast.error("Unable to save profile changes.")
-                } finally {
-                  setSubmitting(false)
-                }
-              })}
-            >
-              <FormField
-                control={form.control}
-                name="fullName"
-                rules={{ required: "Full name is required." }}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Full Name</FormLabel>
-                    <FormControl>
-                      <Input className="border-[#E5E7EB]" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-900">Email</label>
-                <Input value={user.email} readOnly className="border-[#E5E7EB] bg-[#F9FAFB]" />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-900">Role</label>
-                <Input
-                  value={user.role.replaceAll("_", " ")}
-                  readOnly
-                  className="border-[#E5E7EB] bg-[#F9FAFB] capitalize"
+                  try {
+                    const { data } = await api.put<{ user: AuthUser }>("/users/me", values)
+                    updateAuthUser(data.user)
+                    form.reset({
+                      fullName: data.user.fullName,
+                      email: data.user.email,
+                      phone: data.user.phone || "",
+                      avatarUrl: data.user.avatarUrl || "",
+                    })
+                    toast.success("Profile updated.")
+                  } catch (error) {
+                    toast.error(
+                      error instanceof Error ? error.message : "Unable to save profile changes.",
+                    )
+                  } finally {
+                    setSubmitting(false)
+                  }
+                })}
+              >
+                <FormField
+                  control={form.control}
+                  name="fullName"
+                  rules={{ required: "Full name is required." }}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Full Name</FormLabel>
+                      <FormControl>
+                        <Input className="border-[#E5E7EB]" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
 
-              <FormField
-                control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Phone</FormLabel>
-                    <FormControl>
-                      <Input className="border-[#E5E7EB]" placeholder="(303) 555-0123" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  rules={{ required: "Email is required." }}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="email"
+                          autoComplete="email"
+                          className="border-[#E5E7EB]"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="avatarUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Avatar URL</FormLabel>
-                    <FormControl>
-                      <Input
-                        className="border-[#E5E7EB]"
-                        placeholder="https://example.com/avatar.jpg"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-900">Role</label>
+                  <Input
+                    value={user.role.replaceAll("_", " ")}
+                    readOnly
+                    className="border-[#E5E7EB] bg-[#F9FAFB] capitalize"
+                  />
+                </div>
 
-              <Button type="submit" disabled={submitting}>
-                {submitting ? <Spinner className="size-4" /> : null}
-                Save Changes
-              </Button>
-            </form>
-          </Form>
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone</FormLabel>
+                      <FormControl>
+                        <Input className="border-[#E5E7EB]" placeholder="(303) 555-0123" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="avatarUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Avatar URL</FormLabel>
+                      <FormControl>
+                        <Input
+                          className="border-[#E5E7EB]"
+                          placeholder="https://example.com/avatar.jpg"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? <Spinner className="size-4" /> : null}
+                  Save Changes
+                </Button>
+              </form>
+            </Form>
+          )}
 
           <Card className="border-[#E5E7EB] bg-slate-50 shadow-none">
             <CardHeader>

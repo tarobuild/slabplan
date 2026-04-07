@@ -1,88 +1,105 @@
-import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Briefcase, Users, Settings, ChevronLeft, FolderOpen, Calendar, FileText, Image, Video } from "lucide-react";
-import { cn } from "@/lib/utils";
+import {
+  ArrowLeft,
+  BriefcaseBusiness,
+  CalendarDays,
+  FileText,
+  FolderKanban,
+  ImageIcon,
+  LayoutDashboard,
+  Settings,
+  Users,
+  Video,
+} from "lucide-react"
+import { Link, NavLink, useLocation } from "react-router-dom"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 
-interface NavItem {
-  label: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
+type NavItem = {
+  label: string
+  to: string
+  end?: boolean
+  icon: typeof LayoutDashboard
 }
 
-const globalNav: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Jobs", href: "/jobs", icon: Briefcase },
-  { label: "Sales", href: "/sales/leads", icon: Users },
-  { label: "Settings", href: "/settings", icon: Settings },
-];
+function navButtonClass(isActive: boolean) {
+  return cn(
+    "h-10 w-full justify-start rounded-md px-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+    isActive && "bg-blue-50 text-blue-700 hover:bg-blue-50 hover:text-blue-700",
+  )
+}
 
-function NavLink({ item, exact = false }: { item: NavItem; exact?: boolean }) {
-  const [location] = useLocation();
-  const isActive = exact
-    ? location === item.href
-    : location.startsWith(item.href);
-  const Icon = item.icon;
-
+function SidebarLink({ item }: { item: NavItem }) {
   return (
-    <Link href={item.href}>
-      <a
-        className={cn(
-          "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-          isActive
-            ? "bg-primary/10 text-primary"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground"
-        )}
-      >
-        <Icon className="h-4 w-4 shrink-0" />
-        {item.label}
-      </a>
-    </Link>
-  );
+    <NavLink to={item.to} end={item.end}>
+      {({ isActive }) => (
+        <Button variant="ghost" className={navButtonClass(isActive)}>
+          <item.icon className="size-4" />
+          {item.label}
+        </Button>
+      )}
+    </NavLink>
+  )
 }
 
-export default function Sidebar() {
-  const [location] = useLocation();
-  const jobMatch = location.match(/^\/jobs\/([^/]+)/);
-  const jobId = jobMatch ? jobMatch[1] : null;
+export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
+  const location = useLocation()
+  const match = location.pathname.match(/^\/jobs\/([^/]+)/)
+  const jobId = match?.[1] ?? null
 
-  if (jobId) {
-    const jobNav: NavItem[] = [
-      { label: "Summary", href: `/jobs/${jobId}`, icon: Briefcase },
-      { label: "Documents", href: `/jobs/${jobId}/files/documents`, icon: FolderOpen },
-      { label: "Photos", href: `/jobs/${jobId}/files/photos`, icon: Image },
-      { label: "Videos", href: `/jobs/${jobId}/files/videos`, icon: Video },
-      { label: "Schedule", href: `/jobs/${jobId}/schedule`, icon: Calendar },
-      { label: "Daily Logs", href: `/jobs/${jobId}/daily-logs`, icon: FileText },
-    ];
+  const globalNav: NavItem[] = [
+    { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
+    { label: "Jobs", to: "/jobs", icon: BriefcaseBusiness, end: true },
+    { label: "Sales", to: "/sales/leads", icon: Users },
+    { label: "Settings", to: "/settings", icon: Settings },
+  ]
 
-    return (
-      <aside className="w-56 border-r border-border bg-sidebar flex flex-col shrink-0 overflow-y-auto">
-        <div className="p-3 border-b border-border">
-          <Link href="/jobs">
-            <a className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-              <ChevronLeft className="h-4 w-4" />
-              Back to Jobs
-            </a>
-          </Link>
-        </div>
-        <nav className="p-3 flex flex-col gap-0.5">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-3 mb-1 mt-1">
-            Files
-          </p>
-          {jobNav.map((item) => (
-            <NavLink key={item.href} item={item} exact={item.href === `/jobs/${jobId}`} />
+  const jobNav: NavItem[] = jobId
+    ? [
+        { label: "Summary", to: `/jobs/${jobId}/summary`, icon: LayoutDashboard },
+        { label: "Documents", to: `/jobs/${jobId}/files/documents`, icon: FolderKanban },
+        { label: "Photos", to: `/jobs/${jobId}/files/photos`, icon: ImageIcon },
+        { label: "Videos", to: `/jobs/${jobId}/files/videos`, icon: Video },
+        { label: "Schedule", to: `/jobs/${jobId}/schedule`, icon: CalendarDays },
+        { label: "Daily Logs", to: `/jobs/${jobId}/daily-logs`, icon: FileText },
+      ]
+    : []
+
+  const content = (
+    <div className="flex h-full flex-col border-r border-[#E5E7EB] bg-white">
+      {jobId ? (
+        <>
+          <div className="border-b border-[#E5E7EB] px-3 py-3">
+            <Button variant="ghost" className="h-10 w-full justify-start rounded-md px-3 text-slate-600" asChild>
+              <Link to="/jobs">
+                <ArrowLeft className="size-4" />
+                Back to Jobs
+              </Link>
+            </Button>
+          </div>
+          <div className="space-y-1 px-3 py-3">
+            {jobNav.map((item) => (
+              <SidebarLink key={item.to} item={item} />
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="space-y-1 px-3 py-3">
+          {globalNav.map((item) => (
+            <SidebarLink key={item.to} item={item} />
           ))}
-        </nav>
-      </aside>
-    );
+        </div>
+      )}
+    </div>
+  )
+
+  if (!mobile) {
+    return content
   }
 
   return (
-    <aside className="w-56 border-r border-border bg-sidebar flex flex-col shrink-0 overflow-y-auto">
-      <nav className="p-3 flex flex-col gap-0.5 mt-2">
-        {globalNav.map((item) => (
-          <NavLink key={item.href} item={item} />
-        ))}
-      </nav>
-    </aside>
-  );
+    <Card className="border-[#E5E7EB] bg-white shadow-sm">
+      <CardContent className="p-0">{content}</CardContent>
+    </Card>
+  )
 }

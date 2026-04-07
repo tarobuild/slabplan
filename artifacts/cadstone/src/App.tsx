@@ -1,78 +1,134 @@
-import { useEffect } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
-import { Toaster } from "sonner";
-import { useAuthStore } from "@/store/auth";
-import api, { setAccessToken } from "@/lib/api";
-import AppLayout from "@/components/layout/AppLayout";
+import { useEffect, useState } from "react"
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom"
+import { Toaster } from "sonner"
+import AppLayout from "@/components/layout/AppLayout"
+import { Card, CardContent } from "@/components/ui/card"
+import { Spinner } from "@/components/ui/spinner"
+import { bootstrapAuthSession } from "@/lib/api"
+import DashboardPage from "@/pages/dashboard"
+import JobDailyLogsPage from "@/pages/job-daily-logs"
+import JobDetailPage from "@/pages/job-detail"
+import JobFilesDocumentsPage from "@/pages/job-files-documents"
+import JobFilesPhotosPage from "@/pages/job-files-photos"
+import JobFilesVideosPage from "@/pages/job-files-videos"
+import JobSchedulePage from "@/pages/job-schedule"
+import JobSummaryPage from "@/pages/job-summary"
+import JobsPage from "@/pages/jobs"
+import LeadsPage from "@/pages/leads"
+import LoginPage from "@/pages/login"
+import NotFoundPage from "@/pages/not-found"
+import RegisterPage from "@/pages/register"
+import SettingsPage from "@/pages/settings"
+import { useAuthStore } from "@/store/auth"
 
-import LoginPage from "@/pages/login";
-import RegisterPage from "@/pages/register";
-import DashboardPage from "@/pages/dashboard";
-import JobsPage from "@/pages/jobs";
-import JobDetailPage from "@/pages/job-detail";
-import LeadsPage from "@/pages/leads";
-import SettingsPage from "@/pages/settings";
-import NotFound from "@/pages/not-found";
-
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const { user, isInitialized } = useAuthStore();
-  if (!isInitialized) return null;
-  if (!user) return <Redirect to="/login" />;
+function RouteLoadingScreen() {
   return (
-    <AppLayout>
-      <Component />
-    </AppLayout>
-  );
+    <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] p-4">
+      <Card className="w-full max-w-md border-[#E5E7EB] shadow-sm">
+        <CardContent className="flex items-center justify-center gap-3 py-10">
+          <Spinner className="size-5 text-blue-600" />
+          <p className="text-sm text-slate-600">Restoring your session…</p>
+        </CardContent>
+      </Card>
+    </div>
+  )
 }
 
-function PublicOnlyRoute({ component: Component }: { component: React.ComponentType }) {
-  const { user, isInitialized } = useAuthStore();
-  if (!isInitialized) return null;
-  if (user) return <Redirect to="/dashboard" />;
-  return <Component />;
+function ProtectedRoute({ ready }: { ready: boolean }) {
+  const user = useAuthStore((state) => state.user)
+
+  if (!ready) {
+    return <RouteLoadingScreen />
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  return <Outlet />
 }
 
-function AppRouter() {
+function PublicOnlyRoute({ ready }: { ready: boolean }) {
+  const user = useAuthStore((state) => state.user)
+
+  if (!ready) {
+    return <RouteLoadingScreen />
+  }
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <Outlet />
+}
+
+function AppRoutes({ ready }: { ready: boolean }) {
   return (
-    <Switch>
-      <Route path="/login" component={() => <PublicOnlyRoute component={LoginPage} />} />
-      <Route path="/register" component={() => <PublicOnlyRoute component={RegisterPage} />} />
-      <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} />} />
-      <Route path="/jobs/:id/files/documents" component={() => <ProtectedRoute component={JobDetailPage} />} />
-      <Route path="/jobs/:id/files/photos" component={() => <ProtectedRoute component={JobDetailPage} />} />
-      <Route path="/jobs/:id/files/videos" component={() => <ProtectedRoute component={JobDetailPage} />} />
-      <Route path="/jobs/:id/schedule" component={() => <ProtectedRoute component={JobDetailPage} />} />
-      <Route path="/jobs/:id/daily-logs" component={() => <ProtectedRoute component={JobDetailPage} />} />
-      <Route path="/jobs/:id" component={() => <ProtectedRoute component={JobDetailPage} />} />
-      <Route path="/jobs" component={() => <ProtectedRoute component={JobsPage} />} />
-      <Route path="/sales/leads" component={() => <ProtectedRoute component={LeadsPage} />} />
-      <Route path="/settings" component={() => <ProtectedRoute component={SettingsPage} />} />
-      <Route path="/" component={() => <Redirect to="/dashboard" />} />
-      <Route component={NotFound} />
-    </Switch>
-  );
+    <Routes>
+      <Route element={<PublicOnlyRoute ready={ready} />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
+
+      <Route element={<ProtectedRoute ready={ready} />}>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/jobs/:jobId" element={<JobDetailPage />}>
+            <Route index element={<Navigate to="summary" replace />} />
+            <Route path="summary" element={<JobSummaryPage />} />
+            <Route path="files/documents" element={<JobFilesDocumentsPage />} />
+            <Route path="files/photos" element={<JobFilesPhotosPage />} />
+            <Route path="files/videos" element={<JobFilesVideosPage />} />
+            <Route path="schedule" element={<JobSchedulePage />} />
+            <Route path="daily-logs" element={<JobDailyLogsPage />} />
+          </Route>
+          <Route path="/sales/leads" element={<LeadsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+      </Route>
+
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
+  )
 }
 
-export default function App() {
-  const { setAuth, clearAuth, setInitialized } = useAuthStore();
+function App() {
+  const [ready, setReady] = useState(false)
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || undefined
 
   useEffect(() => {
-    api.post("/auth/refresh", {})
-      .then((res) => {
-        setAuth(res.data.user, res.data.accessToken);
-      })
-      .catch(() => {
-        clearAuth();
-      })
-      .finally(() => {
-        setInitialized();
-      });
-  }, []);
+    let active = true
+
+    void bootstrapAuthSession().finally(() => {
+      if (active) {
+        setReady(true)
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   return (
-    <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-      <AppRouter />
-      <Toaster position="top-right" richColors closeButton duration={4000} />
-    </WouterRouter>
-  );
+    <BrowserRouter basename={basename}>
+      <AppRoutes ready={ready} />
+      <Toaster
+        position="top-right"
+        duration={4000}
+        richColors
+        closeButton
+        toastOptions={{
+          classNames: {
+            toast: "border border-[#E5E7EB] bg-white text-slate-900 shadow-lg",
+            description: "text-slate-500",
+          },
+        }}
+      />
+    </BrowserRouter>
+  )
 }
+
+export default App

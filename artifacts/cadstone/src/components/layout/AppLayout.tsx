@@ -1,21 +1,22 @@
-import { ReactNode } from "react";
-import TopNav from "./TopNav";
-import Sidebar from "./Sidebar";
+import { Outlet } from "react-router-dom"
+import Sidebar from "./Sidebar"
+import TopNav from "./TopNav"
 
-interface AppLayoutProps {
-  children: ReactNode;
-}
-
-export default function AppLayout({ children }: AppLayoutProps) {
+export default function AppLayout() {
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar />
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <TopNav />
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
+    <div className="min-h-screen bg-[#F9FAFB]">
+      <TopNav />
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1600px]">
+        <aside className="hidden w-72 shrink-0 lg:block">
+          <Sidebar />
+        </aside>
+        <main className="flex-1 p-4 lg:p-6">
+          <div className="mb-4 lg:hidden">
+            <Sidebar mobile />
+          </div>
+          <Outlet />
         </main>
       </div>
     </div>
-  );
+  )
 }

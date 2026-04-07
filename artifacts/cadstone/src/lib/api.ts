@@ -1,81 +1,125 @@
-import axios from "axios";
+import {
+  AxiosHeaders,
+  isAxiosError,
+  type InternalAxiosRequestConfig,
+} from "axios"
+import axios from "axios"
+import { useAuthStore, type AuthUser } from "@/store/auth"
 
-let accessToken: string | null = null;
-
-export function setAccessToken(token: string | null) {
-  accessToken = token;
+type AuthResponse = {
+  accessToken: string
+  expiresIn?: number
+  user: AuthUser
 }
 
-export function getAccessToken() {
-  return accessToken;
-}
-
-const api = axios.create({
+export const authApi = axios.create({
   baseURL: "/api",
   withCredentials: true,
-});
+})
 
-api.interceptors.request.use((config) => {
-  if (accessToken) {
-    config.headers.Authorization = `Bearer ${accessToken}`;
+export const api = axios.create({
+  baseURL: "/api",
+  withCredentials: true,
+})
+
+let refreshPromise: Promise<string | null> | null = null
+let interceptorsInitialized = false
+
+function applyAuthorizationHeader(
+  config: InternalAxiosRequestConfig,
+  token: string,
+) {
+  const headers = AxiosHeaders.from(config.headers)
+  headers.set("Authorization", `Bearer ${token}`)
+  config.headers = headers
+}
+
+function setAuthFromResponse(payload: AuthResponse) {
+  useAuthStore.getState().setAuth(payload.user, payload.accessToken)
+  return payload.accessToken
+}
+
+function initializeInterceptors() {
+  if (interceptorsInitialized) {
+    return
   }
-  return config;
-});
 
-let isRefreshing = false;
-let refreshQueue: Array<(token: string | null) => void> = [];
+  interceptorsInitialized = true
 
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
+  api.interceptors.request.use((config) => {
+    const token = useAuthStore.getState().accessToken
 
-    if (
-      error.response?.status === 401 &&
-      !originalRequest._retry &&
-      !originalRequest.url?.includes("/auth/")
-    ) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          refreshQueue.push((token) => {
-            if (token) {
-              originalRequest.headers.Authorization = `Bearer ${token}`;
-              resolve(api(originalRequest));
-            } else {
-              reject(error);
-            }
-          });
-        });
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      try {
-        const response = await axios.post(
-          "/api/auth/refresh",
-          {},
-          { withCredentials: true }
-        );
-        const newToken = response.data.accessToken;
-        setAccessToken(newToken);
-        refreshQueue.forEach((cb) => cb(newToken));
-        refreshQueue = [];
-        originalRequest.headers.Authorization = `Bearer ${newToken}`;
-        return api(originalRequest);
-      } catch {
-        setAccessToken(null);
-        refreshQueue.forEach((cb) => cb(null));
-        refreshQueue = [];
-        window.location.href = "/login";
-        return Promise.reject(error);
-      } finally {
-        isRefreshing = false;
-      }
+    if (token) {
+      applyAuthorizationHeader(config, token)
     }
 
-    return Promise.reject(error);
-  }
-);
+    return config
+  })
 
-export default api;
+  api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      if (!isAxiosError(error) || !error.config) {
+        return Promise.reject(error)
+      }
+
+      const request = error.config as InternalAxiosRequestConfig & {
+        _retry?: boolean
+      }
+      const requestUrl = request.url || ""
+
+      if (
+        error.response?.status !== 401 ||
+        request._retry ||
+        requestUrl.includes("/auth/")
+      ) {
+        return Promise.reject(error)
+      }
+
+      request._retry = true
+
+      const refreshedToken = await refreshSession()
+
+      if (!refreshedToken) {
+        return Promise.reject(error)
+      }
+
+      applyAuthorizationHeader(request, refreshedToken)
+      return api(request)
+    },
+  )
+}
+
+initializeInterceptors()
+
+export async function refreshSession(): Promise<string | null> {
+  if (refreshPromise) {
+    return refreshPromise
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const { data } = await authApi.post<AuthResponse>("/auth/refresh")
+      return setAuthFromResponse(data)
+    } catch {
+      useAuthStore.getState().clearAuth()
+      return null
+    } finally {
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
+}
+
+export async function bootstrapAuthSession() {
+  await refreshSession()
+}
+
+export async function logoutSession() {
+  try {
+    await authApi.post("/auth/logout")
+  } finally {
+    useAuthStore.getState().clearAuth()
+  }
+}

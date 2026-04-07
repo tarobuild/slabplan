@@ -1,21 +1,19 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
+import { Link } from "react-router-dom"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 
-export default function NotFound() {
+export default function NotFoundPage() {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md mx-4">
-        <CardContent className="pt-6">
-          <div className="flex mb-4 gap-2">
-            <AlertCircle className="h-8 w-8 text-red-500" />
-            <h1 className="text-2xl font-bold text-gray-900">404 Page Not Found</h1>
-          </div>
-
-          <p className="mt-4 text-sm text-gray-600">
-            Did you forget to add the page to the router?
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
+    <Card className="mx-auto mt-12 max-w-xl border-[#E5E7EB] bg-white shadow-sm">
+      <CardContent className="space-y-4 px-6 py-10 text-center">
+        <h1 className="text-2xl font-semibold text-slate-950">Page not found</h1>
+        <p className="text-sm text-slate-500">
+          This route is outside the current frontend scaffold.
+        </p>
+        <Button asChild>
+          <Link to="/dashboard">Return to Dashboard</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  )
 }

@@ -1,92 +1,93 @@
-import { Search, LogOut, Settings, User } from "lucide-react";
-import { useLocation } from "wouter";
-import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { LogOut, Search, Settings, UserCircle2 } from "lucide-react"
+import { Link, useNavigate } from "react-router-dom"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useAuthStore } from "@/store/auth";
-import api from "@/lib/api";
-import { toast } from "sonner";
+} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import { logoutSession } from "@/lib/api"
+import { useAuthStore } from "@/store/auth"
 
-function getInitials(name: string) {
+function initials(name: string) {
   return name
     .split(" ")
-    .map((n) => n[0])
+    .map((part) => part[0])
     .join("")
+    .slice(0, 2)
     .toUpperCase()
-    .slice(0, 2);
 }
 
 export default function TopNav() {
-  const { user, clearAuth } = useAuthStore();
-  const [, navigate] = useLocation();
-
-  const handleLogout = async () => {
-    try {
-      await api.post("/auth/logout");
-    } catch {
-    }
-    clearAuth();
-    navigate("/login");
-    toast.success("Logged out successfully");
-  };
+  const navigate = useNavigate()
+  const user = useAuthStore((state) => state.user)
 
   return (
-    <header className="h-14 border-b border-border bg-white flex items-center px-4 gap-4 shrink-0">
-      <a
-        href="/dashboard"
-        className="text-sm font-semibold text-gray-900 whitespace-nowrap hover:text-primary transition-colors"
-      >
-        CAD Stone Networks
-      </a>
+    <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-white/95 backdrop-blur">
+      <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-4 px-4 lg:px-6">
+        <Button
+          variant="ghost"
+          className="h-auto px-0 text-base font-semibold text-slate-950 hover:bg-transparent hover:text-blue-700"
+          asChild
+        >
+          <Link to="/dashboard">CAD Stone Networks</Link>
+        </Button>
 
-      <div className="flex-1 max-w-md">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search jobs, leads, files..."
-            className="pl-8 h-9 text-sm bg-muted/40 border-border"
-          />
+        <div className="hidden flex-1 md:flex">
+          <div className="relative w-full max-w-2xl">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              type="search"
+              placeholder="Global search placeholder"
+              className="h-10 border-[#E5E7EB] bg-[#F9FAFB] pl-9 text-sm shadow-none"
+            />
+          </div>
         </div>
-      </div>
 
-      <div className="ml-auto">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-muted transition-colors">
-              <Avatar className="h-7 w-7">
-                <AvatarFallback className="text-xs bg-primary text-primary-foreground">
-                  {user ? getInitials(user.fullName) : "?"}
+            <Button variant="ghost" className="ml-auto h-10 gap-3 rounded-full px-2 hover:bg-slate-100">
+              <Avatar className="size-8 border border-[#E5E7EB]">
+                <AvatarFallback className="bg-blue-50 text-blue-700">
+                  {user ? initials(user.fullName) : "CS"}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-sm font-medium text-foreground hidden sm:block">
-                {user?.fullName}
-              </span>
-            </button>
+              <div className="hidden text-left sm:block">
+                <div className="text-sm font-medium text-slate-900">
+                  {user?.fullName || "Signed out"}
+                </div>
+                <div className="text-xs capitalize text-slate-500">
+                  {user?.role?.replaceAll("_", " ") || "anonymous"}
+                </div>
+              </div>
+            </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuContent align="end" className="w-56 border-[#E5E7EB]">
             <DropdownMenuItem onClick={() => navigate("/settings")}>
-              <User className="mr-2 h-4 w-4" />
+              <UserCircle2 className="size-4" />
               Profile
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate("/settings")}>
-              <Settings className="mr-2 h-4 w-4" />
+              <Settings className="size-4" />
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
-              <LogOut className="mr-2 h-4 w-4" />
+            <DropdownMenuItem
+              onClick={async () => {
+                await logoutSession()
+                navigate("/login", { replace: true })
+              }}
+            >
+              <LogOut className="size-4" />
               Logout
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
     </header>
-  );
+  )
 }

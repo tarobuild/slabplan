@@ -1,0 +1,63 @@
+#3 - CRM, Schedule & Daily Logs
+What & Why
+Build three remaining feature modules: Sales/CRM (lead opportunities with a rich side panel), Schedule (calendar + list + Gantt views per job), and Daily Logs (per-job log cards with weather integration, draft/publish workflow). These complete the core feature set for the Cadstone team.
+
+Done looks like
+Sales/CRM
+/sales/leads shows a full-width table: Checkbox, Title (blue link), Created Date, Client Contact, Status badge, Age (days), Confidence (% + mini progress bar), Est. Revenue Min
+Toolbar: Help, Settings, Export, Filter (with active count badge); "+ Lead Opportunity" button (right)
+Bottom bar: View filter dropdown (All/Open/Won/Lost), "..." menu (Export CSV, Import, Delete selected), pagination; Total Estimated Revenue row
+Empty state with button; status badges: Open (blue), In Negotiation (yellow), Won (green), Lost (gray), Archived (light gray)
+Create Lead modal (~700px wide, two-column layout) with all fields from the spec: title, address, confidence slider, projected sales date, status, client contact search/new, salespeople multi-select, project type, revenue min/max, lead source, tags, notes textarea
+Clicking a lead title opens a shadcn/ui Sheet side panel (~500px) with tabs: General | Activities | Proposals
+General tab: contact card section (empty state + New Contact / Choose Existing buttons; populated shows contact card with "..." menu); all lead fields editable inline; rich text notes editor (Bold/Italic/Underline/Lists); attachments section with upload + file list
+Activities tab: list of lead activities + "+ Lead Activity" button + empty state
+Proposals tab: empty state with "Convert to a Job for full proposal features" message
+Bottom action bar of side panel: "Created by [User] on [Date]", "..." menu (Edit, Duplicate, Convert to job, Delete), Cancel + "+Job" + Save buttons
+Add Client Contact modal works (First name, Last name, Display name, address, phone, cell phone, email, label)
+Convert lead to job: POST /api/leads/:id/convert-to-job creates a job from lead data, sets lead status to Won, redirects to new job
+All destructive actions have confirmation dialogs; toasts on all actions
+Schedule
+Schedule tab on a job detail page shows: toolbar (Help, Settings, Activity, "Schedule Offline" toggle, "More Actions" dropdown, Filter, "+ New Schedule Item"), view mode toggle (Calendar | List | Gantt)
+Calendar view (default): uses react-big-calendar or FullCalendar; month/week/day/agenda granularity selector; today button; prev/next navigation; today cell highlighted in blue; weekends show "Non-workday" in light gray; schedule items shown as color-coded pills; click pill opens detail modal
+List view: table with columns Task name, Assigned to, Start date, End date, Duration, Progress (%), Status, Actions; click task name opens detail modal; empty state
+Gantt view: uses frappe-gantt or similar library; left panel task list, right panel timeline with colored bars, today marker (vertical red line), zoom controls; empty state
+Create Schedule Item modal (tabs: Schedule Item Details | Related Items): title, display color swatch picker, assignees multi-select, start date, work days input, auto-calculated end date (skipping weekends, manually overridable), hourly toggle (shows start/end time when on), progress slider, reminder select, notes; Related Items tab has predecessors section (search/select existing tasks, dependency type, lag days) and tags
+All CRUD wired to schedule API endpoints
+Daily Logs
+Daily Logs tab on job detail shows: toolbar (Help, Settings, Print, Filter with badge count, "+ Daily Log"); vertical stack of log cards (title, date, created by, action icons, 2-3 line notes preview, tags); pagination; empty state
+Filter sidebar slides from right: Shared with, Keywords, Created by, Date range, Tags; Clear all + Apply
+Create Daily Log modal (~900px wide, two-column layout):
+Left 40%: Job (pre-filled), Date (default today), Title, Tags, Share permissions (Internal Users checked by default, Subs/Vendors, Client, Private), Notify users multi-select
+Right 60%: Attachments (Add button + Create new doc + file list), Notes large textarea, Weather section ("Include Weather Conditions" checkbox checked by default — auto-fetches from OpenWeatherMap API using job location: condition, temp high/low, wind, humidity, precipitation displayed as read-only card; "Include Weather Notes" optional textarea)
+Fixed bottom bar: "Daily logs are auto-saved as drafts" info, "Save as Draft" + "Publish" buttons
+Publish behavior: sets published_at, sends notifications, shows success toast
+Click a log card opens the log for viewing/editing in a modal or page
+Out of scope
+Real-time Socket.IO push for new logs/schedule changes (polish phase)
+Email notification delivery (stub the notification call, log to console)
+OpenWeatherMap integration if API key is not configured (show graceful "weather unavailable" fallback)
+Tasks
+CRM API routes — Add all lead endpoints (GET/POST/PUT/DELETE /api/leads, contacts, attachments, convert-to-job). Add lead_salespeople, lead_tags, lead_sources junction table handling. Activity log entries on create/update.
+
+Lead list page — Build /sales/leads with the full-width table, toolbar, status badges, confidence progress bars, revenue summary row, bottom bar, and empty state. Wire to GET /api/leads.
+
+Create Lead modal — Build the two-column ~700px wide shadcn/ui Dialog with all fields, confidence slider, tag input, and salespeople multi-select. Wire to POST /api/leads.
+
+Lead detail side panel — Build the shadcn/ui Sheet with three tabs. General tab with editable fields, contact card section, rich text notes (use a lightweight rich text editor like tiptap-starter-kit), and attachments. Activities and Proposals tabs with empty states. Bottom action bar with convert-to-job flow.
+
+Schedule API routes — Add endpoints for schedule items (GET/POST /api/jobs/:jobId/schedule, GET/PUT/DELETE /api/schedule-items/:id). Handle assignees junction table. Business-day end-date calculation logic on the server.
+
+Schedule UI — Build the Schedule tab with all three view modes: Calendar (react-big-calendar), List (shadcn/ui Table), Gantt (frappe-gantt). Build Create Schedule Item modal with both tabs. Wire all CRUD to API.
+
+Daily Logs API routes — Add endpoints (GET/POST /api/jobs/:jobId/daily-logs, GET/PUT/DELETE /api/daily-logs/:id, POST publish, POST attachments). Handle tags junction table, activity log writes.
+
+Daily Logs UI — Build the Daily Logs tab with the card list, filter sidebar, pagination, and empty state. Build the Create Daily Log modal with both columns, weather auto-fetch (OpenWeatherMap, graceful fallback), draft/publish workflow, and attachment section.
+
+Relevant files
+lib/db/src/schema/index.ts
+artifacts/api-server/src/routes/index.ts
+lib/api-spec/openapi.yaml
+lib/api-client-react/src/generated/api.ts
+Dependencies
+Jobs & File Management

@@ -1,8 +1,33 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
-import { ChevronRight, File, FileText, Folder, FolderOpen, Loader2, Plus, Upload } from "lucide-react"
+import {
+  ChevronRight,
+  Download,
+  File,
+  FileText,
+  Folder,
+  FolderOpen,
+  Grid2X2,
+  List,
+  Loader2,
+  MoreHorizontal,
+  Play,
+  Plus,
+  Upload,
+  X,
+} from "lucide-react"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Dialog,
   DialogContent,
@@ -10,6 +35,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -40,6 +79,8 @@ type FileItem = {
 }
 
 type MediaType = "document" | "photo" | "video"
+type ViewMode = "grid" | "list"
+type SortOption = "name-asc" | "name-desc" | "date-desc" | "date-asc" | "size-desc" | "size-asc"
 
 function formatFileSize(bytes: number | null) {
   if (!bytes) return "—"
@@ -61,27 +102,57 @@ function FileIcon({ mimeType }: { mimeType: string | null }) {
   return <FileText className="size-4 text-slate-400" />
 }
 
-export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
+function displayName(file: FileItem) {
+  return file.originalName || file.filename
+}
+
+export default function FileBrowser({
+  mediaType,
+  defaultView,
+}: {
+  mediaType: MediaType
+  defaultView?: ViewMode
+}) {
   const { jobId } = useParams<{ jobId: string }>()
+
+  const resolvedDefault: ViewMode =
+    defaultView ?? (mediaType === "document" ? "list" : "grid")
+
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([])
   const [folders, setFolders] = useState<FolderItem[]>([])
   const [files, setFiles] = useState<FileItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filesLoading, setFilesLoading] = useState(false)
+
+  const [viewMode, setViewMode] = useState<ViewMode>(resolvedDefault)
+  const [sortBy, setSortBy] = useState<SortOption>("name-asc")
+
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState("")
   const [creatingFolder, setCreatingFolder] = useState(false)
+
+  const [renameFolderTarget, setRenameFolderTarget] = useState<FolderItem | null>(null)
+  const [renameFolderName, setRenameFolderName] = useState("")
+  const [renamingFolder, setRenamingFolder] = useState(false)
+
+  const [deleteConfirmFolder, setDeleteConfirmFolder] = useState<FolderItem | null>(null)
+  const [deletingFolder, setDeletingFolder] = useState(false)
+
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [lightboxFile, setLightboxFile] = useState<FileItem | null>(null)
+  const [videoPlayerFile, setVideoPlayerFile] = useState<FileItem | null>(null)
 
   const loadFolders = (parentId: string | null = null) => {
     if (!jobId) return
     setLoading(true)
     const params = new URLSearchParams({ mediaType })
     if (parentId) params.set("parentId", parentId)
-    api.get(`/jobs/${jobId}/folders?${params}`)
-      .then(r => {
+    api
+      .get(`/jobs/${jobId}/folders?${params}`)
+      .then((r) => {
         setFolders(r.data.folders ?? [])
         setBreadcrumb(r.data.breadcrumb ?? [])
       })
@@ -91,16 +162,18 @@ export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
 
   const loadFiles = (folderId: string) => {
     setFilesLoading(true)
-    api.get(`/folders/${folderId}/files`)
-      .then(r => setFiles(r.data.files ?? []))
+    api
+      .get(`/folders/${folderId}/files`)
+      .then((r) => setFiles(r.data.files ?? []))
       .catch(() => toast.error("Failed to load files"))
       .finally(() => setFilesLoading(false))
   }
 
   useEffect(() => {
-    loadFolders(null)
     setCurrentFolderId(null)
     setFiles([])
+    setBreadcrumb([])
+    loadFolders(null)
   }, [jobId, mediaType])
 
   const openFolder = (folder: FolderItem) => {
@@ -137,14 +210,45 @@ export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
     }
   }
 
+  const handleRenameFolder = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!renameFolderTarget) return
+    setRenamingFolder(true)
+    try {
+      await api.put(`/folders/${renameFolderTarget.id}`, { title: renameFolderName })
+      toast.success("Folder renamed")
+      setRenameFolderTarget(null)
+      loadFolders(currentFolderId)
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Failed to rename folder")
+    } finally {
+      setRenamingFolder(false)
+    }
+  }
+
+  const handleDeleteFolder = async () => {
+    if (!deleteConfirmFolder) return
+    setDeletingFolder(true)
+    try {
+      await api.delete(`/folders/${deleteConfirmFolder.id}`)
+      toast.success("Folder deleted")
+      setDeleteConfirmFolder(null)
+      loadFolders(currentFolderId)
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Failed to delete folder")
+    } finally {
+      setDeletingFolder(false)
+    }
+  }
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!currentFolderId || !e.target.files?.length) return
     const formData = new FormData()
-    Array.from(e.target.files).forEach(f => formData.append("files", f))
+    Array.from(e.target.files).forEach((f) => formData.append("files", f))
     setUploading(true)
     try {
       await api.post(`/folders/${currentFolderId}/files`, formData, {
-        headers: { "Content-Type": "multipart/form-data" }
+        headers: { "Content-Type": "multipart/form-data" },
       })
       toast.success(`${e.target.files.length} file(s) uploaded`)
       loadFiles(currentFolderId)
@@ -156,31 +260,107 @@ export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
     }
   }
 
-  const mediaLabel = mediaType === "document" ? "Documents" : mediaType === "photo" ? "Photos" : "Videos"
+  const sortedFolders = useMemo(() => {
+    const arr = [...folders]
+    if (sortBy === "name-asc") arr.sort((a, b) => a.title.localeCompare(b.title))
+    else if (sortBy === "name-desc") arr.sort((a, b) => b.title.localeCompare(a.title))
+    return arr
+  }, [folders, sortBy])
+
+  const sortedFiles = useMemo(() => {
+    const arr = [...files]
+    const name = (f: FileItem) => displayName(f).toLowerCase()
+    if (sortBy === "name-asc") arr.sort((a, b) => name(a).localeCompare(name(b)))
+    else if (sortBy === "name-desc") arr.sort((a, b) => name(b).localeCompare(name(a)))
+    else if (sortBy === "date-desc")
+      arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    else if (sortBy === "date-asc")
+      arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    else if (sortBy === "size-desc") arr.sort((a, b) => (b.fileSize ?? 0) - (a.fileSize ?? 0))
+    else if (sortBy === "size-asc") arr.sort((a, b) => (a.fileSize ?? 0) - (b.fileSize ?? 0))
+    return arr
+  }, [files, sortBy])
+
+  const mediaLabel =
+    mediaType === "document" ? "Documents" : mediaType === "photo" ? "Photos" : "Videos"
+  const canToggleView = mediaType !== "document"
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-sm">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-2">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5 text-sm min-w-0">
           <button
             onClick={() => navigateTo(null)}
-            className={`font-medium transition-colors ${currentFolderId ? "text-blue-600 hover:underline" : "text-slate-900"}`}
+            className={`font-medium transition-colors shrink-0 ${
+              currentFolderId ? "text-blue-600 hover:underline" : "text-slate-900"
+            }`}
           >
             {mediaLabel}
           </button>
-          {breadcrumb.map(crumb => (
-            <span key={crumb.id} className="flex items-center gap-1.5">
-              <ChevronRight className="size-3.5 text-slate-400" />
+          {breadcrumb.map((crumb) => (
+            <span key={crumb.id} className="flex items-center gap-1.5 min-w-0">
+              <ChevronRight className="size-3.5 text-slate-400 shrink-0" />
               <button
                 onClick={() => navigateTo(crumb.id)}
-                className={`font-medium transition-colors ${crumb.id === currentFolderId ? "text-slate-900" : "text-blue-600 hover:underline"}`}
+                className={`font-medium transition-colors truncate ${
+                  crumb.id === currentFolderId
+                    ? "text-slate-900"
+                    : "text-blue-600 hover:underline"
+                }`}
               >
                 {crumb.title}
               </button>
             </span>
           ))}
         </div>
-        <div className="flex gap-2">
+
+        {/* Controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Sort */}
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+            <SelectTrigger className="h-8 w-36 text-xs">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name-asc">Name A–Z</SelectItem>
+              <SelectItem value="name-desc">Name Z–A</SelectItem>
+              <SelectItem value="date-desc">Newest First</SelectItem>
+              <SelectItem value="date-asc">Oldest First</SelectItem>
+              <SelectItem value="size-desc">Largest First</SelectItem>
+              <SelectItem value="size-asc">Smallest First</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Grid/List toggle — only for Photos and Videos */}
+          {canToggleView && (
+            <div className="flex border border-[#E5E7EB] rounded-md overflow-hidden">
+              <button
+                onClick={() => setViewMode("grid")}
+                className={`px-2 py-1.5 transition-colors ${
+                  viewMode === "grid"
+                    ? "bg-slate-900 text-white"
+                    : "bg-white text-slate-500 hover:bg-slate-50"
+                }`}
+                title="Grid view"
+              >
+                <Grid2X2 className="size-3.5" />
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                className={`px-2 py-1.5 border-l border-[#E5E7EB] transition-colors ${
+                  viewMode === "list"
+                    ? "bg-slate-900 text-white"
+                    : "bg-white text-slate-500 hover:bg-slate-50"
+                }`}
+                title="List view"
+              >
+                <List className="size-3.5" />
+              </button>
+            </div>
+          )}
+
           {currentFolderId && (
             <>
               <input
@@ -196,13 +376,24 @@ export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
               >
-                {uploading ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Upload className="mr-1.5 size-3.5" />}
+                {uploading ? (
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                ) : (
+                  <Upload className="mr-1.5 size-3.5" />
+                )}
                 Upload
               </Button>
             </>
           )}
-          <Button size="sm" onClick={() => { setNewFolderName(""); setCreateFolderOpen(true) }}>
-            <Plus className="mr-1.5 size-3.5" />New Folder
+          <Button
+            size="sm"
+            onClick={() => {
+              setNewFolderName("")
+              setCreateFolderOpen(true)
+            }}
+          >
+            <Plus className="mr-1.5 size-3.5" />
+            New Folder
           </Button>
         </div>
       </div>
@@ -210,80 +401,51 @@ export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+            <Skeleton key={i} className="h-16 w-full rounded-lg" />
           ))}
         </div>
       ) : (
         <>
-          {folders.length > 0 && (
-            <div className="space-y-1">
-              {folders.map(folder => (
-                <button
+          {/* Folder tile cards */}
+          {sortedFolders.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {sortedFolders.map((folder) => (
+                <FolderCard
                   key={folder.id}
-                  onClick={() => openFolder(folder)}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-[#E5E7EB] bg-white hover:border-blue-200 hover:bg-blue-50/40 transition-colors text-left group"
-                >
-                  {currentFolderId === folder.id
-                    ? <FolderOpen className="size-5 text-yellow-500 shrink-0" />
-                    : <Folder className="size-5 text-yellow-500 shrink-0" />
-                  }
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">{folder.title}</p>
-                    <p className="text-xs text-slate-400">
-                      {folder.fileCount} file{folder.fileCount !== 1 ? "s" : ""}
-                      {folder.childFolderCount > 0 && `, ${folder.childFolderCount} subfolder${folder.childFolderCount !== 1 ? "s" : ""}`}
-                    </p>
-                  </div>
-                  <ChevronRight className="size-4 text-slate-300 group-hover:text-slate-500 shrink-0" />
-                </button>
+                  folder={folder}
+                  isOpen={currentFolderId === folder.id}
+                  onOpen={() => openFolder(folder)}
+                  onRename={() => {
+                    setRenameFolderTarget(folder)
+                    setRenameFolderName(folder.title)
+                  }}
+                  onDelete={() => setDeleteConfirmFolder(folder)}
+                />
               ))}
             </div>
           )}
 
+          {/* Files */}
           {currentFolderId && (
             <>
               {filesLoading ? (
-                <div className="space-y-2">
+                <div className="space-y-2 mt-3">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <Skeleton key={i} className="h-10 w-full rounded" />
                   ))}
                 </div>
-              ) : files.length > 0 ? (
-                <div className="rounded-lg border border-[#E5E7EB] bg-white overflow-hidden mt-3">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 border-b border-[#E5E7EB]">
-                      <tr>
-                        <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Name</th>
-                        <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Size</th>
-                        <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Uploaded By</th>
-                        <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {files.map(file => (
-                        <tr key={file.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <FileIcon mimeType={file.mimeType} />
-                              {file.fileUrl ? (
-                                <a href={file.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate max-w-xs">
-                                  {file.originalName || file.filename}
-                                </a>
-                              ) : (
-                                <span className="text-slate-700 truncate max-w-xs">{file.originalName || file.filename}</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-slate-500 tabular-nums">{formatFileSize(file.fileSize)}</td>
-                          <td className="px-4 py-3 text-slate-500">{file.uploadedByName || "—"}</td>
-                          <td className="px-4 py-3 text-slate-500">{fmtDate(file.createdAt)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              ) : sortedFiles.length > 0 ? (
+                <div className="mt-3">
+                  {mediaType === "photo" && viewMode === "grid" ? (
+                    <PhotoGrid files={sortedFiles} onOpenLightbox={setLightboxFile} />
+                  ) : mediaType === "video" && viewMode === "grid" ? (
+                    <VideoGrid files={sortedFiles} onOpenPlayer={setVideoPlayerFile} />
+                  ) : (
+                    <FileTable files={sortedFiles} showDuration={mediaType === "video"} />
+                  )}
                 </div>
-              ) : folders.length === 0 ? (
-                <div className="py-16 text-center">
+              ) : sortedFolders.length === 0 ? (
+                <div className="py-16 text-center mt-3">
                   <FolderOpen className="mx-auto mb-3 size-8 text-slate-200" />
                   <p className="text-sm text-slate-400">This folder is empty.</p>
                   <button
@@ -301,12 +463,15 @@ export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
             </>
           )}
 
-          {!currentFolderId && folders.length === 0 && (
+          {!currentFolderId && sortedFolders.length === 0 && (
             <div className="py-16 text-center">
               <Folder className="mx-auto mb-3 size-8 text-slate-200" />
               <p className="text-sm text-slate-400">No folders yet.</p>
               <button
-                onClick={() => { setNewFolderName(""); setCreateFolderOpen(true) }}
+                onClick={() => {
+                  setNewFolderName("")
+                  setCreateFolderOpen(true)
+                }}
                 className="mt-1 text-sm text-blue-600 hover:underline"
               >
                 Create the first folder
@@ -316,6 +481,7 @@ export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
         </>
       )}
 
+      {/* Create Folder Dialog */}
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -327,14 +493,16 @@ export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
               <Input
                 id="folder-name"
                 value={newFolderName}
-                onChange={e => setNewFolderName(e.target.value)}
+                onChange={(e) => setNewFolderName(e.target.value)}
                 required
                 placeholder="e.g. Blueprints"
                 autoFocus
               />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => setCreateFolderOpen(false)}>
+                Cancel
+              </Button>
               <Button type="submit" disabled={creatingFolder}>
                 {creatingFolder && <Loader2 className="mr-2 size-3.5 animate-spin" />}
                 Create
@@ -343,6 +511,344 @@ export default function FileBrowser({ mediaType }: { mediaType: MediaType }) {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Rename Folder Dialog */}
+      <Dialog
+        open={!!renameFolderTarget}
+        onOpenChange={(open) => !open && setRenameFolderTarget(null)}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename Folder</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleRenameFolder}>
+            <div className="py-4 space-y-1.5">
+              <Label htmlFor="rename-folder-name">Folder Name *</Label>
+              <Input
+                id="rename-folder-name"
+                value={renameFolderName}
+                onChange={(e) => setRenameFolderName(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRenameFolderTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renamingFolder}>
+                {renamingFolder && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Folder Alert */}
+      <AlertDialog
+        open={!!deleteConfirmFolder}
+        onOpenChange={(open) => !open && setDeleteConfirmFolder(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Folder?</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{deleteConfirmFolder?.title}" and all its contents will be permanently deleted. This
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteFolder}
+              disabled={deletingFolder}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deletingFolder && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Photo Lightbox */}
+      <Dialog open={!!lightboxFile} onOpenChange={(open) => !open && setLightboxFile(null)}>
+        <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black border-0">
+          <button
+            onClick={() => setLightboxFile(null)}
+            className="absolute top-3 right-3 z-10 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors"
+          >
+            <X className="size-4" />
+          </button>
+          {lightboxFile?.fileUrl && (
+            <div className="flex flex-col items-center">
+              <img
+                src={lightboxFile.fileUrl}
+                alt={displayName(lightboxFile)}
+                className="max-h-[80vh] max-w-full object-contain"
+              />
+              <div className="flex items-center justify-between w-full px-4 py-3 bg-black/80 text-white">
+                <span className="text-sm font-medium truncate max-w-xs">
+                  {displayName(lightboxFile)}
+                </span>
+                <a
+                  href={lightboxFile.fileUrl}
+                  download={displayName(lightboxFile)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-sm text-blue-300 hover:text-blue-200 shrink-0"
+                >
+                  <Download className="size-3.5" />
+                  Download
+                </a>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Video Player Dialog */}
+      <Dialog open={!!videoPlayerFile} onOpenChange={(open) => !open && setVideoPlayerFile(null)}>
+        <DialogContent className="max-w-3xl p-0 overflow-hidden bg-black border-0">
+          <button
+            onClick={() => setVideoPlayerFile(null)}
+            className="absolute top-3 right-3 z-10 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors"
+          >
+            <X className="size-4" />
+          </button>
+          {videoPlayerFile?.fileUrl && (
+            <div className="flex flex-col">
+              <video
+                src={videoPlayerFile.fileUrl}
+                controls
+                autoPlay
+                className="w-full max-h-[75vh] bg-black"
+              />
+              <div className="flex items-center justify-between px-4 py-3 bg-black/80 text-white">
+                <span className="text-sm font-medium truncate max-w-xs">
+                  {displayName(videoPlayerFile)}
+                </span>
+                <a
+                  href={videoPlayerFile.fileUrl}
+                  download={displayName(videoPlayerFile)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-sm text-blue-300 hover:text-blue-200 shrink-0"
+                >
+                  <Download className="size-3.5" />
+                  Download
+                </a>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function FolderCard({
+  folder,
+  isOpen,
+  onOpen,
+  onRename,
+  onDelete,
+}: {
+  folder: FolderItem
+  isOpen: boolean
+  onOpen: () => void
+  onRename: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-blue-200 hover:bg-blue-50/30 transition-colors cursor-pointer select-none">
+      <button className="absolute inset-0 rounded-xl" onClick={onOpen} aria-label={`Open ${folder.title}`} />
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3">
+          {isOpen ? (
+            <FolderOpen className="size-8 text-yellow-400 shrink-0" />
+          ) : (
+            <Folder className="size-8 text-yellow-400 shrink-0" />
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800 truncate leading-tight">
+              {folder.title}
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {folder.fileCount} file{folder.fileCount !== 1 ? "s" : ""}
+              {folder.childFolderCount > 0 &&
+                ` · ${folder.childFolderCount} subfolder${folder.childFolderCount !== 1 ? "s" : ""}`}
+            </p>
+          </div>
+        </div>
+
+        {/* Context menu */}
+        <div className="relative z-10">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                onClick={(e) => e.stopPropagation()}
+                aria-label="Folder options"
+              >
+                <MoreHorizontal className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRename()
+                }}
+              >
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="text-red-600 focus:text-red-600"
+              >
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PhotoGrid({
+  files,
+  onOpenLightbox,
+}: {
+  files: FileItem[]
+  onOpenLightbox: (file: FileItem) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      {files.map((file) => (
+        <button
+          key={file.id}
+          onClick={() => onOpenLightbox(file)}
+          className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 aspect-square hover:border-blue-300 transition-colors text-left"
+        >
+          {file.fileUrl ? (
+            <img
+              src={file.fileUrl}
+              alt={displayName(file)}
+              className="w-full h-full object-cover transition-transform group-hover:scale-105"
+              onError={(e) => {
+                ;(e.target as HTMLImageElement).style.display = "none"
+              }}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-slate-300">
+              <span className="text-4xl">🖼️</span>
+            </div>
+          )}
+          {/* Hover overlay */}
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-end">
+            <div className="w-full px-2.5 py-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+              <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
+              <p className="text-white/70 text-xs">{formatFileSize(file.fileSize)}</p>
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function VideoGrid({
+  files,
+  onOpenPlayer,
+}: {
+  files: FileItem[]
+  onOpenPlayer: (file: FileItem) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      {files.map((file) => (
+        <button
+          key={file.id}
+          onClick={() => onOpenPlayer(file)}
+          className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-blue-300 transition-colors text-left"
+        >
+          {/* Play overlay */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="size-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/30 transition-colors">
+              <Play className="size-5 text-white fill-white ml-0.5" />
+            </div>
+          </div>
+          {/* Bottom bar */}
+          <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2">
+            <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
+            <p className="text-white/60 text-xs">{formatFileSize(file.fileSize)}</p>
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function FileTable({
+  files,
+  showDuration,
+}: {
+  files: FileItem[]
+  showDuration?: boolean
+}) {
+  return (
+    <div className="rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 border-b border-[#E5E7EB]">
+          <tr>
+            <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Name</th>
+            <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Size</th>
+            {showDuration && (
+              <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Duration</th>
+            )}
+            <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Uploaded By</th>
+            <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Date</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {files.map((file) => (
+            <tr key={file.id} className="hover:bg-slate-50">
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <FileIcon mimeType={file.mimeType} />
+                  {file.fileUrl ? (
+                    <a
+                      href={file.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline truncate max-w-xs"
+                    >
+                      {displayName(file)}
+                    </a>
+                  ) : (
+                    <span className="text-slate-700 truncate max-w-xs">{displayName(file)}</span>
+                  )}
+                </div>
+              </td>
+              <td className="px-4 py-3 text-slate-500 tabular-nums">{formatFileSize(file.fileSize)}</td>
+              {showDuration && <td className="px-4 py-3 text-slate-400">—</td>}
+              <td className="px-4 py-3 text-slate-500">{file.uploadedByName || "—"}</td>
+              <td className="px-4 py-3 text-slate-500">{fmtDate(file.createdAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

@@ -374,9 +374,9 @@ export default function LeadsPage() {
       const existingContact = leadDetail.clientContact
       if (existingContact?.id) {
         await api.put(`/leads/${sheetLeadId}/contacts/${existingContact.id}`, {
-          displayName: editForm.contactDisplayName || existingContact.displayName,
-          email: editForm.contactEmail || existingContact.email,
-          phone: editForm.contactPhone || existingContact.phone,
+          displayName: editForm.contactDisplayName || null,
+          email: editForm.contactEmail || null,
+          phone: editForm.contactPhone || null,
         })
       } else if (editForm.contactDisplayName && editForm.contactEmail) {
         await api.post(`/leads/${sheetLeadId}/contacts`, {

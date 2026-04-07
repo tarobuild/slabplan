@@ -1,0 +1,346 @@
+import { and, asc, count, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { z } from "zod";
+import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import { files, folders, jobs, type NewJob, users } from "@workspace/db/schema";
+import { ensureSystemFolders, writeActivity } from "../lib/file-manager";
+import { HttpError, asyncHandler } from "../lib/http";
+
+const router: IRouter = Router();
+
+const jobQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
+  search: z.string().trim().optional(),
+  status: z.enum(["open", "closed", "archived"]).optional(),
+});
+
+const optionalString = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((value) => {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  });
+
+const optionalDate = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((value) => {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  })
+  .refine((value) => value === null || /^\d{4}-\d{2}-\d{2}$/.test(value), {
+    message: "Dates must be in YYYY-MM-DD format.",
+  });
+
+const optionalMoney = z
+  .union([z.string(), z.number(), z.null(), z.undefined()])
+  .transform((value) => {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+
+    const normalized = typeof value === "number" ? value.toString() : value.trim();
+    return normalized.length === 0 ? null : normalized;
+  })
+  .refine((value) => value === null || Number.isFinite(Number(value)), {
+    message: "Contract price must be a valid number.",
+  });
+
+const jobPayloadSchema = z.object({
+  title: z.string().trim().min(1).max(255),
+  status: z.enum(["open", "closed", "archived"]).optional().default("open"),
+  streetAddress: optionalString,
+  city: optionalString,
+  state: optionalString.refine((value) => value === null || value.length <= 2, {
+    message: "State must be a 2-character abbreviation.",
+  }),
+  zipCode: optionalString,
+  contractPrice: optionalMoney,
+  jobType: optionalString,
+  workDays: z
+    .array(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
+    .nullable()
+    .optional()
+    .default(null),
+  projectedStart: optionalDate,
+  projectedCompletion: optionalDate,
+  actualStart: optionalDate,
+  actualCompletion: optionalDate,
+});
+
+function getParam(value: string | string[] | undefined, label: string) {
+  const normalized = Array.isArray(value) ? value[0] : value;
+
+  if (!normalized) {
+    throw new HttpError(400, `Missing ${label}.`);
+  }
+
+  return normalized;
+}
+
+function toJobInsert(data: z.infer<typeof jobPayloadSchema>, createdBy: string): NewJob {
+  return {
+    title: data.title,
+    status: data.status,
+    streetAddress: data.streetAddress,
+    city: data.city,
+    state: data.state,
+    zipCode: data.zipCode,
+    contractPrice: data.contractPrice,
+    jobType: data.jobType,
+    workDays: data.workDays,
+    projectedStart: data.projectedStart,
+    projectedCompletion: data.projectedCompletion,
+    actualStart: data.actualStart,
+    actualCompletion: data.actualCompletion,
+    createdBy,
+  };
+}
+
+async function findJobById(id: string) {
+  const [job] = await db
+    .select({
+      id: jobs.id,
+      title: jobs.title,
+      status: jobs.status,
+      city: jobs.city,
+      state: jobs.state,
+      streetAddress: jobs.streetAddress,
+      zipCode: jobs.zipCode,
+      jobType: jobs.jobType,
+      contractPrice: jobs.contractPrice,
+      projectedStart: jobs.projectedStart,
+      projectedCompletion: jobs.projectedCompletion,
+      actualStart: jobs.actualStart,
+      actualCompletion: jobs.actualCompletion,
+      workDays: jobs.workDays,
+      createdAt: jobs.createdAt,
+      updatedAt: jobs.updatedAt,
+      createdById: users.id,
+      createdByName: users.fullName,
+    })
+    .from(jobs)
+    .leftJoin(users, eq(jobs.createdBy, users.id))
+    .where(and(eq(jobs.id, id), isNull(jobs.deletedAt)))
+    .limit(1);
+
+  return job ?? null;
+}
+
+router.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    const query = jobQuerySchema.safeParse(req.query);
+
+    if (!query.success) {
+      throw new HttpError(400, "Invalid jobs query.", query.error.flatten());
+    }
+
+    const conditions = [isNull(jobs.deletedAt)];
+
+    if (query.data.status) {
+      conditions.push(eq(jobs.status, query.data.status));
+    }
+
+    if (query.data.search) {
+      const search = `%${query.data.search}%`;
+      conditions.push(
+        or(
+          ilike(jobs.title, search),
+          ilike(jobs.city, search),
+          ilike(jobs.state, search),
+          ilike(jobs.jobType, search),
+        )!,
+      );
+    }
+
+    const whereClause = and(...conditions);
+    const offset = (query.data.page - 1) * query.data.pageSize;
+
+    const [totalRow] = await db
+      .select({
+        total: count(),
+      })
+      .from(jobs)
+      .where(whereClause);
+
+    const rows = await db
+      .select({
+        id: jobs.id,
+        title: jobs.title,
+        status: jobs.status,
+        city: jobs.city,
+        state: jobs.state,
+        streetAddress: jobs.streetAddress,
+        zipCode: jobs.zipCode,
+        jobType: jobs.jobType,
+        contractPrice: jobs.contractPrice,
+        projectedStart: jobs.projectedStart,
+        projectedCompletion: jobs.projectedCompletion,
+        actualStart: jobs.actualStart,
+        actualCompletion: jobs.actualCompletion,
+        workDays: jobs.workDays,
+        createdAt: jobs.createdAt,
+        updatedAt: jobs.updatedAt,
+      })
+      .from(jobs)
+      .where(whereClause)
+      .orderBy(desc(jobs.createdAt), asc(jobs.title))
+      .limit(query.data.pageSize)
+      .offset(offset);
+
+    const totalItems = Number(totalRow?.total ?? 0);
+
+    res.json({
+      jobs: rows,
+      pagination: {
+        page: query.data.page,
+        pageSize: query.data.pageSize,
+        totalItems,
+        totalPages: Math.max(1, Math.ceil(totalItems / query.data.pageSize)),
+      },
+    });
+  }),
+);
+
+router.post(
+  "/",
+  asyncHandler(async (req, res) => {
+    const body = jobPayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid job payload.", body.error.flatten());
+    }
+
+    const [job] = await db
+      .insert(jobs)
+      .values(toJobInsert(body.data, req.auth.userId))
+      .returning();
+
+    await ensureSystemFolders(job.id);
+    await writeActivity({
+      entityType: "job",
+      entityId: job.id,
+      action: "created",
+      userId: req.auth.userId,
+      jobId: job.id,
+      description: `Created job ${job.title}`,
+    });
+
+    const hydrated = await findJobById(job.id);
+
+    res.status(201).json({ job: hydrated });
+  }),
+);
+
+router.get(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.id, "job id");
+    const job = await findJobById(jobId);
+
+    if (!job) {
+      throw new HttpError(404, "Job not found.");
+    }
+
+    res.json({ job });
+  }),
+);
+
+router.put(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const body = jobPayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid job payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.id, "job id");
+    const existing = await findJobById(jobId);
+
+    if (!existing) {
+      throw new HttpError(404, "Job not found.");
+    }
+
+    const [updated] = await db
+      .update(jobs)
+      .set({
+        ...toJobInsert(body.data, existing.createdById ?? req.auth.userId),
+        updatedAt: new Date(),
+      })
+      .where(eq(jobs.id, jobId))
+      .returning();
+
+    await ensureSystemFolders(updated.id);
+    await writeActivity({
+      entityType: "job",
+      entityId: updated.id,
+      action: "updated",
+      userId: req.auth.userId,
+      jobId: updated.id,
+      description: `Updated job ${updated.title}`,
+    });
+
+    const hydrated = await findJobById(updated.id);
+
+    res.json({ job: hydrated });
+  }),
+);
+
+router.delete(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.id, "job id");
+    const existing = await findJobById(jobId);
+
+    if (!existing) {
+      throw new HttpError(404, "Job not found.");
+    }
+
+    const deletedAt = new Date();
+
+    await db
+      .update(jobs)
+      .set({ deletedAt, updatedAt: deletedAt })
+      .where(eq(jobs.id, jobId));
+
+    const relatedFolders = await db
+      .select({ id: folders.id })
+      .from(folders)
+      .where(eq(folders.jobId, jobId));
+
+    if (relatedFolders.length > 0) {
+      const folderIds = relatedFolders.map((folder) => folder.id);
+      await db
+        .update(folders)
+        .set({ deletedAt, updatedAt: deletedAt })
+        .where(inArray(folders.id, folderIds));
+      await db
+        .update(files)
+        .set({ deletedAt, updatedAt: deletedAt })
+        .where(inArray(files.folderId, folderIds));
+    }
+
+    await writeActivity({
+      entityType: "job",
+      entityId: jobId,
+      action: "deleted",
+      userId: req.auth.userId,
+      jobId,
+      description: `Archived job ${existing.title}`,
+    });
+
+    res.json({ success: true });
+  }),
+);
+
+export default router;

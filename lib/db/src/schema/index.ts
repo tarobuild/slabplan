@@ -1,20 +1,329 @@
-// Export your models here. Add one export per file
-// export * from "./posts";
-//
-// Each model/table should ideally be split into different files.
-// Each model/table should define a Drizzle table, insert schema, and types:
-//
-//   import { pgTable, text, serial } from "drizzle-orm/pg-core";
-//   import { createInsertSchema } from "drizzle-zod";
-//   import { z } from "zod/v4";
-//
-//   export const postsTable = pgTable("posts", {
-//     id: serial("id").primaryKey(),
-//     title: text("title").notNull(),
-//   });
-//
-//   export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true });
-//   export type InsertPost = z.infer<typeof insertPostSchema>;
-//   export type Post = typeof postsTable.$inferSelect;
+import crypto from "node:crypto";
+import {
+  bigint,
+  boolean,
+  date,
+  foreignKey,
+  integer,
+  json,
+  numeric,
+  pgTable,
+  text,
+  time,
+  timestamp,
+  unique,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
 
-export {}
+const createId = () => crypto.randomUUID();
+
+const baseTimestamps = {
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+};
+
+const softDeleteTimestamp = {
+  deletedAt: timestamp("deleted_at"),
+};
+
+export const userRoles = ["admin", "project_manager", "crew_member"] as const;
+export const jobStatuses = ["open", "closed", "archived"] as const;
+export const fileMediaTypes = ["document", "photo", "video"] as const;
+export const leadStatuses = [
+  "open",
+  "in_negotiation",
+  "won",
+  "lost",
+  "archived",
+] as const;
+export const projectTypes = [
+  "countertops",
+  "backsplash",
+  "flooring",
+  "custom",
+  "none",
+] as const;
+export const reminderOptions = [
+  "none",
+  "1_day_before",
+  "3_days_before",
+  "1_week_before",
+] as const;
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  fullName: varchar("full_name", { length: 255 }).notNull(),
+  role: varchar("role", { length: 50 }).notNull().default("crew_member"),
+  avatarUrl: varchar("avatar_url", { length: 500 }),
+  phone: varchar("phone", { length: 20 }),
+  ...baseTimestamps,
+  ...softDeleteTimestamp,
+});
+
+export const jobs = pgTable("jobs", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  title: varchar("title", { length: 255 }).notNull(),
+  status: varchar("status", { length: 50 }).notNull().default("open"),
+  streetAddress: varchar("street_address", { length: 255 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 2 }),
+  zipCode: varchar("zip_code", { length: 10 }),
+  contractPrice: numeric("contract_price", { precision: 12, scale: 2 }),
+  jobType: varchar("job_type", { length: 100 }),
+  workDays: json("work_days").$type<string[] | null>(),
+  projectedStart: date("projected_start", { mode: "string" }),
+  projectedCompletion: date("projected_completion", { mode: "string" }),
+  actualStart: date("actual_start", { mode: "string" }),
+  actualCompletion: date("actual_completion", { mode: "string" }),
+  createdBy: uuid("created_by").references(() => users.id),
+  ...baseTimestamps,
+  ...softDeleteTimestamp,
+});
+
+export const folders = pgTable(
+  "folders",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    title: varchar("title", { length: 255 }).notNull(),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
+    parentFolderId: uuid("parent_folder_id"),
+    mediaType: varchar("media_type", { length: 50 }).notNull(),
+    viewingPermissions: json("viewing_permissions").$type<Record<string, unknown> | null>(),
+    uploadingPermissions: json("uploading_permissions").$type<Record<string, unknown> | null>(),
+    isGlobal: boolean("is_global").default(false),
+    ...baseTimestamps,
+    ...softDeleteTimestamp,
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.parentFolderId],
+      foreignColumns: [table.id],
+      name: "folders_parent_folder_id_fkey",
+    }).onDelete("cascade"),
+    unique("folders_job_title_parent_media_unique").on(
+      table.jobId,
+      table.title,
+      table.parentFolderId,
+      table.mediaType,
+    ),
+  ],
+);
+
+export const files = pgTable("files", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  folderId: uuid("folder_id").references(() => folders.id, { onDelete: "cascade" }),
+  filename: varchar("filename", { length: 255 }).notNull(),
+  originalName: varchar("original_name", { length: 255 }).notNull(),
+  fileUrl: varchar("file_url", { length: 500 }),
+  fileSize: bigint("file_size", { mode: "number" }),
+  mimeType: varchar("mime_type", { length: 100 }),
+  uploadedBy: uuid("uploaded_by").references(() => users.id),
+  ...baseTimestamps,
+  ...softDeleteTimestamp,
+});
+
+export const leads = pgTable("leads", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  title: varchar("title", { length: 255 }).notNull(),
+  streetAddress: varchar("street_address", { length: 255 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 2 }),
+  zipCode: varchar("zip_code", { length: 10 }),
+  confidence: integer("confidence").default(0),
+  projectedSalesDate: date("projected_sales_date", { mode: "string" }),
+  estimatedRevenueMin: numeric("estimated_revenue_min", {
+    precision: 12,
+    scale: 2,
+  }),
+  estimatedRevenueMax: numeric("estimated_revenue_max", {
+    precision: 12,
+    scale: 2,
+  }),
+  status: varchar("status", { length: 50 }).notNull().default("open"),
+  projectType: varchar("project_type", { length: 100 }),
+  notes: text("notes"),
+  leadSource: varchar("lead_source", { length: 255 }),
+  createdBy: uuid("created_by").references(() => users.id),
+  ...baseTimestamps,
+  ...softDeleteTimestamp,
+});
+
+export const leadContacts = pgTable("lead_contacts", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+  firstName: varchar("first_name", { length: 100 }),
+  lastName: varchar("last_name", { length: 100 }),
+  displayName: varchar("display_name", { length: 255 }).notNull(),
+  streetAddress: varchar("street_address", { length: 255 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 2 }),
+  zipCode: varchar("zip_code", { length: 10 }),
+  phone: varchar("phone", { length: 20 }),
+  cellPhone: varchar("cell_phone", { length: 20 }),
+  email: varchar("email", { length: 255 }).notNull(),
+  label: varchar("label", { length: 100 }),
+  ...baseTimestamps,
+  ...softDeleteTimestamp,
+});
+
+export const leadSalespeople = pgTable(
+  "lead_salespeople",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [unique("lead_salespeople_lead_user_unique").on(table.leadId, table.userId)],
+);
+
+export const leadTags = pgTable(
+  "lead_tags",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+    tagName: varchar("tag_name", { length: 100 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [unique("lead_tags_lead_tag_unique").on(table.leadId, table.tagName)],
+);
+
+export const leadSources = pgTable(
+  "lead_sources",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+    sourceName: varchar("source_name", { length: 100 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [unique("lead_sources_lead_source_unique").on(table.leadId, table.sourceName)],
+);
+
+export const leadAttachments = pgTable(
+  "lead_attachments",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+    fileId: uuid("file_id").references(() => files.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [unique("lead_attachments_lead_file_unique").on(table.leadId, table.fileId)],
+);
+
+export const scheduleItems = pgTable("schedule_items", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  displayColor: varchar("display_color", { length: 50 }).notNull().default("blue"),
+  startDate: date("start_date", { mode: "string" }).notNull(),
+  workDays: integer("work_days").notNull(),
+  endDate: date("end_date", { mode: "string" }).notNull(),
+  isHourly: boolean("is_hourly").default(false),
+  startTime: time("start_time"),
+  endTime: time("end_time"),
+  progress: integer("progress").default(0),
+  reminder: varchar("reminder", { length: 100 }).default("none"),
+  notes: text("notes"),
+  createdBy: uuid("created_by").references(() => users.id),
+  ...baseTimestamps,
+  ...softDeleteTimestamp,
+});
+
+export const scheduleItemAssignees = pgTable(
+  "schedule_item_assignees",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    scheduleItemId: uuid("schedule_item_id").references(() => scheduleItems.id, {
+      onDelete: "cascade",
+    }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("schedule_item_assignees_item_user_unique").on(
+      table.scheduleItemId,
+      table.userId,
+    ),
+  ],
+);
+
+export const dailyLogs = pgTable("daily_logs", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
+  logDate: date("log_date", { mode: "string" }).notNull(),
+  title: varchar("title", { length: 255 }),
+  notes: text("notes").notNull(),
+  weatherData: json("weather_data").$type<Record<string, unknown> | null>(),
+  includeWeather: boolean("include_weather").default(true),
+  includeWeatherNotes: boolean("include_weather_notes").default(false),
+  weatherNotes: text("weather_notes"),
+  shareInternalUsers: boolean("share_internal_users").default(true),
+  shareSubsVendors: boolean("share_subs_vendors").default(false),
+  shareClient: boolean("share_client").default(false),
+  isPrivate: boolean("is_private").default(false),
+  createdBy: uuid("created_by").references(() => users.id),
+  publishedAt: timestamp("published_at"),
+  ...baseTimestamps,
+  ...softDeleteTimestamp,
+});
+
+export const dailyLogAttachments = pgTable(
+  "daily_log_attachments",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    dailyLogId: uuid("daily_log_id").references(() => dailyLogs.id, {
+      onDelete: "cascade",
+    }),
+    fileId: uuid("file_id").references(() => files.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [unique("daily_log_attachments_log_file_unique").on(table.dailyLogId, table.fileId)],
+);
+
+export const dailyLogTags = pgTable(
+  "daily_log_tags",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    dailyLogId: uuid("daily_log_id").references(() => dailyLogs.id, {
+      onDelete: "cascade",
+    }),
+    tagName: varchar("tag_name", { length: 100 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [unique("daily_log_tags_log_tag_unique").on(table.dailyLogId, table.tagName)],
+);
+
+export const activityLog = pgTable("activity_log", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  entityType: varchar("entity_type", { length: 100 }).notNull(),
+  entityId: uuid("entity_id").notNull(),
+  action: varchar("action", { length: 100 }).notNull(),
+  userId: uuid("user_id").references(() => users.id),
+  metadata: json("metadata").$type<Record<string, unknown> | null>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type Job = typeof jobs.$inferSelect;
+export type NewJob = typeof jobs.$inferInsert;
+export type Folder = typeof folders.$inferSelect;
+export type NewFolder = typeof folders.$inferInsert;
+export type File = typeof files.$inferSelect;
+export type NewFile = typeof files.$inferInsert;
+export type Lead = typeof leads.$inferSelect;
+export type NewLead = typeof leads.$inferInsert;
+export type LeadContact = typeof leadContacts.$inferSelect;
+export type LeadSalesperson = typeof leadSalespeople.$inferSelect;
+export type LeadTag = typeof leadTags.$inferSelect;
+export type LeadSource = typeof leadSources.$inferSelect;
+export type LeadAttachment = typeof leadAttachments.$inferSelect;
+export type ScheduleItem = typeof scheduleItems.$inferSelect;
+export type ScheduleItemAssignee = typeof scheduleItemAssignees.$inferSelect;
+export type DailyLog = typeof dailyLogs.$inferSelect;
+export type DailyLogAttachment = typeof dailyLogAttachments.$inferSelect;
+export type DailyLogTag = typeof dailyLogTags.$inferSelect;
+export type ActivityLogEntry = typeof activityLog.$inferSelect;

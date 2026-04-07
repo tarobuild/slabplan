@@ -60,6 +60,7 @@ type FolderItem = {
   childFolderCount: number
   fileCount: number
   parentFolderId: string | null
+  createdAt: string
 }
 
 type BreadcrumbItem = {
@@ -294,14 +295,17 @@ export default function FileBrowser({
       case "name-desc":
         arr.sort((a, b) => b.title.localeCompare(a.title))
         break
+      case "date-desc":
+        arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        break
+      case "date-asc":
+        arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        break
       case "size-desc":
         arr.sort((a, b) => b.fileCount - a.fileCount)
         break
       case "size-asc":
         arr.sort((a, b) => a.fileCount - b.fileCount)
-        break
-      default:
-        arr.sort((a, b) => a.title.localeCompare(b.title))
         break
     }
     return arr

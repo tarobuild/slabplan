@@ -1,72 +1,95 @@
+import { useEffect, useState } from "react"
+import { Link, NavLink, Outlet, useParams } from "react-router-dom"
+import { ChevronRight } from "lucide-react"
+import { api } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Link, NavLink, Outlet, useLocation, useParams } from "react-router-dom"
+import { Skeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
+
+type Job = {
+  id: string
+  title: string
+  status: "open" | "closed" | "archived"
+  city: string | null
+  state: string | null
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  open: "bg-blue-50 text-blue-700 border-blue-200",
+  closed: "bg-slate-50 text-slate-600 border-slate-200",
+  archived: "bg-slate-50 text-slate-400 border-slate-200",
+}
 
 export default function JobDetailPage() {
-  const { jobId = "job-id" } = useParams()
-  const location = useLocation()
-  const currentTab = location.pathname.includes("/files/documents")
-    ? "documents"
-    : location.pathname.includes("/files/photos")
-      ? "photos"
-      : location.pathname.includes("/files/videos")
-        ? "videos"
-        : location.pathname.endsWith("/schedule")
-          ? "schedule"
-          : location.pathname.endsWith("/daily-logs")
-            ? "daily-logs"
-            : "summary"
+  const { jobId } = useParams<{ jobId: string }>()
+  const [job, setJob] = useState<Job | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!jobId) return
+    api.get(`/jobs/${jobId}`)
+      .then(r => setJob(r.data.job ?? r.data))
+      .finally(() => setLoading(false))
+  }, [jobId])
+
+  const tabs = [
+    { label: "Summary", to: `/jobs/${jobId}/summary` },
+    { label: "Documents", to: `/jobs/${jobId}/files/documents` },
+    { label: "Photos", to: `/jobs/${jobId}/files/photos` },
+    { label: "Videos", to: `/jobs/${jobId}/files/videos` },
+    { label: "Schedule", to: `/jobs/${jobId}/schedule` },
+    { label: "Daily Logs", to: `/jobs/${jobId}/daily-logs` },
+  ]
 
   return (
     <div className="space-y-4">
-      <Card className="border-[#E5E7EB] bg-white shadow-sm">
-        <CardContent className="space-y-4 p-6">
-          <div className="space-y-2">
-            <div className="text-sm text-slate-500">
-              <Link to="/jobs" className="text-blue-700 hover:text-blue-800">
-                Jobs
-              </Link>
-              <span className="mx-2 text-slate-300">/</span>
-              <span>Job Detail</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-semibold text-slate-950">Job {jobId}</h1>
-              <Badge variant="outline" className="border-[#E5E7EB] bg-[#F9FAFB] text-slate-600">
-                Stub
+      <nav className="flex items-center gap-1.5 text-sm text-slate-500">
+        <Link to="/jobs" className="hover:text-slate-900">Jobs</Link>
+        <ChevronRight className="size-3.5" />
+        {loading ? (
+          <Skeleton className="h-4 w-32" />
+        ) : (
+          <span className="text-slate-900 font-medium">{job?.title}</span>
+        )}
+      </nav>
+
+      <div className="flex items-center gap-3">
+        {loading ? (
+          <Skeleton className="h-7 w-48" />
+        ) : (
+          <>
+            <h1 className="text-xl font-semibold text-slate-900">{job?.title}</h1>
+            {job?.status && (
+              <Badge variant="outline" className={`capitalize text-xs ${STATUS_COLORS[job.status]}`}>
+                {job.status}
               </Badge>
-            </div>
-            <p className="text-sm text-slate-500">
-              Nested job routes are wired and ready for real Summary, Files, Schedule, and Daily Logs pages.
-            </p>
-          </div>
+            )}
+          </>
+        )}
+      </div>
 
-          <Tabs value={currentTab}>
-            <TabsList className="h-auto w-full justify-start gap-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-1">
-              <TabsTrigger value="summary" asChild>
-                <NavLink to="summary">Summary</NavLink>
-              </TabsTrigger>
-              <TabsTrigger value="documents" asChild>
-                <NavLink to="files/documents">Documents</NavLink>
-              </TabsTrigger>
-              <TabsTrigger value="photos" asChild>
-                <NavLink to="files/photos">Photos</NavLink>
-              </TabsTrigger>
-              <TabsTrigger value="videos" asChild>
-                <NavLink to="files/videos">Videos</NavLink>
-              </TabsTrigger>
-              <TabsTrigger value="schedule" asChild>
-                <NavLink to="schedule">Schedule</NavLink>
-              </TabsTrigger>
-              <TabsTrigger value="daily-logs" asChild>
-                <NavLink to="daily-logs">Daily Logs</NavLink>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </CardContent>
-      </Card>
+      <div className="border-b border-[#E5E7EB]">
+        <nav className="flex gap-0 -mb-px">
+          {tabs.map(tab => (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              className={({ isActive }) =>
+                cn(
+                  "px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                  isActive
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300"
+                )
+              }
+            >
+              {tab.label}
+            </NavLink>
+          ))}
+        </nav>
+      </div>
 
-      <Outlet />
+      <Outlet context={{ job, setJob, jobId }} />
     </div>
   )
 }

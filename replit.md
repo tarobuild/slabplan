@@ -33,24 +33,39 @@ Routes:
 - `GET/POST /api/leads`, `GET/PUT/DELETE /api/leads/:id`
 - `POST /api/leads/:id/contacts|attachments|convert-to-job`
 - `GET /api/activity`
-- **Pending** (Task #3): Schedule items and Daily Logs routes
+- `GET /api/dashboard/stats`
+- `GET/POST /api/jobs/:jobId/daily-logs`, `GET /api/daily-logs/:id`
+- `GET/POST /api/jobs/:jobId/schedule`, `GET/PUT/DELETE /api/schedule-items/:id`
 
 ### `artifacts/cadstone`
 React + Vite + Tailwind CSS v4 + shadcn/ui frontend. Runs on port assigned by `$PORT`.
 Base path: `/`. Proxies `/api` to `localhost:8080`.
+Router: **react-router-dom v6** (BrowserRouter + nested routes).
 
 Key files:
-- `src/App.tsx` — wouter router, protected routes, silent refresh on mount
-- `src/lib/api.ts` — Axios instance (auto Bearer token + 401 refresh interceptor)
+- `src/App.tsx` — react-router-dom v6 BrowserRouter, protected routes, silent refresh on mount
+- `src/lib/api.ts` — Axios named exports: `api` (auth interceptor) and `authApi` (raw). `bootstrapAuthSession` for session restore on app load.
 - `src/store/auth.ts` — Zustand auth store (user, accessToken, setAuth, clearAuth)
 - `src/components/layout/` — AppLayout, TopNav, Sidebar
-- `src/pages/` — login, register, dashboard (stub), jobs (stub), job-detail (stub), leads (stub), settings
+- `src/components/FileBrowser.tsx` — shared file browser (folders + files) for Documents/Photos/Videos tabs
+- `src/pages/` — All pages are fully implemented (no more stubs)
 
-Theme: Primary blue `#2563EB` (221 83% 53%), page bg `#F9FAFB`, white cards, `#E5E7EB` borders. Full dark mode via `.dark` class.
+### Pages (all fully implemented)
+- `/dashboard` — stat cards (active jobs, open leads, schedule items, my logs) + recent activity feed
+- `/jobs` — jobs table with search, status filter, pagination + Create Job modal + delete
+- `/jobs/:jobId/summary` — editable job form (all fields, work days toggles, save)
+- `/jobs/:jobId/files/documents` — folder browser + file upload (documents)
+- `/jobs/:jobId/files/photos` — folder browser + file upload (photos)
+- `/jobs/:jobId/files/videos` — folder browser + file upload (videos)
+- `/jobs/:jobId/schedule` — schedule items table + Add Item modal (color, dates, progress)
+- `/jobs/:jobId/daily-logs` — daily log cards with search + New Log modal
+- `/sales/leads` — leads table with search, status filter + New Lead modal + delete
 
-Design rules: shadcn/ui everywhere, all forms in Dialog modals, AlertDialog for deletes, 14px body text, information-dense tables.
+Theme: Primary blue `#2563EB` (221 83% 53%), page bg `#F9FAFB`, white cards, `#E5E7EB` borders.
 
-Frontend dependencies: axios, zustand, wouter, sonner (toasts), lucide-react, shadcn/ui
+Design rules: shadcn/ui everywhere, all forms in Dialog modals, AlertDialog for deletes, 14px body text (`text-sm`), information-dense tables.
+
+Frontend dependencies: axios, zustand, react-router-dom v6, sonner (toasts), lucide-react, shadcn/ui
 
 ### `lib/db`
 Drizzle ORM + PostgreSQL. 16 tables.
@@ -67,17 +82,12 @@ Seed credentials: `cruz.martinez@cadstone.internal` / `Cadstone123!` (also maria
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm --filter @workspace/db run seed` — seed database with test data
 
-## Codex Guide
-
-The comprehensive Codex frontend build guide is at:
-`artifacts/cadstone/CODEX_FRONTEND_GUIDE.md`
-
-It documents all API endpoints, all pages to build (Dashboard, Jobs, Job Detail with tabs, Files, Photos, Videos, Schedule, Daily Logs, Leads), design rules, component patterns, and build order.
-
 ## Feature Status
 
-- ✅ Task #1: Foundation — DB schema (16 tables), JWT auth, app shell
-- ✅ Task #2: Jobs & File Management — routes for jobs, folders, files
-- ⏳ Task #3: CRM, Schedule & Daily Logs — leads partial (basic GET only), schedule and daily logs routes pending
-- ⏳ Task #4: Dashboard & Polish
-- ✅ Task #5: Frontend scaffold — CSS theme, API client, auth store, router, layout shell, stub pages, Codex guide
+- ✅ Backend: 16 DB tables, JWT auth, all routes (jobs, files, leads, schedule, daily-logs, dashboard, activity)
+- ✅ Frontend: All pages fully built (dashboard, jobs, job detail with 6 tabs, leads)
+- ✅ File management: Folder browser + file upload on all three file tabs
+- ✅ Jobs: Create, view, edit, delete with full form
+- ✅ Leads: Create, view, delete with status badges and revenue tracking
+- ✅ Schedule: Add items with color, dates, progress tracking
+- ✅ Daily Logs: Create logs with weather notes, privacy setting, keyword search

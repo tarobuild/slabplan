@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt";
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -31,6 +32,11 @@ const updateProfileSchema = z.object({
       const trimmed = value.trim();
       return trimmed.length > 0 ? trimmed : null;
     }),
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required."),
+  newPassword: z.string().min(8, "New password must be at least 8 characters."),
 });
 
 async function findActiveUserById(id: string) {
@@ -113,6 +119,38 @@ router.put(
       .returning();
 
     res.json({ user: toPublicUser(updated) });
+  }),
+);
+
+router.post(
+  "/me/password",
+  asyncHandler(async (req, res) => {
+    const user = await findActiveUserById(req.auth.userId);
+
+    if (!user) {
+      throw new HttpError(404, "User not found.");
+    }
+
+    const body = changePasswordSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, body.error.errors[0]?.message ?? "Invalid password payload.");
+    }
+
+    const isValid = await bcrypt.compare(body.data.currentPassword, user.passwordHash);
+
+    if (!isValid) {
+      throw new HttpError(400, "Current password is incorrect.");
+    }
+
+    const passwordHash = await bcrypt.hash(body.data.newPassword, 10);
+
+    await db
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, user.id));
+
+    res.json({ success: true });
   }),
 );
 

@@ -1,5 +1,22 @@
 import { useEffect, useRef, useState } from "react"
-import { Loader2, Plus, Search, Trash2 } from "lucide-react"
+import {
+  Building2,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Edit2,
+  Loader2,
+  Mail,
+  MapPin,
+  Pencil,
+  Phone,
+  Plus,
+  Search,
+  Tag,
+  Trash2,
+  User,
+  X,
+} from "lucide-react"
 import { api } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,7 +46,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Separator } from "@/components/ui/separator"
 import {
   Table,
   TableBody,
@@ -38,7 +62,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
+
+type LeadContact = {
+  id: string
+  displayName: string | null
+  firstName: string | null
+  lastName: string | null
+  email: string | null
+  phone: string | null
+  cellPhone: string | null
+  label: string | null
+}
 
 type Lead = {
   id: string
@@ -60,7 +96,37 @@ type Lead = {
   } | null
 }
 
-type Pagination = { page: number; pageSize: number; totalItems: number; totalPages: number }
+type LeadDetail = {
+  id: string
+  title: string
+  status: string
+  city: string | null
+  state: string | null
+  zipCode: string | null
+  streetAddress: string | null
+  projectType: string | null
+  confidence: number | null
+  estimatedRevenueMin: string | null
+  estimatedRevenueMax: string | null
+  projectedSalesDate: string | null
+  notes: string | null
+  leadSource: string | null
+  createdAt: string
+  updatedAt: string | null
+  createdByName: string | null
+  contacts: LeadContact[]
+  clientContact: LeadContact | null
+  tags: string[]
+  sources: string[]
+  salespeople: { id: string; fullName: string }[]
+}
+
+type Pagination = {
+  page: number
+  pageSize: number
+  totalItems: number
+  totalPages: number
+}
 
 const STATUS_COLORS: Record<string, string> = {
   open: "bg-blue-50 text-blue-700 border-blue-200",
@@ -71,15 +137,36 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  open: "Open", in_negotiation: "In Negotiation", won: "Won", lost: "Lost", archived: "Archived"
+  open: "Open",
+  in_negotiation: "In Negotiation",
+  won: "Won",
+  lost: "Lost",
+  archived: "Archived",
 }
 
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  return new Date(d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
 }
+
 function fmtCurrency(v: string | null) {
   if (!v) return null
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v))
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(Number(v))
+}
+
+function getApiError(err: unknown, fallback: string): string {
+  if (typeof err === "object" && err !== null) {
+    const e = err as { response?: { data?: { message?: string } }; message?: string }
+    return e.response?.data?.message ?? e.message ?? fallback
+  }
+  return fallback
 }
 
 type CreateForm = {
@@ -96,23 +183,88 @@ type CreateForm = {
   leadSource: string
 }
 
-const emptyForm: CreateForm = {
-  title: "", status: "open", projectType: "", city: "", state: "",
-  estimatedRevenueMin: "", estimatedRevenueMax: "", confidence: "",
-  projectedSalesDate: "", notes: "", leadSource: "",
+type ContactForm = {
+  displayName: string
+  email: string
+  phone: string
+}
+
+type EditForm = CreateForm & {
+  tags: string
+  sources: string
+  contactDisplayName: string
+  contactEmail: string
+  contactPhone: string
+}
+
+const emptyCreate: CreateForm = {
+  title: "",
+  status: "open",
+  projectType: "",
+  city: "",
+  state: "",
+  estimatedRevenueMin: "",
+  estimatedRevenueMax: "",
+  confidence: "",
+  projectedSalesDate: "",
+  notes: "",
+  leadSource: "",
+}
+
+const emptyContact: ContactForm = {
+  displayName: "",
+  email: "",
+  phone: "",
+}
+
+function DetailRow({
+  icon,
+  label,
+  value,
+}: {
+  icon?: React.ReactNode
+  label: string
+  value: React.ReactNode
+}) {
+  if (!value && value !== 0) return null
+  return (
+    <div className="flex items-start gap-2.5 py-1.5">
+      {icon && <span className="mt-0.5 text-slate-400 shrink-0">{icon}</span>}
+      <div className="min-w-0">
+        <p className="text-xs text-slate-400 leading-tight">{label}</p>
+        <p className="text-sm text-slate-800 font-medium mt-0.5">{value}</p>
+      </div>
+    </div>
+  )
 }
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
-  const [pagination, setPagination] = useState<Pagination>({ page: 1, pageSize: 10, totalItems: 0, totalPages: 1 })
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    pageSize: 10,
+    totalItems: 0,
+    totalPages: 1,
+  })
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState("all")
   const [loading, setLoading] = useState(true)
+
   const [createOpen, setCreateOpen] = useState(false)
-  const [form, setForm] = useState<CreateForm>(emptyForm)
+  const [form, setForm] = useState<CreateForm>(emptyCreate)
+  const [contactForm, setContactForm] = useState<ContactForm>(emptyContact)
   const [saving, setSaving] = useState(false)
+
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  const [sheetLeadId, setSheetLeadId] = useState<string | null>(null)
+  const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState<EditForm | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchLeads = (s = search, st = status, p = pagination.page) => {
@@ -120,8 +272,9 @@ export default function LeadsPage() {
     const params = new URLSearchParams({ page: String(p), pageSize: "10" })
     if (s) params.set("search", s)
     if (st !== "all") params.set("status", st)
-    api.get(`/leads?${params}`)
-      .then(r => {
+    api
+      .get(`/leads?${params}`)
+      .then((r) => {
         setLeads(r.data.leads)
         setPagination(r.data.pagination)
       })
@@ -129,7 +282,9 @@ export default function LeadsPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchLeads() }, [])
+  useEffect(() => {
+    fetchLeads()
+  }, [])
 
   const handleSearch = (v: string) => {
     setSearch(v)
@@ -138,16 +293,110 @@ export default function LeadsPage() {
   }
 
   const handleStatus = (v: string) => {
-    setStatus(v); fetchLeads(search, v, 1)
+    setStatus(v)
+    fetchLeads(search, v, 1)
   }
 
   const handlePage = (p: number) => fetchLeads(search, status, p)
+
+  const openSheet = (leadId: string) => {
+    setSheetLeadId(leadId)
+    setIsEditing(false)
+    setLeadDetail(null)
+    setEditForm(null)
+    setLoadingDetail(true)
+    api
+      .get(`/leads/${leadId}`)
+      .then((r) => {
+        const lead: LeadDetail = r.data.lead
+        setLeadDetail(lead)
+        setEditForm({
+          title: lead.title,
+          status: lead.status,
+          projectType: lead.projectType ?? "",
+          city: lead.city ?? "",
+          state: lead.state ?? "",
+          estimatedRevenueMin: lead.estimatedRevenueMin ?? "",
+          estimatedRevenueMax: lead.estimatedRevenueMax ?? "",
+          confidence: lead.confidence != null ? String(lead.confidence) : "",
+          projectedSalesDate: lead.projectedSalesDate
+            ? lead.projectedSalesDate.slice(0, 10)
+            : "",
+          notes: lead.notes ?? "",
+          leadSource: lead.leadSource ?? "",
+          tags: lead.tags.join(", "),
+          sources: lead.sources.join(", "),
+          contactDisplayName: lead.clientContact?.displayName ?? "",
+          contactEmail: lead.clientContact?.email ?? "",
+          contactPhone: lead.clientContact?.phone ?? "",
+        })
+      })
+      .catch(() => toast.error("Failed to load lead details"))
+      .finally(() => setLoadingDetail(false))
+  }
+
+  const handleSaveEdit = async () => {
+    if (!sheetLeadId || !editForm || !leadDetail) return
+    setSavingEdit(true)
+    try {
+      const tags = editForm.tags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+      const sources = editForm.sources
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+
+      const { data } = await api.put(`/leads/${sheetLeadId}`, {
+        title: editForm.title,
+        status: editForm.status,
+        projectType: editForm.projectType || null,
+        city: editForm.city || null,
+        state: editForm.state || null,
+        estimatedRevenueMin: editForm.estimatedRevenueMin || null,
+        estimatedRevenueMax: editForm.estimatedRevenueMax || null,
+        confidence: editForm.confidence ? Number(editForm.confidence) : 0,
+        projectedSalesDate: editForm.projectedSalesDate || null,
+        notes: editForm.notes || null,
+        leadSource: editForm.leadSource || null,
+        tags,
+        sources,
+        salespeople: leadDetail.salespeople.map((sp) => sp.id),
+      })
+
+      const existingContact = leadDetail.clientContact
+      if (existingContact?.id) {
+        await api.put(`/leads/${sheetLeadId}/contacts/${existingContact.id}`, {
+          displayName: editForm.contactDisplayName || existingContact.displayName,
+          email: editForm.contactEmail || existingContact.email,
+          phone: editForm.contactPhone || existingContact.phone,
+        })
+      } else if (editForm.contactDisplayName && editForm.contactEmail) {
+        await api.post(`/leads/${sheetLeadId}/contacts`, {
+          displayName: editForm.contactDisplayName,
+          email: editForm.contactEmail,
+          phone: editForm.contactPhone || null,
+        })
+      }
+
+      const { data: freshData } = await api.get(`/leads/${sheetLeadId}`)
+      setLeadDetail(freshData.lead)
+      setIsEditing(false)
+      toast.success("Lead updated")
+      fetchLeads()
+    } catch (err: unknown) {
+      toast.error(getApiError(err, "Failed to save changes"))
+    } finally {
+      setSavingEdit(false)
+    }
+  }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
     try {
-      await api.post("/leads", {
+      const { data } = await api.post("/leads", {
         title: form.title,
         status: form.status,
         projectType: form.projectType || null,
@@ -155,17 +404,33 @@ export default function LeadsPage() {
         state: form.state || null,
         estimatedRevenueMin: form.estimatedRevenueMin || null,
         estimatedRevenueMax: form.estimatedRevenueMax || null,
-        confidence: form.confidence ? Number(form.confidence) : null,
+        confidence: form.confidence ? Number(form.confidence) : 0,
         projectedSalesDate: form.projectedSalesDate || null,
         notes: form.notes || null,
         leadSource: form.leadSource || null,
       })
+
+      const newLeadId = data.lead?.id ?? data.id
+
+      if (contactForm.displayName && contactForm.email && newLeadId) {
+        try {
+          await api.post(`/leads/${newLeadId}/contacts`, {
+            displayName: contactForm.displayName,
+            email: contactForm.email,
+            phone: contactForm.phone || null,
+          })
+        } catch {
+          toast.error("Lead created but failed to add contact")
+        }
+      }
+
       toast.success("Lead created")
       setCreateOpen(false)
-      setForm(emptyForm)
+      setForm(emptyCreate)
+      setContactForm(emptyContact)
       fetchLeads()
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to create lead")
+    } catch (err: unknown) {
+      toast.error(getApiError(err, "Failed to create lead"))
     } finally {
       setSaving(false)
     }
@@ -178,6 +443,7 @@ export default function LeadsPage() {
       await api.delete(`/leads/${deleteId}`)
       toast.success("Lead deleted")
       setDeleteId(null)
+      if (sheetLeadId === deleteId) setSheetLeadId(null)
       fetchLeads()
     } catch {
       toast.error("Failed to delete lead")
@@ -186,22 +452,49 @@ export default function LeadsPage() {
     }
   }
 
-  const setField = (k: keyof CreateForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setForm(f => ({ ...f, [k]: e.target.value }))
+  const setField =
+    (k: keyof CreateForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }))
+
+  const setEditField =
+    (k: keyof EditForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setEditForm((f) => (f ? { ...f, [k]: e.target.value } : f))
+
+  const revenue = (lead: Lead) => {
+    const min = fmtCurrency(lead.estimatedRevenueMin)
+    const max = fmtCurrency(lead.estimatedRevenueMax)
+    if (min && max && min !== max) return `${min} – ${max}`
+    return min ?? max ?? "—"
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Sales Leads</h1>
-        <Button size="sm" onClick={() => { setForm(emptyForm); setCreateOpen(true) }}>
-          <Plus className="mr-1.5 size-3.5" />New Lead
+        <Button
+          size="sm"
+          onClick={() => {
+            setForm(emptyCreate)
+            setContactForm(emptyContact)
+            setCreateOpen(true)
+          }}
+        >
+          <Plus className="mr-1.5 size-3.5" />
+          New Lead
         </Button>
       </div>
 
       <div className="flex gap-2">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
-          <Input value={search} onChange={e => handleSearch(e.target.value)} placeholder="Search leads…" className="pl-8 h-9" />
+          <Input
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="Search leads…"
+            className="pl-8 h-9"
+          />
         </div>
         <Select value={status} onValueChange={handleStatus}>
           <SelectTrigger className="w-40 h-9">
@@ -237,7 +530,9 @@ export default function LeadsPage() {
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
                   {Array.from({ length: 8 }).map((_, j) => (
-                    <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+                    <TableCell key={j}>
+                      <Skeleton className="h-4 w-full" />
+                    </TableCell>
                   ))}
                 </TableRow>
               ))
@@ -245,17 +540,31 @@ export default function LeadsPage() {
               <TableRow>
                 <TableCell colSpan={8} className="py-12 text-center text-sm text-slate-400">
                   No leads found.{" "}
-                  <button onClick={() => { setForm(emptyForm); setCreateOpen(true) }} className="text-blue-600 hover:underline">
+                  <button
+                    onClick={() => {
+                      setForm(emptyCreate)
+                      setContactForm(emptyContact)
+                      setCreateOpen(true)
+                    }}
+                    className="text-blue-600 hover:underline"
+                  >
                     Create your first lead
                   </button>
                 </TableCell>
               </TableRow>
             ) : (
-              leads.map(lead => (
-                <TableRow key={lead.id} className="hover:bg-slate-50">
+              leads.map((lead) => (
+                <TableRow
+                  key={lead.id}
+                  className="hover:bg-slate-50 cursor-pointer"
+                  onClick={() => openSheet(lead.id)}
+                >
                   <TableCell className="font-medium text-slate-900">{lead.title}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={`text-xs ${STATUS_COLORS[lead.status] ?? ""}`}>
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${STATUS_COLORS[lead.status] ?? ""}`}
+                    >
                       {STATUS_LABELS[lead.status] ?? lead.status}
                     </Badge>
                   </TableCell>
@@ -269,16 +578,19 @@ export default function LeadsPage() {
                     {lead.clientContact?.displayName || "—"}
                   </TableCell>
                   <TableCell className="text-right text-sm text-slate-700">
-                    {(() => {
-                      const min = fmtCurrency(lead.estimatedRevenueMin)
-                      const max = fmtCurrency(lead.estimatedRevenueMax)
-                      if (min && max && min !== max) return `${min} – ${max}`
-                      return min || max || "—"
-                    })()}
+                    {revenue(lead)}
                   </TableCell>
-                  <TableCell className="text-sm text-slate-500">{fmtDate(lead.createdAt)}</TableCell>
+                  <TableCell className="text-sm text-slate-500">
+                    {fmtDate(lead.createdAt)}
+                  </TableCell>
                   <TableCell>
-                    <button onClick={() => setDeleteId(lead.id)} className="text-slate-400 hover:text-red-500 transition-colors p-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeleteId(lead.id)
+                      }}
+                      className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                    >
                       <Trash2 className="size-3.5" />
                     </button>
                   </TableCell>
@@ -292,17 +604,36 @@ export default function LeadsPage() {
       {!loading && pagination.totalItems > pagination.pageSize && (
         <div className="flex items-center justify-between text-sm text-slate-500">
           <span>
-            Showing {(pagination.page - 1) * pagination.pageSize + 1}–{Math.min(pagination.page * pagination.pageSize, pagination.totalItems)} of {pagination.totalItems}
+            Showing {(pagination.page - 1) * pagination.pageSize + 1}–
+            {Math.min(pagination.page * pagination.pageSize, pagination.totalItems)} of{" "}
+            {pagination.totalItems}
           </span>
           <div className="flex gap-1">
-            <Button variant="outline" size="sm" onClick={() => handlePage(pagination.page - 1)} disabled={pagination.page <= 1}>Previous</Button>
-            <Button variant="outline" size="sm" onClick={() => handlePage(pagination.page + 1)} disabled={pagination.page >= pagination.totalPages}>Next</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePage(pagination.page - 1)}
+              disabled={pagination.page <= 1}
+            >
+              <ChevronLeft className="size-3.5 mr-1" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePage(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages}
+            >
+              Next
+              <ChevronRight className="size-3.5 ml-1" />
+            </Button>
           </div>
         </div>
       )}
 
+      {/* Create Lead Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Lead Opportunity</DialogTitle>
           </DialogHeader>
@@ -310,13 +641,24 @@ export default function LeadsPage() {
             <div className="grid grid-cols-2 gap-4 py-4">
               <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="lead-title">Title *</Label>
-                <Input id="lead-title" value={form.title} onChange={setField("title")} required placeholder="e.g. Smith Residence Countertops" />
+                <Input
+                  id="lead-title"
+                  value={form.title}
+                  onChange={setField("title")}
+                  required
+                  placeholder="e.g. Smith Residence Countertops"
+                />
               </div>
 
               <div className="space-y-1.5">
                 <Label>Status</Label>
-                <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select
+                  value={form.status}
+                  onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="open">Open</SelectItem>
                     <SelectItem value="in_negotiation">In Negotiation</SelectItem>
@@ -328,46 +670,159 @@ export default function LeadsPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="lead-projectType">Project Type</Label>
-                <Input id="lead-projectType" value={form.projectType} onChange={setField("projectType")} placeholder="e.g. countertops" />
+                <Input
+                  id="lead-projectType"
+                  value={form.projectType}
+                  onChange={setField("projectType")}
+                  placeholder="e.g. countertops"
+                />
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="lead-city">City</Label>
-                <Input id="lead-city" value={form.city} onChange={setField("city")} placeholder="Austin" />
+                <Input
+                  id="lead-city"
+                  value={form.city}
+                  onChange={setField("city")}
+                  placeholder="Austin"
+                />
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="lead-state">State</Label>
-                <Input id="lead-state" value={form.state} onChange={setField("state")} placeholder="TX" maxLength={2} />
+                <Input
+                  id="lead-state"
+                  value={form.state}
+                  onChange={setField("state")}
+                  placeholder="TX"
+                  maxLength={2}
+                />
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="lead-revMin">Revenue Min ($)</Label>
-                <Input id="lead-revMin" type="number" min="0" step="0.01" value={form.estimatedRevenueMin} onChange={setField("estimatedRevenueMin")} placeholder="0" />
+                <Input
+                  id="lead-revMin"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.estimatedRevenueMin}
+                  onChange={setField("estimatedRevenueMin")}
+                  placeholder="0"
+                />
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="lead-revMax">Revenue Max ($)</Label>
-                <Input id="lead-revMax" type="number" min="0" step="0.01" value={form.estimatedRevenueMax} onChange={setField("estimatedRevenueMax")} placeholder="0" />
+                <Input
+                  id="lead-revMax"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.estimatedRevenueMax}
+                  onChange={setField("estimatedRevenueMax")}
+                  placeholder="0"
+                />
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="lead-confidence">Confidence (0–100)</Label>
-                <Input id="lead-confidence" type="number" min="0" max="100" value={form.confidence} onChange={setField("confidence")} placeholder="50" />
+                <Input
+                  id="lead-confidence"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.confidence}
+                  onChange={setField("confidence")}
+                  placeholder="50"
+                />
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="lead-salesDate">Projected Sales Date</Label>
-                <Input id="lead-salesDate" type="date" value={form.projectedSalesDate} onChange={setField("projectedSalesDate")} />
+                <Input
+                  id="lead-salesDate"
+                  type="date"
+                  value={form.projectedSalesDate}
+                  onChange={setField("projectedSalesDate")}
+                />
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="lead-source">Lead Source</Label>
-                <Input id="lead-source" value={form.leadSource} onChange={setField("leadSource")} placeholder="Referral, Web, etc." />
+                <Input
+                  id="lead-source"
+                  value={form.leadSource}
+                  onChange={setField("leadSource")}
+                  placeholder="Referral, Web, etc."
+                />
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="lead-notes">Notes</Label>
+                <Textarea
+                  id="lead-notes"
+                  value={form.notes}
+                  onChange={setField("notes")}
+                  placeholder="Additional details…"
+                  rows={2}
+                />
+              </div>
+
+              {/* Contact section */}
+              <div className="col-span-2 pt-2">
+                <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
+                  <User className="size-3.5" />
+                  Primary Contact <span className="font-normal text-slate-400">(optional)</span>
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="contact-name">Display Name</Label>
+                    <Input
+                      id="contact-name"
+                      value={contactForm.displayName}
+                      onChange={(e) =>
+                        setContactForm((c) => ({ ...c, displayName: e.target.value }))
+                      }
+                      placeholder="Jane Smith"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="contact-email">Email</Label>
+                    <Input
+                      id="contact-email"
+                      type="email"
+                      value={contactForm.email}
+                      onChange={(e) =>
+                        setContactForm((c) => ({ ...c, email: e.target.value }))
+                      }
+                      placeholder="jane@example.com"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="contact-phone">Phone</Label>
+                    <Input
+                      id="contact-phone"
+                      type="tel"
+                      value={contactForm.phone}
+                      onChange={(e) =>
+                        setContactForm((c) => ({ ...c, phone: e.target.value }))
+                      }
+                      placeholder="(555) 000-0000"
+                    />
+                  </div>
+                </div>
+                {contactForm.displayName && !contactForm.email && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    Email is required when adding a contact.
+                  </p>
+                )}
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
                 Create Lead
@@ -377,20 +832,423 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteId} onOpenChange={open => !open && setDeleteId(null)}>
+      {/* Delete Confirmation */}
+      <AlertDialog
+        open={!!deleteId}
+        onOpenChange={(open) => {
+          if (!open) setDeleteId(null)
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Lead?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently delete this lead. This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogDescription>
+              This will permanently delete this lead. This action cannot be undone.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
               {deleting ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Lead Detail Sheet */}
+      <Sheet
+        open={!!sheetLeadId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSheetLeadId(null)
+            setIsEditing(false)
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col p-0 gap-0">
+          {/* Sheet header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB]">
+            <SheetHeader className="space-y-0 text-left">
+              <SheetTitle className="text-base font-semibold text-slate-900">
+                {leadDetail?.title ?? "Lead Details"}
+              </SheetTitle>
+              {leadDetail && (
+                <Badge
+                  variant="outline"
+                  className={`w-fit text-xs mt-1 ${STATUS_COLORS[leadDetail.status] ?? ""}`}
+                >
+                  {STATUS_LABELS[leadDetail.status] ?? leadDetail.status}
+                </Badge>
+              )}
+            </SheetHeader>
+            <div className="flex items-center gap-2">
+              {!isEditing && leadDetail && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <Pencil className="mr-1.5 size-3.5" />
+                  Edit
+                </Button>
+              )}
+              {isEditing && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsEditing(false)}
+                  >
+                    <X className="mr-1.5 size-3.5" />
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={handleSaveEdit} disabled={savingEdit}>
+                    {savingEdit && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                    Save
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Sheet body */}
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+            {loadingDetail ? (
+              <div className="space-y-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full" />
+                ))}
+              </div>
+            ) : leadDetail && editForm ? (
+              <>
+                {isEditing ? (
+                  /* ─── Edit Mode ─── */
+                  <div className="space-y-5">
+                    <div className="space-y-1.5">
+                      <Label>Title *</Label>
+                      <Input
+                        value={editForm.title}
+                        onChange={setEditField("title")}
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label>Status</Label>
+                        <Select
+                          value={editForm.status}
+                          onValueChange={(v) =>
+                            setEditForm((f) => (f ? { ...f, status: v } : f))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="open">Open</SelectItem>
+                            <SelectItem value="in_negotiation">In Negotiation</SelectItem>
+                            <SelectItem value="won">Won</SelectItem>
+                            <SelectItem value="lost">Lost</SelectItem>
+                            <SelectItem value="archived">Archived</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label>Project Type</Label>
+                        <Input
+                          value={editForm.projectType}
+                          onChange={setEditField("projectType")}
+                          placeholder="e.g. countertops"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label>City</Label>
+                        <Input
+                          value={editForm.city}
+                          onChange={setEditField("city")}
+                          placeholder="Austin"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label>State</Label>
+                        <Input
+                          value={editForm.state}
+                          onChange={setEditField("state")}
+                          placeholder="TX"
+                          maxLength={2}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label>Revenue Min ($)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={editForm.estimatedRevenueMin}
+                          onChange={setEditField("estimatedRevenueMin")}
+                          placeholder="0"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label>Revenue Max ($)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={editForm.estimatedRevenueMax}
+                          onChange={setEditField("estimatedRevenueMax")}
+                          placeholder="0"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label>Confidence (0–100)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={editForm.confidence}
+                          onChange={setEditField("confidence")}
+                          placeholder="50"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label>Projected Sales Date</Label>
+                        <Input
+                          type="date"
+                          value={editForm.projectedSalesDate}
+                          onChange={setEditField("projectedSalesDate")}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label>Lead Source</Label>
+                        <Input
+                          value={editForm.leadSource}
+                          onChange={setEditField("leadSource")}
+                          placeholder="Referral, Web, etc."
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label>Tags (comma-separated)</Label>
+                        <Input
+                          value={editForm.tags}
+                          onChange={setEditField("tags")}
+                          placeholder="roofing, residential"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Notes</Label>
+                      <Textarea
+                        value={editForm.notes}
+                        onChange={setEditField("notes")}
+                        placeholder="Additional details…"
+                        rows={3}
+                      />
+                    </div>
+
+                    <Separator />
+
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
+                        <User className="size-3.5" />
+                        Primary Contact
+                      </p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label>Display Name</Label>
+                          <Input
+                            value={editForm.contactDisplayName}
+                            onChange={setEditField("contactDisplayName")}
+                            placeholder="Jane Smith"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Email</Label>
+                          <Input
+                            type="email"
+                            value={editForm.contactEmail}
+                            onChange={setEditField("contactEmail")}
+                            placeholder="jane@example.com"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Phone</Label>
+                          <Input
+                            type="tel"
+                            value={editForm.contactPhone}
+                            onChange={setEditField("contactPhone")}
+                            placeholder="(555) 000-0000"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* ─── Read-only Mode ─── */
+                  <div className="space-y-6">
+                    {/* Core details */}
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-0">
+                      <DetailRow
+                        icon={<Building2 className="size-4" />}
+                        label="Project Type"
+                        value={leadDetail.projectType}
+                      />
+                      <DetailRow
+                        icon={<MapPin className="size-4" />}
+                        label="Location"
+                        value={
+                          [leadDetail.city, leadDetail.state].filter(Boolean).join(", ") || null
+                        }
+                      />
+                      <DetailRow
+                        label="Confidence"
+                        value={
+                          leadDetail.confidence != null
+                            ? `${leadDetail.confidence}%`
+                            : null
+                        }
+                      />
+                      <DetailRow
+                        icon={<Calendar className="size-4" />}
+                        label="Projected Sales Date"
+                        value={
+                          leadDetail.projectedSalesDate
+                            ? fmtDate(leadDetail.projectedSalesDate)
+                            : null
+                        }
+                      />
+                      <DetailRow
+                        label="Revenue Estimate"
+                        value={(() => {
+                          const min = fmtCurrency(leadDetail.estimatedRevenueMin)
+                          const max = fmtCurrency(leadDetail.estimatedRevenueMax)
+                          if (min && max && min !== max) return `${min} – ${max}`
+                          return min ?? max ?? null
+                        })()}
+                      />
+                      <DetailRow
+                        label="Lead Source"
+                        value={leadDetail.leadSource}
+                      />
+                      <DetailRow
+                        label="Created By"
+                        value={leadDetail.createdByName}
+                      />
+                      <DetailRow
+                        label="Created"
+                        value={fmtDate(leadDetail.createdAt)}
+                      />
+                    </div>
+
+                    {leadDetail.notes && (
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1">Notes</p>
+                        <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                          {leadDetail.notes}
+                        </p>
+                      </div>
+                    )}
+
+                    {leadDetail.tags.length > 0 && (
+                      <div>
+                        <p className="text-xs text-slate-400 mb-2 flex items-center gap-1">
+                          <Tag className="size-3" />
+                          Tags
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {leadDetail.tags.map((tag) => (
+                            <Badge key={tag} variant="secondary" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <Separator />
+
+                    {/* Contact info */}
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
+                        <User className="size-3.5" />
+                        Primary Contact
+                      </p>
+                      {leadDetail.clientContact ? (
+                        <div className="space-y-1.5">
+                          <p className="text-sm font-medium text-slate-800">
+                            {leadDetail.clientContact.displayName ?? "Unnamed Contact"}
+                          </p>
+                          {leadDetail.clientContact.email && (
+                            <a
+                              href={`mailto:${leadDetail.clientContact.email}`}
+                              className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline"
+                            >
+                              <Mail className="size-3.5 text-slate-400" />
+                              {leadDetail.clientContact.email}
+                            </a>
+                          )}
+                          {leadDetail.clientContact.phone && (
+                            <a
+                              href={`tel:${leadDetail.clientContact.phone}`}
+                              className="flex items-center gap-1.5 text-sm text-slate-700"
+                            >
+                              <Phone className="size-3.5 text-slate-400" />
+                              {leadDetail.clientContact.phone}
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-sm text-slate-400">
+                          <p>No contact added yet.</p>
+                          <button
+                            onClick={() => setIsEditing(true)}
+                            className="text-blue-600 hover:underline text-sm flex items-center gap-1"
+                          >
+                            <Edit2 className="size-3" />
+                            Add contact
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Additional contacts */}
+                    {leadDetail.contacts.length > 1 && (
+                      <div>
+                        <p className="text-xs text-slate-400 mb-2">
+                          Other Contacts ({leadDetail.contacts.length - 1})
+                        </p>
+                        <div className="space-y-2">
+                          {leadDetail.contacts.slice(1).map((c) => (
+                            <div key={c.id} className="text-sm text-slate-600">
+                              {c.displayName}
+                              {c.email && ` · ${c.email}`}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

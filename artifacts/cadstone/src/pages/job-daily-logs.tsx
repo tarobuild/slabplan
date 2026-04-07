@@ -37,7 +37,7 @@ type DailyLog = {
   publishedAt: string | null
   createdAt: string
   createdByName: string | null
-  tags: { tag: string }[]
+  tags: string[]
 }
 
 type Pagination = {
@@ -369,11 +369,11 @@ export default function JobDailyLogsPage() {
                     )}
                     {log.tags?.map((t) => (
                       <Badge
-                        key={t.tag}
+                        key={t}
                         variant="outline"
                         className="text-xs text-blue-600 border-blue-200 bg-blue-50"
                       >
-                        {t.tag}
+                        {t}
                       </Badge>
                     ))}
                   </div>

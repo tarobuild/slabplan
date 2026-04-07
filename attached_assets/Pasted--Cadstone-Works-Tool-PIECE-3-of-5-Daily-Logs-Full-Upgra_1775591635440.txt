@@ -1,0 +1,176 @@
+# Cadstone Works Tool — PIECE 3 of 5: Daily Logs Full Upgrade
+
+## Context
+This is piece 3 of 5 for the Cadstone internal tool. Pieces 1–2 handled Schedule. This piece fully upgrades the Daily Logs feature. Daily Logs live as a tab within each Job detail page. The backend routes already exist. The current frontend has only a basic search bar, simple card list (date + text + author), and a "+ New Log" button. This task rebuilds the entire Daily Logs experience.
+
+## What Exists Now (DO NOT break these)
+- Daily Logs tab within Job detail page
+- Basic list showing date, text preview, author
+- "+ New Log" button
+- Search bar
+- Basic CRUD
+
+## What To Build
+
+### 1. Daily Logs List Page
+
+**Header area:**
+- Project name above page title
+- Page title: "Daily Logs"
+- Toolbar (right side): Settings gear icon, Print icon, Filter icon, "+ Daily Log" button (primary blue)
+
+**List cards** — Each daily log renders as a card with:
+
+| Element | Position | Details |
+|---------|----------|---------|
+| Title link | Top-left | Format: "Day, Mon DD \| Title" (e.g., "Tue, Apr 7 \| Kitchen Counter Install"). Clickable — opens detail view |
+| Author | Below title, left | User avatar circle (initials) + full name |
+| Visibility badge | Next to author | Pill/badge showing "Internal" with a people icon |
+| Likes count | Below author, left | Heart icon + number (e.g., ♡ 0) |
+| Comments count | Next to likes | Speech bubble icon + number (e.g., 💬 0) |
+| Attachments count | Next to comments | Document icon + number (e.g., 📄 0) |
+| Weather summary | Far right | Weather icon (sun/cloud/rain) + "78°F↑ 56°F↓" showing high and low temps |
+| Notes preview | Below counts | 1–2 line text preview of the notes content |
+| Action icons | Top-right of card | Print icon, Edit (pencil) icon |
+
+- **Pagination** at bottom-right: "1–X of Y items"
+
+### 2. Daily Log Create/Edit Form
+
+Opens as a **modal/overlay** when clicking "+ Daily Log" or the edit icon. Two-column layout:
+
+#### LEFT COLUMN — Daily Log Information:
+
+| Field | Type | Required | Details |
+|-------|------|----------|---------|
+| Job | Dropdown | Yes | Pre-filled with current job. Lists all jobs for switching |
+| Date | Date picker | Yes | Defaults to today |
+| Title | Text input | No | Free text, e.g., "Kitchen Counter Install" |
+| Tags | Tag input field | No | Shows "No tags" by default. "Add" and "Edit" buttons to manage tags |
+
+#### LEFT COLUMN — Permissions:
+
+Section header: "Permissions"
+
+Sub-header: "Share"
+
+Checkboxes:
+- ✅ Internal Users (checked by default)
+- ☐ Estimators
+- ☐ Installers
+- ☐ Private (only visible to creator)
+
+#### LEFT COLUMN — Notify Users:
+
+"Notify Users" label with info icon tooltip: "Selected users will be notified when this log is published"
+- Multi-select user picker (autocomplete from team members)
+
+#### RIGHT COLUMN — Attachments:
+
+Section header: "Attachments"
+- "Add" button — Opens file picker for uploading images/documents
+- "Create new doc" button — Creates an inline document
+- Uploaded files display as a list: filename, file type icon, remove (X) button
+- Support drag-and-drop file upload
+
+#### RIGHT COLUMN — Notes:
+
+Section header: "Notes"
+- Large text area (at least 6 rows tall) for free-form notes content. This is the main content area where estimators describe what happened that day.
+
+#### RIGHT COLUMN — Weather:
+
+Section header: "Weather"
+- **"Include Weather Conditions" checkbox** (checked by default)
+  - When checked, auto-populate weather data for the job's location and selected date:
+    - Weather condition icon (sun, cloud, rain, snow, etc.)
+    - Condition text (e.g., "Sunny")
+    - High temperature in °F
+    - Low temperature in °F
+    - Wind speed (e.g., "Wind: 8 mph")
+    - Humidity (e.g., "Humidity: 91%")
+    - Total precipitation (e.g., "Total Precip: 0\"")
+    - Fetch timestamp (e.g., "Tue, Apr 7, 2026, 9:58 AM")
+  - When unchecked, hides all weather data
+- **"Include Weather Notes" checkbox** — When checked, shows a "Weather Notes" text area below the weather data for manual notes about weather conditions
+
+#### FOOTER:
+- **On create**: "Publish" button (primary blue) — this publishes/creates the daily log
+- **On edit**: "Delete" button (red text) + "Save" button (primary blue)
+
+### 3. Daily Log Detail View (Read-Only)
+
+After publishing, clicking a daily log from the list opens this full detail view:
+
+**Header:**
+- Breadcrumb: "[Project Name] / Daily Logs" (both clickable links)
+- Title: "Day, Mon DD | Title" (e.g., "Tue, Apr 7 | Kitchen Counter Install")
+- Visibility badge: "Internal" pill with people icon
+- **Top-right icons**: "..." menu (Print, Delete), Comments icon (opens comments panel), Edit icon (pencil — opens the edit form)
+
+**Left content area:**
+- **Likes**: Heart icon + count. Clickable to like/unlike
+- **Notes section**: Section header "Notes", followed by full text content of the notes
+
+**Right sidebar:**
+- **Weather widget** (yellow/warm background card):
+  - Weather icon (large)
+  - High temp (large, bold) + Low temp below it
+  - Wind, Humidity, Total precipitation on the right of temps
+  - Info (i) icon
+- **To-Do's section**:
+  - Section header: "To-Do's" with "+ Add" button
+  - Empty state: clipboard icon + "Add To-Do's quickly based on today's updates"
+  - When to-dos are added: List of linked to-do items with checkboxes
+
+### 4. Comments Panel
+
+Accessed via the **comments icon** on the detail view. Slides out as a **right-side panel**.
+
+**Panel header:** "Comments" with X close button
+
+**Comment tab:** "Internal" (single tab since this is an internal tool)
+
+**Comment input area (bottom of panel):**
+- Row of toolbar icons: Emoji picker (dropdown), Link button, Image/photo attachment (dropdown), Text format button (Aa)
+- Text input: "Add a comment" placeholder
+- "Send" button (right-aligned)
+
+**Comment features:**
+- @mentions: Typing @ shows autocomplete dropdown of team members
+- Photo/image attachment: Click image icon to attach photos
+- Link attachment: Click link icon to add URLs
+- Emoji reactions on existing comments (thumbs up, etc.)
+- Reply threads: Each comment has a "Reply" action that creates a nested reply
+- Each comment displays: author avatar + name, timestamp, comment text, any attachments, reaction buttons
+
+### 5. Daily Logs Filter Panel
+
+Right-side slide-out panel (same pattern as Schedule filter from Piece 2):
+
+| Filter Field | Type |
+|-------------|------|
+| Standard Filter | Preset dropdown |
+| Shared with | Dropdown: All (default), Internal, Estimators, Installers, Private |
+| Keywords | Text search input with info icon tooltip: "Searches title and notes content" |
+| Created by | User search/select (autocomplete) |
+| Date | Dropdown with presets: All dates (default), Custom dates, Today, Today onward, Next 30 days, Next 14 days, Next 7 days, Today & tomorrow, Past 7 days, Past 14 days, Past 30 days, Past 45 days, Past 60 days, Past 90 days, Past 180 days, Past 365 days |
+| Tags | Tag multi-select |
+
+Bottom buttons: "Clear all" + "Apply filter" (primary blue)
+
+### 6. Weather API Integration
+
+- Use a free weather API (OpenWeatherMap or similar)
+- When creating a new daily log, auto-fetch current weather conditions based on the job's street address/city/state/zip
+- Store the weather data snapshot with the daily log record so it persists even if weather changes later
+- If the job has no address, show a message: "Add a job address to auto-fetch weather conditions"
+
+## API Notes
+- Extend the daily log schema to support: title, tags, attachments (file references), weather data (JSON blob with condition, temps, wind, humidity, precipitation, timestamp), visibility/permissions, likes (array of user IDs), comments (sub-collection)
+- New endpoints needed:
+  - `POST /api/daily-logs/:id/comments` — Add comment
+  - `GET /api/daily-logs/:id/comments` — Get comments
+  - `POST /api/daily-logs/:id/like` — Toggle like
+  - `POST /api/daily-logs/:id/files` — Upload attachment
+  - `GET /api/weather?address=...` — Proxy to weather API

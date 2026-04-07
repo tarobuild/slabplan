@@ -824,35 +824,35 @@ function PhotoGrid({
           <button
             key={file.id}
             onClick={() => onOpenLightbox(file)}
-            className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 aspect-square hover:border-blue-300 transition-colors text-left"
+            className="group flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-blue-300 transition-colors text-left"
           >
-            {hasUrl ? (
-              <img
-                src={file.fileUrl!}
-                alt={displayName(file)}
-                className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                onError={() =>
-                  setBrokenImages((prev) => {
-                    const next = new Set(prev)
-                    next.add(file.id)
-                    return next
-                  })
-                }
-              />
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-300 bg-slate-100">
-                <span className="text-3xl">🖼️</span>
-                <span className="text-xs text-slate-400 px-2 text-center truncate w-full">
-                  {displayName(file)}
-                </span>
-              </div>
-            )}
-            {/* Hover overlay */}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-end">
-              <div className="w-full px-2.5 py-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
-                <p className="text-white/70 text-xs">{formatFileSize(file.fileSize)}</p>
-              </div>
+            {/* Thumbnail */}
+            <div className="relative aspect-square overflow-hidden bg-slate-100">
+              {hasUrl ? (
+                <img
+                  src={file.fileUrl!}
+                  alt={displayName(file)}
+                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                  onError={() =>
+                    setBrokenImages((prev) => {
+                      const next = new Set(prev)
+                      next.add(file.id)
+                      return next
+                    })
+                  }
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-300">
+                  <span className="text-3xl">🖼️</span>
+                </div>
+              )}
+              {/* Hover zoom indicator */}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
+            </div>
+            {/* Caption — always visible */}
+            <div className="px-2.5 py-2 border-t border-[#E5E7EB] bg-white">
+              <p className="text-xs font-medium text-slate-800 truncate">{displayName(file)}</p>
+              <p className="text-xs text-slate-400">{formatFileSize(file.fileSize)}</p>
             </div>
           </button>
         )

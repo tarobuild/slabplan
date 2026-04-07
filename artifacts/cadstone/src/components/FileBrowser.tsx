@@ -80,7 +80,28 @@ type FileItem = {
 
 type MediaType = "document" | "photo" | "video"
 type ViewMode = "grid" | "list"
-type SortOption = "name-asc" | "name-desc" | "date-desc" | "date-asc" | "size-desc" | "size-asc"
+
+const SORT_OPTIONS = [
+  "name-asc",
+  "name-desc",
+  "date-desc",
+  "date-asc",
+  "size-desc",
+  "size-asc",
+] as const
+type SortOption = (typeof SORT_OPTIONS)[number]
+
+function isSortOption(v: string): v is SortOption {
+  return (SORT_OPTIONS as readonly string[]).includes(v)
+}
+
+function getApiErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === "object" && err !== null) {
+    const e = err as { response?: { data?: { message?: string } }; message?: string }
+    return e.response?.data?.message ?? e.message ?? fallback
+  }
+  return fallback
+}
 
 function formatFileSize(bytes: number | null) {
   if (!bytes) return "—"
@@ -91,7 +112,11 @@ function formatFileSize(bytes: number | null) {
 }
 
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  return new Date(d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
 }
 
 function FileIcon({ mimeType }: { mimeType: string | null }) {
@@ -156,7 +181,7 @@ export default function FileBrowser({
         setFolders(r.data.folders ?? [])
         setBreadcrumb(r.data.breadcrumb ?? [])
       })
-      .catch(() => toast.error("Failed to load folders"))
+      .catch((err: unknown) => toast.error(getApiErrorMessage(err, "Failed to load folders")))
       .finally(() => setLoading(false))
   }
 
@@ -165,7 +190,7 @@ export default function FileBrowser({
     api
       .get(`/folders/${folderId}/files`)
       .then((r) => setFiles(r.data.files ?? []))
-      .catch(() => toast.error("Failed to load files"))
+      .catch((err: unknown) => toast.error(getApiErrorMessage(err, "Failed to load files")))
       .finally(() => setFilesLoading(false))
   }
 
@@ -203,8 +228,8 @@ export default function FileBrowser({
       setCreateFolderOpen(false)
       setNewFolderName("")
       loadFolders(currentFolderId)
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to create folder")
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Failed to create folder"))
     } finally {
       setCreatingFolder(false)
     }
@@ -219,8 +244,8 @@ export default function FileBrowser({
       toast.success("Folder renamed")
       setRenameFolderTarget(null)
       loadFolders(currentFolderId)
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to rename folder")
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Failed to rename folder"))
     } finally {
       setRenamingFolder(false)
     }
@@ -234,8 +259,8 @@ export default function FileBrowser({
       toast.success("Folder deleted")
       setDeleteConfirmFolder(null)
       loadFolders(currentFolderId)
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to delete folder")
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Failed to delete folder"))
     } finally {
       setDeletingFolder(false)
     }
@@ -252,8 +277,8 @@ export default function FileBrowser({
       })
       toast.success(`${e.target.files.length} file(s) uploaded`)
       loadFiles(currentFolderId)
-    } catch {
-      toast.error("Upload failed")
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Upload failed"))
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ""
@@ -262,22 +287,49 @@ export default function FileBrowser({
 
   const sortedFolders = useMemo(() => {
     const arr = [...folders]
-    if (sortBy === "name-asc") arr.sort((a, b) => a.title.localeCompare(b.title))
-    else if (sortBy === "name-desc") arr.sort((a, b) => b.title.localeCompare(a.title))
+    switch (sortBy) {
+      case "name-asc":
+        arr.sort((a, b) => a.title.localeCompare(b.title))
+        break
+      case "name-desc":
+        arr.sort((a, b) => b.title.localeCompare(a.title))
+        break
+      case "size-desc":
+        arr.sort((a, b) => b.fileCount - a.fileCount)
+        break
+      case "size-asc":
+        arr.sort((a, b) => a.fileCount - b.fileCount)
+        break
+      default:
+        arr.sort((a, b) => a.title.localeCompare(b.title))
+        break
+    }
     return arr
   }, [folders, sortBy])
 
   const sortedFiles = useMemo(() => {
     const arr = [...files]
     const name = (f: FileItem) => displayName(f).toLowerCase()
-    if (sortBy === "name-asc") arr.sort((a, b) => name(a).localeCompare(name(b)))
-    else if (sortBy === "name-desc") arr.sort((a, b) => name(b).localeCompare(name(a)))
-    else if (sortBy === "date-desc")
-      arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    else if (sortBy === "date-asc")
-      arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-    else if (sortBy === "size-desc") arr.sort((a, b) => (b.fileSize ?? 0) - (a.fileSize ?? 0))
-    else if (sortBy === "size-asc") arr.sort((a, b) => (a.fileSize ?? 0) - (b.fileSize ?? 0))
+    switch (sortBy) {
+      case "name-asc":
+        arr.sort((a, b) => name(a).localeCompare(name(b)))
+        break
+      case "name-desc":
+        arr.sort((a, b) => name(b).localeCompare(name(a)))
+        break
+      case "date-desc":
+        arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        break
+      case "date-asc":
+        arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        break
+      case "size-desc":
+        arr.sort((a, b) => (b.fileSize ?? 0) - (a.fileSize ?? 0))
+        break
+      case "size-asc":
+        arr.sort((a, b) => (a.fileSize ?? 0) - (b.fileSize ?? 0))
+        break
+    }
     return arr
   }, [files, sortBy])
 
@@ -319,7 +371,12 @@ export default function FileBrowser({
         {/* Controls */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Sort */}
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+          <Select
+            value={sortBy}
+            onValueChange={(v) => {
+              if (isSortOption(v)) setSortBy(v)
+            }}
+          >
             <SelectTrigger className="h-8 w-36 text-xs">
               <SelectValue placeholder="Sort" />
             </SelectTrigger>
@@ -515,7 +572,9 @@ export default function FileBrowser({
       {/* Rename Folder Dialog */}
       <Dialog
         open={!!renameFolderTarget}
-        onOpenChange={(open) => !open && setRenameFolderTarget(null)}
+        onOpenChange={(open) => {
+          if (!open) setRenameFolderTarget(null)
+        }}
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -552,7 +611,9 @@ export default function FileBrowser({
       {/* Delete Folder Alert */}
       <AlertDialog
         open={!!deleteConfirmFolder}
-        onOpenChange={(open) => !open && setDeleteConfirmFolder(null)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirmFolder(null)
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -577,7 +638,12 @@ export default function FileBrowser({
       </AlertDialog>
 
       {/* Photo Lightbox */}
-      <Dialog open={!!lightboxFile} onOpenChange={(open) => !open && setLightboxFile(null)}>
+      <Dialog
+        open={!!lightboxFile}
+        onOpenChange={(open) => {
+          if (!open) setLightboxFile(null)
+        }}
+      >
         <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black border-0">
           <button
             onClick={() => setLightboxFile(null)}
@@ -613,7 +679,12 @@ export default function FileBrowser({
       </Dialog>
 
       {/* Video Player Dialog */}
-      <Dialog open={!!videoPlayerFile} onOpenChange={(open) => !open && setVideoPlayerFile(null)}>
+      <Dialog
+        open={!!videoPlayerFile}
+        onOpenChange={(open) => {
+          if (!open) setVideoPlayerFile(null)
+        }}
+      >
         <DialogContent className="max-w-3xl p-0 overflow-hidden bg-black border-0">
           <button
             onClick={() => setVideoPlayerFile(null)}
@@ -667,7 +738,11 @@ function FolderCard({
 }) {
   return (
     <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-blue-200 hover:bg-blue-50/30 transition-colors cursor-pointer select-none">
-      <button className="absolute inset-0 rounded-xl" onClick={onOpen} aria-label={`Open ${folder.title}`} />
+      <button
+        className="absolute inset-0 rounded-xl"
+        onClick={onOpen}
+        aria-label={`Open ${folder.title}`}
+      />
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-3">
           {isOpen ? (
@@ -733,37 +808,51 @@ function PhotoGrid({
   files: FileItem[]
   onOpenLightbox: (file: FileItem) => void
 }) {
+  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set())
+
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-      {files.map((file) => (
-        <button
-          key={file.id}
-          onClick={() => onOpenLightbox(file)}
-          className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 aspect-square hover:border-blue-300 transition-colors text-left"
-        >
-          {file.fileUrl ? (
-            <img
-              src={file.fileUrl}
-              alt={displayName(file)}
-              className="w-full h-full object-cover transition-transform group-hover:scale-105"
-              onError={(e) => {
-                ;(e.target as HTMLImageElement).style.display = "none"
-              }}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-300">
-              <span className="text-4xl">🖼️</span>
+      {files.map((file) => {
+        const isBroken = brokenImages.has(file.id)
+        const hasUrl = !!file.fileUrl && !isBroken
+
+        return (
+          <button
+            key={file.id}
+            onClick={() => onOpenLightbox(file)}
+            className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 aspect-square hover:border-blue-300 transition-colors text-left"
+          >
+            {hasUrl ? (
+              <img
+                src={file.fileUrl!}
+                alt={displayName(file)}
+                className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                onError={() =>
+                  setBrokenImages((prev) => {
+                    const next = new Set(prev)
+                    next.add(file.id)
+                    return next
+                  })
+                }
+              />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-300 bg-slate-100">
+                <span className="text-3xl">🖼️</span>
+                <span className="text-xs text-slate-400 px-2 text-center truncate w-full">
+                  {displayName(file)}
+                </span>
+              </div>
+            )}
+            {/* Hover overlay */}
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-end">
+              <div className="w-full px-2.5 py-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
+                <p className="text-white/70 text-xs">{formatFileSize(file.fileSize)}</p>
+              </div>
             </div>
-          )}
-          {/* Hover overlay */}
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-end">
-            <div className="w-full px-2.5 py-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-              <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
-              <p className="text-white/70 text-xs">{formatFileSize(file.fileSize)}</p>
-            </div>
-          </div>
-        </button>
-      ))}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -841,9 +930,11 @@ function FileTable({
                   )}
                 </div>
               </td>
-              <td className="px-4 py-3 text-slate-500 tabular-nums">{formatFileSize(file.fileSize)}</td>
+              <td className="px-4 py-3 text-slate-500 tabular-nums">
+                {formatFileSize(file.fileSize)}
+              </td>
               {showDuration && <td className="px-4 py-3 text-slate-400">—</td>}
-              <td className="px-4 py-3 text-slate-500">{file.uploadedByName || "—"}</td>
+              <td className="px-4 py-3 text-slate-500">{file.uploadedByName ?? "—"}</td>
               <td className="px-4 py-3 text-slate-500">{fmtDate(file.createdAt)}</td>
             </tr>
           ))}

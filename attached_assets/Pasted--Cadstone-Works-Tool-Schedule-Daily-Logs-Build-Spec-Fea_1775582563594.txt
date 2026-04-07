@@ -1,0 +1,537 @@
+# Cadstone Works Tool — Schedule & Daily Logs Build Spec
+## Feature Parity with BuilderTrend (Audited April 7, 2026)
+
+> **Purpose:** This document is a complete, field-by-field specification of the Schedule and Daily Logs features as they exist in BuilderTrend. Cadstone's internal tool must replicate these features. The backend routes for schedule and daily logs already exist. The current frontend has a basic calendar shell and a simple daily log list. This spec details everything that needs to be built or upgraded.
+>
+> **Important context:** This is an INTERNAL-ONLY tool. We can simplify or omit anything related to external-facing users (client portal, sub/vendor portals). Features labeled "Subs/Vendors" or "Client" sharing can be simplified to internal role-based visibility (e.g., Estimators, Installers, Admin). The Cadstone team specifically wants estimators and key members to be able to set dates ("have things by X date") and post daily text + photo updates per project.
+
+---
+
+## CURRENT STATE (What Already Exists in Replit)
+
+**Schedule tab (within Job detail):**
+- Basic calendar grid (month view only)
+- Calendar/List toggle buttons
+- "+ Add Item" button opens a simple modal with: Title, Start Date, Work Days, Progress %, Color dropdown (limited), Assignees (checkboxes), Notes (single text field)
+- No Gantt view, no filters, no phases/tags, no predecessors, no viewing controls, no reminders, no hourly toggle, no baseline, no workday exceptions
+
+**Daily Logs tab (within Job detail):**
+- Search bar
+- Simple card list showing date + text preview + author
+- "+ New Log" button
+- No attachments, no photos, no weather, no tags, no permissions/sharing, no comments, no likes, no to-do linking, no filters, no settings
+
+---
+
+## PART 1: SCHEDULE
+
+The Schedule is a tab within each Job/Project detail page. It has three top-level sub-tabs.
+
+### 1.1 Top-Level Sub-Tabs
+```
+[ Schedule ]  [ Baseline ]  [ Workday Exceptions ]
+```
+
+---
+
+### 1.2 Schedule Sub-Tab (Main Working Schedule)
+
+#### 1.2.1 View Toggles
+
+A button group at the top: **Calendar | List | Gantt**
+
+#### 1.2.2 Toolbar (present across all views)
+
+- **Settings gear icon** — Opens Schedule Settings modal (see 1.7)
+- **History clock icon** — Opens Schedule History side panel showing a log of all changes made to the schedule with timestamps
+- **"Schedule Offline" toggle** — On/off switch (when off, schedule is unavailable externally; for internal tool, this controls whether the schedule is "published" or in draft)
+- **"More Actions" dropdown** with options:
+  - Import From Templates
+  - Track Conflicts
+  - Notify Assigned Users (disabled if no items)
+  - Delete All Items
+  - Export to PDF
+- **Filter button** — Opens a right-side filter panel (see 1.6)
+- **"New Schedule Item" button** (primary blue) — Opens the Schedule Item modal (see 1.3)
+
+---
+
+#### 1.2.3 Calendar View
+
+- **Time period dropdown**: Month, Week, Day, Agenda
+- **Navigation**: Left arrow, right arrow, clickable month/year label (opens date picker), "Today" button
+- **Grid layout**: 7-column (Sun–Sat). Non-workdays (weekends by default) display "Non-workday" label in grey. Today's date shows a blue circle highlight
+- **Schedule items render as colored horizontal bars** spanning their date range. Color matches the item's Display Color setting. Clicking an item opens the Schedule Item modal
+- **"Expand All" button** in top-right corner
+
+#### 1.2.4 List View
+
+A table with sortable columns:
+
+| Column | Description |
+|--------|------------|
+| Checkbox | Row selection |
+| ID # | Auto-incrementing item number |
+| Title | Clickable link (color dot prefix matching Display Color) |
+| Complete | Circle checkbox to mark complete |
+| Phase | Phase name or "--" |
+| Duration | e.g. "3 days" |
+| Start | Start date |
+| End | End date |
+| Assigned To | Assignee names |
+| Accepted | Count of accepted confirmations |
+| Pending | Count of pending confirmations |
+| Declined | Count of declined confirmations |
+| Files | Attachment count |
+
+- **"View" dropdown** with options: Phases, Notes (toggles additional grouping/display)
+- **"Standard View" dropdown** at bottom for saved view presets
+- **Pagination**: "1-1 of X items" at bottom-right
+
+#### 1.2.5 Gantt View
+
+- **Time scale dropdown**: Day, Week, Month, Year
+- **"Today" button**: Scrolls to current date
+- **Left panel columns**: Title, Start, Workdays
+- **Right panel**: Horizontal timeline with date headers (day-of-week labels). Schedule items render as colored bars. Progress is shown as a filled portion within the bar (e.g., 50% filled = left half blue)
+- **Phases toggle**: On/off switch to group items by phase
+- **Critical Path toggle**: On/off switch to highlight the critical path
+- **Edit icon (pencil)** and **Add icon (+)** per row
+- **"Switch to Draft mode" banner** at bottom — Draft mode enables undo/redo for schedule changes
+- **Fullscreen button** to expand the Gantt chart
+
+---
+
+### 1.3 Schedule Item Modal (Create / Edit)
+
+This is the core data entry form. It opens as a modal/overlay when clicking "New Schedule Item" or clicking an existing item.
+
+#### 1.3.1 Top-Level Tabs in Modal
+```
+[ Schedule Item Details ]  [ Related Items (count) ]
+```
+
+#### 1.3.2 Schedule Item Details — Main Fields
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Complete | Circle checkbox | No | Only appears after item is saved. Click to mark item done |
+| Title | Text input | Yes (★) | e.g. "Granite Countertop Template" |
+| Display Color | Dropdown with color swatches | No | Options: Maroon, Merlot, Tuscan Red, Rose, Victoria, Brown, Coffee, Amber, Cucumber, Plum, Purple, Lavender, Iris, Violet, Navy, Levi (default). Each has a colored circle next to the name |
+| Assignees | Multi-select user picker | No | Text input with autocomplete. Has a "send/notify" icon button |
+| Start Date | Date picker | Yes (★) | Defaults to today |
+| Work Days | Number input (spinner) | Yes (★) | Defaults to 1. Unit label says "day" or "days" |
+| End Date | Date picker | Yes (★) | Auto-calculated from Start Date + Work Days, but can be manually overridden |
+| Hourly toggle | Switch (on/off) | No | Default off. When ON, reveals a "Start Time" field (time picker with clock icon, required) |
+| Progress | Slider + number input | No | Slider from 0–100, paired with a text input showing percentage. Defaults to 0% |
+| Reminder | Dropdown | No | Options: None (default), 1 Hour Before, 2 Hours Before, 4 Hours Before, 8 Hours Before, 12 Hours Before, 1 Day Before, 2 Days Before |
+
+#### 1.3.3 Schedule Item Details — Sub-Tabs
+
+Below the main fields, there are sub-tabs:
+
+**On creation (before first save):**
+```
+[ Predecessors & Links ]  [ Phases & Tags ]  [ Viewing ]  [ Notes ]  [ Files ]
+```
+
+**After first save (additional tabs appear):**
+```
+[ Predecessors & Links ]  [ Phases & Tags ]  [ Viewing ]  [ Notes (X new) ]  [ Shifts ]  [ Files ]  [ RFIs ]
+```
+
+##### Sub-Tab: Predecessors & Links
+
+- **Predecessors section** with table rows:
+  - **Name**: Dropdown to select another schedule item (shows "There are no items to select" if this is the only item)
+  - **Type**: Dropdown with options: Finish-to-Start (FS), Start-to-Start (SS)
+  - **Lag**: Number input + "days" label
+  - **Delete button** (trash icon) per row
+- **"+ Add Predecessor" button** to add rows
+
+##### Sub-Tab: Phases & Tags
+
+- **Schedule Item Phase section:**
+  - Phase dropdown (defaults to "Unassigned")
+  - "Add" button to create new phase
+  - "Edit" button to edit existing phases
+- **Schedule Item Tags section:**
+  - Tags text field
+  - "Add" button to create new tag
+  - "Edit" button to edit existing tags
+
+##### Sub-Tab: Viewing
+
+- **Schedule Viewing section:**
+  - "Show on Gantt" checkbox (checked by default)
+  - "Show Client (Full schedule)" checkbox with info icon (checked by default)
+- **Subs/Vendors section:**
+  - Multi-select dropdown to grant viewing access. Note: "All Assigned Subs/Vendors have been granted viewing access and will receive notifications on this schedule item."
+
+> **Cadstone simplification:** Since this is internal-only, replace the "Subs/Vendors" and "Show Client" options with internal role-based visibility (e.g., checkboxes for "Visible to Estimators", "Visible to Installers", "Visible to Office Staff").
+
+##### Sub-Tab: Notes
+
+- **Note type sub-tabs**: All Notes, Internal Notes, Sub Notes, Client Notes
+- **Text area** for adding notes
+- Notes show with author and timestamp after saving
+
+> **Cadstone simplification:** Since internal-only, simplify to just a single notes stream (no sub-tabs needed). Keep author + timestamp display.
+
+##### Sub-Tab: Files
+
+- **Attachments section:**
+  - "Add" button to upload files
+  - "Create new doc" button to create a document inline
+
+##### Sub-Tab: Shifts (only after save)
+
+- **Baseline section:** Shows baseline comparison or "The baseline has not been set on this Schedule"
+- **Shift History section** with sub-tabs: All, Direct, Indirect — shows timeline shift records
+
+##### Sub-Tab: RFIs (only after save)
+
+- **RFIs section** with "Create RFI" button to create a Request for Information linked to this schedule item
+
+> **Cadstone note:** RFIs may not be needed for Cadstone's stonework workflow. Include as a simple section but low priority.
+
+#### 1.3.4 Related Items Tab
+
+- **Related To-Do's section:**
+  - Shows linked to-do items
+  - "Save and Create To-Do" button (only available after initial save)
+
+#### 1.3.5 Footer (After Save)
+
+- **Created by**: Author avatar + name + timestamp (e.g., "Created by Paola Hernandez on Apr 7, 2026, 10:03 AM")
+- **"..." menu**: Copy, Delete
+- **Save button** with dropdown chevron offering: Save, Save and close, Save and new
+- **Keyboard shortcut hint**: Shows Ctrl+S / Cmd+S
+
+---
+
+### 1.4 Baseline Sub-Tab
+
+- **Purpose**: Take a snapshot of the ideal schedule to compare against future changes
+- **"Set Baseline" button** (primary action)
+- **Toolbar**: Settings gear, Schedule Offline toggle, More Actions dropdown, Export dropdown, Filter button
+- **Once set**: Shows a comparison view between baseline and current schedule dates
+
+---
+
+### 1.5 Workday Exceptions Sub-Tab
+
+- **Purpose**: Define holidays, days off, or extra workdays that override the default work schedule
+- **"+ Workday Exception" button** (primary action)
+- **Toolbar**: Settings gear, Schedule Offline toggle, Export dropdown, Filter button
+
+#### Workday Exception Form (full-page form):
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Title | Text input | Yes (★) | e.g., "Company Holiday" |
+| Type | Radio buttons | Yes | Options: Non workday (default), Extra workday |
+| Start date | Date picker | Yes (★) | |
+| End date | Date picker | Yes (★) | |
+| Same every year | Toggle switch | No | Repeats the exception annually |
+| Category | Dropdown | Yes (★) | Select from categories with "+" button to add new and pencil icon to edit |
+| Apply exception to | Radio buttons | Yes | Options: All jobs, Specific jobs |
+| Jobs | Multi-select dropdown | Conditional (★ if "Specific jobs") | Pre-filled with current job |
+| Notes | Text area | No | Max 500 characters |
+
+- **Cancel and Save buttons** in top-right
+
+---
+
+### 1.6 Schedule Filter Panel
+
+A right-side slide-out panel with:
+
+| Filter | Type |
+|--------|------|
+| Standard Filter | Preset dropdown at top |
+| Title | Text search |
+| Assigned To | User search/select |
+| Status | Dropdown: All, None, Upcoming, Completed, In Progress, Incomplete, Past Due, Unconfirmed |
+| Tags | Tag selector |
+| Phases | Phase selector |
+| Other Items | Additional filter field |
+
+- **"Clear all" button** and **"Apply filter" button** at bottom
+
+---
+
+### 1.7 Schedule Settings Modal
+
+Opened via the gear icon. Contains:
+
+**Default Viewing Options:**
+- Default builder view: Dropdown (e.g., "Calendar - Month")
+- Default client view: Dropdown (e.g., "Calendar")
+
+**Default Notification Options:**
+- Default schedule item reminders: Dropdown
+- "Send confirmation request with schedule item reminders" checkbox
+- "Default notify linked subs/vendors" checkbox
+
+**Other Settings (checkboxes):**
+- Show times for hourly items on Calendar - Month view
+- Show job name on Calendar - Month/Week/Day views for All Listed Jobs
+- Automatically mark items complete
+- New Schedule Items - Default to show subs/vendors
+- Include header on schedule PDF exports
+
+**Phases Management:**
+- Table with Phase Name and Color columns
+- "Add Phase" button
+- Each phase row is clickable/editable
+
+> **Cadstone simplification:** Reduce to relevant settings: default view, auto-complete toggle, phase management. Drop external notification settings.
+
+---
+
+## PART 2: DAILY LOGS
+
+Daily Logs are attached to each Job/Project. They live as a tab within the Job detail view.
+
+### 2.1 Daily Logs List Page
+
+**Header area:**
+- Page title: "Daily Logs"
+- Project name displayed above title
+- **Toolbar icons** (right side): Help (?), Settings (gear), Print, Filter, "+ Daily Log" button (primary blue)
+
+**List card display** — Each daily log shows as a card:
+
+| Element | Description |
+|---------|------------|
+| Title link | "Day, Mon DD \| Title" format (e.g., "Tue, Apr 7 \| Kitchen Counter Install") — clickable to open detail view |
+| Author | Avatar/initials circle + full name |
+| Visibility badge | e.g., "Internal" with people icon |
+| Likes count | Heart icon + number |
+| Comments count | Speech bubble icon + number |
+| Attachments count | Document icon + number |
+| Weather summary | Sun/cloud icon + "78°F↑ 56°F↓" (high/low) on far right |
+| Notes preview | Text preview of the notes content |
+| Action icons (right) | Clock/history icon, Print icon, Edit (pencil) icon |
+
+- **Pagination**: "1-1 of X items" at bottom-right
+
+---
+
+### 2.2 Daily Log Create/Edit Form
+
+Opens as a modal/overlay when clicking "+ Daily Log" or editing an existing log.
+
+#### Left Column — Daily Log Information:
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Job | Dropdown | Yes | Pre-filled with current job. Allows changing job assignment |
+| Date | Date picker | Yes (★) | Defaults to today |
+| Title | Text input | No | Free text title |
+| Tags | Tag field | No | "No tags" default. "Add" and "Edit" buttons |
+
+#### Left Column — Permissions:
+
+**Share checkboxes with column header "Share":**
+
+| Role | Share checkbox |
+|------|---------------|
+| Internal Users | ✓ (checked by default) |
+| Subs/Vendors | ☐ |
+| Client | ☐ |
+| Private | ☐ |
+
+> **Cadstone simplification:** Since internal-only, replace with role-based visibility or simply keep "Internal Users" always checked and remove the others. Or add: Estimators, Installers, Admin checkboxes.
+
+**Notify Users:** Multi-select user picker to notify specific users on publish.
+
+#### Right Column — Attachments:
+
+- "Add" button — File upload
+- "Create new doc" button — Inline document creation
+- Uploaded files display as a list with filename, remove option
+
+#### Right Column — Notes:
+
+- Large text area for free-form notes content
+
+#### Right Column — Weather:
+
+- **"Include Weather Conditions" checkbox** (checked by default) — Auto-populates weather data:
+  - Weather icon (sun, cloud, rain, etc.)
+  - Condition text (e.g., "Sunny")
+  - High temperature (e.g., 78°F)
+  - Low temperature (e.g., 56°F)
+  - Wind speed (e.g., "Wind: 8 mph")
+  - Humidity percentage (e.g., "Humidity: 91%")
+  - Total precipitation (e.g., "Total Precip: 0\"")
+  - Timestamp (e.g., "Tue, Apr 7, 2026, 9:58 AM")
+- **"Include Weather Notes" checkbox** — When checked, reveals a "Weather Notes" text area for manual weather notes
+
+> **Cadstone implementation note:** For weather auto-population, integrate a weather API (OpenWeatherMap or similar) using the job's address/location. The system should auto-fetch current conditions when creating a new daily log.
+
+#### Footer:
+
+- **Info icon** (bottom-left)
+- **"Publish" button** (on create) or **"Delete" and "Save" buttons** (on edit)
+
+---
+
+### 2.3 Daily Log Detail View (Read-Only)
+
+After publishing, the daily log displays in a detail view:
+
+**Header:**
+- Breadcrumb: "Project Name / Daily Logs"
+- Title: "Day, Mon DD | Title"
+- Visibility badge (e.g., "Internal")
+- **Toolbar icons**: "..." menu (Print, Delete), Share/external link, Comments, Edit (pencil)
+
+**Main Content Area (left):**
+- **Likes**: Heart icon + count (clickable to like)
+- **Notes section**: Full text of the notes
+
+**Right Sidebar:**
+- **Weather widget**: Weather icon, high/low temps, wind, humidity, precipitation, info (i) icon
+- **To-Do's section**: "+ Add" button to create to-dos linked to this daily log. Shows prompt "Add To-Do's quickly based on today's updates"
+
+---
+
+### 2.4 Comments Panel
+
+Accessed via the comments icon on the detail view. Slides out as a right-side panel.
+
+**Comment type tabs:** Internal, Clients, Subs/vendors
+
+> **Cadstone simplification:** Keep only "Internal" tab since this is an internal tool.
+
+**Comment features:**
+- @mentions to tag team members (autocomplete user names)
+- Photo/image attachment (image icon with dropdown)
+- Link attachment (link icon)
+- Emoji picker (smiley icon with dropdown)
+- Text formatting (Aa button)
+- "Add a comment" text input field
+- "Send" button
+- Reactions on comments (thumbs up, etc.)
+- Reply threads to keep conversations tidy
+
+---
+
+### 2.5 Daily Logs Settings Modal
+
+Opened via the gear icon on the Daily Logs list page.
+
+**Daily Log Setup:**
+- "Stamp Location" checkbox with info icon — Stamps the job location on the daily log
+- "Default Daily Log Notes" text area — Pre-populated notes template for all new logs
+
+**Weather:**
+- "Include Weather Conditions (Default)" checkbox
+- "Include Weather Condition Notes (Default)" checkbox
+
+**Default Daily Log Share Settings:**
+- Table with "Share" and "Notify" columns for: Internal Users, Subs/Vendors, Client
+
+> **Cadstone simplification:** Reduce to Internal Users only.
+
+**Daily Logs Custom Fields:**
+- "+ Custom field" button to add custom data fields to daily logs
+- Table showing custom field name + configuration
+
+---
+
+### 2.6 Daily Logs Filter Panel
+
+Right-side slide-out panel with:
+
+| Filter | Type |
+|--------|------|
+| Standard Filter | Preset dropdown |
+| Shared with | Dropdown: All (default), Internal, Subs/Vendors, Client, Private |
+| Keywords | Text search with info icon |
+| Created by | User search/select |
+| Date | Dropdown: All dates, Custom dates, Today, Today onward, Next 30/14/7 days, Today & tomorrow, Past 7/14/30/45/60/90/180/365 days |
+| Tags | Tag selector |
+
+- **"Clear all" button** and **"Apply filter" button** at bottom
+
+---
+
+## PART 3: WHAT CADSTONE'S TOOL NEEDS (GAP SUMMARY)
+
+### Schedule — What Must Be Added:
+
+1. **Gantt view** — Full horizontal timeline with bars, progress fill, drag support. Time scales: Day, Week, Month, Year. Phases and Critical Path toggles
+2. **Calendar view upgrades** — Week/Day/Agenda period options (currently only Month). "Today" button, month navigation arrows, "Expand All" button
+3. **Schedule Item modal upgrade** — Add all missing fields: End Date (auto-calc), Hourly toggle + Start Time, Reminder dropdown, Display Color with full color palette (16 named colors), Progress slider
+4. **Sub-tabs in Schedule Item** — Predecessors & Links (with dependency types FS/SS and lag), Phases & Tags, Viewing, Notes (with author/timestamp), Files/Attachments, Related Items (To-Do linking)
+5. **Complete checkbox** on saved items (circle mark-complete UI)
+6. **Schedule Settings modal** — Default view preferences, auto-complete toggle, phase management (name + color)
+7. **Filter panel** — Title, Assigned To, Status (All/None/Upcoming/Completed/In Progress/Incomplete/Past Due/Unconfirmed), Tags, Phases
+8. **Baseline sub-tab** — Set/view baseline snapshots for schedule comparison
+9. **Workday Exceptions sub-tab** — CRUD for non-workdays and extra workdays with category, recurring yearly option, job scope
+10. **Schedule History panel** — Audit log of all changes
+11. **List view columns** — Add: ID#, Phase, Duration, Assigned To, Accepted/Pending/Declined counts, Files count. Add sortable columns
+12. **More Actions menu** — Import from templates, track conflicts, delete all, export to PDF
+13. **Save dropdown** — Save, Save and close, Save and new
+14. **Item actions** — Copy item, Delete item
+15. **Schedule items display** on calendar as colored bars spanning date ranges
+
+### Daily Logs — What Must Be Added:
+
+1. **Title field** — Currently missing from the create form
+2. **Tags** — Add/Edit tag support on daily logs
+3. **Attachments section** — File upload ("Add" button) and "Create new doc" button
+4. **Weather integration** — Auto-fetch weather based on job address. Display: condition, icon, high/low temp, wind, humidity, precipitation. Include Weather Notes toggle
+5. **Permissions/Sharing** — Role-based visibility checkboxes (Estimators, Installers, Admin)
+6. **Notify Users** — User multi-select to send notifications on publish
+7. **Detail view** — Full read-only view with: breadcrumb navigation, likes (heart), weather sidebar widget, To-Do's section with "+ Add" button
+8. **Comments system** — Right-side panel with: text comments, @mentions, photo attachments, link attachments, emoji picker, text formatting, reactions, reply threads
+9. **List card upgrades** — Add: author avatar + name, visibility badge, likes/comments/attachments counts, weather summary (icon + temps), action icons (history, print, edit)
+10. **Filter panel** — Shared with, Keywords, Created by, Date (with 15+ preset date ranges), Tags
+11. **Daily Logs Settings modal** — Stamp Location, Default Notes template, Weather defaults, Custom Fields support
+12. **Publish workflow** — "Publish" button (not just "Save") for initial creation. "Delete" and "Save" for editing existing logs
+13. **Print support** — Print icon on list cards and detail view
+
+---
+
+## PART 4: RECOMMENDED BUILD ORDER
+
+**Phase 1 — Core Schedule Upgrades (Highest Priority — matches client's "by X date" request):**
+1. Upgrade Schedule Item modal with all fields (End Date auto-calc, Reminder, Display Color, Progress slider, Hourly toggle)
+2. Schedule items rendering as colored bars on calendar
+3. Complete/incomplete checkbox on items
+4. Notes sub-tab with author + timestamp
+5. Files/Attachments sub-tab
+
+**Phase 2 — Schedule Views:**
+6. Calendar period options (Week, Day, Agenda)
+7. List view with full column set
+8. Gantt view (timeline bars with progress)
+9. Filter panel
+
+**Phase 3 — Daily Logs Upgrade (Matches client's "text and photo updates" request):**
+10. Daily Log create form with all fields (Title, Tags, Attachments, Notes, Weather)
+11. Daily Log detail view (read-only with weather sidebar, likes, To-Do's)
+12. Daily Log list card upgrades (author, badges, counts, weather)
+13. Comments system on daily logs
+14. Filter panel for daily logs
+
+**Phase 4 — Advanced Schedule Features:**
+15. Phases & Tags management
+16. Predecessors & Links (dependencies)
+17. Baseline sub-tab
+18. Workday Exceptions sub-tab
+19. Schedule Settings modal
+20. Schedule History panel
+21. More Actions menu (export to PDF, import templates, etc.)
+
+**Phase 5 — Polish:**
+22. Daily Logs Settings modal + Custom Fields
+23. Save dropdown (Save and close / Save and new)
+24. Copy/Delete item actions
+25. Print support
+26. Gantt: Draft mode, Critical Path, Phases toggle

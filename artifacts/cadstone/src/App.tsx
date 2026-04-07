@@ -6,6 +6,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { bootstrapAuthSession } from "@/lib/api"
 import DashboardPage from "@/pages/dashboard"
+import FilesDocumentsPage from "@/pages/files-documents"
+import FilesPhotosPage from "@/pages/files-photos"
+import FilesVideosPage from "@/pages/files-videos"
 import JobDailyLogsPage from "@/pages/job-daily-logs"
 import JobDetailPage from "@/pages/job-detail"
 import JobFilesDocumentsPage from "@/pages/job-files-documents"
@@ -75,6 +78,9 @@ function AppRoutes({ ready }: { ready: boolean }) {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/files/documents" element={<FilesDocumentsPage />} />
+          <Route path="/files/photos" element={<FilesPhotosPage />} />
+          <Route path="/files/videos" element={<FilesVideosPage />} />
           <Route path="/jobs/:jobId" element={<JobDetailPage />}>
             <Route index element={<Navigate to="summary" replace />} />
             <Route path="summary" element={<JobSummaryPage />} />

@@ -135,11 +135,14 @@ function displayName(file: FileItem) {
 export default function FileBrowser({
   mediaType,
   defaultView,
+  jobIdOverride,
 }: {
   mediaType: MediaType
   defaultView?: ViewMode
+  jobIdOverride?: string
 }) {
-  const { jobId } = useParams<{ jobId: string }>()
+  const { jobId: jobIdParam } = useParams<{ jobId: string }>()
+  const jobId = jobIdOverride ?? jobIdParam
 
   const resolvedDefault: ViewMode =
     defaultView ?? (mediaType === "document" ? "list" : "grid")
@@ -339,13 +342,11 @@ export default function FileBrowser({
 
   const mediaLabel =
     mediaType === "document" ? "Documents" : mediaType === "photo" ? "Photos" : "Videos"
-  const canToggleView = mediaType !== "document"
+  const canToggleView = true
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
       <div className="flex items-center justify-between gap-2">
-        {/* Breadcrumb */}
         <div className="flex items-center gap-1.5 text-sm min-w-0">
           <button
             onClick={() => navigateTo(null)}
@@ -372,9 +373,7 @@ export default function FileBrowser({
           ))}
         </div>
 
-        {/* Controls */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Sort */}
           <Select
             value={sortBy}
             onValueChange={(v) => {
@@ -394,7 +393,6 @@ export default function FileBrowser({
             </SelectContent>
           </Select>
 
-          {/* Grid/List toggle — only for Photos and Videos */}
           {canToggleView && (
             <div className="flex border border-[#E5E7EB] rounded-md overflow-hidden">
               <button
@@ -467,7 +465,6 @@ export default function FileBrowser({
         </div>
       ) : (
         <>
-          {/* Folder tile cards */}
           {sortedFolders.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {sortedFolders.map((folder) => (
@@ -486,7 +483,6 @@ export default function FileBrowser({
             </div>
           )}
 
-          {/* Files */}
           {currentFolderId && (
             <>
               {filesLoading ? (
@@ -542,7 +538,6 @@ export default function FileBrowser({
         </>
       )}
 
-      {/* Create Folder Dialog */}
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -573,7 +568,6 @@ export default function FileBrowser({
         </DialogContent>
       </Dialog>
 
-      {/* Rename Folder Dialog */}
       <Dialog
         open={!!renameFolderTarget}
         onOpenChange={(open) => {
@@ -612,7 +606,6 @@ export default function FileBrowser({
         </DialogContent>
       </Dialog>
 
-      {/* Delete Folder Alert */}
       <AlertDialog
         open={!!deleteConfirmFolder}
         onOpenChange={(open) => {
@@ -641,7 +634,6 @@ export default function FileBrowser({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Photo Lightbox */}
       <Dialog
         open={!!lightboxFile}
         onOpenChange={(open) => {
@@ -682,7 +674,6 @@ export default function FileBrowser({
         </DialogContent>
       </Dialog>
 
-      {/* Video Player Dialog */}
       <Dialog
         open={!!videoPlayerFile}
         onOpenChange={(open) => {
@@ -766,7 +757,6 @@ function FolderCard({
           </div>
         </div>
 
-        {/* Context menu */}
         <div className="relative z-10">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -826,7 +816,6 @@ function PhotoGrid({
             onClick={() => onOpenLightbox(file)}
             className="group flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-blue-300 transition-colors text-left"
           >
-            {/* Thumbnail */}
             <div className="relative aspect-square overflow-hidden bg-slate-100">
               {hasUrl ? (
                 <img
@@ -846,10 +835,8 @@ function PhotoGrid({
                   <span className="text-3xl">🖼️</span>
                 </div>
               )}
-              {/* Hover zoom indicator */}
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
             </div>
-            {/* Caption — always visible */}
             <div className="px-2.5 py-2 border-t border-[#E5E7EB] bg-white">
               <p className="text-xs font-medium text-slate-800 truncate">{displayName(file)}</p>
               <p className="text-xs text-slate-400">{formatFileSize(file.fileSize)}</p>
@@ -876,13 +863,11 @@ function VideoGrid({
           onClick={() => onOpenPlayer(file)}
           className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-blue-300 transition-colors text-left"
         >
-          {/* Play overlay */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="size-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/30 transition-colors">
               <Play className="size-5 text-white fill-white ml-0.5" />
             </div>
           </div>
-          {/* Bottom bar */}
           <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2">
             <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
             <p className="text-white/60 text-xs">{formatFileSize(file.fileSize)}</p>

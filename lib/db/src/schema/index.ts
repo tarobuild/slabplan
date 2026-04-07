@@ -46,9 +46,13 @@ export const projectTypes = [
 ] as const;
 export const reminderOptions = [
   "none",
+  "1_hour_before",
+  "2_hours_before",
+  "4_hours_before",
+  "8_hours_before",
+  "12_hours_before",
   "1_day_before",
-  "3_days_before",
-  "1_week_before",
+  "2_days_before",
 ] as const;
 
 export const users = pgTable("users", {
@@ -213,11 +217,40 @@ export const leadAttachments = pgTable(
   (table) => [unique("lead_attachments_lead_file_unique").on(table.leadId, table.fileId)],
 );
 
+export const schedulePhases = pgTable(
+  "schedule_phases",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    jobId: uuid("job_id")
+      .references(() => jobs.id, { onDelete: "cascade" })
+      .notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    ...baseTimestamps,
+  },
+  (table) => [unique("schedule_phases_job_name_unique").on(table.jobId, table.name)],
+);
+
+export const scheduleTagSettings = pgTable(
+  "schedule_tag_settings",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    jobId: uuid("job_id")
+      .references(() => jobs.id, { onDelete: "cascade" })
+      .notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    ...baseTimestamps,
+  },
+  (table) => [unique("schedule_tag_settings_job_name_unique").on(table.jobId, table.name)],
+);
+
 export const scheduleItems = pgTable("schedule_items", {
   id: uuid("id").primaryKey().$defaultFn(createId),
   jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
+  schedulePhaseId: uuid("schedule_phase_id").references(() => schedulePhases.id, {
+    onDelete: "set null",
+  }),
   title: varchar("title", { length: 255 }).notNull(),
-  displayColor: varchar("display_color", { length: 50 }).notNull().default("blue"),
+  displayColor: varchar("display_color", { length: 50 }).notNull().default("#2563eb"),
   startDate: date("start_date", { mode: "string" }).notNull(),
   workDays: integer("work_days").notNull(),
   endDate: date("end_date", { mode: "string" }).notNull(),
@@ -226,6 +259,11 @@ export const scheduleItems = pgTable("schedule_items", {
   endTime: time("end_time"),
   progress: integer("progress").default(0),
   reminder: varchar("reminder", { length: 100 }).default("none"),
+  showOnGantt: boolean("show_on_gantt").default(true),
+  visibleToEstimators: boolean("visible_to_estimators").default(true),
+  visibleToInstallers: boolean("visible_to_installers").default(true),
+  visibleToOfficeStaff: boolean("visible_to_office_staff").default(true),
+  isComplete: boolean("is_complete").default(false),
   notes: text("notes"),
   createdBy: uuid("created_by").references(() => users.id),
   ...baseTimestamps,
@@ -249,6 +287,44 @@ export const scheduleItemAssignees = pgTable(
     ),
   ],
 );
+
+export const scheduleItemNotes = pgTable("schedule_item_notes", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  scheduleItemId: uuid("schedule_item_id")
+    .references(() => scheduleItems.id, { onDelete: "cascade" })
+    .notNull(),
+  note: text("note").notNull(),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const scheduleItemAttachments = pgTable(
+  "schedule_item_attachments",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    scheduleItemId: uuid("schedule_item_id")
+      .references(() => scheduleItems.id, { onDelete: "cascade" })
+      .notNull(),
+    fileId: uuid("file_id")
+      .references(() => files.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("schedule_item_attachments_item_file_unique").on(table.scheduleItemId, table.fileId),
+  ],
+);
+
+export const scheduleItemTodos = pgTable("schedule_item_todos", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  scheduleItemId: uuid("schedule_item_id")
+    .references(() => scheduleItems.id, { onDelete: "cascade" })
+    .notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  isComplete: boolean("is_complete").default(false),
+  createdBy: uuid("created_by").references(() => users.id),
+  ...baseTimestamps,
+});
 
 export const dailyLogs = pgTable("daily_logs", {
   id: uuid("id").primaryKey().$defaultFn(createId),
@@ -321,8 +397,13 @@ export type LeadSalesperson = typeof leadSalespeople.$inferSelect;
 export type LeadTag = typeof leadTags.$inferSelect;
 export type LeadSource = typeof leadSources.$inferSelect;
 export type LeadAttachment = typeof leadAttachments.$inferSelect;
+export type SchedulePhase = typeof schedulePhases.$inferSelect;
+export type ScheduleTagSetting = typeof scheduleTagSettings.$inferSelect;
 export type ScheduleItem = typeof scheduleItems.$inferSelect;
 export type ScheduleItemAssignee = typeof scheduleItemAssignees.$inferSelect;
+export type ScheduleItemNote = typeof scheduleItemNotes.$inferSelect;
+export type ScheduleItemAttachment = typeof scheduleItemAttachments.$inferSelect;
+export type ScheduleItemTodo = typeof scheduleItemTodos.$inferSelect;
 export type DailyLog = typeof dailyLogs.$inferSelect;
 export type DailyLogAttachment = typeof dailyLogAttachments.$inferSelect;
 export type DailyLogTag = typeof dailyLogTags.$inferSelect;

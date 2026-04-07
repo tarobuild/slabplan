@@ -1,8 +1,11 @@
+import { useEffect, useState } from "react"
 import {
   ArrowLeft,
   BriefcaseBusiness,
   CalendarDays,
+  ChevronDown,
   FileText,
+  Folder,
   FolderKanban,
   ImageIcon,
   LayoutDashboard,
@@ -46,10 +49,22 @@ export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
   const location = useLocation()
   const match = location.pathname.match(/^\/jobs\/([^/]+)/)
   const jobId = match?.[1] ?? null
+  const [filesOpen, setFilesOpen] = useState(
+    () => typeof window !== "undefined" && window.location.pathname.startsWith("/files"),
+  )
 
-  const globalNav: NavItem[] = [
+  const globalNavPrimary: NavItem[] = [
     { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
     { label: "Jobs", to: "/jobs", icon: BriefcaseBusiness, end: true },
+  ]
+
+  const filesNav: NavItem[] = [
+    { label: "Documents", to: "/files/documents", icon: FileText },
+    { label: "Photos", to: "/files/photos", icon: ImageIcon },
+    { label: "Videos", to: "/files/videos", icon: Video },
+  ]
+
+  const globalNavSecondary: NavItem[] = [
     { label: "Sales", to: "/sales/leads", icon: Users },
     { label: "Settings", to: "/settings", icon: Settings },
   ]
@@ -64,6 +79,12 @@ export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
         { label: "Daily Logs", to: `/jobs/${jobId}/daily-logs`, icon: FileText },
       ]
     : []
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/files")) {
+      setFilesOpen(true)
+    }
+  }, [location.pathname])
 
   const content = (
     <div className="flex h-full flex-col border-r border-[#E5E7EB] bg-white">
@@ -85,7 +106,37 @@ export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
         </>
       ) : (
         <div className="space-y-1 px-3 py-3">
-          {globalNav.map((item) => (
+          {globalNavPrimary.map((item) => (
+            <SidebarLink key={item.to} item={item} />
+          ))}
+          <div className="space-y-1">
+            <Button
+              variant="ghost"
+              className={navButtonClass(location.pathname.startsWith("/files"))}
+              onClick={() => setFilesOpen((open) => !open)}
+            >
+              <Folder className="size-4" />
+              <span className="flex-1 text-left">Files</span>
+              <ChevronDown
+                className={cn("ml-auto size-4 transition-transform", filesOpen && "rotate-180")}
+              />
+            </Button>
+            {filesOpen && (
+              <div className="space-y-1 pl-3">
+                {filesNav.map((item) => (
+                  <NavLink key={item.to} to={item.to}>
+                    {({ isActive }) => (
+                      <Button variant="ghost" className={cn(navButtonClass(isActive), "pl-6")}>
+                        <item.icon className="size-4" />
+                        {item.label}
+                      </Button>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
+          {globalNavSecondary.map((item) => (
             <SidebarLink key={item.to} item={item} />
           ))}
         </div>

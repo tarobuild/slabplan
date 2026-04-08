@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { files, folders, jobs, type NewJob, users } from "@workspace/db/schema";
+import { clients, files, folders, jobs, type NewJob, users } from "@workspace/db/schema";
 import { ensureSystemFolders, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
@@ -91,6 +91,7 @@ const jobPayloadSchema = z.object({
     }),
   permitNumber: optionalString,
   projectManagerId: z.string().uuid().nullable().optional().default(null),
+  clientId: z.string().uuid().nullable().optional().default(null),
 });
 
 function getParam(value: string | string[] | undefined, label: string) {
@@ -124,6 +125,7 @@ function toJobInsert(data: z.infer<typeof jobPayloadSchema>, createdBy: string):
     squareFeet: data.squareFeet ?? null,
     permitNumber: data.permitNumber ?? null,
     projectManagerId: data.projectManagerId ?? null,
+    clientId: data.clientId ?? null,
     createdBy,
   };
 }
@@ -153,6 +155,8 @@ async function findJobById(id: string) {
       permitNumber: jobs.permitNumber,
       projectManagerId: jobs.projectManagerId,
       projectManagerName: projectManagers.fullName,
+      clientId: jobs.clientId,
+      clientName: clients.companyName,
       createdAt: jobs.createdAt,
       updatedAt: jobs.updatedAt,
       createdById: users.id,
@@ -161,6 +165,7 @@ async function findJobById(id: string) {
     .from(jobs)
     .leftJoin(users, eq(jobs.createdBy, users.id))
     .leftJoin(projectManagers, eq(jobs.projectManagerId, projectManagers.id))
+    .leftJoin(clients, eq(jobs.clientId, clients.id))
     .where(and(eq(jobs.id, id), isNull(jobs.deletedAt)))
     .limit(1);
 
@@ -223,10 +228,13 @@ router.get(
         workDays: jobs.workDays,
         squareFeet: jobs.squareFeet,
         permitNumber: jobs.permitNumber,
+        clientId: jobs.clientId,
+        clientName: clients.companyName,
         createdAt: jobs.createdAt,
         updatedAt: jobs.updatedAt,
       })
       .from(jobs)
+      .leftJoin(clients, eq(jobs.clientId, clients.id))
       .where(whereClause)
       .orderBy(desc(jobs.createdAt), asc(jobs.title))
       .limit(query.data.pageSize)

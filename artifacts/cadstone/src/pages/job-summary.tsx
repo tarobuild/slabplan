@@ -33,6 +33,8 @@ type Job = {
   permitNumber: string | null
   projectManagerId: string | null
   projectManagerName: string | null
+  clientId: string | null
+  clientName: string | null
   projectedStart: string | null
   projectedCompletion: string | null
   actualStart: string | null
@@ -43,6 +45,7 @@ type Job = {
 }
 
 type UserOption = { id: string; fullName: string }
+type ClientOption = { id: string; companyName: string }
 
 const JOB_TYPES = ["countertops", "backsplash", "flooring", "custom"]
 const WORK_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -60,9 +63,11 @@ export default function JobSummaryPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [userOptions, setUserOptions] = useState<UserOption[]>([])
+  const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
 
   useEffect(() => {
     api.get("/users").then(r => setUserOptions(r.data.users ?? [])).catch(() => {})
+    api.get("/clients?pageSize=200").then(r => setClientOptions(r.data.clients ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -109,6 +114,7 @@ export default function JobSummaryPage() {
         squareFeet: job.squareFeet || null,
         permitNumber: job.permitNumber || null,
         projectManagerId: job.projectManagerId || null,
+        clientId: job.clientId || null,
       })
       setJob(res.data.job ?? res.data)
       toast.success("Job saved")
@@ -316,6 +322,21 @@ export default function JobSummaryPage() {
           {/* Additional Information */}
           <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
             <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Additional Information</h3>
+            <div className="space-y-1.5">
+              <Label>Client</Label>
+              <Select
+                value={job.clientId ?? "_none"}
+                onValueChange={v => setField("clientId", v === "_none" ? null : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Link to a client" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— None —</SelectItem>
+                  {clientOptions.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5">
               <Label>Project Manager</Label>
               <Select

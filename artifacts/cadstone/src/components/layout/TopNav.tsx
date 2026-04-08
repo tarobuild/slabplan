@@ -108,6 +108,21 @@ export default function TopNav() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Clients */}
+          <NavLink
+            to="/clients"
+            className={({ isActive }) =>
+              cn(
+                "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
+                isActive
+                  ? "text-[#E85D04] bg-white/10"
+                  : "text-white/70 hover:text-white hover:bg-white/10",
+              )
+            }
+          >
+            Clients
+          </NavLink>
+
           {/* Sales */}
           <NavLink
             to="/sales/leads"

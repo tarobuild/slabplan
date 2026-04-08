@@ -5,6 +5,7 @@ import AppLayout from "@/components/layout/AppLayout"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { bootstrapAuthSession } from "@/lib/api"
+import ClientsPage from "@/pages/clients"
 import DashboardPage from "@/pages/dashboard"
 import FilesDocumentsPage from "@/pages/files-documents"
 import FilesPhotosPage from "@/pages/files-photos"
@@ -93,6 +94,7 @@ function AppRoutes({ ready }: { ready: boolean }) {
             <Route path="daily-logs" element={<JobDailyLogsPage />} />
           </Route>
           <Route path="/sales/leads" element={<LeadsPage />} />
+          <Route path="/clients" element={<ClientsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>

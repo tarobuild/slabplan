@@ -69,6 +69,8 @@ function fmtCurrency(v: string | null) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v))
 }
 
+type ClientOption = { id: string; companyName: string }
+
 type CreateJobForm = {
   title: string
   status: string
@@ -81,12 +83,14 @@ type CreateJobForm = {
   contractPrice: string
   projectedStart: string
   projectedCompletion: string
+  clientId: string
 }
 
 const emptyForm: CreateJobForm = {
   title: "", status: "open", jobType: "", contractType: "",
   streetAddress: "", city: "", state: "", zipCode: "",
   contractPrice: "", projectedStart: "", projectedCompletion: "",
+  clientId: "",
 }
 
 export default function JobsPage() {
@@ -102,8 +106,15 @@ export default function JobsPage() {
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
+
+  useEffect(() => {
+    api.get("/clients?pageSize=200")
+      .then(r => setClientOptions(r.data.clients ?? []))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if ((location.state as any)?.openCreate) {
@@ -157,6 +168,7 @@ export default function JobsPage() {
         contractPrice: form.contractPrice || null,
         projectedStart: form.projectedStart || null,
         projectedCompletion: form.projectedCompletion || null,
+        clientId: form.clientId || null,
       })
       toast.success("Job created")
       setCreateOpen(false)
@@ -313,6 +325,18 @@ export default function JobsPage() {
                 <Label htmlFor="title">Title *</Label>
                 <Input id="title" value={form.title} onChange={setField("title")} required placeholder="e.g. Johnson Kitchen Countertops" />
               </div>
+              {clientOptions.length > 0 && (
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Client</Label>
+                  <Select value={form.clientId} onValueChange={v => setForm(f => ({ ...f, clientId: v === "_none" ? "" : v }))}>
+                    <SelectTrigger><SelectValue placeholder="Link to a client (optional)" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">— None —</SelectItem>
+                      {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label>Job Type</Label>
                 <Select value={form.jobType} onValueChange={v => setForm(f => ({ ...f, jobType: v }))}>

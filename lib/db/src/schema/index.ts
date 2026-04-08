@@ -74,6 +74,35 @@ export const users = pgTable("users", {
   ...softDeleteTimestamp,
 });
 
+export const clients = pgTable("clients", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  companyName: varchar("company_name", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 20 }),
+  email: varchar("email", { length: 255 }),
+  streetAddress: varchar("street_address", { length: 255 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 2 }),
+  zipCode: varchar("zip_code", { length: 10 }),
+  notes: text("notes"),
+  createdBy: uuid("created_by").references(() => users.id),
+  ...baseTimestamps,
+  ...softDeleteTimestamp,
+});
+
+export const clientContacts = pgTable("client_contacts", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  firstName: varchar("first_name", { length: 100 }),
+  lastName: varchar("last_name", { length: 100 }),
+  title: varchar("title", { length: 100 }),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 20 }),
+  cellPhone: varchar("cell_phone", { length: 20 }),
+  isPrimary: boolean("is_primary").default(false),
+  ...baseTimestamps,
+  ...softDeleteTimestamp,
+});
+
 export const jobs = pgTable("jobs", {
   id: uuid("id").primaryKey().$defaultFn(createId),
   title: varchar("title", { length: 255 }).notNull(),
@@ -95,6 +124,7 @@ export const jobs = pgTable("jobs", {
   squareFeet: numeric("square_feet", { precision: 10, scale: 2 }),
   permitNumber: varchar("permit_number", { length: 100 }),
   projectManagerId: uuid("project_manager_id").references(() => users.id),
+  clientId: uuid("client_id").references(() => clients.id),
   createdBy: uuid("created_by").references(() => users.id),
   ...baseTimestamps,
   ...softDeleteTimestamp,
@@ -563,6 +593,10 @@ export const activityLog = pgTable("activity_log", {
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type Client = typeof clients.$inferSelect;
+export type NewClient = typeof clients.$inferInsert;
+export type ClientContact = typeof clientContacts.$inferSelect;
+export type NewClientContact = typeof clientContacts.$inferInsert;
 export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
 export type Folder = typeof folders.$inferSelect;

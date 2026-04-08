@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import activityRouter from "./activity";
 import authRouter from "./auth";
+import clientsRouter from "./clients";
 import dashboardRouter from "./dashboard";
 import dailyLogAdminRouter from "./daily-log-admin";
 import dailyLogsRouter from "./daily-logs";
@@ -30,5 +31,6 @@ router.use(scheduleRouter);
 router.use("/users", usersRouter);
 router.use("/jobs", jobsRouter);
 router.use("/leads", leadsRouter);
+router.use("/clients", clientsRouter);
 
 export default router;

@@ -1,0 +1,73 @@
+FIXED BUT WITH REMAINING GAPS
+                                                                                                                    
+  Finding #6: Sharing Defaults Mapping (Critical) — ⚠️  PARTIALLY FIXED
+                                                                                                                    
+  job-daily-logs.tsx:275-281 introduces dailyLogShareDefaults mapping, and buildDefaultForm on line 589-591 uses it 
+  correctly via settings[dailyLogShareDefaults.shareClient]. The mapping documents the legacy naming (shareClient =
+  estimators). However, the comment says the backend uses "legacy field names" — this means the actual field        
+  semantics mismatch still exists at the API level. The frontend workaround is sound, but the underlying schema
+  naming is still confusing and a source of future bugs.
+
+  Finding #24: ILIKE Escape — ⚠️  MISSED IN ONE SPOT                                                                 
+   
+  daily-log-admin.ts:357 still uses raw %${query.data.keywords}% without buildContainsLikePattern. This endpoint was
+   missed by Codex.
+                                                                                                                    
+  ---                                                                                                               
+  NOT FIXED (Codex explicitly scoped out or missed)
+                                                                                                                    
+  ┌─────┬──────────────────────────────────────┬──────────┬─────────────────────────────────────────────────────┐
+  │  #  │               Finding                │ Severity │                       Status                        │   
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤
+  │ 5   │ Hardcoded JWT dev secrets            │ Critical │ ❌ Codex explicitly skipped                         │   
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤
+  │ 8   │ OpenAPI spec is a stub               │ Critical │ ❌ Not addressed                                    │   
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤   
+  │ 11  │ Refresh token reused as upload       │ High     │ ❌ Still sends refresh token as upload cookie       │   
+  │     │ cookie                               │          │ (auth.ts:198)                                       │   
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤
+  │ 12  │ getActivityEntries full table scan   │ High     │ ❌ Not addressed                                    │   
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤   
+  │ 13  │ No CSRF protection                   │ High     │ ❌ Not addressed                                    │
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤   
+  │ 14  │ Race conditions / missing            │ High     │ ❌ Codex explicitly skipped                         │
+  │     │ transactions                         │          │                                                     │
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤
+  │ 16  │ Missing pagination on many endpoints │ High     │ ❌ Not addressed                                    │
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤   
+  │ 17  │ updatedAt never auto-updates         │ High     │ ❌ Codex explicitly skipped (schema)                │
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤   
+  │ 18  │ Timestamps without timezone          │ High     │ ❌ Codex explicitly skipped (schema)                │   
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤
+  │ 19  │ Missing NOT NULL on ~16 FKs          │ High     │ ❌ Codex explicitly skipped (schema)                │   
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤
+  │ 20  │ Soft delete + unique constraint      │ High     │ ❌ Codex explicitly skipped (schema)                │   
+  │     │ conflict                             │          │                                                     │
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤   
+  │ 21  │ Missing cascading deletes on user    │ High     │ ❌ Codex explicitly skipped (schema)                │
+  │     │ FKs                                  │          │                                                     │   
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤
+  │ 23  │ strictFunctionTypes disabled         │ High     │ ❌ Not addressed                                    │   
+  ├─────┼──────────────────────────────────────┼──────────┼─────────────────────────────────────────────────────┤
+  │ 31  │ Missing indexes on ~15 FK columns    │ Medium   │ ❌ Codex explicitly skipped (schema)                │
+  └─────┴──────────────────────────────────────┴──────────┴─────────────────────────────────────────────────────┘   
+   
+  Also not addressed (Medium/Low from original report):                                                             
+  - No Content-Disposition: attachment on file serving route (stored XSS vector for .html uploads — helmet's nosniff
+   helps but doesn't fully prevent this)                                                                            
+  - Registration race condition (check-then-insert without transaction)
+  - purgeFolder deletes files before DB records without transaction                                                 
+  - void ensureUploadRoot() silently ignores errors                                                                 
+  - Archive error handler crashes Node process (throw in event callback)                                            
+  - Socket.IO never re-validates tokens after connection                                                            
+  - Frontend: sidebar never refetches, sidebar swallows errors, file uploads have no client-side validation,        
+  UTC/local timezone mixing in schedule, login says "Username" sends "email", no unsaved changes warning, job       
+  summary doesn't update parent context                                                                             
+                  
+  ---                                                                                                               
+  NEW ISSUE INTRODUCED
+                      
+  The in-memory rate limiter (rate-limit.ts:17) uses a global Map with a MAX_BUCKETS = 5000 cap. Pruning only
+  triggers when the map is full (line 39). In a multi-instance deployment (the .replit uses autoscale), each        
+  instance has its own map — an attacker can distribute requests across instances to bypass limits entirely. For
+  production, this should use a shared store (Redis).               

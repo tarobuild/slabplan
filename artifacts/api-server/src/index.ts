@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import app from "./app";
+import app, { prepareApp } from "./app";
 import { logger } from "./lib/logger";
 import { initRealtime } from "./lib/realtime";
 
@@ -13,6 +13,8 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 async function bootstrap() {
+  await prepareApp();
+
   const server = createServer(app);
 
   initRealtime(server);

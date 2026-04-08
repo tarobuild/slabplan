@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { useParams } from "react-router-dom"
+import { type Dispatch, type SetStateAction, useEffect, useState } from "react"
+import { useOutletContext, useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
+import { invalidateAppData } from "@/lib/data-refresh"
 import { toast } from "sonner"
 
 type Job = {
@@ -57,13 +59,36 @@ function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
+function serializeJob(job: Job | null) {
+  if (!job) return ""
+
+  return JSON.stringify({
+    ...job,
+    workDays: [...(job.workDays ?? [])].sort(),
+  })
+}
+
+type JobDetailContext = {
+  setJob: Dispatch<SetStateAction<{
+    id: string
+    title: string
+    status: "open" | "closed" | "archived"
+    city: string | null
+    state: string | null
+  } | null>>
+}
+
 export default function JobSummaryPage() {
   const { jobId } = useParams<{ jobId: string }>()
+  const { setJob: setParentJob } = useOutletContext<JobDetailContext>()
   const [job, setJob] = useState<Job | null>(null)
+  const [savedJob, setSavedJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [userOptions, setUserOptions] = useState<UserOption[]>([])
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
+  const hasUnsavedChanges = !!job && !!savedJob && serializeJob(job) !== serializeJob(savedJob)
+  const unsavedChanges = useUnsavedChangesGuard(hasUnsavedChanges && !saving)
 
   useEffect(() => {
     api.get("/users").then(r => setUserOptions(r.data.users ?? [])).catch(() => {})
@@ -74,7 +99,11 @@ export default function JobSummaryPage() {
     if (!jobId) return
     setLoading(true)
     api.get(`/jobs/${jobId}`)
-      .then(r => setJob(r.data.job ?? r.data))
+      .then(r => {
+        const nextJob = r.data.job ?? r.data
+        setJob(nextJob)
+        setSavedJob(nextJob)
+      })
       .finally(() => setLoading(false))
   }, [jobId])
 
@@ -116,7 +145,21 @@ export default function JobSummaryPage() {
         projectManagerId: job.projectManagerId || null,
         clientId: job.clientId || null,
       })
-      setJob(res.data.job ?? res.data)
+      const updatedJob = res.data.job ?? res.data
+      setJob(updatedJob)
+      setSavedJob(updatedJob)
+      setParentJob((current) =>
+        current
+          ? {
+              ...current,
+              title: updatedJob.title,
+              status: updatedJob.status,
+              city: updatedJob.city,
+              state: updatedJob.state,
+            }
+          : current,
+      )
+      invalidateAppData(["jobs", "navigation"])
       toast.success("Job saved")
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to save")
@@ -382,6 +425,9 @@ export default function JobSummaryPage() {
           {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
           Save Changes
         </Button>
+        {unsavedChanges.isDirty ? (
+          <p className="mt-2 text-sm font-medium text-amber-700">Unsaved changes</p>
+        ) : null}
       </div>
     </div>
   )

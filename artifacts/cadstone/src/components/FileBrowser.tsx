@@ -52,6 +52,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
+import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
 import { toast } from "sonner"
 
 type FolderItem = {
@@ -169,6 +170,7 @@ export default function FileBrowser({
   const [deletingFolder, setDeletingFolder] = useState(false)
 
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [lightboxFile, setLightboxFile] = useState<FileItem | null>(null)
@@ -192,7 +194,7 @@ export default function FileBrowser({
   const loadFiles = (folderId: string) => {
     setFilesLoading(true)
     api
-      .get(`/folders/${folderId}/files`)
+      .get(`/folders/${folderId}/files?page=1&limit=100`)
       .then((r) => setFiles(r.data.files ?? []))
       .catch((err: unknown) => toast.error(getApiErrorMessage(err, "Failed to load files")))
       .finally(() => setFilesLoading(false))
@@ -202,6 +204,7 @@ export default function FileBrowser({
     setCurrentFolderId(null)
     setFiles([])
     setBreadcrumb([])
+    setUploadError(null)
     loadFolders(null)
   }, [jobId, mediaType])
 
@@ -272,14 +275,24 @@ export default function FileBrowser({
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!currentFolderId || !e.target.files?.length) return
+    const selectedFiles = Array.from(e.target.files)
+    const validationError = validateSelectedFiles(selectedFiles, mediaType)
+
+    if (validationError) {
+      setUploadError(validationError)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      return
+    }
+
+    setUploadError(null)
     const formData = new FormData()
-    Array.from(e.target.files).forEach((f) => formData.append("files", f))
+    selectedFiles.forEach((file) => formData.append("files", file))
     setUploading(true)
     try {
       await api.post(`/folders/${currentFolderId}/files`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       })
-      toast.success(`${e.target.files.length} file(s) uploaded`)
+      toast.success(`${selectedFiles.length} file(s) uploaded`)
       loadFiles(currentFolderId)
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, "Upload failed"))
@@ -426,6 +439,7 @@ export default function FileBrowser({
                 ref={fileInputRef}
                 type="file"
                 multiple
+                accept={uploadAcceptForMediaType(mediaType)}
                 className="hidden"
                 onChange={handleUpload}
               />
@@ -456,6 +470,12 @@ export default function FileBrowser({
           </Button>
         </div>
       </div>
+
+      {uploadError ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {uploadError}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="space-y-2">

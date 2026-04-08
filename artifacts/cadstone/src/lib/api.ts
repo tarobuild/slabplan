@@ -12,13 +12,19 @@ type AuthResponse = {
   user: AuthUser
 }
 
+const defaultApiHeaders = {
+  "X-Requested-With": "XMLHttpRequest",
+}
+
 export const authApi = axios.create({
   baseURL: "/api",
+  headers: { ...defaultApiHeaders },
   withCredentials: true,
 })
 
 export const api = axios.create({
   baseURL: "/api",
+  headers: { ...defaultApiHeaders },
   withCredentials: true,
 })
 

@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useParams } from "react-router-dom"
 import { api } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
 
 type Job = {
@@ -32,13 +33,27 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const loadJob = (showLoading = false) => {
     if (!jobId) return
+    if (showLoading) {
+      setLoading(true)
+    }
+
     api
       .get(`/jobs/${jobId}`)
       .then((r) => setJob(r.data.job ?? r.data))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (showLoading) {
+          setLoading(false)
+        }
+      })
+  }
+
+  useEffect(() => {
+    loadJob(true)
   }, [jobId])
+
+  useEffect(() => subscribeToDataRefresh("jobs", () => loadJob()), [jobId])
 
   return (
     <div className="space-y-0">

@@ -11,6 +11,7 @@ import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { useAuthStore } from "@/store/auth"
 import { cn } from "@/lib/utils"
 import {
@@ -467,14 +468,29 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchCal() }, [fetchCal])
 
-  useEffect(() => {
-    api.get("/activity?limit=12")
-      .then(r => setActivity(r.data.entries ?? []))
+  const fetchSidebarData = useCallback(() => {
+    setSidebarLoading(true)
+
+    api.get<{ data: ActivityEntry[] }>("/activity?limit=12")
+      .then(r => setActivity(r.data.data ?? []))
 
     api.get("/dashboard/agenda")
       .then(r => setRecentJobs(r.data.recentJobs ?? []))
       .finally(() => setSidebarLoading(false))
   }, [])
+
+  useEffect(() => {
+    fetchSidebarData()
+  }, [fetchSidebarData])
+
+  useEffect(
+    () =>
+      subscribeToDataRefresh("jobs", () => {
+        fetchCal()
+        fetchSidebarData()
+      }),
+    [fetchCal, fetchSidebarData],
+  )
 
   function nav(dir: -1 | 1) {
     setAnchor(prev => calPeriod === "month" ? addMonths(prev, dir) : addDays(prev, dir * 7))

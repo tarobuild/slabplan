@@ -75,6 +75,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
+import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
 import { toast } from "sonner"
 
 type JobContext = {
@@ -618,6 +620,44 @@ function formFromDetail(log: DailyLogDetail): FormValues {
     weatherData: normalizeWeatherData(log.weatherData),
     customFieldValues: normalizeCustomFieldValues(log.customFieldValues),
   }
+}
+
+function buildDailyLogDraftSnapshot(
+  values: FormValues,
+  existingAttachments: DailyLogAttachment[],
+  removedAttachmentIds: string[],
+  pendingFiles: File[],
+) {
+  const activeAttachmentIds = existingAttachments
+    .filter((attachment) => !removedAttachmentIds.includes(attachment.id))
+    .map((attachment) => attachment.id)
+    .sort()
+
+  const customFieldValues = Object.fromEntries(
+    Object.entries(values.customFieldValues).sort(([left], [right]) => left.localeCompare(right)),
+  )
+
+  const pendingFileEntries = pendingFiles
+    .map((file) => ({
+      key: `${file.name}:${file.size}:${file.lastModified}:${file.type}`,
+      name: file.name,
+      size: file.size,
+      lastModified: file.lastModified,
+      type: file.type,
+    }))
+    .sort((left, right) => left.key.localeCompare(right.key))
+
+  return JSON.stringify({
+    values: {
+      ...values,
+      tags: [...values.tags].sort(),
+      notifyUserIds: [...values.notifyUserIds].sort(),
+      customFieldValues,
+      weatherData: null,
+    },
+    activeAttachmentIds,
+    pendingFileEntries,
+  })
 }
 
 function buildLocationStamp(job: JobOption | null | undefined) {
@@ -1816,12 +1856,18 @@ function DailyLogDialog({
   const [existingAttachments, setExistingAttachments] = useState<DailyLogAttachment[]>([])
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState<string[]>([])
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [initialSnapshot, setInitialSnapshot] = useState("")
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === values.jobId) || jobs.find((job) => job.id === jobId) || null,
     [jobs, jobId, values.jobId],
   )
   const locationStampPreview = useMemo(() => buildLocationStamp(selectedJob), [selectedJob])
+  const hasUnsavedChanges =
+    initialSnapshot !== "" &&
+    buildDailyLogDraftSnapshot(values, existingAttachments, removedAttachmentIds, pendingFiles) !== initialSnapshot
+  const unsavedChanges = useUnsavedChangesGuard(open && hasUnsavedChanges && !saving && !deleting && !loading)
 
   async function loadLog(nextLogId: string) {
     const response = await api.get<{ log: DailyLogDetail }>(`/daily-logs/${nextLogId}`)
@@ -1830,23 +1876,28 @@ function DailyLogDialog({
       weatherData: normalizeWeatherData(response.data.log.weatherData),
       customFieldValues: normalizeCustomFieldValues(response.data.log.customFieldValues),
     }
+    const nextValues = formFromDetail(normalized)
     setCurrentLog(normalized)
-    setValues(formFromDetail(normalized))
+    setValues(nextValues)
     setExistingAttachments(normalized.attachments)
     setRemovedAttachmentIds([])
     setPendingFiles([])
+    setInitialSnapshot(buildDailyLogDraftSnapshot(nextValues, normalized.attachments, [], []))
   }
 
   useEffect(() => {
     if (!open) return
 
     if (!logId) {
+      const nextValues = buildDefaultForm(jobId, settings, users)
       setCurrentLog(null)
-      setValues(buildDefaultForm(jobId, settings, users))
+      setValues(nextValues)
       setExistingAttachments([])
       setRemovedAttachmentIds([])
       setPendingFiles([])
+      setAttachmentError(null)
       setWeatherMessage("")
+      setInitialSnapshot(buildDailyLogDraftSnapshot(nextValues, [], [], []))
       return
     }
 
@@ -1903,7 +1954,17 @@ function DailyLogDialog({
   }, [open, values.includeWeather, values.logDate, values.jobId, selectedJob?.streetAddress, selectedJob?.city, selectedJob?.state, selectedJob?.zipCode])
 
   const onDrop = useDropzone({
-    onDrop: (files) => setPendingFiles((current) => [...current, ...files]),
+    onDrop: (files) => {
+      const validationError = validateSelectedFiles([...pendingFiles, ...files], "document")
+
+      if (validationError) {
+        setAttachmentError(validationError)
+        return
+      }
+
+      setAttachmentError(null)
+      setPendingFiles((current) => [...current, ...files])
+    },
     noClick: true,
     noKeyboard: true,
   })
@@ -1995,8 +2056,16 @@ function DailyLogDialog({
     })),
   ]
 
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && !unsavedChanges.confirmDiscardChanges()) {
+      return
+    }
+
+    onOpenChange(nextOpen)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="max-h-[94vh] max-w-[1080px] overflow-y-auto border-slate-200 bg-white">
         <DialogHeader>
           <DialogTitle>{currentLog ? "Edit Daily Log" : "Create Daily Log"}</DialogTitle>
@@ -2235,10 +2304,15 @@ function DailyLogDialog({
                       onDrop.isDragActive ? "border-blue-400 bg-blue-50" : "border-slate-300 bg-slate-50",
                     )}
                   >
-                    <input {...onDrop.getInputProps()} />
+                    <input {...onDrop.getInputProps({ accept: uploadAcceptForMediaType("document") })} />
                     <Paperclip className="mx-auto size-5 text-slate-400" />
                     <div className="mt-2 text-sm text-slate-600">Drag and drop files here, or use Add.</div>
                   </div>
+                  {attachmentError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {attachmentError}
+                    </div>
+                  ) : null}
                   <div className="space-y-2">
                     {combinedAttachments.length === 0 ? (
                       <div className="text-sm text-slate-500">No attachments yet.</div>
@@ -2361,8 +2435,13 @@ function DailyLogDialog({
             </div>
 
             <DialogFooter className="mt-2 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm text-slate-500">
-                {currentLog ? "Save updates to keep this daily log current." : "Publish creates and publishes the log immediately."}
+              <div>
+                <div className="text-sm text-slate-500">
+                  {currentLog ? "Save updates to keep this daily log current." : "Publish creates and publishes the log immediately."}
+                </div>
+                {unsavedChanges.isDirty ? (
+                  <div className="mt-1 text-sm font-medium text-amber-700">Unsaved changes</div>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {currentLog ? (

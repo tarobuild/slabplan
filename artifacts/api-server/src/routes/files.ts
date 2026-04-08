@@ -40,6 +40,8 @@ const fileListQuerySchema = z.object({
   to: z.string().optional(),
   sortBy: z.string().optional().default("modified_newest"),
   includeDeleted: z.coerce.boolean().optional().default(false),
+  page: z.coerce.number().int().positive().optional().default(1),
+  limit: z.coerce.number().int().positive().max(100).optional().default(100),
 });
 
 const renameFileSchema = z.object({
@@ -77,6 +79,8 @@ router.get(
       to: query.data.to?.trim() || null,
       sortBy: query.data.sortBy,
       includeDeleted: query.data.includeDeleted,
+      page: query.data.page,
+      limit: query.data.limit,
     });
 
     res.json(result);

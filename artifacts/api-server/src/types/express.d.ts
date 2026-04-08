@@ -4,7 +4,7 @@ declare namespace Express {
       userId: string;
       email: string;
       role: string;
-      type: "access";
+      type: "access" | "upload";
     };
   }
 }

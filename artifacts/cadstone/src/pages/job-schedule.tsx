@@ -31,6 +31,7 @@ import {
   dateKey,
   DEFAULT_SCHEDULE_COLOR,
   deriveScheduleStatus,
+  fmtClockRange,
   fmtDate,
   fmtDateTime,
   itemEndDate,
@@ -1657,9 +1658,9 @@ export default function JobSchedulePage() {
     setHistoryLoading(true)
 
     try {
-      const response = await api.get<{ entries: ActivityEntry[] }>(`/activity?jobId=${jobId}&page=1&limit=100`)
+      const response = await api.get<{ data: ActivityEntry[] }>(`/activity?jobId=${jobId}&page=1&limit=100`)
       setHistoryEntries(
-        (response.data.entries ?? []).filter((entry) => entry.entityType.startsWith("schedule_")),
+        (response.data.data ?? []).filter((entry) => entry.entityType.startsWith("schedule_")),
       )
     } catch (err) {
       toast.error(getApiError(err, "Failed to load schedule history"))
@@ -3441,7 +3442,7 @@ export default function JobSchedulePage() {
                                     <span className="block truncate">{segment.item.title}</span>
                                     <span className="block truncate text-[10px] text-white/80">
                                       {segment.item.isHourly && segment.item.startTime
-                                        ? `${segment.item.startTime.slice(0, 5)}${segment.item.endTime ? ` - ${segment.item.endTime.slice(0, 5)}` : ""}`
+                                        ? fmtClockRange(segment.item.startTime, segment.item.endTime)
                                         : `${segment.item.workDays} workday${segment.item.workDays === 1 ? "" : "s"}`}
                                     </span>
                                   </button>
@@ -3529,7 +3530,7 @@ export default function JobSchedulePage() {
                                 <span className="block truncate">{segment.item.title}</span>
                                 <span className="mt-1 block text-xs text-white/80">
                                   {segment.item.isHourly && segment.item.startTime
-                                    ? `${segment.item.startTime.slice(0, 5)}${segment.item.endTime ? ` - ${segment.item.endTime.slice(0, 5)}` : ""}`
+                                    ? fmtClockRange(segment.item.startTime, segment.item.endTime)
                                     : `${segment.item.workDays} workday${segment.item.workDays === 1 ? "" : "s"}`}
                                 </span>
                               </button>

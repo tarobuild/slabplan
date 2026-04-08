@@ -3,7 +3,7 @@ import jwt, { type JwtPayload } from "jsonwebtoken";
 import type { User } from "@workspace/db/schema";
 import { HttpError } from "./http";
 
-type TokenType = "access" | "refresh" | "reset";
+type TokenType = "access" | "refresh" | "reset" | "upload";
 
 type TokenClaims = {
   type: TokenType;
@@ -22,8 +22,9 @@ type PublicUser = Pick<
   "id" | "email" | "fullName" | "role" | "avatarUrl" | "phone" | "createdAt" | "updatedAt"
 >;
 
-const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+export const UPLOAD_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const RESET_TOKEN_TTL_SECONDS = 60 * 60;
 const JWT_ALGORITHMS = ["HS256"] as const;
 
@@ -71,7 +72,7 @@ const uploadCookieOptions: CookieOptions = {
   sameSite: "lax",
   secure: secureCookies,
   path: "/uploads",
-  maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
+  maxAge: UPLOAD_TOKEN_TTL_SECONDS * 1000,
 };
 
 function buildTokenPayload(user: PublicUser, type: TokenType): TokenClaims {
@@ -157,6 +158,10 @@ export function signRefreshToken(user: PublicUser): string {
   return signToken(user, "refresh", refreshSecret, REFRESH_TOKEN_TTL_SECONDS);
 }
 
+export function signUploadToken(user: PublicUser): string {
+  return signToken(user, "upload", accessSecret, UPLOAD_TOKEN_TTL_SECONDS);
+}
+
 export function signResetToken(user: PublicUser): string {
   return signToken(user, "reset", resetSecret, RESET_TOKEN_TTL_SECONDS);
 }
@@ -167,6 +172,10 @@ export function verifyAccessToken(token: string): VerifiedToken<"access"> {
 
 export function verifyRefreshToken(token: string): VerifiedToken<"refresh"> {
   return decodeVerifiedToken(token, refreshSecret, "refresh");
+}
+
+export function verifyUploadToken(token: string): VerifiedToken<"upload"> {
+  return decodeVerifiedToken(token, accessSecret, "upload");
 }
 
 export function verifyResetToken(token: string): VerifiedToken<"reset"> {
@@ -193,9 +202,10 @@ export function sendAuthResponse(res: Response, user: User): void {
   const publicUser = toPublicUser(user);
   const accessToken = signAccessToken(publicUser);
   const refreshToken = signRefreshToken(publicUser);
+  const uploadToken = signUploadToken(publicUser);
 
   setRefreshTokenCookie(res, refreshToken);
-  setUploadTokenCookie(res, refreshToken);
+  setUploadTokenCookie(res, uploadToken);
 
   res.json({
     accessToken,

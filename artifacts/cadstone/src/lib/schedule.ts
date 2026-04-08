@@ -271,6 +271,45 @@ export function fmtDateTime(value: string | null | undefined) {
   }).format(new Date(value))
 }
 
+export function fmtClockTime(value: string | null | undefined) {
+  if (!value) {
+    return "—"
+  }
+
+  const parts = value.split(":")
+
+  if (parts.length < 2) {
+    return value
+  }
+
+  const hours = Number(parts[0])
+  const minutes = Number(parts[1])
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return value
+  }
+
+  const date = new Date()
+  date.setHours(hours, minutes, 0, 0)
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date)
+}
+
+export function fmtClockRange(start: string | null | undefined, end: string | null | undefined) {
+  if (!start) {
+    return "—"
+  }
+
+  if (!end) {
+    return fmtClockTime(start)
+  }
+
+  return `${fmtClockTime(start)} - ${fmtClockTime(end)}`
+}
+
 function isWeekend(date: Date) {
   const day = date.getUTCDay()
   return day === 0 || day === 6

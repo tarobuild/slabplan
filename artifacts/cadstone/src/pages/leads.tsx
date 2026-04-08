@@ -69,6 +69,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
+import { invalidateAppData } from "@/lib/data-refresh"
+import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
 import { toast } from "sonner"
 
 type LeadContact = {
@@ -258,6 +261,35 @@ const emptyContact: ContactForm = {
   phone: "",
 }
 
+function buildEditForm(lead: LeadDetail): EditForm {
+  return {
+    title: lead.title,
+    status: lead.status,
+    projectType: lead.projectType ?? "",
+    streetAddress: lead.streetAddress ?? "",
+    city: lead.city ?? "",
+    state: lead.state ?? "",
+    zipCode: lead.zipCode ?? "",
+    estimatedRevenueMin: lead.estimatedRevenueMin ?? "",
+    estimatedRevenueMax: lead.estimatedRevenueMax ?? "",
+    confidence: lead.confidence != null ? String(lead.confidence) : "",
+    projectedSalesDate: lead.projectedSalesDate
+      ? lead.projectedSalesDate.slice(0, 10)
+      : "",
+    notes: lead.notes ?? "",
+    leadSource: lead.leadSource ?? "",
+    tags: lead.tags.join(", "),
+    sources: lead.sources.join(", "),
+    contactDisplayName: lead.clientContact?.displayName ?? "",
+    contactEmail: lead.clientContact?.email ?? "",
+    contactPhone: lead.clientContact?.phone ?? "",
+  }
+}
+
+function serializeEditForm(form: EditForm | null) {
+  return form ? JSON.stringify(form) : ""
+}
+
 function DetailRow({
   icon,
   label,
@@ -304,14 +336,22 @@ export default function LeadsPage() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState<EditForm | null>(null)
+  const [savedEditForm, setSavedEditForm] = useState<EditForm | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
 
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [confirmDeleteAttachmentId, setConfirmDeleteAttachmentId] = useState<string | null>(null)
   const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasUnsavedLeadChanges =
+    isEditing &&
+    !!editForm &&
+    !!savedEditForm &&
+    serializeEditForm(editForm) !== serializeEditForm(savedEditForm)
+  const leadUnsavedChanges = useUnsavedChangesGuard(hasUnsavedLeadChanges && !savingEdit)
 
   const fetchLeads = (s = search, st = status, p = pagination.page) => {
     setLoading(true)
@@ -350,34 +390,17 @@ export default function LeadsPage() {
     setIsEditing(false)
     setLeadDetail(null)
     setEditForm(null)
+    setSavedEditForm(null)
+    setAttachmentError(null)
     setLoadingDetail(true)
     api
       .get(`/leads/${leadId}`)
       .then((r) => {
         const lead: LeadDetail = r.data.lead
+        const nextEditForm = buildEditForm(lead)
         setLeadDetail(lead)
-        setEditForm({
-          title: lead.title,
-          status: lead.status,
-          projectType: lead.projectType ?? "",
-          streetAddress: lead.streetAddress ?? "",
-          city: lead.city ?? "",
-          state: lead.state ?? "",
-          zipCode: lead.zipCode ?? "",
-          estimatedRevenueMin: lead.estimatedRevenueMin ?? "",
-          estimatedRevenueMax: lead.estimatedRevenueMax ?? "",
-          confidence: lead.confidence != null ? String(lead.confidence) : "",
-          projectedSalesDate: lead.projectedSalesDate
-            ? lead.projectedSalesDate.slice(0, 10)
-            : "",
-          notes: lead.notes ?? "",
-          leadSource: lead.leadSource ?? "",
-          tags: lead.tags.join(", "),
-          sources: lead.sources.join(", "),
-          contactDisplayName: lead.clientContact?.displayName ?? "",
-          contactEmail: lead.clientContact?.email ?? "",
-          contactPhone: lead.clientContact?.phone ?? "",
-        })
+        setEditForm(nextEditForm)
+        setSavedEditForm(nextEditForm)
       })
       .catch(() => toast.error("Failed to load lead details"))
       .finally(() => setLoadingDetail(false))
@@ -432,9 +455,12 @@ export default function LeadsPage() {
 
       const { data: freshData } = await api.get(`/leads/${sheetLeadId}`)
       setLeadDetail(freshData.lead)
+      setEditForm(buildEditForm(freshData.lead))
+      setSavedEditForm(buildEditForm(freshData.lead))
       setIsEditing(false)
       toast.success("Lead updated")
       fetchLeads()
+      invalidateAppData(["leads", "navigation"])
     } catch (err: unknown) {
       toast.error(getApiError(err, "Failed to save changes"))
     } finally {
@@ -479,6 +505,7 @@ export default function LeadsPage() {
       setForm(emptyCreate)
       setContactForm(emptyContact)
       fetchLeads()
+      invalidateAppData(["leads", "navigation"])
     } catch (err: unknown) {
       toast.error(getApiError(err, "Failed to create lead"))
     } finally {
@@ -495,6 +522,7 @@ export default function LeadsPage() {
       setDeleteId(null)
       if (sheetLeadId === deleteId) setSheetLeadId(null)
       fetchLeads()
+      invalidateAppData(["leads", "navigation"])
     } catch {
       toast.error("Failed to delete lead")
     } finally {
@@ -504,10 +532,20 @@ export default function LeadsPage() {
 
   const handleUploadAttachments = async (fileList: FileList) => {
     if (!sheetLeadId || fileList.length === 0) return
+    const selectedFiles = Array.from(fileList)
+    const validationError = validateSelectedFiles(selectedFiles, "document")
+
+    if (validationError) {
+      setAttachmentError(validationError)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      return
+    }
+
+    setAttachmentError(null)
     setUploadingAttachment(true)
     try {
       const formData = new FormData()
-      Array.from(fileList).forEach((f) => formData.append("files", f))
+      selectedFiles.forEach((file) => formData.append("files", file))
       const { data } = await api.post(`/leads/${sheetLeadId}/attachments`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       })
@@ -560,6 +598,31 @@ export default function LeadsPage() {
     (k: keyof EditForm) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setEditForm((f) => (f ? { ...f, [k]: e.target.value } : f))
+
+  const closeLeadEditor = () => {
+    if (!leadUnsavedChanges.confirmDiscardChanges()) {
+      return
+    }
+
+    setIsEditing(false)
+    if (leadDetail) {
+      const nextEditForm = buildEditForm(leadDetail)
+      setEditForm(nextEditForm)
+      setSavedEditForm(nextEditForm)
+    }
+  }
+
+  const handleSheetOpenChange = (open: boolean) => {
+    if (!open && !leadUnsavedChanges.confirmDiscardChanges()) {
+      return
+    }
+
+    if (!open) {
+      setSheetLeadId(null)
+      setIsEditing(false)
+      setAttachmentError(null)
+    }
+  }
 
   const revenue = (lead: Lead) => {
     const min = fmtCurrency(lead.estimatedRevenueMin)
@@ -961,12 +1024,7 @@ export default function LeadsPage() {
       {/* Lead Detail Sheet */}
       <Sheet
         open={!!sheetLeadId}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSheetLeadId(null)
-            setIsEditing(false)
-          }
-        }}
+        onOpenChange={handleSheetOpenChange}
       >
         <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col p-0 gap-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB]">
@@ -999,7 +1057,7 @@ export default function LeadsPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setIsEditing(false)}
+                    onClick={closeLeadEditor}
                   >
                     <X className="mr-1.5 size-3.5" />
                     Cancel
@@ -1008,6 +1066,9 @@ export default function LeadsPage() {
                     {savingEdit && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
                     Save
                   </Button>
+                  {leadUnsavedChanges.isDirty ? (
+                    <span className="text-xs font-medium text-amber-700">Unsaved changes</span>
+                  ) : null}
                 </>
               )}
             </div>
@@ -1401,6 +1462,7 @@ export default function LeadsPage() {
                           ref={fileInputRef}
                           type="file"
                           multiple
+                          accept={uploadAcceptForMediaType("document")}
                           className="hidden"
                           onChange={(e) => {
                             if (e.target.files && e.target.files.length > 0) {
@@ -1409,6 +1471,11 @@ export default function LeadsPage() {
                           }}
                         />
                       </div>
+                      {attachmentError ? (
+                        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                          {attachmentError}
+                        </div>
+                      ) : null}
 
                       {leadDetail.attachments.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-slate-200 rounded-lg">

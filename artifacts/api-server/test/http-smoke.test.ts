@@ -15,7 +15,9 @@ before(async () => {
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
   process.env.REPLIT_DEV_DOMAIN = "workspace.kirk.replit.dev";
 
-  const { default: app } = await import("../src/app.ts");
+  const { default: app, prepareApp } = await import("../src/app.ts");
+
+  await prepareApp();
 
   server = app.listen(0);
 
@@ -96,11 +98,28 @@ test("cors does not reflect disallowed origins", async () => {
   assert.equal(response.headers.get("access-control-allow-origin"), null);
 });
 
+test("state-changing requests require the XMLHttpRequest header", async () => {
+  const response = await fetch(`${baseUrl}/api/auth/register`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      email: "unauthorized@example.com",
+      password: "Cadstone123!",
+      full_name: "Unauthorized User",
+    }),
+  });
+
+  assert.equal(response.status, 403);
+});
+
 test("register endpoint rejects unauthenticated callers", async () => {
   const response = await fetch(`${baseUrl}/api/auth/register`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
     },
     body: JSON.stringify({
       email: "unauthorized@example.com",

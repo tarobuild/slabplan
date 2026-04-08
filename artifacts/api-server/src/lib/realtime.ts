@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
-import { verifyAccessToken } from "./auth";
+import { ACCESS_TOKEN_TTL_SECONDS, verifyAccessToken } from "./auth";
 import {
   isAdmin,
   listAccessibleJobIds,
@@ -11,6 +11,7 @@ import { logger } from "./logger";
 
 let io: Server | null = null;
 const adminRoom = "__cadstone_admins__";
+const REALTIME_TOKEN_REVALIDATION_INTERVAL_MS = ACCESS_TOKEN_TTL_SECONDS * 1000;
 
 async function listRealtimeScopeIds(auth: Express.Request["auth"]) {
   if (isAdmin(auth)) {
@@ -51,6 +52,7 @@ export function initRealtime(server: HttpServer) {
 
         const auth = verifyAccessToken(token);
         socket.data.auth = auth;
+        socket.data.accessToken = token;
         socket.data.scopeIds = await listRealtimeScopeIds(auth);
       })
       .then(() => next())
@@ -58,6 +60,44 @@ export function initRealtime(server: HttpServer) {
   });
 
   io.on("connection", (socket) => {
+    const revalidateAccessToken = () => {
+      const token = typeof socket.data.accessToken === "string" ? socket.data.accessToken : null;
+
+      if (!token) {
+        logger.info({ socketId: socket.id }, "Disconnecting realtime client without an access token");
+        socket.disconnect(true);
+        return false;
+      }
+
+      try {
+        socket.data.auth = verifyAccessToken(token);
+        return true;
+      } catch (error) {
+        logger.info(
+          {
+            err: error,
+            socketId: socket.id,
+            userId: socket.data.auth?.userId ?? null,
+          },
+          "Disconnecting realtime client with an expired or invalid token",
+        );
+        socket.disconnect(true);
+        return false;
+      }
+    };
+
+    if (!revalidateAccessToken()) {
+      return;
+    }
+
+    const tokenRevalidationTimer = setInterval(() => {
+      revalidateAccessToken();
+    }, REALTIME_TOKEN_REVALIDATION_INTERVAL_MS);
+
+    socket.once("disconnect", () => {
+      clearInterval(tokenRevalidationTimer);
+    });
+
     const scopeIds = Array.isArray(socket.data.scopeIds)
       ? socket.data.scopeIds.filter((scopeId: unknown): scopeId is string => typeof scopeId === "string")
       : [];

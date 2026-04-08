@@ -2,9 +2,12 @@ import express, { type Express } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
+import { eq } from "drizzle-orm";
 import pinoHttp from "pino-http";
+import { db } from "@workspace/db";
+import { files } from "@workspace/db/schema";
 import router from "./routes";
-import { verifyAccessToken, verifyRefreshToken, uploadCookieName } from "./lib/auth";
+import { uploadCookieName, verifyAccessToken, verifyUploadToken } from "./lib/auth";
 import { assertCanAccessUploadPath } from "./lib/authorization";
 import { corsOrigin } from "./lib/cors";
 import { logger } from "./lib/logger";
@@ -16,7 +19,9 @@ const app: Express = express();
 
 app.set("trust proxy", 1);
 
-void ensureUploadRoot();
+export async function prepareApp() {
+  await ensureUploadRoot();
+}
 
 app.use(
   pinoHttp({
@@ -49,6 +54,21 @@ app.use(
     credentials: true,
   }),
 );
+app.use((req, _res, next) => {
+  const method = req.method.toUpperCase();
+
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
+    next();
+    return;
+  }
+
+  if (req.get("X-Requested-With") !== "XMLHttpRequest") {
+    next(new HttpError(403, "State-changing requests must include X-Requested-With: XMLHttpRequest."));
+    return;
+  }
+
+  next();
+});
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -62,10 +82,7 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
     const auth = bearerToken
       ? verifyAccessToken(bearerToken)
       : uploadToken
-        ? {
-            ...verifyRefreshToken(uploadToken),
-            type: "access" as const,
-          }
+        ? verifyUploadToken(uploadToken)
         : null;
 
     if (!auth) {
@@ -81,8 +98,19 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
     const fileUrl = `/uploads/${pathname}`;
     await assertCanAccessUploadPath(auth, fileUrl);
     const absolutePath = resolveAbsolutePathFromFileUrl(fileUrl);
+    const [storedFile] = await db
+      .select({
+        originalName: files.originalName,
+      })
+      .from(files)
+      .where(eq(files.fileUrl, fileUrl))
+      .limit(1);
 
-    res.sendFile(absolutePath, (error) => {
+    if (!storedFile) {
+      throw new HttpError(404, "Stored file missing.");
+    }
+
+    res.download(absolutePath, storedFile.originalName, (error) => {
       if (!error) {
         return;
       }

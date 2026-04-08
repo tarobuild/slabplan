@@ -12,10 +12,6 @@ deploymentTarget = "autoscale"
 build = "pnpm --filter @workspace/api-server run build"
 run = "pnpm --filter @workspace/api-server run start"
 
-[[ports]]
-localPort = 8080
-externalPort = 80
-
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }

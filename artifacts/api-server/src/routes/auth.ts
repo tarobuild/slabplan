@@ -140,12 +140,6 @@ router.post(
     const password = normalizePassword(req.body.password);
     const fullName = normalizeFullName(req.body.full_name);
 
-    const existing = await findActiveUserByEmail(email);
-
-    if (existing) {
-      throw new HttpError(409, "An account with that email already exists.");
-    }
-
     const passwordHash = await bcrypt.hash(password, 10);
     const [user] = await db
       .insert(users)
@@ -154,7 +148,14 @@ router.post(
         passwordHash,
         fullName,
       })
+      .onConflictDoNothing({
+        target: users.email,
+      })
       .returning();
+
+    if (!user) {
+      throw new HttpError(409, "An account with that email already exists.");
+    }
 
     res.status(201).json({ user: toPublicUser(user) });
   }),

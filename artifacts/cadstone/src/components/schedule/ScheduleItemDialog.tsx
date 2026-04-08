@@ -35,6 +35,7 @@ import {
   type ScheduleTodo,
   type ScheduleWorkdayException,
 } from "@/lib/schedule"
+import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -235,6 +236,7 @@ export function ScheduleItemDialog({
   const [noteDraft, setNoteDraft] = useState("")
   const [loadingItem, setLoadingItem] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [manualEndDate, setManualEndDate] = useState(false)
   const [addingPhase, setAddingPhase] = useState("")
   const [editingPhases, setEditingPhases] = useState<Record<string, string>>({})
@@ -245,6 +247,12 @@ export function ScheduleItemDialog({
   const [showAddTag, setShowAddTag] = useState(false)
   const [showEditTags, setShowEditTags] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setAttachmentError(null)
+    }
+  }, [open])
 
   async function loadItem(nextItemId: string) {
     setLoadingItem(true)
@@ -568,9 +576,19 @@ export function ScheduleItemDialog({
       return
     }
 
+    const selectedFiles = Array.from(event.target.files)
+    const validationError = validateSelectedFiles(selectedFiles, "document")
+
+    if (validationError) {
+      setAttachmentError(validationError)
+      event.target.value = ""
+      return
+    }
+
+    setAttachmentError(null)
     const formData = new FormData()
 
-    Array.from(event.target.files).forEach((file) => {
+    selectedFiles.forEach((file) => {
       formData.append("files", file)
     })
 
@@ -1690,6 +1708,7 @@ export function ScheduleItemDialog({
                               type="file"
                               className="hidden"
                               multiple
+                              accept={uploadAcceptForMediaType("document")}
                               onChange={handleUploadFiles}
                             />
                             <Button
@@ -1709,6 +1728,11 @@ export function ScheduleItemDialog({
                           </div>
                         ) : null}
                       </div>
+                      {attachmentError ? (
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                          {attachmentError}
+                        </div>
+                      ) : null}
 
                       {!item ? (
                         <p className="text-sm text-slate-500">Attachments are available after save.</p>

@@ -14,6 +14,10 @@ type RateLimitOptions = {
   resolveKey: (req: Request) => string | null;
 };
 
+// TODO(autoscale): This in-memory bucket map is per-instance. In multi-instance
+// autoscale deployments each instance enforces its own counters, so the effective
+// rate limit is only approximate. Move these counters to a shared store such as
+// Redis or the database for production-grade enforcement.
 const buckets = new Map<string, RateLimitBucket>();
 const MAX_BUCKETS = 5000;
 

@@ -43,6 +43,7 @@ import {
 } from "../lib/authorization";
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
+import { logger } from "../lib/logger";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -51,6 +52,8 @@ import {
 } from "../lib/storage";
 
 const router: IRouter = Router();
+type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -833,8 +836,9 @@ async function getWorkdayExceptionsForJob(jobId: string): Promise<WorkdayExcepti
 async function syncPredecessors(
   scheduleItemId: string,
   predecessors: Array<z.infer<typeof predecessorSchema>>,
+  executor: DbExecutor = db,
 ) {
-  await db
+  await executor
     .delete(scheduleItemPredecessors)
     .where(eq(scheduleItemPredecessors.scheduleItemId, scheduleItemId));
 
@@ -842,7 +846,7 @@ async function syncPredecessors(
     return;
   }
 
-  await db.insert(scheduleItemPredecessors).values(
+  await executor.insert(scheduleItemPredecessors).values(
     predecessors.map((predecessor) => ({
       id: crypto.randomUUID(),
       scheduleItemId,
@@ -992,15 +996,19 @@ function predecessorConflictReasons(
   return reasons;
 }
 
-async function syncAssignees(scheduleItemId: string, assigneeIds: string[]) {
-  await db
+async function syncAssignees(
+  scheduleItemId: string,
+  assigneeIds: string[],
+  executor: DbExecutor = db,
+) {
+  await executor
     .delete(scheduleItemAssignees)
     .where(eq(scheduleItemAssignees.scheduleItemId, scheduleItemId));
 
   const uniqueUserIds = Array.from(new Set(assigneeIds));
 
   if (uniqueUserIds.length > 0) {
-    await db.insert(scheduleItemAssignees).values(
+    await executor.insert(scheduleItemAssignees).values(
       uniqueUserIds.map((userId) => ({
         scheduleItemId,
         userId,
@@ -1009,14 +1017,14 @@ async function syncAssignees(scheduleItemId: string, assigneeIds: string[]) {
   }
 }
 
-async function ensureTagSettings(jobId: string, tagNames: string[]) {
+async function ensureTagSettings(jobId: string, tagNames: string[], executor: DbExecutor = db) {
   const uniqueTagNames = normalizeUniqueStrings(tagNames);
 
   if (uniqueTagNames.length === 0) {
     return;
   }
 
-  const existing = await db
+  const existing = await executor
     .select({
       name: scheduleTagSettings.name,
     })
@@ -1029,7 +1037,7 @@ async function ensureTagSettings(jobId: string, tagNames: string[]) {
     return;
   }
 
-  await db.insert(scheduleTagSettings).values(
+  await executor.insert(scheduleTagSettings).values(
     missing.map((name) => ({
       jobId,
       name,
@@ -1261,6 +1269,14 @@ async function maybeDeletePhysicalFile(fileUrl: string | null | undefined, fileI
 
   if (!duplicate) {
     await deletePhysicalFile(fileUrl);
+  }
+}
+
+async function deletePhysicalFileBestEffort(fileUrl: string, context: string) {
+  try {
+    await deletePhysicalFile(fileUrl);
+  } catch (error) {
+    logger.error({ err: error, fileUrl, context }, "Failed to delete physical file");
   }
 }
 
@@ -2379,7 +2395,7 @@ router.post(
       body.data.predecessors.map((predecessor) => predecessor.scheduleItemId),
     );
     await assertPhaseBelongsToJob(jobId, body.data.phaseId);
-    await ensureTagSettings(jobId, body.data.tags);
+    let item: typeof scheduleItems.$inferSelect;
     const predecessorIds = body.data.predecessors.map((predecessor) => predecessor.scheduleItemId);
     const predecessorItems = predecessorIds.length > 0
       ? await db
@@ -2400,37 +2416,44 @@ router.post(
       exceptions,
     );
 
-    const [item] = await db
-      .insert(scheduleItems)
-      .values({
-        jobId,
-        schedulePhaseId: normalizedPayload.phaseId,
-        title: normalizedPayload.title,
-        displayColor: normalizedPayload.displayColor ?? "#2563eb",
-        startDate: normalizedPayload.startDate,
-        workDays: normalizedPayload.workDays,
-        endDate: normalizedPayload.endDate ?? calculateBusinessEndDate(normalizedPayload.startDate, normalizedPayload.workDays, exceptions),
-        isHourly: normalizedPayload.isHourly,
-        startTime: normalizeTimeValue(normalizedPayload.startTime),
-        endTime: normalizeTimeValue(normalizedPayload.endTime),
-        progress: normalizedPayload.progress,
-        reminder: normalizedPayload.reminder,
-        showOnGantt: normalizedPayload.showOnGantt,
-        visibleToEstimators: normalizedPayload.visibleToEstimators,
-        visibleToInstallers: normalizedPayload.visibleToInstallers,
-        visibleToOfficeStaff: normalizedPayload.visibleToOfficeStaff,
-        isComplete: normalizedPayload.isComplete,
-        notes: encodeScheduleMeta({
-          notes: normalizedPayload.notes,
-          tags: normalizeUniqueStrings(normalizedPayload.tags),
-          predecessors: normalizedPayload.predecessors,
-        }),
-        createdBy: req.auth.userId,
-      })
-      .returning();
+    item = await db.transaction(async (tx) => {
+      await ensureTagSettings(jobId, normalizedPayload.tags, tx);
 
-    await syncAssignees(item.id, normalizedPayload.assigneeIds);
-    await syncPredecessors(item.id, normalizedPayload.predecessors);
+      const [createdItem] = await tx
+        .insert(scheduleItems)
+        .values({
+          jobId,
+          schedulePhaseId: normalizedPayload.phaseId,
+          title: normalizedPayload.title,
+          displayColor: normalizedPayload.displayColor ?? "#2563eb",
+          startDate: normalizedPayload.startDate,
+          workDays: normalizedPayload.workDays,
+          endDate: normalizedPayload.endDate ?? calculateBusinessEndDate(normalizedPayload.startDate, normalizedPayload.workDays, exceptions),
+          isHourly: normalizedPayload.isHourly,
+          startTime: normalizeTimeValue(normalizedPayload.startTime),
+          endTime: normalizeTimeValue(normalizedPayload.endTime),
+          progress: normalizedPayload.progress,
+          reminder: normalizedPayload.reminder,
+          showOnGantt: normalizedPayload.showOnGantt,
+          visibleToEstimators: normalizedPayload.visibleToEstimators,
+          visibleToInstallers: normalizedPayload.visibleToInstallers,
+          visibleToOfficeStaff: normalizedPayload.visibleToOfficeStaff,
+          isComplete: normalizedPayload.isComplete,
+          notes: encodeScheduleMeta({
+            notes: normalizedPayload.notes,
+            tags: normalizeUniqueStrings(normalizedPayload.tags),
+            predecessors: normalizedPayload.predecessors,
+          }),
+          createdBy: req.auth.userId,
+        })
+        .returning();
+
+      await syncAssignees(createdItem.id, normalizedPayload.assigneeIds, tx);
+      await syncPredecessors(createdItem.id, normalizedPayload.predecessors, tx);
+
+      return createdItem;
+    });
+
     await synchronizeJobSchedule(jobId);
 
     if (normalizedPayload.notifyUserIds.length > 0) {
@@ -2508,7 +2531,6 @@ router.put(
       body.data.predecessors.map((predecessor) => predecessor.scheduleItemId),
     );
     await assertPhaseBelongsToJob(existing.jobId, body.data.phaseId);
-    await ensureTagSettings(existing.jobId, body.data.tags);
     const predecessorIds = body.data.predecessors.map((predecessor) => predecessor.scheduleItemId);
     const predecessorItems = predecessorIds.length > 0
       ? await db
@@ -2529,36 +2551,41 @@ router.put(
       exceptions,
     );
 
-    await db
-      .update(scheduleItems)
-      .set({
-        schedulePhaseId: normalizedPayload.phaseId,
-        title: normalizedPayload.title,
-        displayColor: normalizedPayload.displayColor ?? "#2563eb",
-        startDate: normalizedPayload.startDate,
-        workDays: normalizedPayload.workDays,
-        endDate: normalizedPayload.endDate ?? calculateBusinessEndDate(normalizedPayload.startDate, normalizedPayload.workDays, exceptions),
-        isHourly: normalizedPayload.isHourly,
-        startTime: normalizeTimeValue(normalizedPayload.startTime),
-        endTime: normalizeTimeValue(normalizedPayload.endTime),
-        progress: normalizedPayload.progress,
-        reminder: normalizedPayload.reminder,
-        showOnGantt: normalizedPayload.showOnGantt,
-        visibleToEstimators: normalizedPayload.visibleToEstimators,
-        visibleToInstallers: normalizedPayload.visibleToInstallers,
-        visibleToOfficeStaff: normalizedPayload.visibleToOfficeStaff,
-        isComplete: normalizedPayload.isComplete,
-        notes: encodeScheduleMeta({
-          notes: normalizedPayload.notes,
-          tags: normalizeUniqueStrings(normalizedPayload.tags),
-          predecessors: normalizedPayload.predecessors,
-        }),
-        updatedAt: new Date(),
-      })
-      .where(eq(scheduleItems.id, itemId));
+    await db.transaction(async (tx) => {
+      await ensureTagSettings(existing.jobId!, normalizedPayload.tags, tx);
 
-    await syncAssignees(itemId, normalizedPayload.assigneeIds);
-    await syncPredecessors(itemId, normalizedPayload.predecessors);
+      await tx
+        .update(scheduleItems)
+        .set({
+          schedulePhaseId: normalizedPayload.phaseId,
+          title: normalizedPayload.title,
+          displayColor: normalizedPayload.displayColor ?? "#2563eb",
+          startDate: normalizedPayload.startDate,
+          workDays: normalizedPayload.workDays,
+          endDate: normalizedPayload.endDate ?? calculateBusinessEndDate(normalizedPayload.startDate, normalizedPayload.workDays, exceptions),
+          isHourly: normalizedPayload.isHourly,
+          startTime: normalizeTimeValue(normalizedPayload.startTime),
+          endTime: normalizeTimeValue(normalizedPayload.endTime),
+          progress: normalizedPayload.progress,
+          reminder: normalizedPayload.reminder,
+          showOnGantt: normalizedPayload.showOnGantt,
+          visibleToEstimators: normalizedPayload.visibleToEstimators,
+          visibleToInstallers: normalizedPayload.visibleToInstallers,
+          visibleToOfficeStaff: normalizedPayload.visibleToOfficeStaff,
+          isComplete: normalizedPayload.isComplete,
+          notes: encodeScheduleMeta({
+            notes: normalizedPayload.notes,
+            tags: normalizeUniqueStrings(normalizedPayload.tags),
+            predecessors: normalizedPayload.predecessors,
+          }),
+          updatedAt: new Date(),
+        })
+        .where(eq(scheduleItems.id, itemId));
+
+      await syncAssignees(itemId, normalizedPayload.assigneeIds, tx);
+      await syncPredecessors(itemId, normalizedPayload.predecessors, tx);
+    });
+
     await synchronizeJobSchedule(existing.jobId);
 
     if (normalizedPayload.notifyUserIds.length > 0) {
@@ -2874,28 +2901,43 @@ router.post(
 
       await writeUploadedBuffer(uploadPath.fileUrl, uploadedFile.buffer);
 
-      const [file] = await db
-        .insert(files)
-        .values({
-          folderId: attachmentFolder.id,
-          filename: storedFileName,
-          originalName: uploadedFile.originalname,
-          fileUrl: uploadPath.fileUrl,
-          fileSize: uploadedFile.size,
-          mimeType: uploadedFile.mimetype,
-          uploadedBy: req.auth.userId,
-        })
-        .returning();
+      let file: typeof files.$inferSelect;
+      let attachment: { id: string };
 
-      const [attachment] = await db
-        .insert(scheduleItemAttachments)
-        .values({
-          scheduleItemId: itemId,
-          fileId: file.id,
-        })
-        .returning({
-          id: scheduleItemAttachments.id,
-        });
+      try {
+        ({ file, attachment } = await db.transaction(async (tx) => {
+          const [createdFile] = await tx
+            .insert(files)
+            .values({
+              folderId: attachmentFolder.id,
+              filename: storedFileName,
+              originalName: uploadedFile.originalname,
+              fileUrl: uploadPath.fileUrl,
+              fileSize: uploadedFile.size,
+              mimeType: uploadedFile.mimetype,
+              uploadedBy: req.auth.userId,
+            })
+            .returning();
+
+          const [createdAttachment] = await tx
+            .insert(scheduleItemAttachments)
+            .values({
+              scheduleItemId: itemId,
+              fileId: createdFile.id,
+            })
+            .returning({
+              id: scheduleItemAttachments.id,
+            });
+
+          return {
+            file: createdFile,
+            attachment: createdAttachment,
+          };
+        }));
+      } catch (error) {
+        await deletePhysicalFileBestEffort(uploadPath.fileUrl, "schedule-item-attachment-upload:rollback");
+        throw error;
+      }
 
       await writeActivity({
         entityType: "schedule_item_attachment",
@@ -2966,28 +3008,43 @@ router.post(
 
     await writeUploadedBuffer(uploadPath.fileUrl, Buffer.from(documentContents, "utf8"));
 
-    const [file] = await db
-      .insert(files)
-      .values({
-        folderId: attachmentFolder.id,
-        filename: storedFileName,
-        originalName,
-        fileUrl: uploadPath.fileUrl,
-        fileSize: Buffer.byteLength(documentContents, "utf8"),
-        mimeType: "text/plain",
-        uploadedBy: req.auth.userId,
-      })
-      .returning();
+    let file: typeof files.$inferSelect;
+    let attachment: { id: string };
 
-    const [attachment] = await db
-      .insert(scheduleItemAttachments)
-      .values({
-        scheduleItemId: itemId,
-        fileId: file.id,
-      })
-      .returning({
-        id: scheduleItemAttachments.id,
-      });
+    try {
+      ({ file, attachment } = await db.transaction(async (tx) => {
+        const [createdFile] = await tx
+          .insert(files)
+          .values({
+            folderId: attachmentFolder.id,
+            filename: storedFileName,
+            originalName,
+            fileUrl: uploadPath.fileUrl,
+            fileSize: Buffer.byteLength(documentContents, "utf8"),
+            mimeType: "text/plain",
+            uploadedBy: req.auth.userId,
+          })
+          .returning();
+
+        const [createdAttachment] = await tx
+          .insert(scheduleItemAttachments)
+          .values({
+            scheduleItemId: itemId,
+            fileId: createdFile.id,
+          })
+          .returning({
+            id: scheduleItemAttachments.id,
+          });
+
+        return {
+          file: createdFile,
+          attachment: createdAttachment,
+        };
+      }));
+    } catch (error) {
+      await deletePhysicalFileBestEffort(uploadPath.fileUrl, "schedule-item-attachment-doc:rollback");
+      throw error;
+    }
 
     await writeActivity({
       entityType: "schedule_item_attachment",
@@ -3051,11 +3108,26 @@ router.delete(
       throw new HttpError(404, "Attachment not found.");
     }
 
-    await db
-      .delete(scheduleItemAttachments)
-      .where(eq(scheduleItemAttachments.id, attachmentId));
-    await db.delete(files).where(eq(files.id, attachment.fileId));
-    await maybeDeletePhysicalFile(attachment.fileUrl, attachment.fileId);
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(scheduleItemAttachments)
+        .where(eq(scheduleItemAttachments.id, attachmentId));
+      await tx.delete(files).where(eq(files.id, attachment.fileId));
+    });
+
+    try {
+      await maybeDeletePhysicalFile(attachment.fileUrl, attachment.fileId);
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          attachmentId,
+          fileId: attachment.fileId,
+          fileUrl: attachment.fileUrl,
+        },
+        "Failed to delete schedule attachment physical file",
+      );
+    }
 
     await writeActivity({
       entityType: "schedule_item_attachment",

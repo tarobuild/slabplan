@@ -1,7 +1,7 @@
 import archiver from "archiver";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 import type { Response } from "express";
 import { db } from "@workspace/db";
 import {
@@ -22,6 +22,7 @@ import {
   writeUploadedBuffer,
 } from "./storage";
 import { emitRealtimeEvent } from "./realtime";
+import { logger } from "./logger";
 
 export const documentExtensions = [
   ".pdf",
@@ -307,6 +308,51 @@ function collectDescendantFolderIds(rootFolderId: string, allFolders: Folder[]) 
   return ids;
 }
 
+async function deletePhysicalFilesBestEffort(fileUrls: Iterable<string>, context: string) {
+  for (const fileUrl of fileUrls) {
+    try {
+      await deletePhysicalFile(fileUrl);
+    } catch (error) {
+      logger.error({ err: error, fileUrl, context }, "Failed to delete physical file");
+    }
+  }
+}
+
+async function listExclusiveFileUrlsToDelete(fileRecords: Array<{ id: string; fileUrl: string | null }>) {
+  const uniqueFileUrls = Array.from(
+    new Set(
+      fileRecords
+        .map((file) => file.fileUrl)
+        .filter((fileUrl): fileUrl is string => typeof fileUrl === "string" && fileUrl.length > 0),
+    ),
+  );
+
+  if (uniqueFileUrls.length === 0) {
+    return [];
+  }
+
+  const excludedIds = fileRecords.map((file) => file.id);
+  const remaining = await db
+    .select({
+      fileUrl: files.fileUrl,
+    })
+    .from(files)
+    .where(
+      and(
+        inArray(files.fileUrl, uniqueFileUrls),
+        notInArray(files.id, excludedIds),
+      ),
+    );
+
+  const remainingFileUrls = new Set(
+    remaining
+      .map((row) => row.fileUrl)
+      .filter((fileUrl): fileUrl is string => typeof fileUrl === "string" && fileUrl.length > 0),
+  );
+
+  return uniqueFileUrls.filter((fileUrl) => !remainingFileUrls.has(fileUrl));
+}
+
 export async function writeActivity(params: {
   entityType: string;
   entityId: string;
@@ -436,6 +482,8 @@ export async function listFilesForFolder(params: {
   to: string | null;
   sortBy: string;
   includeDeleted?: boolean;
+  page?: number;
+  limit?: number;
 }) {
   const folder = await getFolderOrThrow(params.folderId, params.includeDeleted ?? false);
 
@@ -527,9 +575,19 @@ export async function listFilesForFolder(params: {
 
   filtered.sort(sorters[params.sortBy] ?? sorters.modified_newest);
 
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 100;
+  const offset = (page - 1) * limit;
+
   return {
     folder,
-    files: filtered,
+    files: filtered.slice(offset, offset + limit),
+    pagination: {
+      page,
+      limit,
+      totalItems: filtered.length,
+      totalPages: Math.max(1, Math.ceil(filtered.length / limit)),
+    },
   };
 }
 
@@ -672,43 +730,45 @@ export async function copyFolder(params: {
 
   const createdMap = new Map<string, string>();
 
-  for (const currentFolder of subtreeFolders.sort((left, right) => {
-    const leftDepth = buildFolderPath(left.id, new Map(allFolders.map((item) => [item.id, item]))).length;
-    const rightDepth = buildFolderPath(right.id, new Map(allFolders.map((item) => [item.id, item]))).length;
-    return leftDepth - rightDepth;
-  })) {
-    const [created] = await db
-      .insert(folders)
-      .values({
-        jobId: currentFolder.jobId,
-        title:
-          currentFolder.id === folder.id
-            ? `${currentFolder.title} Copy`
-            : currentFolder.title,
-        parentFolderId: currentFolder.parentFolderId
-          ? createdMap.get(currentFolder.parentFolderId) ?? null
-          : currentFolder.parentFolderId,
-        mediaType: currentFolder.mediaType,
-        viewingPermissions: currentFolder.viewingPermissions,
-        uploadingPermissions: currentFolder.uploadingPermissions,
-        isGlobal: false,
-      })
-      .returning();
+  await db.transaction(async (tx) => {
+    for (const currentFolder of subtreeFolders.sort((left, right) => {
+      const leftDepth = buildFolderPath(left.id, new Map(allFolders.map((item) => [item.id, item]))).length;
+      const rightDepth = buildFolderPath(right.id, new Map(allFolders.map((item) => [item.id, item]))).length;
+      return leftDepth - rightDepth;
+    })) {
+      const [created] = await tx
+        .insert(folders)
+        .values({
+          jobId: currentFolder.jobId,
+          title:
+            currentFolder.id === folder.id
+              ? `${currentFolder.title} Copy`
+              : currentFolder.title,
+          parentFolderId: currentFolder.parentFolderId
+            ? createdMap.get(currentFolder.parentFolderId) ?? null
+            : currentFolder.parentFolderId,
+          mediaType: currentFolder.mediaType,
+          viewingPermissions: currentFolder.viewingPermissions,
+          uploadingPermissions: currentFolder.uploadingPermissions,
+          isGlobal: false,
+        })
+        .returning();
 
-    createdMap.set(currentFolder.id, created.id);
-  }
+      createdMap.set(currentFolder.id, created.id);
+    }
 
-  for (const currentFile of subtreeFiles) {
-    await db.insert(files).values({
-      folderId: currentFile.folderId ? createdMap.get(currentFile.folderId) ?? null : null,
-      filename: currentFile.filename,
-      originalName: currentFile.originalName,
-      fileUrl: currentFile.fileUrl,
-      fileSize: currentFile.fileSize,
-      mimeType: currentFile.mimeType,
-      uploadedBy: currentFile.uploadedBy,
-    });
-  }
+    for (const currentFile of subtreeFiles) {
+      await tx.insert(files).values({
+        folderId: currentFile.folderId ? createdMap.get(currentFile.folderId) ?? null : null,
+        filename: currentFile.filename,
+        originalName: currentFile.originalName,
+        fileUrl: currentFile.fileUrl,
+        fileSize: currentFile.fileSize,
+        mimeType: currentFile.mimeType,
+        uploadedBy: currentFile.uploadedBy,
+      });
+    }
+  });
 
   const copiedRootId = createdMap.get(folder.id);
 
@@ -741,15 +801,17 @@ export async function softDeleteFolder(params: {
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
   const deletedAt = new Date();
 
-  await db
-    .update(folders)
-    .set({ deletedAt, updatedAt: deletedAt })
-    .where(inArray(folders.id, folderIds));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(folders)
+      .set({ deletedAt, updatedAt: deletedAt })
+      .where(inArray(folders.id, folderIds));
 
-  await db
-    .update(files)
-    .set({ deletedAt, updatedAt: deletedAt })
-    .where(inArray(files.folderId, folderIds));
+    await tx
+      .update(files)
+      .set({ deletedAt, updatedAt: deletedAt })
+      .where(inArray(files.folderId, folderIds));
+  });
 
   await writeActivity({
     entityType: "folder",
@@ -763,26 +825,6 @@ export async function softDeleteFolder(params: {
   });
 }
 
-async function restoreFolderAncestors(folder: Folder) {
-  let currentParentId = folder.parentFolderId;
-
-  while (currentParentId) {
-    const parent = await getFolderOrThrow(currentParentId, true);
-
-    if (!parent.deletedAt) {
-      currentParentId = parent.parentFolderId;
-      continue;
-    }
-
-    await db
-      .update(folders)
-      .set({ deletedAt: null, updatedAt: new Date() })
-      .where(eq(folders.id, parent.id));
-
-    currentParentId = parent.parentFolderId;
-  }
-}
-
 export async function restoreFolder(params: {
   folderId: string;
   userId: string;
@@ -793,21 +835,46 @@ export async function restoreFolder(params: {
     return folder;
   }
 
-  await restoreFolderAncestors(folder);
-
   const allFolders = await getAllFoldersForJob(folder.jobId!, folder.mediaType, true);
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
+  const folderMap = new Map(allFolders.map((currentFolder) => [currentFolder.id, currentFolder]));
+  const ancestorIdsToRestore: string[] = [];
+  let currentParentId = folder.parentFolderId;
+
+  while (currentParentId) {
+    const parent = folderMap.get(currentParentId);
+
+    if (!parent) {
+      break;
+    }
+
+    if (parent.deletedAt) {
+      ancestorIdsToRestore.push(parent.id);
+    }
+
+    currentParentId = parent.parentFolderId;
+  }
+
   const restoredAt = new Date();
 
-  await db
-    .update(folders)
-    .set({ deletedAt: null, updatedAt: restoredAt })
-    .where(inArray(folders.id, folderIds));
+  await db.transaction(async (tx) => {
+    if (ancestorIdsToRestore.length > 0) {
+      await tx
+        .update(folders)
+        .set({ deletedAt: null, updatedAt: restoredAt })
+        .where(inArray(folders.id, ancestorIdsToRestore));
+    }
 
-  await db
-    .update(files)
-    .set({ deletedAt: null, updatedAt: restoredAt })
-    .where(inArray(files.folderId, folderIds));
+    await tx
+      .update(folders)
+      .set({ deletedAt: null, updatedAt: restoredAt })
+      .where(inArray(folders.id, folderIds));
+
+    await tx
+      .update(files)
+      .set({ deletedAt: null, updatedAt: restoredAt })
+      .where(inArray(files.folderId, folderIds));
+  });
 
   await writeActivity({
     entityType: "folder",
@@ -831,23 +898,13 @@ export async function purgeFolder(params: {
   const allFolders = await getAllFoldersForJob(folder.jobId!, folder.mediaType, true);
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
   const subtreeFiles = await getAllFilesForFolderIds(folderIds, true);
+  const fileUrlsToDelete = await listExclusiveFileUrlsToDelete(subtreeFiles);
 
-  for (const file of subtreeFiles) {
-    if (!file.fileUrl) {
-      continue;
-    }
+  await db.transaction(async (tx) => {
+    await tx.delete(folders).where(inArray(folders.id, folderIds));
+  });
 
-    const [remaining] = await db
-      .select({ total: count() })
-      .from(files)
-      .where(and(eq(files.fileUrl, file.fileUrl), sql`${files.id} <> ${file.id}`));
-
-    if (!remaining || Number(remaining.total) === 0) {
-      await deletePhysicalFile(file.fileUrl);
-    }
-  }
-
-  await db.delete(folders).where(inArray(folders.id, folderIds));
+  await deletePhysicalFilesBestEffort(fileUrlsToDelete, "purgeFolder");
 
   await writeActivity({
     entityType: "folder",
@@ -885,21 +942,27 @@ export async function saveUploadedFiles(params: {
     });
 
     await writeUploadedBuffer(fileUrl, uploadedFile.buffer);
+    let file: File;
 
-    const [file] = await db
-      .insert(files)
-      .values({
-        folderId: folder.id,
-        filename: storedName,
-        originalName: uploadedFile.originalname,
-        fileUrl,
-        fileSize: uploadedFile.size,
-        mimeType: uploadedFile.mimetype,
-        uploadedBy: params.userId,
-      })
-      .returning();
-
-    created.push(file);
+    try {
+      [file] = await db.transaction(async (tx) =>
+        tx
+          .insert(files)
+          .values({
+            folderId: folder.id,
+            filename: storedName,
+            originalName: uploadedFile.originalname,
+            fileUrl,
+            fileSize: uploadedFile.size,
+            mimeType: uploadedFile.mimetype,
+            uploadedBy: params.userId,
+          })
+          .returning(),
+      );
+    } catch (error) {
+      await deletePhysicalFilesBestEffort([fileUrl], "saveUploadedFiles:rollback");
+      throw error;
+    }
 
     await writeActivity({
       entityType: "file",
@@ -920,6 +983,8 @@ export async function saveUploadedFiles(params: {
       mediaType: folder.mediaType,
       originalName: file.originalName,
     }, folder.jobId);
+
+    created.push(file);
   }
 
   return {
@@ -1031,19 +1096,13 @@ export async function purgeFile(params: {
 }) {
   const file = await getFileOrThrow(params.fileId, true);
   const folder = await getFolderOrThrow(file.folderId!, true);
+  const fileUrlsToDelete = await listExclusiveFileUrlsToDelete([file]);
 
-  if (file.fileUrl) {
-    const [remaining] = await db
-      .select({ total: count() })
-      .from(files)
-      .where(and(eq(files.fileUrl, file.fileUrl), sql`${files.id} <> ${file.id}`));
+  await db.transaction(async (tx) => {
+    await tx.delete(files).where(eq(files.id, file.id));
+  });
 
-    if (!remaining || Number(remaining.total) === 0) {
-      await deletePhysicalFile(file.fileUrl);
-    }
-  }
-
-  await db.delete(files).where(eq(files.id, file.id));
+  await deletePhysicalFilesBestEffort(fileUrlsToDelete, "purgeFile");
 
   await writeActivity({
     entityType: "file",
@@ -1152,6 +1211,48 @@ export async function getActivityEntries(params: {
   page?: number;
   limit?: number;
 }) {
+  const metadataJobId = sql<string | null>`${activityLog.metadata} ->> 'jobId'`;
+  const metadataMediaType = sql<string | null>`${activityLog.metadata} ->> 'mediaType'`;
+  const metadataFolderId = sql<string | null>`${activityLog.metadata} ->> 'folderId'`;
+  const metadataDescription = sql<string | null>`${activityLog.metadata} ->> 'description'`;
+  const conditions: SQL[] = [];
+
+  if (params.entityType) {
+    conditions.push(eq(activityLog.entityType, params.entityType));
+  }
+
+  if (params.entityId) {
+    conditions.push(eq(activityLog.entityId, params.entityId));
+  }
+
+  if (!params.entityType && !params.entityId && params.jobId) {
+    conditions.push(eq(metadataJobId, params.jobId));
+
+    if (params.mediaType) {
+      conditions.push(eq(metadataMediaType, params.mediaType));
+    }
+
+    if (params.folderId) {
+      conditions.push(eq(metadataFolderId, params.folderId));
+    }
+  }
+
+  if (params.allowedScopeIds) {
+    conditions.push(inArray(metadataJobId, params.allowedScopeIds));
+  }
+
+  const whereClause = and(...conditions);
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 50;
+  const offset = (page - 1) * limit;
+
+  const [totalRow] = await db
+    .select({
+      total: count(),
+    })
+    .from(activityLog)
+    .where(whereClause);
+
   const rows = await db
     .select({
       id: activityLog.id,
@@ -1159,59 +1260,26 @@ export async function getActivityEntries(params: {
       entityId: activityLog.entityId,
       action: activityLog.action,
       metadata: activityLog.metadata,
+      description: metadataDescription,
       createdAt: activityLog.createdAt,
       userName: users.fullName,
     })
     .from(activityLog)
     .leftJoin(users, eq(activityLog.userId, users.id))
-    .orderBy(desc(activityLog.createdAt));
+    .where(whereClause)
+    .orderBy(desc(activityLog.createdAt))
+    .limit(limit)
+    .offset(offset);
 
-  const filtered = rows.filter((row) => {
-    const metadata = (row.metadata ?? {}) as Record<string, unknown>;
-
-    if (params.entityType || params.entityId) {
-      if (params.entityType && row.entityType !== params.entityType) {
-        return false;
-      }
-
-      if (params.entityId && row.entityId !== params.entityId) {
-        return false;
-      }
-    } else if (params.jobId) {
-      if (metadata.jobId !== params.jobId) {
-        return false;
-      }
-
-      if (params.mediaType && metadata.mediaType !== params.mediaType) {
-        return false;
-      }
-
-      if (params.folderId && metadata.folderId !== params.folderId) {
-        return false;
-      }
-    }
-
-    if (
-      params.allowedScopeIds &&
-      !params.allowedScopeIds.includes(String(metadata.jobId ?? ""))
-    ) {
-      return false;
-    }
-
-    return true;
-  });
-
-  const page = params.page ?? 1;
-  const limit = params.limit ?? 20;
-  const offset = (page - 1) * limit;
+  const totalItems = totalRow?.total ?? 0;
 
   return {
-    entries: filtered.slice(offset, offset + limit),
+    data: rows,
     pagination: {
       page,
       limit,
-      totalItems: filtered.length,
-      totalPages: Math.max(1, Math.ceil(filtered.length / limit)),
+      totalItems,
+      totalPages: Math.max(1, Math.ceil(totalItems / limit)),
     },
   };
 }
@@ -1233,7 +1301,14 @@ export async function streamFolderZip(params: {
   });
 
   archive.on("error", (error: Error) => {
-    throw error;
+    logger.error({ err: error, folderId: params.folderId }, "Failed to stream folder archive");
+
+    if (!params.res.headersSent) {
+      params.res.status(500).end();
+      return;
+    }
+
+    params.res.destroy(error);
   });
 
   archive.pipe(params.res);

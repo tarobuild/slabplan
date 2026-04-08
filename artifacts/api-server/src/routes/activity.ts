@@ -52,10 +52,10 @@ router.get(
 
     if (allowedScopeIds && allowedScopeIds.length === 0) {
       res.json({
-        entries: [],
+        data: [],
         pagination: {
           page: query.data.page ?? 1,
-          limit: query.data.limit ?? 20,
+          limit: query.data.limit ?? 50,
           totalItems: 0,
           totalPages: 1,
         },

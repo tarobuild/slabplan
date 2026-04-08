@@ -52,6 +52,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { invalidateAppData } from "@/lib/data-refresh"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -249,6 +250,7 @@ export default function ClientsPage() {
       setClientForm(emptyClientForm)
       fetchClients(search, 1)
       setPage(1)
+      invalidateAppData(["clients", "navigation"])
       await openDetail(r.data.client.id)
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to create client")
@@ -291,6 +293,7 @@ export default function ClientsPage() {
       setEditingClient(false)
       setSelected(prev => prev ? { ...prev, ...r.data.client } : prev)
       fetchClients(search, page)
+      invalidateAppData(["clients", "navigation"])
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to update client")
     } finally {
@@ -307,6 +310,7 @@ export default function ClientsPage() {
       setDeleteClientId(null)
       if (selected?.id === deleteClientId) setSelected(null)
       fetchClients(search, page)
+      invalidateAppData(["clients", "navigation"])
     } catch {
       toast.error("Failed to delete client")
     } finally {

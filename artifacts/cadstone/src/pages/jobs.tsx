@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { invalidateAppData, subscribeToDataRefresh } from "@/lib/data-refresh"
 import {
   Table,
   TableBody,
@@ -139,6 +140,8 @@ export default function JobsPage() {
 
   useEffect(() => { fetchJobs() }, [])
 
+  useEffect(() => subscribeToDataRefresh("jobs", () => fetchJobs()), [])
+
   const handleSearch = (v: string) => {
     setSearch(v)
     setPage(1)
@@ -177,6 +180,7 @@ export default function JobsPage() {
       setForm(emptyForm)
       fetchJobs(search, status, 1)
       setPage(1)
+      invalidateAppData(["jobs", "navigation"])
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to create job")
     } finally {
@@ -192,6 +196,7 @@ export default function JobsPage() {
       toast.success("Job deleted")
       setDeleteId(null)
       fetchJobs()
+      invalidateAppData(["jobs", "navigation"])
     } catch {
       toast.error("Failed to delete job")
     } finally {

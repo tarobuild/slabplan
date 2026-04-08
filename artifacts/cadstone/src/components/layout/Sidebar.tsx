@@ -10,6 +10,7 @@ import {
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
 
 type Job = {
@@ -26,20 +27,40 @@ const STATUS_DOT: Record<string, string> = {
   archived: "bg-slate-300",
 }
 
+function getApiErrorMessage(err: unknown, fallback: string) {
+  if (typeof err === "object" && err !== null) {
+    const value = err as { response?: { data?: { message?: string } }; message?: string }
+    return value.response?.data?.message ?? value.message ?? fallback
+  }
+
+  return fallback
+}
+
 export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
   const { jobId } = useParams<{ jobId?: string }>()
   const navigate = useNavigate()
   const [jobs, setJobs] = useState<Job[]>([])
   const [search, setSearch] = useState("")
   const [sortAsc, setSortAsc] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const activeRef = useRef<HTMLButtonElement | null>(null)
 
-  useEffect(() => {
+  const loadJobs = () => {
+    setErrorMessage(null)
+
     api
       .get("/jobs?limit=200&status=open")
       .then((r) => setJobs(r.data.jobs ?? r.data ?? []))
-      .catch(() => {})
+      .catch((err: unknown) => {
+        setErrorMessage(getApiErrorMessage(err, "Couldn't refresh jobs right now."))
+      })
+  }
+
+  useEffect(() => {
+    loadJobs()
   }, [])
+
+  useEffect(() => subscribeToDataRefresh("navigation", () => loadJobs()), [])
 
   useEffect(() => {
     if (activeRef.current) {
@@ -106,6 +127,23 @@ export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
           />
         </div>
       </div>
+
+      {errorMessage ? (
+        <div className="mx-2.5 mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-amber-800">{errorMessage}</p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[11px] text-amber-900 hover:text-amber-950"
+              onClick={loadJobs}
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {jobId && (
         <div className="border-b border-[#E5E7EB] px-2.5 pb-2">

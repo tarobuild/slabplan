@@ -31,6 +31,13 @@ function normalizeEmail(value: unknown): string {
   return normalized;
 }
 
+function normalizeUsername(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new HttpError(400, "Username is required.");
+  }
+  return value.trim().toLowerCase();
+}
+
 function normalizePassword(value: unknown, label = "Password"): string {
   if (typeof value !== "string") {
     throw new HttpError(400, `${label} is required.`);
@@ -43,6 +50,13 @@ function normalizePassword(value: unknown, label = "Password"): string {
   }
 
   return trimmed;
+}
+
+function normalizeLoginPassword(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new HttpError(400, "Password is required.");
+  }
+  return value.trim();
 }
 
 function normalizeFullName(value: unknown): string {
@@ -109,8 +123,8 @@ router.post(
 router.post(
   "/login",
   asyncHandler(async (req, res) => {
-    const email = normalizeEmail(req.body.email);
-    const password = normalizePassword(req.body.password);
+    const email = normalizeUsername(req.body.email);
+    const password = normalizeLoginPassword(req.body.password);
 
     const user = await findActiveUserByEmail(email);
 

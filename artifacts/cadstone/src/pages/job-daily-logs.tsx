@@ -272,6 +272,23 @@ type FilterValues = {
   tags: string[]
 }
 
+const dailyLogShareDefaults = {
+  shareInternalUsers: "shareInternalUsersByDefault",
+  // Legacy API flag names: shareClient is used for estimators.
+  shareClient: "shareEstimatorsByDefault",
+  // Legacy API flag names: shareSubsVendors is used for installers.
+  shareSubsVendors: "shareInstallersByDefault",
+} as const
+
+const dailyLogShareLabels: Array<
+  [keyof Pick<FormValues, "shareInternalUsers" | "shareClient" | "shareSubsVendors" | "isPrivate">, string]
+> = [
+  ["shareInternalUsers", "Internal Users"],
+  ["shareClient", "Estimators"],
+  ["shareSubsVendors", "Installers"],
+  ["isPrivate", "Private"],
+]
+
 const PAGE_SIZE = 10
 const DEFAULT_SETTINGS: DailyLogSettings = {
   stampLocation: false,
@@ -569,9 +586,9 @@ function buildDefaultForm(jobId: string, settings: DailyLogSettings, users: User
     notes: settings.defaultNotes,
     tags: [],
     tagInput: "",
-    shareInternalUsers: settings.shareInternalUsersByDefault,
-    shareClient: settings.shareEstimatorsByDefault,
-    shareSubsVendors: settings.shareInstallersByDefault,
+    shareInternalUsers: settings[dailyLogShareDefaults.shareInternalUsers],
+    shareClient: settings[dailyLogShareDefaults.shareClient],
+    shareSubsVendors: settings[dailyLogShareDefaults.shareSubsVendors],
     isPrivate: false,
     notifyUserIds: buildDefaultNotifyUserIds(users, settings),
     includeWeather: settings.includeWeatherByDefault,
@@ -2162,16 +2179,11 @@ function DailyLogDialog({
                   <div className="mb-1 text-sm font-semibold text-slate-950">Permissions</div>
                   <div className="mb-4 text-sm text-slate-500">Share</div>
                   <div className="space-y-3">
-                    {[
-                      ["shareInternalUsers", "Internal Users"],
-                      ["shareClient", "Estimators"],
-                      ["shareSubsVendors", "Installers"],
-                      ["isPrivate", "Private"],
-                    ].map(([key, label]) => (
+                    {dailyLogShareLabels.map(([key, label]) => (
                       <label key={key} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-3">
                         <span className="text-sm text-slate-700">{label}</span>
                         <Checkbox
-                          checked={values[key as keyof FormValues] as boolean}
+                          checked={values[key]}
                           onCheckedChange={(checked) =>
                             setValues((current) => ({
                               ...current,

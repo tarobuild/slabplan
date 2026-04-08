@@ -25,6 +25,7 @@ type PublicUser = Pick<
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const RESET_TOKEN_TTL_SECONDS = 60 * 60;
+const JWT_ALGORITHMS = ["HS256"] as const;
 
 function readJwtSecret(envName: "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET" | "JWT_RESET_SECRET") {
   const value = process.env[envName]?.trim();
@@ -107,7 +108,9 @@ function decodeVerifiedToken<TType extends TokenType>(
   let payload: JwtPayload | string;
 
   try {
-    payload = jwt.verify(token, secret);
+    payload = jwt.verify(token, secret, {
+      algorithms: [...JWT_ALGORITHMS],
+    });
   } catch {
     throw new HttpError(401, "Invalid or expired token.");
   }

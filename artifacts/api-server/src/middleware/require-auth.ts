@@ -22,8 +22,12 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
     return;
   }
 
-  req.auth = verifyAccessToken(token);
-  next();
+  try {
+    req.auth = verifyAccessToken(token);
+    next();
+  } catch (error) {
+    next(error);
+  }
 }
 
 export function requireRole(...roles: AppRole[]) {

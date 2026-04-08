@@ -65,6 +65,18 @@ function lowerExtension(fileName: string) {
   return path.extname(fileName).toLowerCase();
 }
 
+function validateAllowedUpload(
+  extension: string,
+  mimeType: string,
+  allowedExtensions: string[],
+  isAllowedMimeType: (value: string) => boolean,
+  message: string,
+) {
+  if (!allowedExtensions.includes(extension) || !isAllowedMimeType(mimeType)) {
+    throw new HttpError(400, message);
+  }
+}
+
 export function validateUploadForMediaType(
   mediaType: string,
   file: {
@@ -76,29 +88,37 @@ export function validateUploadForMediaType(
   const mimeType = file.mimetype?.toLowerCase() ?? "";
 
   if (mediaType === "photo") {
-    const allowed = photoExtensions.includes(extension) || allowedPhotoMimeTypes.has(mimeType);
-    if (!allowed) {
-      throw new HttpError(400, "Photos must be image files (.jpg, .png, .gif, .webp).");
-    }
+    validateAllowedUpload(
+      extension,
+      mimeType,
+      photoExtensions,
+      (value) => allowedPhotoMimeTypes.has(value),
+      "Photos must be image files (.jpg, .png, .gif, .webp).",
+    );
     return;
   }
 
   if (mediaType === "video") {
-    const allowed = videoExtensions.includes(extension) || allowedVideoMimeTypes.has(mimeType);
-    if (!allowed) {
-      throw new HttpError(400, "Videos must be video files (.mp4, .mov, .avi, .webm).");
-    }
+    validateAllowedUpload(
+      extension,
+      mimeType,
+      videoExtensions,
+      (value) => allowedVideoMimeTypes.has(value),
+      "Videos must be video files (.mp4, .mov, .avi, .webm).",
+    );
     return;
   }
 
   if (mediaType === "document") {
-    const allowed =
-      documentExtensions.includes(extension) ||
-      allowedDocumentMimeTypes.has(mimeType) ||
-      mimeType.startsWith("application/vnd.openxmlformats-officedocument.");
-    if (!allowed) {
-      throw new HttpError(400, "Documents must be supported office, text, or PDF files.");
-    }
+    validateAllowedUpload(
+      extension,
+      mimeType,
+      documentExtensions,
+      (value) =>
+        allowedDocumentMimeTypes.has(value) ||
+        value.startsWith("application/vnd.openxmlformats-officedocument."),
+      "Documents must be supported office, text, or PDF files.",
+    );
     return;
   }
 

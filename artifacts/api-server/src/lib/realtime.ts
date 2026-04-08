@@ -6,6 +6,7 @@ import {
   listAccessibleJobIds,
   listAccessibleLeadIds,
 } from "./authorization";
+import { corsOrigin } from "./cors";
 import { logger } from "./logger";
 
 let io: Server | null = null;
@@ -31,7 +32,7 @@ export function initRealtime(server: HttpServer) {
 
   io = new Server(server, {
     cors: {
-      origin: true,
+      origin: corsOrigin,
       credentials: true,
     },
   });

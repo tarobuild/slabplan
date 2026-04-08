@@ -25,6 +25,28 @@ test("photo uploads reject svg", () => {
   );
 });
 
+test("photo uploads reject mismatched mime types", () => {
+  assert.throws(
+    () =>
+      validateUploadForMediaType("photo", {
+        originalname: "payload.jpg",
+        mimetype: "text/html",
+      }),
+    (error) => error instanceof HttpError && error.statusCode === 400,
+  );
+});
+
+test("document uploads reject mismatched extensions", () => {
+  assert.throws(
+    () =>
+      validateUploadForMediaType("document", {
+        originalname: "payload.html",
+        mimetype: "application/pdf",
+      }),
+    (error) => error instanceof HttpError && error.statusCode === 400,
+  );
+});
+
 test("document uploads still allow office and text files", () => {
   assert.doesNotThrow(() =>
     validateUploadForMediaType("document", {

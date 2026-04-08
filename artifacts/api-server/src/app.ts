@@ -1,16 +1,20 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { verifyAccessToken, verifyRefreshToken, uploadCookieName } from "./lib/auth";
 import { assertCanAccessUploadPath } from "./lib/authorization";
+import { corsOrigin } from "./lib/cors";
 import { logger } from "./lib/logger";
 import { HttpError } from "./lib/http";
 import { readBearerToken } from "./middleware/require-auth";
 import { ensureUploadRoot, resolveAbsolutePathFromFileUrl } from "./lib/storage";
 
 const app: Express = express();
+
+app.set("trust proxy", 1);
 
 void ensureUploadRoot();
 
@@ -34,8 +38,14 @@ app.use(
   }),
 );
 app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: false,
+  }),
+);
+app.use(
   cors({
-    origin: true,
+    origin: corsOrigin,
     credentials: true,
   }),
 );

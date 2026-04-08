@@ -154,9 +154,6 @@ type SortKey =
   | "start"
   | "end"
   | "assigned"
-  | "accepted"
-  | "pending"
-  | "declined"
   | "files"
 
 type FilterState = {
@@ -305,7 +302,6 @@ const STATUS_OPTIONS = [
   { value: "in_progress", label: "In Progress" },
   { value: "incomplete", label: "Incomplete" },
   { value: "past_due", label: "Past Due" },
-  { value: "unconfirmed", label: "Unconfirmed" },
 ] as const
 const DAY_START_HOUR = 6
 const DAY_END_HOUR = 19
@@ -866,10 +862,6 @@ function mergeUniqueIds(current: string[], nextIds: string[]) {
 }
 
 function matchesStatus(item: ScheduleItemRecord, status: string) {
-  const accepted = 0
-  const pending = 0
-  const declined = 0
-
   switch (status) {
     case "all":
       return true
@@ -885,8 +877,6 @@ function matchesStatus(item: ScheduleItemRecord, status: string) {
       return !item.isComplete && item.status !== "completed"
     case "past_due":
       return item.status === "overdue"
-    case "unconfirmed":
-      return accepted === 0 && pending === 0 && declined === 0
     default:
       return true
   }
@@ -1855,10 +1845,6 @@ export default function JobSchedulePage() {
           return compareValues(itemEndDate(left), itemEndDate(right), sortDirection)
         case "assigned":
           return compareValues(assignedLeft.toLowerCase(), assignedRight.toLowerCase(), sortDirection)
-        case "accepted":
-        case "pending":
-        case "declined":
-          return 0
         case "files":
           return compareValues(leftFiles, rightFiles, sortDirection)
         default:
@@ -3688,9 +3674,6 @@ export default function JobSchedulePage() {
                               <SortableHead label="Start" sortKey="start" activeSortKey={sortKey} direction={sortDirection} onSort={handleSort} />
                               <SortableHead label="End" sortKey="end" activeSortKey={sortKey} direction={sortDirection} onSort={handleSort} />
                               <SortableHead label="Assigned To" sortKey="assigned" activeSortKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                              <SortableHead label="Accepted" sortKey="accepted" activeSortKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                              <SortableHead label="Pending" sortKey="pending" activeSortKey={sortKey} direction={sortDirection} onSort={handleSort} />
-                              <SortableHead label="Declined" sortKey="declined" activeSortKey={sortKey} direction={sortDirection} onSort={handleSort} />
                               <SortableHead label="Files" sortKey="files" activeSortKey={sortKey} direction={sortDirection} onSort={handleSort} />
                             </TableRow>
                           </TableHeader>
@@ -3699,7 +3682,7 @@ export default function JobSchedulePage() {
                               <Fragment key={group.label}>
                                 {listDisplayMode === "phases" ? (
                                   <TableRow className="hover:bg-white">
-                                    <TableCell colSpan={13} className="bg-slate-50 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                    <TableCell colSpan={10} className="bg-slate-50 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
                                       {group.label}
                                     </TableCell>
                                   </TableRow>
@@ -3763,9 +3746,6 @@ export default function JobSchedulePage() {
                                         ? item.assignees.map((assignee) => assignee.fullName || "Unknown").join(", ")
                                         : "—"}
                                     </TableCell>
-                                    <TableCell className="text-sm text-slate-500">0</TableCell>
-                                    <TableCell className="text-sm text-slate-500">0</TableCell>
-                                    <TableCell className="text-sm text-slate-500">0</TableCell>
                                     <TableCell className="text-sm text-slate-500">{item.attachments.length}</TableCell>
                                   </TableRow>
                                 ))}

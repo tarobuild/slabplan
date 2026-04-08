@@ -34,6 +34,7 @@ import {
 import { ensureSystemFolders, validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
+import { buildContainsLikePattern } from "../lib/search";
 import { requireManagerOrAbove } from "../middleware/require-auth";
 import {
   buildStoredFileName,
@@ -588,7 +589,7 @@ router.get(
     }
 
     if (query.data.search) {
-      const search = `%${query.data.search}%`;
+      const search = buildContainsLikePattern(query.data.search);
       conditions.push(
         or(
           ilike(leads.title, search),

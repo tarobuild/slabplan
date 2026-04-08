@@ -17,6 +17,7 @@ import {
   listAccessibleLeadIds,
 } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
+import { buildContainsLikePattern } from "../lib/search";
 
 const router: IRouter = Router();
 
@@ -34,7 +35,7 @@ router.get(
       throw new HttpError(400, "Invalid search query.", query.error.flatten());
     }
 
-    const search = `%${query.data.q}%`;
+    const search = buildContainsLikePattern(query.data.q);
     const limit = query.data.limit;
     const queryLimit = Math.min(limit * 3, 30);
     const [accessibleJobIds, accessibleLeadIds] = await Promise.all([

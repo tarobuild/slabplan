@@ -12,6 +12,8 @@ before(async () => {
   process.env.NODE_ENV = "test";
   process.env.LOG_LEVEL = "silent";
   process.env.DATABASE_URL ??= testDatabaseUrl;
+  process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
+  process.env.REPLIT_DEV_DOMAIN = "workspace.kirk.replit.dev";
 
   const { default: app } = await import("../src/app.ts");
 
@@ -50,6 +52,48 @@ test("health endpoint stays public", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: "ok" });
+});
+
+test("health endpoint applies security headers", async () => {
+  const response = await fetch(`${baseUrl}/api/healthz`);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("x-frame-options"), "SAMEORIGIN");
+});
+
+test("cors allows configured app origin", async () => {
+  const response = await fetch(`${baseUrl}/api/healthz`, {
+    headers: {
+      origin: "https://app.example.com",
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://app.example.com");
+  assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+});
+
+test("cors allows replit dev origin", async () => {
+  const response = await fetch(`${baseUrl}/api/healthz`, {
+    headers: {
+      origin: "https://workspace.kirk.replit.dev",
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://workspace.kirk.replit.dev");
+});
+
+test("cors does not reflect disallowed origins", async () => {
+  const response = await fetch(`${baseUrl}/api/healthz`, {
+    headers: {
+      origin: "https://evil.example.com",
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), null);
 });
 
 test("register endpoint rejects unauthenticated callers", async () => {

@@ -38,6 +38,7 @@ import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
 import { emitRealtimeEvent } from "../lib/realtime";
+import { buildContainsLikePattern } from "../lib/search";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -895,7 +896,7 @@ router.get(
     }
 
     if (query.data.keywords) {
-      const search = `%${query.data.keywords}%`;
+      const search = buildContainsLikePattern(query.data.keywords);
       conditions.push(
         sql`(${ilike(dailyLogs.title, search)} or ${ilike(dailyLogs.notes, search)} or ${ilike(dailyLogs.weatherNotes, search)})`,
       );

@@ -170,6 +170,7 @@ async function assertCustomFieldNameUnique(name: string, excludeId?: string) {
 
 router.get(
   "/daily-logs/settings",
+  requireAdmin,
   asyncHandler(async (_req, res) => {
     const settings = await ensureSettingsRow();
     res.json({ settings });
@@ -219,6 +220,7 @@ router.put(
 
 router.get(
   "/daily-logs/custom-fields",
+  requireAdmin,
   asyncHandler(async (_req, res) => {
     const fields = await db
       .select({

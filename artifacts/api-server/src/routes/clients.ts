@@ -19,6 +19,7 @@ import {
   listAccessibleClientIds,
 } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
+import { buildContainsLikePattern } from "../lib/search";
 import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
 
 const router: IRouter = Router();
@@ -106,7 +107,7 @@ router.get(
       conditions.push(inArray(clients.id, accessibleClientIds));
     }
     if (search) {
-      const like = `%${search}%`;
+      const like = buildContainsLikePattern(search);
       conditions.push(
         or(
           ilike(clients.companyName, like),

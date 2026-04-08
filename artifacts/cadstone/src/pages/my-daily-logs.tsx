@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { ChevronRight, FileText, Search, Users } from "lucide-react"
 import { api } from "@/lib/api"
@@ -50,8 +50,19 @@ function apiError(error: unknown, fallback: string) {
 export default function MyDailyLogsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [logs, setLogs] = useState<MyDailyLogItem[]>([])
   const [errorMessage, setErrorMessage] = useState("")
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearch(search)
+    }, 300)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [search])
 
   useEffect(() => {
     setLoading(true)
@@ -62,15 +73,13 @@ export default function MyDailyLogsPage() {
         params: {
           page: 1,
           pageSize: 100,
-          keywords: search.trim() || undefined,
+          keywords: debouncedSearch.trim() || undefined,
         },
       })
       .then((response) => setLogs(response.data.logs ?? []))
       .catch((error) => setErrorMessage(apiError(error, "Failed to load your daily logs")))
       .finally(() => setLoading(false))
-  }, [search])
-
-  const groupedLogs = useMemo(() => logs, [logs])
+  }, [debouncedSearch])
 
   return (
     <div className="space-y-5">
@@ -100,7 +109,7 @@ export default function MyDailyLogsPage() {
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
           {errorMessage}
         </div>
-      ) : groupedLogs.length === 0 ? (
+      ) : logs.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
           <FileText className="mx-auto size-8 text-slate-400" />
           <div className="mt-4 text-lg font-semibold text-slate-900">No daily logs found</div>
@@ -108,7 +117,7 @@ export default function MyDailyLogsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {groupedLogs.map((log) => (
+          {logs.map((log) => (
             <div key={log.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 flex-1">

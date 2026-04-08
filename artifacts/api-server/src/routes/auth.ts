@@ -15,9 +15,52 @@ import {
 } from "../lib/auth";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
+import { createRateLimit } from "../lib/rate-limit";
 import { requireAdmin, requireAuth } from "../middleware/require-auth";
 
 const router: IRouter = Router();
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeEmailForRateLimit(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return emailPattern.test(normalized) ? normalized : null;
+}
+
+const loginRateLimitByIp = createRateLimit({
+  keyPrefix: "auth:login:ip",
+  max: 10,
+  windowMs: 10 * 60 * 1000,
+  message: "Too many login attempts. Try again later.",
+  resolveKey: (req) => req.ip || null,
+});
+
+const loginRateLimitByEmail = createRateLimit({
+  keyPrefix: "auth:login:email",
+  max: 5,
+  windowMs: 10 * 60 * 1000,
+  message: "Too many login attempts. Try again later.",
+  resolveKey: (req) => normalizeEmailForRateLimit(req.body?.email),
+});
+
+const forgotPasswordRateLimitByIp = createRateLimit({
+  keyPrefix: "auth:forgot-password:ip",
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+  message: "Too many password reset requests. Try again later.",
+  resolveKey: (req) => req.ip || null,
+});
+
+const forgotPasswordRateLimitByEmail = createRateLimit({
+  keyPrefix: "auth:forgot-password:email",
+  max: 3,
+  windowMs: 15 * 60 * 1000,
+  message: "Too many password reset requests. Try again later.",
+  resolveKey: (req) => normalizeEmailForRateLimit(req.body?.email),
+});
 
 function normalizeEmail(value: unknown): string {
   if (typeof value !== "string") {
@@ -26,18 +69,11 @@ function normalizeEmail(value: unknown): string {
 
   const normalized = value.trim().toLowerCase();
 
-  if (!normalized || !normalized.includes("@")) {
+  if (!normalized || !emailPattern.test(normalized)) {
     throw new HttpError(400, "A valid email is required.");
   }
 
   return normalized;
-}
-
-function normalizeUsername(value: unknown): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new HttpError(400, "Username is required.");
-  }
-  return value.trim().toLowerCase();
 }
 
 function normalizePassword(value: unknown, label = "Password"): string {
@@ -126,8 +162,10 @@ router.post(
 
 router.post(
   "/login",
+  loginRateLimitByIp,
+  loginRateLimitByEmail,
   asyncHandler(async (req, res) => {
-    const email = normalizeUsername(req.body.email);
+    const email = normalizeEmail(req.body.email);
     const password = normalizeLoginPassword(req.body.password);
 
     const user = await findActiveUserByEmail(email);
@@ -176,6 +214,8 @@ router.post(
 
 router.post(
   "/forgot-password",
+  forgotPasswordRateLimitByIp,
+  forgotPasswordRateLimitByEmail,
   asyncHandler(async (req, res) => {
     const email = normalizeEmail(req.body.email);
     const user = await findActiveUserByEmail(email);

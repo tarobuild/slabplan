@@ -84,7 +84,7 @@ function AppRoutes({ ready }: { ready: boolean }) {
           <Route path="/files/photos" element={<FilesPhotosPage />} />
           <Route path="/files/videos" element={<FilesVideosPage />} />
           <Route path="/jobs/:jobId" element={<JobDetailPage />}>
-            <Route index element={<Navigate to="summary" replace />} />
+            <Route index element={<Navigate to="schedule" replace />} />
             <Route path="summary" element={<JobSummaryPage />} />
             <Route path="files/documents" element={<JobFilesDocumentsPage />} />
             <Route path="files/photos" element={<JobFilesPhotosPage />} />

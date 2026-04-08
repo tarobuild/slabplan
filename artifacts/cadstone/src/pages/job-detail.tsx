@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Link, NavLink, Outlet, useParams } from "react-router-dom"
+import { Link, Outlet, useLocation, useParams } from "react-router-dom"
 import { api } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -20,16 +20,15 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const TABS = [
-  { label: "Summary", path: "summary" },
-  { label: "Documents", path: "files/documents" },
-  { label: "Photos", path: "files/photos" },
-  { label: "Videos", path: "files/videos" },
   { label: "Schedule", path: "schedule" },
+  { label: "Summary", path: "summary" },
+  { label: "Files", path: "files/documents", matchPrefix: "files/" },
   { label: "Daily Logs", path: "daily-logs" },
 ]
 
 export default function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>()
+  const location = useLocation()
   const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -83,22 +82,25 @@ export default function JobDetailPage() {
 
       <div className="border-b border-[#E5E7EB]">
         <nav className="-mb-px flex gap-0">
-          {TABS.map((tab) => (
-            <NavLink
-              key={tab.path}
-              to={`/jobs/${jobId}/${tab.path}`}
-              className={({ isActive }) =>
-                cn(
+          {TABS.map((tab) => {
+            const isActive = tab.matchPrefix
+              ? location.pathname.includes(`/${tab.matchPrefix}`)
+              : location.pathname.endsWith(`/${tab.path}`)
+            return (
+              <Link
+                key={tab.path}
+                to={`/jobs/${jobId}/${tab.path}`}
+                className={cn(
                   "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
                   isActive
                     ? "border-orange-500 text-orange-600"
                     : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900",
-                )
-              }
-            >
-              {tab.label}
-            </NavLink>
-          ))}
+                )}
+              >
+                {tab.label}
+              </Link>
+            )
+          })}
         </nav>
       </div>
 

@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import {
-  Briefcase,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  FileText,
   List,
   MapPin,
-  TrendingUp,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -26,13 +23,6 @@ import {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-type Stats = {
-  activeJobs: number
-  openLeads: number
-  openScheduleItems: number
-  myDailyLogs: number
-}
-
 type CalItem = {
   id: string
   title: string
@@ -444,8 +434,6 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const today = useMemo(() => new Date(), [])
 
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [statsLoading, setStatsLoading] = useState(true)
   const [activity, setActivity] = useState<ActivityEntry[]>([])
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
   const [sidebarLoading, setSidebarLoading] = useState(true)
@@ -480,12 +468,8 @@ export default function DashboardPage() {
   useEffect(() => { fetchCal() }, [fetchCal])
 
   useEffect(() => {
-    Promise.all([
-      api.get("/dashboard/stats").then(r => r.data.stats),
-      api.get("/activity?limit=12").then(r => r.data.entries ?? []),
-    ])
-      .then(([s, a]) => { setStats(s); setActivity(a) })
-      .finally(() => setStatsLoading(false))
+    api.get("/activity?limit=12")
+      .then(r => setActivity(r.data.entries ?? []))
 
     api.get("/dashboard/agenda")
       .then(r => setRecentJobs(r.data.recentJobs ?? []))
@@ -501,13 +485,6 @@ export default function DashboardPage() {
     if (calPeriod === "month") return formatMonthLabel(anchor)
     return formatRangeLabel(startOfWeek(anchor), endOfWeek(anchor))
   }, [calView, calPeriod, anchor])
-
-  const statCards = [
-    { label: "Active Jobs", value: stats?.activeJobs ?? 0, icon: Briefcase, href: "/jobs", color: "#E85D04" },
-    { label: "Open Leads", value: stats?.openLeads ?? 0, icon: TrendingUp, href: "/sales/leads", color: "#10b981" },
-    { label: "Schedule Items", value: stats?.openScheduleItems ?? 0, icon: CalendarDays, href: "/jobs", color: "#3b82f6" },
-    { label: "My Daily Logs", value: stats?.myDailyLogs ?? 0, icon: FileText, href: "/daily-logs/mine", color: "#8b5cf6" },
-  ]
 
   const todayDisplay = today.toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric", year: "numeric",
@@ -533,30 +510,6 @@ export default function DashboardPage() {
               <Link to="/jobs">New Job</Link>
             </Button>
           </div>
-        </div>
-
-        {/* Stat cards */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {statCards.map(card => (
-            <Link key={card.label} to={card.href}>
-              <Card className="border-[#E5E7EB] bg-white hover:shadow-sm hover:border-slate-300 transition-all cursor-pointer">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide leading-none">{card.label}</p>
-                      {statsLoading
-                        ? <Skeleton className="mt-2 h-7 w-10" />
-                        : <p className="mt-1.5 text-2xl font-bold text-slate-900 leading-none">{card.value}</p>
-                      }
-                    </div>
-                    <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: card.color + "18" }}>
-                      <card.icon className="size-4" style={{ color: card.color }} />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
         </div>
 
         {/* Calendar + Sidebar */}

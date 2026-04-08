@@ -73,6 +73,7 @@ type CreateJobForm = {
   title: string
   status: string
   jobType: string
+  contractType: string
   streetAddress: string
   city: string
   state: string
@@ -83,8 +84,9 @@ type CreateJobForm = {
 }
 
 const emptyForm: CreateJobForm = {
-  title: "", status: "open", jobType: "", streetAddress: "", city: "",
-  state: "", zipCode: "", contractPrice: "", projectedStart: "", projectedCompletion: "",
+  title: "", status: "open", jobType: "", contractType: "",
+  streetAddress: "", city: "", state: "", zipCode: "",
+  contractPrice: "", projectedStart: "", projectedCompletion: "",
 }
 
 export default function JobsPage() {
@@ -147,6 +149,7 @@ export default function JobsPage() {
         title: form.title,
         status: form.status,
         jobType: form.jobType || null,
+        contractType: form.contractType || null,
         streetAddress: form.streetAddress || null,
         city: form.city || null,
         state: form.state || null,
@@ -346,6 +349,31 @@ export default function JobsPage() {
                 <div className="space-y-1.5">
                   <Label htmlFor="zipCode">Zip</Label>
                   <Input id="zipCode" value={form.zipCode} onChange={setField("zipCode")} placeholder="78701" />
+                </div>
+              </div>
+              <div className="col-span-2 space-y-1.5">
+                <Label>Contract Type</Label>
+                <div className="flex gap-6 pt-0.5">
+                  {(["fixed_price", "open_book"] as const).map(ct => (
+                    <label key={ct} className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="createContractType"
+                        value={ct}
+                        checked={form.contractType === ct}
+                        onChange={() => setForm(f => ({ ...f, contractType: ct }))}
+                        className="mt-0.5 accent-blue-600"
+                      />
+                      <div>
+                        <div className="text-sm font-medium text-slate-800">
+                          {ct === "fixed_price" ? "Fixed price" : "Open book"}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {ct === "fixed_price" ? "Set contract price for the client" : "Projected costs + markup"}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
               <div className="space-y-1.5">

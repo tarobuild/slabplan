@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
@@ -75,6 +76,21 @@ const jobPayloadSchema = z.object({
   projectedCompletion: optionalDate,
   actualStart: optionalDate,
   actualCompletion: optionalDate,
+  contractType: z.enum(["fixed_price", "open_book"]).nullable().optional().default(null),
+  internalNotes: optionalString,
+  subVendorNotes: optionalString,
+  squareFeet: z
+    .union([z.string(), z.number(), z.null(), z.undefined()])
+    .transform((v) => {
+      if (v === null || v === undefined || v === "") return null;
+      const s = typeof v === "number" ? v.toString() : v.trim();
+      return s.length === 0 ? null : s;
+    })
+    .refine((v) => v === null || Number.isFinite(Number(v)), {
+      message: "Square feet must be a valid number.",
+    }),
+  permitNumber: optionalString,
+  projectManagerId: z.string().uuid().nullable().optional().default(null),
 });
 
 function getParam(value: string | string[] | undefined, label: string) {
@@ -102,11 +118,18 @@ function toJobInsert(data: z.infer<typeof jobPayloadSchema>, createdBy: string):
     projectedCompletion: data.projectedCompletion,
     actualStart: data.actualStart,
     actualCompletion: data.actualCompletion,
+    contractType: data.contractType ?? null,
+    internalNotes: data.internalNotes ?? null,
+    subVendorNotes: data.subVendorNotes ?? null,
+    squareFeet: data.squareFeet ?? null,
+    permitNumber: data.permitNumber ?? null,
+    projectManagerId: data.projectManagerId ?? null,
     createdBy,
   };
 }
 
 async function findJobById(id: string) {
+  const projectManagers = alias(users, "pm");
   const [job] = await db
     .select({
       id: jobs.id,
@@ -123,6 +146,13 @@ async function findJobById(id: string) {
       actualStart: jobs.actualStart,
       actualCompletion: jobs.actualCompletion,
       workDays: jobs.workDays,
+      contractType: jobs.contractType,
+      internalNotes: jobs.internalNotes,
+      subVendorNotes: jobs.subVendorNotes,
+      squareFeet: jobs.squareFeet,
+      permitNumber: jobs.permitNumber,
+      projectManagerId: jobs.projectManagerId,
+      projectManagerName: projectManagers.fullName,
       createdAt: jobs.createdAt,
       updatedAt: jobs.updatedAt,
       createdById: users.id,
@@ -130,6 +160,7 @@ async function findJobById(id: string) {
     })
     .from(jobs)
     .leftJoin(users, eq(jobs.createdBy, users.id))
+    .leftJoin(projectManagers, eq(jobs.projectManagerId, projectManagers.id))
     .where(and(eq(jobs.id, id), isNull(jobs.deletedAt)))
     .limit(1);
 
@@ -184,11 +215,14 @@ router.get(
         zipCode: jobs.zipCode,
         jobType: jobs.jobType,
         contractPrice: jobs.contractPrice,
+        contractType: jobs.contractType,
         projectedStart: jobs.projectedStart,
         projectedCompletion: jobs.projectedCompletion,
         actualStart: jobs.actualStart,
         actualCompletion: jobs.actualCompletion,
         workDays: jobs.workDays,
+        squareFeet: jobs.squareFeet,
+        permitNumber: jobs.permitNumber,
         createdAt: jobs.createdAt,
         updatedAt: jobs.updatedAt,
       })

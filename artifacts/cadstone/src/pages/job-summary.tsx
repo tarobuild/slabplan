@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 
 type Job = {
@@ -25,6 +26,13 @@ type Job = {
   zipCode: string | null
   jobType: string | null
   contractPrice: string | null
+  contractType: "fixed_price" | "open_book" | null
+  internalNotes: string | null
+  subVendorNotes: string | null
+  squareFeet: string | null
+  permitNumber: string | null
+  projectManagerId: string | null
+  projectManagerName: string | null
   projectedStart: string | null
   projectedCompletion: string | null
   actualStart: string | null
@@ -33,6 +41,8 @@ type Job = {
   createdAt: string
   createdByName: string | null
 }
+
+type UserOption = { id: string; fullName: string }
 
 const JOB_TYPES = ["countertops", "backsplash", "flooring", "custom"]
 const WORK_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -49,6 +59,11 @@ export default function JobSummaryPage() {
   const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [userOptions, setUserOptions] = useState<UserOption[]>([])
+
+  useEffect(() => {
+    api.get("/users").then(r => setUserOptions(r.data.users ?? [])).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!jobId) return
@@ -88,6 +103,12 @@ export default function JobSummaryPage() {
         actualStart: job.actualStart || null,
         actualCompletion: job.actualCompletion || null,
         workDays: job.workDays,
+        contractType: job.contractType || null,
+        internalNotes: job.internalNotes || null,
+        subVendorNotes: job.subVendorNotes || null,
+        squareFeet: job.squareFeet || null,
+        permitNumber: job.permitNumber || null,
+        projectManagerId: job.projectManagerId || null,
       })
       setJob(res.data.job ?? res.data)
       toast.success("Job saved")
@@ -179,6 +200,71 @@ export default function JobSummaryPage() {
         </div>
 
         <div className="space-y-1.5">
+          <Label>Contract Type</Label>
+          <div className="flex gap-4 pt-1">
+            {(["fixed_price", "open_book"] as const).map(ct => (
+              <label key={ct} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="contractType"
+                  value={ct}
+                  checked={job.contractType === ct}
+                  onChange={() => setField("contractType", ct)}
+                  className="mt-0.5 accent-blue-600"
+                />
+                <div>
+                  <div className="text-sm font-medium text-slate-800">
+                    {ct === "fixed_price" ? "Fixed price" : "Open book"}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {ct === "fixed_price"
+                      ? "You will set the contract price for the client"
+                      : 'Price = projected costs + markup. "Cost plus" and "time and materials" contracts.'}
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Project Manager</Label>
+          <Select
+            value={job.projectManagerId ?? "_none"}
+            onValueChange={v => setField("projectManagerId", v === "_none" ? null : v)}
+          >
+            <SelectTrigger><SelectValue placeholder="Assign a project manager" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_none">— None —</SelectItem>
+              {userOptions.map(u => (
+                <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Square Feet</Label>
+          <Input
+            value={job.squareFeet ?? ""}
+            onChange={e => setField("squareFeet", e.target.value || null)}
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="e.g. 48.5"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Permit Number</Label>
+          <Input
+            value={job.permitNumber ?? ""}
+            onChange={e => setField("permitNumber", e.target.value || null)}
+            placeholder="e.g. BP-2024-00123"
+          />
+        </div>
+
+        <div className="space-y-1.5">
           <Label>Work Days</Label>
           <div className="flex flex-wrap gap-1.5 pt-1">
             {WORK_DAYS.map(d => {
@@ -223,6 +309,32 @@ export default function JobSummaryPage() {
             Created by <span className="font-medium text-slate-600">{job.createdByName}</span> on {fmtDate(job.createdAt)}
           </div>
         )}
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+        <h3 className="text-sm font-semibold text-slate-700">Notes</h3>
+        <div className="space-y-1.5">
+          <Label>Notes for internal users</Label>
+          <Textarea
+            value={job.internalNotes ?? ""}
+            onChange={e => setField("internalNotes", e.target.value || null)}
+            placeholder="Internal notes visible only to your team…"
+            maxLength={2500}
+            rows={4}
+          />
+          <p className="text-xs text-slate-400">Maximum 2500 characters</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Notes for subs/vendors</Label>
+          <Textarea
+            value={job.subVendorNotes ?? ""}
+            onChange={e => setField("subVendorNotes", e.target.value || null)}
+            placeholder="Notes visible to subcontractors and vendors…"
+            maxLength={2500}
+            rows={4}
+          />
+          <p className="text-xs text-slate-400">Maximum 2500 characters</p>
+        </div>
       </div>
 
       <div>

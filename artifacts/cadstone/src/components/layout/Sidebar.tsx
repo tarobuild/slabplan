@@ -59,7 +59,8 @@ export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
     <div className="flex h-full flex-col border-r border-[#E5E7EB] bg-white">
       <div className="border-b border-[#E5E7EB] p-2.5">
         <Button
-          className="w-full bg-blue-600 text-white hover:bg-blue-700"
+          variant="orange"
+          className="w-full"
           size="sm"
           onClick={() => navigate("/jobs", { state: { openCreate: true } })}
         >

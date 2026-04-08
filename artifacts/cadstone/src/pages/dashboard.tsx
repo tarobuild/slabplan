@@ -506,7 +506,7 @@ export default function DashboardPage() {
             <Button size="sm" variant="outline" className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-xs h-8" asChild>
               <Link to="/sales/leads">New Lead</Link>
             </Button>
-            <Button size="sm" className="text-xs h-8 text-white" style={{ backgroundColor: "#E85D04" }} asChild>
+            <Button size="sm" variant="orange" className="text-xs h-8" asChild>
               <Link to="/jobs">New Job</Link>
             </Button>
           </div>

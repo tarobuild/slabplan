@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
@@ -10,6 +10,12 @@ import {
   leads,
   scheduleItems,
 } from "@workspace/db/schema";
+import {
+  assertCanViewFolder,
+  assertCanViewScheduleItem,
+  listAccessibleJobIds,
+  listAccessibleLeadIds,
+} from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
 
 const router: IRouter = Router();
@@ -30,121 +36,180 @@ router.get(
 
     const search = `%${query.data.q}%`;
     const limit = query.data.limit;
+    const queryLimit = Math.min(limit * 3, 30);
+    const [accessibleJobIds, accessibleLeadIds] = await Promise.all([
+      listAccessibleJobIds(req.auth),
+      listAccessibleLeadIds(req.auth),
+    ]);
+
+    const noJobAccess = accessibleJobIds !== null && accessibleJobIds.length === 0;
+    const noLeadAccess = accessibleLeadIds !== null && accessibleLeadIds.length === 0;
+
+    if (noJobAccess && noLeadAccess) {
+      res.json({ results: [] });
+      return;
+    }
 
     const [jobRows, leadRows, contactLeadRows, fileRows, scheduleRows] = await Promise.all([
-      db
-        .select({
-          id: jobs.id,
-          title: jobs.title,
-          streetAddress: jobs.streetAddress,
-          city: jobs.city,
-          state: jobs.state,
-          status: jobs.status,
-        })
-        .from(jobs)
-        .where(
-          and(
-            isNull(jobs.deletedAt),
-            or(
-              ilike(jobs.title, search),
-              ilike(jobs.streetAddress, search),
-              ilike(jobs.city, search),
-              ilike(jobs.state, search),
-            ),
-          ),
-        )
-        .orderBy(desc(jobs.updatedAt), asc(jobs.title))
-        .limit(limit),
-      db
-        .select({
-          id: leads.id,
-          title: leads.title,
-          city: leads.city,
-          state: leads.state,
-          status: leads.status,
-        })
-        .from(leads)
-        .where(
-          and(
-            isNull(leads.deletedAt),
-            or(
-              ilike(leads.title, search),
-              ilike(leads.city, search),
-              ilike(leads.state, search),
-              ilike(leads.projectType, search),
-            ),
-          ),
-        )
-        .orderBy(desc(leads.updatedAt), asc(leads.title))
-        .limit(limit),
-      db
-        .select({
-          leadId: leads.id,
-          title: leads.title,
-          city: leads.city,
-          state: leads.state,
-          status: leads.status,
-          contactName: leadContacts.displayName,
-        })
-        .from(leadContacts)
-        .innerJoin(leads, eq(leadContacts.leadId, leads.id))
-        .where(
-          and(
-            isNull(leadContacts.deletedAt),
-            isNull(leads.deletedAt),
-            or(
-              ilike(leadContacts.displayName, search),
-              ilike(leadContacts.email, search),
-              ilike(leadContacts.phone, search),
-              ilike(leadContacts.cellPhone, search),
-            ),
-          ),
-        )
-        .orderBy(asc(leadContacts.displayName))
-        .limit(limit),
-      db
-        .select({
-          id: files.id,
-          originalName: files.originalName,
-          folderId: folders.id,
-          folderTitle: folders.title,
-          mediaType: folders.mediaType,
-          jobId: jobs.id,
-          jobTitle: jobs.title,
-        })
-        .from(files)
-        .innerJoin(folders, eq(files.folderId, folders.id))
-        .innerJoin(jobs, eq(folders.jobId, jobs.id))
-        .where(
-          and(
-            isNull(files.deletedAt),
-            isNull(folders.deletedAt),
-            isNull(jobs.deletedAt),
-            or(ilike(files.originalName, search), ilike(files.filename, search)),
-          ),
-        )
-        .orderBy(desc(files.updatedAt), asc(files.originalName))
-        .limit(limit),
-      db
-        .select({
-          id: scheduleItems.id,
-          title: scheduleItems.title,
-          startDate: scheduleItems.startDate,
-          endDate: scheduleItems.endDate,
-          jobId: jobs.id,
-          jobTitle: jobs.title,
-        })
-        .from(scheduleItems)
-        .innerJoin(jobs, eq(scheduleItems.jobId, jobs.id))
-        .where(
-          and(
-            isNull(scheduleItems.deletedAt),
-            isNull(jobs.deletedAt),
-            ilike(scheduleItems.title, search),
-          ),
-        )
-        .orderBy(desc(scheduleItems.updatedAt), asc(scheduleItems.title))
-        .limit(limit),
+      noJobAccess
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: jobs.id,
+              title: jobs.title,
+              streetAddress: jobs.streetAddress,
+              city: jobs.city,
+              state: jobs.state,
+              status: jobs.status,
+            })
+            .from(jobs)
+            .where(
+              and(
+                isNull(jobs.deletedAt),
+                accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+                or(
+                  ilike(jobs.title, search),
+                  ilike(jobs.streetAddress, search),
+                  ilike(jobs.city, search),
+                  ilike(jobs.state, search),
+                ),
+              ),
+            )
+            .orderBy(desc(jobs.updatedAt), asc(jobs.title))
+            .limit(queryLimit),
+      noLeadAccess
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: leads.id,
+              title: leads.title,
+              city: leads.city,
+              state: leads.state,
+              status: leads.status,
+            })
+            .from(leads)
+            .where(
+              and(
+                isNull(leads.deletedAt),
+                accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
+                or(
+                  ilike(leads.title, search),
+                  ilike(leads.city, search),
+                  ilike(leads.state, search),
+                  ilike(leads.projectType, search),
+                ),
+              ),
+            )
+            .orderBy(desc(leads.updatedAt), asc(leads.title))
+            .limit(queryLimit),
+      noLeadAccess
+        ? Promise.resolve([])
+        : db
+            .select({
+              leadId: leads.id,
+              title: leads.title,
+              city: leads.city,
+              state: leads.state,
+              status: leads.status,
+              contactName: leadContacts.displayName,
+            })
+            .from(leadContacts)
+            .innerJoin(leads, eq(leadContacts.leadId, leads.id))
+            .where(
+              and(
+                isNull(leadContacts.deletedAt),
+                isNull(leads.deletedAt),
+                accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
+                or(
+                  ilike(leadContacts.displayName, search),
+                  ilike(leadContacts.email, search),
+                  ilike(leadContacts.phone, search),
+                  ilike(leadContacts.cellPhone, search),
+                ),
+              ),
+            )
+            .orderBy(asc(leadContacts.displayName))
+            .limit(queryLimit),
+      noJobAccess
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: files.id,
+              originalName: files.originalName,
+              folderId: folders.id,
+              folderTitle: folders.title,
+              mediaType: folders.mediaType,
+              jobId: jobs.id,
+              jobTitle: jobs.title,
+            })
+            .from(files)
+            .innerJoin(folders, eq(files.folderId, folders.id))
+            .innerJoin(jobs, eq(folders.jobId, jobs.id))
+            .where(
+              and(
+                isNull(files.deletedAt),
+                isNull(folders.deletedAt),
+                isNull(jobs.deletedAt),
+                accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+                or(ilike(files.originalName, search), ilike(files.filename, search)),
+              ),
+            )
+            .orderBy(desc(files.updatedAt), asc(files.originalName))
+            .limit(queryLimit),
+      noJobAccess
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: scheduleItems.id,
+              title: scheduleItems.title,
+              startDate: scheduleItems.startDate,
+              endDate: scheduleItems.endDate,
+              jobId: jobs.id,
+              jobTitle: jobs.title,
+            })
+            .from(scheduleItems)
+            .innerJoin(jobs, eq(scheduleItems.jobId, jobs.id))
+            .where(
+              and(
+                isNull(scheduleItems.deletedAt),
+                isNull(jobs.deletedAt),
+                accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+                ilike(scheduleItems.title, search),
+              ),
+            )
+            .orderBy(desc(scheduleItems.updatedAt), asc(scheduleItems.title))
+            .limit(queryLimit),
+    ]);
+
+    const [visibleFileRows, visibleScheduleRows] = await Promise.all([
+      Promise.all(
+        fileRows.map(async (file) => {
+          try {
+            await assertCanViewFolder(req.auth, file.folderId);
+            return file;
+          } catch (error) {
+            if (error instanceof HttpError && error.statusCode === 403) {
+              return null;
+            }
+
+            throw error;
+          }
+        }),
+      ).then((rows) => rows.filter((row): row is NonNullable<typeof row> => row !== null)),
+      Promise.all(
+        scheduleRows.map(async (item) => {
+          try {
+            await assertCanViewScheduleItem(req.auth, item.id);
+            return item;
+          } catch (error) {
+            if (error instanceof HttpError && error.statusCode === 403) {
+              return null;
+            }
+
+            throw error;
+          }
+        }),
+      ).then((rows) => rows.filter((row): row is NonNullable<typeof row> => row !== null)),
     ]);
 
     const leadMap = new Map<
@@ -206,14 +271,14 @@ router.get(
           `Status: ${lead.status.replaceAll("_", " ")}`,
         href: `/sales/leads?lead=${lead.id}`,
       })),
-      ...fileRows.map((file) => ({
+      ...visibleFileRows.map((file) => ({
         id: file.id,
         type: "file" as const,
         title: file.originalName,
         subtitle: `${file.jobTitle} • ${file.folderTitle}`,
         href: `/jobs/${file.jobId}/files/${file.mediaType === "document" ? "documents" : `${file.mediaType}s`}?folder=${file.folderId}`,
       })),
-      ...scheduleRows.map((item) => ({
+      ...visibleScheduleRows.map((item) => ({
         id: item.id,
         type: "schedule" as const,
         title: item.title,

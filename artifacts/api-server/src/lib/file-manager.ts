@@ -37,6 +37,30 @@ export const documentExtensions = [
 export const photoExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
 export const videoExtensions = [".mp4", ".mov", ".avi", ".webm", ".m4v"];
 
+const allowedPhotoMimeTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
+const allowedVideoMimeTypes = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/x-msvideo",
+  "video/webm",
+  "video/x-m4v",
+]);
+
+const allowedDocumentMimeTypes = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-powerpoint",
+  "text/plain",
+  "text/csv",
+]);
+
 function lowerExtension(fileName: string) {
   return path.extname(fileName).toLowerCase();
 }
@@ -52,7 +76,7 @@ export function validateUploadForMediaType(
   const mimeType = file.mimetype?.toLowerCase() ?? "";
 
   if (mediaType === "photo") {
-    const allowed = photoExtensions.includes(extension) || mimeType.startsWith("image/");
+    const allowed = photoExtensions.includes(extension) || allowedPhotoMimeTypes.has(mimeType);
     if (!allowed) {
       throw new HttpError(400, "Photos must be image files (.jpg, .png, .gif, .webp).");
     }
@@ -60,7 +84,7 @@ export function validateUploadForMediaType(
   }
 
   if (mediaType === "video") {
-    const allowed = videoExtensions.includes(extension) || mimeType.startsWith("video/");
+    const allowed = videoExtensions.includes(extension) || allowedVideoMimeTypes.has(mimeType);
     if (!allowed) {
       throw new HttpError(400, "Videos must be video files (.mp4, .mov, .avi, .webm).");
     }
@@ -70,8 +94,8 @@ export function validateUploadForMediaType(
   if (mediaType === "document") {
     const allowed =
       documentExtensions.includes(extension) ||
-      mimeType.startsWith("application/") ||
-      mimeType.startsWith("text/");
+      allowedDocumentMimeTypes.has(mimeType) ||
+      mimeType.startsWith("application/vnd.openxmlformats-officedocument.");
     if (!allowed) {
       throw new HttpError(400, "Documents must be supported office, text, or PDF files.");
     }
@@ -322,7 +346,7 @@ export async function writeActivity(params: {
   emitRealtimeEvent("activity:created", {
     ...created,
     userName: userRecord?.fullName ?? null,
-  });
+  }, params.jobId ?? null);
 
   return created;
 }
@@ -875,7 +899,7 @@ export async function saveUploadedFiles(params: {
       fileId: file.id,
       mediaType: folder.mediaType,
       originalName: file.originalName,
-    });
+    }, folder.jobId);
   }
 
   return {
@@ -1104,6 +1128,7 @@ export async function getActivityEntries(params: {
   folderId?: string | null;
   entityType?: string | null;
   entityId?: string | null;
+  allowedScopeIds?: string[] | null;
   page?: number;
   limit?: number;
 }) {
@@ -1144,6 +1169,13 @@ export async function getActivityEntries(params: {
       if (params.folderId && metadata.folderId !== params.folderId) {
         return false;
       }
+    }
+
+    if (
+      params.allowedScopeIds &&
+      !params.allowedScopeIds.includes(String(metadata.jobId ?? ""))
+    ) {
+      return false;
     }
 
     return true;

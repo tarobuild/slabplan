@@ -9,13 +9,17 @@
     "./seed": "./src/seed.ts"
   },
   "scripts": {
+    "db:generate": "drizzle-kit generate --config ./drizzle.config.ts",
+    "db:migrate": "tsx ./src/migrate-cli.ts",
     "db:push": "drizzle-kit push --config ./drizzle.config.ts",
+    "generate": "drizzle-kit generate --config ./drizzle.config.ts",
+    "migrate": "tsx ./src/migrate-cli.ts",
     "push": "drizzle-kit push --config ./drizzle.config.ts",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
     "seed": "tsx ./src/seed-cli.ts"
   },
   "dependencies": {
-    "bcrypt": "5.1.1",
+    "bcrypt": "6.0.0",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.20.0",

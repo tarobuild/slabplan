@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import {
+  assertCanAccessJob,
+  assertCanManageJob,
+  assertCanUploadToFolder,
+  assertCanViewFolder,
+} from "../lib/authorization";
+import {
   copyFolder,
   createFolder,
   emptyTrash,
@@ -14,6 +20,7 @@ import {
   streamFolderZip,
 } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
+import { requireManagerOrAbove } from "../middleware/require-auth";
 
 const router: IRouter = Router();
 
@@ -62,8 +69,11 @@ router.get(
       throw new HttpError(400, "Invalid folder query.", query.error.flatten());
     }
 
+    const jobId = getParam(req.params.jobId, "job id");
+    await assertCanAccessJob(req.auth, jobId);
+
     const result = await listFoldersForJob({
-      jobId: getParam(req.params.jobId, "job id"),
+      jobId,
       mediaType: query.data.mediaType,
       parentId: query.data.parentId ?? null,
       all: query.data.all,
@@ -75,6 +85,7 @@ router.get(
 
 router.post(
   "/jobs/:jobId/folders",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = folderBodySchema.safeParse(req.body);
 
@@ -82,8 +93,11 @@ router.post(
       throw new HttpError(400, "Invalid folder payload.", body.error.flatten());
     }
 
+    const jobId = getParam(req.params.jobId, "job id");
+    await assertCanManageJob(req.auth, jobId);
+
     const folder = await createFolder({
-      jobId: getParam(req.params.jobId, "job id"),
+      jobId,
       mediaType: body.data.mediaType,
       parentFolderId: body.data.parentFolderId,
       title: body.data.title,
@@ -96,6 +110,7 @@ router.post(
 
 router.put(
   "/folders/:id",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = folderUpdateSchema.safeParse(req.body);
 
@@ -103,8 +118,11 @@ router.put(
       throw new HttpError(400, "Invalid folder update payload.", body.error.flatten());
     }
 
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolder(req.auth, folderId);
+
     const folder = await renameOrUpdateFolder({
-      folderId: getParam(req.params.id, "folder id"),
+      folderId,
       title: body.data.title ?? null,
       viewingPermissions: body.data.viewingPermissions,
       uploadingPermissions: body.data.uploadingPermissions,
@@ -117,9 +135,13 @@ router.put(
 
 router.delete(
   "/folders/:id",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolder(req.auth, folderId);
+
     await softDeleteFolder({
-      folderId: getParam(req.params.id, "folder id"),
+      folderId,
       userId: req.auth.userId,
     });
 
@@ -129,9 +151,13 @@ router.delete(
 
 router.post(
   "/folders/:id/copy",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolder(req.auth, folderId);
+
     const folder = await copyFolder({
-      folderId: getParam(req.params.id, "folder id"),
+      folderId,
       userId: req.auth.userId,
     });
 
@@ -141,6 +167,7 @@ router.post(
 
 router.put(
   "/folders/:id/move",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = moveFolderSchema.safeParse(req.body);
 
@@ -148,8 +175,11 @@ router.put(
       throw new HttpError(400, "Invalid move folder payload.", body.error.flatten());
     }
 
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolder(req.auth, folderId);
+
     const folder = await moveFolder({
-      folderId: getParam(req.params.id, "folder id"),
+      folderId,
       destinationFolderId: body.data.destinationFolderId,
       userId: req.auth.userId,
     });
@@ -160,9 +190,13 @@ router.put(
 
 router.post(
   "/folders/:id/restore",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolder(req.auth, folderId, true);
+
     const folder = await restoreFolder({
-      folderId: getParam(req.params.id, "folder id"),
+      folderId,
       userId: req.auth.userId,
     });
 
@@ -172,9 +206,13 @@ router.post(
 
 router.delete(
   "/folders/:id/purge",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolder(req.auth, folderId, true);
+
     await purgeFolder({
-      folderId: getParam(req.params.id, "folder id"),
+      folderId,
       userId: req.auth.userId,
     });
 
@@ -185,8 +223,11 @@ router.delete(
 router.get(
   "/folders/:id/download",
   asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanViewFolder(req.auth, folderId);
+
     await streamFolderZip({
-      folderId: getParam(req.params.id, "folder id"),
+      folderId,
       res,
     });
   }),
@@ -201,8 +242,11 @@ router.get(
       throw new HttpError(400, "Invalid trash query.", query.error.flatten());
     }
 
+    const jobId = getParam(req.params.jobId, "job id");
+    await assertCanAccessJob(req.auth, jobId);
+
     const items = await listTrash({
-      jobId: getParam(req.params.jobId, "job id"),
+      jobId,
       mediaType: query.data.mediaType,
     });
 
@@ -212,6 +256,7 @@ router.get(
 
 router.delete(
   "/jobs/:jobId/trash",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const query = trashQuerySchema.safeParse(req.query);
 
@@ -219,8 +264,11 @@ router.delete(
       throw new HttpError(400, "Invalid trash query.", query.error.flatten());
     }
 
+    const jobId = getParam(req.params.jobId, "job id");
+    await assertCanManageJob(req.auth, jobId);
+
     await emptyTrash({
-      jobId: getParam(req.params.jobId, "job id"),
+      jobId,
       mediaType: query.data.mediaType,
       userId: req.auth.userId,
     });

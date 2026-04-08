@@ -33,7 +33,15 @@ import {
   scheduleWorkdayExceptions,
   users,
 } from "@workspace/db/schema";
-import { writeActivity } from "../lib/file-manager";
+import {
+  assertCanAccessJob,
+  assertCanManageJob,
+  assertCanManageScheduleItem,
+  assertCanViewScheduleItem,
+  isAdmin,
+  type AuthContext,
+} from "../lib/authorization";
+import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import {
   buildStoredFileName,
@@ -260,6 +268,58 @@ function normalizeUniqueStrings(values: string[]) {
   );
 }
 
+function canViewHydratedScheduleItem(
+  auth: AuthContext,
+  item: {
+    createdBy: string | null;
+    assigneeIds: string[];
+    visibleToEstimators: boolean | null;
+    visibleToInstallers: boolean | null;
+    visibleToOfficeStaff: boolean | null;
+  },
+) {
+  if (isAdmin(auth) || item.createdBy === auth.userId || item.assigneeIds.includes(auth.userId)) {
+    return true;
+  }
+
+  if (auth.role === "project_manager") {
+    return item.visibleToOfficeStaff !== false || item.visibleToEstimators !== false;
+  }
+
+  return item.visibleToInstallers !== false;
+}
+
+const requireScheduleJobRouteAccess = asyncHandler(async (req, _res, next) => {
+  const jobId = getParam(req.params.jobId, "job id");
+
+  if (req.method === "GET") {
+    await assertCanAccessJob(req.auth, jobId);
+  } else {
+    await assertCanManageJob(req.auth, jobId);
+  }
+
+  next();
+});
+
+const requireScheduleItemRouteAccess = asyncHandler(async (req, _res, next) => {
+  const itemId = getParam(req.params.id, "schedule item id");
+  const path = req.path || "/";
+  const isCollaborativeUpdate =
+    path.startsWith("/notes") || path.startsWith("/todos");
+
+  if (req.method === "GET" || isCollaborativeUpdate) {
+    await assertCanViewScheduleItem(req.auth, itemId);
+  } else {
+    await assertCanManageScheduleItem(req.auth, itemId);
+  }
+
+  next();
+});
+
+router.use("/jobs/:jobId/schedule", requireScheduleJobRouteAccess);
+router.use("/jobs/:jobId/workday-exceptions", requireScheduleJobRouteAccess);
+router.use("/schedule-items/:id", requireScheduleItemRouteAccess);
+
 function normalizeTimeValue(value: string | null) {
   if (!value) {
     return null;
@@ -402,94 +462,6 @@ function buildScheduleHistoryChanges(
       } satisfies ScheduleHistoryChange,
     ];
   });
-}
-
-let ensureAdvancedScheduleTablesPromise: Promise<void> | null = null;
-
-async function ensureAdvancedScheduleTables() {
-  if (!ensureAdvancedScheduleTablesPromise) {
-    ensureAdvancedScheduleTablesPromise = (async () => {
-      await db.execute(sql`
-        alter table schedule_phases
-        add column if not exists color varchar(50) default '#e76f8a'
-      `);
-      await db.execute(sql`
-        create table if not exists schedule_settings (
-          id uuid primary key,
-          job_id uuid not null unique references jobs(id) on delete cascade,
-          default_view varchar(100) default 'calendar_month',
-          show_times_on_month_view boolean default false,
-          show_job_name_on_all_listed_jobs boolean default true,
-          automatically_mark_items_complete boolean default false,
-          include_header_on_pdf_exports boolean default true,
-          created_at timestamp not null default now(),
-          updated_at timestamp not null default now()
-        )
-      `);
-      await db.execute(sql`
-        create table if not exists schedule_baselines (
-          id uuid primary key,
-          job_id uuid not null unique references jobs(id) on delete cascade,
-          captured_at timestamp not null default now(),
-          captured_by uuid references users(id),
-          items_snapshot json,
-          created_at timestamp not null default now(),
-          updated_at timestamp not null default now()
-        )
-      `);
-      await db.execute(sql`
-        create table if not exists schedule_workday_exception_categories (
-          id uuid primary key,
-          job_id uuid references jobs(id) on delete cascade,
-          name varchar(100) not null,
-          created_at timestamp not null default now(),
-          updated_at timestamp not null default now(),
-          unique(job_id, name)
-        )
-      `);
-      await db.execute(sql`
-        create table if not exists schedule_workday_exceptions (
-          id uuid primary key,
-          title varchar(255) not null,
-          type varchar(50) not null,
-          start_date date not null,
-          end_date date not null,
-          same_every_year boolean default false,
-          category_id uuid references schedule_workday_exception_categories(id) on delete set null,
-          applies_to_all_jobs boolean default false,
-          job_ids json,
-          notes varchar(500),
-          created_by uuid references users(id),
-          created_at timestamp not null default now(),
-          updated_at timestamp not null default now()
-        )
-      `);
-      await db.execute(sql`
-        create table if not exists schedule_item_predecessors (
-          id uuid primary key,
-          schedule_item_id uuid not null references schedule_items(id) on delete cascade,
-          predecessor_id uuid not null references schedule_items(id) on delete cascade,
-          dependency_type varchar(50) not null,
-          lag_days integer not null default 0,
-          created_at timestamp not null default now(),
-          unique(schedule_item_id, predecessor_id)
-        )
-      `);
-      await db.execute(sql`
-        create index if not exists schedule_item_predecessors_item_idx
-        on schedule_item_predecessors (schedule_item_id)
-      `);
-      await db.execute(sql`
-        create index if not exists schedule_item_predecessors_predecessor_idx
-        on schedule_item_predecessors (predecessor_id)
-      `);
-    })().catch((error) => {
-      ensureAdvancedScheduleTablesPromise = null;
-      throw error;
-    });
-  }
-
-  await ensureAdvancedScheduleTablesPromise;
 }
 
 function isWeekend(date: Date) {
@@ -696,8 +668,6 @@ function fileIconKind(mimeType: string | null) {
 }
 
 async function ensureJobExists(jobId: string) {
-  await ensureAdvancedScheduleTables();
-
   const [job] = await db
     .select({
       id: jobs.id,
@@ -770,8 +740,6 @@ async function assertPhaseBelongsToJob(jobId: string, phaseId: string | null) {
 }
 
 async function ensureDefaultPhase(jobId: string) {
-  await ensureAdvancedScheduleTables();
-
   await db
     .insert(schedulePhases)
     .values({
@@ -801,8 +769,6 @@ async function ensureDefaultPhase(jobId: string) {
 }
 
 async function ensureDefaultScheduleSettings(jobId: string) {
-  await ensureAdvancedScheduleTables();
-
   await db
     .insert(scheduleSettings)
     .values({
@@ -832,8 +798,6 @@ async function ensureDefaultScheduleSettings(jobId: string) {
 }
 
 async function getWorkdayExceptionsForJob(jobId: string): Promise<WorkdayExceptionRecord[]> {
-  await ensureAdvancedScheduleTables();
-
   const rows = await db
     .select({
       id: scheduleWorkdayExceptions.id,
@@ -870,8 +834,6 @@ async function syncPredecessors(
   scheduleItemId: string,
   predecessors: Array<z.infer<typeof predecessorSchema>>,
 ) {
-  await ensureAdvancedScheduleTables();
-
   await db
     .delete(scheduleItemPredecessors)
     .where(eq(scheduleItemPredecessors.scheduleItemId, scheduleItemId));
@@ -1114,8 +1076,6 @@ async function applyAutomaticCompletionIfEnabled(jobId: string) {
 }
 
 async function synchronizeJobSchedule(jobId: string) {
-  await ensureAdvancedScheduleTables();
-
   const [items, exceptions, predecessorRows] = await Promise.all([
     db
       .select({
@@ -1486,8 +1446,6 @@ async function upsertBaselineForJob(jobId: string, userId: string) {
 }
 
 async function hydrateScheduleItem(itemId: string) {
-  await ensureAdvancedScheduleTables();
-
   const [row] = await db
     .select({
       id: scheduleItems.id,
@@ -2397,7 +2355,9 @@ router.get(
     const hydrated = await Promise.all(rows.map((row) => hydrateScheduleItem(row.id)));
 
     res.json({
-      items: hydrated.map((entry) => entry.item),
+      items: hydrated
+        .map((entry) => entry.item)
+        .filter((item) => canViewHydratedScheduleItem(req.auth, item)),
     });
   }),
 );
@@ -2883,6 +2843,7 @@ router.post(
 
 router.post(
   "/schedule-items/:id/attachments",
+  requireScheduleItemRouteAccess,
   upload.array("files", 20),
   asyncHandler(async (req, res) => {
     const itemId = getParam(req.params.id, "schedule item id");
@@ -2902,6 +2863,8 @@ router.post(
     const attachments = [];
 
     for (const uploadedFile of uploadedFiles) {
+      validateUploadForMediaType("document", uploadedFile);
+
       const storedFileName = buildStoredFileName(uploadedFile.originalname);
       const uploadPath = buildUploadPath({
         jobId: item.jobId,
@@ -2966,6 +2929,7 @@ router.post(
 
 router.post(
   "/schedule-items/:id/attachments/new-doc",
+  requireScheduleItemRouteAccess,
   asyncHandler(async (req, res) => {
     const body = createDocPayloadSchema.safeParse(req.body ?? {});
 
@@ -3056,6 +3020,7 @@ router.post(
 
 router.delete(
   "/schedule-items/:id/attachments/:attachmentId",
+  requireScheduleItemRouteAccess,
   asyncHandler(async (req, res) => {
     const itemId = getParam(req.params.id, "schedule item id");
     const attachmentId = getParam(req.params.attachmentId, "attachment id");

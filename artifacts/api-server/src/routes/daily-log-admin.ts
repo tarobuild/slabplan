@@ -26,8 +26,8 @@ import {
   jobs,
   users,
 } from "@workspace/db/schema";
-import { ensureDailyLogConfigTables } from "../lib/daily-log-support";
 import { HttpError, asyncHandler } from "../lib/http";
+import { requireAdmin } from "../middleware/require-auth";
 
 const router: IRouter = Router();
 
@@ -121,13 +121,7 @@ function firstParamValue(value: string | string[] | undefined) {
   return value ?? null;
 }
 
-async function ensureDailyLogAdminTables() {
-  await ensureDailyLogConfigTables();
-}
-
 async function ensureSettingsRow() {
-  await ensureDailyLogAdminTables();
-
   const [existing] = await db
     .select()
     .from(dailyLogSettings)
@@ -184,6 +178,7 @@ router.get(
 
 router.put(
   "/daily-logs/settings",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const body = settingsPayloadSchema.safeParse(req.body ?? {});
 
@@ -225,7 +220,6 @@ router.put(
 router.get(
   "/daily-logs/custom-fields",
   asyncHandler(async (_req, res) => {
-    await ensureDailyLogAdminTables();
     const fields = await db
       .select({
         id: dailyLogCustomFields.id,
@@ -245,9 +239,8 @@ router.get(
 
 router.post(
   "/daily-logs/custom-fields",
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogAdminTables();
-
     const body = customFieldPayloadSchema.safeParse(req.body ?? {});
 
     if (!body.success) {
@@ -277,9 +270,8 @@ router.post(
 
 router.put(
   "/daily-logs/custom-fields/:fieldId",
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogAdminTables();
-
     const body = customFieldPayloadSchema.safeParse(req.body ?? {});
 
     if (!body.success) {
@@ -322,9 +314,8 @@ router.put(
 
 router.delete(
   "/daily-logs/custom-fields/:fieldId",
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogAdminTables();
-
     const fieldId = firstParamValue(req.params.fieldId);
 
     if (!fieldId) {
@@ -349,8 +340,6 @@ router.delete(
 router.get(
   "/daily-logs/mine",
   asyncHandler(async (req, res) => {
-    await ensureDailyLogAdminTables();
-
     const query = myDailyLogsQuerySchema.safeParse(req.query);
 
     if (!query.success) {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Router, type IRouter } from "express";
+import { listAccessibleJobIds, listAccessibleLeadIds } from "../lib/authorization";
 import { getActivityEntries } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 
@@ -40,12 +41,39 @@ router.get(
       throw new HttpError(400, "Invalid activity query.", query.error.flatten());
     }
 
+    const [accessibleJobIds, accessibleLeadIds] = await Promise.all([
+      listAccessibleJobIds(req.auth),
+      listAccessibleLeadIds(req.auth),
+    ]);
+    const allowedScopeIds =
+      accessibleJobIds === null
+        ? null
+        : Array.from(new Set([...(accessibleJobIds ?? []), ...(accessibleLeadIds ?? [])]));
+
+    if (allowedScopeIds && allowedScopeIds.length === 0) {
+      res.json({
+        entries: [],
+        pagination: {
+          page: query.data.page ?? 1,
+          limit: query.data.limit ?? 20,
+          totalItems: 0,
+          totalPages: 1,
+        },
+      });
+      return;
+    }
+
+    if (query.data.jobId && allowedScopeIds && !allowedScopeIds.includes(query.data.jobId)) {
+      throw new HttpError(403, "You do not have access to that activity feed.");
+    }
+
     const result = await getActivityEntries({
       jobId: query.data.jobId ?? null,
       mediaType: query.data.mediaType ?? null,
       folderId: query.data.folderId ?? null,
       entityType: query.data.entityType ?? null,
       entityId: query.data.entityId ?? null,
+      allowedScopeIds,
       page: query.data.page,
       limit: query.data.limit,
     });

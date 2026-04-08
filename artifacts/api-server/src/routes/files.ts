@@ -2,6 +2,12 @@ import { promises as fs } from "node:fs";
 import multer from "multer";
 import { z } from "zod";
 import { Router, type IRouter } from "express";
+import {
+  assertCanManageFile,
+  assertCanUploadToFolder,
+  assertCanViewFile,
+  assertCanViewFolder,
+} from "../lib/authorization";
 import { getFileOrThrow, listFilesForFolder, purgeFile, renameFile, restoreFile, saveUploadedFiles, softDeleteFile } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { resolveAbsolutePathFromFileUrl } from "../lib/storage";
@@ -59,8 +65,11 @@ router.get(
       throw new HttpError(400, "Invalid file list query.", query.error.flatten());
     }
 
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanViewFolder(req.auth, folderId);
+
     const result = await listFilesForFolder({
-      folderId: getParam(req.params.id, "folder id"),
+      folderId,
       search: query.data.search?.trim() || null,
       uploadedBy: query.data.uploadedBy ?? null,
       fileTypes: query.data.fileTypes,
@@ -78,10 +87,13 @@ router.post(
   "/folders/:id/files",
   upload.array("files", 20),
   asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolder(req.auth, folderId);
+
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
 
     const result = await saveUploadedFiles({
-      folderId: getParam(req.params.id, "folder id"),
+      folderId,
       userId: req.auth.userId,
       uploadedFiles,
     });
@@ -99,8 +111,11 @@ router.put(
       throw new HttpError(400, "Invalid file payload.", body.error.flatten());
     }
 
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanManageFile(req.auth, fileId);
+
     const file = await renameFile({
-      fileId: getParam(req.params.id, "file id"),
+      fileId,
       originalName: body.data.originalName,
       userId: req.auth.userId,
     });
@@ -112,8 +127,11 @@ router.put(
 router.delete(
   "/files/:id",
   asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanManageFile(req.auth, fileId);
+
     await softDeleteFile({
-      fileId: getParam(req.params.id, "file id"),
+      fileId,
       userId: req.auth.userId,
     });
 
@@ -124,8 +142,11 @@ router.delete(
 router.post(
   "/files/:id/restore",
   asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanManageFile(req.auth, fileId);
+
     const file = await restoreFile({
-      fileId: getParam(req.params.id, "file id"),
+      fileId,
       userId: req.auth.userId,
     });
 
@@ -136,8 +157,11 @@ router.post(
 router.delete(
   "/files/:id/purge",
   asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanManageFile(req.auth, fileId);
+
     await purgeFile({
-      fileId: getParam(req.params.id, "file id"),
+      fileId,
       userId: req.auth.userId,
     });
 
@@ -148,7 +172,9 @@ router.delete(
 router.get(
   "/files/:id/download",
   asyncHandler(async (req, res) => {
-    const file = await getFileOrThrow(getParam(req.params.id, "file id"), true);
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanViewFile(req.auth, fileId, true);
+    const file = await getFileOrThrow(fileId, true);
 
     if (!file.fileUrl) {
       throw new HttpError(404, "Stored file missing.");

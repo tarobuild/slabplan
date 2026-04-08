@@ -4,9 +4,15 @@ import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { clients, files, folders, jobs, type NewJob, users } from "@workspace/db/schema";
+import {
+  assertCanAccessJob,
+  assertCanManageJob,
+  listAccessibleJobIds,
+} from "../lib/authorization";
 import { ensureSystemFolders, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
+import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
 
 const router: IRouter = Router();
 
@@ -181,7 +187,26 @@ router.get(
       throw new HttpError(400, "Invalid jobs query.", query.error.flatten());
     }
 
+    const accessibleJobIds = await listAccessibleJobIds(req.auth);
+    const { page, pageSize } = query.data;
+
+    if (accessibleJobIds && accessibleJobIds.length === 0) {
+      res.json({
+        jobs: [],
+        pagination: {
+          page,
+          pageSize,
+          totalItems: 0,
+          totalPages: 1,
+        },
+      });
+      return;
+    }
+
     const conditions = [isNull(jobs.deletedAt)];
+    if (accessibleJobIds) {
+      conditions.push(inArray(jobs.id, accessibleJobIds));
+    }
 
     if (query.data.status) {
       conditions.push(eq(jobs.status, query.data.status));
@@ -200,7 +225,7 @@ router.get(
     }
 
     const whereClause = and(...conditions);
-    const offset = (query.data.page - 1) * query.data.pageSize;
+    const offset = (page - 1) * pageSize;
 
     const [totalRow] = await db
       .select({
@@ -237,7 +262,7 @@ router.get(
       .leftJoin(clients, eq(jobs.clientId, clients.id))
       .where(whereClause)
       .orderBy(desc(jobs.createdAt), asc(jobs.title))
-      .limit(query.data.pageSize)
+      .limit(pageSize)
       .offset(offset);
 
     const totalItems = Number(totalRow?.total ?? 0);
@@ -245,10 +270,10 @@ router.get(
     res.json({
       jobs: rows,
       pagination: {
-        page: query.data.page,
-        pageSize: query.data.pageSize,
+        page,
+        pageSize,
         totalItems,
-        totalPages: Math.max(1, Math.ceil(totalItems / query.data.pageSize)),
+        totalPages: Math.max(1, Math.ceil(totalItems / pageSize)),
       },
     });
   }),
@@ -256,6 +281,7 @@ router.get(
 
 router.post(
   "/",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = jobPayloadSchema.safeParse(req.body);
 
@@ -263,9 +289,17 @@ router.post(
       throw new HttpError(400, "Invalid job payload.", body.error.flatten());
     }
 
+    const payload =
+      req.auth.role === "project_manager"
+        ? {
+            ...body.data,
+            projectManagerId: req.auth.userId,
+          }
+        : body.data;
+
     const [job] = await db
       .insert(jobs)
-      .values(toJobInsert(body.data, req.auth.userId))
+      .values(toJobInsert(payload, req.auth.userId))
       .returning();
 
     await ensureSystemFolders(job.id);
@@ -288,6 +322,7 @@ router.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.id, "job id");
+    await assertCanAccessJob(req.auth, jobId);
     const job = await findJobById(jobId);
 
     if (!job) {
@@ -300,6 +335,7 @@ router.get(
 
 router.put(
   "/:id",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = jobPayloadSchema.safeParse(req.body);
 
@@ -308,16 +344,25 @@ router.put(
     }
 
     const jobId = getParam(req.params.id, "job id");
+    await assertCanManageJob(req.auth, jobId);
     const existing = await findJobById(jobId);
 
     if (!existing) {
       throw new HttpError(404, "Job not found.");
     }
 
+    const payload =
+      req.auth.role === "project_manager"
+        ? {
+            ...body.data,
+            projectManagerId: req.auth.userId,
+          }
+        : body.data;
+
     const [updated] = await db
       .update(jobs)
       .set({
-        ...toJobInsert(body.data, existing.createdById ?? req.auth.userId),
+        ...toJobInsert(payload, existing.createdById ?? req.auth.userId),
         updatedAt: new Date(),
       })
       .where(eq(jobs.id, jobId))
@@ -339,7 +384,7 @@ router.put(
         title: updated.title,
         previousStatus: existing.status,
         status: updated.status,
-      });
+      }, updated.id);
     }
 
     const hydrated = await findJobById(updated.id);
@@ -350,8 +395,10 @@ router.put(
 
 router.delete(
   "/:id",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.id, "job id");
+    await assertCanAccessJob(req.auth, jobId);
     const existing = await findJobById(jobId);
 
     if (!existing) {

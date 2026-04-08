@@ -27,7 +27,14 @@ import {
   jobs,
   users,
 } from "@workspace/db/schema";
-import { writeActivity } from "../lib/file-manager";
+import {
+  assertCanAccessJob,
+  assertCanEditDailyLog,
+  assertCanViewDailyLog,
+  isAdmin,
+  type AuthContext,
+} from "../lib/authorization";
+import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
 import { emitRealtimeEvent } from "../lib/realtime";
@@ -37,7 +44,6 @@ import {
   deletePhysicalFile,
   writeUploadedBuffer,
 } from "../lib/storage";
-import { ensureDailyLogConfigTables } from "../lib/daily-log-support";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -182,72 +188,38 @@ function normalizeUniqueStrings(values: string[]) {
   );
 }
 
-let ensureDailyLogSupportTablesPromise: Promise<void> | null = null;
-
-async function ensureDailyLogSupportTables() {
-  if (!ensureDailyLogSupportTablesPromise) {
-    ensureDailyLogSupportTablesPromise = (async () => {
-      await db.execute(sql`
-        create table if not exists daily_log_likes (
-          id uuid primary key,
-          daily_log_id uuid not null references daily_logs(id) on delete cascade,
-          user_id uuid not null references users(id) on delete cascade,
-          created_at timestamp not null default now(),
-          unique (daily_log_id, user_id)
-        )
-      `);
-      await db.execute(sql`
-        create index if not exists daily_log_likes_log_id_idx
-        on daily_log_likes (daily_log_id)
-      `);
-      await db.execute(sql`
-        create table if not exists daily_log_comments (
-          id uuid primary key,
-          daily_log_id uuid not null references daily_logs(id) on delete cascade,
-          parent_comment_id uuid references daily_log_comments(id) on delete cascade,
-          created_by uuid references users(id),
-          body text not null,
-          mentions json,
-          attachments json,
-          links json,
-          reactions json,
-          created_at timestamp not null default now(),
-          updated_at timestamp not null default now(),
-          deleted_at timestamp
-        )
-      `);
-      await db.execute(sql`
-        create index if not exists daily_log_comments_log_id_idx
-        on daily_log_comments (daily_log_id)
-      `);
-      await db.execute(sql`
-        create index if not exists daily_log_comments_parent_comment_id_idx
-        on daily_log_comments (parent_comment_id)
-      `);
-      await db.execute(sql`
-        create table if not exists daily_log_todos (
-          id uuid primary key,
-          daily_log_id uuid not null references daily_logs(id) on delete cascade,
-          title varchar(255) not null,
-          is_complete boolean default false,
-          created_by uuid references users(id),
-          created_at timestamp not null default now(),
-          updated_at timestamp not null default now()
-        )
-      `);
-      await db.execute(sql`
-        create index if not exists daily_log_todos_log_id_idx
-        on daily_log_todos (daily_log_id)
-      `);
-      await ensureDailyLogConfigTables();
-    })().catch((error) => {
-      ensureDailyLogSupportTablesPromise = null;
-      throw error;
-    });
+function canViewDailyLogSummary(
+  auth: AuthContext,
+  row: {
+    createdBy: string | null;
+    isPrivate: boolean | null;
+    shareInternalUsers: boolean | null;
+  },
+) {
+  if (isAdmin(auth) || row.createdBy === auth.userId) {
+    return true;
   }
 
-  await ensureDailyLogSupportTablesPromise;
+  return !row.isPrivate && row.shareInternalUsers !== false;
 }
+
+const requireDailyLogJobAccess = asyncHandler(async (req, _res, next) => {
+  const jobId = getParam(req.params.jobId, "job id");
+  await assertCanAccessJob(req.auth, jobId);
+  next();
+});
+
+const requireDailyLogViewAccess = asyncHandler(async (req, _res, next) => {
+  const logId = getParam(req.params.id, "daily log id");
+  await assertCanViewDailyLog(req.auth, logId);
+  next();
+});
+
+const requireDailyLogEditAccess = asyncHandler(async (req, _res, next) => {
+  const logId = getParam(req.params.id, "daily log id");
+  await assertCanEditDailyLog(req.auth, logId);
+  next();
+});
 
 function sanitizeWeatherIcon(value: string) {
   const normalized = value.trim().toLowerCase();
@@ -475,8 +447,6 @@ function deriveVisibilityLabel(log: {
 }
 
 async function loadDailyLogEngagement(logIds: string[], currentUserId: string) {
-  await ensureDailyLogSupportTables();
-
   const [likeRows, commentRows, todoRows] = await Promise.all([
     logIds.length > 0
       ? db
@@ -610,8 +580,6 @@ function normalizeCommentReactions(value: unknown) {
 }
 
 async function loadDailyLogComments(dailyLogId: string) {
-  await ensureDailyLogSupportTables();
-
   const rows = await db
     .select({
       id: dailyLogComments.id,
@@ -679,8 +647,6 @@ async function loadDailyLogComments(dailyLogId: string) {
 }
 
 async function loadDailyLogTodos(dailyLogId: string) {
-  await ensureDailyLogSupportTables();
-
   return db
     .select({
       id: dailyLogTodos.id,
@@ -798,8 +764,6 @@ async function fetchWeatherSnapshot(address: string, dateValue: string | null) {
 }
 
 async function hydrateDailyLog(id: string, currentUserId: string) {
-  await ensureDailyLogSupportTables();
-
   const [row] = await db
     .select({
       id: dailyLogs.id,
@@ -905,9 +869,8 @@ async function hydrateDailyLog(id: string, currentUserId: string) {
 
 router.get(
   "/jobs/:jobId/daily-logs",
+  requireDailyLogJobAccess,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogSupportTables();
-
     const query = dailyLogListQuerySchema.safeParse(req.query);
 
     if (!query.success) {
@@ -1011,7 +974,9 @@ router.get(
 
     const engagement = await loadDailyLogEngagement(logIds, req.auth.userId);
 
-    let filtered = rows.map((row) => {
+    let filtered = rows
+      .filter((row) => canViewDailyLogSummary(req.auth, row))
+      .map((row) => {
       const weather = decodeWeatherPayload(
         row.weatherData as Record<string, unknown> | null | undefined,
       );
@@ -1031,7 +996,7 @@ router.get(
         completedTodoCount: engagement.completedTodosCountByLogId.get(row.id) ?? 0,
         status: row.publishedAt ? "published" : "draft",
       };
-    });
+      });
 
     const requestedTags = normalizeUniqueStrings([
       ...(query.data.tag ? [query.data.tag] : []),
@@ -1082,9 +1047,8 @@ router.get(
 
 router.post(
   "/jobs/:jobId/daily-logs",
+  requireDailyLogJobAccess,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogSupportTables();
-
     const body = dailyLogPayloadSchema.safeParse(req.body);
 
     if (!body.success) {
@@ -1135,6 +1099,7 @@ router.post(
 
 router.get(
   "/daily-logs/:id",
+  requireDailyLogViewAccess,
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
     const hydrated = await hydrateDailyLog(logId, req.auth.userId);
@@ -1144,9 +1109,8 @@ router.get(
 
 router.put(
   "/daily-logs/:id",
+  requireDailyLogEditAccess,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogSupportTables();
-
     const body = dailyLogPayloadSchema.safeParse(req.body);
 
     if (!body.success) {
@@ -1162,6 +1126,7 @@ router.put(
     }
 
     await ensureJobExists(nextJobId);
+    await assertCanAccessJob(req.auth, nextJobId);
 
     await db
       .update(dailyLogs)
@@ -1204,6 +1169,7 @@ router.put(
 
 router.delete(
   "/daily-logs/:id",
+  requireDailyLogEditAccess,
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
     const existing = await getDailyLogOrThrow(logId);
@@ -1238,6 +1204,7 @@ router.delete(
 
 router.post(
   "/daily-logs/:id/publish",
+  requireDailyLogEditAccess,
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
     const existing = await getDailyLogOrThrow(logId);
@@ -1286,7 +1253,7 @@ router.post(
       title: hydrated.log.title,
       logDate: hydrated.log.logDate,
       publishedAt: hydrated.log.publishedAt,
-    });
+    }, hydrated.log.jobId);
 
     res.json(hydrated);
   }),
@@ -1308,9 +1275,8 @@ router.get(
 
 router.post(
   "/daily-logs/:id/like",
+  requireDailyLogViewAccess,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogSupportTables();
-
     const logId = getParam(req.params.id, "daily log id");
     const dailyLog = await getDailyLogOrThrow(logId);
 
@@ -1364,6 +1330,7 @@ router.post(
 
 router.get(
   "/daily-logs/:id/comments",
+  requireDailyLogViewAccess,
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
     await getDailyLogOrThrow(logId);
@@ -1374,9 +1341,8 @@ router.get(
 
 router.post(
   "/daily-logs/:id/comments",
+  requireDailyLogViewAccess,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogSupportTables();
-
     const body = commentPayloadSchema.safeParse(req.body);
 
     if (!body.success) {
@@ -1439,9 +1405,8 @@ router.post(
 
 router.post(
   "/daily-logs/:id/comments/:commentId/reactions",
+  requireDailyLogViewAccess,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogSupportTables();
-
     const body = commentReactionPayloadSchema.safeParse(req.body);
 
     if (!body.success) {
@@ -1501,9 +1466,8 @@ router.post(
 
 router.post(
   "/daily-logs/:id/todos",
+  requireDailyLogViewAccess,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogSupportTables();
-
     const body = todoPayloadSchema.safeParse(req.body);
 
     if (!body.success) {
@@ -1543,9 +1507,8 @@ router.post(
 
 router.post(
   "/daily-logs/:id/todos/:todoId/toggle",
+  requireDailyLogViewAccess,
   asyncHandler(async (req, res) => {
-    await ensureDailyLogSupportTables();
-
     const body = todoTogglePayloadSchema.safeParse(req.body);
 
     if (!body.success) {
@@ -1589,6 +1552,7 @@ router.post(
 
 router.post(
   "/daily-logs/:id/attachments",
+  requireDailyLogEditAccess,
   upload.array("files", 20),
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
@@ -1603,6 +1567,8 @@ router.post(
     const attachments = [];
 
     for (const uploadedFile of uploadedFiles) {
+      validateUploadForMediaType("document", uploadedFile);
+
       const storedFileName = buildStoredFileName(uploadedFile.originalname);
       const uploadPath = buildUploadPath({
         jobId: `daily-log-${logId}`,
@@ -1665,6 +1631,7 @@ router.post(
 
 router.delete(
   "/daily-logs/:id/attachments/:attachmentId",
+  requireDailyLogEditAccess,
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
     const attachmentId = getParam(req.params.attachmentId, "attachment id");

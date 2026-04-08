@@ -23,7 +23,8 @@ Auth: JWT (access token in-memory + httpOnly refresh cookie via bcrypt).
 
 Routes:
 - `GET /api/healthz` — health check
-- `POST /api/auth/login|register|logout|refresh|forgot-password|reset-password`
+- `POST /api/auth/login|logout|refresh|forgot-password|reset-password`
+- `POST /api/auth/register` — admin-only user creation
 - `GET/PUT /api/users/me`, `GET /api/users`
 - `GET/POST /api/jobs`, `GET/PUT/DELETE /api/jobs/:id`
 - `GET/POST /api/jobs/:jobId/folders`
@@ -79,6 +80,9 @@ Seed credentials: `cruz.martinez@cadstone.internal` / `Cadstone123!` (also maria
 
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
+- `pnpm test` — run the checked-in automated test suite
+- `pnpm --filter @workspace/db run migrate` — apply checked-in SQL migrations
+- `pnpm --filter @workspace/db run generate` — generate future Drizzle migrations
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm --filter @workspace/db run seed` — seed database with test data
 

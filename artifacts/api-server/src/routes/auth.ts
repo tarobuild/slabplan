@@ -5,15 +5,17 @@ import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import {
   clearRefreshTokenCookie,
+  clearUploadTokenCookie,
   refreshCookieName,
-  sendAuthResponse,
   signResetToken,
   toPublicUser,
+  sendAuthResponse,
   verifyRefreshToken,
   verifyResetToken,
 } from "../lib/auth";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
+import { requireAdmin, requireAuth } from "../middleware/require-auth";
 
 const router: IRouter = Router();
 
@@ -95,6 +97,8 @@ async function findActiveUserById(id: string) {
 
 router.post(
   "/register",
+  requireAuth,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const email = normalizeEmail(req.body.email);
     const password = normalizePassword(req.body.password);
@@ -116,7 +120,7 @@ router.post(
       })
       .returning();
 
-    sendAuthResponse(res.status(201), user);
+    res.status(201).json({ user: toPublicUser(user) });
   }),
 );
 
@@ -144,6 +148,7 @@ router.post(
 
 router.post("/logout", (_req, res) => {
   clearRefreshTokenCookie(res);
+  clearUploadTokenCookie(res);
   res.json({ success: true });
 });
 
@@ -161,6 +166,7 @@ router.post(
 
     if (!user) {
       clearRefreshTokenCookie(res);
+      clearUploadTokenCookie(res);
       throw new HttpError(401, "Refresh token invalid.");
     }
 
@@ -186,7 +192,6 @@ router.post(
     logger.info(
       {
         email,
-        resetToken,
       },
       "Generated password reset token",
     );
@@ -220,6 +225,10 @@ router.post(
       throw new HttpError(404, "User account not found.");
     }
 
+    if (claims.version !== String(user.updatedAt?.getTime() ?? 0)) {
+      throw new HttpError(401, "Reset token invalid.");
+    }
+
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
     await db
@@ -231,6 +240,7 @@ router.post(
       .where(eq(users.id, user.id));
 
     clearRefreshTokenCookie(res);
+    clearUploadTokenCookie(res);
     res.json({ success: true });
   }),
 );

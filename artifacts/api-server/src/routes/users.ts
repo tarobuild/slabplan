@@ -6,6 +6,7 @@ import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { toPublicUser } from "../lib/auth";
 import { HttpError, asyncHandler } from "../lib/http";
+import { requireManagerOrAbove } from "../middleware/require-auth";
 
 const router: IRouter = Router();
 
@@ -51,6 +52,7 @@ async function findActiveUserById(id: string) {
 
 router.get(
   "/",
+  requireManagerOrAbove,
   asyncHandler(async (_req, res) => {
     const rows = await db
       .select()

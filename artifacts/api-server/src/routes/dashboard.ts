@@ -8,6 +8,7 @@ import {
   scheduleItems,
   users,
 } from "@workspace/db/schema";
+import { listAccessibleJobIds, listAccessibleLeadIds } from "../lib/authorization";
 import { asyncHandler } from "../lib/http";
 
 const router: IRouter = Router();
@@ -15,12 +16,35 @@ const router: IRouter = Router();
 router.get(
   "/dashboard/stats",
   asyncHandler(async (req, res) => {
+    const [accessibleJobIds, accessibleLeadIds] = await Promise.all([
+      listAccessibleJobIds(req.auth),
+      listAccessibleLeadIds(req.auth),
+    ]);
+
+    if (accessibleJobIds && accessibleJobIds.length === 0) {
+      res.json({
+        stats: {
+          activeJobs: 0,
+          openLeads: 0,
+          openScheduleItems: 0,
+          myDailyLogs: 0,
+        },
+      });
+      return;
+    }
+
     const [activeJobsRow, openLeadsRow, openScheduleItemsRow, myDailyLogsRow] =
       await Promise.all([
         db
           .select({ total: count() })
           .from(jobs)
-          .where(and(isNull(jobs.deletedAt), eq(jobs.status, "open")))
+          .where(
+            and(
+              isNull(jobs.deletedAt),
+              eq(jobs.status, "open"),
+              accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+            ),
+          )
           .then((rows) => rows[0]),
         db
           .select({ total: count() })
@@ -29,6 +53,7 @@ router.get(
             and(
               isNull(leads.deletedAt),
               inArray(leads.status, ["open", "in_negotiation"]),
+              accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
             ),
           )
           .then((rows) => rows[0]),
@@ -39,6 +64,7 @@ router.get(
             and(
               isNull(scheduleItems.deletedAt),
               or(isNull(scheduleItems.progress), lt(scheduleItems.progress, 100)),
+              accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
             ),
           )
           .then((rows) => rows[0]),
@@ -49,6 +75,7 @@ router.get(
             and(
               isNull(dailyLogs.deletedAt),
               eq(dailyLogs.createdBy, req.auth.userId),
+              accessibleJobIds ? inArray(dailyLogs.jobId, accessibleJobIds) : undefined,
             ),
           )
           .then((rows) => rows[0]),
@@ -68,10 +95,16 @@ router.get(
 router.get(
   "/dashboard/agenda",
   asyncHandler(async (req, res) => {
+    const accessibleJobIds = await listAccessibleJobIds(req.auth);
     const today = new Date().toISOString().split("T")[0];
     const in14Days = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split("T")[0];
+
+    if (accessibleJobIds && accessibleJobIds.length === 0) {
+      res.json({ upcomingItems: [], recentLogs: [], recentJobs: [] });
+      return;
+    }
 
     const [upcomingItems, recentLogs, recentJobs] = await Promise.all([
       db
@@ -94,6 +127,7 @@ router.get(
             gte(scheduleItems.startDate, today),
             lte(scheduleItems.startDate, in14Days),
             or(isNull(scheduleItems.isComplete), eq(scheduleItems.isComplete, false)),
+            accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
           ),
         )
         .orderBy(scheduleItems.startDate)
@@ -112,7 +146,12 @@ router.get(
         .from(dailyLogs)
         .leftJoin(jobs, eq(dailyLogs.jobId, jobs.id))
         .leftJoin(users, eq(dailyLogs.createdBy, users.id))
-        .where(isNull(dailyLogs.deletedAt))
+        .where(
+          and(
+            isNull(dailyLogs.deletedAt),
+            accessibleJobIds ? inArray(dailyLogs.jobId, accessibleJobIds) : undefined,
+          ),
+        )
         .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt))
         .limit(5),
 
@@ -126,7 +165,13 @@ router.get(
           createdAt: jobs.createdAt,
         })
         .from(jobs)
-        .where(and(isNull(jobs.deletedAt), eq(jobs.status, "open")))
+        .where(
+          and(
+            isNull(jobs.deletedAt),
+            eq(jobs.status, "open"),
+            accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+          ),
+        )
         .orderBy(desc(jobs.createdAt))
         .limit(5),
     ]);
@@ -138,8 +183,14 @@ router.get(
 router.get(
   "/dashboard/schedule",
   asyncHandler(async (req, res) => {
+    const accessibleJobIds = await listAccessibleJobIds(req.auth);
     const startParam = (req.query.start as string) ?? new Date().toISOString().split("T")[0];
     const endParam = (req.query.end as string) ?? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+    if (accessibleJobIds && accessibleJobIds.length === 0) {
+      res.json({ items: [] });
+      return;
+    }
 
     const items = await db
       .select({
@@ -162,6 +213,7 @@ router.get(
         and(
           isNull(scheduleItems.deletedAt),
           isNull(jobs.deletedAt),
+          accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
           // items that overlap the requested range
           lte(scheduleItems.startDate, endParam),
           or(

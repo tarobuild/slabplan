@@ -1,0 +1,43 @@
+ Critical Public self-registration is enabled for a product described as an internal tool. The API
+     mounts /auth before auth enforcement, the backend accepts unauthenticated POST /api/auth/register,
+     and the frontend exposes a public /register page that immediately authenticates the new user. If
+     there is no external gate in deployment, this is an unauthorized account-creation path. artifacts/
+     api-server/src/routes/index.ts:21 artifacts/api-server/src/routes/auth.ts:96 artifacts/cadstone/src/
+     App.tsx:73 artifacts/cadstone/src/pages/register.tsx:23 replit.md:5
+  2. Critical Authorization is effectively absent after login. requireAuth only validates a bearer token;
+     I did not find route-level role or resource checks despite roles existing in the schema. As written,
+     any authenticated user can enumerate all users, read/update/delete any job, edit global daily-log
+     settings, and access org-wide dashboard/search data. artifacts/api-server/src/middleware/require-
+     auth.ts:5 lib/db/src/schema/index.ts:30 artifacts/api-server/src/routes/users.ts:52 artifacts/api-
+     server/src/routes/jobs.ts:175 artifacts/api-server/src/routes/daily-log-admin.ts:177 artifacts/api-
+     server/src/routes/search.ts:22
+  3. Critical Uploaded files create a same-origin stored-XSS/account-takeover path. /uploads is served
+     directly from the app origin without auth; document uploads allow text/* and application/*, which
+     includes HTML, and several attachment endpoints skip MIME validation entirely. The frontend opens
+     raw fileUrl values in new tabs, so uploaded HTML can execute on the app origin and call /api/auth/
+     storage.ts:38 artifacts/api-server/src/lib/file-manager.ts:70 artifacts/api-server/src/routes/
+     leads.ts:948 artifacts/api-server/src/routes/daily-logs.ts:1590 artifacts/api-server/src/routes/
+     schedule.ts:2884 artifacts/cadstone/src/components/FileBrowser.tsx:908 artifacts/cadstone/src/
+     components/schedule/ScheduleItemDialog.tsx:1727 artifacts/api-server/src/routes/auth.ts:150
+     artifacts/api-server/src/lib/auth.ts:145
+  4. High Realtime events are broadcast to every authenticated socket, not scoped by job, role, or room.
+     Socket auth only verifies token validity, and every event is sent with io.emit(...). That leaks
+     activity across the whole company dataset to any logged-in client that connects to Socket.IO.
+     artifacts/api-server/src/index.ts:22 artifacts/api-server/src/lib/realtime.ts:20 artifacts/api-
+     server/src/lib/realtime.ts:53 artifacts/api-server/src/lib/file-manager.ts:872
+  5. High JWT secrets silently fall back to hard-coded defaults. If any production environment misses the
+     secret vars, access, refresh, and reset tokens become forgeable. This is the kind of failure mode
+     that turns a deploy/config mistake into full auth bypass. artifacts/api-server/src/lib/auth.ts:28
+  6. High Password reset tokens are logged in plaintext and remain reusable until expiry. forgot-password
+     writes the reset token to application logs, logger redaction does not cover it, and reset-password
+     has no nonce/version invalidation after a successful reset. artifacts/api-server/src/routes/
+     auth.ts:171 artifacts/api-server/src/routes/auth.ts:206 artifacts/api-server/src/lib/logger.ts:5
+     artifacts/api-server/src/lib/auth.ts:24
+  7. High The application performs schema DDL in normal request paths instead of through migrations.
+     Daily-log and schedule handlers create or alter tables on demand, which means the runtime DB role
+     needs DDL rights and first-request failures can become schema-management outages. artifacts/api-
+     server/src/routes/daily-logs.ts:187 artifacts/api-server/src/routes/daily-logs.ts:909 artifacts/api-
+     server/src/routes/schedule.ts:409 artifacts/api-server/src/routes/schedule.ts:1694
+  8. Medium Dependency posture is materially behind current advisories. pnpm audit --prod reported 15
+     high / 5 moderate; full pnpm audit reported 19 high / 10 moderate. Highest-signal packages are
+     multer, drizzle-orm, axios, react-router, vite, path-to-regexp, plus transitive tar and lodash.

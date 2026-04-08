@@ -26,9 +26,15 @@ import {
   leads,
   users,
 } from "@workspace/db/schema";
-import { ensureSystemFolders, writeActivity } from "../lib/file-manager";
+import {
+  assertCanAccessLead,
+  assertCanManageLead,
+  listAccessibleLeadIds,
+} from "../lib/authorization";
+import { ensureSystemFolders, validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
+import { requireManagerOrAbove } from "../middleware/require-auth";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -37,6 +43,7 @@ import {
 } from "../lib/storage";
 
 const router: IRouter = Router();
+router.use(requireManagerOrAbove);
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -499,6 +506,12 @@ router.get(
   asyncHandler(async (req, res) => {
     const query =
       typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
+    const accessibleLeadIds = await listAccessibleLeadIds(req.auth);
+
+    if (accessibleLeadIds && accessibleLeadIds.length === 0) {
+      res.json({ contacts: [] });
+      return;
+    }
 
     const rows = await db
       .select({
@@ -513,7 +526,13 @@ router.get(
       })
       .from(leadContacts)
       .innerJoin(leads, eq(leadContacts.leadId, leads.id))
-      .where(and(isNull(leadContacts.deletedAt), isNull(leads.deletedAt)))
+      .where(
+        and(
+          isNull(leadContacts.deletedAt),
+          isNull(leads.deletedAt),
+          accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
+        ),
+      )
       .orderBy(asc(leadContacts.displayName));
 
     const contacts = query
@@ -539,7 +558,30 @@ router.get(
       throw new HttpError(400, "Invalid leads query.", query.error.flatten());
     }
 
+    const accessibleLeadIds = await listAccessibleLeadIds(req.auth);
+    const { page, pageSize } = query.data;
+
+    if (accessibleLeadIds && accessibleLeadIds.length === 0) {
+      res.json({
+        leads: [],
+        pagination: {
+          page,
+          pageSize,
+          totalItems: 0,
+          totalPages: 1,
+        },
+        summary: {
+          estimatedRevenueMinTotal: "0",
+          estimatedRevenueMaxTotal: "0",
+        },
+      });
+      return;
+    }
+
     const conditions = [isNull(leads.deletedAt)];
+    if (accessibleLeadIds) {
+      conditions.push(inArray(leads.id, accessibleLeadIds));
+    }
 
     if (query.data.status) {
       conditions.push(eq(leads.status, query.data.status));
@@ -558,7 +600,7 @@ router.get(
     }
 
     const whereClause = and(...conditions);
-    const offset = (query.data.page - 1) * query.data.pageSize;
+    const offset = (page - 1) * pageSize;
 
     const [totalRow, totalsRow] = await Promise.all([
       db
@@ -599,7 +641,7 @@ router.get(
       .leftJoin(users, eq(leads.createdBy, users.id))
       .where(whereClause)
       .orderBy(desc(leads.createdAt), asc(leads.title))
-      .limit(query.data.pageSize)
+      .limit(pageSize)
       .offset(offset);
 
     const leadIds = rows.map((lead) => lead.id);
@@ -641,9 +683,9 @@ router.get(
       })),
       pagination: {
         page: query.data.page,
-        pageSize: query.data.pageSize,
+        pageSize,
         totalItems,
-        totalPages: Math.max(1, Math.ceil(totalItems / query.data.pageSize)),
+        totalPages: Math.max(1, Math.ceil(totalItems / pageSize)),
       },
       summary: {
         estimatedRevenueMinTotal: totalsRow?.estimatedRevenueMinTotal ?? "0",
@@ -692,7 +734,9 @@ router.post(
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    res.json(await hydrateLead(getParam(req.params.id, "lead id")));
+    const leadId = getParam(req.params.id, "lead id");
+    await assertCanAccessLead(req.auth, leadId);
+    res.json(await hydrateLead(leadId));
   }),
 );
 
@@ -706,6 +750,7 @@ router.put(
     }
 
     const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth, leadId);
     const existing = await getLeadOrThrow(leadId);
 
     await db
@@ -740,7 +785,7 @@ router.put(
         title: body.data.title,
         previousStatus: existing.status,
         status: body.data.status,
-      });
+      }, leadId);
     }
 
     res.json(await hydrateLead(leadId));
@@ -751,6 +796,7 @@ router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth, leadId);
     const lead = await getLeadOrThrow(leadId);
     const deletedAt = new Date();
 
@@ -796,6 +842,7 @@ router.post(
     }
 
     const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth, leadId);
     await getLeadOrThrow(leadId);
 
     let values;
@@ -863,6 +910,7 @@ router.put(
 
     const leadId = getParam(req.params.id, "lead id");
     const contactId = getParam(req.params.contactId, "contact id");
+    await assertCanManageLead(req.auth, leadId);
     await getLeadOrThrow(leadId);
 
     const existing = await getContactOrThrow(contactId);
@@ -912,6 +960,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     const contactId = getParam(req.params.contactId, "contact id");
+    await assertCanManageLead(req.auth, leadId);
     await getLeadOrThrow(leadId);
 
     const contact = await getContactOrThrow(contactId);
@@ -950,6 +999,7 @@ router.post(
   upload.array("files", 20),
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth, leadId);
     await getLeadOrThrow(leadId);
 
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
@@ -962,6 +1012,8 @@ router.post(
     const attachments = [];
 
     for (const uploadedFile of uploadedFiles) {
+      validateUploadForMediaType("document", uploadedFile);
+
       const storedName = buildStoredFileName(uploadedFile.originalname);
       const { fileUrl } = buildUploadPath({
         jobId: `lead-${leadId}`,
@@ -1026,6 +1078,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     const attachmentId = getParam(req.params.attachmentId, "attachment id");
+    await assertCanManageLead(req.auth, leadId);
     await getLeadOrThrow(leadId);
 
     const [attachment] = await db
@@ -1070,6 +1123,7 @@ router.post(
   "/:id/convert-to-job",
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth, leadId);
     const lead = await getLeadOrThrow(leadId);
 
     const [job] = await db
@@ -1105,7 +1159,7 @@ router.post(
         title: lead.title,
         previousStatus: lead.status,
         status: "won",
-      });
+      }, leadId);
     }
 
     await writeActivity({
@@ -1141,6 +1195,7 @@ router.post(
     }
 
     const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth, leadId);
     await getLeadOrThrow(leadId);
 
     await writeActivity({

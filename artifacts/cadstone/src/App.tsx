@@ -22,7 +22,6 @@ import LeadsPage from "@/pages/leads"
 import LoginPage from "@/pages/login"
 import MyDailyLogsPage from "@/pages/my-daily-logs"
 import NotFoundPage from "@/pages/not-found"
-import RegisterPage from "@/pages/register"
 import SettingsPage from "@/pages/settings"
 import { useAuthStore } from "@/store/auth"
 
@@ -72,7 +71,7 @@ function AppRoutes({ ready }: { ready: boolean }) {
     <Routes>
       <Route element={<PublicOnlyRoute ready={ready} />}>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/register" element={<Navigate to="/login" replace />} />
       </Route>
 
       <Route element={<ProtectedRoute ready={ready} />}>

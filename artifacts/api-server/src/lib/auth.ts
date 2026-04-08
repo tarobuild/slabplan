@@ -9,6 +9,7 @@ type TokenClaims = {
   type: TokenType;
   email: string;
   role: string;
+  version?: string;
 };
 
 type VerifiedToken<TType extends TokenType = TokenType> = TokenClaims & {
@@ -25,14 +26,34 @@ const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const RESET_TOKEN_TTL_SECONDS = 60 * 60;
 
-const accessSecret =
-  process.env.JWT_ACCESS_SECRET ?? "cadstone-dev-access-secret-change-me";
-const refreshSecret =
-  process.env.JWT_REFRESH_SECRET ?? "cadstone-dev-refresh-secret-change-me";
-const resetSecret =
-  process.env.JWT_RESET_SECRET ?? "cadstone-dev-reset-secret-change-me";
+function readJwtSecret(envName: "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET" | "JWT_RESET_SECRET") {
+  const value = process.env[envName]?.trim();
+
+  if (value) {
+    return value;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(`${envName} must be configured in production.`);
+  }
+
+  if (envName === "JWT_ACCESS_SECRET") {
+    return "cadstone-dev-access-secret-change-me";
+  }
+
+  if (envName === "JWT_REFRESH_SECRET") {
+    return "cadstone-dev-refresh-secret-change-me";
+  }
+
+  return "cadstone-dev-reset-secret-change-me";
+}
+
+const accessSecret = readJwtSecret("JWT_ACCESS_SECRET");
+const refreshSecret = readJwtSecret("JWT_REFRESH_SECRET");
+const resetSecret = readJwtSecret("JWT_RESET_SECRET");
 
 export const refreshCookieName = "cadstone_refresh_token";
+export const uploadCookieName = "cadstone_upload_token";
 
 const secureCookies = process.env.NODE_ENV === "production";
 
@@ -44,12 +65,26 @@ const refreshCookieOptions: CookieOptions = {
   maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
 };
 
+const uploadCookieOptions: CookieOptions = {
+  httpOnly: true,
+  sameSite: "lax",
+  secure: secureCookies,
+  path: "/uploads",
+  maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
+};
+
 function buildTokenPayload(user: PublicUser, type: TokenType): TokenClaims {
-  return {
+  const basePayload: TokenClaims = {
     type,
     email: user.email,
     role: user.role,
   };
+
+  if (type === "reset") {
+    basePayload.version = String(user.updatedAt?.getTime() ?? 0);
+  }
+
+  return basePayload;
 }
 
 function signToken(
@@ -94,6 +129,7 @@ function decodeVerifiedToken<TType extends TokenType>(
     email: payload.email,
     role: payload.role,
     type: payload.type,
+    version: typeof payload.version === "string" ? payload.version : undefined,
   };
 }
 
@@ -142,12 +178,21 @@ export function clearRefreshTokenCookie(res: Response): void {
   res.clearCookie(refreshCookieName, refreshCookieOptions);
 }
 
+export function setUploadTokenCookie(res: Response, token: string): void {
+  res.cookie(uploadCookieName, token, uploadCookieOptions);
+}
+
+export function clearUploadTokenCookie(res: Response): void {
+  res.clearCookie(uploadCookieName, uploadCookieOptions);
+}
+
 export function sendAuthResponse(res: Response, user: User): void {
   const publicUser = toPublicUser(user);
   const accessToken = signAccessToken(publicUser);
   const refreshToken = signRefreshToken(publicUser);
 
   setRefreshTokenCookie(res, refreshToken);
+  setUploadTokenCookie(res, refreshToken);
 
   res.json({
     accessToken,

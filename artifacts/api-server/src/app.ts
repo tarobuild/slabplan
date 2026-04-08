@@ -3,9 +3,12 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import { verifyAccessToken, verifyRefreshToken, uploadCookieName } from "./lib/auth";
+import { assertCanAccessUploadPath } from "./lib/authorization";
 import { logger } from "./lib/logger";
 import { HttpError } from "./lib/http";
-import { ensureUploadRoot, uploadRoot } from "./lib/storage";
+import { readBearerToken } from "./middleware/require-auth";
+import { ensureUploadRoot, resolveAbsolutePathFromFileUrl } from "./lib/storage";
 
 const app: Express = express();
 
@@ -39,7 +42,52 @@ app.use(
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use("/uploads", express.static(uploadRoot));
+app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
+  try {
+    const bearerToken = readBearerToken(req);
+    const uploadToken = typeof req.cookies?.[uploadCookieName] === "string"
+      ? req.cookies[uploadCookieName]
+      : null;
+
+    const auth = bearerToken
+      ? verifyAccessToken(bearerToken)
+      : uploadToken
+        ? {
+            ...verifyRefreshToken(uploadToken),
+            type: "access" as const,
+          }
+        : null;
+
+    if (!auth) {
+      throw new HttpError(401, "Authentication required.");
+    }
+
+    const pathname = typeof req.params[0] === "string" ? req.params[0] : "";
+
+    if (!pathname) {
+      throw new HttpError(404, "Stored file missing.");
+    }
+
+    const fileUrl = `/uploads/${pathname}`;
+    await assertCanAccessUploadPath(auth, fileUrl);
+    const absolutePath = resolveAbsolutePathFromFileUrl(fileUrl);
+
+    res.sendFile(absolutePath, (error) => {
+      if (!error) {
+        return;
+      }
+
+      if ("statusCode" in error && error.statusCode === 404) {
+        next(new HttpError(404, "Stored file missing."));
+        return;
+      }
+
+      next(error);
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.use("/api", router);
 

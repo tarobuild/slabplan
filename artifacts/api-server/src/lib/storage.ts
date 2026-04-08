@@ -41,7 +41,14 @@ export function buildUploadPath(params: {
 
 export function resolveAbsolutePathFromFileUrl(fileUrl: string) {
   const relative = fileUrl.replace(/^\/+uploads\/?/, "");
-  return path.join(uploadRoot, relative);
+  const absolute = path.resolve(uploadRoot, relative);
+  const normalizedRoot = `${uploadRoot}${path.sep}`;
+
+  if (absolute !== uploadRoot && !absolute.startsWith(normalizedRoot)) {
+    throw new Error("Upload path resolves outside of the upload root.");
+  }
+
+  return absolute;
 }
 
 export async function writeUploadedBuffer(fileUrl: string, buffer: Buffer) {

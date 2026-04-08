@@ -13,9 +13,17 @@ import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { clientContacts, clients, jobs, users } from "@workspace/db/schema";
+import {
+  assertCanAccessClient,
+  assertCanManageClient,
+  listAccessibleClientIds,
+} from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
+import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
 
 const router: IRouter = Router();
+
+router.use(requireManagerOrAbove);
 
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
@@ -78,8 +86,25 @@ router.get(
 
     const { page, pageSize, search } = query.data;
     const offset = (page - 1) * pageSize;
+    const accessibleClientIds = await listAccessibleClientIds(req.auth);
+
+    if (accessibleClientIds && accessibleClientIds.length === 0) {
+      res.json({
+        clients: [],
+        pagination: {
+          page,
+          pageSize,
+          totalItems: 0,
+          totalPages: 1,
+        },
+      });
+      return;
+    }
 
     const conditions = [isNull(clients.deletedAt)];
+    if (accessibleClientIds) {
+      conditions.push(inArray(clients.id, accessibleClientIds));
+    }
     if (search) {
       const like = `%${search}%`;
       conditions.push(
@@ -228,6 +253,7 @@ router.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
+    await assertCanAccessClient(req.auth, clientId);
     const client = await getClientOrThrow(clientId);
 
     const [contacts, jobList] = await Promise.all([
@@ -262,6 +288,7 @@ router.put(
   "/:id",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
+    await assertCanManageClient(req.auth, clientId);
     await getClientOrThrow(clientId);
 
     const body = clientPayloadSchema.safeParse(req.body);
@@ -289,8 +316,10 @@ router.put(
 
 router.delete(
   "/:id",
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
+    await assertCanAccessClient(req.auth, clientId);
     await getClientOrThrow(clientId);
 
     const now = new Date();
@@ -318,6 +347,7 @@ router.get(
   "/:id/contacts",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
+    await assertCanAccessClient(req.auth, clientId);
     await getClientOrThrow(clientId);
 
     const contacts = await db
@@ -334,6 +364,7 @@ router.get(
   "/:id/jobs",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
+    await assertCanAccessClient(req.auth, clientId);
     await getClientOrThrow(clientId);
 
     const jobList = await db
@@ -361,6 +392,7 @@ router.post(
   "/:id/contacts",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
+    await assertCanManageClient(req.auth, clientId);
     await getClientOrThrow(clientId);
 
     const body = contactPayloadSchema.safeParse(req.body);
@@ -396,6 +428,7 @@ router.put(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     const contactId = getParam(req.params.contactId, "contact id");
+    await assertCanManageClient(req.auth, clientId);
     await getClientOrThrow(clientId);
 
     const [existing] = await db
@@ -439,6 +472,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     const contactId = getParam(req.params.contactId, "contact id");
+    await assertCanManageClient(req.auth, clientId);
     await getClientOrThrow(clientId);
 
     const [existing] = await db

@@ -46,14 +46,15 @@ export default function TopNav() {
         {/* Logo */}
         <Link
           to="/dashboard"
-          className="flex items-center gap-2 shrink-0 mr-2"
+          className="flex items-center shrink-0 mr-2"
         >
-          <div className="flex size-7 items-center justify-center rounded bg-white/20 text-[10px] font-black text-white leading-none select-none">
-            CS
+          <div className="flex items-center bg-white rounded px-2 py-1">
+            <img
+              src="/cad-logo.png"
+              alt="CAD Stone Networks"
+              className="h-6 w-auto"
+            />
           </div>
-          <span className="hidden text-sm font-bold text-white sm:block tracking-wide">
-            CAD STONE
-          </span>
         </Link>
 
         {/* Primary nav */}

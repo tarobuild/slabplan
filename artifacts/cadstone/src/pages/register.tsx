@@ -38,9 +38,16 @@ export default function RegisterPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] px-4 py-10">
       <Card className="w-full max-w-sm border-[#E5E7EB] bg-white shadow-sm">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-xl text-slate-950">Create an account</CardTitle>
-          <CardDescription className="text-sm text-slate-500">CAD Stone Networks — internal tool</CardDescription>
+        <CardHeader className="space-y-3 items-center text-center">
+          <img
+            src="/cad-logo.png"
+            alt="CAD Stone Networks"
+            className="h-12 w-auto mx-auto"
+          />
+          <div>
+            <CardTitle className="text-lg text-slate-900">Create an account</CardTitle>
+            <CardDescription className="text-sm text-slate-500 mt-0.5">CAD Stone Networks — internal tool</CardDescription>
+          </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">

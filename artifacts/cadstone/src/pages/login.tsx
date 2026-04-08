@@ -33,9 +33,16 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] px-4 py-10">
       <Card className="w-full max-w-sm border-[#E5E7EB] bg-white shadow-sm">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-xl text-slate-950">CAD Stone Networks</CardTitle>
-          <CardDescription className="text-sm text-slate-500">Sign in to your account</CardDescription>
+        <CardHeader className="space-y-3 items-center text-center">
+          <img
+            src="/cad-logo.png"
+            alt="CAD Stone Networks"
+            className="h-12 w-auto mx-auto"
+          />
+          <div>
+            <CardTitle className="text-lg text-slate-900">CAD Stone Networks</CardTitle>
+            <CardDescription className="text-sm text-slate-500 mt-0.5">Sign in to your account</CardDescription>
+          </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
@@ -66,7 +73,7 @@ export default function LoginPage() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-3">
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 text-white" disabled={loading}>
               {loading ? "Signing in…" : "Sign in"}
             </Button>
             <p className="text-sm text-slate-500 text-center">

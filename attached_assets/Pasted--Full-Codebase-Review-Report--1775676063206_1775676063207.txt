@@ -1,0 +1,323 @@
+ Full Codebase Review Report                                                                            
+                                                                                                         
+  I've completed a thorough end-to-end review of every source file in the project. Here's a consolidated 
+  report of all findings, deduplicated and organized by severity.                                        
+                                                                                                         
+  ---                                                                                                    
+  CRITICAL (Must Fix)                                                                                    
+                     
+  1. CORS allows any origin with credentials                                                             
+                                                                                                         
+  Files: api-server/src/app.ts:37-40, lib/realtime.ts:32-36                                              
+  cors({ origin: true, credentials: true }) reflects any Origin header while sending credentials. Any    
+  malicious website can make authenticated cross-origin requests and read responses. The same            
+  misconfiguration exists on the Socket.IO server. Fix: Whitelist specific allowed origins.              
+                                                                                                         
+  2. No JWT algorithm restriction — algorithm confusion attack                                           
+   
+  File: api-server/src/lib/auth.ts:110                                                                   
+  jwt.verify(token, secret) is called without algorithms: ["HS256"]. Depending on the library version, an
+   attacker could craft a token with alg: "none" or use asymmetric/symmetric confusion. Fix: Always pass 
+  { algorithms: ["HS256"] }.
+                                                                                                         
+  3. No rate limiting anywhere in the application
+
+  Files: All route files, especially routes/auth.ts:127-147 (login), routes/auth.ts:177-209              
+  (forgot-password)
+  Zero rate limiting exists. Login, password reset, and all other endpoints are fully exposed to         
+  brute-force and credential stuffing attacks.                                                           
+   
+  4. Upload validation uses OR instead of AND (extension OR MIME type)                                   
+                  
+  File: api-server/src/lib/file-manager.ts:77-101                                                        
+  A file with a dangerous MIME type (e.g., text/html) but a .jpg extension passes validation, and vice
+  versa. Combined with res.sendFile() serving files with guessed Content-Type and no Content-Disposition:
+   attachment, this enables stored XSS.
+                                                                                                         
+  5. Hardcoded JWT secrets used when NODE_ENV ≠ "production"                                             
+   
+  File: api-server/src/lib/auth.ts:40-48                                                                 
+  Fallback secrets like "cadstone-dev-access-secret-change-me" are used whenever NODE_ENV is not exactly
+  "production" (including when unset). Any attacker knowing these defaults can forge arbitrary JWTs.     
+   
+  6. Sharing defaults mapped to wrong audience groups                                                    
+                  
+  File: cadstone/src/pages/job-daily-logs.tsx:573-574                                                    
+  settings.shareEstimatorsByDefault is mapped to shareClient, and settings.shareInstallersByDefault is
+  mapped to shareSubsVendors. Sharing defaults are applied to the wrong groups.                          
+                  
+  7. matchesStatus function is dead code — "unconfirmed" filter matches everything                       
+                  
+  File: cadstone/src/pages/job-schedule.tsx:869-892                                                      
+  Lines 869-871 hardcode accepted, pending, and declined to 0. The unconfirmed check (accepted === 0 && 
+  pending === 0 && declined === 0) is always true, so the "unconfirmed" filter matches every single item.
+   
+  8. OpenAPI spec is a stub — 95% of the API is undocumented                                             
+                  
+  File: lib/api-spec/openapi.yaml                                                                        
+  The spec defines only GET /healthz. The server implements ~80+ endpoints. The generated client
+  (api-client-react) and Zod schemas (api-zod) are essentially useless for anything beyond a health      
+  check. The entire code generation pipeline provides no value for real API operations.
+                                                                                                         
+  ---             
+  HIGH (Should Fix Soon)
+                        
+  9. Missing security headers
+                                                                                                         
+  File: api-server/src/app.ts
+  No helmet middleware, no X-Content-Type-Options: nosniff, no X-Frame-Options, no                       
+  Content-Security-Policy. Without nosniff, browsers may MIME-sniff uploaded files and execute them as   
+  HTML/JS.
+                                                                                                         
+  10. Unhandled exception in requireAuth crashes requests                                                
+   
+  File: api-server/src/middleware/require-auth.ts:25                                                     
+  verifyAccessToken(token) throws HttpError, but requireAuth is synchronous middleware with no try-catch.
+   Invalid tokens cause unhandled exceptions instead of clean 401 responses.                             
+   
+  11. Refresh token reused as upload cookie                                                              
+                  
+  File: api-server/src/lib/auth.ts:195, app.ts:55-58                                                     
+  The 30-day refresh token is sent as an upload cookie on every request to /uploads/*. If intercepted,
+  the attacker gets a long-lived credential instead of the 15-minute access token.                       
+                  
+  12. getActivityEntries loads entire activity table into memory                                         
+                  
+  File: api-server/src/lib/file-manager.ts:1135-1147                                                     
+  The query has no WHERE clause and no LIMIT. It loads the entire activity log, filters in JS, then
+  paginates in memory. This will OOM the server as the table grows.                                      
+                  
+  13. No CSRF protection                                                                                 
+                  
+  The refresh cookie is sameSite: "lax", but POST requests from forms on other sites still send cookies  
+  in lax mode. Combined with the open CORS policy, this is a significant gap.
+                                                                                                         
+  14. Multiple race conditions with no transactions                                                      
+   
+  - Client primary contact (clients.ts:401-419): clears all primary flags, then inserts — concurrent     
+  requests can leave 0 or 2 primaries.
+  - Job/client/lead deletion (jobs.ts:396-443, clients.ts:317-343, leads.ts:795-832): multi-table        
+  soft-deletes without transactions.                                                                     
+  - Daily log like toggle (daily-logs.ts:1276-1328): check-then-insert without atomicity.
+  - Comment reactions (daily-logs.ts:1406-1465): read-modify-write without locking.                      
+                                                                                                         
+  15. Missing authorization on daily log admin GET routes                                                
+                                                                                                         
+  File: api-server/src/routes/daily-log-admin.ts:171-177, 220-237                                        
+  GET /daily-logs/settings and GET /daily-logs/custom-fields have no requireAdmin middleware — any
+  authenticated user can read admin settings.                                                            
+                  
+  16. No pagination on many endpoints — DoS risk                                                         
+                  
+  - clients.ts:346-360 — all contacts for a client, no limit                                             
+  - leads.ts:504-549 — all lead contacts into memory, JS filtering
+  - schedule.ts:2336-2362 — all schedule items + N+1 hydration queries                                   
+  - daily-log-admin.ts:340-515 — all user daily logs into memory                                         
+  - users.ts:53-67 — all users, loads passwordHash into memory                                           
+                                                                                                         
+  17. updatedAt never auto-updates — stale timestamps across all tables                                  
+                                                                                                         
+  File: lib/db/src/schema/index.ts:23                                                                    
+  .defaultNow() only sets the value on INSERT. There is no trigger or $onUpdate(). Any UPDATE that
+  forgets to manually set updatedAt leaves a stale timestamp. This affects every table.                  
+   
+  18. Timestamps use timestamp without timezone                                                          
+                  
+  File: lib/db/src/schema/index.ts:22-23                                                                 
+  timestamp("created_at") maps to timestamp without time zone. This will cause bugs when the app server
+  and database are in different timezones.                                                               
+                  
+  19. Missing NOT NULL on ~16 critical foreign keys                                                      
+                  
+  File: lib/db/src/schema/index.ts                                                                       
+  Junction/child table FKs like clientContacts.clientId, files.folderId, dailyLogs.jobId,
+  scheduleItems.jobId, dailyLogAttachments.dailyLogId, etc. are all nullable. A NULL FK makes these rows 
+  orphaned and breaks unique constraints (PostgreSQL treats NULLs as distinct).
+                                                                                                         
+  20. Soft delete + unique constraints conflict
+
+  File: lib/db/src/schema/index.ts:153-158                                                               
+  The folders unique constraint doesn't account for deletedAt. Soft-deleting a folder then creating one
+  with the same name violates the constraint. Same issue with users.email — can't re-register after      
+  soft-delete.    
+                                                                                                         
+  21. Missing cascading delete on all user references                                                    
+   
+  File: lib/db/src/schema/index.ts                                                                       
+  ~15 FK columns reference users.id with no onDelete clause (jobs.createdBy, jobs.projectManagerId,
+  files.uploadedBy, etc.). Hard-deleting a user raises FK violations everywhere.                         
+   
+  22. API called on every keystroke without debounce                                                     
+                  
+  File: cadstone/src/pages/my-daily-logs.tsx:56-71                                                       
+  The useEffect depends on search — every character typed fires a new API request immediately with no
+  debouncing, causing server hammering and race conditions.                                              
+                  
+  23. strictFunctionTypes disabled in tsconfig                                                           
+                  
+  File: tsconfig.base.json:16
+  strictFunctionTypes: false disables bivariant function parameter checking, which can mask real type
+  errors in callback-heavy React/Query code.                                                             
+   
+  ---                                                                                                    
+  MEDIUM (Should Fix)
+                     
+  24. ILIKE wildcard injection across search endpoints
+                                                                                                         
+  Files: jobs.ts:216, clients.ts:109, leads.ts:591, search.ts:37, daily-logs.ts:898                      
+  User input is interpolated into %${search}% without escaping % and _ wildcards.                        
+                                                                                                         
+  25. Email validation is just .includes("@")                                                            
+                                                                                                         
+  File: api-server/src/routes/auth.ts:29                                                                 
+  Accepts "@", "@@@@", "foo@", etc.
+                                                                                                         
+  26. Registration race condition allows duplicate emails                                                
+                                                                                                         
+  File: api-server/src/routes/auth.ts:107-124                                                            
+  Check-then-insert without transaction or database unique constraint enforcement.
+                                                                                                         
+  27. purgeFolder deletes physical files before DB records, no transaction                               
+                                                                                                         
+  File: api-server/src/lib/file-manager.ts:806-842                                                       
+  A crash between physical deletion and DB deletion leaves orphaned records.
+                                                                                                         
+  28. void ensureUploadRoot() silently ignores errors                                                    
+                                                                                                         
+  File: api-server/src/app.ts:15                                                                         
+  If creating the uploads directory fails, all uploads silently fail with cryptic errors.
+                                                                                                         
+  29. Archive error handler crashes Node.js process                                                      
+                                                                                                         
+  File: api-server/src/lib/file-manager.ts:1215-1217                                                     
+  throw error inside an event listener callback causes an unhandled exception.
+                                                                                                         
+  30. Socket.IO never re-validates tokens after connection                                               
+                                                                                                         
+  File: api-server/src/lib/realtime.ts                                                                   
+  Auth is checked only at connection time. Expired/revoked tokens keep the WebSocket active indefinitely.
+                                                                                                         
+  31. Missing indexes on ~15 frequently queried FK columns
+                                                                                                         
+  File: lib/db/src/schema/index.ts
+  jobs.clientId, files.folderId, folders.jobId, folders.parentFolderId, dailyLogs.jobId,
+  activityLog.entityId, etc. — PostgreSQL does NOT auto-create indexes on FK columns.                    
+   
+  32. dailyLogSettings is a singleton table with no constraint                                           
+                  
+  File: lib/db/src/schema/index.ts:472-485                                                               
+  Multiple rows can be inserted with no scoping column and no unique constraint.
+                                                                                                         
+  33. Sidebar jobs never refetch after mutations
+                                                                                                         
+  File: cadstone/src/components/layout/Sidebar.tsx:37-42                                                 
+  Jobs are fetched once with [] deps. Creating/renaming/deleting a job never updates the sidebar.
+                                                                                                         
+  34. Sidebar silently swallows all API errors                                                           
+                                                                                                         
+  File: cadstone/src/components/layout/Sidebar.tsx:41                                                    
+  .catch(() => {}) — including 401s that should trigger session handling.
+                                                                                                         
+  35. File uploads have no client-side validation
+
+  File: cadstone/src/components/FileBrowser.tsx:273-289
+  No accept attribute, no size limits, no type checks. Same issue in ScheduleItemDialog.tsx:560-591.
+                                                                                                         
+  36. UTC vs local timezone mixing in schedule module                                                    
+                                                                                                         
+  File: cadstone/src/lib/schedule.ts:274-277 vs 233-237                                                  
+  isWeekend() uses getUTCDay() but dateKey() uses local timezone methods. Near midnight in non-UTC
+  timezones, this produces off-by-one-day bugs.                                                          
+                  
+  37. Permission labels are misleading                                                                   
+                  
+  File: cadstone/src/pages/job-daily-logs.tsx:2164-2183                                                  
+  shareClient labeled as "Estimators" and shareSubsVendors labeled as "Installers" — compounds the
+  critical bug #6.                                                                                       
+                  
+  38. my-daily-logs.tsx — groupedLogs memo is a no-op                                                    
+                  
+  File: Line 73 — useMemo(() => logs, [logs]) returns logs unchanged. Misleading variable name.          
+                  
+  39. Login label says "Username" but sends email                                                        
+                  
+  File: cadstone/src/pages/login.tsx:50-54                                                               
+  UI says "Username" with placeholder "Enter your username" but the field is email.
+                                                                                                         
+  40. No unsaved changes warning on job summary page                                                     
+                                                                                                         
+  File: cadstone/src/pages/job-summary.tsx                                                               
+  Users can lose edits by accidentally navigating away.
+                                                                                                         
+  41. Job summary edits don't update parent context                                                      
+                                                                                                         
+  File: cadstone/src/pages/job-summary.tsx                                                               
+  Saving updates local state but the parent job-detail.tsx header shows stale title/status.
+                                                                                                         
+  42. Sequential API calls in schedule publish — slow and fragile                                        
+                                                                                                         
+  File: cadstone/src/pages/job-schedule.tsx:2343-2383                                                    
+  Each draft item is saved sequentially. A mid-way failure leaves a partially published schedule.
+                                                                                                         
+  43. dailyLog.jobId! non-null assertion on nullable field                                               
+                                                                                                         
+  File: daily-logs.ts:1317, 1394, 1497, 1609, 1672                                                       
+  Multiple uses of ! on a nullable FK. If null, writeActivity gets corrupted data.
+                                                                                                         
+  44. leadId passed as jobId in activity logging                                                         
+                                                                                                         
+  File: leads.ts:723, 775, 828                                                                           
+  writeActivity({ jobId: lead.id }) — a lead ID in a field meant for job IDs, corrupting the activity
+  feed.                                                                                                  
+   
+  ---                                                                                                    
+  LOW (Nice to Fix)
+                   
+  ┌─────┬──────────────────────────────────────────────────────────┬──────────────────────────────────┐
+  │  #  │                         Finding                          │             Location             │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤
+  │ 45  │ Password minimum 8 chars, no complexity or breach        │ routes/auth.ts:50                │  
+  │     │ checking                                                 │                                  │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 46  │ bcrypt cost factor 10 (OWASP recommends 12+)             │ routes/auth.ts:113               │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 47  │ Reset token leaked in non-production environments        │ routes/auth.ts:202-206           │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤
+  │ 48  │ No register link on login page                           │ pages/login.tsx                  │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤
+  │ 49  │ No client-side password length validation on register    │ pages/register.tsx:87            │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤
+  │ 50  │ Email changes have no verification flow                  │ pages/settings.tsx               │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤
+  │ 51  │ today memo with [] deps never updates past midnight      │ pages/dashboard.tsx:435          │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤
+  │ 52  │ Dashboard sidebar not responsive (fixed 256px)           │ pages/dashboard.tsx:623          │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤
+  │ 53  │ Edit button in TagEditor has no onClick handler          │ pages/job-daily-logs.tsx:746-748 │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤
+  │ 54  │ Debounce timer not cleared on unmount in jobs page       │ pages/jobs.tsx:142-146           │  
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 55  │ formatFileSize shows "---" for 0 bytes                   │ FileBrowser.tsx:107-113          │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 56  │ TOAST_REMOVE_DELAY is ~17 minutes — slow memory leak     │ hooks/use-toast.ts:9             │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 57  │ state column limited to 2 chars (US only)                │ schema/index.ts:84,112,180,209   │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 58  │ confidence and progress columns have no 0-100 bounds     │ schema/index.ts:182, 304         │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 59  │ Seed data has wrong file in wrong folder                 │ seed.ts:665-673                  │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 60  │ Seed data uses color names but schema defaults to hex    │ seed.ts:782,798                  │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 61  │ drizzle.config.ts uses __dirname in ESM module           │ drizzle.config.ts:12-13          │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 62  │ Test coverage is minimal (2 files, ~7 cases)             │ test/                            │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 63  │ dateKey and isoDate are identical duplicate functions    │ schedule.ts:233-247              │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 64  │ runtimeErrorOverlay plugin included in production        │ vite.config.ts:88                │
+  ├─────┼──────────────────────────────────────────────────────────┼──────────────────────────────────┤  
+  │ 65  │ All frontend packages in devDependencies not             │ cadstone/package.json            │
+  │     │ dependencies                                             │                                  │  
+  └─────┴──────────────────────────────────────────────────────────┴──────────────────────────────────┘
+                                                                                         

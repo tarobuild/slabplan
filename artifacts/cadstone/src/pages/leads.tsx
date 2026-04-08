@@ -512,16 +512,13 @@ export default function LeadsPage() {
         headers: { "Content-Type": "multipart/form-data" },
       })
       const newAttachments: LeadAttachment[] = data.attachments
-      setLeadDetail((prev) =>
-        prev
-          ? { ...prev, attachments: [...newAttachments, ...prev.attachments] }
-          : prev,
-      )
       toast.success(
         newAttachments.length === 1
           ? "File uploaded"
           : `${newAttachments.length} files uploaded`,
       )
+      const { data: freshData } = await api.get(`/leads/${sheetLeadId}`)
+      setLeadDetail(freshData.lead)
     } catch (err: unknown) {
       toast.error(getApiError(err, "Failed to upload file(s)"))
     } finally {
@@ -1418,8 +1415,9 @@ export default function LeadsPage() {
                           <Paperclip className="size-7 text-slate-300 mb-2" />
                           <p className="text-sm text-slate-400">No attachments yet</p>
                           <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="mt-1 text-xs text-blue-600 hover:underline"
+                            onClick={() => !uploadingAttachment && fileInputRef.current?.click()}
+                            disabled={uploadingAttachment}
+                            className="mt-1 text-xs text-blue-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             Upload a file
                           </button>

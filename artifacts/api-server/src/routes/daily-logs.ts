@@ -116,7 +116,7 @@ const customFieldValuesSchema = z.record(customFieldValueSchema).optional().defa
 
 const dailyLogListQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
-  pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
+  pageSize: z.coerce.number().int().positive().max(500).optional().default(10),
   keywords: z.string().trim().optional(),
   createdBy: z.string().uuid().optional(),
   from: optionalDate,

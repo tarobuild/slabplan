@@ -4,19 +4,26 @@ import TopNav from "./TopNav"
 
 export default function AppLayout() {
   return (
-    <div className="min-h-screen bg-[#F9FAFB]">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#F9FAFB]">
       <div data-print-hide="true">
         <TopNav />
       </div>
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1600px]">
-        <aside data-print-hide="true" className="hidden w-72 shrink-0 lg:block">
+
+      <div className="flex flex-1 overflow-hidden">
+        <aside
+          data-print-hide="true"
+          className="hidden w-56 shrink-0 overflow-hidden lg:flex lg:flex-col"
+        >
           <Sidebar />
         </aside>
-        <main className="flex-1 p-4 lg:p-6">
-          <div data-print-hide="true" className="mb-4 lg:hidden">
+
+        <main className="flex-1 overflow-y-auto">
+          <div data-print-hide="true" className="mb-3 lg:hidden">
             <Sidebar mobile />
           </div>
-          <Outlet />
+          <div className="p-4 lg:p-5">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

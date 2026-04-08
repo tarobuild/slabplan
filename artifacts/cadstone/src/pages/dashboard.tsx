@@ -506,7 +506,7 @@ export default function DashboardPage() {
     { label: "Active Jobs", value: stats?.activeJobs ?? 0, icon: Briefcase, href: "/jobs", color: "#E85D04" },
     { label: "Open Leads", value: stats?.openLeads ?? 0, icon: TrendingUp, href: "/sales/leads", color: "#10b981" },
     { label: "Schedule Items", value: stats?.openScheduleItems ?? 0, icon: CalendarDays, href: "/jobs", color: "#3b82f6" },
-    { label: "My Daily Logs", value: stats?.myDailyLogs ?? 0, icon: FileText, href: "/jobs", color: "#8b5cf6" },
+    { label: "My Daily Logs", value: stats?.myDailyLogs ?? 0, icon: FileText, href: "/daily-logs/mine", color: "#8b5cf6" },
   ]
 
   const todayDisplay = today.toLocaleDateString("en-US", {

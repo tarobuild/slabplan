@@ -772,7 +772,18 @@ async function assertPhaseBelongsToJob(jobId: string, phaseId: string | null) {
 async function ensureDefaultPhase(jobId: string) {
   await ensureAdvancedScheduleTables();
 
-  const [existing] = await db
+  await db
+    .insert(schedulePhases)
+    .values({
+      jobId,
+      name: "Pre-Construction",
+      color: "#e76f8a",
+    })
+    .onConflictDoNothing({
+      target: [schedulePhases.jobId, schedulePhases.name],
+    });
+
+  const [phase] = await db
     .select({
       id: schedulePhases.id,
       name: schedulePhases.name,
@@ -782,22 +793,9 @@ async function ensureDefaultPhase(jobId: string) {
     .where(and(eq(schedulePhases.jobId, jobId), eq(schedulePhases.name, "Pre-Construction")))
     .limit(1);
 
-  if (existing) {
-    return existing;
+  if (!phase) {
+    throw new HttpError(500, "Failed to ensure default schedule phase.");
   }
-
-  const [phase] = await db
-    .insert(schedulePhases)
-    .values({
-      jobId,
-      name: "Pre-Construction",
-      color: "#e76f8a",
-    })
-    .returning({
-      id: schedulePhases.id,
-      name: schedulePhases.name,
-      color: schedulePhases.color,
-    });
 
   return phase;
 }
@@ -805,17 +803,7 @@ async function ensureDefaultPhase(jobId: string) {
 async function ensureDefaultScheduleSettings(jobId: string) {
   await ensureAdvancedScheduleTables();
 
-  const [existing] = await db
-    .select()
-    .from(scheduleSettings)
-    .where(eq(scheduleSettings.jobId, jobId))
-    .limit(1);
-
-  if (existing) {
-    return existing;
-  }
-
-  const [created] = await db
+  await db
     .insert(scheduleSettings)
     .values({
       id: crypto.randomUUID(),
@@ -826,7 +814,19 @@ async function ensureDefaultScheduleSettings(jobId: string) {
       automaticallyMarkItemsComplete: false,
       includeHeaderOnPdfExports: true,
     })
-    .returning();
+    .onConflictDoNothing({
+      target: scheduleSettings.jobId,
+    });
+
+  const [created] = await db
+    .select()
+    .from(scheduleSettings)
+    .where(eq(scheduleSettings.jobId, jobId))
+    .limit(1);
+
+  if (!created) {
+    throw new HttpError(500, "Failed to ensure default schedule settings.");
+  }
 
   return created;
 }

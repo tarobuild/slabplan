@@ -14,7 +14,7 @@ import { toast } from "sonner"
 
 type Job = {
   id: string
-  name: string
+  title: string
   status: string | null
 }
 
@@ -53,7 +53,7 @@ export default function FilesPhotosPage() {
             <ImageIcon className="size-6 text-slate-700" />
             <h1 className="text-2xl font-bold text-slate-900">Photos</h1>
           </div>
-          {selectedJob && <p className="mt-0.5 text-sm text-slate-500">{selectedJob.name}</p>}
+          {selectedJob && <p className="mt-0.5 text-sm text-slate-500">{selectedJob.title}</p>}
         </div>
         {loading ? (
           <Skeleton className="h-9 w-56" />
@@ -65,7 +65,7 @@ export default function FilesPhotosPage() {
             <SelectContent>
               {jobs.map((job) => (
                 <SelectItem key={job.id} value={job.id}>
-                  {job.name}
+                  {job.title}
                 </SelectItem>
               ))}
             </SelectContent>

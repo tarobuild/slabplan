@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
 import { Loader2, Plus, Search, Trash2 } from "lucide-react"
 import { api } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
@@ -101,6 +101,15 @@ export default function JobsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const location = useLocation()
+
+  useEffect(() => {
+    if ((location.state as any)?.openCreate) {
+      setForm(emptyForm)
+      setCreateOpen(true)
+      window.history.replaceState({}, "")
+    }
+  }, [location.state])
 
   const fetchJobs = (s = search, st = status, p = page) => {
     setLoading(true)
@@ -108,7 +117,7 @@ export default function JobsPage() {
     if (s) params.set("search", s)
     if (st !== "all") params.set("status", st)
     api.get(`/jobs?${params}`)
-      .then(r => { setJobs(r.data.jobs); setTotal(r.data.total) })
+      .then(r => { setJobs(r.data.jobs); setTotal(r.data.pagination?.totalItems ?? 0) })
       .catch(() => toast.error("Failed to load jobs"))
       .finally(() => setLoading(false))
   }

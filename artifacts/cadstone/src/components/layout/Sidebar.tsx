@@ -61,7 +61,7 @@ export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
         <Button
           className="w-full bg-blue-600 text-white hover:bg-blue-700"
           size="sm"
-          onClick={() => navigate("/jobs")}
+          onClick={() => navigate("/jobs", { state: { openCreate: true } })}
         >
           <Plus className="size-4" />
           New Job

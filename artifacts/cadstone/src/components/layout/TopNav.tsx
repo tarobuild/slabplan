@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  ClipboardList,
   FileImage,
   FileText,
   Film,
@@ -158,6 +159,10 @@ export default function TopNav() {
             <DropdownMenuItem onClick={() => navigate("/settings")}>
               <Settings className="size-4" />
               Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/daily-logs/mine")}>
+              <ClipboardList className="size-4" />
+              My Daily Logs
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

@@ -293,14 +293,21 @@ router.delete(
     const clientId = getParam(req.params.id, "client id");
     await getClientOrThrow(clientId);
 
+    const now = new Date();
+
     await db
       .update(jobs)
-      .set({ clientId: null, updatedAt: new Date() })
+      .set({ clientId: null, updatedAt: now })
       .where(eq(jobs.clientId, clientId));
 
     await db
+      .update(clientContacts)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
+
+    await db
       .update(clients)
-      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .set({ deletedAt: now, updatedAt: now })
       .where(eq(clients.id, clientId));
 
     res.json({ success: true });

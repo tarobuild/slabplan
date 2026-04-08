@@ -49,6 +49,8 @@ type Job = {
   state: string | null
   jobType: string | null
   contractPrice: string | null
+  clientId: string | null
+  clientName: string | null
   createdAt: string
   createdByName: string | null
 }
@@ -238,6 +240,7 @@ export default function JobsPage() {
           <TableHeader>
             <TableRow className="bg-slate-50">
               <TableHead className="font-semibold text-slate-600">Title</TableHead>
+              <TableHead className="font-semibold text-slate-600">Client</TableHead>
               <TableHead className="font-semibold text-slate-600">Location</TableHead>
               <TableHead className="font-semibold text-slate-600">Type</TableHead>
               <TableHead className="font-semibold text-slate-600">Status</TableHead>
@@ -250,14 +253,14 @@ export default function JobsPage() {
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 7 }).map((_, j) => (
+                  {Array.from({ length: 8 }).map((_, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : jobs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-slate-400 text-sm">
+                <TableCell colSpan={8} className="text-center py-12 text-slate-400 text-sm">
                   No jobs found.{" "}
                   <button onClick={() => { setForm(emptyForm); setCreateOpen(true) }} className="text-blue-600 hover:underline">
                     Create your first job
@@ -271,6 +274,9 @@ export default function JobsPage() {
                     <Link to={`/jobs/${job.id}/summary`} className="font-medium text-blue-600 hover:underline">
                       {job.title}
                     </Link>
+                  </TableCell>
+                  <TableCell className="text-slate-600 text-sm">
+                    {job.clientName || "—"}
                   </TableCell>
                   <TableCell className="text-slate-600 text-sm">
                     {[job.city, job.state].filter(Boolean).join(", ") || "—"}

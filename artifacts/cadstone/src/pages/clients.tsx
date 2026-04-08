@@ -852,7 +852,7 @@ export default function ClientsPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Client?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently delete the client and all their contacts. Their linked jobs will be unlinked but not deleted.</AlertDialogDescription>
+            <AlertDialogDescription>This will permanently delete the client and all their contacts. Any linked jobs will be unlinked and the client association removed.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

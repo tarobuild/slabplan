@@ -294,11 +294,32 @@ router.delete(
     await getClientOrThrow(clientId);
 
     await db
+      .update(jobs)
+      .set({ clientId: null, updatedAt: new Date() })
+      .where(eq(jobs.clientId, clientId));
+
+    await db
       .update(clients)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(eq(clients.id, clientId));
 
     res.json({ success: true });
+  }),
+);
+
+router.get(
+  "/:id/contacts",
+  asyncHandler(async (req, res) => {
+    const clientId = getParam(req.params.id, "client id");
+    await getClientOrThrow(clientId);
+
+    const contacts = await db
+      .select()
+      .from(clientContacts)
+      .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)))
+      .orderBy(desc(clientContacts.isPrimary), asc(clientContacts.firstName));
+
+    res.json({ contacts });
   }),
 );
 

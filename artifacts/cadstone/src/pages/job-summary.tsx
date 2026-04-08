@@ -135,205 +135,224 @@ export default function JobSummaryPage() {
   if (!job) return <div className="text-sm text-slate-500">Job not found.</div>
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div className="grid grid-cols-2 gap-4">
+    <div className="space-y-5">
 
-        <div className="col-span-2 space-y-1.5">
-          <Label>Title *</Label>
-          <Input value={job.title} onChange={e => setField("title", e.target.value)} />
-        </div>
+      {/* Two-panel layout */}
+      <div className="flex gap-5 items-start">
 
-        <div className="space-y-1.5">
-          <Label>Job Type</Label>
-          <Select value={job.jobType ?? "_none"} onValueChange={v => setField("jobType", v === "_none" ? null : v)}>
-            <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_none">— None —</SelectItem>
-              {JOB_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        {/* LEFT — Job information */}
+        <div className="flex-1 min-w-0 space-y-5">
+          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Job Information</h3>
 
-        <div className="space-y-1.5">
-          <Label>Status</Label>
-          <Select value={job.status} onValueChange={v => setField("status", v)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="closed">Closed</SelectItem>
-              <SelectItem value="archived">Archived</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="space-y-1.5">
+              <Label>Title *</Label>
+              <Input value={job.title} onChange={e => setField("title", e.target.value)} />
+            </div>
 
-        <div className="col-span-2 space-y-1.5">
-          <Label>Street Address</Label>
-          <Input value={job.streetAddress ?? ""} onChange={e => setField("streetAddress", e.target.value || null)} placeholder="123 Main St" />
-        </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Job Type</Label>
+                <Select value={job.jobType ?? "_none"} onValueChange={v => setField("jobType", v === "_none" ? null : v)}>
+                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— None —</SelectItem>
+                    {JOB_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select value={job.status} onValueChange={v => setField("status", v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                    <SelectItem value="archived">Archived</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-        <div className="space-y-1.5">
-          <Label>City</Label>
-          <Input value={job.city ?? ""} onChange={e => setField("city", e.target.value || null)} placeholder="Austin" />
-        </div>
+            <div className="space-y-1.5">
+              <Label>Contract Price ($)</Label>
+              <Input
+                value={job.contractPrice ?? ""}
+                onChange={e => setField("contractPrice", e.target.value || null)}
+                type="number" step="0.01" min="0" placeholder="0.00"
+              />
+            </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1.5">
-            <Label>State</Label>
-            <Input value={job.state ?? ""} onChange={e => setField("state", e.target.value || null)} placeholder="TX" maxLength={2} className="uppercase" />
+            <div className="space-y-1.5">
+              <Label>Contract Type</Label>
+              <div className="flex flex-col gap-2 pt-0.5">
+                {(["fixed_price", "open_book"] as const).map(ct => (
+                  <label key={ct} className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="contractType"
+                      value={ct}
+                      checked={job.contractType === ct}
+                      onChange={() => setField("contractType", ct)}
+                      className="mt-0.5 accent-blue-600"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-slate-800">
+                        {ct === "fixed_price" ? "Fixed price" : "Open book"}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {ct === "fixed_price"
+                          ? "You will set the contract price for the client"
+                          : 'Price = projected costs + markup. "Cost plus" and "time and materials" contracts.'}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Zip Code</Label>
-            <Input value={job.zipCode ?? ""} onChange={e => setField("zipCode", e.target.value || null)} placeholder="78701" />
-          </div>
-        </div>
 
-        <div className="space-y-1.5">
-          <Label>Contract Price ($)</Label>
-          <Input
-            value={job.contractPrice ?? ""}
-            onChange={e => setField("contractPrice", e.target.value || null)}
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="0.00"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label>Contract Type</Label>
-          <div className="flex gap-4 pt-1">
-            {(["fixed_price", "open_book"] as const).map(ct => (
-              <label key={ct} className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="contractType"
-                  value={ct}
-                  checked={job.contractType === ct}
-                  onChange={() => setField("contractType", ct)}
-                  className="mt-0.5 accent-blue-600"
-                />
-                <div>
-                  <div className="text-sm font-medium text-slate-800">
-                    {ct === "fixed_price" ? "Fixed price" : "Open book"}
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {ct === "fixed_price"
-                      ? "You will set the contract price for the client"
-                      : 'Price = projected costs + markup. "Cost plus" and "time and materials" contracts.'}
-                  </div>
+          {/* Address */}
+          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Address</h3>
+            <div className="space-y-1.5">
+              <Label>Street Address</Label>
+              <Input value={job.streetAddress ?? ""} onChange={e => setField("streetAddress", e.target.value || null)} placeholder="123 Main St" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>City</Label>
+                <Input value={job.city ?? ""} onChange={e => setField("city", e.target.value || null)} placeholder="Austin" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label>State</Label>
+                  <Input value={job.state ?? ""} onChange={e => setField("state", e.target.value || null)} placeholder="TX" maxLength={2} className="uppercase" />
                 </div>
-              </label>
-            ))}
+                <div className="space-y-1.5">
+                  <Label>Zip</Label>
+                  <Input value={job.zipCode ?? ""} onChange={e => setField("zipCode", e.target.value || null)} placeholder="78701" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Notes</h3>
+            <div className="space-y-1.5">
+              <Label>Notes for internal users</Label>
+              <Textarea
+                value={job.internalNotes ?? ""}
+                onChange={e => setField("internalNotes", e.target.value || null)}
+                placeholder="Internal notes visible only to your team…"
+                maxLength={2500}
+                rows={4}
+              />
+              <p className="text-xs text-slate-400">Maximum 2500 characters</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes for subs/vendors</Label>
+              <Textarea
+                value={job.subVendorNotes ?? ""}
+                onChange={e => setField("subVendorNotes", e.target.value || null)}
+                placeholder="Notes visible to subcontractors and vendors…"
+                maxLength={2500}
+                rows={4}
+              />
+              <p className="text-xs text-slate-400">Maximum 2500 characters</p>
+            </div>
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label>Project Manager</Label>
-          <Select
-            value={job.projectManagerId ?? "_none"}
-            onValueChange={v => setField("projectManagerId", v === "_none" ? null : v)}
-          >
-            <SelectTrigger><SelectValue placeholder="Assign a project manager" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_none">— None —</SelectItem>
-              {userOptions.map(u => (
-                <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {/* RIGHT — Schedule + Additional */}
+        <div className="w-72 shrink-0 space-y-5">
 
-        <div className="space-y-1.5">
-          <Label>Square Feet</Label>
-          <Input
-            value={job.squareFeet ?? ""}
-            onChange={e => setField("squareFeet", e.target.value || null)}
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="e.g. 48.5"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label>Permit Number</Label>
-          <Input
-            value={job.permitNumber ?? ""}
-            onChange={e => setField("permitNumber", e.target.value || null)}
-            placeholder="e.g. BP-2024-00123"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label>Work Days</Label>
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {WORK_DAYS.map(d => {
-              const active = (job.workDays ?? []).includes(d)
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => toggleWorkDay(d)}
-                  className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
-                    active
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-white text-slate-600 border-[#E5E7EB] hover:border-blue-300"
-                  }`}
-                >
-                  {WORK_DAYS_LABELS[d]}
-                </button>
-              )
-            })}
+          {/* Schedule */}
+          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Schedule</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Projected Start</Label>
+                <Input type="date" value={job.projectedStart ?? ""} onChange={e => setField("projectedStart", e.target.value || null)} className="text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Actual Start</Label>
+                <Input type="date" value={job.actualStart ?? ""} onChange={e => setField("actualStart", e.target.value || null)} className="text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Projected Completion</Label>
+                <Input type="date" value={job.projectedCompletion ?? ""} onChange={e => setField("projectedCompletion", e.target.value || null)} className="text-xs" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Actual Completion</Label>
+                <Input type="date" value={job.actualCompletion ?? ""} onChange={e => setField("actualCompletion", e.target.value || null)} className="text-xs" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Work Days</Label>
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {WORK_DAYS.map(d => {
+                  const active = (job.workDays ?? []).includes(d)
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => toggleWorkDay(d)}
+                      className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                        active
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white text-slate-600 border-[#E5E7EB] hover:border-blue-300"
+                      }`}
+                    >
+                      {WORK_DAYS_LABELS[d]}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div className="space-y-1.5">
-          <Label>Projected Start</Label>
-          <Input type="date" value={job.projectedStart ?? ""} onChange={e => setField("projectedStart", e.target.value || null)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Projected Completion</Label>
-          <Input type="date" value={job.projectedCompletion ?? ""} onChange={e => setField("projectedCompletion", e.target.value || null)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Actual Start</Label>
-          <Input type="date" value={job.actualStart ?? ""} onChange={e => setField("actualStart", e.target.value || null)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Actual Completion</Label>
-          <Input type="date" value={job.actualCompletion ?? ""} onChange={e => setField("actualCompletion", e.target.value || null)} />
-        </div>
-
-        {job.createdByName && (
-          <div className="col-span-2 pt-1 text-xs text-slate-400">
-            Created by <span className="font-medium text-slate-600">{job.createdByName}</span> on {fmtDate(job.createdAt)}
+          {/* Additional Information */}
+          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Additional Information</h3>
+            <div className="space-y-1.5">
+              <Label>Project Manager</Label>
+              <Select
+                value={job.projectManagerId ?? "_none"}
+                onValueChange={v => setField("projectManagerId", v === "_none" ? null : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Assign a project manager" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— None —</SelectItem>
+                  {userOptions.map(u => (
+                    <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Square Feet</Label>
+              <Input
+                value={job.squareFeet ?? ""}
+                onChange={e => setField("squareFeet", e.target.value || null)}
+                type="number" step="0.01" min="0" placeholder="e.g. 48.5"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Permit Number</Label>
+              <Input
+                value={job.permitNumber ?? ""}
+                onChange={e => setField("permitNumber", e.target.value || null)}
+                placeholder="e.g. BP-2024-00123"
+              />
+            </div>
+            {job.createdByName && (
+              <p className="text-xs text-slate-400 pt-1">
+                Created by <span className="font-medium text-slate-600">{job.createdByName}</span> on {fmtDate(job.createdAt)}
+              </p>
+            )}
           </div>
-        )}
-      </div>
-
-      <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-        <h3 className="text-sm font-semibold text-slate-700">Notes</h3>
-        <div className="space-y-1.5">
-          <Label>Notes for internal users</Label>
-          <Textarea
-            value={job.internalNotes ?? ""}
-            onChange={e => setField("internalNotes", e.target.value || null)}
-            placeholder="Internal notes visible only to your team…"
-            maxLength={2500}
-            rows={4}
-          />
-          <p className="text-xs text-slate-400">Maximum 2500 characters</p>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Notes for subs/vendors</Label>
-          <Textarea
-            value={job.subVendorNotes ?? ""}
-            onChange={e => setField("subVendorNotes", e.target.value || null)}
-            placeholder="Notes visible to subcontractors and vendors…"
-            maxLength={2500}
-            rows={4}
-          />
-          <p className="text-xs text-slate-400">Maximum 2500 characters</p>
         </div>
       </div>
 

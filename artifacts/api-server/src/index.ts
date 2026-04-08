@@ -3,15 +3,10 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { initRealtime } from "./lib/realtime";
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+const rawPort = process.env["PORT"] ?? "8080";
 
 const port = Number(rawPort);
+const host = process.env["HOST"] || "0.0.0.0";
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
@@ -27,8 +22,8 @@ async function bootstrap() {
     process.exit(1);
   });
 
-  server.listen(port, () => {
-    logger.info({ port }, "Server listening");
+  server.listen(port, host, () => {
+    logger.info({ host, port }, "Server listening");
   });
 }
 

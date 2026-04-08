@@ -135,4 +135,46 @@ router.get(
   }),
 );
 
+router.get(
+  "/dashboard/schedule",
+  asyncHandler(async (req, res) => {
+    const startParam = (req.query.start as string) ?? new Date().toISOString().split("T")[0];
+    const endParam = (req.query.end as string) ?? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+    const items = await db
+      .select({
+        id: scheduleItems.id,
+        title: scheduleItems.title,
+        startDate: scheduleItems.startDate,
+        endDate: scheduleItems.endDate,
+        workDays: scheduleItems.workDays,
+        displayColor: scheduleItems.displayColor,
+        progress: scheduleItems.progress,
+        isComplete: scheduleItems.isComplete,
+        jobId: scheduleItems.jobId,
+        jobTitle: jobs.title,
+        jobCity: jobs.city,
+        jobState: jobs.state,
+      })
+      .from(scheduleItems)
+      .leftJoin(jobs, eq(scheduleItems.jobId, jobs.id))
+      .where(
+        and(
+          isNull(scheduleItems.deletedAt),
+          isNull(jobs.deletedAt),
+          // items that overlap the requested range
+          lte(scheduleItems.startDate, endParam),
+          or(
+            gte(scheduleItems.endDate, startParam),
+            gte(scheduleItems.startDate, startParam),
+          ),
+        ),
+      )
+      .orderBy(scheduleItems.startDate)
+      .limit(500);
+
+    res.json({ items });
+  }),
+);
+
 export default router;

@@ -41,12 +41,12 @@ export default function TopNav() {
   const user = useAuthStore((s) => s.user)
 
   return (
-    <header className="sticky top-0 z-30 bg-orange-600 shadow-md">
+    <header className="sticky top-0 z-30 shadow-md" style={{ backgroundColor: "#1D1D1D" }}>
       <div className="flex h-12 items-center gap-1 px-3">
         {/* Logo */}
         <Link
           to="/dashboard"
-          className="flex items-center shrink-0 mr-2"
+          className="flex items-center shrink-0 mr-3"
         >
           <div className="flex items-center bg-white rounded px-2 py-1">
             <img
@@ -64,8 +64,10 @@ export default function TopNav() {
             to="/jobs"
             className={({ isActive }) =>
               cn(
-                "px-3 py-1.5 text-sm rounded text-white/85 hover:text-white hover:bg-white/15 transition-colors whitespace-nowrap",
-                isActive && "bg-white/20 text-white font-medium",
+                "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
+                isActive
+                  ? "text-[#E85D04] bg-white/10"
+                  : "text-white/70 hover:text-white hover:bg-white/10",
               )
             }
           >
@@ -77,9 +79,10 @@ export default function TopNav() {
             <DropdownMenuTrigger asChild>
               <button
                 className={cn(
-                  "flex items-center gap-1 px-3 py-1.5 text-sm rounded text-white/85 hover:text-white hover:bg-white/15 transition-colors whitespace-nowrap outline-none",
-                  location.pathname.startsWith("/files") &&
-                    "bg-white/20 text-white font-medium",
+                  "flex items-center gap-1 px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap outline-none font-medium",
+                  location.pathname.startsWith("/files")
+                    ? "text-[#E85D04] bg-white/10"
+                    : "text-white/70 hover:text-white hover:bg-white/10",
                 )}
               >
                 Files
@@ -109,8 +112,10 @@ export default function TopNav() {
             to="/sales/leads"
             className={({ isActive }) =>
               cn(
-                "px-3 py-1.5 text-sm rounded text-white/85 hover:text-white hover:bg-white/15 transition-colors whitespace-nowrap",
-                isActive && "bg-white/20 text-white font-medium",
+                "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
+                isActive
+                  ? "text-[#E85D04] bg-white/10"
+                  : "text-white/70 hover:text-white hover:bg-white/10",
               )
             }
           >
@@ -124,9 +129,9 @@ export default function TopNav() {
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="ml-1 flex items-center gap-1.5 rounded-full px-1 py-0.5 text-white/85 hover:text-white hover:bg-white/15 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/50">
-              <Avatar className="size-7 border-2 border-white/30 cursor-pointer">
-                <AvatarFallback className="bg-orange-800 text-white text-[10px] font-semibold">
+            <button className="ml-1 flex items-center gap-1.5 rounded px-2 py-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors outline-none">
+              <Avatar className="size-7 border border-white/20 cursor-pointer">
+                <AvatarFallback className="text-[10px] font-semibold text-white" style={{ backgroundColor: "#E85D04" }}>
                   {user ? initials(user.fullName) : "CS"}
                 </AvatarFallback>
               </Avatar>

@@ -15,6 +15,13 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/store/auth"
+import { cn } from "@/lib/utils"
+import {
+  dateKey,
+  itemEndDate,
+  itemOverlapsDateRange,
+  todayStr,
+} from "@/lib/schedule"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,16 +36,13 @@ type Stats = {
 type CalItem = {
   id: string
   title: string
-  startDate: string | null
+  startDate: string
   endDate: string | null
-  workDays: number | null
   displayColor: string | null
   progress: number | null
   isComplete: boolean | null
   jobId: string
   jobTitle: string | null
-  jobCity: string | null
-  jobState: string | null
 }
 
 type ActivityEntry = {
@@ -57,141 +61,165 @@ type RecentJob = {
 }
 
 // ---------------------------------------------------------------------------
-// Date helpers (no library)
+// Calendar date helpers (matching job-schedule.tsx exactly)
 // ---------------------------------------------------------------------------
-function dateStr(d: Date) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const dd = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${dd}`
+function cloneDate(d: Date) { return new Date(d.getTime()) }
+function parseDate(value: string) { return new Date(`${value}T12:00:00`) }
+function addDays(date: Date, amount: number) { const n = cloneDate(date); n.setDate(n.getDate() + amount); return n }
+function addMonths(date: Date, amount: number) { const n = cloneDate(date); n.setMonth(n.getMonth() + amount); return n }
+function startOfWeek(date: Date) { const n = cloneDate(date); n.setDate(n.getDate() - n.getDay()); n.setHours(0, 0, 0, 0); return n }
+function endOfWeek(date: Date) { return addDays(startOfWeek(date), 6) }
+function startOfMonth(date: Date) { return new Date(date.getFullYear(), date.getMonth(), 1) }
+function endOfMonth(date: Date) { return new Date(date.getFullYear(), date.getMonth() + 1, 0) }
+
+function formatMonthLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(date)
 }
 
-function parseDate(s: string) {
-  const [y, m, d] = s.split("-").map(Number)
-  return new Date(y, m - 1, d)
+function formatRangeLabel(start: Date, end: Date) {
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()
+  if (sameMonth) {
+    return `${new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric" }).format(start)}–${new Intl.DateTimeFormat("en-US", { day: "numeric", year: "numeric" }).format(end)}`
+  }
+  return `${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(start)} – ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(end)}`
 }
 
-function addDays(d: Date, n: number) {
-  const r = new Date(d)
-  r.setDate(r.getDate() + n)
-  return r
+function buildMonthWeeks(date: Date): string[][] {
+  const firstDay = startOfMonth(date)
+  const lastDay = endOfMonth(date)
+  const rangeStart = startOfWeek(firstDay)
+  const rangeEnd = endOfWeek(lastDay)
+  const weeks: string[][] = []
+  const cursor = cloneDate(rangeStart)
+  while (cursor <= rangeEnd) {
+    const week: string[] = []
+    for (let i = 0; i < 7; i++) { week.push(dateKey(cursor)); cursor.setDate(cursor.getDate() + 1) }
+    weeks.push(week)
+  }
+  return weeks
 }
 
-function startOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1)
+type WeekSegment = { item: CalItem; lane: number; startIndex: number; endIndex: number }
+
+function buildWeekSegments(week: string[], items: CalItem[]): WeekSegment[] {
+  const weekStart = week[0]
+  const weekEnd = week[6]
+  const laneEndDates: string[] = []
+
+  return items
+    .filter(item => itemOverlapsDateRange(item as any, weekStart, weekEnd))
+    .sort((a, b) => {
+      const sc = a.startDate.localeCompare(b.startDate)
+      if (sc !== 0) return sc
+      const ec = (itemEndDate(b as any) || b.startDate).localeCompare(itemEndDate(a as any) || a.startDate)
+      if (ec !== 0) return ec
+      return a.title.localeCompare(b.title)
+    })
+    .map(item => {
+      const segmentStart = item.startDate > weekStart ? item.startDate : weekStart
+      const segmentEnd = (itemEndDate(item as any) || item.startDate) < weekEnd
+        ? (itemEndDate(item as any) || item.startDate)
+        : weekEnd
+      const startIndex = week.indexOf(segmentStart)
+      const endIndex = week.indexOf(segmentEnd)
+      let lane = 0
+      while (laneEndDates[lane] && laneEndDates[lane] >= segmentStart) lane++
+      laneEndDates[lane] = segmentEnd
+      return { item, lane, startIndex, endIndex }
+    })
 }
 
-function endOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0)
-}
-
-function startOfWeek(d: Date) {
-  const day = d.getDay()
-  return addDays(d, -day)
-}
-
-function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-
-function isSameMonth(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
-}
-
-function monthLabel(d: Date) {
-  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" })
-}
-
-function weekRangeLabel(d: Date) {
-  const sun = startOfWeek(d)
-  const sat = addDays(sun, 6)
-  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }
-  return `${sun.toLocaleDateString("en-US", opts)} – ${sat.toLocaleDateString("en-US", { ...opts, year: "numeric" })}`
-}
-
-function shortDate(s: string) {
-  return parseDate(s).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
-}
-
-// ---------------------------------------------------------------------------
-// Calendar event component
-// ---------------------------------------------------------------------------
-function EventPill({ item, navigate }: { item: CalItem; navigate: (path: string) => void }) {
-  const color = item.displayColor ?? "#E85D04"
-  const done = item.isComplete || (item.progress ?? 0) >= 100
-  return (
-    <button
-      onClick={() => navigate(`/jobs/${item.jobId}/schedule`)}
-      className="w-full text-left truncate rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight mt-0.5 first:mt-0 hover:opacity-80 transition-opacity"
-      style={{ backgroundColor: color + "22", color, borderLeft: `2px solid ${color}` }}
-      title={`${item.title} — ${item.jobTitle ?? ""}`}
-    >
-      <span className={done ? "line-through opacity-60" : ""}>{item.title}</span>
-      {item.jobTitle && (
-        <span className="ml-1 opacity-60 font-normal">{item.jobTitle}</span>
-      )}
-    </button>
-  )
-}
+const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+const DEFAULT_COLOR = "#2563eb"
 
 // ---------------------------------------------------------------------------
-// Month view
+// Month calendar view — matches per-job design exactly
 // ---------------------------------------------------------------------------
-function MonthView({ cursor, items, today, navigate }: {
-  cursor: Date
+function MonthCalendar({ anchor, items, navigate }: {
+  anchor: Date
   items: CalItem[]
-  today: Date
   navigate: (path: string) => void
 }) {
-  const gridStart = startOfWeek(startOfMonth(cursor))
-
-  const cells = useMemo(() => Array.from({ length: 42 }, (_, i) => addDays(gridStart, i)), [cursor])
-
-  const byDate = useMemo(() => {
-    const map: Record<string, CalItem[]> = {}
-    items.forEach(item => {
-      if (!item.startDate) return
-      const key = item.startDate
-      if (!map[key]) map[key] = []
-      map[key].push(item)
-    })
-    return map
-  }, [items])
-
-  const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  const today = todayStr()
+  const monthWeeks = useMemo(() => buildMonthWeeks(anchor), [anchor])
+  const currentMonthPrefix = `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, "0")}`
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col">
+    <div className="overflow-hidden rounded-xl border border-[#E5E7EB]">
       {/* Day headers */}
-      <div className="grid grid-cols-7 border-b border-slate-200">
-        {DOW.map(d => (
-          <div key={d} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">
-            {d}
+      <div className="grid grid-cols-7 border-b border-[#E5E7EB] bg-[#F8FAFC]">
+        {DAYS_OF_WEEK.map(day => (
+          <div key={day} className="px-3 py-3 text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{day}</p>
           </div>
         ))}
       </div>
-      {/* Calendar grid */}
-      <div className="flex-1 grid grid-cols-7" style={{ gridTemplateRows: "repeat(6, minmax(0,1fr))" }}>
-        {cells.map((cell, i) => {
-          const key = dateStr(cell)
-          const dayItems = byDate[key] ?? []
-          const inMonth = isSameMonth(cell, cursor)
-          const isToday = isSameDay(cell, today)
+
+      {/* Week rows */}
+      <div>
+        {monthWeeks.map(week => {
+          const segments = buildWeekSegments(week, items)
+          const maxLane = segments.reduce((max, s) => Math.max(max, s.lane), -1)
+          const laneCount = Math.max(maxLane + 1, 1)
+          const rowHeight = 80 + laneCount * 28
+
           return (
             <div
-              key={key}
-              className={`border-b border-r border-slate-200 p-1.5 overflow-hidden ${!inMonth ? "bg-slate-50/70" : "bg-white"} ${i % 7 === 0 ? "border-l border-slate-200" : ""}`}
+              key={week[0]}
+              className="relative grid grid-cols-7 border-b border-[#E5E7EB] last:border-b-0"
+              style={{ minHeight: `${rowHeight}px` }}
             >
-              <div className={`mb-1 flex items-center justify-center size-5 rounded-full text-xs font-semibold leading-none ${isToday ? "text-white" : inMonth ? "text-slate-700" : "text-slate-400"}`}
-                style={isToday ? { backgroundColor: "#E85D04" } : {}}>
-                {cell.getDate()}
+              {/* Day cells */}
+              {week.map(day => {
+                const isCurrentMonth = day.startsWith(currentMonthPrefix)
+                const isToday = day === today
+                const parsed = parseDate(day)
+
+                return (
+                  <div
+                    key={day}
+                    className={cn(
+                      "border-r border-[#E5E7EB] p-2 last:border-r-0",
+                      isCurrentMonth ? "bg-white" : "bg-slate-50/70",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex size-7 items-center justify-center rounded-full text-xs font-medium",
+                        isToday ? "bg-blue-600 text-white" : isCurrentMonth ? "text-slate-700" : "text-slate-300",
+                      )}
+                    >
+                      {parsed.getDate()}
+                    </span>
+                  </div>
+                )
+              })}
+
+              {/* Absolute event bars */}
+              <div className="pointer-events-none absolute inset-x-0 top-9 bottom-2">
+                {segments.map(seg => (
+                  <button
+                    key={`${seg.item.id}-${seg.startIndex}-${seg.lane}`}
+                    type="button"
+                    className="pointer-events-auto absolute flex h-6 items-center overflow-hidden rounded-full px-3 text-left text-xs font-medium text-white shadow-sm transition hover:opacity-90"
+                    style={{
+                      backgroundColor: seg.item.displayColor || DEFAULT_COLOR,
+                      left: `calc(${(seg.startIndex / 7) * 100}% + 4px)`,
+                      width: `calc(${((seg.endIndex - seg.startIndex + 1) / 7) * 100}% - 8px)`,
+                      top: `${seg.lane * 28}px`,
+                    }}
+                    onClick={() => navigate(`/jobs/${seg.item.jobId}/schedule`)}
+                    title={`${seg.item.title}${seg.item.jobTitle ? ` — ${seg.item.jobTitle}` : ""}`}
+                  >
+                    <span className="truncate">
+                      {seg.item.isComplete ? "✓ " : ""}
+                      {seg.item.jobTitle
+                        ? <><span className="opacity-70 mr-1">{seg.item.jobTitle.split(" ")[0]}</span>{seg.item.title}</>
+                        : seg.item.title}
+                    </span>
+                  </button>
+                ))}
               </div>
-              {dayItems.slice(0, 3).map(item => (
-                <EventPill key={item.id} item={item} navigate={navigate} />
-              ))}
-              {dayItems.length > 3 && (
-                <p className="text-[10px] text-slate-400 mt-0.5 pl-1">+{dayItems.length - 3} more</p>
-              )}
             </div>
           )
         })}
@@ -201,147 +229,178 @@ function MonthView({ cursor, items, today, navigate }: {
 }
 
 // ---------------------------------------------------------------------------
-// Week view
+// Week calendar view — matches per-job design
 // ---------------------------------------------------------------------------
-function WeekView({ cursor, items, today, navigate }: {
-  cursor: Date
+function WeekCalendar({ anchor, items, navigate }: {
+  anchor: Date
   items: CalItem[]
-  today: Date
   navigate: (path: string) => void
 }) {
-  const sun = startOfWeek(cursor)
-  const days = Array.from({ length: 7 }, (_, i) => addDays(sun, i))
-
-  const byDate = useMemo(() => {
-    const map: Record<string, CalItem[]> = {}
-    items.forEach(item => {
-      if (!item.startDate) return
-      if (!map[item.startDate]) map[item.startDate] = []
-      map[item.startDate].push(item)
-    })
-    return map
-  }, [items])
+  const today = todayStr()
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i)), [anchor])
+  const week = days.map(d => dateKey(d))
+  const segments = useMemo(() => buildWeekSegments(week, items), [items, anchor])
+  const maxLane = segments.reduce((max, s) => Math.max(max, s.lane), -1)
+  const laneCount = Math.max(maxLane + 1, 1)
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="grid grid-cols-7 border-b border-slate-200 sticky top-0 bg-white z-10">
-        {days.map(d => {
-          const isToday = isSameDay(d, today)
+    <div className="overflow-hidden rounded-xl border border-[#E5E7EB]">
+      {/* Day headers */}
+      <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))] border-b border-[#E5E7EB] bg-[#F8FAFC]">
+        <div className="border-r border-[#E5E7EB] p-3" />
+        {days.map((day, i) => {
+          const key = dateKey(day)
+          const isToday = key === today
           return (
-            <div key={dateStr(d)} className="p-2 text-center border-r border-slate-200 last:border-r-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                {d.toLocaleDateString("en-US", { weekday: "short" })}
-              </p>
-              <p className={`mt-0.5 text-lg font-bold leading-none ${isToday ? "text-[#E85D04]" : "text-slate-800"}`}>
-                {d.getDate()}
-              </p>
+            <div key={key} className="border-r border-[#E5E7EB] p-3 last:border-r-0">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-900">
+                  {new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(day)}
+                </p>
+                <span className={cn(
+                  "flex size-7 items-center justify-center rounded-full text-xs font-medium",
+                  isToday ? "bg-blue-600 text-white" : "text-slate-600",
+                )}>
+                  {day.getDate()}
+                </span>
+              </div>
             </div>
           )
         })}
       </div>
-      <div className="grid grid-cols-7 min-h-64">
-        {days.map(d => {
-          const dayItems = byDate[dateStr(d)] ?? []
-          return (
-            <div key={dateStr(d)} className="border-r border-slate-200 last:border-r-0 p-2 space-y-1">
-              {dayItems.map(item => (
-                <EventPill key={item.id} item={item} navigate={navigate} />
-              ))}
-              {dayItems.length === 0 && (
-                <p className="text-[10px] text-slate-300 text-center pt-4">–</p>
-              )}
-            </div>
-          )
-        })}
+
+      {/* Event bars */}
+      <div
+        className="relative grid grid-cols-[72px_repeat(7,minmax(0,1fr))]"
+        style={{ minHeight: `${60 + laneCount * 30}px` }}
+      >
+        <div className="border-r border-[#E5E7EB] bg-[#F8FAFC] flex items-center justify-center">
+          <span className="text-[10px] text-slate-400 font-medium">All day</span>
+        </div>
+        {days.map((day, i) => (
+          <div key={i} className="border-r border-[#E5E7EB] last:border-r-0 p-1" />
+        ))}
+        {/* Absolute positioned bars (offset by 72px gutter) */}
+        <div className="pointer-events-none absolute" style={{ left: 72, top: 8, right: 0, bottom: 8 }}>
+          {segments.map(seg => (
+            <button
+              key={`${seg.item.id}-${seg.startIndex}-${seg.lane}`}
+              type="button"
+              className="pointer-events-auto absolute flex h-7 items-center overflow-hidden rounded-full px-3 text-left text-xs font-medium text-white shadow-sm transition hover:opacity-90"
+              style={{
+                backgroundColor: seg.item.displayColor || DEFAULT_COLOR,
+                left: `calc(${(seg.startIndex / 7) * 100}% + 4px)`,
+                width: `calc(${((seg.endIndex - seg.startIndex + 1) / 7) * 100}% - 8px)`,
+                top: `${seg.lane * 32}px`,
+              }}
+              onClick={() => navigate(`/jobs/${seg.item.jobId}/schedule`)}
+              title={`${seg.item.title}${seg.item.jobTitle ? ` — ${seg.item.jobTitle}` : ""}`}
+            >
+              <span className="truncate">
+                {seg.item.isComplete ? "✓ " : ""}{seg.item.title}
+                {seg.item.jobTitle && <span className="ml-1 opacity-70">— {seg.item.jobTitle}</span>}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// List view
+// List view — matches per-job list style
 // ---------------------------------------------------------------------------
-function ListView({ items, navigate }: { items: CalItem[]; navigate: (path: string) => void }) {
-  const grouped = useMemo(() => {
-    const map: Record<string, CalItem[]> = {}
-    items.forEach(item => {
-      const key = item.startDate ?? "no-date"
-      if (!map[key]) map[key] = []
-      map[key].push(item)
-    })
-    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b))
-  }, [items])
+function ListCalendar({ items, navigate }: { items: CalItem[]; navigate: (path: string) => void }) {
+  const today = todayStr()
+  const sorted = useMemo(() =>
+    [...items].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    [items]
+  )
 
-  if (grouped.length === 0) {
+  if (sorted.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center text-slate-400 py-16">
-          <CalendarDays className="size-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No scheduled items in this period</p>
-        </div>
+      <div className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white py-20 text-center">
+        <CalendarDays className="mx-auto size-10 text-slate-200 mb-3" />
+        <p className="text-sm text-slate-500">No scheduled items in this period.</p>
       </div>
     )
   }
 
   return (
-    <div className="flex-1 overflow-auto divide-y divide-slate-100">
-      {grouped.map(([dateKey, dayItems]) => (
-        <div key={dateKey} className="flex gap-4 px-4 py-3">
-          <div className="w-28 shrink-0 pt-0.5">
-            <p className="text-xs font-semibold text-slate-700">
-              {dateKey !== "no-date" ? shortDate(dateKey) : "No date"}
-            </p>
-          </div>
-          <div className="flex-1 space-y-1.5">
-            {dayItems.map(item => {
-              const color = item.displayColor ?? "#E85D04"
-              const done = item.isComplete || (item.progress ?? 0) >= 100
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => navigate(`/jobs/${item.jobId}/schedule`)}
-                  className="w-full text-left flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-slate-300 hover:shadow-sm transition-all"
-                >
-                  <div className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium text-slate-800 truncate ${done ? "line-through opacity-60" : ""}`}>
-                      {item.title}
-                    </p>
-                    {item.jobTitle && (
-                      <p className="text-xs text-slate-400 truncate mt-0.5">{item.jobTitle}</p>
-                    )}
-                  </div>
-                  {typeof item.progress === "number" && !done && (
-                    <div className="shrink-0 flex items-center gap-1.5">
-                      <div className="w-16 h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${item.progress}%`, backgroundColor: color }} />
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-medium">{item.progress}%</span>
+    <div className="overflow-hidden rounded-xl border border-[#E5E7EB]">
+      {/* Header row */}
+      <div className="grid grid-cols-[minmax(0,1fr)_120px_120px_100px] border-b border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+        <span>Item</span>
+        <span>Start</span>
+        <span>End</span>
+        <span>Progress</span>
+      </div>
+
+      <div className="divide-y divide-[#E5E7EB] bg-white">
+        {sorted.map(item => {
+          const done = item.isComplete || (item.progress ?? 0) >= 100
+          const overdue = !done && (itemEndDate(item as any) || item.startDate) < today
+          const color = item.displayColor || DEFAULT_COLOR
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className="grid w-full grid-cols-[minmax(0,1fr)_120px_120px_100px] items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+              onClick={() => navigate(`/jobs/${item.jobId}/schedule`)}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                <div className="min-w-0">
+                  <p className={cn("text-sm font-medium text-slate-900 truncate", done && "line-through opacity-60")}>
+                    {item.title}
+                  </p>
+                  {item.jobTitle && (
+                    <p className="text-xs text-slate-400 truncate mt-0.5">{item.jobTitle}</p>
+                  )}
+                </div>
+              </div>
+
+              <span className="text-sm text-slate-600 tabular-nums">
+                {item.startDate
+                  ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parseDate(item.startDate))
+                  : "—"}
+              </span>
+              <span className="text-sm text-slate-600 tabular-nums">
+                {itemEndDate(item as any)
+                  ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parseDate(itemEndDate(item as any)))
+                  : "—"}
+              </span>
+
+              <div className="flex items-center gap-2">
+                {done ? (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Done</span>
+                ) : overdue ? (
+                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">Overdue</span>
+                ) : (
+                  <>
+                    <div className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-200">
+                      <div className="h-full rounded-full" style={{ width: `${item.progress ?? 0}%`, backgroundColor: color }} />
                     </div>
-                  )}
-                  {done && (
-                    <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 rounded px-1.5 py-0.5 shrink-0">Done</span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      ))}
+                    <span className="text-[11px] text-slate-500 tabular-nums">{item.progress ?? 0}%</span>
+                  </>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Main Dashboard
+// Utility helpers
 // ---------------------------------------------------------------------------
-type CalView = "month" | "week" | "list"
-
 function getGreeting() {
   const h = new Date().getHours()
-  if (h < 12) return "morning"
-  if (h < 17) return "afternoon"
-  return "evening"
+  return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening"
 }
 
 function timeAgo(d: string) {
@@ -368,22 +427,22 @@ function entityBadgeColor(type: string) {
 
 function entityLabel(type: string) {
   const map: Record<string, string> = {
-    job: "Job",
-    lead: "Lead",
-    schedule_item: "Schedule",
-    daily_log: "Daily Log",
-    document: "Document",
-    photo: "Photo",
+    job: "Job", lead: "Lead", schedule_item: "Schedule", daily_log: "Daily Log",
+    document: "Document", photo: "Photo",
   }
   return map[type] ?? type
 }
 
+// ---------------------------------------------------------------------------
+// Main Dashboard
+// ---------------------------------------------------------------------------
+type CalView = "calendar" | "list"
+type CalPeriod = "month" | "week"
+
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user)
   const navigate = useNavigate()
-
   const today = useMemo(() => new Date(), [])
-  const todayStr = dateStr(today)
 
   const [stats, setStats] = useState<Stats | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
@@ -391,37 +450,35 @@ export default function DashboardPage() {
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
   const [sidebarLoading, setSidebarLoading] = useState(true)
 
-  const [calView, setCalView] = useState<CalView>("month")
-  const [cursor, setCursor] = useState(today)
+  const [calView, setCalView] = useState<CalView>("calendar")
+  const [calPeriod, setCalPeriod] = useState<CalPeriod>("month")
+  const [anchor, setAnchor] = useState(today)
   const [calItems, setCalItems] = useState<CalItem[]>([])
   const [calLoading, setCalLoading] = useState(true)
 
-  // Compute fetch range based on view + cursor
-  const fetchRange = useMemo((): { start: string; end: string } => {
-    if (calView === "month") {
-      const first = startOfMonth(cursor)
-      const gridStart = startOfWeek(first)
-      return { start: dateStr(gridStart), end: dateStr(addDays(gridStart, 41)) }
+  // Compute fetch range
+  const fetchRange = useMemo(() => {
+    if (calView === "list") {
+      return { start: dateKey(today), end: dateKey(addDays(today, 60)) }
     }
-    if (calView === "week") {
-      const sun = startOfWeek(cursor)
-      return { start: dateStr(sun), end: dateStr(addDays(sun, 6)) }
+    if (calPeriod === "week") {
+      const sun = startOfWeek(anchor)
+      return { start: dateKey(sun), end: dateKey(addDays(sun, 6)) }
     }
-    // list: next 60 days
-    return { start: todayStr, end: dateStr(addDays(today, 60)) }
-  }, [calView, cursor])
+    // month: include the full grid (up to 6 weeks)
+    const gridStart = startOfWeek(startOfMonth(anchor))
+    return { start: dateKey(gridStart), end: dateKey(addDays(gridStart, 41)) }
+  }, [calView, calPeriod, anchor])
 
-  // Fetch schedule items
   const fetchCal = useCallback(() => {
     setCalLoading(true)
     api.get(`/dashboard/schedule?start=${fetchRange.start}&end=${fetchRange.end}`)
-      .then(r => setCalItems(r.data.items ?? []))
+      .then(r => setCalItems((r.data.items ?? []).filter((i: any) => i.startDate)))
       .finally(() => setCalLoading(false))
   }, [fetchRange])
 
   useEffect(() => { fetchCal() }, [fetchCal])
 
-  // Fetch stats + sidebar
   useEffect(() => {
     Promise.all([
       api.get("/dashboard/stats").then(r => r.data.stats),
@@ -435,22 +492,21 @@ export default function DashboardPage() {
       .finally(() => setSidebarLoading(false))
   }, [])
 
-  // Navigation
   function nav(dir: -1 | 1) {
-    setCursor(prev => {
-      if (calView === "month") return new Date(prev.getFullYear(), prev.getMonth() + dir, 1)
-      if (calView === "week") return addDays(prev, dir * 7)
-      return addDays(prev, dir * 30)
-    })
+    setAnchor(prev => calPeriod === "month" ? addMonths(prev, dir) : addDays(prev, dir * 7))
   }
 
-  const periodLabel = calView === "month" ? monthLabel(cursor) : calView === "week" ? weekRangeLabel(cursor) : "Next 60 Days"
+  const rangeLabel = useMemo(() => {
+    if (calView === "list") return "Next 60 Days"
+    if (calPeriod === "month") return formatMonthLabel(anchor)
+    return formatRangeLabel(startOfWeek(anchor), endOfWeek(anchor))
+  }, [calView, calPeriod, anchor])
 
   const statCards = [
-    { label: "Active Jobs", value: stats?.activeJobs ?? 0, icon: Briefcase, href: "/jobs", iconColor: "#E85D04" },
-    { label: "Open Leads", value: stats?.openLeads ?? 0, icon: TrendingUp, href: "/sales/leads", iconColor: "#10b981" },
-    { label: "Schedule Items", value: stats?.openScheduleItems ?? 0, icon: CalendarDays, href: "/jobs", iconColor: "#3b82f6" },
-    { label: "My Daily Logs", value: stats?.myDailyLogs ?? 0, icon: FileText, href: "/jobs", iconColor: "#8b5cf6" },
+    { label: "Active Jobs", value: stats?.activeJobs ?? 0, icon: Briefcase, href: "/jobs", color: "#E85D04" },
+    { label: "Open Leads", value: stats?.openLeads ?? 0, icon: TrendingUp, href: "/sales/leads", color: "#10b981" },
+    { label: "Schedule Items", value: stats?.openScheduleItems ?? 0, icon: CalendarDays, href: "/jobs", color: "#3b82f6" },
+    { label: "My Daily Logs", value: stats?.myDailyLogs ?? 0, icon: FileText, href: "/jobs", color: "#8b5cf6" },
   ]
 
   const todayDisplay = today.toLocaleDateString("en-US", {
@@ -458,10 +514,11 @@ export default function DashboardPage() {
   })
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-slate-50">
-      <div className="px-6 pt-5 pb-3 shrink-0">
+    <div className="min-h-full bg-slate-50">
+      <div className="mx-auto max-w-[1600px] px-6 py-5 space-y-5">
+
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-slate-900">
               Good {getGreeting()}, {user?.fullName?.split(" ")[0] ?? "there"}.
@@ -479,26 +536,21 @@ export default function DashboardPage() {
         </div>
 
         {/* Stat cards */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {statCards.map((card) => (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {statCards.map(card => (
             <Link key={card.label} to={card.href}>
               <Card className="border-[#E5E7EB] bg-white hover:shadow-sm hover:border-slate-300 transition-all cursor-pointer">
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide leading-none">
-                        {card.label}
-                      </p>
-                      {statsLoading ? (
-                        <Skeleton className="mt-2 h-7 w-10" />
-                      ) : (
-                        <p className="mt-1.5 text-2xl font-bold text-slate-900 leading-none">
-                          {card.value}
-                        </p>
-                      )}
+                      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide leading-none">{card.label}</p>
+                      {statsLoading
+                        ? <Skeleton className="mt-2 h-7 w-10" />
+                        : <p className="mt-1.5 text-2xl font-bold text-slate-900 leading-none">{card.value}</p>
+                      }
                     </div>
-                    <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: card.iconColor + "18" }}>
-                      <card.icon className="size-4" style={{ color: card.iconColor }} />
+                    <div className="p-2 rounded-lg shrink-0" style={{ backgroundColor: card.color + "18" }}>
+                      <card.icon className="size-4" style={{ color: card.color }} />
                     </div>
                   </div>
                 </CardContent>
@@ -506,146 +558,185 @@ export default function DashboardPage() {
             </Link>
           ))}
         </div>
-      </div>
 
-      {/* Calendar + Sidebar */}
-      <div className="flex-1 min-h-0 flex gap-4 px-6 pb-5">
+        {/* Calendar + Sidebar */}
+        <div className="flex gap-5">
 
-        {/* Calendar panel */}
-        <Card className="flex-1 min-w-0 border-[#E5E7EB] bg-white flex flex-col overflow-hidden">
-          {/* Calendar toolbar */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => nav(-1)}
-                className="size-7 flex items-center justify-center rounded hover:bg-slate-100 transition-colors text-slate-600"
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              <button
-                onClick={() => nav(1)}
-                className="size-7 flex items-center justify-center rounded hover:bg-slate-100 transition-colors text-slate-600"
-              >
-                <ChevronRight className="size-4" />
-              </button>
-              <button
-                onClick={() => setCursor(today)}
-                className="px-2.5 py-1 text-xs font-medium text-slate-600 border border-slate-300 rounded hover:bg-slate-50 transition-colors"
-              >
-                Today
-              </button>
-              <span className="text-sm font-semibold text-slate-900 ml-1">{periodLabel}</span>
+          {/* Calendar panel */}
+          <div className="flex-1 min-w-0 space-y-4">
+
+            {/* Toolbar — matches per-job schedule exactly */}
+            <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                {/* View mode toggle */}
+                <div className="flex items-center gap-2">
+                  <div className="flex overflow-hidden rounded-lg border border-[#D8E0EA] bg-[#F8FAFC]">
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex h-10 items-center gap-2 px-4 text-sm font-medium transition-colors",
+                        calView === "calendar" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white",
+                      )}
+                      onClick={() => setCalView("calendar")}
+                    >
+                      <CalendarDays className="size-4" />
+                      Calendar
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex h-10 items-center gap-2 border-l border-[#D8E0EA] px-4 text-sm font-medium transition-colors",
+                        calView === "list" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white",
+                      )}
+                      onClick={() => setCalView("list")}
+                    >
+                      <List className="size-4" />
+                      List
+                    </button>
+                  </div>
+
+                  {/* Period selector (month/week) — only when in calendar view */}
+                  {calView === "calendar" && (
+                    <div className="flex overflow-hidden rounded-lg border border-[#D8E0EA] bg-[#F8FAFC]">
+                      {(["month", "week"] as CalPeriod[]).map((p, i) => (
+                        <button
+                          key={p}
+                          type="button"
+                          className={cn(
+                            "flex h-10 items-center px-4 text-sm font-medium capitalize transition-colors",
+                            i > 0 && "border-l border-[#D8E0EA]",
+                            calPeriod === p ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white",
+                          )}
+                          onClick={() => setCalPeriod(p)}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Navigation */}
+                {calView === "calendar" && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center overflow-hidden rounded-lg border border-[#D8E0EA] bg-[#F8FAFC]">
+                      <button
+                        type="button"
+                        className="flex h-10 w-10 items-center justify-center text-slate-500 hover:bg-white transition-colors"
+                        onClick={() => nav(-1)}
+                      >
+                        <ChevronLeft className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        className="h-10 px-3 text-sm font-medium text-slate-600 border-l border-r border-[#D8E0EA] hover:bg-white transition-colors"
+                        onClick={() => setAnchor(today)}
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        className="flex h-10 w-10 items-center justify-center text-slate-500 hover:bg-white transition-colors"
+                        onClick={() => nav(1)}
+                      >
+                        <ChevronRight className="size-4" />
+                      </button>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-900 min-w-[160px]">{rangeLabel}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
-              {(["month", "week", "list"] as CalView[]).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setCalView(v)}
-                  className={`px-3 py-1 text-xs font-medium rounded-md capitalize transition-all ${calView === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                >
-                  {v === "list" ? <List className="size-3.5" /> : v}
-                </button>
-              ))}
-            </div>
+            {/* Calendar body */}
+            {calLoading ? (
+              <div className="rounded-xl border border-[#E5E7EB] bg-white p-8">
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-4/5" />
+                  <Skeleton className="h-4 w-3/5" />
+                </div>
+              </div>
+            ) : calView === "calendar" && calPeriod === "month" ? (
+              <MonthCalendar anchor={anchor} items={calItems} navigate={navigate} />
+            ) : calView === "calendar" && calPeriod === "week" ? (
+              <WeekCalendar anchor={anchor} items={calItems} navigate={navigate} />
+            ) : (
+              <ListCalendar items={calItems} navigate={navigate} />
+            )}
           </div>
 
-          {/* Calendar body */}
-          {calLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="space-y-3 w-full p-6">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-4/5" />
-                <Skeleton className="h-4 w-3/5" />
-              </div>
-            </div>
-          ) : calView === "month" ? (
-            <MonthView cursor={cursor} items={calItems} today={today} navigate={navigate} />
-          ) : calView === "week" ? (
-            <WeekView cursor={cursor} items={calItems} today={today} navigate={navigate} />
-          ) : (
-            <ListView items={calItems} navigate={navigate} />
-          )}
-        </Card>
+          {/* Right sidebar */}
+          <div className="w-64 shrink-0 space-y-4">
 
-        {/* Right sidebar */}
-        <div className="w-64 shrink-0 flex flex-col gap-4 overflow-y-auto">
-
-          {/* Recent Activity */}
-          <Card className="border-[#E5E7EB] bg-white flex-1 min-h-0 flex flex-col">
-            <CardHeader className="px-4 py-3 border-b border-slate-100 shrink-0">
-              <CardTitle className="text-xs font-semibold text-slate-900 uppercase tracking-wide">Recent Activity</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 overflow-y-auto flex-1">
-              {sidebarLoading ? (
-                <div className="p-4 space-y-3">
-                  {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-8 w-full" />)}
-                </div>
-              ) : activity.length === 0 ? (
-                <div className="py-8 text-center text-xs text-slate-400">No activity yet</div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {activity.map(entry => (
-                    <div key={entry.id} className="px-4 py-2.5">
-                      <p className="text-xs text-slate-700 leading-snug line-clamp-2">{entry.description}</p>
-                      <div className="mt-1 flex items-center gap-1.5">
-                        {entry.entityType && (
-                          <span className={`text-[10px] font-medium rounded px-1 py-0.5 ${entityBadgeColor(entry.entityType)}`}>
-                            {entityLabel(entry.entityType)}
-                          </span>
-                        )}
-                        <span className="text-[10px] text-slate-400">{timeAgo(entry.createdAt)}</span>
+            {/* Recent Activity */}
+            <Card className="border-[#E5E7EB] bg-white">
+              <CardHeader className="px-4 py-3 border-b border-[#E5E7EB]">
+                <CardTitle className="text-xs font-semibold text-slate-900 uppercase tracking-[0.08em]">Recent Activity</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 max-h-72 overflow-y-auto">
+                {sidebarLoading ? (
+                  <div className="p-4 space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+                ) : activity.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-400">No activity yet</div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {activity.map(entry => (
+                      <div key={entry.id} className="px-4 py-2.5">
+                        <p className="text-xs text-slate-700 leading-snug line-clamp-2">{entry.description}</p>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          {entry.entityType && (
+                            <span className={`text-[10px] font-medium rounded px-1 py-0.5 ${entityBadgeColor(entry.entityType)}`}>
+                              {entityLabel(entry.entityType)}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-slate-400">{timeAgo(entry.createdAt)}</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-          {/* Open Jobs */}
-          <Card className="border-[#E5E7EB] bg-white shrink-0">
-            <CardHeader className="px-4 py-3 border-b border-slate-100">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-xs font-semibold text-slate-900 uppercase tracking-wide">Open Jobs</CardTitle>
-                <Link to="/jobs" className="text-[10px] font-medium hover:underline" style={{ color: "#E85D04" }}>All</Link>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {sidebarLoading ? (
-                <div className="p-4 space-y-2">
-                  {[1, 2].map(i => <Skeleton key={i} className="h-8 w-full" />)}
+            {/* Open Jobs */}
+            <Card className="border-[#E5E7EB] bg-white">
+              <CardHeader className="px-4 py-3 border-b border-[#E5E7EB]">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xs font-semibold text-slate-900 uppercase tracking-[0.08em]">Open Jobs</CardTitle>
+                  <Link to="/jobs" className="text-[10px] font-medium hover:underline" style={{ color: "#E85D04" }}>All</Link>
                 </div>
-              ) : recentJobs.length === 0 ? (
-                <div className="py-6 text-center">
-                  <p className="text-xs text-slate-400">No open jobs</p>
-                  <Link to="/jobs" className="mt-1 block text-xs hover:underline" style={{ color: "#E85D04" }}>Create one</Link>
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {recentJobs.map(job => (
-                    <Link
-                      key={job.id}
-                      to={`/jobs/${job.id}`}
-                      className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors"
-                    >
-                      <div className="size-2 rounded-full bg-emerald-400 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-slate-800 truncate">{job.title}</p>
-                        {(job.city || job.state) && (
-                          <p className="text-[10px] text-slate-400 flex items-center gap-0.5 mt-0.5">
-                            <MapPin className="size-2.5" />
-                            {[job.city, job.state].filter(Boolean).join(", ")}
-                          </p>
-                        )}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent className="p-0">
+                {sidebarLoading ? (
+                  <div className="p-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+                ) : recentJobs.length === 0 ? (
+                  <div className="py-6 text-center">
+                    <p className="text-xs text-slate-400">No open jobs</p>
+                    <Link to="/jobs" className="mt-1 block text-xs hover:underline" style={{ color: "#E85D04" }}>Create one</Link>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {recentJobs.map(job => (
+                      <Link key={job.id} to={`/jobs/${job.id}`} className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                        <div className="size-2 rounded-full bg-emerald-400 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-slate-800 truncate">{job.title}</p>
+                          {(job.city || job.state) && (
+                            <p className="text-[10px] text-slate-400 flex items-center gap-0.5 mt-0.5">
+                              <MapPin className="size-2.5" />
+                              {[job.city, job.state].filter(Boolean).join(", ")}
+                            </p>
+                          )}
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
+          </div>
         </div>
       </div>
     </div>

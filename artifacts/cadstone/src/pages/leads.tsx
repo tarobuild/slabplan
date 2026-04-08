@@ -5,15 +5,21 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit2,
+  File,
+  FileImage,
+  FileText,
+  FileVideo,
   Loader2,
   Mail,
   MapPin,
+  Paperclip,
   Pencil,
   Phone,
   Plus,
   Search,
   Tag,
   Trash2,
+  Upload,
   User,
   X,
 } from "lucide-react"
@@ -96,6 +102,17 @@ type Lead = {
   } | null
 }
 
+type LeadAttachment = {
+  id: string
+  fileId: string
+  originalName: string
+  fileUrl: string
+  fileSize: number | null
+  mimeType: string | null
+  createdAt: string
+  uploadedByName: string | null
+}
+
 type LeadDetail = {
   id: string
   title: string
@@ -119,6 +136,7 @@ type LeadDetail = {
   tags: string[]
   sources: string[]
   salespeople: { id: string; fullName: string }[]
+  attachments: LeadAttachment[]
 }
 
 type Pagination = {
@@ -159,6 +177,27 @@ function fmtCurrency(v: string | null) {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(Number(v))
+}
+
+function fmtFileSize(bytes: number | null): string {
+  if (!bytes) return ""
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getAttachmentIcon(mimeType: string | null) {
+  if (!mimeType) return <File className="size-4 text-slate-400" />
+  if (mimeType.startsWith("image/")) return <FileImage className="size-4 text-blue-400" />
+  if (mimeType.startsWith("video/")) return <FileVideo className="size-4 text-purple-400" />
+  if (mimeType === "application/pdf") return <FileText className="size-4 text-red-400" />
+  if (
+    mimeType.includes("word") ||
+    mimeType.includes("document") ||
+    mimeType.includes("text")
+  )
+    return <FileText className="size-4 text-blue-500" />
+  return <File className="size-4 text-slate-400" />
 }
 
 function getApiError(err: unknown, fallback: string): string {
@@ -266,6 +305,11 @@ export default function LeadsPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState<EditForm | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
+  const [confirmDeleteAttachmentId, setConfirmDeleteAttachmentId] = useState<string | null>(null)
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -455,6 +499,58 @@ export default function LeadsPage() {
       toast.error("Failed to delete lead")
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleUploadAttachments = async (fileList: FileList) => {
+    if (!sheetLeadId || fileList.length === 0) return
+    setUploadingAttachment(true)
+    try {
+      const formData = new FormData()
+      Array.from(fileList).forEach((f) => formData.append("files", f))
+      const { data } = await api.post(`/leads/${sheetLeadId}/attachments`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      const newAttachments: LeadAttachment[] = data.attachments
+      setLeadDetail((prev) =>
+        prev
+          ? { ...prev, attachments: [...newAttachments, ...prev.attachments] }
+          : prev,
+      )
+      toast.success(
+        newAttachments.length === 1
+          ? "File uploaded"
+          : `${newAttachments.length} files uploaded`,
+      )
+    } catch (err: unknown) {
+      toast.error(getApiError(err, "Failed to upload file(s)"))
+    } finally {
+      setUploadingAttachment(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  const handleDeleteAttachment = async () => {
+    if (!sheetLeadId || !confirmDeleteAttachmentId) return
+    setDeletingAttachmentId(confirmDeleteAttachmentId)
+    setConfirmDeleteAttachmentId(null)
+    try {
+      await api.delete(`/leads/${sheetLeadId}/attachments/${confirmDeleteAttachmentId}`)
+      setLeadDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              attachments: prev.attachments.filter(
+                (a) => a.id !== confirmDeleteAttachmentId,
+              ),
+            }
+          : prev,
+      )
+      toast.success("Attachment deleted")
+    } catch {
+      toast.error("Failed to delete attachment")
+    } finally {
+      setDeletingAttachmentId(null)
     }
   }
 
@@ -1275,6 +1371,106 @@ export default function LeadsPage() {
                         </div>
                       </div>
                     )}
+
+                    <Separator />
+
+                    {/* Attachments */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                          <Paperclip className="size-3.5" />
+                          Attachments
+                          {leadDetail.attachments.length > 0 && (
+                            <span className="text-slate-400 font-normal text-xs">
+                              ({leadDetail.attachments.length})
+                            </span>
+                          )}
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs px-2.5 gap-1.5"
+                          disabled={uploadingAttachment}
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          {uploadingAttachment ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Upload className="size-3" />
+                          )}
+                          Upload files
+                        </Button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files.length > 0) {
+                              handleUploadAttachments(e.target.files)
+                            }
+                          }}
+                        />
+                      </div>
+
+                      {leadDetail.attachments.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-slate-200 rounded-lg">
+                          <Paperclip className="size-7 text-slate-300 mb-2" />
+                          <p className="text-sm text-slate-400">No attachments yet</p>
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="mt-1 text-xs text-blue-600 hover:underline"
+                          >
+                            Upload a file
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          {leadDetail.attachments.map((att) => (
+                            <div
+                              key={att.id}
+                              className="flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-slate-50 group"
+                            >
+                              <span className="shrink-0">
+                                {getAttachmentIcon(att.mimeType)}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <a
+                                  href={att.fileUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm text-slate-800 font-medium truncate block hover:text-blue-600 hover:underline"
+                                  title={att.originalName}
+                                >
+                                  {att.originalName}
+                                </a>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                  {[
+                                    fmtFileSize(att.fileSize),
+                                    fmtDate(att.createdAt),
+                                    att.uploadedByName,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </p>
+                              </div>
+                              <button
+                                className="shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
+                                disabled={deletingAttachmentId === att.id}
+                                onClick={() => setConfirmDeleteAttachmentId(att.id)}
+                                aria-label="Delete attachment"
+                              >
+                                {deletingAttachmentId === att.id ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="size-4" />
+                                )}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </>
@@ -1282,6 +1478,32 @@ export default function LeadsPage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Attachment Delete Confirmation */}
+      <AlertDialog
+        open={!!confirmDeleteAttachmentId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteAttachmentId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Attachment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the file. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteAttachment}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

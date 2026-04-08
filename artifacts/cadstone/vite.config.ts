@@ -13,6 +13,73 @@ if (Number.isNaN(port) || port <= 0) {
 
 const basePath = process.env.BASE_PATH ?? "/"
 
+function buildChunkName(id: string) {
+  const normalized = id.split(path.sep).join("/")
+
+  if (!normalized.includes("/node_modules/")) {
+    return null
+  }
+
+  if (
+    normalized.includes("/react/")
+    || normalized.includes("/react-dom/")
+    || normalized.includes("/react-router/")
+    || normalized.includes("/react-router-dom/")
+    || normalized.includes("/scheduler/")
+    || normalized.includes("/@remix-run/router/")
+    || normalized.includes("/use-sync-external-store/")
+  ) {
+    return "react-vendor"
+  }
+
+  if (normalized.includes("/@radix-ui/")) {
+    return "radix-vendor"
+  }
+
+  if (normalized.includes("/@tiptap/")) {
+    return "tiptap-vendor"
+  }
+
+  if (
+    normalized.includes("/recharts/")
+    || normalized.includes("/frappe-gantt/")
+    || normalized.includes("/react-big-calendar/")
+  ) {
+    return "visualization-vendor"
+  }
+
+  if (
+    normalized.includes("/date-fns/")
+    || normalized.includes("/react-day-picker/")
+  ) {
+    return "date-vendor"
+  }
+
+  if (normalized.includes("/lucide-react/")) {
+    return "icons-vendor"
+  }
+
+  if (
+    normalized.includes("/cmdk/")
+    || normalized.includes("/detect-node-es/")
+    || normalized.includes("/embla-carousel-react/")
+    || normalized.includes("/react-resizable-panels/")
+    || normalized.includes("/vaul/")
+  ) {
+    return "ui-vendor"
+  }
+
+  const packagePath = normalized.split("/node_modules/").at(-1) ?? ""
+  const segments = packagePath.split("/")
+  const packageName = segments[0]?.startsWith("@")
+    ? `${segments[0]}/${segments[1]}`
+    : segments[0]
+
+  return packageName
+    ? `vendor-${packageName.replace(/^@/, "").replace(/[/.]/g, "-")}`
+    : "vendor"
+}
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -44,6 +111,13 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          return buildChunkName(id)
+        },
+      },
+    },
   },
   server: {
     port,

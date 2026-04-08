@@ -50,7 +50,7 @@ export default function DashboardPage() {
     { label: "Active Jobs", value: stats?.activeJobs ?? 0, icon: Briefcase, href: "/jobs", color: "text-blue-600 bg-blue-50" },
     { label: "Open Leads", value: stats?.openLeads ?? 0, icon: TrendingUp, href: "/sales/leads", color: "text-green-600 bg-green-50" },
     { label: "Schedule Items", value: stats?.openScheduleItems ?? 0, icon: CalendarDays, href: "/jobs", color: "text-yellow-600 bg-yellow-50" },
-    { label: "My Daily Logs", value: stats?.myDailyLogs ?? 0, icon: FileText, href: "/jobs", color: "text-purple-600 bg-purple-50" },
+    { label: "My Daily Logs", value: stats?.myDailyLogs ?? 0, icon: FileText, href: "/daily-logs/mine", color: "text-purple-600 bg-purple-50" },
   ]
 
   return (

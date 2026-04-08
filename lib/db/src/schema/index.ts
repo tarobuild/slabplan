@@ -54,6 +54,13 @@ export const reminderOptions = [
   "1_day_before",
   "2_days_before",
 ] as const;
+export const dailyLogCustomFieldTypes = [
+  "text",
+  "number",
+  "date",
+  "dropdown",
+  "checkbox",
+] as const;
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().$defaultFn(createId),
@@ -225,6 +232,7 @@ export const schedulePhases = pgTable(
       .references(() => jobs.id, { onDelete: "cascade" })
       .notNull(),
     name: varchar("name", { length: 100 }).notNull(),
+    color: varchar("color", { length: 50 }).default("#e76f8a"),
     ...baseTimestamps,
   },
   (table) => [unique("schedule_phases_job_name_unique").on(table.jobId, table.name)],
@@ -326,6 +334,84 @@ export const scheduleItemTodos = pgTable("schedule_item_todos", {
   ...baseTimestamps,
 });
 
+export const scheduleSettings = pgTable("schedule_settings", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  jobId: uuid("job_id")
+    .references(() => jobs.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
+  defaultView: varchar("default_view", { length: 100 }).default("calendar_month"),
+  showTimesOnMonthView: boolean("show_times_on_month_view").default(false),
+  showJobNameOnAllListedJobs: boolean("show_job_name_on_all_listed_jobs").default(true),
+  automaticallyMarkItemsComplete: boolean("automatically_mark_items_complete").default(false),
+  includeHeaderOnPdfExports: boolean("include_header_on_pdf_exports").default(true),
+  ...baseTimestamps,
+});
+
+export const scheduleBaselines = pgTable("schedule_baselines", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  jobId: uuid("job_id")
+    .references(() => jobs.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
+  capturedAt: timestamp("captured_at").defaultNow().notNull(),
+  capturedBy: uuid("captured_by").references(() => users.id),
+  itemsSnapshot: json("items_snapshot").$type<
+    Array<{
+      scheduleItemId: string;
+      title: string;
+      baselineStartDate: string;
+      baselineEndDate: string;
+    }>
+  >(),
+  ...baseTimestamps,
+});
+
+export const scheduleWorkdayExceptionCategories = pgTable(
+  "schedule_workday_exception_categories",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 100 }).notNull(),
+    ...baseTimestamps,
+  },
+  (table) => [unique("schedule_workday_exception_categories_job_name_unique").on(table.jobId, table.name)],
+);
+
+export const scheduleWorkdayExceptions = pgTable("schedule_workday_exceptions", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  title: varchar("title", { length: 255 }).notNull(),
+  type: varchar("type", { length: 50 }).notNull(),
+  startDate: date("start_date", { mode: "string" }).notNull(),
+  endDate: date("end_date", { mode: "string" }).notNull(),
+  sameEveryYear: boolean("same_every_year").default(false),
+  categoryId: uuid("category_id").references(() => scheduleWorkdayExceptionCategories.id, {
+    onDelete: "set null",
+  }),
+  appliesToAllJobs: boolean("applies_to_all_jobs").default(false),
+  jobIds: json("job_ids").$type<string[] | null>(),
+  notes: varchar("notes", { length: 500 }),
+  createdBy: uuid("created_by").references(() => users.id),
+  ...baseTimestamps,
+});
+
+export const scheduleItemPredecessors = pgTable(
+  "schedule_item_predecessors",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    scheduleItemId: uuid("schedule_item_id")
+      .references(() => scheduleItems.id, { onDelete: "cascade" })
+      .notNull(),
+    predecessorId: uuid("predecessor_id")
+      .references(() => scheduleItems.id, { onDelete: "cascade" })
+      .notNull(),
+    dependencyType: varchar("dependency_type", { length: 50 }).notNull(),
+    lagDays: integer("lag_days").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [unique("schedule_item_predecessors_item_predecessor_unique").on(table.scheduleItemId, table.predecessorId)],
+);
+
 export const dailyLogs = pgTable("daily_logs", {
   id: uuid("id").primaryKey().$defaultFn(createId),
   jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
@@ -340,11 +426,40 @@ export const dailyLogs = pgTable("daily_logs", {
   shareSubsVendors: boolean("share_subs_vendors").default(false),
   shareClient: boolean("share_client").default(false),
   isPrivate: boolean("is_private").default(false),
+  customFieldValues: json("custom_field_values").$type<Record<string, string | number | boolean | null> | null>(),
   createdBy: uuid("created_by").references(() => users.id),
   publishedAt: timestamp("published_at"),
   ...baseTimestamps,
   ...softDeleteTimestamp,
 });
+
+export const dailyLogSettings = pgTable("daily_log_settings", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  stampLocation: boolean("stamp_location").default(false),
+  defaultNotes: text("default_notes").default(""),
+  includeWeatherByDefault: boolean("include_weather_by_default").default(true),
+  includeWeatherNotesByDefault: boolean("include_weather_notes_by_default").default(false),
+  shareInternalUsersByDefault: boolean("share_internal_users_by_default").default(true),
+  notifyInternalUsersByDefault: boolean("notify_internal_users_by_default").default(false),
+  shareEstimatorsByDefault: boolean("share_estimators_by_default").default(false),
+  notifyEstimatorsByDefault: boolean("notify_estimators_by_default").default(false),
+  shareInstallersByDefault: boolean("share_installers_by_default").default(false),
+  notifyInstallersByDefault: boolean("notify_installers_by_default").default(false),
+  ...baseTimestamps,
+});
+
+export const dailyLogCustomFields = pgTable(
+  "daily_log_custom_fields",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    name: varchar("name", { length: 100 }).notNull(),
+    fieldType: varchar("field_type", { length: 50 }).notNull(),
+    options: json("options").$type<string[] | null>(),
+    displayOrder: integer("display_order").notNull().default(0),
+    ...baseTimestamps,
+  },
+  (table) => [unique("daily_log_custom_fields_name_unique").on(table.name)],
+);
 
 export const dailyLogAttachments = pgTable(
   "daily_log_attachments",
@@ -371,6 +486,64 @@ export const dailyLogTags = pgTable(
   },
   (table) => [unique("daily_log_tags_log_tag_unique").on(table.dailyLogId, table.tagName)],
 );
+
+export const dailyLogLikes = pgTable(
+  "daily_log_likes",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    dailyLogId: uuid("daily_log_id")
+      .references(() => dailyLogs.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [unique("daily_log_likes_log_user_unique").on(table.dailyLogId, table.userId)],
+);
+
+export const dailyLogComments = pgTable(
+  "daily_log_comments",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    dailyLogId: uuid("daily_log_id")
+      .references(() => dailyLogs.id, { onDelete: "cascade" })
+      .notNull(),
+    parentCommentId: uuid("parent_comment_id"),
+    createdBy: uuid("created_by").references(() => users.id),
+    body: text("body").notNull(),
+    mentions: json("mentions").$type<string[] | null>(),
+    attachments: json("attachments").$type<
+      Array<{
+        name: string;
+        url: string;
+        mimeType: string | null;
+      }> | null
+    >(),
+    links: json("links").$type<string[] | null>(),
+    reactions: json("reactions").$type<Record<string, string[]> | null>(),
+    ...baseTimestamps,
+    ...softDeleteTimestamp,
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.parentCommentId],
+      foreignColumns: [table.id],
+      name: "daily_log_comments_parent_comment_id_fkey",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const dailyLogTodos = pgTable("daily_log_todos", {
+  id: uuid("id").primaryKey().$defaultFn(createId),
+  dailyLogId: uuid("daily_log_id")
+    .references(() => dailyLogs.id, { onDelete: "cascade" })
+    .notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  isComplete: boolean("is_complete").default(false),
+  createdBy: uuid("created_by").references(() => users.id),
+  ...baseTimestamps,
+});
 
 export const activityLog = pgTable("activity_log", {
   id: uuid("id").primaryKey().$defaultFn(createId),
@@ -404,7 +577,17 @@ export type ScheduleItemAssignee = typeof scheduleItemAssignees.$inferSelect;
 export type ScheduleItemNote = typeof scheduleItemNotes.$inferSelect;
 export type ScheduleItemAttachment = typeof scheduleItemAttachments.$inferSelect;
 export type ScheduleItemTodo = typeof scheduleItemTodos.$inferSelect;
+export type ScheduleSetting = typeof scheduleSettings.$inferSelect;
+export type ScheduleBaseline = typeof scheduleBaselines.$inferSelect;
+export type ScheduleWorkdayExceptionCategory = typeof scheduleWorkdayExceptionCategories.$inferSelect;
+export type ScheduleWorkdayException = typeof scheduleWorkdayExceptions.$inferSelect;
+export type ScheduleItemPredecessor = typeof scheduleItemPredecessors.$inferSelect;
 export type DailyLog = typeof dailyLogs.$inferSelect;
+export type DailyLogSettings = typeof dailyLogSettings.$inferSelect;
+export type DailyLogCustomField = typeof dailyLogCustomFields.$inferSelect;
 export type DailyLogAttachment = typeof dailyLogAttachments.$inferSelect;
 export type DailyLogTag = typeof dailyLogTags.$inferSelect;
+export type DailyLogLike = typeof dailyLogLikes.$inferSelect;
+export type DailyLogComment = typeof dailyLogComments.$inferSelect;
+export type DailyLogTodo = typeof dailyLogTodos.$inferSelect;
 export type ActivityLogEntry = typeof activityLog.$inferSelect;

@@ -25,16 +25,28 @@ import {
   fmtDateTime,
   getInitials,
   SCHEDULE_COLOR_OPTIONS,
-    SCHEDULE_PREDECESSOR_TYPES,
-    SCHEDULE_REMINDER_OPTIONS,
-    type ScheduleItemRecord,
-    type ScheduleNote,
-    type SchedulePredecessor,
-    type ScheduleSettings,
-    type ScheduleTodo,
-  } from "@/lib/schedule"
+  SCHEDULE_PREDECESSOR_TYPES,
+  SCHEDULE_REMINDER_OPTIONS,
+  type ScheduleItemPayload,
+  type ScheduleItemRecord,
+  type ScheduleNote,
+  type SchedulePredecessor,
+  type ScheduleSettings,
+  type ScheduleTodo,
+  type ScheduleWorkdayException,
+} from "@/lib/schedule"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -99,6 +111,27 @@ type ScheduleFormValues = {
 
 const UNASSIGNED_PHASE = "__unassigned__"
 
+type ScheduleItemDialogProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  jobId: string
+  itemId: string | null
+  items: ScheduleItemRecord[]
+  users: UserOption[]
+  settings: ScheduleSettings
+  workdayExceptions: ScheduleWorkdayException[]
+  refreshSettings: () => Promise<void>
+  onRefresh: () => Promise<void>
+  draftMode?: boolean
+  onDraftSave?: (params: {
+    itemId: string | null
+    payload: ScheduleItemPayload
+    note: string | null
+  }) => Promise<ScheduleItemRecord>
+  onDraftAddNote?: (itemId: string, note: string) => Promise<ScheduleItemRecord>
+  onDraftDelete?: (itemId: string) => Promise<void>
+}
+
 function getApiError(err: unknown, fallback: string) {
   if (typeof err === "object" && err !== null) {
     const e = err as { response?: { data?: { message?: string } }; message?: string }
@@ -108,14 +141,14 @@ function getApiError(err: unknown, fallback: string) {
   return fallback
 }
 
-function defaultForm(startDate: string): ScheduleFormValues {
+function defaultForm(startDate: string, workdayExceptions: ScheduleWorkdayException[] = []): ScheduleFormValues {
   return {
     title: "",
     displayColor: DEFAULT_SCHEDULE_COLOR,
     assigneeIds: [],
     startDate,
     workDays: 1,
-    endDate: calculateBusinessEndDate(startDate, 1),
+    endDate: calculateBusinessEndDate(startDate, 1, workdayExceptions),
     isHourly: false,
     startTime: "08:00",
     progress: 0,
@@ -182,26 +215,21 @@ export function ScheduleItemDialog({
   items,
   users,
   settings,
+  workdayExceptions,
   refreshSettings,
   onRefresh,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  jobId: string
-  itemId: string | null
-  items: ScheduleItemRecord[]
-  users: UserOption[]
-  settings: ScheduleSettings
-  refreshSettings: () => Promise<void>
-  onRefresh: () => Promise<void>
-}) {
+  draftMode = false,
+  onDraftSave,
+  onDraftAddNote,
+  onDraftDelete,
+}: ScheduleItemDialogProps) {
   const today = dateKey(new Date())
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [topTab, setTopTab] = useState("details")
   const [subTab, setSubTab] = useState("predecessors")
   const [item, setItem] = useState<ScheduleItemRecord | null>(null)
-  const [values, setValues] = useState<ScheduleFormValues>(defaultForm(today))
+  const [values, setValues] = useState<ScheduleFormValues>(defaultForm(today, workdayExceptions))
   const [assigneeQuery, setAssigneeQuery] = useState("")
   const [notifyAssignees, setNotifyAssignees] = useState(false)
   const [noteDraft, setNoteDraft] = useState("")
@@ -216,11 +244,27 @@ export function ScheduleItemDialog({
   const [editingTags, setEditingTags] = useState<Record<string, string>>({})
   const [showAddTag, setShowAddTag] = useState(false)
   const [showEditTags, setShowEditTags] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
   async function loadItem(nextItemId: string) {
     setLoadingItem(true)
 
     try {
+      if (draftMode) {
+        const draftItem = items.find((candidate) => candidate.id === nextItemId)
+
+        if (!draftItem) {
+          throw new Error("Draft schedule item not found")
+        }
+
+        setItem(draftItem)
+        setValues(formFromItem(draftItem))
+        setNoteDraft("")
+        setNotifyAssignees(false)
+        setManualEndDate(false)
+        return
+      }
+
       const response = await api.get<{ item: ScheduleItemRecord }>(`/schedule-items/${nextItemId}`)
       setItem(response.data.item)
       setValues(formFromItem(response.data.item))
@@ -236,7 +280,7 @@ export function ScheduleItemDialog({
 
   function resetForNewItem() {
     setItem(null)
-    setValues(defaultForm(today))
+    setValues(defaultForm(today, workdayExceptions))
     setAssigneeQuery("")
     setNotifyAssignees(false)
     setNoteDraft("")
@@ -264,7 +308,7 @@ export function ScheduleItemDialog({
     }
 
     resetForNewItem()
-  }, [itemId, open, today])
+  }, [itemId, open, today, workdayExceptions])
 
   useEffect(() => {
     if (!open) {
@@ -287,6 +331,40 @@ export function ScheduleItemDialog({
       Object.fromEntries(settings.tags.map((tag) => [tag.id, current[tag.id] ?? tag.name])),
     )
   }, [open, settings.tags])
+
+  useEffect(() => {
+    if (!open || !draftMode || !itemId) {
+      return
+    }
+
+    const draftItem = items.find((candidate) => candidate.id === itemId)
+
+    if (!draftItem) {
+      onOpenChange(false)
+      return
+    }
+
+    setItem(draftItem)
+    setValues(formFromItem(draftItem))
+  }, [draftMode, itemId, items, onOpenChange, open])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault()
+        if (!saving && !loadingItem) {
+          void handleSave("stay")
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [loadingItem, open, saving, values, item, noteDraft, notifyAssignees])
 
   const availablePredecessors = useMemo(
     () => items.filter((candidate) => candidate.id !== item?.id),
@@ -345,14 +423,14 @@ export function ScheduleItemDialog({
     }))
   }
 
-  function buildPayload() {
+  function buildPayload(): ScheduleItemPayload {
     return {
       title: values.title.trim(),
       displayColor: values.displayColor,
       assigneeIds: values.assigneeIds,
       startDate: values.startDate,
       workDays: values.workDays,
-      endDate: values.endDate,
+      endDate: null,
       isHourly: values.isHourly,
       startTime: values.isHourly ? values.startTime : null,
       endTime: null,
@@ -381,19 +459,32 @@ export function ScheduleItemDialog({
 
     try {
       const payload = buildPayload()
-      const response = item
-        ? await api.put<{ item: ScheduleItemRecord }>(`/schedule-items/${item.id}`, payload)
-        : await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
+      const pendingNote = noteDraft.trim() || null
+      const savedItem = draftMode && onDraftSave
+        ? await onDraftSave({
+            itemId: item?.id ?? null,
+            payload,
+            note: pendingNote,
+          })
+        : (
+            item
+              ? await api.put<{ item: ScheduleItemRecord }>(`/schedule-items/${item.id}`, payload)
+              : await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
+          ).data.item
 
-      const savedItem = response.data.item
-
-      if (noteDraft.trim()) {
+      if (!draftMode && pendingNote) {
         await api.post(`/schedule-items/${savedItem.id}/notes`, {
-          note: noteDraft.trim(),
+          note: pendingNote,
         })
       }
 
-      await onRefresh()
+      if (notifyAssignees && draftMode && values.assigneeIds.length > 0) {
+        toast.info("Assigned-user notifications will be available after publish")
+      }
+
+      if (!draftMode) {
+        await onRefresh()
+      }
 
       if (mode === "new") {
         resetForNewItem()
@@ -407,7 +498,15 @@ export function ScheduleItemDialog({
         return savedItem.id
       }
 
-      await loadItem(savedItem.id)
+      if (draftMode) {
+        setItem(savedItem)
+        setValues(formFromItem(savedItem))
+        setNoteDraft("")
+        setNotifyAssignees(false)
+        setManualEndDate(false)
+      } else {
+        await loadItem(savedItem.id)
+      }
       setNotifyAssignees(false)
       toast.success(item ? "Schedule item saved" : "Schedule item created")
       return savedItem.id
@@ -427,6 +526,15 @@ export function ScheduleItemDialog({
     setSaving(true)
 
     try {
+      if (draftMode && onDraftAddNote) {
+        const updatedItem = await onDraftAddNote(item.id, noteDraft.trim())
+        setItem(updatedItem)
+        setValues(formFromItem(updatedItem))
+        setNoteDraft("")
+        toast.success("Note added to the draft")
+        return
+      }
+
       const response = await api.post<{ note: ScheduleNote }>(`/schedule-items/${item.id}/notes`, {
         note: noteDraft.trim(),
       })
@@ -450,6 +558,12 @@ export function ScheduleItemDialog({
   }
 
   async function handleUploadFiles(event: React.ChangeEvent<HTMLInputElement>) {
+    if (draftMode) {
+      toast.info("Publish draft changes before managing attachments")
+      event.target.value = ""
+      return
+    }
+
     if (!item || !event.target.files?.length) {
       return
     }
@@ -477,6 +591,11 @@ export function ScheduleItemDialog({
   }
 
   async function handleCreateDoc() {
+    if (draftMode) {
+      toast.info("Publish draft changes before creating attachments")
+      return
+    }
+
     if (!item) {
       return
     }
@@ -501,6 +620,11 @@ export function ScheduleItemDialog({
   }
 
   async function handleDeleteAttachment(attachmentId: string) {
+    if (draftMode) {
+      toast.info("Publish draft changes before deleting attachments")
+      return
+    }
+
     if (!item) {
       return
     }
@@ -527,13 +651,29 @@ export function ScheduleItemDialog({
 
     try {
       const payload = buildPayload()
-      const response = await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, {
-        ...payload,
-        title: `${payload.title} Copy`,
-        notes: null,
-      })
-      await onRefresh()
-      await loadItem(response.data.item.id)
+      const copiedItem = draftMode && onDraftSave
+        ? await onDraftSave({
+            itemId: null,
+            payload: {
+              ...payload,
+              title: `${payload.title} (Copy)`,
+              progress: 0,
+              isComplete: false,
+            },
+            note: null,
+          })
+        : (
+            await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, {
+              ...payload,
+              title: `${payload.title} (Copy)`,
+              progress: 0,
+              isComplete: false,
+            })
+          ).data.item
+      if (!draftMode) {
+        await onRefresh()
+      }
+      await loadItem(copiedItem.id)
       toast.success("Schedule item copied")
     } catch (err) {
       toast.error(getApiError(err, "Failed to copy schedule item"))
@@ -547,17 +687,18 @@ export function ScheduleItemDialog({
       return
     }
 
-    const confirmed = window.confirm(`Delete "${item.title}"?`)
-
-    if (!confirmed) {
-      return
-    }
-
     setSaving(true)
 
     try {
-      await api.delete(`/schedule-items/${item.id}`)
-      await onRefresh()
+      if (draftMode && onDraftDelete) {
+        await onDraftDelete(item.id)
+      } else {
+        await api.delete(`/schedule-items/${item.id}`)
+      }
+      if (!draftMode) {
+        await onRefresh()
+      }
+      setDeleteConfirmOpen(false)
       onOpenChange(false)
       toast.success("Schedule item deleted")
     } catch (err) {
@@ -568,6 +709,11 @@ export function ScheduleItemDialog({
   }
 
   async function handleCreateTodo() {
+    if (draftMode) {
+      toast.info("Publish draft changes before creating linked to-do's")
+      return
+    }
+
     const itemTitle = values.title.trim() || item?.title || "New To-Do"
     const nextItemId = await handleSave("stay")
 
@@ -597,6 +743,11 @@ export function ScheduleItemDialog({
   }
 
   async function handleToggleTodo(todo: ScheduleTodo) {
+    if (draftMode) {
+      toast.info("Publish draft changes before updating linked to-do's")
+      return
+    }
+
     if (!item) {
       return
     }
@@ -616,6 +767,11 @@ export function ScheduleItemDialog({
   }
 
   async function handleDeleteTodo(todoId: string) {
+    if (draftMode) {
+      toast.info("Publish draft changes before removing linked to-do's")
+      return
+    }
+
     if (!item) {
       return
     }
@@ -741,6 +897,7 @@ export function ScheduleItemDialog({
   )
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[95vh] max-w-5xl overflow-hidden border-[#E5E7EB] bg-white p-0">
         <DialogHeader className="border-b border-[#E5E7EB] px-6 py-4">
@@ -922,13 +1079,13 @@ export function ScheduleItemDialog({
                           onChange={(event) =>
                             updateValues((current) => {
                               const startDate = event.target.value
-                              return {
-                                ...current,
-                                startDate,
-                                endDate: calculateBusinessEndDate(startDate, current.workDays),
-                              }
-                            })
-                          }
+    return {
+      ...current,
+      startDate,
+      endDate: calculateBusinessEndDate(startDate, current.workDays, workdayExceptions),
+    }
+  })
+}
                         />
                       </div>
                       <div className="space-y-2">
@@ -946,7 +1103,7 @@ export function ScheduleItemDialog({
                               updateValues((current) => ({
                                 ...current,
                                 workDays,
-                                endDate: calculateBusinessEndDate(current.startDate, workDays),
+                                endDate: calculateBusinessEndDate(current.startDate, workDays, workdayExceptions),
                               }))
                             }}
                           />
@@ -967,7 +1124,7 @@ export function ScheduleItemDialog({
                             updateValues((current) => ({
                               ...current,
                               endDate,
-                              workDays: calculateWorkDaysBetween(current.startDate, endDate),
+                              workDays: calculateWorkDaysBetween(current.startDate, endDate, workdayExceptions),
                             }))
                           }}
                         />
@@ -1690,7 +1847,7 @@ export function ScheduleItemDialog({
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-red-600 focus:text-red-600"
-                          onClick={() => void handleDelete()}
+                          onClick={() => setDeleteConfirmOpen(true)}
                         >
                           <Trash2 className="size-4" />
                           Delete
@@ -1731,5 +1888,30 @@ export function ScheduleItemDialog({
         )}
       </DialogContent>
     </Dialog>
+    <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete Schedule Item</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete this schedule item? This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={saving}
+            className="bg-red-600 text-white hover:bg-red-700"
+            onClick={(event) => {
+              event.preventDefault()
+              void handleDelete()
+            }}
+          >
+            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import multer from "multer";
 import {
   and,
@@ -15,7 +16,11 @@ import { z } from "zod";
 import { db } from "@workspace/db";
 import {
   dailyLogAttachments,
+  dailyLogComments,
+  dailyLogCustomFields,
+  dailyLogLikes,
   dailyLogTags,
+  dailyLogTodos,
   dailyLogs,
   files,
   folders,
@@ -32,6 +37,7 @@ import {
   deletePhysicalFile,
   writeUploadedBuffer,
 } from "../lib/storage";
+import { ensureDailyLogConfigTables } from "../lib/daily-log-support";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -73,6 +79,41 @@ const weatherDataSchema = z
   .optional()
   .default(null);
 
+const commentAttachmentSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  url: z.string().trim().min(1),
+  mimeType: optionalString,
+});
+
+const commentPayloadSchema = z.object({
+  body: z.string().trim().min(1).max(10000),
+  parentCommentId: z.string().uuid().nullable().optional().default(null),
+  mentions: z.array(z.string().uuid()).optional().default([]),
+  attachments: z.array(commentAttachmentSchema).optional().default([]),
+  links: z.array(z.string().trim().url()).optional().default([]),
+});
+
+const commentReactionPayloadSchema = z.object({
+  emoji: z.string().trim().min(1).max(32),
+});
+
+const todoPayloadSchema = z.object({
+  title: z.string().trim().min(1).max(255),
+});
+
+const todoTogglePayloadSchema = z.object({
+  isComplete: z.coerce.boolean().optional(),
+});
+
+const customFieldValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+]);
+
+const customFieldValuesSchema = z.record(customFieldValueSchema).optional().default({});
+
 const dailyLogListQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
@@ -81,12 +122,23 @@ const dailyLogListQuerySchema = z.object({
   from: optionalDate,
   to: optionalDate,
   tag: z.string().trim().optional(),
+  tags: z
+    .union([z.string(), z.array(z.string()), z.undefined()])
+    .transform((value) => {
+      if (!value) {
+        return [];
+      }
+
+      const values = Array.isArray(value) ? value : value.split(",");
+      return normalizeUniqueStrings(values);
+    }),
   sharedWith: z
-    .enum(["internal", "subs_vendors", "client", "private"])
+    .enum(["internal", "subs_vendors", "client", "private", "estimators", "installers"])
     .optional(),
 });
 
 const dailyLogPayloadSchema = z.object({
+  jobId: z.string().uuid().optional(),
   logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   title: optionalString,
   notes: z.string().optional().default(""),
@@ -100,6 +152,12 @@ const dailyLogPayloadSchema = z.object({
   isPrivate: z.coerce.boolean().optional().default(false),
   notifyUserIds: z.array(z.string().uuid()).optional().default([]),
   tags: z.array(z.string().trim().min(1).max(100)).optional().default([]),
+  customFieldValues: customFieldValuesSchema,
+});
+
+const weatherQuerySchema = z.object({
+  address: z.string().trim().min(1).max(500),
+  date: optionalDate,
 });
 
 const weatherMetaKey = "__cadstoneMeta";
@@ -122,6 +180,114 @@ function normalizeUniqueStrings(values: string[]) {
         .filter(Boolean),
     ),
   );
+}
+
+let ensureDailyLogSupportTablesPromise: Promise<void> | null = null;
+
+async function ensureDailyLogSupportTables() {
+  if (!ensureDailyLogSupportTablesPromise) {
+    ensureDailyLogSupportTablesPromise = (async () => {
+      await db.execute(sql`
+        create table if not exists daily_log_likes (
+          id uuid primary key,
+          daily_log_id uuid not null references daily_logs(id) on delete cascade,
+          user_id uuid not null references users(id) on delete cascade,
+          created_at timestamp not null default now(),
+          unique (daily_log_id, user_id)
+        )
+      `);
+      await db.execute(sql`
+        create index if not exists daily_log_likes_log_id_idx
+        on daily_log_likes (daily_log_id)
+      `);
+      await db.execute(sql`
+        create table if not exists daily_log_comments (
+          id uuid primary key,
+          daily_log_id uuid not null references daily_logs(id) on delete cascade,
+          parent_comment_id uuid references daily_log_comments(id) on delete cascade,
+          created_by uuid references users(id),
+          body text not null,
+          mentions json,
+          attachments json,
+          links json,
+          reactions json,
+          created_at timestamp not null default now(),
+          updated_at timestamp not null default now(),
+          deleted_at timestamp
+        )
+      `);
+      await db.execute(sql`
+        create index if not exists daily_log_comments_log_id_idx
+        on daily_log_comments (daily_log_id)
+      `);
+      await db.execute(sql`
+        create index if not exists daily_log_comments_parent_comment_id_idx
+        on daily_log_comments (parent_comment_id)
+      `);
+      await db.execute(sql`
+        create table if not exists daily_log_todos (
+          id uuid primary key,
+          daily_log_id uuid not null references daily_logs(id) on delete cascade,
+          title varchar(255) not null,
+          is_complete boolean default false,
+          created_by uuid references users(id),
+          created_at timestamp not null default now(),
+          updated_at timestamp not null default now()
+        )
+      `);
+      await db.execute(sql`
+        create index if not exists daily_log_todos_log_id_idx
+        on daily_log_todos (daily_log_id)
+      `);
+      await ensureDailyLogConfigTables();
+    })().catch((error) => {
+      ensureDailyLogSupportTablesPromise = null;
+      throw error;
+    });
+  }
+
+  await ensureDailyLogSupportTablesPromise;
+}
+
+function sanitizeWeatherIcon(value: string) {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized.includes("snow")) {
+    return "snow";
+  }
+
+  if (normalized.includes("storm") || normalized.includes("thunder")) {
+    return "storm";
+  }
+
+  if (
+    normalized.includes("rain") ||
+    normalized.includes("drizzle") ||
+    normalized.includes("shower")
+  ) {
+    return "rain";
+  }
+
+  if (normalized.includes("cloud") || normalized.includes("overcast") || normalized.includes("fog")) {
+    return "cloud";
+  }
+
+  return "sun";
+}
+
+function weatherCodeToCondition(code: number) {
+  if (code === 0) return "Sunny";
+  if (code === 1) return "Mainly clear";
+  if (code === 2) return "Partly cloudy";
+  if (code === 3) return "Overcast";
+  if (code >= 45 && code <= 48) return "Fog";
+  if (code >= 51 && code <= 57) return "Drizzle";
+  if (code >= 61 && code <= 67) return "Rain";
+  if (code >= 71 && code <= 77) return "Snow";
+  if (code >= 80 && code <= 82) return "Rain showers";
+  if (code >= 85 && code <= 86) return "Snow showers";
+  if (code >= 95 && code <= 99) return "Thunderstorm";
+  return "Unknown";
 }
 
 function encodeWeatherPayload(
@@ -159,6 +325,27 @@ function decodeWeatherPayload(value: Record<string, unknown> | null | undefined)
     weatherData: Object.keys(nextValue).length > 0 ? nextValue : null,
     notifyUserIds,
   };
+}
+
+function normalizeCustomFieldValueRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {} as Record<string, string | number | boolean | null>;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) => {
+    if (
+      typeof entry === "string" ||
+      typeof entry === "number" ||
+      typeof entry === "boolean" ||
+      entry === null
+    ) {
+      return [[key, entry] as const];
+    }
+
+    return [];
+  });
+
+  return Object.fromEntries(entries);
 }
 
 async function ensureJobExists(jobId: string) {
@@ -262,7 +449,357 @@ async function syncDailyLogTags(dailyLogId: string, tags: string[]) {
   }
 }
 
-async function hydrateDailyLog(id: string) {
+function deriveVisibilityLabel(log: {
+  isPrivate: boolean | null;
+  shareInternalUsers: boolean | null;
+  shareClient: boolean | null;
+  shareSubsVendors: boolean | null;
+}) {
+  if (log.isPrivate) {
+    return "Private";
+  }
+
+  if (log.shareClient) {
+    return "Estimators";
+  }
+
+  if (log.shareSubsVendors) {
+    return "Installers";
+  }
+
+  if (log.shareInternalUsers) {
+    return "Internal";
+  }
+
+  return "Internal";
+}
+
+async function loadDailyLogEngagement(logIds: string[], currentUserId: string) {
+  await ensureDailyLogSupportTables();
+
+  const [likeRows, commentRows, todoRows] = await Promise.all([
+    logIds.length > 0
+      ? db
+          .select({
+            dailyLogId: dailyLogLikes.dailyLogId,
+            userId: dailyLogLikes.userId,
+          })
+          .from(dailyLogLikes)
+          .where(inArray(dailyLogLikes.dailyLogId, logIds))
+      : Promise.resolve([]),
+    logIds.length > 0
+      ? db
+          .select({
+            dailyLogId: dailyLogComments.dailyLogId,
+            total: count(),
+          })
+          .from(dailyLogComments)
+          .where(
+            and(
+              inArray(dailyLogComments.dailyLogId, logIds),
+              isNull(dailyLogComments.deletedAt),
+            ),
+          )
+          .groupBy(dailyLogComments.dailyLogId)
+      : Promise.resolve([]),
+    logIds.length > 0
+      ? db
+          .select({
+            dailyLogId: dailyLogTodos.dailyLogId,
+            total: count(),
+            complete: sql<number>`sum(case when ${dailyLogTodos.isComplete} then 1 else 0 end)`,
+          })
+          .from(dailyLogTodos)
+          .where(inArray(dailyLogTodos.dailyLogId, logIds))
+          .groupBy(dailyLogTodos.dailyLogId)
+      : Promise.resolve([]),
+  ]);
+
+  const likesCountByLogId = new Map<string, number>();
+  const likedByCurrentUser = new Set<string>();
+  const commentsCountByLogId = new Map<string, number>();
+  const todosCountByLogId = new Map<string, number>();
+  const completedTodosCountByLogId = new Map<string, number>();
+
+  for (const row of likeRows) {
+    const key = row.dailyLogId;
+    likesCountByLogId.set(key, (likesCountByLogId.get(key) ?? 0) + 1);
+
+    if (row.userId === currentUserId) {
+      likedByCurrentUser.add(key);
+    }
+  }
+
+  for (const row of commentRows) {
+    commentsCountByLogId.set(row.dailyLogId, Number(row.total));
+  }
+
+  for (const row of todoRows) {
+    todosCountByLogId.set(row.dailyLogId, Number(row.total));
+    completedTodosCountByLogId.set(row.dailyLogId, Number(row.complete ?? 0));
+  }
+
+  return {
+    likesCountByLogId,
+    likedByCurrentUser,
+    commentsCountByLogId,
+    todosCountByLogId,
+    completedTodosCountByLogId,
+  };
+}
+
+type HydratedComment = {
+  id: string;
+  dailyLogId: string;
+  parentCommentId: string | null;
+  body: string;
+  mentions: string[];
+  attachments: Array<{
+    name: string;
+    url: string;
+    mimeType: string | null;
+  }>;
+  links: string[];
+  reactions: Record<string, string[]>;
+  createdBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  author: {
+    id: string | null;
+    fullName: string | null;
+    avatarUrl: string | null;
+  };
+  replies: HydratedComment[];
+};
+
+function normalizeCommentArrayValue<T>(value: unknown, guard: (item: unknown) => item is T) {
+  if (!Array.isArray(value)) {
+    return [] as T[];
+  }
+
+  return value.filter(guard);
+}
+
+function isStringArrayValue(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isCommentAttachmentValue(
+  value: unknown,
+): value is { name: string; url: string; mimeType: string | null } {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { name?: unknown }).name === "string" &&
+    typeof (value as { url?: unknown }).url === "string"
+  );
+}
+
+function normalizeCommentReactions(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {} as Record<string, string[]>;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).map(([emoji, userIds]) => [
+    emoji,
+    normalizeCommentArrayValue(userIds, isStringArrayValue),
+  ]);
+
+  return Object.fromEntries(entries);
+}
+
+async function loadDailyLogComments(dailyLogId: string) {
+  await ensureDailyLogSupportTables();
+
+  const rows = await db
+    .select({
+      id: dailyLogComments.id,
+      dailyLogId: dailyLogComments.dailyLogId,
+      parentCommentId: dailyLogComments.parentCommentId,
+      body: dailyLogComments.body,
+      mentions: dailyLogComments.mentions,
+      attachments: dailyLogComments.attachments,
+      links: dailyLogComments.links,
+      reactions: dailyLogComments.reactions,
+      createdBy: dailyLogComments.createdBy,
+      createdAt: dailyLogComments.createdAt,
+      updatedAt: dailyLogComments.updatedAt,
+      authorId: users.id,
+      authorName: users.fullName,
+      authorAvatarUrl: users.avatarUrl,
+    })
+    .from(dailyLogComments)
+    .leftJoin(users, eq(dailyLogComments.createdBy, users.id))
+    .where(
+      and(
+        eq(dailyLogComments.dailyLogId, dailyLogId),
+        isNull(dailyLogComments.deletedAt),
+      ),
+    )
+    .orderBy(asc(dailyLogComments.createdAt));
+
+  const byId = new Map<string, HydratedComment>();
+  const roots: HydratedComment[] = [];
+
+  for (const row of rows) {
+    const comment: HydratedComment = {
+      id: row.id,
+      dailyLogId: row.dailyLogId,
+      parentCommentId: row.parentCommentId,
+      body: row.body,
+      mentions: normalizeCommentArrayValue(row.mentions, isStringArrayValue),
+      attachments: normalizeCommentArrayValue(row.attachments, isCommentAttachmentValue),
+      links: normalizeCommentArrayValue(row.links, isStringArrayValue),
+      reactions: normalizeCommentReactions(row.reactions),
+      createdBy: row.createdBy,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      author: {
+        id: row.authorId,
+        fullName: row.authorName,
+        avatarUrl: row.authorAvatarUrl,
+      },
+      replies: [],
+    };
+
+    byId.set(comment.id, comment);
+  }
+
+  for (const comment of byId.values()) {
+    if (comment.parentCommentId && byId.has(comment.parentCommentId)) {
+      byId.get(comment.parentCommentId)?.replies.push(comment);
+      continue;
+    }
+
+    roots.push(comment);
+  }
+
+  return roots;
+}
+
+async function loadDailyLogTodos(dailyLogId: string) {
+  await ensureDailyLogSupportTables();
+
+  return db
+    .select({
+      id: dailyLogTodos.id,
+      title: dailyLogTodos.title,
+      isComplete: dailyLogTodos.isComplete,
+      createdBy: dailyLogTodos.createdBy,
+      createdAt: dailyLogTodos.createdAt,
+      updatedAt: dailyLogTodos.updatedAt,
+      createdByName: users.fullName,
+    })
+    .from(dailyLogTodos)
+    .leftJoin(users, eq(dailyLogTodos.createdBy, users.id))
+    .where(eq(dailyLogTodos.dailyLogId, dailyLogId))
+    .orderBy(asc(dailyLogTodos.isComplete), asc(dailyLogTodos.createdAt));
+}
+
+async function fetchWeatherSnapshot(address: string, dateValue: string | null) {
+  const today = new Date().toISOString().slice(0, 10);
+  const targetDate = dateValue ?? today;
+  const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
+  geoUrl.searchParams.set("name", address);
+  geoUrl.searchParams.set("count", "1");
+  geoUrl.searchParams.set("language", "en");
+  geoUrl.searchParams.set("format", "json");
+
+  const geoResponse = await fetch(geoUrl);
+
+  if (!geoResponse.ok) {
+    throw new HttpError(502, "Weather geocoding failed.");
+  }
+
+  const geoPayload = (await geoResponse.json()) as {
+    results?: Array<{ latitude: number; longitude: number; name?: string }>;
+  };
+  const match = geoPayload.results?.[0];
+
+  if (!match) {
+    throw new HttpError(404, "Unable to locate that address for weather lookup.");
+  }
+
+  const isPast = targetDate < today;
+  const weatherUrl = new URL(
+    isPast
+      ? "https://archive-api.open-meteo.com/v1/archive"
+      : "https://api.open-meteo.com/v1/forecast",
+  );
+
+  weatherUrl.searchParams.set("latitude", String(match.latitude));
+  weatherUrl.searchParams.set("longitude", String(match.longitude));
+  weatherUrl.searchParams.set("temperature_unit", "fahrenheit");
+  weatherUrl.searchParams.set("wind_speed_unit", "mph");
+  weatherUrl.searchParams.set("precipitation_unit", "inch");
+  weatherUrl.searchParams.set("timezone", "auto");
+  weatherUrl.searchParams.set("start_date", targetDate);
+  weatherUrl.searchParams.set("end_date", targetDate);
+  weatherUrl.searchParams.set(
+    "daily",
+    "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum",
+  );
+  weatherUrl.searchParams.set("hourly", "relative_humidity_2m,wind_speed_10m");
+
+  const weatherResponse = await fetch(weatherUrl);
+
+  if (!weatherResponse.ok) {
+    throw new HttpError(502, "Weather lookup failed.");
+  }
+
+  const payload = (await weatherResponse.json()) as {
+    daily?: {
+      weather_code?: number[];
+      temperature_2m_max?: number[];
+      temperature_2m_min?: number[];
+      precipitation_sum?: number[];
+    };
+    hourly?: {
+      relative_humidity_2m?: number[];
+      wind_speed_10m?: number[];
+    };
+  };
+
+  if (!payload.daily) {
+    throw new HttpError(404, "Weather data is unavailable for that day.");
+  }
+
+  const code = payload.daily.weather_code?.[0] ?? 0;
+  const humidityValues = payload.hourly?.relative_humidity_2m ?? [];
+  const windValues = payload.hourly?.wind_speed_10m ?? [];
+  const humidityAverage =
+    humidityValues.length > 0
+      ? Math.round(humidityValues.reduce((sum, value) => sum + value, 0) / humidityValues.length)
+      : null;
+  const windMax =
+    windValues.length > 0 ? Math.round(Math.max(...windValues)) : null;
+  const condition = weatherCodeToCondition(code);
+
+  return {
+    condition,
+    icon: sanitizeWeatherIcon(condition),
+    temperatureHigh:
+      typeof payload.daily.temperature_2m_max?.[0] === "number"
+        ? Math.round(payload.daily.temperature_2m_max[0])
+        : null,
+    temperatureLow:
+      typeof payload.daily.temperature_2m_min?.[0] === "number"
+        ? Math.round(payload.daily.temperature_2m_min[0])
+        : null,
+    windMph: windMax,
+    humidity: humidityAverage,
+    precipitation:
+      typeof payload.daily.precipitation_sum?.[0] === "number"
+        ? Number(payload.daily.precipitation_sum[0].toFixed(2))
+        : 0,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+async function hydrateDailyLog(id: string, currentUserId: string) {
+  await ensureDailyLogSupportTables();
+
   const [row] = await db
     .select({
       id: dailyLogs.id,
@@ -274,6 +811,7 @@ async function hydrateDailyLog(id: string) {
       includeWeather: dailyLogs.includeWeather,
       includeWeatherNotes: dailyLogs.includeWeatherNotes,
       weatherNotes: dailyLogs.weatherNotes,
+      customFieldValues: dailyLogs.customFieldValues,
       shareInternalUsers: dailyLogs.shareInternalUsers,
       shareSubsVendors: dailyLogs.shareSubsVendors,
       shareClient: dailyLogs.shareClient,
@@ -320,6 +858,10 @@ async function hydrateDailyLog(id: string) {
       .where(eq(dailyLogAttachments.dailyLogId, id))
       .orderBy(desc(files.createdAt)),
   ]);
+  const [engagement, todos] = await Promise.all([
+    loadDailyLogEngagement([id], currentUserId),
+    loadDailyLogTodos(id),
+  ]);
 
   const weather = decodeWeatherPayload(
     row.weatherData as Record<string, unknown> | null | undefined,
@@ -347,7 +889,15 @@ async function hydrateDailyLog(id: string) {
       notifyUserIds: weather.notifyUserIds,
       notifyUsers,
       tags: tagRows.map((tag) => tag.tagName),
+      customFieldValues: normalizeCustomFieldValueRecord(row.customFieldValues),
       attachments: attachmentRows,
+      likesCount: engagement.likesCountByLogId.get(id) ?? 0,
+      commentsCount: engagement.commentsCountByLogId.get(id) ?? 0,
+      likedByCurrentUser: engagement.likedByCurrentUser.has(id),
+      visibilityLabel: deriveVisibilityLabel(row),
+      todos,
+      todoCount: engagement.todosCountByLogId.get(id) ?? 0,
+      completedTodoCount: engagement.completedTodosCountByLogId.get(id) ?? 0,
       status: row.publishedAt ? "published" : "draft",
     },
   };
@@ -356,6 +906,8 @@ async function hydrateDailyLog(id: string) {
 router.get(
   "/jobs/:jobId/daily-logs",
   asyncHandler(async (req, res) => {
+    await ensureDailyLogSupportTables();
+
     const query = dailyLogListQuerySchema.safeParse(req.query);
 
     if (!query.success) {
@@ -397,6 +949,7 @@ router.get(
         includeWeather: dailyLogs.includeWeather,
         includeWeatherNotes: dailyLogs.includeWeatherNotes,
         weatherNotes: dailyLogs.weatherNotes,
+        customFieldValues: dailyLogs.customFieldValues,
         shareInternalUsers: dailyLogs.shareInternalUsers,
         shareSubsVendors: dailyLogs.shareSubsVendors,
         shareClient: dailyLogs.shareClient,
@@ -456,6 +1009,8 @@ router.get(
       attachmentCountByLogId.set(row.dailyLogId, Number(row.total));
     }
 
+    const engagement = await loadDailyLogEngagement(logIds, req.auth.userId);
+
     let filtered = rows.map((row) => {
       const weather = decodeWeatherPayload(
         row.weatherData as Record<string, unknown> | null | undefined,
@@ -465,16 +1020,29 @@ router.get(
         ...row,
         weatherData: weather.weatherData,
         notifyUserIds: weather.notifyUserIds,
+        customFieldValues: normalizeCustomFieldValueRecord(row.customFieldValues),
         tags: normalizeUniqueStrings(tagsByLogId.get(row.id) ?? []),
         attachmentCount: attachmentCountByLogId.get(row.id) ?? 0,
+        likesCount: engagement.likesCountByLogId.get(row.id) ?? 0,
+        commentsCount: engagement.commentsCountByLogId.get(row.id) ?? 0,
+        likedByCurrentUser: engagement.likedByCurrentUser.has(row.id),
+        visibilityLabel: deriveVisibilityLabel(row),
+        todoCount: engagement.todosCountByLogId.get(row.id) ?? 0,
+        completedTodoCount: engagement.completedTodosCountByLogId.get(row.id) ?? 0,
         status: row.publishedAt ? "published" : "draft",
       };
     });
 
-    if (query.data.tag) {
-      const expectedTag = query.data.tag.toLowerCase();
+    const requestedTags = normalizeUniqueStrings([
+      ...(query.data.tag ? [query.data.tag] : []),
+      ...query.data.tags,
+    ]).map((tag) => tag.toLowerCase());
+
+    if (requestedTags.length > 0) {
       filtered = filtered.filter((row) =>
-        row.tags.some((tag) => tag.toLowerCase() === expectedTag),
+        requestedTags.every((expectedTag) =>
+          row.tags.some((tag) => tag.toLowerCase() === expectedTag),
+        ),
       );
     }
 
@@ -484,11 +1052,11 @@ router.get(
           return !!row.shareInternalUsers;
         }
 
-        if (query.data.sharedWith === "subs_vendors") {
+        if (query.data.sharedWith === "subs_vendors" || query.data.sharedWith === "installers") {
           return !!row.shareSubsVendors;
         }
 
-        if (query.data.sharedWith === "client") {
+        if (query.data.sharedWith === "client" || query.data.sharedWith === "estimators") {
           return !!row.shareClient;
         }
 
@@ -515,13 +1083,15 @@ router.get(
 router.post(
   "/jobs/:jobId/daily-logs",
   asyncHandler(async (req, res) => {
+    await ensureDailyLogSupportTables();
+
     const body = dailyLogPayloadSchema.safeParse(req.body);
 
     if (!body.success) {
       throw new HttpError(400, "Invalid daily log payload.", body.error.flatten());
     }
 
-    const jobId = getParam(req.params.jobId, "job id");
+    const jobId = body.data.jobId ?? getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
 
     const [log] = await db
@@ -535,6 +1105,7 @@ router.post(
         includeWeather: body.data.includeWeather,
         includeWeatherNotes: body.data.includeWeatherNotes,
         weatherNotes: body.data.weatherNotes,
+        customFieldValues: body.data.customFieldValues,
         shareInternalUsers: body.data.shareInternalUsers,
         shareSubsVendors: body.data.shareSubsVendors,
         shareClient: body.data.shareClient,
@@ -557,7 +1128,7 @@ router.post(
       },
     });
 
-    const hydrated = await hydrateDailyLog(log.id);
+    const hydrated = await hydrateDailyLog(log.id, req.auth.userId);
     res.status(201).json(hydrated);
   }),
 );
@@ -566,7 +1137,7 @@ router.get(
   "/daily-logs/:id",
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
-    const hydrated = await hydrateDailyLog(logId);
+    const hydrated = await hydrateDailyLog(logId, req.auth.userId);
     res.json(hydrated);
   }),
 );
@@ -574,6 +1145,8 @@ router.get(
 router.put(
   "/daily-logs/:id",
   asyncHandler(async (req, res) => {
+    await ensureDailyLogSupportTables();
+
     const body = dailyLogPayloadSchema.safeParse(req.body);
 
     if (!body.success) {
@@ -582,14 +1155,18 @@ router.put(
 
     const logId = getParam(req.params.id, "daily log id");
     const existing = await getDailyLogOrThrow(logId);
+    const nextJobId = body.data.jobId ?? existing.jobId;
 
-    if (!existing.jobId) {
+    if (!nextJobId) {
       throw new HttpError(400, "Daily log is missing a job.");
     }
+
+    await ensureJobExists(nextJobId);
 
     await db
       .update(dailyLogs)
       .set({
+        jobId: nextJobId,
         logDate: body.data.logDate,
         title: body.data.title,
         notes: body.data.notes,
@@ -597,6 +1174,7 @@ router.put(
         includeWeather: body.data.includeWeather,
         includeWeatherNotes: body.data.includeWeatherNotes,
         weatherNotes: body.data.weatherNotes,
+        customFieldValues: body.data.customFieldValues,
         shareInternalUsers: body.data.shareInternalUsers,
         shareSubsVendors: body.data.shareSubsVendors,
         shareClient: body.data.shareClient,
@@ -612,14 +1190,14 @@ router.put(
       entityId: logId,
       action: "updated",
       userId: req.auth.userId,
-      jobId: existing.jobId,
+      jobId: nextJobId,
       description: `Updated daily log ${body.data.title || body.data.logDate}`,
       extra: {
         dailyLogId: logId,
       },
     });
 
-    const hydrated = await hydrateDailyLog(logId);
+    const hydrated = await hydrateDailyLog(logId, req.auth.userId);
     res.json(hydrated);
   }),
 );
@@ -676,7 +1254,7 @@ router.post(
       })
       .where(eq(dailyLogs.id, logId));
 
-    const hydrated = await hydrateDailyLog(logId);
+    const hydrated = await hydrateDailyLog(logId, req.auth.userId);
 
     logger.info(
       {
@@ -711,6 +1289,301 @@ router.post(
     });
 
     res.json(hydrated);
+  }),
+);
+
+router.get(
+  "/weather",
+  asyncHandler(async (req, res) => {
+    const query = weatherQuerySchema.safeParse(req.query);
+
+    if (!query.success) {
+      throw new HttpError(400, "Invalid weather query.", query.error.flatten());
+    }
+
+    const weather = await fetchWeatherSnapshot(query.data.address, query.data.date);
+    res.json({ weather });
+  }),
+);
+
+router.post(
+  "/daily-logs/:id/like",
+  asyncHandler(async (req, res) => {
+    await ensureDailyLogSupportTables();
+
+    const logId = getParam(req.params.id, "daily log id");
+    const dailyLog = await getDailyLogOrThrow(logId);
+
+    const [existingLike] = await db
+      .select({ id: dailyLogLikes.id })
+      .from(dailyLogLikes)
+      .where(
+        and(
+          eq(dailyLogLikes.dailyLogId, logId),
+          eq(dailyLogLikes.userId, req.auth.userId),
+        ),
+      )
+      .limit(1);
+
+    let liked = false;
+
+    if (existingLike) {
+      await db.delete(dailyLogLikes).where(eq(dailyLogLikes.id, existingLike.id));
+    } else {
+      await db.insert(dailyLogLikes).values({
+        id: crypto.randomUUID(),
+        dailyLogId: logId,
+        userId: req.auth.userId,
+      });
+      liked = true;
+    }
+
+    const [totalRow] = await db
+      .select({ total: count() })
+      .from(dailyLogLikes)
+      .where(eq(dailyLogLikes.dailyLogId, logId));
+
+    await writeActivity({
+      entityType: "daily_log",
+      entityId: logId,
+      action: liked ? "liked" : "unliked",
+      userId: req.auth.userId,
+      jobId: dailyLog.jobId!,
+      description: `${liked ? "Liked" : "Unliked"} daily log ${dailyLog.title || dailyLog.logDate}`,
+      extra: {
+        dailyLogId: logId,
+      },
+    });
+
+    res.json({
+      liked,
+      likesCount: Number(totalRow?.total ?? 0),
+    });
+  }),
+);
+
+router.get(
+  "/daily-logs/:id/comments",
+  asyncHandler(async (req, res) => {
+    const logId = getParam(req.params.id, "daily log id");
+    await getDailyLogOrThrow(logId);
+    const comments = await loadDailyLogComments(logId);
+    res.json({ comments });
+  }),
+);
+
+router.post(
+  "/daily-logs/:id/comments",
+  asyncHandler(async (req, res) => {
+    await ensureDailyLogSupportTables();
+
+    const body = commentPayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid comment payload.", body.error.flatten());
+    }
+
+    const logId = getParam(req.params.id, "daily log id");
+    const dailyLog = await getDailyLogOrThrow(logId);
+
+    if (body.data.parentCommentId) {
+      const [parent] = await db
+        .select({ id: dailyLogComments.id })
+        .from(dailyLogComments)
+        .where(
+          and(
+            eq(dailyLogComments.id, body.data.parentCommentId),
+            eq(dailyLogComments.dailyLogId, logId),
+            isNull(dailyLogComments.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      if (!parent) {
+        throw new HttpError(404, "Parent comment not found.");
+      }
+    }
+
+    const [comment] = await db
+      .insert(dailyLogComments)
+      .values({
+        id: crypto.randomUUID(),
+        dailyLogId: logId,
+        parentCommentId: body.data.parentCommentId,
+        createdBy: req.auth.userId,
+        body: body.data.body,
+        mentions: body.data.mentions,
+        attachments: body.data.attachments,
+        links: body.data.links,
+        reactions: {},
+      })
+      .returning({ id: dailyLogComments.id });
+
+    await writeActivity({
+      entityType: "daily_log_comment",
+      entityId: comment.id,
+      action: body.data.parentCommentId ? "replied" : "commented",
+      userId: req.auth.userId,
+      jobId: dailyLog.jobId!,
+      description: `${body.data.parentCommentId ? "Replied on" : "Commented on"} daily log ${dailyLog.title || dailyLog.logDate}`,
+      extra: {
+        dailyLogId: logId,
+        commentId: comment.id,
+      },
+    });
+
+    const comments = await loadDailyLogComments(logId);
+    res.status(201).json({ comments });
+  }),
+);
+
+router.post(
+  "/daily-logs/:id/comments/:commentId/reactions",
+  asyncHandler(async (req, res) => {
+    await ensureDailyLogSupportTables();
+
+    const body = commentReactionPayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid reaction payload.", body.error.flatten());
+    }
+
+    const logId = getParam(req.params.id, "daily log id");
+    const commentId = getParam(req.params.commentId, "comment id");
+    await getDailyLogOrThrow(logId);
+
+    const [comment] = await db
+      .select({
+        id: dailyLogComments.id,
+        reactions: dailyLogComments.reactions,
+      })
+      .from(dailyLogComments)
+      .where(
+        and(
+          eq(dailyLogComments.id, commentId),
+          eq(dailyLogComments.dailyLogId, logId),
+          isNull(dailyLogComments.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!comment) {
+      throw new HttpError(404, "Comment not found.");
+    }
+
+    const reactions = normalizeCommentReactions(comment.reactions);
+    const current = new Set(reactions[body.data.emoji] ?? []);
+
+    if (current.has(req.auth.userId)) {
+      current.delete(req.auth.userId);
+    } else {
+      current.add(req.auth.userId);
+    }
+
+    reactions[body.data.emoji] = Array.from(current);
+
+    if (reactions[body.data.emoji].length === 0) {
+      delete reactions[body.data.emoji];
+    }
+
+    await db
+      .update(dailyLogComments)
+      .set({
+        reactions,
+        updatedAt: new Date(),
+      })
+      .where(eq(dailyLogComments.id, commentId));
+
+    const comments = await loadDailyLogComments(logId);
+    res.json({ comments });
+  }),
+);
+
+router.post(
+  "/daily-logs/:id/todos",
+  asyncHandler(async (req, res) => {
+    await ensureDailyLogSupportTables();
+
+    const body = todoPayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid to-do payload.", body.error.flatten());
+    }
+
+    const logId = getParam(req.params.id, "daily log id");
+    const dailyLog = await getDailyLogOrThrow(logId);
+
+    const [todo] = await db
+      .insert(dailyLogTodos)
+      .values({
+        id: crypto.randomUUID(),
+        dailyLogId: logId,
+        title: body.data.title,
+        isComplete: false,
+        createdBy: req.auth.userId,
+      })
+      .returning({ id: dailyLogTodos.id });
+
+    await writeActivity({
+      entityType: "daily_log_todo",
+      entityId: todo.id,
+      action: "created",
+      userId: req.auth.userId,
+      jobId: dailyLog.jobId!,
+      description: `Added to-do for daily log ${dailyLog.title || dailyLog.logDate}`,
+      extra: {
+        dailyLogId: logId,
+      },
+    });
+
+    const todos = await loadDailyLogTodos(logId);
+    res.status(201).json({ todos });
+  }),
+);
+
+router.post(
+  "/daily-logs/:id/todos/:todoId/toggle",
+  asyncHandler(async (req, res) => {
+    await ensureDailyLogSupportTables();
+
+    const body = todoTogglePayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid to-do toggle payload.", body.error.flatten());
+    }
+
+    const logId = getParam(req.params.id, "daily log id");
+    const todoId = getParam(req.params.todoId, "to-do id");
+    await getDailyLogOrThrow(logId);
+
+    const [todo] = await db
+      .select({
+        id: dailyLogTodos.id,
+        isComplete: dailyLogTodos.isComplete,
+      })
+      .from(dailyLogTodos)
+      .where(
+        and(
+          eq(dailyLogTodos.id, todoId),
+          eq(dailyLogTodos.dailyLogId, logId),
+        ),
+      )
+      .limit(1);
+
+    if (!todo) {
+      throw new HttpError(404, "To-do not found.");
+    }
+
+    await db
+      .update(dailyLogTodos)
+      .set({
+        isComplete: body.data.isComplete ?? !todo.isComplete,
+        updatedAt: new Date(),
+      })
+      .where(eq(dailyLogTodos.id, todoId));
+
+    const todos = await loadDailyLogTodos(logId);
+    res.json({ todos });
   }),
 );
 

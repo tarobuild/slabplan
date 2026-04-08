@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import {
+  ArrowLeft,
   BarChart3,
   CalendarDays,
   Check,
@@ -10,26 +11,40 @@ import {
   ChevronRight,
   Circle,
   Clock3,
+  Download,
   Edit3,
   Filter,
+  Loader2,
   Maximize2,
   Minimize2,
   MoreHorizontal,
   Plus,
+  RotateCcw,
+  RotateCw,
   Settings2,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import {
+  addBusinessDays,
+  calculateBusinessEndDate,
+  classifyWorkday,
   dateKey,
   DEFAULT_SCHEDULE_COLOR,
+  deriveScheduleStatus,
   fmtDate,
   fmtDateTime,
   itemEndDate,
   itemOverlapsDateRange,
+  SCHEDULE_COLOR_OPTIONS,
+  SCHEDULE_DEFAULT_VIEW_OPTIONS,
+  type ScheduleItemPayload,
   todayStr,
+  type ScheduleBaselineRecord,
   type ScheduleItemRecord,
   type ScheduleSettings,
   type ScheduleSettingsOption,
+  type ScheduleViewModeDefault,
+  type ScheduleWorkdayException,
 } from "@/lib/schedule"
 import { cn } from "@/lib/utils"
 import { ScheduleItemDialog } from "@/components/schedule/ScheduleItemDialog"
@@ -58,11 +73,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
@@ -89,6 +106,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 
 type AppUser = {
@@ -107,6 +125,18 @@ type ActivityEntry = {
   metadata: Record<string, unknown> | null
   createdAt: string
   userName: string | null
+}
+
+type ActivityEntryChange = {
+  field: string
+  label: string
+  from: string
+  to: string
+}
+
+type JobOption = {
+  id: string
+  title: string
 }
 
 type ViewMode = "calendar" | "list" | "gantt"
@@ -136,6 +166,33 @@ type FilterState = {
   status: string
   tags: string[]
   phases: string[]
+}
+
+type ScheduleSettingsForm = {
+  defaultView: ScheduleViewModeDefault
+  showTimesOnMonthView: boolean
+  showJobNameOnAllListedJobs: boolean
+  automaticallyMarkItemsComplete: boolean
+  includeHeaderOnPdfExports: boolean
+  phases: Array<{
+    id: string
+    name: string
+    color: string
+    isNew?: boolean
+  }>
+}
+
+type WorkdayExceptionForm = {
+  id: string | null
+  title: string
+  type: "non_workday" | "extra_workday"
+  startDate: string
+  endDate: string
+  sameEveryYear: boolean
+  categoryId: string | null
+  appliesToAllJobs: boolean
+  jobIds: string[]
+  notes: string
 }
 
 type TimelineHeaderUnit = {
@@ -173,6 +230,17 @@ type GanttRow =
       item: ScheduleItemRecord
     }
 
+type ScheduleTemplate = {
+  id: string
+  name: string
+  description: string
+  items: Array<{
+    title: string
+    workDays: number
+    displayColor?: string
+  }>
+}
+
 const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const CALENDAR_PERIODS: Array<{ value: CalendarPeriod; label: string }> = [
   { value: "month", label: "Month" },
@@ -191,6 +259,43 @@ const FILTER_PRESETS: Array<{ value: string; label: string }> = [
   { value: "upcoming", label: "Upcoming Work" },
   { value: "completed", label: "Completed Items" },
   { value: "unassigned", label: "Unassigned Work" },
+]
+const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
+  {
+    id: "standard-countertop-install",
+    name: "Standard Countertop Install",
+    description: "Template, fabrication, install, and final inspection milestones for a typical countertop project.",
+    items: [
+      { title: "Template", workDays: 1, displayColor: "#2563eb" },
+      { title: "Fabrication", workDays: 2, displayColor: "#6b7280" },
+      { title: "Install", workDays: 1, displayColor: "#16a34a" },
+      { title: "Final Inspection", workDays: 1, displayColor: "#f59e0b" },
+    ],
+  },
+  {
+    id: "backsplash-project",
+    name: "Backsplash Project",
+    description: "Measurement, material selection, fabrication, and install schedule for backsplash work.",
+    items: [
+      { title: "Measurement", workDays: 1, displayColor: "#7c3aed" },
+      { title: "Material Selection", workDays: 1, displayColor: "#ec4899" },
+      { title: "Fabrication", workDays: 2, displayColor: "#6b7280" },
+      { title: "Install", workDays: 1, displayColor: "#16a34a" },
+    ],
+  },
+  {
+    id: "custom-stone-work",
+    name: "Custom Stone Work",
+    description: "Design through punch list workflow for custom stone fabrication and installation.",
+    items: [
+      { title: "Design", workDays: 2, displayColor: "#0f766e" },
+      { title: "Template", workDays: 1, displayColor: "#2563eb" },
+      { title: "Fabrication", workDays: 3, displayColor: "#6b7280" },
+      { title: "Dry Fit", workDays: 1, displayColor: "#f97316" },
+      { title: "Final Install", workDays: 1, displayColor: "#16a34a" },
+      { title: "Punch List", workDays: 1, displayColor: "#f59e0b" },
+    ],
+  },
 ]
 const STATUS_OPTIONS = [
   { value: "all", label: "All" },
@@ -211,6 +316,16 @@ const DAY_WIDTH_BY_SCALE: Record<GanttScale, number> = {
   week: 18,
   month: 8,
   year: 3,
+}
+const DEFAULT_SETTINGS: ScheduleSettings = {
+  phases: [],
+  tags: [],
+  defaultView: "calendar_month",
+  showTimesOnMonthView: false,
+  showJobNameOnAllListedJobs: true,
+  automaticallyMarkItemsComplete: false,
+  includeHeaderOnPdfExports: true,
+  workdayExceptionCategories: [],
 }
 
 function getApiError(err: unknown, fallback: string) {
@@ -621,6 +736,28 @@ function titleCaseStatus(value: string) {
     .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
+function getActivityEntryChanges(metadata: Record<string, unknown> | null) {
+  const rawChanges = metadata?.changes
+
+  if (!Array.isArray(rawChanges)) {
+    return []
+  }
+
+  return rawChanges.filter((change): change is ActivityEntryChange => {
+    if (typeof change !== "object" || change === null) {
+      return false
+    }
+
+    const candidate = change as Partial<ActivityEntryChange>
+    return (
+      typeof candidate.field === "string"
+      && typeof candidate.label === "string"
+      && typeof candidate.from === "string"
+      && typeof candidate.to === "string"
+    )
+  })
+}
+
 function buildFilterPreset(preset: string): FilterState {
   if (preset === "upcoming") {
     return {
@@ -673,6 +810,55 @@ function countActiveFilters(filters: FilterState) {
     filters.tags.length > 0,
     filters.phases.length > 0,
   ].filter(Boolean).length
+}
+
+function applyDefaultViewChoice(
+  defaultView: ScheduleViewModeDefault,
+  setViewMode: (value: ViewMode) => void,
+  setCalendarPeriod: (value: CalendarPeriod) => void,
+) {
+  if (defaultView === "list") {
+    setViewMode("list")
+    return
+  }
+
+  if (defaultView === "gantt") {
+    setViewMode("gantt")
+    return
+  }
+
+  setViewMode("calendar")
+  setCalendarPeriod(defaultView.replace("calendar_", "") as CalendarPeriod)
+}
+
+function buildSettingsForm(settings: ScheduleSettings): ScheduleSettingsForm {
+  return {
+    defaultView: settings.defaultView,
+    showTimesOnMonthView: settings.showTimesOnMonthView,
+    showJobNameOnAllListedJobs: settings.showJobNameOnAllListedJobs,
+    automaticallyMarkItemsComplete: settings.automaticallyMarkItemsComplete,
+    includeHeaderOnPdfExports: settings.includeHeaderOnPdfExports,
+    phases: settings.phases.map((phase) => ({
+      id: phase.id,
+      name: phase.name,
+      color: phase.color || DEFAULT_SCHEDULE_COLOR,
+    })),
+  }
+}
+
+function defaultExceptionForm(jobId: string, startDate = todayStr()): WorkdayExceptionForm {
+  return {
+    id: null,
+    title: "",
+    type: "non_workday",
+    startDate,
+    endDate: startDate,
+    sameEveryYear: false,
+    categoryId: null,
+    appliesToAllJobs: false,
+    jobIds: jobId ? [jobId] : [],
+    notes: "",
+  }
 }
 
 function mergeUniqueIds(current: string[], nextIds: string[]) {
@@ -998,14 +1184,369 @@ function SortableHead({
   )
 }
 
+function isDraftScheduleItemId(id: string) {
+  return id.startsWith("draft-item-")
+}
+
+function isDraftScheduleNoteId(id: string) {
+  return id.startsWith("draft-note-")
+}
+
+function cloneScheduleItems(items: ScheduleItemRecord[]) {
+  return items.map((item) => ({
+    ...item,
+    tags: [...item.tags],
+    assigneeIds: [...item.assigneeIds],
+    assignees: item.assignees.map((assignee) => ({ ...assignee })),
+    predecessors: item.predecessors.map((predecessor) => ({ ...predecessor })),
+    notesStream: item.notesStream.map((note) => ({ ...note })),
+    attachments: item.attachments.map((attachment) => ({ ...attachment })),
+    relatedTodos: item.relatedTodos.map((todo) => ({ ...todo })),
+    conflictReasons: item.conflictReasons ? [...item.conflictReasons] : [],
+  }))
+}
+
+function schedulePayloadFromItem(item: ScheduleItemRecord): ScheduleItemPayload {
+  return {
+    title: item.title,
+    displayColor: item.displayColor || DEFAULT_SCHEDULE_COLOR,
+    assigneeIds: [...item.assigneeIds].sort(),
+    startDate: item.startDate,
+    workDays: Math.max(item.workDays, 1),
+    endDate: null,
+    isHourly: !!item.isHourly,
+    startTime: item.isHourly ? item.startTime : null,
+    endTime: null,
+    progress: Math.max(0, Math.min(100, item.progress ?? 0)),
+    reminder: item.reminder || "none",
+    notes: item.notes ?? null,
+    notifyUserIds: [],
+    tags: [...item.tags].sort((left, right) => left.localeCompare(right)),
+    predecessors: item.predecessors
+      .map((predecessor) => ({
+        scheduleItemId: predecessor.scheduleItemId,
+        dependencyType: predecessor.dependencyType,
+        lagDays: predecessor.lagDays,
+      }))
+      .sort((left, right) => {
+        if (left.scheduleItemId !== right.scheduleItemId) {
+          return left.scheduleItemId.localeCompare(right.scheduleItemId)
+        }
+
+        if (left.dependencyType !== right.dependencyType) {
+          return left.dependencyType.localeCompare(right.dependencyType)
+        }
+
+        return left.lagDays - right.lagDays
+      }),
+    phaseId: item.phaseId,
+    showOnGantt: item.showOnGantt ?? true,
+    visibleToEstimators: item.visibleToEstimators ?? true,
+    visibleToInstallers: item.visibleToInstallers ?? true,
+    visibleToOfficeStaff: item.visibleToOfficeStaff ?? true,
+    isComplete: item.isComplete ?? false,
+  }
+}
+
+function schedulePayloadSignature(item: ScheduleItemRecord) {
+  return JSON.stringify(schedulePayloadFromItem(item))
+}
+
+function scheduleDraftSignature(item: ScheduleItemRecord) {
+  return JSON.stringify({
+    payload: schedulePayloadFromItem(item),
+    draftNotes: item.notesStream
+      .filter((note) => isDraftScheduleNoteId(note.id))
+      .map((note) => note.note),
+  })
+}
+
+function resolveDraftPredecessorStartDate(
+  startDate: string,
+  workDays: number,
+  predecessors: ScheduleItemPayload["predecessors"],
+  predecessorMap: Map<string, { startDate: string; endDate: string }>,
+  workdayExceptions: ScheduleWorkdayException[],
+) {
+  let resolvedStartDate = startDate
+
+  for (const predecessor of predecessors) {
+    const linked = predecessorMap.get(predecessor.scheduleItemId)
+
+    if (!linked) {
+      continue
+    }
+
+    if (predecessor.dependencyType === "finish_to_start") {
+      const candidate = addBusinessDays(linked.endDate, predecessor.lagDays + 1, workdayExceptions)
+      if (candidate > resolvedStartDate) {
+        resolvedStartDate = candidate
+      }
+      continue
+    }
+
+    if (predecessor.dependencyType === "start_to_start") {
+      const candidate = addBusinessDays(linked.startDate, predecessor.lagDays, workdayExceptions)
+      if (candidate > resolvedStartDate) {
+        resolvedStartDate = candidate
+      }
+      continue
+    }
+
+    if (predecessor.dependencyType === "finish_to_finish") {
+      const desiredEnd = addBusinessDays(linked.endDate, predecessor.lagDays, workdayExceptions)
+      const candidateStart = calculateBusinessEndDate(desiredEnd, Math.max(workDays, 1), workdayExceptions)
+      if (candidateStart > resolvedStartDate) {
+        resolvedStartDate = candidateStart
+      }
+      continue
+    }
+
+    const desiredEnd = addBusinessDays(linked.startDate, predecessor.lagDays, workdayExceptions)
+    const candidateStart = calculateBusinessEndDate(desiredEnd, Math.max(workDays, 1), workdayExceptions)
+    if (candidateStart > resolvedStartDate) {
+      resolvedStartDate = candidateStart
+    }
+  }
+
+  return resolvedStartDate
+}
+
+function draftConflictReasons(
+  item: Pick<ScheduleItemRecord, "title" | "startDate" | "endDate" | "predecessors">,
+  predecessorMap: Map<string, { title: string; startDate: string; endDate: string }>,
+  workdayExceptions: ScheduleWorkdayException[],
+) {
+  const reasons: string[] = []
+
+  for (const predecessor of item.predecessors) {
+    const linked = predecessorMap.get(predecessor.scheduleItemId)
+
+    if (!linked) {
+      continue
+    }
+
+    if (predecessor.dependencyType === "finish_to_start") {
+      const requiredStart = addBusinessDays(linked.endDate, predecessor.lagDays + 1, workdayExceptions)
+      if (item.startDate < requiredStart) {
+        reasons.push(`${item.title} starts before ${linked.title} finishes`)
+      }
+      continue
+    }
+
+    if (predecessor.dependencyType === "start_to_start") {
+      const requiredStart = addBusinessDays(linked.startDate, predecessor.lagDays, workdayExceptions)
+      if (item.startDate < requiredStart) {
+        reasons.push(`${item.title} starts before ${linked.title} is allowed to start it`)
+      }
+      continue
+    }
+
+    if (predecessor.dependencyType === "finish_to_finish") {
+      const requiredEnd = addBusinessDays(linked.endDate, predecessor.lagDays, workdayExceptions)
+      if (item.endDate < requiredEnd) {
+        reasons.push(`${item.title} finishes before ${linked.title} requirement is met`)
+      }
+      continue
+    }
+
+    const requiredEnd = addBusinessDays(linked.startDate, predecessor.lagDays, workdayExceptions)
+    if (item.endDate < requiredEnd) {
+      reasons.push(`${item.title} finishes before ${linked.title} start dependency is met`)
+    }
+  }
+
+  return reasons
+}
+
+function normalizeDraftScheduleItems(
+  items: ScheduleItemRecord[],
+  users: AppUser[],
+  settings: ScheduleSettings,
+  workdayExceptions: ScheduleWorkdayException[],
+) {
+  const userMap = new Map(users.map((user) => [user.id, user]))
+  const phaseMap = new Map(settings.phases.map((phase) => [phase.id, phase]))
+  let normalized = cloneScheduleItems(items).map((item) => ({
+    ...item,
+    displayColor: item.displayColor || DEFAULT_SCHEDULE_COLOR,
+    workDays: Math.max(item.workDays, 1),
+    progress: Math.max(0, Math.min(100, item.progress ?? 0)),
+    isHourly: !!item.isHourly,
+    startTime: item.isHourly ? item.startTime || "08:00" : null,
+    reminder: item.reminder || "none",
+    showOnGantt: item.showOnGantt ?? true,
+    visibleToEstimators: item.visibleToEstimators ?? true,
+    visibleToInstallers: item.visibleToInstallers ?? true,
+    visibleToOfficeStaff: item.visibleToOfficeStaff ?? true,
+    isComplete: item.isComplete ?? false,
+    tags: [...item.tags],
+    assigneeIds: Array.from(new Set(item.assigneeIds)),
+    predecessors: item.predecessors.map((predecessor) => ({
+      ...predecessor,
+      lagDays: Math.max(0, predecessor.lagDays),
+    })),
+  }))
+
+  for (let pass = 0; pass < Math.max(normalized.length * 2, 1); pass += 1) {
+    const predecessorMap = new Map(
+      normalized.map((item) => [
+        item.id,
+        {
+          startDate: item.startDate,
+          endDate: item.endDate,
+        },
+      ]),
+    )
+
+    let changed = false
+
+    normalized = normalized.map((item) => {
+      const nextStartDate = item.predecessors.length > 0
+        ? resolveDraftPredecessorStartDate(
+            item.startDate,
+            item.workDays,
+            item.predecessors.map((predecessor) => ({
+              scheduleItemId: predecessor.scheduleItemId,
+              dependencyType: predecessor.dependencyType,
+              lagDays: predecessor.lagDays,
+            })),
+            predecessorMap,
+            workdayExceptions,
+          )
+        : item.startDate
+      const nextEndDate = calculateBusinessEndDate(nextStartDate, item.workDays, workdayExceptions)
+
+      if (nextStartDate !== item.startDate || nextEndDate !== item.endDate) {
+        changed = true
+      }
+
+      return {
+        ...item,
+        startDate: nextStartDate,
+        endDate: nextEndDate,
+      }
+    })
+
+    if (!changed) {
+      break
+    }
+  }
+
+  const normalizedMap = new Map(
+    normalized.map((item) => [
+      item.id,
+      {
+        title: item.title,
+        startDate: item.startDate,
+        endDate: item.endDate,
+      },
+    ]),
+  )
+
+  return normalized.map((item) => {
+    const phase = item.phaseId ? phaseMap.get(item.phaseId) : null
+    const assignees = item.assigneeIds
+      .map((assigneeId) => userMap.get(assigneeId))
+      .filter((assignee): assignee is AppUser => !!assignee)
+      .map((assignee) => ({
+        id: assignee.id,
+        fullName: assignee.fullName,
+        email: assignee.email,
+        role: assignee.role,
+        avatarUrl: assignee.avatarUrl,
+      }))
+    const predecessors = item.predecessors.map((predecessor) => ({
+      ...predecessor,
+      title: normalizedMap.get(predecessor.scheduleItemId)?.title || predecessor.title || "Unknown task",
+    }))
+    const conflictReasons = draftConflictReasons(
+      {
+        title: item.title,
+        startDate: item.startDate,
+        endDate: item.endDate,
+        predecessors,
+      },
+      normalizedMap,
+      workdayExceptions,
+    )
+
+    return {
+      ...item,
+      phaseName: phase?.name ?? null,
+      phaseColor: phase?.color ?? null,
+      assignees,
+      predecessors,
+      noteCount: item.notesStream.length,
+      relatedTodoCount: item.relatedTodos.length,
+      status: deriveScheduleStatus({
+        startDate: item.startDate,
+        endDate: item.endDate,
+        progress: item.progress ?? 0,
+        isComplete: item.isComplete ?? false,
+      }),
+      hasConflict: conflictReasons.length > 0,
+      conflictReasons,
+    }
+  })
+}
+
+function remapDraftPayload(
+  payload: ScheduleItemPayload,
+  draftIdMap: Map<string, string>,
+  options: {
+    dropUnresolvedPredecessors?: boolean
+  } = {},
+) {
+  return {
+    ...payload,
+    predecessors: payload.predecessors.flatMap((predecessor) => {
+      const mappedId = draftIdMap.get(predecessor.scheduleItemId)
+
+      if (isDraftScheduleItemId(predecessor.scheduleItemId)) {
+        if (!mappedId && options.dropUnresolvedPredecessors) {
+          return []
+        }
+
+        if (!mappedId) {
+          return []
+        }
+      }
+
+      return [
+        {
+          ...predecessor,
+          scheduleItemId: mappedId || predecessor.scheduleItemId,
+        },
+      ]
+    }),
+  }
+}
+
 export default function JobSchedulePage() {
   const { jobId } = useParams<{ jobId: string }>()
   const monthPickerRef = useRef<HTMLInputElement | null>(null)
   const ganttTimelineRef = useRef<HTMLDivElement | null>(null)
+  const scheduleExportRef = useRef<HTMLDivElement | null>(null)
+  const baselineExportRef = useRef<HTMLDivElement | null>(null)
+  const exceptionsExportRef = useRef<HTMLDivElement | null>(null)
+  const appliedDefaultViewRef = useRef(false)
 
   const [items, setItems] = useState<ScheduleItemRecord[]>([])
   const [users, setUsers] = useState<AppUser[]>([])
-  const [settings, setSettings] = useState<ScheduleSettings>({ phases: [], tags: [] })
+  const [jobs, setJobs] = useState<JobOption[]>([])
+  const [settings, setSettings] = useState<ScheduleSettings>(DEFAULT_SETTINGS)
+  const [settingsForm, setSettingsForm] = useState<ScheduleSettingsForm>(() => buildSettingsForm(DEFAULT_SETTINGS))
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [baseline, setBaseline] = useState<ScheduleBaselineRecord | null>(null)
+  const [workdayExceptions, setWorkdayExceptions] = useState<ScheduleWorkdayException[]>([])
+  const [workdayForm, setWorkdayForm] = useState<WorkdayExceptionForm>(() => defaultExceptionForm(jobId || ""))
+  const [workdayEditorOpen, setWorkdayEditorOpen] = useState(false)
+  const [workdaySaving, setWorkdaySaving] = useState(false)
+  const [categoryDraft, setCategoryDraft] = useState("")
+  const [categoryEditorOpen, setCategoryEditorOpen] = useState(false)
+  const [editingCategories, setEditingCategories] = useState<Record<string, string>>({})
+  const [trackedConflictIds, setTrackedConflictIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyEntries, setHistoryEntries] = useState<ActivityEntry[]>([])
@@ -1024,6 +1565,12 @@ export default function JobSchedulePage() {
   const [ganttCriticalPath, setGanttCriticalPath] = useState(false)
   const [ganttFullscreen, setGanttFullscreen] = useState(false)
   const [scheduleOffline, setScheduleOffline] = useState(false)
+  const [draftItems, setDraftItems] = useState<ScheduleItemRecord[]>([])
+  const [draftPast, setDraftPast] = useState<ScheduleItemRecord[][]>([])
+  const [draftFuture, setDraftFuture] = useState<ScheduleItemRecord[][]>([])
+  const [draftPublishing, setDraftPublishing] = useState(false)
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  const [templateApplyingId, setTemplateApplyingId] = useState<string | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -1031,6 +1578,9 @@ export default function JobSchedulePage() {
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
+  const draftItemsRef = useRef<ScheduleItemRecord[]>([])
+  const draftPastRef = useRef<ScheduleItemRecord[][]>([])
+  const draftFutureRef = useRef<ScheduleItemRecord[][]>([])
 
   async function fetchItems() {
     if (!jobId) {
@@ -1038,7 +1588,35 @@ export default function JobSchedulePage() {
     }
 
     const response = await api.get<{ items: ScheduleItemRecord[] }>(`/jobs/${jobId}/schedule`)
-    setItems(response.data.items ?? [])
+    const nextItems = response.data.items ?? []
+    setItems(nextItems)
+
+    if (!scheduleOffline) {
+      setDraftItems(cloneScheduleItems(nextItems))
+      setDraftPast([])
+      setDraftFuture([])
+      draftItemsRef.current = cloneScheduleItems(nextItems)
+      draftPastRef.current = []
+      draftFutureRef.current = []
+    }
+  }
+
+  async function fetchBaseline() {
+    if (!jobId) {
+      return
+    }
+
+    const response = await api.get<{ baseline: ScheduleBaselineRecord | null }>(`/jobs/${jobId}/schedule/baseline`)
+    setBaseline(response.data.baseline ?? null)
+  }
+
+  async function fetchWorkdayExceptions() {
+    if (!jobId) {
+      return
+    }
+
+    const response = await api.get<{ exceptions: ScheduleWorkdayException[] }>(`/jobs/${jobId}/workday-exceptions`)
+    setWorkdayExceptions(response.data.exceptions ?? [])
   }
 
   async function fetchSettings() {
@@ -1047,15 +1625,38 @@ export default function JobSchedulePage() {
     }
 
     const response = await api.get<ScheduleSettings>(`/jobs/${jobId}/schedule/settings`)
-    setSettings({
+    const nextSettings: ScheduleSettings = {
+      ...DEFAULT_SETTINGS,
+      ...response.data,
       phases: response.data.phases ?? [],
       tags: response.data.tags ?? [],
-    })
+      workdayExceptionCategories: response.data.workdayExceptionCategories ?? [],
+    }
+    setSettings(nextSettings)
+    setSettingsForm(buildSettingsForm(nextSettings))
+    setEditingCategories(
+      Object.fromEntries((nextSettings.workdayExceptionCategories ?? []).map((category) => [category.id, category.name])),
+    )
+
+    if (!appliedDefaultViewRef.current) {
+      applyDefaultViewChoice(nextSettings.defaultView, setViewMode, setCalendarPeriod)
+      appliedDefaultViewRef.current = true
+    }
   }
 
   async function fetchUsers() {
     const response = await api.get<{ users: AppUser[] }>("/users")
     setUsers(response.data.users ?? [])
+  }
+
+  async function fetchJobs() {
+    const response = await api.get<{ jobs: JobOption[] }>("/jobs", {
+      params: {
+        page: 1,
+        pageSize: 100,
+      },
+    })
+    setJobs(response.data.jobs ?? [])
   }
 
   async function fetchHistory() {
@@ -1085,7 +1686,7 @@ export default function JobSchedulePage() {
     setLoading(true)
 
     try {
-      await Promise.all([fetchItems(), fetchUsers(), fetchSettings()])
+      await Promise.all([fetchItems(), fetchUsers(), fetchJobs(), fetchSettings(), fetchBaseline(), fetchWorkdayExceptions()])
     } catch (err) {
       toast.error(getApiError(err, "Failed to load schedule"))
     } finally {
@@ -1094,7 +1695,7 @@ export default function JobSchedulePage() {
   }
 
   async function refreshScheduleData() {
-    await fetchItems()
+    await Promise.all([fetchItems(), fetchBaseline(), fetchWorkdayExceptions()])
 
     if (historyOpen) {
       await fetchHistory()
@@ -1104,6 +1705,28 @@ export default function JobSchedulePage() {
   useEffect(() => {
     void loadData()
   }, [jobId])
+
+  useEffect(() => {
+    if (!jobId) {
+      return
+    }
+
+    setWorkdayForm(defaultExceptionForm(jobId))
+    setWorkdayEditorOpen(false)
+    setTrackedConflictIds([])
+  }, [jobId])
+
+  useEffect(() => {
+    draftItemsRef.current = draftItems
+  }, [draftItems])
+
+  useEffect(() => {
+    draftPastRef.current = draftPast
+  }, [draftPast])
+
+  useEffect(() => {
+    draftFutureRef.current = draftFuture
+  }, [draftFuture])
 
   useEffect(() => {
     if (historyOpen) {
@@ -1117,19 +1740,39 @@ export default function JobSchedulePage() {
     }
   }, [appliedFilters, filterOpen])
 
+  const activeItems = scheduleOffline ? draftItems : items
+
   useEffect(() => {
-    const availableIds = new Set(items.map((item) => item.id))
+    const availableIds = new Set(activeItems.map((item) => item.id))
     setSelectedListIds((current) => current.filter((id) => availableIds.has(id)))
-  }, [items])
+  }, [activeItems])
 
   const todayIso = todayStr()
   const itemNumberById = useMemo(
-    () => new Map(items.map((item, index) => [item.id, index + 1])),
-    [items],
+    () => new Map(activeItems.map((item, index) => [item.id, index + 1])),
+    [activeItems],
   )
+  const availableTagOptions = useMemo(() => {
+    const tagMap = new Map(settings.tags.map((tag) => [tag.name.toLowerCase(), tag]))
+
+    for (const item of activeItems) {
+      for (const tagName of item.tags) {
+        const key = tagName.toLowerCase()
+
+        if (!tagMap.has(key)) {
+          tagMap.set(key, {
+            id: `tag:${key}`,
+            name: tagName,
+          })
+        }
+      }
+    }
+
+    return Array.from(tagMap.values()).sort((left, right) => left.name.localeCompare(right.name))
+  }, [activeItems, settings.tags])
 
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+    return activeItems.filter((item) => {
       if (appliedFilters.title.trim()) {
         const searchValue = appliedFilters.title.trim().toLowerCase()
         const noteText = item.notes || item.notesStream?.[0]?.note || ""
@@ -1154,7 +1797,7 @@ export default function JobSchedulePage() {
         return false
       }
 
-      if (appliedFilters.tags.length > 0 && !appliedFilters.tags.every((tagId) => item.tags.includes(settings.tags.find((tag) => tag.id === tagId)?.name || ""))) {
+      if (appliedFilters.tags.length > 0 && !appliedFilters.tags.every((tagId) => item.tags.includes(availableTagOptions.find((tag) => tag.id === tagId)?.name || ""))) {
         return false
       }
 
@@ -1164,7 +1807,7 @@ export default function JobSchedulePage() {
 
       return true
     })
-  }, [appliedFilters, items, settings.tags])
+  }, [activeItems, appliedFilters, availableTagOptions])
 
   const currentRangeLabel = useMemo(() => {
     if (calendarPeriod === "month") {
@@ -1331,6 +1974,881 @@ export default function JobSchedulePage() {
       }) satisfies GanttRow),
     ])
   }, [ganttItems, ganttShowPhases])
+  const activeConflictIds = useMemo(
+    () =>
+      new Set(
+        trackedConflictIds.length > 0
+          ? trackedConflictIds
+          : activeItems.filter((item) => item.hasConflict).map((item) => item.id),
+      ),
+    [activeItems, trackedConflictIds],
+  )
+  const ganttRowMetrics = useMemo(() => {
+    const metrics = new Map<string, { startX: number; endX: number; centerY: number }>()
+    let topOffset = 0
+
+    for (const row of ganttRows) {
+      if (row.type === "phase") {
+        topOffset += 38
+        continue
+      }
+
+      const startX = diffInDays(ganttRange.start, parseDate(row.item.startDate)) * dayWidth
+      const width = (diffInDays(parseDate(row.item.startDate), parseDate(itemEndDate(row.item))) + 1) * dayWidth
+      metrics.set(row.item.id, {
+        startX,
+        endX: startX + width,
+        centerY: topOffset + 27,
+      })
+      topOffset += 54
+    }
+
+    return metrics
+  }, [dayWidth, ganttRange.start, ganttRows])
+  const ganttDependencyLines = useMemo(() => {
+    return ganttItems.flatMap((item) =>
+      item.predecessors
+        .map((predecessor) => {
+          const source = ganttRowMetrics.get(predecessor.scheduleItemId)
+          const target = ganttRowMetrics.get(item.id)
+
+          if (!source || !target) {
+            return null
+          }
+
+          const startX = source.endX + 2
+          const endX = Math.max(target.startX - 6, startX + 12)
+          const midX = startX + Math.max((endX - startX) / 2, 16)
+
+          return {
+            key: `${predecessor.scheduleItemId}-${item.id}-${predecessor.dependencyType}`,
+            path: `M ${startX} ${source.centerY} C ${midX} ${source.centerY}, ${midX} ${target.centerY}, ${endX} ${target.centerY}`,
+            endX,
+            endY: target.centerY,
+            isConflict: activeConflictIds.has(item.id),
+          }
+        })
+        .filter(
+          (
+            line,
+          ): line is {
+            key: string
+            path: string
+            endX: number
+            endY: number
+            isConflict: boolean
+          } => line !== null,
+        ),
+    )
+  }, [activeConflictIds, ganttItems, ganttRowMetrics])
+  const hasDraftChanges = useMemo(() => {
+    if (!scheduleOffline) {
+      return false
+    }
+
+    if (items.length !== draftItems.length) {
+      return true
+    }
+
+    const draftById = new Map(draftItems.map((item) => [item.id, item]))
+
+    return items.some((item) => {
+      const draftItem = draftById.get(item.id)
+
+      if (!draftItem) {
+        return true
+      }
+
+      return scheduleDraftSignature(item) !== scheduleDraftSignature(draftItem)
+    }) || draftItems.some((item) => isDraftScheduleItemId(item.id))
+  }, [draftItems, items, scheduleOffline])
+
+  function replaceDraftState(
+    nextItems: ScheduleItemRecord[],
+    nextPast: ScheduleItemRecord[][] = draftPastRef.current,
+    nextFuture: ScheduleItemRecord[][] = draftFutureRef.current,
+  ) {
+    draftItemsRef.current = nextItems
+    draftPastRef.current = nextPast
+    draftFutureRef.current = nextFuture
+    setDraftItems(nextItems)
+    setDraftPast(nextPast)
+    setDraftFuture(nextFuture)
+  }
+
+  function resetDraftFromPersisted(nextItems = items) {
+    replaceDraftState(
+      normalizeDraftScheduleItems(cloneScheduleItems(nextItems), users, settings, workdayExceptions),
+      [],
+      [],
+    )
+  }
+
+  function enterDraftMode() {
+    setScheduleOffline(true)
+    replaceDraftState(
+      normalizeDraftScheduleItems(cloneScheduleItems(items), users, settings, workdayExceptions),
+      [],
+      [],
+    )
+    setTrackedConflictIds([])
+  }
+
+  function applyDraftMutation(
+    updater: (current: ScheduleItemRecord[]) => ScheduleItemRecord[],
+  ) {
+    const currentItems = cloneScheduleItems(
+      scheduleOffline ? draftItemsRef.current : items,
+    )
+    const nextItems = normalizeDraftScheduleItems(
+      updater(currentItems),
+      users,
+      settings,
+      workdayExceptions,
+    )
+    replaceDraftState(
+      nextItems,
+      [...draftPastRef.current, currentItems].slice(-50),
+      [],
+    )
+    return nextItems
+  }
+
+  function handleDraftUndo() {
+    const previous = draftPastRef.current.at(-1)
+
+    if (!previous) {
+      return
+    }
+
+    replaceDraftState(
+      previous,
+      draftPastRef.current.slice(0, -1),
+      [...draftFutureRef.current, cloneScheduleItems(draftItemsRef.current)].slice(-50),
+    )
+  }
+
+  function handleDraftRedo() {
+    const next = draftFutureRef.current.at(-1)
+
+    if (!next) {
+      return
+    }
+
+    replaceDraftState(
+      next,
+      [...draftPastRef.current, cloneScheduleItems(draftItemsRef.current)].slice(-50),
+      draftFutureRef.current.slice(0, -1),
+    )
+  }
+
+  function handleDiscardDraft() {
+    if (hasDraftChanges) {
+      const confirmed = window.confirm("Discard all unpublished draft changes?")
+
+      if (!confirmed) {
+        return
+      }
+    }
+
+    setScheduleOffline(false)
+    resetDraftFromPersisted()
+    setTrackedConflictIds([])
+
+    if (activeItemId && isDraftScheduleItemId(activeItemId)) {
+      setDialogOpen(false)
+      setActiveItemId(null)
+    }
+  }
+
+  async function handleDraftSaveItem({
+    itemId,
+    payload,
+    note,
+  }: {
+    itemId: string | null
+    payload: ScheduleItemPayload
+    note: string | null
+  }) {
+    const now = new Date().toISOString()
+    const nextId = itemId || `draft-item-${crypto.randomUUID()}`
+    const nextItems = applyDraftMutation((currentItems) => {
+      const existing = itemId ? currentItems.find((item) => item.id === itemId) ?? null : null
+      const noteEntries = note
+        ? [
+            {
+              id: `draft-note-${crypto.randomUUID()}`,
+              note,
+              createdAt: now,
+              authorId: null,
+              authorName: "You",
+              authorAvatarUrl: null,
+              isLegacy: false,
+            },
+          ]
+        : []
+
+      const nextItem: ScheduleItemRecord = {
+        ...(existing ?? {
+          id: nextId,
+          jobId,
+          notes: payload.notes,
+          notesStream: [],
+          attachments: [],
+          relatedTodos: [],
+          createdBy: null,
+          createdByName: "Draft",
+          createdByAvatarUrl: null,
+          createdAt: now,
+          deletedAt: null,
+          status: "upcoming",
+          hasConflict: false,
+          conflictReasons: [],
+          noteCount: 0,
+          relatedTodoCount: 0,
+          assignees: [],
+          phaseName: null,
+          phaseColor: null,
+        }),
+        id: nextId,
+        jobId: jobId ?? existing?.jobId ?? null,
+        title: payload.title,
+        displayColor: payload.displayColor || DEFAULT_SCHEDULE_COLOR,
+        startDate: payload.startDate,
+        endDate: calculateBusinessEndDate(payload.startDate, payload.workDays, workdayExceptions),
+        workDays: payload.workDays,
+        isHourly: payload.isHourly,
+        startTime: payload.isHourly ? payload.startTime : null,
+        endTime: null,
+        progress: payload.progress,
+        reminder: payload.reminder,
+        showOnGantt: payload.showOnGantt,
+        visibleToEstimators: payload.visibleToEstimators,
+        visibleToInstallers: payload.visibleToInstallers,
+        visibleToOfficeStaff: payload.visibleToOfficeStaff,
+        isComplete: payload.isComplete,
+        notes: payload.notes,
+        tags: [...payload.tags],
+        phaseId: payload.phaseId,
+        assigneeIds: [...payload.assigneeIds],
+        predecessors: payload.predecessors.map((predecessor) => ({
+          ...predecessor,
+          title:
+            currentItems.find((candidate) => candidate.id === predecessor.scheduleItemId)?.title
+            || "Unknown task",
+        })),
+        notesStream: [...noteEntries, ...(existing?.notesStream ?? [])],
+        attachments: existing?.attachments ?? [],
+        relatedTodos: existing?.relatedTodos ?? [],
+        createdBy: existing?.createdBy ?? null,
+        createdByName: existing?.createdByName ?? "Draft",
+        createdByAvatarUrl: existing?.createdByAvatarUrl ?? null,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        deletedAt: existing?.deletedAt ?? null,
+        status: existing?.status ?? "upcoming",
+        hasConflict: existing?.hasConflict ?? false,
+        conflictReasons: existing?.conflictReasons ?? [],
+        noteCount: 0,
+        relatedTodoCount: existing?.relatedTodoCount ?? 0,
+        assignees: existing?.assignees ?? [],
+        phaseName: existing?.phaseName ?? null,
+        phaseColor: existing?.phaseColor ?? null,
+      }
+
+      if (existing) {
+        return currentItems.map((item) => (item.id === itemId ? nextItem : item))
+      }
+
+      return [...currentItems, nextItem]
+    })
+
+    const savedItem = nextItems.find((item) => item.id === nextId)
+
+    if (!savedItem) {
+      throw new Error("Draft item was not saved")
+    }
+
+    return savedItem
+  }
+
+  async function handleDraftAddNote(itemId: string, note: string) {
+    const now = new Date().toISOString()
+    const nextItems = applyDraftMutation((currentItems) =>
+      currentItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              notesStream: [
+                {
+                  id: `draft-note-${crypto.randomUUID()}`,
+                  note,
+                  createdAt: now,
+                  authorId: null,
+                  authorName: "You",
+                  authorAvatarUrl: null,
+                  isLegacy: false,
+                },
+                ...item.notesStream,
+              ],
+              updatedAt: now,
+            }
+          : item,
+      ),
+    )
+
+    const updatedItem = nextItems.find((item) => item.id === itemId)
+
+    if (!updatedItem) {
+      throw new Error("Draft item was not found")
+    }
+
+    return updatedItem
+  }
+
+  async function handleDraftDeleteItem(itemId: string) {
+    applyDraftMutation((currentItems) => currentItems.filter((item) => item.id !== itemId))
+  }
+
+  async function handlePublishDraft() {
+    if (!jobId) {
+      return
+    }
+
+    if (!hasDraftChanges) {
+      setScheduleOffline(false)
+      resetDraftFromPersisted()
+      toast.info("No draft changes to publish")
+      return
+    }
+
+    setDraftPublishing(true)
+
+    try {
+      const persistedById = new Map(items.map((item) => [item.id, item]))
+      const currentDraftItems = cloneScheduleItems(draftItemsRef.current)
+      const currentDraftById = new Map(currentDraftItems.map((item) => [item.id, item]))
+      const draftIdMap = new Map<string, string>()
+      const createdDraftItems = currentDraftItems.filter((item) => isDraftScheduleItemId(item.id))
+      const changedPersistedItems = currentDraftItems.filter((item) => {
+        if (isDraftScheduleItemId(item.id)) {
+          return false
+        }
+
+        const persisted = persistedById.get(item.id)
+        return persisted ? scheduleDraftSignature(item) !== scheduleDraftSignature(persisted) : false
+      })
+      const deletedPersistedItems = items.filter((item) => !currentDraftById.has(item.id))
+
+      for (const item of createdDraftItems) {
+        const payload = remapDraftPayload(schedulePayloadFromItem(item), draftIdMap, {
+          dropUnresolvedPredecessors: true,
+        })
+        const response = await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
+        draftIdMap.set(item.id, response.data.item.id)
+      }
+
+      for (const item of [...createdDraftItems, ...changedPersistedItems]) {
+        const targetId = draftIdMap.get(item.id) || item.id
+        const payload = remapDraftPayload(schedulePayloadFromItem(item), draftIdMap)
+        await api.put(`/schedule-items/${targetId}`, payload)
+      }
+
+      for (const item of currentDraftItems) {
+        const targetId = draftIdMap.get(item.id) || item.id
+        const draftNotes = item.notesStream
+          .filter((note) => isDraftScheduleNoteId(note.id))
+          .map((note) => note.note.trim())
+          .filter(Boolean)
+
+        for (const note of draftNotes) {
+          await api.post(`/schedule-items/${targetId}/notes`, { note })
+        }
+      }
+
+      for (const item of deletedPersistedItems) {
+        await api.delete(`/schedule-items/${item.id}`)
+      }
+
+      setDialogOpen(false)
+      setActiveItemId(null)
+      setScheduleOffline(false)
+      setTrackedConflictIds([])
+      await refreshScheduleData()
+      toast.success("Draft changes published")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to publish draft changes"))
+    } finally {
+      setDraftPublishing(false)
+    }
+  }
+
+  async function handleSetBaseline() {
+    if (!jobId) {
+      return
+    }
+
+    try {
+      const response = await api.post<{ baseline: ScheduleBaselineRecord }>(`/jobs/${jobId}/schedule/baseline`)
+      setBaseline(response.data.baseline)
+      toast.success("Baseline captured")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to set baseline"))
+    }
+  }
+
+  async function handleResetBaseline() {
+    if (!jobId) {
+      return
+    }
+
+    try {
+      await api.delete(`/jobs/${jobId}/schedule/baseline`)
+      setBaseline(null)
+      toast.success("Baseline removed")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to reset baseline"))
+    }
+  }
+
+  function openNewWorkdayException() {
+    if (!jobId) {
+      return
+    }
+
+    setWorkdayForm(defaultExceptionForm(jobId))
+    setCategoryDraft("")
+    setCategoryEditorOpen(false)
+    setWorkdayEditorOpen(true)
+  }
+
+  function openExistingWorkdayException(exception: ScheduleWorkdayException) {
+    setWorkdayForm({
+      id: exception.id,
+      title: exception.title,
+      type: exception.type,
+      startDate: exception.startDate,
+      endDate: exception.endDate,
+      sameEveryYear: exception.sameEveryYear,
+      categoryId: exception.categoryId,
+      appliesToAllJobs: exception.appliesToAllJobs,
+      jobIds: exception.jobIds,
+      notes: exception.notes || "",
+    })
+    setCategoryDraft("")
+    setCategoryEditorOpen(false)
+    setWorkdayEditorOpen(true)
+  }
+
+  async function handleSaveWorkdayException() {
+    if (!jobId) {
+      return
+    }
+
+    setWorkdaySaving(true)
+
+    try {
+      const payload = {
+        title: workdayForm.title.trim(),
+        type: workdayForm.type,
+        startDate: workdayForm.startDate,
+        endDate: workdayForm.endDate,
+        sameEveryYear: workdayForm.sameEveryYear,
+        categoryId: workdayForm.categoryId,
+        appliesToAllJobs: workdayForm.appliesToAllJobs,
+        jobIds: workdayForm.appliesToAllJobs ? [] : workdayForm.jobIds,
+        notes: workdayForm.notes.trim() || null,
+      }
+
+      if (workdayForm.id) {
+        await api.put(`/jobs/${jobId}/workday-exceptions/${workdayForm.id}`, payload)
+      } else {
+        await api.post(`/jobs/${jobId}/workday-exceptions`, payload)
+      }
+
+      await refreshScheduleData()
+      setWorkdayEditorOpen(false)
+      setWorkdayForm(defaultExceptionForm(jobId))
+      toast.success(workdayForm.id ? "Workday exception updated" : "Workday exception saved")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to save workday exception"))
+    } finally {
+      setWorkdaySaving(false)
+    }
+  }
+
+  async function handleDeleteWorkdayException() {
+    if (!jobId || !workdayForm.id) {
+      return
+    }
+
+    try {
+      await api.delete(`/jobs/${jobId}/workday-exceptions/${workdayForm.id}`)
+      await refreshScheduleData()
+      setWorkdayEditorOpen(false)
+      setWorkdayForm(defaultExceptionForm(jobId))
+      toast.success("Workday exception deleted")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to delete workday exception"))
+    }
+  }
+
+  async function handleCreateCategory() {
+    if (!jobId || !categoryDraft.trim()) {
+      return
+    }
+
+    try {
+      const response = await api.post<{ category: ScheduleSettingsOption }>(`/jobs/${jobId}/workday-exceptions/categories`, {
+        name: categoryDraft.trim(),
+      })
+      await fetchSettings()
+      setWorkdayForm((current) => ({ ...current, categoryId: response.data.category.id }))
+      setCategoryDraft("")
+      setCategoryEditorOpen(false)
+      toast.success("Category added")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to add category"))
+    }
+  }
+
+  async function handleSaveCategory(categoryId: string) {
+    if (!jobId) {
+      return
+    }
+
+    const name = editingCategories[categoryId]?.trim()
+
+    if (!name) {
+      return
+    }
+
+    try {
+      await api.put(`/jobs/${jobId}/workday-exceptions/categories/${categoryId}`, { name })
+      await fetchSettings()
+      toast.success("Category updated")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to update category"))
+    }
+  }
+
+  async function handleSaveSettings() {
+    if (!jobId) {
+      return
+    }
+
+    setSettingsSaving(true)
+
+    try {
+      await api.put(`/jobs/${jobId}/schedule/settings`, {
+        defaultView: settingsForm.defaultView,
+        showTimesOnMonthView: settingsForm.showTimesOnMonthView,
+        showJobNameOnAllListedJobs: settingsForm.showJobNameOnAllListedJobs,
+        automaticallyMarkItemsComplete: settingsForm.automaticallyMarkItemsComplete,
+        includeHeaderOnPdfExports: settingsForm.includeHeaderOnPdfExports,
+      })
+
+      const existingPhases = new Map(settings.phases.map((phase) => [phase.id, phase]))
+
+      for (const phase of settingsForm.phases) {
+        if (!phase.name.trim()) {
+          continue
+        }
+
+        const existing = existingPhases.get(phase.id)
+
+        if (!existing || phase.isNew) {
+          await api.post(`/jobs/${jobId}/schedule/settings/phases`, {
+            name: phase.name.trim(),
+            color: phase.color,
+          })
+          continue
+        }
+
+        if (existing.name !== phase.name.trim() || (existing.color || DEFAULT_SCHEDULE_COLOR) !== phase.color) {
+          await api.put(`/jobs/${jobId}/schedule/settings/phases/${phase.id}`, {
+            name: phase.name.trim(),
+            color: phase.color,
+          })
+        }
+      }
+
+      await Promise.all([fetchSettings(), refreshScheduleData()])
+      applyDefaultViewChoice(settingsForm.defaultView, setViewMode, setCalendarPeriod)
+      setSettingsOpen(false)
+      toast.success("Schedule settings saved")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to save schedule settings"))
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
+  async function handleTrackConflicts() {
+    if (scheduleOffline) {
+      const conflictIds = draftItemsRef.current
+        .filter((item) => item.hasConflict)
+        .map((item) => item.id)
+      setTrackedConflictIds(conflictIds)
+      toast.info(
+        conflictIds.length === 0
+          ? "No schedule conflicts found"
+          : `${conflictIds.length} conflict${conflictIds.length === 1 ? "" : "s"} highlighted`,
+      )
+      return
+    }
+
+    if (!jobId) {
+      return
+    }
+
+    try {
+      const response = await api.post<{ conflicts: Array<{ id: string }>; count: number }>(
+        `/jobs/${jobId}/schedule/track-conflicts`,
+      )
+      const conflictIds = (response.data.conflicts ?? []).map((conflict) => conflict.id)
+      setTrackedConflictIds(conflictIds)
+      await fetchItems()
+      toast.info(
+        conflictIds.length === 0
+          ? "No schedule conflicts found"
+          : `${response.data.count} conflict${response.data.count === 1 ? "" : "s"} highlighted`,
+      )
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to track conflicts"))
+    }
+  }
+
+  async function handleNotifyAssignedUsers() {
+    if (scheduleOffline) {
+      toast.info("Publish draft changes before notifying assigned users")
+      return
+    }
+
+    if (!jobId) {
+      return
+    }
+
+    try {
+      const response = await api.post<{ countUsers: number; countItems: number }>(
+        `/jobs/${jobId}/schedule/notify-assigned-users`,
+      )
+      const countUsers = response.data.countUsers ?? 0
+      const countItems = response.data.countItems ?? 0
+
+      toast.success(
+        countUsers === 0
+          ? "No assigned users to notify"
+          : `Queued notifications for ${countUsers} assigned user${countUsers === 1 ? "" : "s"} across ${countItems} item${countItems === 1 ? "" : "s"}`,
+      )
+      if (historyOpen) {
+        await fetchHistory()
+      }
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to notify assigned users"))
+    }
+  }
+
+  async function handleDeleteAllItems() {
+    if (!activeItems.length) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Delete all ${activeItems.length} schedule item${activeItems.length === 1 ? "" : "s"} for this job? This cannot be undone.`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    if (scheduleOffline) {
+      applyDraftMutation(() => [])
+      setTrackedConflictIds([])
+      setSelectedListIds([])
+      setDialogOpen(false)
+      setActiveItemId(null)
+      toast.success("Draft schedule items cleared")
+      return
+    }
+
+    try {
+      await Promise.all(activeItems.map((item) => api.delete(`/schedule-items/${item.id}`)))
+      setTrackedConflictIds([])
+      setSelectedListIds([])
+      setDialogOpen(false)
+      setActiveItemId(null)
+      await refreshScheduleData()
+      toast.success("All schedule items deleted")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to delete all schedule items"))
+    }
+  }
+
+  async function handleApplyTemplate(template: ScheduleTemplate) {
+    setTemplateApplyingId(template.id)
+
+    try {
+      if (scheduleOffline) {
+        applyDraftMutation((currentItems) => {
+          let predecessorId: string | null = null
+          const now = new Date().toISOString()
+          const createdItems: ScheduleItemRecord[] = []
+
+          for (const templateItem of template.items) {
+            const nextItemId = `draft-item-${crypto.randomUUID()}`
+            const nextItem: ScheduleItemRecord = {
+              id: nextItemId,
+              jobId: jobId ?? null,
+              title: templateItem.title,
+              displayColor: templateItem.displayColor || DEFAULT_SCHEDULE_COLOR,
+              startDate: todayStr(),
+              endDate: calculateBusinessEndDate(todayStr(), templateItem.workDays, workdayExceptions),
+              workDays: templateItem.workDays,
+              isHourly: false,
+              startTime: null,
+              endTime: null,
+              progress: 0,
+              reminder: "none",
+              showOnGantt: true,
+              visibleToEstimators: true,
+              visibleToInstallers: true,
+              visibleToOfficeStaff: true,
+              isComplete: false,
+              notes: null,
+              tags: [],
+              phaseId: null,
+              phaseName: null,
+              phaseColor: null,
+              assigneeIds: [],
+              assignees: [],
+              predecessors: predecessorId
+                ? [
+                    {
+                      scheduleItemId: predecessorId,
+                      dependencyType: "finish_to_start",
+                      lagDays: 0,
+                      title:
+                        currentItems.find((candidate) => candidate.id === predecessorId)?.title
+                        || createdItems.find((candidate) => candidate.id === predecessorId)?.title
+                        || "Unknown task",
+                    },
+                  ]
+                : [],
+              notesStream: [],
+              noteCount: 0,
+              attachments: [],
+              relatedTodos: [],
+              relatedTodoCount: 0,
+              createdBy: null,
+              createdByName: "Draft",
+              createdByAvatarUrl: null,
+              createdAt: now,
+              updatedAt: now,
+              deletedAt: null,
+              status: "upcoming",
+              hasConflict: false,
+              conflictReasons: [],
+            }
+
+            predecessorId = nextItemId
+            createdItems.push(nextItem)
+          }
+
+          return [...currentItems, ...createdItems]
+        })
+        setTemplateDialogOpen(false)
+        toast.success(`${template.name} added to the draft`)
+        return
+      }
+
+      if (!jobId) {
+        return
+      }
+
+      let predecessorId: string | null = null
+
+      for (const templateItem of template.items) {
+        const response: { data: { item: ScheduleItemRecord } } = await api.post(`/jobs/${jobId}/schedule`, {
+          title: templateItem.title,
+          displayColor: templateItem.displayColor || DEFAULT_SCHEDULE_COLOR,
+          assigneeIds: [],
+          startDate: todayStr(),
+          workDays: templateItem.workDays,
+          endDate: null,
+          isHourly: false,
+          startTime: null,
+          endTime: null,
+          progress: 0,
+          reminder: "none",
+          notes: null,
+          notifyUserIds: [],
+          tags: [],
+          predecessors: predecessorId
+            ? [
+                {
+                  scheduleItemId: predecessorId,
+                  dependencyType: "finish_to_start",
+                  lagDays: 0,
+                },
+              ]
+            : [],
+          phaseId: null,
+          showOnGantt: true,
+          visibleToEstimators: true,
+          visibleToInstallers: true,
+          visibleToOfficeStaff: true,
+          isComplete: false,
+        })
+
+        predecessorId = response.data.item.id
+      }
+
+      setTemplateDialogOpen(false)
+      await refreshScheduleData()
+      toast.success(`${template.name} imported`)
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to import template"))
+    } finally {
+      setTemplateApplyingId(null)
+    }
+  }
+
+  async function handleExport(kind: "schedule" | "baseline" | "exceptions") {
+    const target =
+      kind === "schedule"
+        ? scheduleExportRef.current
+        : kind === "baseline"
+          ? baselineExportRef.current
+          : exceptionsExportRef.current
+
+    if (!target) {
+      toast.error("Nothing is available to export right now")
+      return
+    }
+
+    try {
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ])
+      const canvas = await html2canvas(target, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+      })
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? "landscape" : "portrait",
+        unit: "px",
+        format: [canvas.width, canvas.height],
+      })
+
+      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height)
+      pdf.save(`cadstone-${kind}-${jobId || "job"}.pdf`)
+      toast.success("PDF export ready")
+    } catch (error) {
+      toast.error(getApiError(error, "Failed to export PDF"))
+    }
+  }
 
   function openNewItem() {
     setActiveItemId(null)
@@ -1397,16 +2915,46 @@ export default function JobSchedulePage() {
   const activeFilterCount = countActiveFilters(appliedFilters)
   const listStart = sortedListItems.length === 0 ? 0 : (listPage - 1) * LIST_PAGE_SIZE + 1
   const listEnd = Math.min(listPage * LIST_PAGE_SIZE, sortedListItems.length)
+  const currentJobTitle = jobs.find((job) => job.id === jobId)?.title || "Job Schedule"
   const draftPresetValue = FILTER_PRESETS.some((preset) => preset.value === draftFilters.preset)
     ? draftFilters.preset
     : "custom"
+
+  function runSchedulePrint() {
+    const cleanup = () => {
+      delete document.body.dataset.printPage
+      delete document.body.dataset.printScope
+    }
+
+    document.body.dataset.printPage = "schedule"
+    document.body.dataset.printScope = viewMode
+    window.addEventListener("afterprint", cleanup, { once: true })
+    window.print()
+    window.setTimeout(cleanup, 1000)
+  }
 
   return (
     <>
       {ganttFullscreen ? <div className="fixed inset-0 z-40 bg-slate-950/45" /> : null}
 
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="space-y-4" data-print-root="schedule">
+        <div className="hidden rounded-xl border border-[#E5E7EB] bg-white px-5 py-5 shadow-sm" data-print-only="true">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{currentJobTitle}</div>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-950">Schedule</h1>
+          <div className="mt-2 text-sm text-slate-500">
+            {section === "schedule"
+              ? viewMode === "calendar"
+                ? currentRangeLabel
+                : viewMode === "list"
+                  ? `${sortedListItems.length} item${sortedListItems.length === 1 ? "" : "s"}`
+                  : `${ganttItems.length} timeline item${ganttItems.length === 1 ? "" : "s"}`
+              : section === "baseline"
+                ? "Baseline comparison"
+                : "Workday exceptions"}
+          </div>
+        </div>
+
+        <div data-print-hide="true" className="flex items-center justify-between">
           <h1 className="text-lg font-semibold text-slate-900">Schedule</h1>
         </div>
 
@@ -1415,7 +2963,7 @@ export default function JobSchedulePage() {
           onValueChange={(value) => setSection(value as ScheduleSection)}
           className="space-y-4"
         >
-          <TabsList className="h-auto rounded-xl border border-[#E5E7EB] bg-white p-1">
+          <TabsList data-print-hide="true" className="h-auto rounded-xl border border-[#E5E7EB] bg-white p-1">
             <TabsTrigger value="schedule" className="h-9 rounded-lg px-4">
               Schedule
             </TabsTrigger>
@@ -1427,8 +2975,8 @@ export default function JobSchedulePage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="schedule" className="mt-0 space-y-4">
-            <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+          <TabsContent ref={scheduleExportRef} value="schedule" className="mt-0 space-y-4">
+            <div data-print-hide="true" className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex overflow-hidden rounded-lg border border-[#D8E0EA] bg-[#F8FAFC]">
@@ -1495,8 +3043,34 @@ export default function JobSchedulePage() {
                   </Button>
                   <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
                     <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
-                    <Switch checked={scheduleOffline} onCheckedChange={setScheduleOffline} />
+                    <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
                   </div>
+                  {scheduleOffline ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="border-[#E5E7EB] bg-white"
+                        disabled={draftPast.length === 0 || draftPublishing}
+                        onClick={handleDraftUndo}
+                      >
+                        <RotateCcw className="size-4" />
+                        Undo
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="border-[#E5E7EB] bg-white"
+                        disabled={draftFuture.length === 0 || draftPublishing}
+                        onClick={handleDraftRedo}
+                      >
+                        <RotateCw className="size-4" />
+                        Redo
+                      </Button>
+                    </>
+                  ) : null}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -1509,24 +3083,27 @@ export default function JobSchedulePage() {
                         More Actions
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuItem onClick={() => toast.info("Template import arrives in the next piece.")}>
+                      <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuItem onClick={() => setTemplateDialogOpen(true)}>
                         Import From Templates
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toast.info("Conflict tracking is not wired yet.")}>
+                      <DropdownMenuItem onClick={() => void handleTrackConflicts()}>
                         Track Conflicts
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        disabled={items.length === 0}
-                        onClick={() => toast.info("Assigned-user notifications are not wired yet.")}
+                        disabled={activeItems.length === 0}
+                        onClick={() => void handleNotifyAssignedUsers()}
                       >
                         Notify Assigned Users
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toast.info("Bulk delete is not wired yet.")}>
+                      <DropdownMenuItem disabled={activeItems.length === 0} onClick={() => void handleDeleteAllItems()}>
                         Delete All Items
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toast.info("PDF export is not wired yet.")}>
+                      <DropdownMenuItem onClick={() => handleExport("schedule")}>
                         Export to PDF
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={runSchedulePrint}>
+                        Print
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -1549,13 +3126,31 @@ export default function JobSchedulePage() {
                     <Plus className="size-4" />
                     New Schedule Item
                   </Button>
+                  {scheduleOffline ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="border-[#E5E7EB] bg-white"
+                        disabled={draftPublishing}
+                        onClick={handleDiscardDraft}
+                      >
+                        Discard Draft
+                      </Button>
+                      <Button type="button" size="sm" disabled={draftPublishing} onClick={() => void handlePublishDraft()}>
+                        {draftPublishing ? <Loader2 className="size-4 animate-spin" /> : null}
+                        Publish Changes
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             </div>
 
             {viewMode === "calendar" ? (
               <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-                <div className="flex flex-col gap-3 border-b border-[#E5E7EB] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <div data-print-hide="true" className="flex flex-col gap-3 border-b border-[#E5E7EB] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex flex-wrap items-center gap-2">
                     <Select
                       value={calendarPeriod}
@@ -1636,15 +3231,15 @@ export default function JobSchedulePage() {
                     </div>
                   ) : isEmpty ? (
                     <EmptyState
-                      title={items.length === 0 ? "No schedule items yet" : "No schedule items match this filter"}
+                      title={activeItems.length === 0 ? "No schedule items yet" : "No schedule items match this filter"}
                       description={
-                        items.length === 0
+                        activeItems.length === 0
                           ? "Add the first schedule item to start coordinating fabrication, delivery, and install work."
                           : "Adjust your filters or create another schedule item to populate this calendar."
                       }
-                      actionLabel={items.length === 0 ? "New Schedule Item" : "Clear Filters"}
+                      actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
                       onAction={
-                        items.length === 0
+                        activeItems.length === 0
                           ? openNewItem
                           : () => {
                               const reset = buildFilterPreset("all")
@@ -1660,7 +3255,7 @@ export default function JobSchedulePage() {
                           <div key={day} className="px-3 py-3 text-center">
                             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{day}</p>
                             {index === 0 || index === 6 ? (
-                              <p className="mt-1 text-[11px] text-slate-400">Non-workday</p>
+                              <p className="mt-1 text-[11px] text-slate-400">Default non-workday</p>
                             ) : null}
                           </div>
                         ))}
@@ -1688,13 +3283,18 @@ export default function JobSchedulePage() {
                                 const isCurrentMonth = day.startsWith(currentMonthPrefix)
                                 const isToday = day === todayIso
                                 const parsedDay = parseDate(day)
+                                const workday = classifyWorkday(parsedDay, workdayExceptions)
 
                                 return (
                                   <div
                                     key={day}
                                     className={cn(
                                       "border-r border-[#E5E7EB] p-2 last:border-r-0",
-                                      isCurrentMonth ? "bg-white" : "bg-slate-50/70",
+                                      workday.isWorkday
+                                        ? isCurrentMonth
+                                          ? "bg-white"
+                                          : "bg-slate-50/70"
+                                        : "bg-amber-50/70",
                                     )}
                                   >
                                     <div className="flex items-start justify-between gap-2">
@@ -1710,8 +3310,10 @@ export default function JobSchedulePage() {
                                       >
                                         {parsedDay.getDate()}
                                       </span>
-                                      {isWeekend(parsedDay) ? (
-                                        <span className="text-[11px] text-slate-400">Non-workday</span>
+                                      {!workday.isWorkday || workday.type === "extra_workday" ? (
+                                        <span className={cn("text-[11px]", workday.isWorkday ? "text-emerald-600" : "text-amber-600")}>
+                                          {workday.label}
+                                        </span>
                                       ) : null}
                                     </div>
                                   </div>
@@ -1723,7 +3325,10 @@ export default function JobSchedulePage() {
                                   <button
                                     key={`${segment.item.id}-${segment.startIndex}-${segment.endIndex}-${segment.lane}`}
                                     type="button"
-                                    className="pointer-events-auto absolute flex h-6 items-center overflow-hidden rounded-full px-3 text-left text-xs font-medium text-white shadow-sm transition hover:opacity-95"
+                                    className={cn(
+                                      "pointer-events-auto absolute flex h-6 items-center overflow-hidden rounded-full px-3 text-left text-xs font-medium text-white shadow-sm transition hover:opacity-95",
+                                      activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
+                                    )}
                                     style={{
                                       backgroundColor: segment.item.displayColor || DEFAULT_SCHEDULE_COLOR,
                                       left: `calc(${(segment.startIndex / 7) * 100}% + 4px)`,
@@ -1758,6 +3363,7 @@ export default function JobSchedulePage() {
                           const day = addDays(startOfWeek(calendarAnchorDate), index)
                           const dayKey = dateKey(day)
                           const isToday = dayKey === todayIso
+                          const workday = classifyWorkday(day, workdayExceptions)
 
                           return (
                             <div key={dayKey} className="border-r border-[#E5E7EB] p-3 last:border-r-0">
@@ -1774,7 +3380,11 @@ export default function JobSchedulePage() {
                                   {day.getDate()}
                                 </span>
                               </div>
-                              {isWeekend(day) ? <p className="mt-1 text-[11px] text-slate-400">Non-workday</p> : null}
+                              {!workday.isWorkday || workday.type === "extra_workday" ? (
+                                <p className={cn("mt-1 text-[11px]", workday.isWorkday ? "text-emerald-600" : "text-amber-600")}>
+                                  {workday.label}
+                                </p>
+                              ) : null}
                             </div>
                           )
                         })}
@@ -1800,6 +3410,7 @@ export default function JobSchedulePage() {
                           const day = addDays(startOfWeek(calendarAnchorDate), index)
                           const dayKey = dateKey(day)
                           const segments = buildDayTimelineSegments(dayKey, filteredItems)
+                          const workday = classifyWorkday(day, workdayExceptions)
 
                           return (
                             <div
@@ -1812,7 +3423,7 @@ export default function JobSchedulePage() {
                                   key={hourIndex}
                                   className={cn(
                                     "h-14 border-b border-[#E5E7EB] last:border-b-0",
-                                    isWeekend(day) && "bg-slate-50/50",
+                                    !workday.isWorkday && "bg-amber-50/50",
                                   )}
                                 />
                               ))}
@@ -1827,7 +3438,10 @@ export default function JobSchedulePage() {
                                   <button
                                     key={`${segment.item.id}-${segment.lane}`}
                                     type="button"
-                                    className="absolute overflow-hidden rounded-xl border px-2 py-1 text-left text-xs font-medium text-white shadow-sm"
+                                    className={cn(
+                                      "absolute overflow-hidden rounded-xl border px-2 py-1 text-left text-xs font-medium text-white shadow-sm",
+                                      activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
+                                    )}
                                     style={{
                                       top,
                                       height,
@@ -1858,9 +3472,14 @@ export default function JobSchedulePage() {
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="text-sm font-semibold text-slate-900">{formatLongDate(calendarAnchorDate)}</p>
-                            {isWeekend(calendarAnchorDate) ? (
-                              <p className="text-[11px] text-slate-400">Non-workday</p>
-                            ) : null}
+                            {(() => {
+                              const workday = classifyWorkday(calendarAnchorDate, workdayExceptions)
+                              return !workday.isWorkday || workday.type === "extra_workday" ? (
+                                <p className={cn("text-[11px]", workday.isWorkday ? "text-emerald-600" : "text-amber-600")}>
+                                  {workday.label}
+                                </p>
+                              ) : null
+                            })()}
                           </div>
                           {dateKey(calendarAnchorDate) === todayIso ? (
                             <span className="flex size-8 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
@@ -1889,7 +3508,7 @@ export default function JobSchedulePage() {
                         <div
                           className={cn(
                             "relative",
-                            isWeekend(calendarAnchorDate) && "bg-slate-50/50",
+                            !classifyWorkday(calendarAnchorDate, workdayExceptions).isWorkday && "bg-amber-50/50",
                           )}
                           style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
                         >
@@ -1907,7 +3526,10 @@ export default function JobSchedulePage() {
                               <button
                                 key={`${segment.item.id}-${segment.lane}`}
                                 type="button"
-                                className="absolute overflow-hidden rounded-xl border px-3 py-2 text-left text-sm font-medium text-white shadow-sm"
+                                className={cn(
+                                  "absolute overflow-hidden rounded-xl border px-3 py-2 text-left text-sm font-medium text-white shadow-sm",
+                                  activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
+                                )}
                                 style={{
                                   top,
                                   height,
@@ -1985,7 +3607,7 @@ export default function JobSchedulePage() {
 
             {viewMode === "list" ? (
               <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-                <div className="flex flex-col gap-3 border-b border-[#E5E7EB] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <div data-print-hide="true" className="flex flex-col gap-3 border-b border-[#E5E7EB] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h2 className="text-sm font-semibold text-slate-900">Schedule Items</h2>
                     <p className="text-sm text-slate-500">The list view uses the same schedule items and filters as calendar and gantt.</p>
@@ -2020,15 +3642,15 @@ export default function JobSchedulePage() {
                     </div>
                   ) : isEmpty ? (
                     <EmptyState
-                      title={items.length === 0 ? "No schedule items yet" : "No schedule items match this filter"}
+                      title={activeItems.length === 0 ? "No schedule items yet" : "No schedule items match this filter"}
                       description={
-                        items.length === 0
+                        activeItems.length === 0
                           ? "Create the first schedule item to populate this table."
                           : "Adjust the active filter to see matching schedule items here."
                       }
-                      actionLabel={items.length === 0 ? "New Schedule Item" : "Clear Filters"}
+                      actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
                       onAction={
-                        items.length === 0
+                        activeItems.length === 0
                           ? openNewItem
                           : () => {
                               const reset = buildFilterPreset("all")
@@ -2083,7 +3705,13 @@ export default function JobSchedulePage() {
                                   </TableRow>
                                 ) : null}
                                 {group.items.map((item) => (
-                                  <TableRow key={item.id} className="hover:bg-slate-50">
+                                  <TableRow
+                                    key={item.id}
+                                    className={cn(
+                                      "hover:bg-slate-50",
+                                      activeConflictIds.has(item.id) && "bg-rose-50/60",
+                                    )}
+                                  >
                                     <TableCell>
                                       <Checkbox
                                         checked={selectedListIds.includes(item.id)}
@@ -2190,7 +3818,7 @@ export default function JobSchedulePage() {
                   ganttFullscreen && "fixed inset-4 z-50 flex flex-col",
                 )}
               >
-                <div className="flex flex-col gap-3 border-b border-[#E5E7EB] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <div data-print-hide="true" className="flex flex-col gap-3 border-b border-[#E5E7EB] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex flex-wrap items-center gap-2">
                     <Select value={ganttScale} onValueChange={(value) => setGanttScale(value as GanttScale)}>
                       <SelectTrigger className="h-10 w-[130px] border-[#E5E7EB]">
@@ -2238,15 +3866,15 @@ export default function JobSchedulePage() {
                     </div>
                   ) : ganttItems.length === 0 ? (
                     <EmptyState
-                      title={items.length === 0 ? "No gantt items yet" : "No gantt items match this filter"}
+                      title={activeItems.length === 0 ? "No gantt items yet" : "No gantt items match this filter"}
                       description={
-                        items.length === 0
+                        activeItems.length === 0
                           ? "Create a schedule item with Show on Gantt enabled to build the job timeline."
                           : "Adjust the current filters or enable Show on Gantt on more schedule items."
                       }
-                      actionLabel={items.length === 0 ? "New Schedule Item" : "Clear Filters"}
+                      actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
                       onAction={
-                        items.length === 0
+                        activeItems.length === 0
                           ? openNewItem
                           : () => {
                               const reset = buildFilterPreset("all")
@@ -2277,7 +3905,10 @@ export default function JobSchedulePage() {
                                 ) : (
                                   <div
                                     key={row.key}
-                                    className="grid w-full grid-cols-[minmax(0,1fr)_108px_88px_72px_72px] items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                                    className={cn(
+                                      "grid w-full grid-cols-[minmax(0,1fr)_108px_88px_72px_72px] items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50",
+                                      activeConflictIds.has(row.item.id) && "bg-rose-50/60",
+                                    )}
                                     role="button"
                                     tabIndex={0}
                                     onClick={() => openExistingItem(row.item.id)}
@@ -2292,7 +3923,7 @@ export default function JobSchedulePage() {
                                       <div className="flex items-center gap-2">
                                         <span
                                           className="size-2.5 shrink-0 rounded-full"
-                                          style={{ backgroundColor: row.item.displayColor || DEFAULT_SCHEDULE_COLOR }}
+                                          style={{ backgroundColor: (ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor || DEFAULT_SCHEDULE_COLOR }}
                                         />
                                         <span className="truncate font-medium text-slate-900">{row.item.title}</span>
                                       </div>
@@ -2363,6 +3994,23 @@ export default function JobSchedulePage() {
                                   className="pointer-events-none absolute inset-y-0 z-10 w-px bg-blue-500/60"
                                   style={{ left: `${todayOffsetPx}px` }}
                                 />
+                                <svg className="pointer-events-none absolute inset-0 z-10 overflow-visible">
+                                  {ganttDependencyLines.map((line) => (
+                                    <Fragment key={line.key}>
+                                      <path
+                                        d={line.path}
+                                        fill="none"
+                                        stroke={line.isConflict ? "#dc2626" : "#64748b"}
+                                        strokeWidth="2"
+                                        strokeDasharray={line.isConflict ? "4 4" : undefined}
+                                      />
+                                      <path
+                                        d={`M ${line.endX} ${line.endY} l -6 -4 l 0 8 z`}
+                                        fill={line.isConflict ? "#dc2626" : "#64748b"}
+                                      />
+                                    </Fragment>
+                                  ))}
+                                </svg>
 
                                 {ganttRows.map((row) =>
                                   row.type === "phase" ? (
@@ -2391,19 +4039,20 @@ export default function JobSchedulePage() {
                                           ganttCriticalPath && criticalPathIds.has(row.item.id)
                                             ? "border-amber-500 ring-2 ring-amber-200"
                                             : "border-transparent",
+                                          activeConflictIds.has(row.item.id) && "border-rose-500 ring-2 ring-rose-200",
                                         )}
                                         style={{
                                           left: `${diffInDays(ganttRange.start, parseDate(row.item.startDate)) * dayWidth}px`,
                                           width: `${(diffInDays(parseDate(row.item.startDate), parseDate(itemEndDate(row.item))) + 1) * dayWidth}px`,
                                           height: "28px",
-                                          backgroundColor: colorWithAlpha(row.item.displayColor, 0.18),
+                                          backgroundColor: colorWithAlpha((ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor, 0.18),
                                         }}
                                       >
                                         <div
                                           className="h-full"
                                           style={{
                                             width: `${Math.max(0, Math.min(100, row.item.progress ?? 0))}%`,
-                                            backgroundColor: row.item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                            backgroundColor: (ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor || DEFAULT_SCHEDULE_COLOR,
                                           }}
                                         />
                                         <div className="pointer-events-none absolute inset-0 flex items-center px-3 text-xs font-medium text-slate-900">
@@ -2419,7 +4068,7 @@ export default function JobSchedulePage() {
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-3 border-t border-[#E5E7EB] bg-blue-50/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div data-print-hide="true" className="flex flex-col gap-3 border-t border-[#E5E7EB] bg-blue-50/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                           <p className="text-sm font-semibold text-slate-900">Try Draft mode. Make changes confidently with features like undo and redo.</p>
                         </div>
@@ -2427,7 +4076,7 @@ export default function JobSchedulePage() {
                           type="button"
                           className="sm:w-auto"
                           disabled={scheduleOffline}
-                          onClick={() => setScheduleOffline(true)}
+                          onClick={enterDraftMode}
                         >
                           Switch to Draft mode
                         </Button>
@@ -2439,30 +4088,627 @@ export default function JobSchedulePage() {
             ) : null}
           </TabsContent>
 
-          <TabsContent value="baseline" className="mt-0">
-            <EmptyState
-              title="Baseline is coming in Piece 4"
-              description="Baseline snapshots, comparisons, and controls will live here. This placeholder keeps the schedule tab structure in place for the next piece."
-            />
+          <TabsContent ref={baselineExportRef} value="baseline" className="mt-0">
+            <div className="space-y-4">
+              <div data-print-hide="true" className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="flex flex-wrap items-center gap-2" />
+
+                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                    <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setSettingsOpen(true)}>
+                      <Settings2 className="size-4" />
+                    </Button>
+                    <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
+                      <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
+                      <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white">
+                          <MoreHorizontal className="size-4" />
+                          More Actions
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem disabled={!baseline} onClick={() => void handleResetBaseline()}>
+                          Reset Baseline
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white">
+                          <Download className="size-4" />
+                          Export
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleExport("baseline")}>Export CSV</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExport("baseline")}>Export PDF</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setFilterOpen(true)}>
+                      <Filter className="size-4" />
+                      Filter
+                    </Button>
+                    <Button type="button" size="sm" onClick={() => void handleSetBaseline()}>
+                      <Plus className="size-4" />
+                      Set Baseline
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {!baseline ? (
+                <EmptyState
+                  title="Perfect your schedule with baseline"
+                  description="Take a snapshot of your ideal project schedule and compare to timeline changes to improve planning of future projects."
+                  actionLabel="Set Baseline"
+                  onAction={() => void handleSetBaseline()}
+                />
+              ) : (
+                <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+                  <div className="border-b border-[#E5E7EB] px-6 py-5">
+                    <p className="text-sm font-semibold text-slate-900">Baseline comparison</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Captured {fmtDateTime(baseline.capturedAt)} by {baseline.capturedByName || "System"}
+                    </p>
+                  </div>
+                  <div className="p-4">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Item Title</TableHead>
+                          <TableHead>Baseline Start</TableHead>
+                          <TableHead>Baseline End</TableHead>
+                          <TableHead>Current Start</TableHead>
+                          <TableHead>Current End</TableHead>
+                          <TableHead>Shift</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {baseline.items.map((item) => (
+                          <TableRow key={item.scheduleItemId}>
+                            <TableCell className="font-medium text-slate-900">{item.title}</TableCell>
+                            <TableCell>{fmtDate(item.baselineStartDate)}</TableCell>
+                            <TableCell>{fmtDate(item.baselineEndDate)}</TableCell>
+                            <TableCell>{fmtDate(item.currentStartDate)}</TableCell>
+                            <TableCell>{fmtDate(item.currentEndDate)}</TableCell>
+                            <TableCell>
+                              <Badge
+                                className={cn(
+                                  "border-0",
+                                  item.shiftDays === 0 && "bg-emerald-100 text-emerald-700",
+                                  item.shiftDays > 0 && "bg-rose-100 text-rose-700",
+                                  item.shiftDays < 0 && "bg-amber-100 text-amber-700",
+                                )}
+                              >
+                                {item.shiftDays === 0
+                                  ? "On track"
+                                  : `${item.shiftDays > 0 ? "+" : ""}${item.shiftDays} day${Math.abs(item.shiftDays) === 1 ? "" : "s"}`}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </div>
           </TabsContent>
 
-          <TabsContent value="workday-exceptions" className="mt-0">
-            <EmptyState
-              title="Workday Exceptions are coming in Piece 4"
-              description="Job-specific non-workdays and extra workdays will be managed here once the exception workflow is added."
-            />
+          <TabsContent ref={exceptionsExportRef} value="workday-exceptions" className="mt-0">
+            <div className="space-y-4">
+              <div data-print-hide="true" className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="flex flex-wrap items-center gap-2" />
+
+                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                    <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setSettingsOpen(true)}>
+                      <Settings2 className="size-4" />
+                    </Button>
+                    <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
+                      <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
+                      <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white">
+                          <Download className="size-4" />
+                          Export
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleExport("exceptions")}>Export CSV</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExport("exceptions")}>Export PDF</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setFilterOpen(true)}>
+                      <Filter className="size-4" />
+                      Filter
+                    </Button>
+                    <Button type="button" size="sm" onClick={openNewWorkdayException}>
+                      <Plus className="size-4" />
+                      Workday Exception
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {workdayEditorOpen ? (
+                <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+                  <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-6 py-5">
+                    <div>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:underline"
+                        onClick={() => {
+                          setWorkdayEditorOpen(false)
+                          if (jobId) {
+                            setWorkdayForm(defaultExceptionForm(jobId))
+                          }
+                        }}
+                      >
+                        <ArrowLeft className="size-4" />
+                        Back to Workday Exceptions
+                      </button>
+                      <h2 className="mt-3 text-lg font-semibold text-slate-900">
+                        {workdayForm.id ? "Edit Workday Exception" : "Add Workday Exception"}
+                      </h2>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {workdayForm.id ? (
+                        <Button type="button" variant="outline" className="border-rose-200 text-rose-700" onClick={() => void handleDeleteWorkdayException()}>
+                          Delete
+                        </Button>
+                      ) : null}
+                      <Button type="button" variant="ghost" onClick={() => setWorkdayEditorOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="button" disabled={workdaySaving} onClick={() => void handleSaveWorkdayException()}>
+                        {workdaySaving ? <Loader2 className="size-4 animate-spin" /> : null}
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6 px-6 py-6">
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="workday-title">Title</Label>
+                        <Input
+                          id="workday-title"
+                          value={workdayForm.title}
+                          placeholder="Company Holiday"
+                          onChange={(event) => setWorkdayForm((current) => ({ ...current, title: event.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Type</Label>
+                        <RadioGroup
+                          value={workdayForm.type}
+                          onValueChange={(value) => setWorkdayForm((current) => ({ ...current, type: value as WorkdayExceptionForm["type"] }))}
+                          className="grid gap-3 md:grid-cols-2"
+                        >
+                          <label className="flex items-center gap-3 rounded-lg border border-[#E5E7EB] px-3 py-3">
+                            <RadioGroupItem value="non_workday" />
+                            <span className="text-sm text-slate-700">Non workday</span>
+                          </label>
+                          <label className="flex items-center gap-3 rounded-lg border border-[#E5E7EB] px-3 py-3">
+                            <RadioGroupItem value="extra_workday" />
+                            <span className="text-sm text-slate-700">Extra workday</span>
+                          </label>
+                        </RadioGroup>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="workday-start">Start date</Label>
+                        <Input
+                          id="workday-start"
+                          type="date"
+                          value={workdayForm.startDate}
+                          onChange={(event) => setWorkdayForm((current) => ({ ...current, startDate: event.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="workday-end">End date</Label>
+                        <Input
+                          id="workday-end"
+                          type="date"
+                          value={workdayForm.endDate}
+                          onChange={(event) => setWorkdayForm((current) => ({ ...current, endDate: event.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">Same every year</p>
+                        <p className="text-xs text-slate-500">Repeat this exception annually on the same dates.</p>
+                      </div>
+                      <Switch
+                        checked={workdayForm.sameEveryYear}
+                        onCheckedChange={(checked) => setWorkdayForm((current) => ({ ...current, sameEveryYear: checked }))}
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label>Category</Label>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setCategoryEditorOpen((current) => !current)}>
+                            <Plus className="size-4" />
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setCategoryEditorOpen((current) => !current)}>
+                            <Edit3 className="size-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      <Select
+                        value={workdayForm.categoryId || "__none__"}
+                        onValueChange={(value) => setWorkdayForm((current) => ({ ...current, categoryId: value === "__none__" ? null : value }))}
+                      >
+                        <SelectTrigger className="border-[#E5E7EB]">
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">No category</SelectItem>
+                          {(settings.workdayExceptionCategories ?? []).map((category) => (
+                            <SelectItem key={category.id} value={category.id}>
+                              {category.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {categoryEditorOpen ? (
+                        <div className="space-y-3 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+                          <div className="flex gap-2">
+                            <Input
+                              value={categoryDraft}
+                              placeholder="New category"
+                              onChange={(event) => setCategoryDraft(event.target.value)}
+                            />
+                            <Button type="button" onClick={() => void handleCreateCategory()}>
+                              Save
+                            </Button>
+                          </div>
+                          {(settings.workdayExceptionCategories ?? []).map((category) => (
+                            <div key={category.id} className="flex gap-2">
+                              <Input
+                                value={editingCategories[category.id] ?? category.name}
+                                onChange={(event) =>
+                                  setEditingCategories((current) => ({
+                                    ...current,
+                                    [category.id]: event.target.value,
+                                  }))
+                                }
+                              />
+                              <Button type="button" variant="outline" onClick={() => void handleSaveCategory(category.id)}>
+                                Save
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label>Apply exception to</Label>
+                      <RadioGroup
+                        value={workdayForm.appliesToAllJobs ? "all" : "specific"}
+                        onValueChange={(value) =>
+                          setWorkdayForm((current) => ({
+                            ...current,
+                            appliesToAllJobs: value === "all",
+                            jobIds: value === "all" ? [] : current.jobIds.length > 0 ? current.jobIds : jobId ? [jobId] : [],
+                          }))
+                        }
+                        className="grid gap-3 md:grid-cols-2"
+                      >
+                        <label className="flex items-center gap-3 rounded-lg border border-[#E5E7EB] px-3 py-3">
+                          <RadioGroupItem value="all" />
+                          <span className="text-sm text-slate-700">All jobs</span>
+                        </label>
+                        <label className="flex items-center gap-3 rounded-lg border border-[#E5E7EB] px-3 py-3">
+                          <RadioGroupItem value="specific" />
+                          <span className="text-sm text-slate-700">Specific jobs</span>
+                        </label>
+                      </RadioGroup>
+                    </div>
+
+                    {!workdayForm.appliesToAllJobs ? (
+                      <div className="space-y-2">
+                        <Label>Jobs</Label>
+                        <MultiSelectPopover
+                          placeholder="Select jobs"
+                          options={jobs.map((job) => ({ id: job.id, name: job.title }))}
+                          selected={workdayForm.jobIds}
+                          onChange={(next) => setWorkdayForm((current) => ({ ...current, jobIds: next }))}
+                        />
+                      </div>
+                    ) : null}
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="workday-notes">Notes</Label>
+                        <span className="text-xs text-slate-400">{workdayForm.notes.length}/500</span>
+                      </div>
+                      <Textarea
+                        id="workday-notes"
+                        rows={5}
+                        value={workdayForm.notes}
+                        onChange={(event) => setWorkdayForm((current) => ({ ...current, notes: event.target.value.slice(0, 500) }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : workdayExceptions.length === 0 ? (
+                <EmptyState
+                  title="Plan for any circumstance with workday exceptions"
+                  description="Schedule days off or plan for work outside of the usual weekdays to keep projects on time."
+                  actionLabel="Add a Workday Exception"
+                  onAction={openNewWorkdayException}
+                />
+              ) : (
+                <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+                  <div className="border-b border-[#E5E7EB] px-6 py-5">
+                    <p className="text-sm font-semibold text-slate-900">Workday exceptions</p>
+                    <p className="mt-1 text-sm text-slate-500">Click an exception to edit its schedule impact and scope.</p>
+                  </div>
+                  <div className="p-4">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Title</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Start Date</TableHead>
+                          <TableHead>End Date</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead>Applies To</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {workdayExceptions.map((exception) => (
+                          <TableRow key={exception.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openExistingWorkdayException(exception)}>
+                            <TableCell className="font-medium text-blue-700">{exception.title}</TableCell>
+                            <TableCell>{exception.type === "non_workday" ? "Non workday" : "Extra workday"}</TableCell>
+                            <TableCell>{fmtDate(exception.startDate)}</TableCell>
+                            <TableCell>{fmtDate(exception.endDate)}</TableCell>
+                            <TableCell>{exception.categoryName || "—"}</TableCell>
+                            <TableCell>
+                              {exception.appliesToAllJobs
+                                ? "All jobs"
+                                : exception.jobIds
+                                    .map((scopeJobId) => jobs.find((job) => job.id === scopeJobId)?.title || "Unknown job")
+                                    .join(", ")}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       </div>
 
+      <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+        <DialogContent className="max-w-3xl border-[#E5E7EB] bg-white">
+          <DialogHeader>
+            <DialogTitle>Import From Templates</DialogTitle>
+            <DialogDescription>
+              Apply a pre-built schedule template to create the first pass of this job timeline.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {SCHEDULE_TEMPLATES.map((template) => (
+              <div key={template.id} className="rounded-2xl border border-[#E5E7EB] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">{template.name}</h3>
+                    <p className="mt-1 text-sm text-slate-500">{template.description}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={templateApplyingId !== null}
+                    onClick={() => void handleApplyTemplate(template)}
+                  >
+                    {templateApplyingId === template.id ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Plus className="size-4" />
+                    )}
+                  </Button>
+                </div>
+                <div className="mt-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  {template.items.length} schedule item{template.items.length === 1 ? "" : "s"}
+                </div>
+                <div className="mt-3 space-y-2">
+                  {template.items.map((item) => (
+                    <div key={`${template.id}-${item.title}`} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      <span>{item.title}</span>
+                      <span>{item.workDays} day{item.workDays === 1 ? "" : "s"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-w-lg border-[#E5E7EB] bg-white">
+        <DialogContent className="max-w-4xl border-[#E5E7EB] bg-white">
           <DialogHeader>
             <DialogTitle>Schedule Settings</DialogTitle>
             <DialogDescription>
-              Schedule settings are part of Piece 4. This placeholder confirms the toolbar action and keeps the modal entry point in place.
+              Configure default schedule viewing and phase management for this job.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="space-y-6">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Default view</Label>
+                <Select
+                  value={settingsForm.defaultView}
+                  onValueChange={(value) =>
+                    setSettingsForm((current) => ({
+                      ...current,
+                      defaultView: value as ScheduleViewModeDefault,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="border-[#E5E7EB]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCHEDULE_DEFAULT_VIEW_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-xl border border-[#E5E7EB] p-4">
+              {[
+                {
+                  key: "showTimesOnMonthView",
+                  label: "Show times for hourly items on Calendar - Month view",
+                },
+                {
+                  key: "showJobNameOnAllListedJobs",
+                  label: "Show job name on Calendar for All Listed Jobs",
+                },
+                {
+                  key: "automaticallyMarkItemsComplete",
+                  label: "Automatically mark items complete",
+                },
+                {
+                  key: "includeHeaderOnPdfExports",
+                  label: "Include header on schedule PDF exports",
+                },
+              ].map((option) => (
+                <label key={option.key} className="flex items-center gap-3">
+                  <Checkbox
+                    checked={settingsForm[option.key as keyof ScheduleSettingsForm] as boolean}
+                    onCheckedChange={(checked) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        [option.key]: checked === true,
+                      }))
+                    }
+                  />
+                  <span className="text-sm text-slate-700">{option.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="space-y-4 rounded-xl border border-[#E5E7EB] p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">Phases Management</h3>
+                  <p className="mt-1 text-sm text-slate-500">Phases appear in schedule items, filters, list grouping, and Gantt coloring.</p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() =>
+                    setSettingsForm((current) => ({
+                      ...current,
+                      phases: [
+                        ...current.phases,
+                        {
+                          id: `new-${Date.now()}`,
+                          name: "",
+                          color: SCHEDULE_COLOR_OPTIONS[3]?.value || DEFAULT_SCHEDULE_COLOR,
+                          isNew: true,
+                        },
+                      ],
+                    }))
+                  }
+                >
+                  <Plus className="size-4" />
+                  Add Phase
+                </Button>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Phase Name</TableHead>
+                    <TableHead>Color</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {settingsForm.phases.map((phase) => (
+                    <TableRow key={phase.id}>
+                      <TableCell>
+                        <Input
+                          value={phase.name}
+                          onChange={(event) =>
+                            setSettingsForm((current) => ({
+                              ...current,
+                              phases: current.phases.map((entry) =>
+                                entry.id === phase.id
+                                  ? { ...entry, name: event.target.value }
+                                  : entry,
+                              ),
+                            }))
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={phase.color}
+                          onValueChange={(value) =>
+                            setSettingsForm((current) => ({
+                              ...current,
+                              phases: current.phases.map((entry) =>
+                                entry.id === phase.id
+                                  ? { ...entry, color: value }
+                                  : entry,
+                              ),
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="w-[220px] border-[#E5E7EB]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SCHEDULE_COLOR_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                <div className="flex items-center gap-2">
+                                  <span className="size-3 rounded-full" style={{ backgroundColor: option.value }} />
+                                  {option.label}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="flex justify-end">
+              <Button type="button" disabled={settingsSaving} onClick={() => void handleSaveSettings()}>
+                {settingsSaving ? <Loader2 className="size-4 animate-spin" /> : null}
+                Save
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -2492,6 +4738,7 @@ export default function JobSchedulePage() {
                     const description = typeof entry.metadata?.description === "string"
                       ? entry.metadata.description
                       : titleCaseStatus(entry.action)
+                    const changes = getActivityEntryChanges(entry.metadata)
 
                     return (
                       <div key={entry.id} className="rounded-xl border border-[#E5E7EB] bg-white px-4 py-4">
@@ -2501,6 +4748,18 @@ export default function JobSchedulePage() {
                             <p className="mt-1 text-sm text-slate-500">
                               {entry.userName || "System"} • {fmtDateTime(entry.createdAt)}
                             </p>
+                            {changes.length > 0 ? (
+                              <div className="mt-3 space-y-2 rounded-lg bg-slate-50 px-3 py-3">
+                                {changes.map((change) => (
+                                  <div key={`${entry.id}-${change.field}`} className="text-sm text-slate-600">
+                                    <span className="font-medium text-slate-900">{change.label}:</span>{" "}
+                                    <span className="text-slate-500">{change.from}</span>{" "}
+                                    <span aria-hidden="true">→</span>{" "}
+                                    <span className="text-slate-900">{change.to}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                           <Badge variant="outline" className="border-[#E5E7EB] bg-[#F8FAFC] text-slate-600">
                             {titleCaseStatus(entry.action)}
@@ -2592,7 +4851,7 @@ export default function JobSchedulePage() {
                   <label className="text-sm font-medium text-slate-900">Tags</label>
                   <MultiSelectPopover
                     placeholder="Select tags"
-                    options={settings.tags}
+                    options={availableTagOptions}
                     selected={draftFilters.tags}
                     onChange={(next) => setDraftFilters((current) => ({ ...current, preset: "custom", tags: next }))}
                   />
@@ -2652,11 +4911,16 @@ export default function JobSchedulePage() {
           }}
           jobId={jobId}
           itemId={activeItemId}
-          items={items}
+          items={activeItems}
           users={users}
           settings={settings}
+          workdayExceptions={workdayExceptions}
           refreshSettings={fetchSettings}
           onRefresh={refreshScheduleData}
+          draftMode={scheduleOffline}
+          onDraftSave={handleDraftSaveItem}
+          onDraftAddNote={handleDraftAddNote}
+          onDraftDelete={handleDraftDeleteItem}
         />
       ) : null}
     </>

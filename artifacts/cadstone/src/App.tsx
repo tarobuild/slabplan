@@ -19,6 +19,7 @@ import JobSummaryPage from "@/pages/job-summary"
 import JobsPage from "@/pages/jobs"
 import LeadsPage from "@/pages/leads"
 import LoginPage from "@/pages/login"
+import MyDailyLogsPage from "@/pages/my-daily-logs"
 import NotFoundPage from "@/pages/not-found"
 import RegisterPage from "@/pages/register"
 import SettingsPage from "@/pages/settings"
@@ -77,6 +78,7 @@ function AppRoutes({ ready }: { ready: boolean }) {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/files/documents" element={<FilesDocumentsPage />} />
           <Route path="/files/photos" element={<FilesPhotosPage />} />

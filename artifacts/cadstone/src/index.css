@@ -272,3 +272,78 @@
     inset: -1px;
   }
 }
+
+@media print {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  [data-print-hide="true"] {
+    display: none !important;
+  }
+
+  [data-print-only="true"] {
+    display: block !important;
+  }
+
+  body[data-print-page="schedule"] [data-print-root]:not([data-print-root="schedule"]),
+  body[data-print-page="daily-logs"] [data-print-root]:not([data-print-root="daily-logs"]) {
+    display: none !important;
+  }
+
+  body[data-print-page="daily-logs"][data-print-scope="detail"] [data-print-list-only="true"],
+  body[data-print-page="daily-logs"][data-print-scope="list"] [data-print-detail-only="true"] {
+    display: none !important;
+  }
+
+  body[data-print-page="schedule"] [data-print-root="schedule"],
+  body[data-print-page="daily-logs"] [data-print-root="daily-logs"] {
+    background: #fff !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  body[data-print-page="schedule"] .shadow-sm,
+  body[data-print-page="schedule"] .shadow,
+  body[data-print-page="schedule"] .shadow-md,
+  body[data-print-page="schedule"] .shadow-lg,
+  body[data-print-page="schedule"] .shadow-xl,
+  body[data-print-page="daily-logs"] .shadow-sm,
+  body[data-print-page="daily-logs"] .shadow,
+  body[data-print-page="daily-logs"] .shadow-md,
+  body[data-print-page="daily-logs"] .shadow-lg,
+  body[data-print-page="daily-logs"] .shadow-xl {
+    box-shadow: none !important;
+  }
+
+  body[data-print-page="schedule"] main,
+  body[data-print-page="daily-logs"] main {
+    padding: 0 !important;
+  }
+
+  body[data-print-page="schedule"] .overflow-auto,
+  body[data-print-page="schedule"] .overflow-hidden,
+  body[data-print-page="daily-logs"] .overflow-auto,
+  body[data-print-page="daily-logs"] .overflow-hidden {
+    overflow: visible !important;
+  }
+
+  body[data-print-page="schedule"] [data-print-root="schedule"] {
+    padding: 0 !important;
+  }
+
+  body[data-print-page="schedule"] [data-print-root="schedule"] table,
+  body[data-print-page="daily-logs"] [data-print-root="daily-logs"] table {
+    break-inside: auto;
+  }
+
+  body[data-print-page="schedule"] [data-print-root="schedule"] tr,
+  body[data-print-page="daily-logs"] [data-print-root="daily-logs"] tr,
+  body[data-print-page="daily-logs"] [data-print-root="daily-logs"] [class*="rounded-3xl"] {
+    break-inside: avoid;
+  }
+}

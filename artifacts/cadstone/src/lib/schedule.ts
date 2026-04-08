@@ -11,6 +11,7 @@ export type SchedulePredecessor = {
   title: string
   dependencyType: "finish_to_start" | "start_to_start" | "finish_to_finish" | "start_to_finish"
   lagDays: number
+  isConflict?: boolean
 }
 
 export type ScheduleNote = {
@@ -67,6 +68,7 @@ export type ScheduleItemRecord = {
   tags: string[]
   phaseId: string | null
   phaseName: string | null
+  phaseColor?: string | null
   assigneeIds: string[]
   assignees: ScheduleAssignee[]
   predecessors: SchedulePredecessor[]
@@ -82,16 +84,99 @@ export type ScheduleItemRecord = {
   updatedAt: string
   deletedAt: string | null
   status: string
+  hasConflict?: boolean
+  conflictReasons?: string[]
+}
+
+export type ScheduleItemPayload = {
+  title: string
+  displayColor: string | null
+  assigneeIds: string[]
+  startDate: string
+  workDays: number
+  endDate: string | null
+  isHourly: boolean
+  startTime: string | null
+  endTime: string | null
+  progress: number
+  reminder: string
+  notes: string | null
+  notifyUserIds: string[]
+  tags: string[]
+  predecessors: Array<{
+    scheduleItemId: string
+    dependencyType: SchedulePredecessor["dependencyType"]
+    lagDays: number
+  }>
+  phaseId: string | null
+  showOnGantt: boolean
+  visibleToEstimators: boolean
+  visibleToInstallers: boolean
+  visibleToOfficeStaff: boolean
+  isComplete: boolean
 }
 
 export type ScheduleSettingsOption = {
   id: string
   name: string
+  color?: string | null
+}
+
+export type ScheduleViewModeDefault =
+  | "calendar_month"
+  | "calendar_week"
+  | "calendar_day"
+  | "calendar_agenda"
+  | "list"
+  | "gantt"
+
+export type ScheduleWorkdayExceptionCategory = {
+  id: string
+  name: string
+}
+
+export type ScheduleWorkdayException = {
+  id: string
+  title: string
+  type: "non_workday" | "extra_workday"
+  startDate: string
+  endDate: string
+  sameEveryYear: boolean
+  categoryId: string | null
+  categoryName: string | null
+  appliesToAllJobs: boolean
+  jobIds: string[]
+  notes: string | null
+}
+
+export type ScheduleBaselineItem = {
+  scheduleItemId: string
+  title: string
+  baselineStartDate: string
+  baselineEndDate: string
+  currentStartDate: string | null
+  currentEndDate: string | null
+  shiftDays: number
+}
+
+export type ScheduleBaselineRecord = {
+  id: string
+  jobId: string
+  capturedAt: string
+  capturedBy: string | null
+  capturedByName: string | null
+  items: ScheduleBaselineItem[]
 }
 
 export type ScheduleSettings = {
   phases: ScheduleSettingsOption[]
   tags: ScheduleSettingsOption[]
+  defaultView: ScheduleViewModeDefault
+  showTimesOnMonthView: boolean
+  showJobNameOnAllListedJobs: boolean
+  automaticallyMarkItemsComplete: boolean
+  includeHeaderOnPdfExports: boolean
+  workdayExceptionCategories?: ScheduleWorkdayExceptionCategory[]
 }
 
 export const SCHEDULE_COLOR_OPTIONS = [
@@ -127,7 +212,21 @@ export const SCHEDULE_REMINDER_OPTIONS = [
 export const SCHEDULE_PREDECESSOR_TYPES = [
   { label: "Finish-to-Start (FS)", value: "finish_to_start" },
   { label: "Start-to-Start (SS)", value: "start_to_start" },
+  { label: "Finish-to-Finish (FF)", value: "finish_to_finish" },
+  { label: "Start-to-Finish (SF)", value: "start_to_finish" },
 ] as const
+
+export const SCHEDULE_DEFAULT_VIEW_OPTIONS: Array<{
+  label: string
+  value: ScheduleViewModeDefault
+}> = [
+  { label: "Calendar - Month", value: "calendar_month" },
+  { label: "Calendar - Week", value: "calendar_week" },
+  { label: "Calendar - Day", value: "calendar_day" },
+  { label: "Calendar - Agenda", value: "calendar_agenda" },
+  { label: "List", value: "list" },
+  { label: "Gantt", value: "gantt" },
+]
 
 export const DEFAULT_SCHEDULE_COLOR = "#2563eb"
 
@@ -177,10 +276,64 @@ function isWeekend(date: Date) {
   return day === 0 || day === 6
 }
 
-export function calculateBusinessEndDate(startDate: string, workDays: number) {
+function normalizeExceptionMatchDate(date: Date, sameEveryYear: boolean) {
+  if (!sameEveryYear) {
+    return date.toISOString().slice(5, 10)
+  }
+
+  return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`
+}
+
+function dateMatchesException(date: Date, exception: ScheduleWorkdayException) {
+  const value = sameYearComparableValue(date, exception.sameEveryYear)
+  const start = exception.sameEveryYear ? exception.startDate.slice(5, 10) : exception.startDate
+  const end = exception.sameEveryYear ? exception.endDate.slice(5, 10) : exception.endDate
+  return value >= start && value <= end
+}
+
+function sameYearComparableValue(date: Date, sameEveryYear: boolean) {
+  return sameEveryYear ? normalizeExceptionMatchDate(date, true) : date.toISOString().slice(0, 10)
+}
+
+export function classifyWorkday(
+  date: Date,
+  exceptions: ScheduleWorkdayException[] = [],
+) {
+  const matching = exceptions.filter((exception) => dateMatchesException(date, exception))
+  const hasExtra = matching.some((exception) => exception.type === "extra_workday")
+  const hasNonWorkday = matching.some((exception) => exception.type === "non_workday")
+
+  if (hasExtra) {
+    return {
+      isWorkday: true,
+      label: matching.find((exception) => exception.type === "extra_workday")?.title || "Extra workday",
+      type: "extra_workday" as const,
+    }
+  }
+
+  if (hasNonWorkday) {
+    return {
+      isWorkday: false,
+      label: matching.find((exception) => exception.type === "non_workday")?.title || "Non-workday",
+      type: "non_workday" as const,
+    }
+  }
+
+  return {
+    isWorkday: !isWeekend(date),
+    label: isWeekend(date) ? "Non-workday" : null,
+    type: isWeekend(date) ? ("non_workday" as const) : null,
+  }
+}
+
+export function calculateBusinessEndDate(
+  startDate: string,
+  workDays: number,
+  exceptions: ScheduleWorkdayException[] = [],
+) {
   const current = new Date(`${startDate}T00:00:00.000Z`)
 
-  while (isWeekend(current)) {
+  while (!classifyWorkday(current, exceptions).isWorkday) {
     current.setUTCDate(current.getUTCDate() + 1)
   }
 
@@ -189,7 +342,7 @@ export function calculateBusinessEndDate(startDate: string, workDays: number) {
   while (remaining > 1) {
     current.setUTCDate(current.getUTCDate() + 1)
 
-    if (!isWeekend(current)) {
+    if (classifyWorkday(current, exceptions).isWorkday) {
       remaining -= 1
     }
   }
@@ -197,7 +350,23 @@ export function calculateBusinessEndDate(startDate: string, workDays: number) {
   return current.toISOString().slice(0, 10)
 }
 
-export function calculateWorkDaysBetween(startDate: string, endDate: string) {
+export function addBusinessDays(
+  startDate: string,
+  amount: number,
+  exceptions: ScheduleWorkdayException[] = [],
+) {
+  if (amount <= 0) {
+    return startDate
+  }
+
+  return calculateBusinessEndDate(startDate, amount + 1, exceptions)
+}
+
+export function calculateWorkDaysBetween(
+  startDate: string,
+  endDate: string,
+  exceptions: ScheduleWorkdayException[] = [],
+) {
   let start = new Date(`${startDate}T00:00:00.000Z`)
   const end = new Date(`${endDate}T00:00:00.000Z`)
 
@@ -205,7 +374,7 @@ export function calculateWorkDaysBetween(startDate: string, endDate: string) {
     return 1
   }
 
-  while (isWeekend(start)) {
+  while (!classifyWorkday(start, exceptions).isWorkday) {
     start.setUTCDate(start.getUTCDate() + 1)
   }
 
@@ -213,7 +382,7 @@ export function calculateWorkDaysBetween(startDate: string, endDate: string) {
   const cursor = new Date(start)
 
   while (cursor <= end) {
-    if (!isWeekend(cursor)) {
+    if (classifyWorkday(cursor, exceptions).isWorkday) {
       workDays += 1
     }
 
@@ -236,6 +405,29 @@ export function cleanTags(value: string) {
 
 export function itemEndDate(item: Pick<ScheduleItemRecord, "endDate" | "startDate">) {
   return item.endDate || item.startDate
+}
+
+export function deriveScheduleStatus(item: {
+  startDate: string
+  endDate: string
+  progress: number | null
+  isComplete: boolean | null
+}) {
+  const today = todayStr()
+
+  if (item.isComplete || (item.progress ?? 0) >= 100) {
+    return "completed"
+  }
+
+  if (item.endDate < today) {
+    return "overdue"
+  }
+
+  if (item.startDate > today) {
+    return "upcoming"
+  }
+
+  return "in_progress"
 }
 
 export function itemOverlapsDateRange(

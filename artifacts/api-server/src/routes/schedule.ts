@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import multer from "multer";
 import {
   and,
@@ -7,6 +8,7 @@ import {
   inArray,
   isNull,
   ne,
+  or,
   sql,
 } from "drizzle-orm";
 import { Router, type IRouter } from "express";
@@ -17,13 +19,18 @@ import {
   folders,
   jobs,
   reminderOptions,
+  scheduleBaselines,
   scheduleItemAssignees,
   scheduleItemAttachments,
   scheduleItemNotes,
+  scheduleItemPredecessors,
   scheduleItemTodos,
   scheduleItems,
+  scheduleSettings,
   schedulePhases,
   scheduleTagSettings,
+  scheduleWorkdayExceptionCategories,
+  scheduleWorkdayExceptions,
   users,
 } from "@workspace/db/schema";
 import { writeActivity } from "../lib/file-manager";
@@ -148,6 +155,66 @@ const scheduleSettingPayloadSchema = z.object({
   name: z.string().trim().min(1).max(100),
 });
 
+const schedulePhasePayloadSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  color: optionalString,
+});
+
+const scheduleSettingsPayloadSchema = z.object({
+  defaultView: z
+    .enum(["calendar_month", "calendar_week", "calendar_day", "calendar_agenda", "list", "gantt"])
+    .optional(),
+  showTimesOnMonthView: z.coerce.boolean().optional(),
+  showJobNameOnAllListedJobs: z.coerce.boolean().optional(),
+  automaticallyMarkItemsComplete: z.coerce.boolean().optional(),
+  includeHeaderOnPdfExports: z.coerce.boolean().optional(),
+});
+
+const workdayExceptionCategoryPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+});
+
+const workdayExceptionPayloadBaseSchema = z.object({
+  title: z.string().trim().min(1).max(255),
+  type: z.enum(["non_workday", "extra_workday"]),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  sameEveryYear: z.coerce.boolean().optional().default(false),
+  categoryId: optionalUuid,
+  appliesToAllJobs: z.coerce.boolean().optional().default(false),
+  jobIds: z.array(z.string().uuid()).optional().default([]),
+  notes: optionalString,
+});
+
+const workdayExceptionPayloadSchema = workdayExceptionPayloadBaseSchema
+  .superRefine((value, ctx) => {
+    if (!value.appliesToAllJobs && value.jobIds.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Select at least one job.",
+        path: ["jobIds"],
+      });
+    }
+
+    if (value.endDate < value.startDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "End date must be on or after the start date.",
+        path: ["endDate"],
+      });
+    }
+  });
+
+const workdayExceptionUpdatePayloadSchema = workdayExceptionPayloadBaseSchema.partial().superRefine((value, ctx) => {
+  if (value.startDate && value.endDate && value.endDate < value.startDate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "End date must be on or after the start date.",
+      path: ["endDate"],
+    });
+  }
+});
+
 const scheduleNotePayloadSchema = z.object({
   note: z.string().trim().min(1).max(10_000),
 });
@@ -201,15 +268,297 @@ function normalizeTimeValue(value: string | null) {
   return value.length === 5 ? `${value}:00` : value;
 }
 
+type ScheduleHistoryItem = {
+  title: string;
+  displayColor: string | null;
+  assigneeIds: string[];
+  assignees: Array<{
+    fullName: string | null;
+    email: string;
+  }>;
+  startDate: string;
+  workDays: number;
+  endDate: string;
+  isHourly: boolean | null;
+  startTime: string | null;
+  progress: number | null;
+  reminder: string | null;
+  phaseName: string | null;
+  tags: string[];
+  predecessors: Array<{
+    scheduleItemId: string;
+    title: string;
+    dependencyType: z.infer<typeof predecessorSchema>["dependencyType"];
+    lagDays: number;
+  }>;
+  showOnGantt: boolean | null;
+  visibleToEstimators: boolean | null;
+  visibleToInstallers: boolean | null;
+  visibleToOfficeStaff: boolean | null;
+  isComplete: boolean | null;
+};
+
+type ScheduleHistoryChange = {
+  field: string;
+  label: string;
+  from: string;
+  to: string;
+};
+
+function labelizeScheduleValue(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function predecessorDependencyLabel(value: z.infer<typeof predecessorSchema>["dependencyType"]) {
+  if (value === "finish_to_start") {
+    return "Finish-to-Start (FS)";
+  }
+
+  if (value === "start_to_start") {
+    return "Start-to-Start (SS)";
+  }
+
+  if (value === "finish_to_finish") {
+    return "Finish-to-Finish (FF)";
+  }
+
+  return "Start-to-Finish (SF)";
+}
+
+function buildScheduleHistorySnapshot(item: ScheduleHistoryItem) {
+  return {
+    title: item.title,
+    displayColor: item.displayColor ?? "#2563eb",
+    assignees:
+      item.assignees.length > 0
+        ? item.assignees.map((assignee) => assignee.fullName ?? assignee.email).join(", ")
+        : "—",
+    startDate: item.startDate,
+    workDays: `${item.workDays} ${item.workDays === 1 ? "day" : "days"}`,
+    endDate: item.endDate,
+    hourly: item.isHourly ? "Yes" : "No",
+    startTime: item.startTime ?? "—",
+    progress: `${item.progress ?? 0}%`,
+    reminder: labelizeScheduleValue(item.reminder ?? "none"),
+    phase: item.phaseName ?? "Unassigned",
+    tags: item.tags.length > 0 ? item.tags.join(", ") : "—",
+    predecessors:
+      item.predecessors.length > 0
+        ? item.predecessors
+            .map((predecessor) =>
+              `${predecessor.title} • ${predecessorDependencyLabel(predecessor.dependencyType)} • lag ${predecessor.lagDays} day${predecessor.lagDays === 1 ? "" : "s"}`)
+            .join("; ")
+        : "—",
+    showOnGantt: item.showOnGantt === false ? "No" : "Yes",
+    visibleToEstimators: item.visibleToEstimators === false ? "No" : "Yes",
+    visibleToInstallers: item.visibleToInstallers === false ? "No" : "Yes",
+    visibleToOfficeStaff: item.visibleToOfficeStaff === false ? "No" : "Yes",
+    complete: item.isComplete ? "Complete" : "Incomplete",
+  };
+}
+
+function buildScheduleHistoryChanges(
+  before: ScheduleHistoryItem | null,
+  after: ScheduleHistoryItem,
+) {
+  const nextSnapshot = buildScheduleHistorySnapshot(after);
+  const previousSnapshot = before ? buildScheduleHistorySnapshot(before) : null;
+  const labels: Record<string, string> = {
+    title: "Title",
+    displayColor: "Display Color",
+    assignees: "Assignees",
+    startDate: "Start Date",
+    workDays: "Work Days",
+    endDate: "End Date",
+    hourly: "Hourly",
+    startTime: "Start Time",
+    progress: "Progress",
+    reminder: "Reminder",
+    phase: "Phase",
+    tags: "Tags",
+    predecessors: "Predecessors",
+    showOnGantt: "Show on Gantt",
+    visibleToEstimators: "Visible to Estimators",
+    visibleToInstallers: "Visible to Installers",
+    visibleToOfficeStaff: "Visible to Office Staff",
+    complete: "Complete",
+  };
+
+  return Object.entries(nextSnapshot).flatMap(([field, value]) => {
+    const previousValue = previousSnapshot?.[field as keyof typeof nextSnapshot] ?? "—";
+
+    if (previousValue === value) {
+      return [];
+    }
+
+    return [
+      {
+        field,
+        label: labels[field] ?? labelizeScheduleValue(field),
+        from: String(previousValue),
+        to: String(value),
+      } satisfies ScheduleHistoryChange,
+    ];
+  });
+}
+
+let ensureAdvancedScheduleTablesPromise: Promise<void> | null = null;
+
+async function ensureAdvancedScheduleTables() {
+  if (!ensureAdvancedScheduleTablesPromise) {
+    ensureAdvancedScheduleTablesPromise = (async () => {
+      await db.execute(sql`
+        alter table schedule_phases
+        add column if not exists color varchar(50) default '#e76f8a'
+      `);
+      await db.execute(sql`
+        create table if not exists schedule_settings (
+          id uuid primary key,
+          job_id uuid not null unique references jobs(id) on delete cascade,
+          default_view varchar(100) default 'calendar_month',
+          show_times_on_month_view boolean default false,
+          show_job_name_on_all_listed_jobs boolean default true,
+          automatically_mark_items_complete boolean default false,
+          include_header_on_pdf_exports boolean default true,
+          created_at timestamp not null default now(),
+          updated_at timestamp not null default now()
+        )
+      `);
+      await db.execute(sql`
+        create table if not exists schedule_baselines (
+          id uuid primary key,
+          job_id uuid not null unique references jobs(id) on delete cascade,
+          captured_at timestamp not null default now(),
+          captured_by uuid references users(id),
+          items_snapshot json,
+          created_at timestamp not null default now(),
+          updated_at timestamp not null default now()
+        )
+      `);
+      await db.execute(sql`
+        create table if not exists schedule_workday_exception_categories (
+          id uuid primary key,
+          job_id uuid references jobs(id) on delete cascade,
+          name varchar(100) not null,
+          created_at timestamp not null default now(),
+          updated_at timestamp not null default now(),
+          unique(job_id, name)
+        )
+      `);
+      await db.execute(sql`
+        create table if not exists schedule_workday_exceptions (
+          id uuid primary key,
+          title varchar(255) not null,
+          type varchar(50) not null,
+          start_date date not null,
+          end_date date not null,
+          same_every_year boolean default false,
+          category_id uuid references schedule_workday_exception_categories(id) on delete set null,
+          applies_to_all_jobs boolean default false,
+          job_ids json,
+          notes varchar(500),
+          created_by uuid references users(id),
+          created_at timestamp not null default now(),
+          updated_at timestamp not null default now()
+        )
+      `);
+      await db.execute(sql`
+        create table if not exists schedule_item_predecessors (
+          id uuid primary key,
+          schedule_item_id uuid not null references schedule_items(id) on delete cascade,
+          predecessor_id uuid not null references schedule_items(id) on delete cascade,
+          dependency_type varchar(50) not null,
+          lag_days integer not null default 0,
+          created_at timestamp not null default now(),
+          unique(schedule_item_id, predecessor_id)
+        )
+      `);
+      await db.execute(sql`
+        create index if not exists schedule_item_predecessors_item_idx
+        on schedule_item_predecessors (schedule_item_id)
+      `);
+      await db.execute(sql`
+        create index if not exists schedule_item_predecessors_predecessor_idx
+        on schedule_item_predecessors (predecessor_id)
+      `);
+    })().catch((error) => {
+      ensureAdvancedScheduleTablesPromise = null;
+      throw error;
+    });
+  }
+
+  await ensureAdvancedScheduleTablesPromise;
+}
+
 function isWeekend(date: Date) {
   const day = date.getUTCDay();
   return day === 0 || day === 6;
 }
 
-function calculateBusinessEndDate(startDate: string, workDays: number) {
+type WorkdayExceptionRecord = {
+  id: string;
+  title: string;
+  type: "non_workday" | "extra_workday";
+  startDate: string;
+  endDate: string;
+  sameEveryYear: boolean;
+  categoryId: string | null;
+  categoryName: string | null;
+  appliesToAllJobs: boolean;
+  jobIds: string[];
+  notes: string | null;
+};
+
+function comparableExceptionDate(date: Date, sameEveryYear: boolean) {
+  if (sameEveryYear) {
+    return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+function matchesWorkdayException(date: Date, exception: WorkdayExceptionRecord) {
+  const value = comparableExceptionDate(date, exception.sameEveryYear);
+  const start = exception.sameEveryYear ? exception.startDate.slice(5, 10) : exception.startDate;
+  const end = exception.sameEveryYear ? exception.endDate.slice(5, 10) : exception.endDate;
+  return value >= start && value <= end;
+}
+
+function classifyWorkday(date: Date, exceptions: WorkdayExceptionRecord[]) {
+  const matches = exceptions.filter((exception) => matchesWorkdayException(date, exception));
+  const extra = matches.find((exception) => exception.type === "extra_workday");
+
+  if (extra) {
+    return {
+      isWorkday: true,
+      label: extra.title,
+      type: "extra_workday" as const,
+    };
+  }
+
+  const nonWorkday = matches.find((exception) => exception.type === "non_workday");
+
+  if (nonWorkday) {
+    return {
+      isWorkday: false,
+      label: nonWorkday.title,
+      type: "non_workday" as const,
+    };
+  }
+
+  return {
+    isWorkday: !isWeekend(date),
+    label: isWeekend(date) ? "Non-workday" : null,
+    type: isWeekend(date) ? ("non_workday" as const) : null,
+  };
+}
+
+function calculateBusinessEndDate(startDate: string, workDays: number, exceptions: WorkdayExceptionRecord[] = []) {
   const current = new Date(`${startDate}T00:00:00.000Z`);
 
-  while (isWeekend(current)) {
+  while (!classifyWorkday(current, exceptions).isWorkday) {
     current.setUTCDate(current.getUTCDate() + 1);
   }
 
@@ -218,12 +567,28 @@ function calculateBusinessEndDate(startDate: string, workDays: number) {
   while (remaining > 1) {
     current.setUTCDate(current.getUTCDate() + 1);
 
-    if (!isWeekend(current)) {
+    if (classifyWorkday(current, exceptions).isWorkday) {
       remaining -= 1;
     }
   }
 
   return current.toISOString().slice(0, 10);
+}
+
+function parseIsoDate(value: string) {
+  return new Date(`${value}T12:00:00.000Z`);
+}
+
+function diffInDays(left: Date, right: Date) {
+  return Math.round((right.getTime() - left.getTime()) / 86_400_000);
+}
+
+function addBusinessDays(startDate: string, amount: number, exceptions: WorkdayExceptionRecord[] = []) {
+  if (amount <= 0) {
+    return startDate;
+  }
+
+  return calculateBusinessEndDate(startDate, amount + 1, exceptions);
 }
 
 function encodeScheduleMeta(meta: ScheduleMeta) {
@@ -331,6 +696,8 @@ function fileIconKind(mimeType: string | null) {
 }
 
 async function ensureJobExists(jobId: string) {
+  await ensureAdvancedScheduleTables();
+
   const [job] = await db
     .select({
       id: jobs.id,
@@ -343,6 +710,8 @@ async function ensureJobExists(jobId: string) {
   if (!job) {
     throw new HttpError(404, "Job not found.");
   }
+
+  await Promise.all([ensureDefaultPhase(jobId), ensureDefaultScheduleSettings(jobId)]);
 
   return job;
 }
@@ -400,6 +769,267 @@ async function assertPhaseBelongsToJob(jobId: string, phaseId: string | null) {
   }
 }
 
+async function ensureDefaultPhase(jobId: string) {
+  await ensureAdvancedScheduleTables();
+
+  const [existing] = await db
+    .select({
+      id: schedulePhases.id,
+      name: schedulePhases.name,
+      color: schedulePhases.color,
+    })
+    .from(schedulePhases)
+    .where(and(eq(schedulePhases.jobId, jobId), eq(schedulePhases.name, "Pre-Construction")))
+    .limit(1);
+
+  if (existing) {
+    return existing;
+  }
+
+  const [phase] = await db
+    .insert(schedulePhases)
+    .values({
+      jobId,
+      name: "Pre-Construction",
+      color: "#e76f8a",
+    })
+    .returning({
+      id: schedulePhases.id,
+      name: schedulePhases.name,
+      color: schedulePhases.color,
+    });
+
+  return phase;
+}
+
+async function ensureDefaultScheduleSettings(jobId: string) {
+  await ensureAdvancedScheduleTables();
+
+  const [existing] = await db
+    .select()
+    .from(scheduleSettings)
+    .where(eq(scheduleSettings.jobId, jobId))
+    .limit(1);
+
+  if (existing) {
+    return existing;
+  }
+
+  const [created] = await db
+    .insert(scheduleSettings)
+    .values({
+      id: crypto.randomUUID(),
+      jobId,
+      defaultView: "calendar_month",
+      showTimesOnMonthView: false,
+      showJobNameOnAllListedJobs: true,
+      automaticallyMarkItemsComplete: false,
+      includeHeaderOnPdfExports: true,
+    })
+    .returning();
+
+  return created;
+}
+
+async function getWorkdayExceptionsForJob(jobId: string): Promise<WorkdayExceptionRecord[]> {
+  await ensureAdvancedScheduleTables();
+
+  const rows = await db
+    .select({
+      id: scheduleWorkdayExceptions.id,
+      title: scheduleWorkdayExceptions.title,
+      type: scheduleWorkdayExceptions.type,
+      startDate: scheduleWorkdayExceptions.startDate,
+      endDate: scheduleWorkdayExceptions.endDate,
+      sameEveryYear: scheduleWorkdayExceptions.sameEveryYear,
+      categoryId: scheduleWorkdayExceptions.categoryId,
+      categoryName: scheduleWorkdayExceptionCategories.name,
+      appliesToAllJobs: scheduleWorkdayExceptions.appliesToAllJobs,
+      jobIds: scheduleWorkdayExceptions.jobIds,
+      notes: scheduleWorkdayExceptions.notes,
+    })
+    .from(scheduleWorkdayExceptions)
+    .leftJoin(
+      scheduleWorkdayExceptionCategories,
+      eq(scheduleWorkdayExceptions.categoryId, scheduleWorkdayExceptionCategories.id),
+    )
+    .orderBy(asc(scheduleWorkdayExceptions.startDate), asc(scheduleWorkdayExceptions.title));
+
+  return rows
+    .map((row): WorkdayExceptionRecord => ({
+      ...row,
+      type: row.type === "extra_workday" ? "extra_workday" : "non_workday",
+      sameEveryYear: !!row.sameEveryYear,
+      appliesToAllJobs: !!row.appliesToAllJobs,
+      jobIds: Array.isArray(row.jobIds) ? row.jobIds.filter((jobIdValue): jobIdValue is string => typeof jobIdValue === "string") : [],
+    }))
+    .filter((row) => row.appliesToAllJobs || row.jobIds.includes(jobId));
+}
+
+async function syncPredecessors(
+  scheduleItemId: string,
+  predecessors: Array<z.infer<typeof predecessorSchema>>,
+) {
+  await ensureAdvancedScheduleTables();
+
+  await db
+    .delete(scheduleItemPredecessors)
+    .where(eq(scheduleItemPredecessors.scheduleItemId, scheduleItemId));
+
+  if (predecessors.length === 0) {
+    return;
+  }
+
+  await db.insert(scheduleItemPredecessors).values(
+    predecessors.map((predecessor) => ({
+      id: crypto.randomUUID(),
+      scheduleItemId,
+      predecessorId: predecessor.scheduleItemId,
+      dependencyType: predecessor.dependencyType,
+      lagDays: predecessor.lagDays,
+    })),
+  );
+}
+
+function applyPredecessorDates(
+  payload: z.infer<typeof schedulePayloadSchema>,
+  predecessorItems: Array<{
+    id: string;
+    startDate: string;
+    endDate: string;
+  }>,
+  exceptions: WorkdayExceptionRecord[],
+) {
+  if (payload.predecessors.length === 0) {
+    return payload;
+  }
+
+  const predecessorMap = new Map(predecessorItems.map((item) => [item.id, item]));
+  const resolvedStartDate = resolvePredecessorStartDate(
+    payload.startDate,
+    payload.workDays,
+    payload.predecessors,
+    predecessorMap,
+    exceptions,
+  );
+
+  return {
+    ...payload,
+    startDate: resolvedStartDate,
+    endDate: payload.endDate ?? calculateBusinessEndDate(resolvedStartDate, payload.workDays, exceptions),
+  };
+}
+
+function resolvePredecessorStartDate(
+  startDate: string,
+  workDays: number,
+  predecessors: Array<z.infer<typeof predecessorSchema>>,
+  predecessorMap: Map<string, { startDate: string; endDate: string }>,
+  exceptions: WorkdayExceptionRecord[],
+) {
+  let resolvedStartDate = startDate;
+
+  for (const predecessor of predecessors) {
+    const linked = predecessorMap.get(predecessor.scheduleItemId);
+
+    if (!linked) {
+      continue;
+    }
+
+    if (predecessor.dependencyType === "finish_to_start") {
+      const candidate = addBusinessDays(linked.endDate, predecessor.lagDays + 1, exceptions);
+      if (candidate > resolvedStartDate) {
+        resolvedStartDate = candidate;
+      }
+      continue;
+    }
+
+    if (predecessor.dependencyType === "start_to_start") {
+      const candidate = addBusinessDays(linked.startDate, predecessor.lagDays, exceptions);
+      if (candidate > resolvedStartDate) {
+        resolvedStartDate = candidate;
+      }
+      continue;
+    }
+
+    if (predecessor.dependencyType === "finish_to_finish") {
+      const desiredEnd = addBusinessDays(linked.endDate, predecessor.lagDays, exceptions);
+      const candidateStart = calculateBusinessEndDate(desiredEnd, Math.max(workDays, 1), exceptions);
+      if (candidateStart > resolvedStartDate) {
+        resolvedStartDate = candidateStart;
+      }
+      continue;
+    }
+
+    if (predecessor.dependencyType === "start_to_finish") {
+      const desiredEnd = addBusinessDays(linked.startDate, predecessor.lagDays, exceptions);
+      const candidateStart = calculateBusinessEndDate(desiredEnd, Math.max(workDays, 1), exceptions);
+      if (candidateStart > resolvedStartDate) {
+        resolvedStartDate = candidateStart;
+      }
+    }
+  }
+
+  return resolvedStartDate;
+}
+
+function predecessorConflictReasons(
+  item: {
+    title: string;
+    startDate: string;
+    endDate: string;
+    predecessors: Array<{
+      scheduleItemId: string;
+      dependencyType: z.infer<typeof predecessorSchema>["dependencyType"];
+      lagDays: number;
+      title?: string;
+    }>;
+  },
+  predecessorMap: Map<string, { title: string; startDate: string; endDate: string }>,
+  exceptions: WorkdayExceptionRecord[],
+) {
+  const reasons: string[] = [];
+
+  for (const predecessor of item.predecessors) {
+    const linked = predecessorMap.get(predecessor.scheduleItemId);
+
+    if (!linked) {
+      continue;
+    }
+
+    if (predecessor.dependencyType === "finish_to_start") {
+      const requiredStart = addBusinessDays(linked.endDate, predecessor.lagDays + 1, exceptions);
+      if (item.startDate < requiredStart) {
+        reasons.push(`${item.title} starts before ${linked.title} finishes`);
+      }
+      continue;
+    }
+
+    if (predecessor.dependencyType === "start_to_start") {
+      const requiredStart = addBusinessDays(linked.startDate, predecessor.lagDays, exceptions);
+      if (item.startDate < requiredStart) {
+        reasons.push(`${item.title} starts before ${linked.title} is allowed to start it`);
+      }
+      continue;
+    }
+
+    if (predecessor.dependencyType === "finish_to_finish") {
+      const requiredEnd = addBusinessDays(linked.endDate, predecessor.lagDays, exceptions);
+      if (item.endDate < requiredEnd) {
+        reasons.push(`${item.title} finishes before ${linked.title} requirement is met`);
+      }
+      continue;
+    }
+
+    const requiredEnd = addBusinessDays(linked.startDate, predecessor.lagDays, exceptions);
+    if (item.endDate < requiredEnd) {
+      reasons.push(`${item.title} finishes before ${linked.title} start dependency is met`);
+    }
+  }
+
+  return reasons;
+}
+
 async function syncAssignees(scheduleItemId: string, assigneeIds: string[]) {
   await db
     .delete(scheduleItemAssignees)
@@ -415,6 +1045,216 @@ async function syncAssignees(scheduleItemId: string, assigneeIds: string[]) {
       })),
     );
   }
+}
+
+async function ensureTagSettings(jobId: string, tagNames: string[]) {
+  const uniqueTagNames = normalizeUniqueStrings(tagNames);
+
+  if (uniqueTagNames.length === 0) {
+    return;
+  }
+
+  const existing = await db
+    .select({
+      name: scheduleTagSettings.name,
+    })
+    .from(scheduleTagSettings)
+    .where(and(eq(scheduleTagSettings.jobId, jobId), inArray(scheduleTagSettings.name, uniqueTagNames)));
+  const existingNames = new Set(existing.map((tag) => tag.name));
+  const missing = uniqueTagNames.filter((tag) => !existingNames.has(tag));
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  await db.insert(scheduleTagSettings).values(
+    missing.map((name) => ({
+      jobId,
+      name,
+    })),
+  );
+}
+
+async function assertWorkdayExceptionCategoryBelongsToJob(jobId: string, categoryId: string | null) {
+  if (!categoryId) {
+    return;
+  }
+
+  const category = await getWorkdayExceptionCategoryOrThrow(categoryId);
+
+  if (category.jobId && category.jobId !== jobId) {
+    throw new HttpError(400, "Workday exception category must belong to this job.");
+  }
+}
+
+async function applyAutomaticCompletionIfEnabled(jobId: string) {
+  const settings = await ensureDefaultScheduleSettings(jobId);
+
+  if (!settings.automaticallyMarkItemsComplete) {
+    return;
+  }
+
+  const todayDate = new Date();
+  const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(todayDate.getDate()).padStart(2, "0")}`;
+
+  await db
+    .update(scheduleItems)
+    .set({
+      isComplete: true,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(scheduleItems.jobId, jobId),
+        isNull(scheduleItems.deletedAt),
+        or(eq(scheduleItems.isComplete, false), isNull(scheduleItems.isComplete)),
+        sql`${scheduleItems.endDate} < ${today}`,
+      ),
+    );
+}
+
+async function synchronizeJobSchedule(jobId: string) {
+  await ensureAdvancedScheduleTables();
+
+  const [items, exceptions, predecessorRows] = await Promise.all([
+    db
+      .select({
+        id: scheduleItems.id,
+        title: scheduleItems.title,
+        startDate: scheduleItems.startDate,
+        endDate: scheduleItems.endDate,
+        workDays: scheduleItems.workDays,
+      })
+      .from(scheduleItems)
+      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
+      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.title)),
+    getWorkdayExceptionsForJob(jobId),
+    db
+      .select({
+        scheduleItemId: scheduleItemPredecessors.scheduleItemId,
+        predecessorId: scheduleItemPredecessors.predecessorId,
+        dependencyType: scheduleItemPredecessors.dependencyType,
+        lagDays: scheduleItemPredecessors.lagDays,
+      })
+      .from(scheduleItemPredecessors),
+  ]);
+
+  if (items.length === 0) {
+    await applyAutomaticCompletionIfEnabled(jobId);
+    return;
+  }
+
+  const itemIds = new Set(items.map((item) => item.id));
+  const itemsById = new Map(items.map((item) => [item.id, { ...item }]));
+  const predecessorsByItemId = new Map<
+    string,
+    Array<{
+      scheduleItemId: string;
+      dependencyType: z.infer<typeof predecessorSchema>["dependencyType"];
+      lagDays: number;
+    }>
+  >();
+
+  for (const row of predecessorRows) {
+    if (!itemIds.has(row.scheduleItemId) || !itemIds.has(row.predecessorId)) {
+      continue;
+    }
+
+    const current = predecessorsByItemId.get(row.scheduleItemId) ?? [];
+    current.push({
+      scheduleItemId: row.predecessorId,
+      dependencyType: row.dependencyType as z.infer<typeof predecessorSchema>["dependencyType"],
+      lagDays: row.lagDays,
+    });
+    predecessorsByItemId.set(row.scheduleItemId, current);
+  }
+
+  const orderedItems = [...items].sort((left, right) => left.startDate.localeCompare(right.startDate));
+
+  for (let pass = 0; pass < orderedItems.length; pass += 1) {
+    let changed = false;
+
+    for (const item of orderedItems) {
+      const predecessors = predecessorsByItemId.get(item.id) ?? [];
+
+      if (predecessors.length === 0) {
+        const current = itemsById.get(item.id);
+
+        if (!current) {
+          continue;
+        }
+
+        const computedEndDate = calculateBusinessEndDate(current.startDate, current.workDays, exceptions);
+
+        if (computedEndDate !== current.endDate) {
+          current.endDate = computedEndDate;
+          changed = true;
+        }
+
+        continue;
+      }
+
+      const predecessorEntries: Array<[string, { startDate: string; endDate: string }]> = [];
+
+      for (const predecessor of predecessors) {
+        const linked = itemsById.get(predecessor.scheduleItemId);
+
+        if (linked) {
+          predecessorEntries.push([
+            predecessor.scheduleItemId,
+            {
+              startDate: linked.startDate,
+              endDate: linked.endDate,
+            },
+          ]);
+        }
+      }
+
+      const predecessorMap = new Map<string, { startDate: string; endDate: string }>(predecessorEntries);
+      const current = itemsById.get(item.id);
+
+      if (!current) {
+        continue;
+      }
+
+      const nextStartDate = resolvePredecessorStartDate(
+        current.startDate,
+        current.workDays,
+        predecessors,
+        predecessorMap,
+        exceptions,
+      );
+      const nextEndDate = calculateBusinessEndDate(nextStartDate, current.workDays, exceptions);
+
+      if (nextStartDate !== current.startDate || nextEndDate !== current.endDate) {
+        current.startDate = nextStartDate;
+        current.endDate = nextEndDate;
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      break;
+    }
+  }
+
+  const updates = [...itemsById.values()].filter((item) => {
+    const original = items.find((candidate) => candidate.id === item.id);
+    return original && (original.startDate !== item.startDate || original.endDate !== item.endDate);
+  });
+
+  for (const update of updates) {
+    await db
+      .update(scheduleItems)
+      .set({
+        startDate: update.startDate,
+        endDate: update.endDate,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduleItems.id, update.id));
+  }
+
+  await applyAutomaticCompletionIfEnabled(jobId);
 }
 
 async function ensureScheduleAttachmentFolder(scheduleItemId: string, jobId: string) {
@@ -528,7 +1368,126 @@ async function getTagOrThrow(jobId: string, tagId: string) {
   return tag;
 }
 
+async function getWorkdayExceptionCategoryOrThrow(categoryId: string) {
+  const [category] = await db
+    .select()
+    .from(scheduleWorkdayExceptionCategories)
+    .where(eq(scheduleWorkdayExceptionCategories.id, categoryId))
+    .limit(1);
+
+  if (!category) {
+    throw new HttpError(404, "Workday exception category not found.");
+  }
+
+  return category;
+}
+
+async function getWorkdayExceptionOrThrow(exceptionId: string) {
+  const [exception] = await db
+    .select()
+    .from(scheduleWorkdayExceptions)
+    .where(eq(scheduleWorkdayExceptions.id, exceptionId))
+    .limit(1);
+
+  if (!exception) {
+    throw new HttpError(404, "Workday exception not found.");
+  }
+
+  return exception;
+}
+
+function workdayExceptionAppliesToJob(
+  jobId: string,
+  exception: {
+    appliesToAllJobs: boolean | null;
+    jobIds: string[] | null;
+  },
+) {
+  return !!exception.appliesToAllJobs || (Array.isArray(exception.jobIds) && exception.jobIds.includes(jobId));
+}
+
+async function buildBaselinePayload(jobId: string) {
+  const rows = await db
+    .select({
+      id: scheduleItems.id,
+      title: scheduleItems.title,
+      startDate: scheduleItems.startDate,
+      endDate: scheduleItems.endDate,
+    })
+    .from(scheduleItems)
+    .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
+    .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.title));
+
+  return rows.map((row) => ({
+    scheduleItemId: row.id,
+    title: row.title,
+    baselineStartDate: row.startDate,
+    baselineEndDate: row.endDate,
+  }));
+}
+
+async function upsertBaselineForJob(jobId: string, userId: string) {
+  await synchronizeJobSchedule(jobId);
+  const itemsSnapshot = await buildBaselinePayload(jobId);
+
+  const [existing] = await db
+    .select({ id: scheduleBaselines.id })
+    .from(scheduleBaselines)
+    .where(eq(scheduleBaselines.jobId, jobId))
+    .limit(1);
+
+  if (existing) {
+    await db
+      .update(scheduleBaselines)
+      .set({
+        capturedAt: new Date(),
+        capturedBy: userId,
+        itemsSnapshot,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduleBaselines.id, existing.id));
+  } else {
+    await db.insert(scheduleBaselines).values({
+      id: crypto.randomUUID(),
+      jobId,
+      capturedAt: new Date(),
+      capturedBy: userId,
+      itemsSnapshot,
+    });
+  }
+
+  const [baseline] = await db
+    .select({
+      id: scheduleBaselines.id,
+      jobId: scheduleBaselines.jobId,
+      capturedAt: scheduleBaselines.capturedAt,
+      capturedBy: scheduleBaselines.capturedBy,
+      capturedByName: users.fullName,
+    })
+    .from(scheduleBaselines)
+    .leftJoin(users, eq(scheduleBaselines.capturedBy, users.id))
+    .where(eq(scheduleBaselines.jobId, jobId))
+    .limit(1);
+
+  return {
+    statusCode: existing ? 200 : 201,
+    baseline: baseline
+      ? {
+          ...baseline,
+          items: itemsSnapshot.map((item) => ({
+            ...item,
+            currentStartDate: item.baselineStartDate,
+            currentEndDate: item.baselineEndDate,
+            shiftDays: 0,
+          })),
+        }
+      : null,
+  };
+}
+
 async function hydrateScheduleItem(itemId: string) {
+  await ensureAdvancedScheduleTables();
+
   const [row] = await db
     .select({
       id: scheduleItems.id,
@@ -557,6 +1516,7 @@ async function hydrateScheduleItem(itemId: string) {
       createdByName: users.fullName,
       createdByAvatarUrl: users.avatarUrl,
       phaseName: schedulePhases.name,
+      phaseColor: schedulePhases.color,
     })
     .from(scheduleItems)
     .leftJoin(users, eq(scheduleItems.createdBy, users.id))
@@ -569,8 +1529,7 @@ async function hydrateScheduleItem(itemId: string) {
   }
 
   const meta = decodeScheduleMeta(row.notes);
-
-  const [assignees, predecessorRows, noteRows, attachmentRows, todoRows] = await Promise.all([
+  const [assignees, predecessorRows, noteRows, attachmentRows, todoRows, workdayExceptions] = await Promise.all([
     db
       .select({
         id: users.id,
@@ -583,20 +1542,18 @@ async function hydrateScheduleItem(itemId: string) {
       .innerJoin(users, eq(scheduleItemAssignees.userId, users.id))
       .where(eq(scheduleItemAssignees.scheduleItemId, itemId))
       .orderBy(asc(users.fullName)),
-    meta.predecessors.length > 0
-      ? db
-          .select({
-            id: scheduleItems.id,
-            title: scheduleItems.title,
-          })
-          .from(scheduleItems)
-          .where(
-            inArray(
-              scheduleItems.id,
-              meta.predecessors.map((predecessor) => predecessor.scheduleItemId),
-            ),
-          )
-      : Promise.resolve([]),
+    db
+      .select({
+        scheduleItemId: scheduleItemPredecessors.predecessorId,
+        dependencyType: scheduleItemPredecessors.dependencyType,
+        lagDays: scheduleItemPredecessors.lagDays,
+        title: scheduleItems.title,
+        startDate: scheduleItems.startDate,
+        endDate: scheduleItems.endDate,
+      })
+      .from(scheduleItemPredecessors)
+      .innerJoin(scheduleItems, eq(scheduleItemPredecessors.predecessorId, scheduleItems.id))
+      .where(eq(scheduleItemPredecessors.scheduleItemId, itemId)),
     db
       .select({
         id: scheduleItemNotes.id,
@@ -639,10 +1596,46 @@ async function hydrateScheduleItem(itemId: string) {
       .leftJoin(users, eq(scheduleItemTodos.createdBy, users.id))
       .where(eq(scheduleItemTodos.scheduleItemId, itemId))
       .orderBy(desc(scheduleItemTodos.createdAt)),
+    row.jobId ? getWorkdayExceptionsForJob(row.jobId) : Promise.resolve([]),
   ]);
 
+  const fallbackPredecessors =
+    predecessorRows.length === 0
+      ? meta.predecessors.map((predecessor) => ({
+          scheduleItemId: predecessor.scheduleItemId,
+          dependencyType: predecessor.dependencyType,
+          lagDays: predecessor.lagDays,
+          title: "Unknown task",
+          startDate: row.startDate,
+          endDate: row.endDate,
+        }))
+      : [];
+  const resolvedPredecessorRows = predecessorRows.length > 0 ? predecessorRows : fallbackPredecessors;
   const predecessorMap = new Map(
-    predecessorRows.map((predecessor) => [predecessor.id, predecessor.title]),
+    resolvedPredecessorRows.map((predecessor) => [
+      predecessor.scheduleItemId,
+      {
+        title: predecessor.title ?? "Unknown task",
+        startDate: predecessor.startDate,
+        endDate: predecessor.endDate,
+      },
+    ]),
+  );
+  const predecessorEntries = resolvedPredecessorRows.map((predecessor) => ({
+    scheduleItemId: predecessor.scheduleItemId,
+    dependencyType: predecessor.dependencyType as z.infer<typeof predecessorSchema>["dependencyType"],
+    lagDays: predecessor.lagDays,
+    title: predecessor.title ?? "Unknown task",
+  }));
+  const conflictReasons = predecessorConflictReasons(
+    {
+      title: row.title,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      predecessors: predecessorEntries,
+    },
+    predecessorMap,
+    workdayExceptions,
   );
 
   const notesStream = [
@@ -674,12 +1667,10 @@ async function hydrateScheduleItem(itemId: string) {
       notifyUserIds: [],
       phaseId: row.schedulePhaseId,
       phaseName: row.phaseName,
+      phaseColor: row.phaseColor,
       assigneeIds: assignees.map((assignee) => assignee.id),
       assignees,
-      predecessors: meta.predecessors.map((predecessor) => ({
-        ...predecessor,
-        title: predecessorMap.get(predecessor.scheduleItemId) ?? "Unknown task",
-      })),
+      predecessors: predecessorEntries,
       notesStream,
       noteCount: notesStream.length,
       attachments: attachmentRows.map((attachment) => ({
@@ -694,6 +1685,8 @@ async function hydrateScheduleItem(itemId: string) {
         progress: row.progress,
         isComplete: row.isComplete,
       }),
+      hasConflict: conflictReasons.length > 0,
+      conflictReasons,
     },
   };
 }
@@ -704,11 +1697,13 @@ router.get(
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
 
-    const [phases, tags] = await Promise.all([
+    const [storedSettings, phases, tags, categories] = await Promise.all([
+      ensureDefaultScheduleSettings(jobId),
       db
         .select({
           id: schedulePhases.id,
           name: schedulePhases.name,
+          color: schedulePhases.color,
         })
         .from(schedulePhases)
         .where(eq(schedulePhases.jobId, jobId))
@@ -721,16 +1716,66 @@ router.get(
         .from(scheduleTagSettings)
         .where(eq(scheduleTagSettings.jobId, jobId))
         .orderBy(asc(scheduleTagSettings.name)),
+      db
+        .select({
+          id: scheduleWorkdayExceptionCategories.id,
+          name: scheduleWorkdayExceptionCategories.name,
+        })
+        .from(scheduleWorkdayExceptionCategories)
+        .where(or(eq(scheduleWorkdayExceptionCategories.jobId, jobId), isNull(scheduleWorkdayExceptionCategories.jobId)))
+        .orderBy(asc(scheduleWorkdayExceptionCategories.name)),
     ]);
 
-    res.json({ phases, tags });
+    res.json({
+      defaultView: storedSettings.defaultView,
+      showTimesOnMonthView: !!storedSettings.showTimesOnMonthView,
+      showJobNameOnAllListedJobs: !!storedSettings.showJobNameOnAllListedJobs,
+      automaticallyMarkItemsComplete: !!storedSettings.automaticallyMarkItemsComplete,
+      includeHeaderOnPdfExports: !!storedSettings.includeHeaderOnPdfExports,
+      phases,
+      tags,
+      workdayExceptionCategories: categories,
+    });
+  }),
+);
+
+router.put(
+  "/jobs/:jobId/schedule/settings",
+  asyncHandler(async (req, res) => {
+    const body = scheduleSettingsPayloadSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid schedule settings payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    const existing = await ensureDefaultScheduleSettings(jobId);
+
+    const [updated] = await db
+      .update(scheduleSettings)
+      .set({
+        defaultView: body.data.defaultView ?? existing.defaultView,
+        showTimesOnMonthView: body.data.showTimesOnMonthView ?? existing.showTimesOnMonthView,
+        showJobNameOnAllListedJobs:
+          body.data.showJobNameOnAllListedJobs ?? existing.showJobNameOnAllListedJobs,
+        automaticallyMarkItemsComplete:
+          body.data.automaticallyMarkItemsComplete ?? existing.automaticallyMarkItemsComplete,
+        includeHeaderOnPdfExports:
+          body.data.includeHeaderOnPdfExports ?? existing.includeHeaderOnPdfExports,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduleSettings.jobId, jobId))
+      .returning();
+
+    await applyAutomaticCompletionIfEnabled(jobId);
+    res.json({ settings: updated });
   }),
 );
 
 router.post(
   "/jobs/:jobId/schedule/settings/phases",
   asyncHandler(async (req, res) => {
-    const body = scheduleSettingPayloadSchema.safeParse(req.body);
+    const body = schedulePhasePayloadSchema.safeParse(req.body);
 
     if (!body.success) {
       throw new HttpError(400, "Invalid phase payload.", body.error.flatten());
@@ -745,10 +1790,12 @@ router.post(
       .values({
         jobId,
         name: body.data.name,
+        color: body.data.color ?? "#e76f8a",
       })
       .returning({
         id: schedulePhases.id,
         name: schedulePhases.name,
+        color: schedulePhases.color,
       });
 
     await writeActivity({
@@ -767,7 +1814,7 @@ router.post(
 router.put(
   "/jobs/:jobId/schedule/settings/phases/:phaseId",
   asyncHandler(async (req, res) => {
-    const body = scheduleSettingPayloadSchema.safeParse(req.body);
+    const body = schedulePhasePayloadSchema.safeParse(req.body);
 
     if (!body.success) {
       throw new HttpError(400, "Invalid phase payload.", body.error.flatten());
@@ -783,15 +1830,121 @@ router.put(
       .update(schedulePhases)
       .set({
         name: body.data.name,
+        color: body.data.color ?? "#e76f8a",
         updatedAt: new Date(),
       })
       .where(eq(schedulePhases.id, phaseId))
       .returning({
         id: schedulePhases.id,
         name: schedulePhases.name,
+        color: schedulePhases.color,
       });
 
     res.json({ phase });
+  }),
+);
+
+router.get(
+  "/jobs/:jobId/schedule/phases",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+
+    const phases = await db
+      .select({
+        id: schedulePhases.id,
+        name: schedulePhases.name,
+        color: schedulePhases.color,
+      })
+      .from(schedulePhases)
+      .where(eq(schedulePhases.jobId, jobId))
+      .orderBy(asc(schedulePhases.name));
+
+    res.json({ phases });
+  }),
+);
+
+router.post(
+  "/jobs/:jobId/schedule/phases",
+  asyncHandler(async (req, res) => {
+    const body = schedulePhasePayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid phase payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+    await assertUniquePhaseName(jobId, body.data.name);
+
+    const [phase] = await db
+      .insert(schedulePhases)
+      .values({
+        jobId,
+        name: body.data.name,
+        color: body.data.color ?? "#e76f8a",
+      })
+      .returning({
+        id: schedulePhases.id,
+        name: schedulePhases.name,
+        color: schedulePhases.color,
+      });
+
+    res.status(201).json({ phase });
+  }),
+);
+
+router.put(
+  "/jobs/:jobId/schedule/phases/:phaseId",
+  asyncHandler(async (req, res) => {
+    const body = schedulePhasePayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid phase payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    const phaseId = getParam(req.params.phaseId, "phase id");
+    await ensureJobExists(jobId);
+    await getPhaseOrThrow(jobId, phaseId);
+    await assertUniquePhaseName(jobId, body.data.name, phaseId);
+
+    const [phase] = await db
+      .update(schedulePhases)
+      .set({
+        name: body.data.name,
+        color: body.data.color ?? "#e76f8a",
+        updatedAt: new Date(),
+      })
+      .where(eq(schedulePhases.id, phaseId))
+      .returning({
+        id: schedulePhases.id,
+        name: schedulePhases.name,
+        color: schedulePhases.color,
+      });
+
+    res.json({ phase });
+  }),
+);
+
+router.delete(
+  "/jobs/:jobId/schedule/phases/:phaseId",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    const phaseId = getParam(req.params.phaseId, "phase id");
+    await ensureJobExists(jobId);
+    await getPhaseOrThrow(jobId, phaseId);
+
+    await db
+      .update(scheduleItems)
+      .set({
+        schedulePhaseId: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduleItems.schedulePhaseId, phaseId));
+    await db.delete(schedulePhases).where(eq(schedulePhases.id, phaseId));
+
+    res.json({ success: true });
   }),
 );
 
@@ -864,10 +2017,370 @@ router.put(
 );
 
 router.get(
+  "/jobs/:jobId/schedule/baseline",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+    await synchronizeJobSchedule(jobId);
+
+    const [baseline] = await db
+      .select({
+        id: scheduleBaselines.id,
+        jobId: scheduleBaselines.jobId,
+        capturedAt: scheduleBaselines.capturedAt,
+        capturedBy: scheduleBaselines.capturedBy,
+        capturedByName: users.fullName,
+        itemsSnapshot: scheduleBaselines.itemsSnapshot,
+      })
+      .from(scheduleBaselines)
+      .leftJoin(users, eq(scheduleBaselines.capturedBy, users.id))
+      .where(eq(scheduleBaselines.jobId, jobId))
+      .limit(1);
+
+    if (!baseline) {
+      res.json({ baseline: null });
+      return;
+    }
+
+    const currentItems = await db
+      .select({
+        id: scheduleItems.id,
+        startDate: scheduleItems.startDate,
+        endDate: scheduleItems.endDate,
+      })
+      .from(scheduleItems)
+      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)));
+    const currentItemMap = new Map(currentItems.map((item) => [item.id, item]));
+    const items = (baseline.itemsSnapshot ?? []).map((entry: {
+      scheduleItemId: string;
+      title: string;
+      baselineStartDate: string;
+      baselineEndDate: string;
+    }) => {
+      const current = currentItemMap.get(entry.scheduleItemId);
+      const shiftDays = current
+        ? diffInDays(parseIsoDate(entry.baselineEndDate), parseIsoDate(current.endDate))
+        : 0;
+
+      return {
+        scheduleItemId: entry.scheduleItemId,
+        title: entry.title,
+        baselineStartDate: entry.baselineStartDate,
+        baselineEndDate: entry.baselineEndDate,
+        currentStartDate: current?.startDate ?? null,
+        currentEndDate: current?.endDate ?? null,
+        shiftDays,
+      };
+    });
+
+    res.json({
+      baseline: {
+        id: baseline.id,
+        jobId: baseline.jobId,
+        capturedAt: baseline.capturedAt,
+        capturedBy: baseline.capturedBy,
+        capturedByName: baseline.capturedByName,
+        items,
+      },
+    });
+  }),
+);
+
+router.post(
+  "/jobs/:jobId/schedule/baseline",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+    const response = await upsertBaselineForJob(jobId, req.auth.userId);
+    res.status(response.statusCode).json({ baseline: response.baseline });
+  }),
+);
+
+router.put(
+  "/jobs/:jobId/schedule/baseline",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+    const response = await upsertBaselineForJob(jobId, req.auth.userId);
+    res.status(response.statusCode).json({ baseline: response.baseline });
+  }),
+);
+
+router.delete(
+  "/jobs/:jobId/schedule/baseline",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+    await db.delete(scheduleBaselines).where(eq(scheduleBaselines.jobId, jobId));
+    res.json({ success: true });
+  }),
+);
+
+router.post(
+  "/jobs/:jobId/workday-exceptions/categories",
+  asyncHandler(async (req, res) => {
+    const body = workdayExceptionCategoryPayloadSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid workday exception category payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+
+    const [category] = await db
+      .insert(scheduleWorkdayExceptionCategories)
+      .values({
+        id: crypto.randomUUID(),
+        jobId,
+        name: body.data.name,
+      })
+      .returning({
+        id: scheduleWorkdayExceptionCategories.id,
+        name: scheduleWorkdayExceptionCategories.name,
+      });
+
+    res.status(201).json({ category });
+  }),
+);
+
+router.put(
+  "/jobs/:jobId/workday-exceptions/categories/:categoryId",
+  asyncHandler(async (req, res) => {
+    const body = workdayExceptionCategoryPayloadSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid workday exception category payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    const categoryId = getParam(req.params.categoryId, "category id");
+    await ensureJobExists(jobId);
+    await assertWorkdayExceptionCategoryBelongsToJob(jobId, categoryId);
+
+    const [category] = await db
+      .update(scheduleWorkdayExceptionCategories)
+      .set({
+        name: body.data.name,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduleWorkdayExceptionCategories.id, categoryId))
+      .returning({
+        id: scheduleWorkdayExceptionCategories.id,
+        name: scheduleWorkdayExceptionCategories.name,
+      });
+
+    res.json({ category });
+  }),
+);
+
+router.get(
+  "/jobs/:jobId/workday-exceptions",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+
+    const exceptions = await getWorkdayExceptionsForJob(jobId);
+    res.json({ exceptions });
+  }),
+);
+
+router.post(
+  "/jobs/:jobId/workday-exceptions",
+  asyncHandler(async (req, res) => {
+    const body = workdayExceptionPayloadSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid workday exception payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+    await assertWorkdayExceptionCategoryBelongsToJob(jobId, body.data.categoryId);
+
+    const [exception] = await db
+      .insert(scheduleWorkdayExceptions)
+      .values({
+        id: crypto.randomUUID(),
+        title: body.data.title,
+        type: body.data.type,
+        startDate: body.data.startDate,
+        endDate: body.data.endDate,
+        sameEveryYear: body.data.sameEveryYear,
+        categoryId: body.data.categoryId,
+        appliesToAllJobs: body.data.appliesToAllJobs,
+        jobIds: body.data.appliesToAllJobs ? [] : body.data.jobIds,
+        notes: body.data.notes,
+        createdBy: req.auth.userId,
+      })
+      .returning();
+
+    await synchronizeJobSchedule(jobId);
+    res.status(201).json({ exception });
+  }),
+);
+
+router.put(
+  "/jobs/:jobId/workday-exceptions/:exceptionId",
+  asyncHandler(async (req, res) => {
+    const body = workdayExceptionUpdatePayloadSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid workday exception payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    const exceptionId = getParam(req.params.exceptionId, "exception id");
+    await ensureJobExists(jobId);
+    const existing = await getWorkdayExceptionOrThrow(exceptionId);
+
+    if (!workdayExceptionAppliesToJob(jobId, existing)) {
+      throw new HttpError(404, "Workday exception not found.");
+    }
+
+    const nextCategoryId = body.data.categoryId ?? existing.categoryId;
+    await assertWorkdayExceptionCategoryBelongsToJob(jobId, nextCategoryId);
+
+    const nextAppliesToAllJobs = body.data.appliesToAllJobs ?? existing.appliesToAllJobs ?? false;
+    const nextJobIds = body.data.jobIds ?? (Array.isArray(existing.jobIds) ? existing.jobIds : []);
+
+    if (!nextAppliesToAllJobs && nextJobIds.length === 0) {
+      throw new HttpError(400, "Select at least one job.");
+    }
+
+    const [exception] = await db
+      .update(scheduleWorkdayExceptions)
+      .set({
+        title: body.data.title ?? existing.title,
+        type: body.data.type ?? existing.type,
+        startDate: body.data.startDate ?? existing.startDate,
+        endDate: body.data.endDate ?? existing.endDate,
+        sameEveryYear: body.data.sameEveryYear ?? existing.sameEveryYear,
+        categoryId: nextCategoryId,
+        appliesToAllJobs: nextAppliesToAllJobs,
+        jobIds: nextAppliesToAllJobs ? [] : nextJobIds,
+        notes: body.data.notes ?? existing.notes,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduleWorkdayExceptions.id, exceptionId))
+      .returning();
+
+    await synchronizeJobSchedule(jobId);
+    res.json({ exception });
+  }),
+);
+
+router.delete(
+  "/jobs/:jobId/workday-exceptions/:exceptionId",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    const exceptionId = getParam(req.params.exceptionId, "exception id");
+    await ensureJobExists(jobId);
+    const existing = await getWorkdayExceptionOrThrow(exceptionId);
+
+    if (!workdayExceptionAppliesToJob(jobId, existing)) {
+      throw new HttpError(404, "Workday exception not found.");
+    }
+
+    await db.delete(scheduleWorkdayExceptions).where(eq(scheduleWorkdayExceptions.id, exceptionId));
+    await synchronizeJobSchedule(jobId);
+    res.json({ success: true });
+  }),
+);
+
+router.post(
+  "/jobs/:jobId/schedule/track-conflicts",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+    await synchronizeJobSchedule(jobId);
+
+    const rows = await db
+      .select({
+        id: scheduleItems.id,
+      })
+      .from(scheduleItems)
+      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
+      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.title));
+    const hydrated = await Promise.all(rows.map((row) => hydrateScheduleItem(row.id)));
+    const conflicts = hydrated.map((entry) => entry.item).filter((item) => item.hasConflict);
+
+    res.json({
+      conflicts,
+      count: conflicts.length,
+    });
+  }),
+);
+
+router.post(
+  "/jobs/:jobId/schedule/notify-assigned-users",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+
+    const rows = await db
+      .select({
+        scheduleItemId: scheduleItems.id,
+        scheduleItemTitle: scheduleItems.title,
+        userId: users.id,
+        fullName: users.fullName,
+        email: users.email,
+      })
+      .from(scheduleItems)
+      .innerJoin(
+        scheduleItemAssignees,
+        eq(scheduleItemAssignees.scheduleItemId, scheduleItems.id),
+      )
+      .innerJoin(users, eq(scheduleItemAssignees.userId, users.id))
+      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
+      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.title), asc(users.fullName));
+
+    const recipients = new Map<string, { id: string; fullName: string; email: string }>();
+    const itemsById = new Map<string, { id: string; title: string }>();
+
+    for (const row of rows) {
+      recipients.set(row.userId, {
+        id: row.userId,
+        fullName: row.fullName,
+        email: row.email,
+      });
+      itemsById.set(row.scheduleItemId, {
+        id: row.scheduleItemId,
+        title: row.scheduleItemTitle,
+      });
+    }
+
+    if (recipients.size > 0 && itemsById.size > 0) {
+      await writeActivity({
+        entityType: "schedule_notification",
+        entityId: crypto.randomUUID(),
+        action: "queued",
+        userId: req.auth.userId,
+        jobId,
+        description: `Queued schedule notifications for ${recipients.size} assigned user${recipients.size === 1 ? "" : "s"} across ${itemsById.size} item${itemsById.size === 1 ? "" : "s"}`,
+        extra: {
+          notifyUserIds: Array.from(recipients.keys()),
+          recipients: Array.from(recipients.values()),
+          scheduleItems: Array.from(itemsById.values()),
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      countUsers: recipients.size,
+      countItems: itemsById.size,
+      recipients: Array.from(recipients.values()),
+    });
+  }),
+);
+
+router.get(
   "/jobs/:jobId/schedule",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
+    await synchronizeJobSchedule(jobId);
 
     const rows = await db
       .select({
@@ -900,45 +2413,67 @@ router.post(
 
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
+    const exceptions = await getWorkdayExceptionsForJob(jobId);
     await assertPredecessorsBelongToJob(
       jobId,
       body.data.predecessors.map((predecessor) => predecessor.scheduleItemId),
     );
     await assertPhaseBelongsToJob(jobId, body.data.phaseId);
+    await ensureTagSettings(jobId, body.data.tags);
+    const predecessorIds = body.data.predecessors.map((predecessor) => predecessor.scheduleItemId);
+    const predecessorItems = predecessorIds.length > 0
+      ? await db
+          .select({
+            id: scheduleItems.id,
+            startDate: scheduleItems.startDate,
+            endDate: scheduleItems.endDate,
+          })
+          .from(scheduleItems)
+          .where(and(inArray(scheduleItems.id, predecessorIds), isNull(scheduleItems.deletedAt)))
+      : [];
+    const normalizedPayload = applyPredecessorDates(
+      {
+        ...body.data,
+        endDate: null,
+      },
+      predecessorItems,
+      exceptions,
+    );
 
     const [item] = await db
       .insert(scheduleItems)
       .values({
         jobId,
-        schedulePhaseId: body.data.phaseId,
-        title: body.data.title,
-        displayColor: body.data.displayColor ?? "#2563eb",
-        startDate: body.data.startDate,
-        workDays: body.data.workDays,
-        endDate:
-          body.data.endDate ?? calculateBusinessEndDate(body.data.startDate, body.data.workDays),
-        isHourly: body.data.isHourly,
-        startTime: normalizeTimeValue(body.data.startTime),
-        endTime: normalizeTimeValue(body.data.endTime),
-        progress: body.data.progress,
-        reminder: body.data.reminder,
-        showOnGantt: body.data.showOnGantt,
-        visibleToEstimators: body.data.visibleToEstimators,
-        visibleToInstallers: body.data.visibleToInstallers,
-        visibleToOfficeStaff: body.data.visibleToOfficeStaff,
-        isComplete: body.data.isComplete,
+        schedulePhaseId: normalizedPayload.phaseId,
+        title: normalizedPayload.title,
+        displayColor: normalizedPayload.displayColor ?? "#2563eb",
+        startDate: normalizedPayload.startDate,
+        workDays: normalizedPayload.workDays,
+        endDate: normalizedPayload.endDate ?? calculateBusinessEndDate(normalizedPayload.startDate, normalizedPayload.workDays, exceptions),
+        isHourly: normalizedPayload.isHourly,
+        startTime: normalizeTimeValue(normalizedPayload.startTime),
+        endTime: normalizeTimeValue(normalizedPayload.endTime),
+        progress: normalizedPayload.progress,
+        reminder: normalizedPayload.reminder,
+        showOnGantt: normalizedPayload.showOnGantt,
+        visibleToEstimators: normalizedPayload.visibleToEstimators,
+        visibleToInstallers: normalizedPayload.visibleToInstallers,
+        visibleToOfficeStaff: normalizedPayload.visibleToOfficeStaff,
+        isComplete: normalizedPayload.isComplete,
         notes: encodeScheduleMeta({
-          notes: body.data.notes,
-          tags: normalizeUniqueStrings(body.data.tags),
-          predecessors: body.data.predecessors,
+          notes: normalizedPayload.notes,
+          tags: normalizeUniqueStrings(normalizedPayload.tags),
+          predecessors: normalizedPayload.predecessors,
         }),
         createdBy: req.auth.userId,
       })
       .returning();
 
-    await syncAssignees(item.id, body.data.assigneeIds);
+    await syncAssignees(item.id, normalizedPayload.assigneeIds);
+    await syncPredecessors(item.id, normalizedPayload.predecessors);
+    await synchronizeJobSchedule(jobId);
 
-    if (body.data.notifyUserIds.length > 0) {
+    if (normalizedPayload.notifyUserIds.length > 0) {
       const recipients = await db
         .select({
           id: users.id,
@@ -946,7 +2481,7 @@ router.post(
           email: users.email,
         })
         .from(users)
-        .where(inArray(users.id, body.data.notifyUserIds));
+        .where(inArray(users.id, normalizedPayload.notifyUserIds));
 
       await writeActivity({
         entityType: "schedule_item_notification",
@@ -963,6 +2498,7 @@ router.post(
       });
     }
 
+    const hydrated = await hydrateScheduleItem(item.id);
     await writeActivity({
       entityType: "schedule_item",
       entityId: item.id,
@@ -972,10 +2508,10 @@ router.post(
       description: `Created schedule item ${item.title}`,
       extra: {
         scheduleItemId: item.id,
+        changes: buildScheduleHistoryChanges(null, hydrated.item),
+        current: buildScheduleHistorySnapshot(hydrated.item),
       },
     });
-
-    const hydrated = await hydrateScheduleItem(item.id);
     res.status(201).json(hydrated);
   }),
 );
@@ -1000,49 +2536,72 @@ router.put(
 
     const itemId = getParam(req.params.id, "schedule item id");
     const existing = await getScheduleItemOrThrow(itemId);
+    const existingHydrated = await hydrateScheduleItem(itemId);
 
     if (!existing.jobId) {
       throw new HttpError(400, "Schedule item is missing a job.");
     }
 
+    const exceptions = await getWorkdayExceptionsForJob(existing.jobId);
     await assertPredecessorsBelongToJob(
       existing.jobId,
       body.data.predecessors.map((predecessor) => predecessor.scheduleItemId),
     );
     await assertPhaseBelongsToJob(existing.jobId, body.data.phaseId);
+    await ensureTagSettings(existing.jobId, body.data.tags);
+    const predecessorIds = body.data.predecessors.map((predecessor) => predecessor.scheduleItemId);
+    const predecessorItems = predecessorIds.length > 0
+      ? await db
+          .select({
+            id: scheduleItems.id,
+            startDate: scheduleItems.startDate,
+            endDate: scheduleItems.endDate,
+          })
+          .from(scheduleItems)
+          .where(and(inArray(scheduleItems.id, predecessorIds), isNull(scheduleItems.deletedAt)))
+      : [];
+    const normalizedPayload = applyPredecessorDates(
+      {
+        ...body.data,
+        endDate: null,
+      },
+      predecessorItems,
+      exceptions,
+    );
 
     await db
       .update(scheduleItems)
       .set({
-        schedulePhaseId: body.data.phaseId,
-        title: body.data.title,
-        displayColor: body.data.displayColor ?? "#2563eb",
-        startDate: body.data.startDate,
-        workDays: body.data.workDays,
-        endDate:
-          body.data.endDate ?? calculateBusinessEndDate(body.data.startDate, body.data.workDays),
-        isHourly: body.data.isHourly,
-        startTime: normalizeTimeValue(body.data.startTime),
-        endTime: normalizeTimeValue(body.data.endTime),
-        progress: body.data.progress,
-        reminder: body.data.reminder,
-        showOnGantt: body.data.showOnGantt,
-        visibleToEstimators: body.data.visibleToEstimators,
-        visibleToInstallers: body.data.visibleToInstallers,
-        visibleToOfficeStaff: body.data.visibleToOfficeStaff,
-        isComplete: body.data.isComplete,
+        schedulePhaseId: normalizedPayload.phaseId,
+        title: normalizedPayload.title,
+        displayColor: normalizedPayload.displayColor ?? "#2563eb",
+        startDate: normalizedPayload.startDate,
+        workDays: normalizedPayload.workDays,
+        endDate: normalizedPayload.endDate ?? calculateBusinessEndDate(normalizedPayload.startDate, normalizedPayload.workDays, exceptions),
+        isHourly: normalizedPayload.isHourly,
+        startTime: normalizeTimeValue(normalizedPayload.startTime),
+        endTime: normalizeTimeValue(normalizedPayload.endTime),
+        progress: normalizedPayload.progress,
+        reminder: normalizedPayload.reminder,
+        showOnGantt: normalizedPayload.showOnGantt,
+        visibleToEstimators: normalizedPayload.visibleToEstimators,
+        visibleToInstallers: normalizedPayload.visibleToInstallers,
+        visibleToOfficeStaff: normalizedPayload.visibleToOfficeStaff,
+        isComplete: normalizedPayload.isComplete,
         notes: encodeScheduleMeta({
-          notes: body.data.notes,
-          tags: normalizeUniqueStrings(body.data.tags),
-          predecessors: body.data.predecessors,
+          notes: normalizedPayload.notes,
+          tags: normalizeUniqueStrings(normalizedPayload.tags),
+          predecessors: normalizedPayload.predecessors,
         }),
         updatedAt: new Date(),
       })
       .where(eq(scheduleItems.id, itemId));
 
-    await syncAssignees(itemId, body.data.assigneeIds);
+    await syncAssignees(itemId, normalizedPayload.assigneeIds);
+    await syncPredecessors(itemId, normalizedPayload.predecessors);
+    await synchronizeJobSchedule(existing.jobId);
 
-    if (body.data.notifyUserIds.length > 0) {
+    if (normalizedPayload.notifyUserIds.length > 0) {
       const recipients = await db
         .select({
           id: users.id,
@@ -1050,7 +2609,7 @@ router.put(
           email: users.email,
         })
         .from(users)
-        .where(inArray(users.id, body.data.notifyUserIds));
+        .where(inArray(users.id, normalizedPayload.notifyUserIds));
 
       await writeActivity({
         entityType: "schedule_item_notification",
@@ -1067,19 +2626,25 @@ router.put(
       });
     }
 
+    const hydrated = await hydrateScheduleItem(itemId);
+    const changes = buildScheduleHistoryChanges(existingHydrated.item, hydrated.item);
+    const markedComplete = !existingHydrated.item.isComplete && hydrated.item.isComplete;
     await writeActivity({
       entityType: "schedule_item",
       entityId: itemId,
-      action: "updated",
+      action: markedComplete ? "completed" : "updated",
       userId: req.auth.userId,
       jobId: existing.jobId,
-      description: `Updated schedule item ${body.data.title}`,
+      description: markedComplete
+        ? `Marked schedule item ${body.data.title} complete`
+        : `Updated schedule item ${body.data.title}`,
       extra: {
         scheduleItemId: itemId,
+        changes,
+        previous: buildScheduleHistorySnapshot(existingHydrated.item),
+        current: buildScheduleHistorySnapshot(hydrated.item),
       },
     });
-
-    const hydrated = await hydrateScheduleItem(itemId);
     res.json(hydrated);
   }),
 );
@@ -1548,6 +3113,7 @@ router.delete(
   "/schedule-items/:id",
   asyncHandler(async (req, res) => {
     const itemId = getParam(req.params.id, "schedule item id");
+    const hydrated = await hydrateScheduleItem(itemId);
     const existing = await getScheduleItemOrThrow(itemId);
 
     if (!existing.jobId) {
@@ -1571,6 +3137,7 @@ router.delete(
       description: `Deleted schedule item ${existing.title}`,
       extra: {
         scheduleItemId: itemId,
+        previous: buildScheduleHistorySnapshot(hydrated.item),
       },
     });
 

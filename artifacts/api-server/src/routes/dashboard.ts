@@ -1,7 +1,13 @@
-import { and, count, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lte, lt, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { dailyLogs, jobs, leads, scheduleItems } from "@workspace/db/schema";
+import {
+  dailyLogs,
+  jobs,
+  leads,
+  scheduleItems,
+  users,
+} from "@workspace/db/schema";
 import { asyncHandler } from "../lib/http";
 
 const router: IRouter = Router();
@@ -56,6 +62,76 @@ router.get(
         myDailyLogs: Number(myDailyLogsRow?.total ?? 0),
       },
     });
+  }),
+);
+
+router.get(
+  "/dashboard/agenda",
+  asyncHandler(async (req, res) => {
+    const today = new Date().toISOString().split("T")[0];
+    const in14Days = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+
+    const [upcomingItems, recentLogs, recentJobs] = await Promise.all([
+      db
+        .select({
+          id: scheduleItems.id,
+          title: scheduleItems.title,
+          startDate: scheduleItems.startDate,
+          endDate: scheduleItems.endDate,
+          displayColor: scheduleItems.displayColor,
+          isComplete: scheduleItems.isComplete,
+          progress: scheduleItems.progress,
+          jobId: scheduleItems.jobId,
+          jobTitle: jobs.title,
+        })
+        .from(scheduleItems)
+        .leftJoin(jobs, eq(scheduleItems.jobId, jobs.id))
+        .where(
+          and(
+            isNull(scheduleItems.deletedAt),
+            gte(scheduleItems.startDate, today),
+            lte(scheduleItems.startDate, in14Days),
+            or(isNull(scheduleItems.isComplete), eq(scheduleItems.isComplete, false)),
+          ),
+        )
+        .orderBy(scheduleItems.startDate)
+        .limit(10),
+
+      db
+        .select({
+          id: dailyLogs.id,
+          logDate: dailyLogs.logDate,
+          title: dailyLogs.title,
+          notes: dailyLogs.notes,
+          jobId: dailyLogs.jobId,
+          jobTitle: jobs.title,
+          createdByName: users.fullName,
+        })
+        .from(dailyLogs)
+        .leftJoin(jobs, eq(dailyLogs.jobId, jobs.id))
+        .leftJoin(users, eq(dailyLogs.createdBy, users.id))
+        .where(isNull(dailyLogs.deletedAt))
+        .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt))
+        .limit(5),
+
+      db
+        .select({
+          id: jobs.id,
+          title: jobs.title,
+          status: jobs.status,
+          city: jobs.city,
+          state: jobs.state,
+          createdAt: jobs.createdAt,
+        })
+        .from(jobs)
+        .where(and(isNull(jobs.deletedAt), eq(jobs.status, "open")))
+        .orderBy(desc(jobs.createdAt))
+        .limit(5),
+    ]);
+
+    res.json({ upcomingItems, recentLogs, recentJobs });
   }),
 );
 

@@ -113,7 +113,7 @@ export default function JobsPage() {
   const location = useLocation()
 
   useEffect(() => {
-    api.get("/clients?pageSize=200")
+    api.get("/clients?pageSize=100")
       .then(r => setClientOptions(r.data.clients ?? []))
       .catch(() => {})
   }, [])
@@ -331,18 +331,16 @@ export default function JobsPage() {
                 <Label htmlFor="title">Title *</Label>
                 <Input id="title" value={form.title} onChange={setField("title")} required placeholder="e.g. Johnson Kitchen Countertops" />
               </div>
-              {clientOptions.length > 0 && (
-                <div className="col-span-2 space-y-1.5">
-                  <Label>Client</Label>
-                  <Select value={form.clientId} onValueChange={v => setForm(f => ({ ...f, clientId: v === "_none" ? "" : v }))}>
-                    <SelectTrigger><SelectValue placeholder="Link to a client (optional)" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_none">— None —</SelectItem>
-                      {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              <div className="col-span-2 space-y-1.5">
+                <Label>Client</Label>
+                <Select value={form.clientId || "_none"} onValueChange={v => setForm(f => ({ ...f, clientId: v === "_none" ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="Link to a client (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— None —</SelectItem>
+                    {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-1.5">
                 <Label>Job Type</Label>
                 <Select value={form.jobType} onValueChange={v => setForm(f => ({ ...f, jobType: v }))}>

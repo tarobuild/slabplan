@@ -67,7 +67,7 @@ export default function JobSummaryPage() {
 
   useEffect(() => {
     api.get("/users").then(r => setUserOptions(r.data.users ?? [])).catch(() => {})
-    api.get("/clients?pageSize=200").then(r => setClientOptions(r.data.clients ?? [])).catch(() => {})
+    api.get("/clients?pageSize=100").then(r => setClientOptions(r.data.clients ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {

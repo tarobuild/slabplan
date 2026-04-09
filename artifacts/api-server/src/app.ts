@@ -11,6 +11,7 @@ import router from "./routes";
 import { uploadCookieName, verifyAccessToken, verifyUploadToken } from "./lib/auth";
 import { assertCanAccessUploadPath } from "./lib/authorization";
 import { corsOrigin } from "./lib/cors";
+import { sanitizeDownloadFilename } from "./lib/downloads";
 import { logger } from "./lib/logger";
 import { HttpError } from "./lib/http";
 import { readBearerToken } from "./middleware/require-auth";
@@ -125,7 +126,9 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
       throw new HttpError(404, "Stored file missing.");
     }
 
-    res.download(absolutePath, storedFile.originalName, (error) => {
+    const safeName = sanitizeDownloadFilename(storedFile.originalName);
+
+    res.download(absolutePath, safeName, (error) => {
       if (!error) {
         return;
       }

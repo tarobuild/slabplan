@@ -53,6 +53,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
+import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
 
 type FolderItem = {
@@ -76,12 +77,14 @@ type FileItem = {
   fileUrl: string | null
   fileSize: number | null
   mimeType: string | null
+  note: string | null
   uploadedByName: string | null
   createdAt: string
 }
 
 type MediaType = "document" | "photo" | "video"
 type ViewMode = "grid" | "list"
+type ScopeMode = "job" | "resource"
 
 const SORT_OPTIONS = [
   "name-asc",
@@ -137,13 +140,21 @@ export default function FileBrowser({
   mediaType,
   defaultView,
   jobIdOverride,
+  scope = "job",
+  rootLabel,
 }: {
   mediaType: MediaType
   defaultView?: ViewMode
   jobIdOverride?: string
+  scope?: ScopeMode
+  rootLabel?: string
 }) {
   const { jobId: jobIdParam } = useParams<{ jobId: string }>()
   const jobId = jobIdOverride ?? jobIdParam
+  const user = useAuthStore((state) => state.user)
+  const isResourceScope = scope === "resource"
+  const isReadOnly = isResourceScope && user?.role !== "admin"
+  const showCrewPhotoNote = user?.role === "crew_member" && mediaType === "photo"
 
   const resolvedDefault: ViewMode =
     defaultView ?? (mediaType === "document" ? "list" : "grid")
@@ -171,18 +182,31 @@ export default function FileBrowser({
 
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
+  const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([])
+  const [uploadNote, setUploadNote] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [lightboxFile, setLightboxFile] = useState<FileItem | null>(null)
   const [videoPlayerFile, setVideoPlayerFile] = useState<FileItem | null>(null)
 
   const loadFolders = (parentId: string | null = null) => {
-    if (!jobId) return
     setLoading(true)
-    const params = new URLSearchParams({ mediaType })
+    if (!isResourceScope && !jobId) {
+      setLoading(false)
+      return
+    }
+    const params = new URLSearchParams()
+    if (!isResourceScope) {
+      params.set("mediaType", mediaType)
+    }
     if (parentId) params.set("parentId", parentId)
     api
-      .get(`/jobs/${jobId}/folders?${params}`)
+      .get(
+        isResourceScope
+          ? `/resources/folders?${params}`
+          : `/jobs/${jobId}/folders?${params}`,
+      )
       .then((r) => {
         setFolders(r.data.folders ?? [])
         setBreadcrumb(r.data.breadcrumb ?? [])
@@ -194,7 +218,11 @@ export default function FileBrowser({
   const loadFiles = (folderId: string) => {
     setFilesLoading(true)
     api
-      .get(`/folders/${folderId}/files?page=1&limit=100`)
+      .get(
+        isResourceScope
+          ? `/resources/folders/${folderId}/files`
+          : `/folders/${folderId}/files?page=1&limit=100`,
+      )
       .then((r) => setFiles(r.data.files ?? []))
       .catch((err: unknown) => toast.error(getApiErrorMessage(err, "Failed to load files")))
       .finally(() => setFilesLoading(false))
@@ -205,8 +233,10 @@ export default function FileBrowser({
     setFiles([])
     setBreadcrumb([])
     setUploadError(null)
+    setSelectedUploadFiles([])
+    setUploadNote("")
     loadFolders(null)
-  }, [jobId, mediaType])
+  }, [jobId, mediaType, scope])
 
   const openFolder = (folder: FolderItem) => {
     setCurrentFolderId(folder.id)
@@ -223,14 +253,21 @@ export default function FileBrowser({
 
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!jobId) return
+    if (!isResourceScope && !jobId) return
     setCreatingFolder(true)
     try {
-      await api.post(`/jobs/${jobId}/folders`, {
-        title: newFolderName,
-        mediaType,
-        parentFolderId: currentFolderId,
-      })
+      if (isResourceScope) {
+        await api.post("/resources/folders", {
+          title: newFolderName,
+          parentFolderId: currentFolderId,
+        })
+      } else {
+        await api.post(`/jobs/${jobId}/folders`, {
+          title: newFolderName,
+          mediaType,
+          parentFolderId: currentFolderId,
+        })
+      }
       toast.success("Folder created")
       setCreateFolderOpen(false)
       setNewFolderName("")
@@ -273,26 +310,54 @@ export default function FileBrowser({
     }
   }
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!currentFolderId || !e.target.files?.length) return
-    const selectedFiles = Array.from(e.target.files)
-    const validationError = validateSelectedFiles(selectedFiles, mediaType)
+  const handleUploadSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return
+    const nextFiles = Array.from(e.target.files)
+    const validationError = validateSelectedFiles(nextFiles, mediaType)
 
     if (validationError) {
       setUploadError(validationError)
+      setSelectedUploadFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ""
       return
     }
 
     setUploadError(null)
+    setSelectedUploadFiles(nextFiles)
+  }
+
+  const handleUploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!currentFolderId || selectedUploadFiles.length === 0) {
+      setUploadError("Select at least one file to upload.")
+      return
+    }
+
+    if (showCrewPhotoNote && uploadNote.trim().length === 0) {
+      setUploadError("A note is required when crew members upload photos.")
+      return
+    }
+
     const formData = new FormData()
-    selectedFiles.forEach((file) => formData.append("files", file))
+    selectedUploadFiles.forEach((file) => formData.append("files", file))
+    if (uploadNote.trim()) {
+      formData.append("note", uploadNote.trim())
+    }
     setUploading(true)
     try {
-      await api.post(`/folders/${currentFolderId}/files`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-      toast.success(`${selectedFiles.length} file(s) uploaded`)
+      await api.post(
+        isResourceScope
+          ? `/resources/folders/${currentFolderId}/upload`
+          : `/folders/${currentFolderId}/files`,
+        formData,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      )
+      toast.success(`${selectedUploadFiles.length} file(s) uploaded`)
+      setUploadDialogOpen(false)
+      setSelectedUploadFiles([])
+      setUploadNote("")
       loadFiles(currentFolderId)
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, "Upload failed"))
@@ -355,7 +420,10 @@ export default function FileBrowser({
 
   const mediaLabel =
     mediaType === "document" ? "Documents" : mediaType === "photo" ? "Photos" : "Videos"
+  const rootFolderLabel = rootLabel ?? mediaLabel
   const canToggleView = true
+  const canManageFolders = !isReadOnly
+  const canUploadFiles = !!currentFolderId && !isReadOnly
 
   return (
     <div className="space-y-4">
@@ -367,7 +435,7 @@ export default function FileBrowser({
               currentFolderId ? "text-blue-600 hover:underline" : "text-slate-900"
             }`}
           >
-            {mediaLabel}
+            {rootFolderLabel}
           </button>
           {breadcrumb.map((crumb) => (
             <span key={crumb.id} className="flex items-center gap-1.5 min-w-0">
@@ -433,7 +501,7 @@ export default function FileBrowser({
             </div>
           )}
 
-          {currentFolderId && (
+          {canUploadFiles && (
             <>
               <input
                 ref={fileInputRef}
@@ -441,12 +509,17 @@ export default function FileBrowser({
                 multiple
                 accept={uploadAcceptForMediaType(mediaType)}
                 className="hidden"
-                onChange={handleUpload}
+                onChange={handleUploadSelection}
               />
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  setUploadError(null)
+                  setSelectedUploadFiles([])
+                  setUploadNote("")
+                  setUploadDialogOpen(true)
+                }}
                 disabled={uploading}
               >
                 {uploading ? (
@@ -458,16 +531,18 @@ export default function FileBrowser({
               </Button>
             </>
           )}
-          <Button
-            size="sm"
-            onClick={() => {
-              setNewFolderName("")
-              setCreateFolderOpen(true)
-            }}
-          >
-            <Plus className="mr-1.5 size-3.5" />
-            New Folder
-          </Button>
+          {canManageFolders ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                setNewFolderName("")
+                setCreateFolderOpen(true)
+              }}
+            >
+              <Plus className="mr-1.5 size-3.5" />
+              New Folder
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -492,6 +567,7 @@ export default function FileBrowser({
                   key={folder.id}
                   folder={folder}
                   isOpen={currentFolderId === folder.id}
+                  showActions={canManageFolders}
                   onOpen={() => openFolder(folder)}
                   onRename={() => {
                     setRenameFolderTarget(folder)
@@ -525,12 +601,19 @@ export default function FileBrowser({
                 <div className="py-16 text-center mt-3">
                   <FolderOpen className="mx-auto mb-3 size-8 text-slate-200" />
                   <p className="text-sm text-slate-400">This folder is empty.</p>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="mt-1 text-sm text-blue-600 hover:underline"
-                  >
-                    Upload files
-                  </button>
+                  {canUploadFiles ? (
+                    <button
+                      onClick={() => {
+                        setUploadError(null)
+                        setSelectedUploadFiles([])
+                        setUploadNote("")
+                        setUploadDialogOpen(true)
+                      }}
+                      className="mt-1 text-sm text-blue-600 hover:underline"
+                    >
+                      Upload files
+                    </button>
+                  ) : null}
                 </div>
               ) : (
                 <div className="py-8 text-center text-sm text-slate-400">
@@ -544,19 +627,94 @@ export default function FileBrowser({
             <div className="py-16 text-center">
               <Folder className="mx-auto mb-3 size-8 text-slate-200" />
               <p className="text-sm text-slate-400">No folders yet.</p>
-              <button
-                onClick={() => {
-                  setNewFolderName("")
-                  setCreateFolderOpen(true)
-                }}
-                className="mt-1 text-sm text-blue-600 hover:underline"
-              >
-                Create the first folder
-              </button>
+              {canManageFolders ? (
+                <button
+                  onClick={() => {
+                    setNewFolderName("")
+                    setCreateFolderOpen(true)
+                  }}
+                  className="mt-1 text-sm text-blue-600 hover:underline"
+                >
+                  Create the first folder
+                </button>
+              ) : null}
             </div>
           )}
         </>
       )}
+
+      <Dialog
+        open={uploadDialogOpen}
+        onOpenChange={(open) => {
+          setUploadDialogOpen(open)
+          if (!open) {
+            setSelectedUploadFiles([])
+            setUploadNote("")
+            setUploadError(null)
+            if (fileInputRef.current) fileInputRef.current.value = ""
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Upload {mediaLabel}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUploadSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Files</Label>
+              <div className="rounded-lg border border-dashed border-[#E5E7EB] bg-slate-50 p-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Choose Files
+                </Button>
+                {selectedUploadFiles.length > 0 ? (
+                  <div className="mt-3 space-y-1">
+                    {selectedUploadFiles.map((file) => (
+                      <p key={`${file.name}-${file.size}`} className="truncate text-sm text-slate-600">
+                        {file.name}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-400">No files selected.</p>
+                )}
+              </div>
+            </div>
+
+            {showCrewPhotoNote ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="upload-note">Note (required)</Label>
+                <Input
+                  id="upload-note"
+                  value={uploadNote}
+                  onChange={(event) => setUploadNote(event.target.value)}
+                  placeholder="Describe the area or work shown in these photos"
+                  required
+                />
+              </div>
+            ) : null}
+
+            {uploadError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {uploadError}
+              </div>
+            ) : null}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setUploadDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={uploading}>
+                {uploading && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                Upload
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
         <DialogContent className="sm:max-w-sm">
@@ -674,10 +832,13 @@ export default function FileBrowser({
                 alt={displayName(lightboxFile)}
                 className="max-h-[80vh] max-w-full object-contain"
               />
-              <div className="flex items-center justify-between w-full px-4 py-3 bg-black/80 text-white">
-                <span className="text-sm font-medium truncate max-w-xs">
-                  {displayName(lightboxFile)}
-                </span>
+              <div className="flex w-full items-center justify-between gap-4 bg-black/80 px-4 py-3 text-white">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{displayName(lightboxFile)}</p>
+                  {lightboxFile.note ? (
+                    <p className="mt-1 text-xs text-white/70">{lightboxFile.note}</p>
+                  ) : null}
+                </div>
                 <a
                   href={lightboxFile.fileUrl}
                   download={displayName(lightboxFile)}
@@ -741,12 +902,14 @@ export default function FileBrowser({
 function FolderCard({
   folder,
   isOpen,
+  showActions,
   onOpen,
   onRename,
   onDelete,
 }: {
   folder: FolderItem
   isOpen: boolean
+  showActions: boolean
   onOpen: () => void
   onRename: () => void
   onDelete: () => void
@@ -778,37 +941,39 @@ function FolderCard({
         </div>
 
         <div className="relative z-10">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                onClick={(e) => e.stopPropagation()}
-                aria-label="Folder options"
-              >
-                <MoreHorizontal className="size-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRename()
-                }}
-              >
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDelete()
-                }}
-                className="text-red-600 focus:text-red-600"
-              >
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {showActions ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="Folder options"
+                >
+                  <MoreHorizontal className="size-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRename()
+                  }}
+                >
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete()
+                  }}
+                  className="text-red-600 focus:text-red-600"
+                >
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </div>
     </div>
@@ -860,6 +1025,9 @@ function PhotoGrid({
             <div className="px-2.5 py-2 border-t border-[#E5E7EB] bg-white">
               <p className="text-xs font-medium text-slate-800 truncate">{displayName(file)}</p>
               <p className="text-xs text-slate-400">{formatFileSize(file.fileSize)}</p>
+              {file.note ? (
+                <p className="mt-1 line-clamp-2 text-xs text-slate-500">{file.note}</p>
+              ) : null}
             </div>
           </button>
         )
@@ -905,6 +1073,8 @@ function FileTable({
   files: FileItem[]
   showDuration?: boolean
 }) {
+  const showNotes = files.some((file) => !!file.note)
+
   return (
     <div className="rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
       <table className="w-full text-sm">
@@ -914,6 +1084,9 @@ function FileTable({
             <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Size</th>
             {showDuration && (
               <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Duration</th>
+            )}
+            {showNotes && (
+              <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Note</th>
             )}
             <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Uploaded By</th>
             <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Date</th>
@@ -943,6 +1116,11 @@ function FileTable({
                 {formatFileSize(file.fileSize)}
               </td>
               {showDuration && <td className="px-4 py-3 text-slate-400">—</td>}
+              {showNotes && (
+                <td className="px-4 py-3 text-slate-500">
+                  {file.note ? <span className="line-clamp-2">{file.note}</span> : "—"}
+                </td>
+              )}
               <td className="px-4 py-3 text-slate-500">{file.uploadedByName ?? "—"}</td>
               <td className="px-4 py-3 text-slate-500">{fmtDate(file.createdAt)}</td>
             </tr>

@@ -70,9 +70,7 @@ export default function FilesPhotosPage() {
               ))}
             </SelectContent>
           </Select>
-        ) : (
-          <p className="text-sm text-slate-400">No jobs found</p>
-        )}
+        ) : null}
       </div>
       <div className="border-t border-slate-200" />
       {loading ? (
@@ -80,6 +78,13 @@ export default function FilesPhotosPage() {
           {Array.from({ length: 3 }).map((_, index) => (
             <Skeleton key={index} className="h-16 w-full rounded-xl" />
           ))}
+        </div>
+      ) : jobs.length === 0 ? (
+        <div className="py-16 text-center">
+          <FolderOpen className="mx-auto mb-3 size-8 text-slate-200" />
+          <p className="text-sm text-slate-500">
+            No jobs available. You&apos;ll see files here once you&apos;re assigned to a job.
+          </p>
         </div>
       ) : selectedJobId ? (
         <FileBrowser key={selectedJobId} mediaType="photo" jobIdOverride={selectedJobId} />

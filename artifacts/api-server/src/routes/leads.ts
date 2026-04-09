@@ -1144,7 +1144,7 @@ router.post(
       })
       .returning();
 
-    await ensureSystemFolders(job.id);
+    await ensureSystemFolders(job.id, { includeJobTemplates: true });
 
     await db
       .update(leads)

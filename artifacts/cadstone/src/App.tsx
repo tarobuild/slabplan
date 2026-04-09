@@ -22,6 +22,7 @@ import LeadsPage from "@/pages/leads"
 import LoginPage from "@/pages/login"
 import MyDailyLogsPage from "@/pages/my-daily-logs"
 import NotFoundPage from "@/pages/not-found"
+import ResourcesPage from "@/pages/resources"
 import SettingsPage from "@/pages/settings"
 import { useAuthStore } from "@/store/auth"
 
@@ -80,6 +81,7 @@ function AppRoutes({ ready }: { ready: boolean }) {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
           <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/resources" element={<ResourcesPage />} />
           <Route path="/files/documents" element={<FilesDocumentsPage />} />
           <Route path="/files/photos" element={<FilesPhotosPage />} />
           <Route path="/files/videos" element={<FilesVideosPage />} />

@@ -1,0 +1,77 @@
+---
+  Issue 1: resources/folders/:id/files endpoint hardcodes pagination                  
+                                                                                      
+  File: artifacts/api-server/src/routes/resources.ts:86-106                           
+                                                                                      
+  Problem: The GET /resources/folders/:id/files endpoint hardcodes page: 1, limit: 100
+   instead of accepting query parameters. As the resource library grows, users can't
+  paginate past the first 100 files.                                                  
+                                                                  
+  Fix: Parse page and limit from req.query (like the job files endpoint does in       
+  files.ts:24-45) and pass them through to listFilesForFolder.
+                                                                                      
+  ---                                                             
+  Issue 2: jobPayloadSchema accepts assigneeIds on PUT but ignores it
+                                                                     
+  File: artifacts/api-server/src/routes/jobs.ts:67-104 (schema) and jobs.ts:505-563
+  (PUT handler)                                                                       
+   
+  Problem: The jobPayloadSchema includes assigneeIds:                                 
+  z.array(z.string().uuid()).optional().default([]). This schema is shared by both
+  POST and PUT. The POST handler uses it to create assignees, but the PUT handler     
+  silently ignores assigneeIds. A client sending assigneeIds on a PUT would get no
+  error but nothing would happen — confusing API behavior.
+
+  Fix: Either:
+  - (Preferred) Create a separate updateJobPayloadSchema that omits assigneeIds (since
+   assignees are managed via their own dedicated endpoints), OR                       
+  - Strip assigneeIds from jobPayloadSchema and add it only in the POST handler's
+  inline parse                                                                        
+                                                                                      
+  ---
+  Issue 3: Worker picker always shows full dropdown list immediately                  
+                                                                    
+  File: artifacts/cadstone/src/components/WorkerAssignmentPicker.tsx:96-127
+                                                                                      
+  Problem: The available workers list renders immediately and always, even when the   
+  user hasn't typed anything and there could be dozens of workers. This makes the     
+  component visually heavy.                                                           
+                                                                  
+  Fix: Only show the availableWorkers dropdown when the search query is non-empty     
+  (i.e., the user has started typing), or wrap it in a collapsible/scrollable
+  container with a max-height so it doesn't dominate the form.                        
+                                                                  
+  ---
+  Issue 4: Resource folder file listing doesn't support search/filter/sort query 
+  params                                                                              
+        
+  File: artifacts/api-server/src/routes/resources.ts:86-106                           
+                                                                                      
+  Problem: The job file listing endpoint (files.ts:74-101) supports search,           
+  uploadedBy, fileTypes, from, to, sortBy, includeDeleted query params. The resource  
+  file listing passes none of these — it hardcodes search: null, uploadedBy: null,    
+  fileTypes: [], from: null, to: null, sortBy: "modified_newest". As the resources
+  library grows, users have no way to search or filter files.
+
+  Fix: Reuse the same fileListQuerySchema from files.ts (or a subset of it) in the    
+  resources file listing route, and forward the parsed values to listFilesForFolder.
+                                                                                      
+  ---                                                             
+  Summary prompt for codex
+                          
+  ▎ Fix these 4 issues in the #22 implementation:
+  ▎                                                                                   
+  ▎ 1. artifacts/api-server/src/routes/resources.ts GET /resources/folders/:id/files —
+  ▎  Accept page, limit, search, sortBy, fileTypes, from, to query params (use same   
+  ▎ fileListQuerySchema pattern from artifacts/api-server/src/routes/files.ts:24-45)  
+  ▎ and pass them to listFilesForFolder instead of hardcoding defaults.
+  ▎ 2. artifacts/api-server/src/routes/jobs.ts — The shared jobPayloadSchema includes 
+  ▎ assigneeIds which the PUT handler ignores. Remove assigneeIds from                
+  ▎ jobPayloadSchema and instead parse it only in the POST /jobs handler where it's 
+  ▎ actually used (inline extend the schema or parse separately).                     
+  ▎ 3. artifacts/cadstone/src/components/WorkerAssignmentPicker.tsx — Only show the 
+  ▎ available workers dropdown list when the user has typed a search query (i.e.,     
+  ▎ query.trim().length > 0), or the user has focused the input. Don't render the full
+  ▎  worker list by default.                                                          
+  ▎ 4. Ensure pnpm typecheck and pnpm --filter @workspace/cadstone run build still 
+  ▎ pass after all changes.         

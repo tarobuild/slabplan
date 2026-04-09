@@ -2,9 +2,12 @@ import { type Dispatch, type SetStateAction, useEffect, useState } from "react"
 import { useOutletContext, useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { api } from "@/lib/api"
+import WorkerAssignmentPicker, { type WorkerOption } from "@/components/WorkerAssignmentPicker"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -16,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
 import { invalidateAppData } from "@/lib/data-refresh"
+import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
 
 type Job = {
@@ -44,9 +48,9 @@ type Job = {
   workDays: string[] | null
   createdAt: string
   createdByName: string | null
+  assignees: WorkerOption[]
 }
 
-type UserOption = { id: string; fullName: string }
 type ClientOption = { id: string; companyName: string }
 
 const JOB_TYPES = ["countertops", "backsplash", "flooring", "custom"]
@@ -63,9 +67,37 @@ function serializeJob(job: Job | null) {
   if (!job) return ""
 
   return JSON.stringify({
-    ...job,
+    id: job.id,
+    title: job.title,
+    status: job.status,
+    streetAddress: job.streetAddress,
+    city: job.city,
+    state: job.state,
+    zipCode: job.zipCode,
+    jobType: job.jobType,
+    contractPrice: job.contractPrice,
+    contractType: job.contractType,
+    internalNotes: job.internalNotes,
+    subVendorNotes: job.subVendorNotes,
+    squareFeet: job.squareFeet,
+    permitNumber: job.permitNumber,
+    projectManagerId: job.projectManagerId,
+    clientId: job.clientId,
+    projectedStart: job.projectedStart,
+    projectedCompletion: job.projectedCompletion,
+    actualStart: job.actualStart,
+    actualCompletion: job.actualCompletion,
     workDays: [...(job.workDays ?? [])].sort(),
   })
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .map((part) => part[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase()
 }
 
 type JobDetailContext = {
@@ -81,29 +113,49 @@ type JobDetailContext = {
 export default function JobSummaryPage() {
   const { jobId } = useParams<{ jobId: string }>()
   const { setJob: setParentJob } = useOutletContext<JobDetailContext>()
+  const user = useAuthStore((state) => state.user)
+  const isAdmin = user?.role === "admin"
   const [job, setJob] = useState<Job | null>(null)
   const [savedJob, setSavedJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [userOptions, setUserOptions] = useState<UserOption[]>([])
+  const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([])
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
+  const [assigneePopoverOpen, setAssigneePopoverOpen] = useState(false)
+  const [assigneeDraftIds, setAssigneeDraftIds] = useState<string[]>([])
+  const [savingAssignees, setSavingAssignees] = useState(false)
   const hasUnsavedChanges = !!job && !!savedJob && serializeJob(job) !== serializeJob(savedJob)
   const unsavedChanges = useUnsavedChangesGuard(hasUnsavedChanges && !saving)
+  const projectManagerOptions = workerOptions.filter((option) => option.role === "project_manager")
 
   useEffect(() => {
-    api.get("/users").then(r => setUserOptions(r.data.users ?? [])).catch(() => {})
+    api.get("/users?roles=project_manager,crew_member&limit=200").then(r => setWorkerOptions(r.data.users ?? [])).catch(() => {})
     api.get("/clients?pageSize=100").then(r => setClientOptions(r.data.clients ?? [])).catch(() => {})
   }, [])
+
+  const loadAssignees = async (targetJobId: string) => {
+    const response = await api.get(`/jobs/${targetJobId}/assignees`)
+    const assignees = response.data.assignees ?? []
+    setJob((current) => current ? { ...current, assignees } : current)
+    setSavedJob((current) => current ? { ...current, assignees } : current)
+    return assignees
+  }
 
   useEffect(() => {
     if (!jobId) return
     setLoading(true)
+    setJob(null)
+    setSavedJob(null)
+    setAssigneeDraftIds([])
     api.get(`/jobs/${jobId}`)
       .then(r => {
         const nextJob = r.data.job ?? r.data
         setJob(nextJob)
         setSavedJob(nextJob)
+        setAssigneeDraftIds((nextJob.assignees ?? []).map((assignee: WorkerOption) => assignee.id))
       })
+      .then(() => loadAssignees(jobId).catch(() => {}))
+      .catch(() => toast.error("Failed to load job"))
       .finally(() => setLoading(false))
   }, [jobId])
 
@@ -165,6 +217,33 @@ export default function JobSummaryPage() {
       toast.error(err.response?.data?.message || "Failed to save")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleSaveAssignees = async () => {
+    if (!jobId || !job) return
+
+    const currentIds = new Set(job.assignees.map((assignee) => assignee.id))
+    const nextIds = new Set(assigneeDraftIds)
+    const toAdd = assigneeDraftIds.filter((id) => !currentIds.has(id))
+    const toRemove = job.assignees
+      .map((assignee) => assignee.id)
+      .filter((id) => !nextIds.has(id))
+
+    setSavingAssignees(true)
+    try {
+      await Promise.all([
+        ...toAdd.map((userId) => api.post(`/jobs/${jobId}/assignees`, { userId })),
+        ...toRemove.map((userId) => api.delete(`/jobs/${jobId}/assignees/${userId}`)),
+      ])
+      const assignees = await loadAssignees(jobId)
+      setAssigneeDraftIds(assignees.map((assignee: WorkerOption) => assignee.id))
+      setAssigneePopoverOpen(false)
+      toast.success("Assigned workers updated")
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Failed to update assigned workers")
+    } finally {
+      setSavingAssignees(false)
     }
   }
 
@@ -389,7 +468,7 @@ export default function JobSummaryPage() {
                 <SelectTrigger><SelectValue placeholder="Assign a project manager" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">— None —</SelectItem>
-                  {userOptions.map(u => (
+                  {projectManagerOptions.map(u => (
                     <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
                   ))}
                 </SelectContent>
@@ -415,6 +494,69 @@ export default function JobSummaryPage() {
               <p className="text-xs text-slate-400 pt-1">
                 Created by <span className="font-medium text-slate-600">{job.createdByName}</span> on {fmtDate(job.createdAt)}
               </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Assigned Workers</h3>
+              {isAdmin ? (
+                <Popover open={assigneePopoverOpen} onOpenChange={setAssigneePopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAssigneeDraftIds(job.assignees.map((assignee) => assignee.id))}
+                    >
+                      Add / Remove
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-[380px] space-y-3">
+                    <div>
+                      <h4 className="text-sm font-medium text-slate-900">Assigned Workers</h4>
+                      <p className="text-xs text-slate-500">Project managers and crew members assigned to this job.</p>
+                    </div>
+                    <WorkerAssignmentPicker
+                      options={workerOptions}
+                      selectedIds={assigneeDraftIds}
+                      onChange={setAssigneeDraftIds}
+                      placeholder="Search workers"
+                      className="border-0 px-0 py-0"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setAssigneePopoverOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="button" size="sm" onClick={handleSaveAssignees} disabled={savingAssignees}>
+                        {savingAssignees && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                        Save
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              ) : null}
+            </div>
+
+            {job.assignees.length > 0 ? (
+              <div className="space-y-3">
+                {job.assignees.map((assignee) => (
+                  <div key={assignee.id} className="flex items-center gap-3">
+                    <Avatar className="size-9">
+                      <AvatarImage src={assignee.avatarUrl || undefined} alt={assignee.fullName} />
+                      <AvatarFallback className="bg-slate-100 text-[10px] font-semibold text-slate-700">
+                        {initials(assignee.fullName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900">{assignee.fullName}</p>
+                      <p className="text-xs capitalize text-slate-500">{assignee.role.replaceAll("_", " ")}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">No workers assigned yet.</p>
             )}
           </div>
         </div>

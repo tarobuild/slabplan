@@ -159,12 +159,27 @@ export const jobs = pgTable(
   ],
 );
 
+export const jobAssignees = pgTable(
+  "job_assignees",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("job_assignees_job_user_unique").on(table.jobId, table.userId),
+    index("job_assignees_job_id_idx").on(table.jobId),
+    index("job_assignees_user_id_idx").on(table.userId),
+  ],
+);
+
 export const folders = pgTable(
   "folders",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
     title: varchar("title", { length: 255 }).notNull(),
-    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
     parentFolderId: uuid("parent_folder_id"),
     mediaType: varchar("media_type", { length: 50 }).notNull(),
     viewingPermissions: json("viewing_permissions").$type<Record<string, unknown> | null>(),
@@ -185,12 +200,29 @@ export const folders = pgTable(
       table.title,
       table.parentFolderId,
       table.mediaType,
-    ).where(sql`${table.deletedAt} is null and ${table.parentFolderId} is not null`),
+    ).where(
+      sql`${table.deletedAt} is null and ${table.jobId} is not null and ${table.parentFolderId} is not null`,
+    ),
     uniqueIndex("folders_job_title_root_media_unique").on(
       table.jobId,
       table.title,
       table.mediaType,
-    ).where(sql`${table.deletedAt} is null and ${table.parentFolderId} is null`),
+    ).where(
+      sql`${table.deletedAt} is null and ${table.jobId} is not null and ${table.parentFolderId} is null`,
+    ),
+    uniqueIndex("folders_resource_title_parent_media_unique").on(
+      table.title,
+      table.parentFolderId,
+      table.mediaType,
+    ).where(
+      sql`${table.deletedAt} is null and ${table.jobId} is null and ${table.parentFolderId} is not null`,
+    ),
+    uniqueIndex("folders_resource_title_root_media_unique").on(
+      table.title,
+      table.mediaType,
+    ).where(
+      sql`${table.deletedAt} is null and ${table.jobId} is null and ${table.parentFolderId} is null`,
+    ),
   ],
 );
 
@@ -204,6 +236,7 @@ export const files = pgTable(
     fileUrl: varchar("file_url", { length: 500 }),
     fileSize: bigint("file_size", { mode: "number" }),
     mimeType: varchar("mime_type", { length: 100 }),
+    note: text("note"),
     uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
     ...baseTimestamps,
     ...softDeleteTimestamp,
@@ -726,6 +759,8 @@ export type ClientContact = typeof clientContacts.$inferSelect;
 export type NewClientContact = typeof clientContacts.$inferInsert;
 export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
+export type JobAssignee = typeof jobAssignees.$inferSelect;
+export type NewJobAssignee = typeof jobAssignees.$inferInsert;
 export type Folder = typeof folders.$inferSelect;
 export type NewFolder = typeof folders.$inferInsert;
 export type File = typeof files.$inferSelect;

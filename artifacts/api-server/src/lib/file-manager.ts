@@ -38,6 +38,102 @@ export const documentExtensions = [
 export const photoExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
 export const videoExtensions = [".mp4", ".mov", ".avi", ".webm", ".m4v"];
 
+const GLOBAL_SYSTEM_FOLDERS = [
+  {
+    mediaType: "document",
+    title: "Global Documents",
+    isGlobal: true,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "video",
+    title: "Global Videos",
+    isGlobal: true,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+] as const;
+
+const JOB_TEMPLATE_FOLDERS: Array<{
+  mediaType: "document" | "photo";
+  title: string;
+  isGlobal: boolean;
+  viewingPermissions: Record<string, boolean>;
+  uploadingPermissions: Record<string, boolean>;
+}> = [
+  {
+    mediaType: "document",
+    title: "01. PLANS",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "02. TAKE OFFS & PRICING",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "03. ESTIMATES",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "04. CONTRACT",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "05. PRELIM NOTICE",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "06. COI's",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "07. INVOICES & WAIVERS",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "08. CHANGE ORDERS",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "09. MATERIALS & EXPENSES",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "photo",
+    title: "10. PICTURES",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true, crew_member: true },
+  },
+];
+
 const allowedPhotoMimeTypes = new Set([
   "image/jpeg",
   "image/png",
@@ -144,13 +240,13 @@ export async function ensureJobExists(jobId: string) {
   return job;
 }
 
-async function findRootSystemFolder(jobId: string, mediaType: string, title: string) {
+async function findRootSystemFolder(jobId: string | null, mediaType: string, title: string) {
   const [folder] = await db
     .select()
     .from(folders)
     .where(
       and(
-        eq(folders.jobId, jobId),
+        jobId ? eq(folders.jobId, jobId) : isNull(folders.jobId),
         eq(folders.mediaType, mediaType),
         eq(folders.title, title),
         isNull(folders.parentFolderId),
@@ -162,11 +258,17 @@ async function findRootSystemFolder(jobId: string, mediaType: string, title: str
   return folder ?? null;
 }
 
-export async function ensureSystemFolders(jobId: string) {
+export async function ensureSystemFolders(
+  jobId: string,
+  options?: {
+    includeJobTemplates?: boolean;
+  },
+) {
+  await ensureJobExists(jobId);
   const values = [
-    { mediaType: "document", title: "Global Documents" },
-    { mediaType: "video", title: "Global Videos" },
-  ] as const;
+    ...GLOBAL_SYSTEM_FOLDERS,
+    ...(options?.includeJobTemplates ? JOB_TEMPLATE_FOLDERS : []),
+  ];
 
   for (const value of values) {
     const existing = await findRootSystemFolder(jobId, value.mediaType, value.title);
@@ -176,9 +278,9 @@ export async function ensureSystemFolders(jobId: string) {
         jobId,
         title: value.title,
         mediaType: value.mediaType,
-        isGlobal: true,
-        viewingPermissions: { internal: true },
-        uploadingPermissions: { admin: true, project_manager: true },
+        isGlobal: value.isGlobal,
+        viewingPermissions: value.viewingPermissions,
+        uploadingPermissions: value.uploadingPermissions,
       });
     }
   }
@@ -236,13 +338,13 @@ function assertNestedFolderAllowed(mediaType: string, parentFolderId: string | n
   }
 }
 
-export async function getAllFoldersForJob(jobId: string, mediaType: string, includeDeleted = false) {
+export async function getAllFoldersForJob(jobId: string | null, mediaType: string, includeDeleted = false) {
   return db
     .select()
     .from(folders)
     .where(
       and(
-        eq(folders.jobId, jobId),
+        jobId ? eq(folders.jobId, jobId) : isNull(folders.jobId),
         eq(folders.mediaType, mediaType),
         ...(includeDeleted ? [] : [isNull(folders.deletedAt)]),
       ),
@@ -427,7 +529,32 @@ export async function listFoldersForJob(params: {
 }) {
   await ensureJobExists(params.jobId);
   await ensureSystemFolders(params.jobId);
+  return listFoldersForScope({
+    jobId: params.jobId,
+    mediaType: params.mediaType,
+    parentId: params.parentId,
+    all: params.all,
+  });
+}
 
+export async function listResourceFolders(params: {
+  parentId: string | null;
+  all: boolean;
+}) {
+  return listFoldersForScope({
+    jobId: null,
+    mediaType: "document",
+    parentId: params.parentId,
+    all: params.all,
+  });
+}
+
+async function listFoldersForScope(params: {
+  jobId: string | null;
+  mediaType: string;
+  parentId: string | null;
+  all: boolean;
+}) {
   const allFolders = await getAllFoldersForJob(params.jobId, params.mediaType);
   const folderMap = new Map(allFolders.map((folder) => [folder.id, folder]));
 
@@ -498,6 +625,7 @@ export async function listFilesForFolder(params: {
       fileUrl: files.fileUrl,
       fileSize: files.fileSize,
       mimeType: files.mimeType,
+      note: files.note,
       uploadedBy: files.uploadedBy,
       createdAt: files.createdAt,
       updatedAt: files.updatedAt,
@@ -628,10 +756,49 @@ export async function createFolder(params: {
     entityId: folder.id,
     action: "created",
     userId: params.userId,
-    jobId: params.jobId!,
+    jobId: params.jobId,
     mediaType: params.mediaType,
     folderId: folder.id,
     description: `Created folder ${folder.title}`,
+  });
+
+  return folder;
+}
+
+export async function createResourceFolder(params: {
+  parentFolderId: string | null;
+  title: string;
+  userId: string;
+}) {
+  if (params.parentFolderId) {
+    const parentFolder = await getFolderOrThrow(params.parentFolderId);
+    if (parentFolder.jobId !== null || parentFolder.mediaType !== "document") {
+      throw new HttpError(400, "Parent folder must be a resource folder.");
+    }
+  }
+
+  const [folder] = await db
+    .insert(folders)
+    .values({
+      jobId: null,
+      parentFolderId: params.parentFolderId,
+      mediaType: "document",
+      title: params.title,
+      viewingPermissions: { internal: true },
+      uploadingPermissions: { admin: true },
+      isGlobal: false,
+    })
+    .returning();
+
+  await writeActivity({
+    entityType: "resource_folder",
+    entityId: folder.id,
+    action: "created",
+    userId: params.userId,
+    jobId: null,
+    mediaType: folder.mediaType,
+    folderId: folder.id,
+    description: `Created resource folder ${folder.title}`,
   });
 
   return folder;
@@ -665,7 +832,7 @@ export async function renameOrUpdateFolder(params: {
     entityId: updated.id,
     action: "updated",
     userId: params.userId,
-    jobId: updated.jobId!,
+    jobId: updated.jobId ?? null,
     mediaType: updated.mediaType,
     folderId: updated.id,
     description: `Updated folder ${updated.title}`,
@@ -689,7 +856,7 @@ export async function moveFolder(params: {
       throw new HttpError(400, "Destination folder does not match the selected job and media type.");
     }
 
-    const allFolders = await getAllFoldersForJob(folder.jobId!, folder.mediaType, true);
+    const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
     const subtreeIds = new Set(collectDescendantFolderIds(folder.id, allFolders));
 
     if (subtreeIds.has(destination.id)) {
@@ -711,7 +878,7 @@ export async function moveFolder(params: {
     entityId: updated.id,
     action: "moved",
     userId: params.userId,
-    jobId: updated.jobId!,
+    jobId: updated.jobId ?? null,
     mediaType: updated.mediaType,
     folderId: updated.id,
     description: `Moved folder ${updated.title}`,
@@ -725,7 +892,7 @@ export async function copyFolder(params: {
   userId: string;
 }) {
   const folder = await getFolderOrThrow(params.folderId);
-  const allFolders = await getAllFoldersForJob(folder.jobId!, folder.mediaType, true);
+  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
   const subtreeIds = collectDescendantFolderIds(folder.id, allFolders);
   const subtreeFolders = allFolders.filter((candidate) => subtreeIds.includes(candidate.id));
   const subtreeFiles = await getAllFilesForFolderIds(subtreeIds, true);
@@ -789,7 +956,7 @@ export async function copyFolder(params: {
     entityId: copiedRootId,
     action: "copied",
     userId: params.userId,
-    jobId: folder.jobId!,
+    jobId: folder.jobId ?? null,
     mediaType: folder.mediaType,
     folderId: copiedRootId,
     description: `Copied folder ${folder.title}`,
@@ -805,7 +972,7 @@ export async function softDeleteFolder(params: {
   const folder = await getFolderOrThrow(params.folderId);
   assertFolderEditable(folder);
 
-  const allFolders = await getAllFoldersForJob(folder.jobId!, folder.mediaType, true);
+  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
   const deletedAt = new Date();
 
@@ -826,7 +993,7 @@ export async function softDeleteFolder(params: {
     entityId: folder.id,
     action: "deleted",
     userId: params.userId,
-    jobId: folder.jobId!,
+    jobId: folder.jobId ?? null,
     mediaType: folder.mediaType,
     folderId: folder.id,
     description: `Moved folder ${folder.title} to trash`,
@@ -843,7 +1010,7 @@ export async function restoreFolder(params: {
     return folder;
   }
 
-  const allFolders = await getAllFoldersForJob(folder.jobId!, folder.mediaType, true);
+  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
   const folderMap = new Map(allFolders.map((currentFolder) => [currentFolder.id, currentFolder]));
   const ancestorIdsToRestore: string[] = [];
@@ -889,7 +1056,7 @@ export async function restoreFolder(params: {
     entityId: folder.id,
     action: "restored",
     userId: params.userId,
-    jobId: folder.jobId!,
+    jobId: folder.jobId ?? null,
     mediaType: folder.mediaType,
     folderId: folder.id,
     description: `Restored folder ${folder.title} from trash`,
@@ -903,7 +1070,7 @@ export async function purgeFolder(params: {
   userId: string;
 }) {
   const folder = await getFolderOrThrow(params.folderId, true);
-  const allFolders = await getAllFoldersForJob(folder.jobId!, folder.mediaType, true);
+  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
   const subtreeFiles = await getAllFilesForFolderIds(folderIds, true);
   const fileUrlsToDelete = await listExclusiveFileUrlsToDelete(subtreeFiles);
@@ -919,7 +1086,7 @@ export async function purgeFolder(params: {
     entityId: folder.id,
     action: "purged",
     userId: params.userId,
-    jobId: folder.jobId!,
+    jobId: folder.jobId ?? null,
     mediaType: folder.mediaType,
     folderId: folder.id,
     description: `Permanently deleted folder ${folder.title}`,
@@ -930,6 +1097,7 @@ export async function saveUploadedFiles(params: {
   folderId: string;
   userId: string;
   uploadedFiles: Express.Multer.File[];
+  note?: string | null;
 }) {
   const folder = await getFolderOrThrow(params.folderId);
 
@@ -944,7 +1112,7 @@ export async function saveUploadedFiles(params: {
 
     const storedName = buildStoredFileName(uploadedFile.originalname);
     const { fileUrl } = buildUploadPath({
-      jobId: folder.jobId!,
+      jobId: folder.jobId ?? "resources",
       mediaType: folder.mediaType,
       storedFileName: storedName,
     });
@@ -963,6 +1131,7 @@ export async function saveUploadedFiles(params: {
             fileUrl,
             fileSize: uploadedFile.size,
             mimeType: uploadedFile.mimetype,
+            note: params.note ?? null,
             uploadedBy: params.userId,
           })
           .returning(),
@@ -977,7 +1146,7 @@ export async function saveUploadedFiles(params: {
       entityId: file.id,
       action: "uploaded",
       userId: params.userId,
-      jobId: folder.jobId!,
+      jobId: folder.jobId ?? null,
       mediaType: folder.mediaType,
       folderId: folder.id,
       fileId: file.id,
@@ -1024,7 +1193,7 @@ export async function renameFile(params: {
     entityId: updated.id,
     action: "renamed",
     userId: params.userId,
-    jobId: folder.jobId!,
+    jobId: folder.jobId ?? null,
     mediaType: folder.mediaType,
     folderId: folder.id,
     fileId: updated.id,
@@ -1053,7 +1222,7 @@ export async function softDeleteFile(params: {
     entityId: file.id,
     action: "deleted",
     userId: params.userId,
-    jobId: folder.jobId!,
+    jobId: folder.jobId ?? null,
     mediaType: folder.mediaType,
     folderId: folder.id,
     fileId: file.id,
@@ -1088,7 +1257,7 @@ export async function restoreFile(params: {
     entityId: file.id,
     action: "restored",
     userId: params.userId,
-    jobId: activeFolder.jobId!,
+    jobId: activeFolder.jobId ?? null,
     mediaType: activeFolder.mediaType,
     folderId: activeFolder.id,
     fileId: file.id,
@@ -1117,7 +1286,7 @@ export async function purgeFile(params: {
     entityId: file.id,
     action: "purged",
     userId: params.userId,
-    jobId: folder.jobId!,
+    jobId: folder.jobId ?? null,
     mediaType: folder.mediaType,
     folderId: folder.id,
     fileId: file.id,
@@ -1297,7 +1466,7 @@ export async function streamFolderZip(params: {
   res: Response;
 }) {
   const folder = await getFolderOrThrow(params.folderId);
-  const allFolders = await getAllFoldersForJob(folder.jobId!, folder.mediaType, true);
+  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
   const folderMap = new Map(allFolders.map((item) => [item.id, item]));
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
   const subtreeFiles = await getAllFilesForFolderIds(folderIds, true);

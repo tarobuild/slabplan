@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 
 type Job = {
   id: string
@@ -32,16 +33,25 @@ export default function JobDetailPage() {
   const location = useLocation()
   const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const loadJob = (showLoading = false) => {
     if (!jobId) return
     if (showLoading) {
       setLoading(true)
+      setJob(null)
     }
+    setError(null)
 
     api
       .get(`/jobs/${jobId}`)
-      .then((r) => setJob(r.data.job ?? r.data))
+      .then((r) => {
+        setJob(r.data.job ?? r.data)
+      })
+      .catch(() => {
+        setError("Unable to load this job.")
+        toast.error("Failed to load job")
+      })
       .finally(() => {
         if (showLoading) {
           setLoading(false)
@@ -54,6 +64,23 @@ export default function JobDetailPage() {
   }, [jobId])
 
   useEffect(() => subscribeToDataRefresh("jobs", () => loadJob()), [jobId])
+
+  if ((error && !job) || (!loading && !job)) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 text-center">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-slate-900">Job not found</h1>
+          <p className="text-sm text-slate-500">{error ?? "This job could not be found."}</p>
+        </div>
+        <Link
+          to="/jobs"
+          className="text-sm font-medium text-orange-600 hover:text-orange-700"
+        >
+          Back to jobs
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-0">

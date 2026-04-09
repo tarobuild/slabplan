@@ -8,6 +8,7 @@ import {
   assertCanViewFile,
   assertCanViewFolder,
 } from "../lib/authorization";
+import { sanitizeDownloadFilename } from "../lib/downloads";
 import { getFileOrThrow, listFilesForFolder, purgeFile, renameFile, restoreFile, saveUploadedFiles, softDeleteFile } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { resolveAbsolutePathFromFileUrl } from "../lib/storage";
@@ -46,6 +47,19 @@ const fileListQuerySchema = z.object({
 
 const renameFileSchema = z.object({
   originalName: z.string().trim().min(1).max(255),
+});
+
+const uploadFilesSchema = z.object({
+  note: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value) => {
+      if (typeof value !== "string") {
+        return null;
+      }
+
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }),
 });
 
 function getParam(value: string | string[] | undefined, label: string) {
@@ -92,7 +106,16 @@ router.post(
   upload.array("files", 20),
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanUploadToFolder(req.auth!, folderId);
+    const folder = await assertCanUploadToFolder(req.auth!, folderId);
+    const body = uploadFilesSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid upload payload.", body.error.flatten());
+    }
+
+    if (folder.mediaType === "photo" && req.auth!.role === "crew_member" && !body.data.note) {
+      throw new HttpError(400, "A note is required when crew members upload photos.");
+    }
 
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
 
@@ -100,6 +123,7 @@ router.post(
       folderId,
       userId: req.auth!.userId,
       uploadedFiles,
+      note: body.data.note,
     });
 
     res.status(201).json(result);
@@ -192,7 +216,7 @@ router.get(
       throw new HttpError(404, "Stored file missing.");
     }
 
-    res.download(absolutePath, file.originalName);
+    res.download(absolutePath, sanitizeDownloadFilename(file.originalName));
   }),
 );
 

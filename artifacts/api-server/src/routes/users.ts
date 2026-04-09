@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import { and, asc, count, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, ne } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
@@ -53,6 +53,24 @@ const changePasswordSchema = z.object({
 const userListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional().default(50),
   offset: z.coerce.number().int().min(0).optional().default(0),
+  roles: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((value) => {
+      if (!value) {
+        return [];
+      }
+
+      const items = Array.isArray(value)
+        ? value.flatMap((item) => item.split(","))
+        : value.split(",");
+
+      return items
+        .map((item) => item.trim())
+        .filter((item): item is "admin" | "project_manager" | "crew_member" =>
+          item === "admin" || item === "project_manager" || item === "crew_member",
+        );
+    }),
 });
 
 async function findActiveUserById(id: string) {
@@ -79,11 +97,21 @@ router.get(
       db
         .select({ total: count() })
         .from(users)
-        .where(isNull(users.deletedAt)),
+        .where(
+          and(
+            isNull(users.deletedAt),
+            query.data.roles.length > 0 ? inArray(users.role, query.data.roles) : undefined,
+          ),
+        ),
       db
         .select()
         .from(users)
-        .where(isNull(users.deletedAt))
+        .where(
+          and(
+            isNull(users.deletedAt),
+            query.data.roles.length > 0 ? inArray(users.role, query.data.roles) : undefined,
+          ),
+        )
         .orderBy(asc(users.fullName))
         .limit(query.data.limit)
         .offset(query.data.offset),

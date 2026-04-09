@@ -470,6 +470,7 @@ export default function DashboardPage() {
     setCalLoading(true)
     api.get(`/dashboard/schedule?start=${fetchRange.start}&end=${fetchRange.end}`)
       .then(r => setCalItems((r.data.items ?? []).filter((i: any) => i.startDate)))
+      .catch(() => {})
       .finally(() => setCalLoading(false))
   }, [fetchRange])
 
@@ -478,11 +479,15 @@ export default function DashboardPage() {
   const fetchSidebarData = useCallback(() => {
     setSidebarLoading(true)
 
-    api.get<{ data: ActivityEntry[] }>("/activity?limit=12")
-      .then(r => setActivity(r.data.data ?? []))
-
-    api.get("/dashboard/agenda")
-      .then(r => setRecentJobs(r.data.recentJobs ?? []))
+    Promise.all([
+      api.get<{ data: ActivityEntry[] }>("/activity?limit=12"),
+      api.get("/dashboard/agenda"),
+    ])
+      .then(([activityResponse, agendaResponse]) => {
+        setActivity(activityResponse.data.data ?? [])
+        setRecentJobs(agendaResponse.data.recentJobs ?? [])
+      })
+      .catch(() => {})
       .finally(() => setSidebarLoading(false))
   }, [])
 
@@ -673,6 +678,11 @@ export default function DashboardPage() {
                             </span>
                           )}
                           <span className="text-[10px] text-slate-400">{timeAgo(entry.createdAt)}</span>
+                          {entry.userName ? (
+                            <span className="text-[10px] text-slate-400">
+                              by {entry.userName === user?.fullName ? "You" : entry.userName}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     ))}

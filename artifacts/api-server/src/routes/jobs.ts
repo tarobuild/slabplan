@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { clients, files, folders, jobs, type NewJob, users } from "@workspace/db/schema";
+import { clients, files, folders, jobAssignees, jobs, type NewJob, users } from "@workspace/db/schema";
 import {
   assertCanAccessJob,
   assertCanManageJob,
@@ -16,6 +16,7 @@ import { buildContainsLikePattern } from "../lib/search";
 import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
 
 const router: IRouter = Router();
+type DbExecutor = Pick<typeof db, "insert" | "delete">;
 
 const jobQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
@@ -101,6 +102,10 @@ const jobPayloadSchema = z.object({
   clientId: z.string().uuid().nullable().optional().default(null),
 });
 
+const createJobPayloadSchema = jobPayloadSchema.extend({
+  assigneeIds: z.array(z.string().uuid()).optional().default([]),
+});
+
 function getParam(value: string | string[] | undefined, label: string) {
   const normalized = Array.isArray(value) ? value[0] : value;
 
@@ -135,6 +140,75 @@ function toJobInsert(data: z.infer<typeof jobPayloadSchema>, createdBy: string):
     clientId: data.clientId ?? null,
     createdBy,
   };
+}
+
+async function listJobAssignees(jobId: string) {
+  return db
+    .select({
+      id: users.id,
+      fullName: users.fullName,
+      email: users.email,
+      role: users.role,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(jobAssignees)
+    .innerJoin(users, eq(jobAssignees.userId, users.id))
+    .where(
+      and(
+        eq(jobAssignees.jobId, jobId),
+        isNull(users.deletedAt),
+      ),
+    )
+    .orderBy(asc(users.fullName));
+}
+
+async function ensureAssignableUserIds(userIds: string[]) {
+  const uniqueUserIds = Array.from(new Set(userIds));
+
+  if (uniqueUserIds.length === 0) {
+    return [];
+  }
+
+  const rows = await db
+    .select({
+      id: users.id,
+    })
+    .from(users)
+    .where(
+      and(
+        inArray(users.id, uniqueUserIds),
+        inArray(users.role, ["project_manager", "crew_member"]),
+        isNull(users.deletedAt),
+      ),
+    );
+
+  if (rows.length !== uniqueUserIds.length) {
+    throw new HttpError(400, "One or more assignees are invalid.");
+  }
+
+  return uniqueUserIds;
+}
+
+async function insertJobAssignees(
+  jobId: string,
+  userIds: string[],
+  executor: DbExecutor = db,
+) {
+  const uniqueUserIds = Array.from(new Set(userIds));
+
+  if (uniqueUserIds.length === 0) {
+    return;
+  }
+
+  await executor
+    .insert(jobAssignees)
+    .values(
+      uniqueUserIds.map((userId) => ({
+        jobId,
+        userId,
+      })),
+    )
+    .onConflictDoNothing();
 }
 
 async function findJobById(id: string) {
@@ -176,7 +250,16 @@ async function findJobById(id: string) {
     .where(and(eq(jobs.id, id), isNull(jobs.deletedAt)))
     .limit(1);
 
-  return job ?? null;
+  if (!job) {
+    return null;
+  }
+
+  const assignees = await listJobAssignees(id);
+
+  return {
+    ...job,
+    assignees,
+  };
 }
 
 router.get(
@@ -284,7 +367,7 @@ router.post(
   "/",
   requireManagerOrAbove,
   asyncHandler(async (req, res) => {
-    const body = jobPayloadSchema.safeParse(req.body);
+    const body = createJobPayloadSchema.safeParse(req.body);
 
     if (!body.success) {
       throw new HttpError(400, "Invalid job payload.", body.error.flatten());
@@ -297,13 +380,27 @@ router.post(
             projectManagerId: req.auth!.userId,
           }
         : body.data;
+    const assigneeIds =
+      req.auth!.role === "admin"
+        ? await ensureAssignableUserIds(payload.assigneeIds)
+        : [];
 
-    const [job] = await db
-      .insert(jobs)
-      .values(toJobInsert(payload, req.auth!.userId))
-      .returning();
+    if (req.auth!.role !== "admin" && payload.assigneeIds.length > 0) {
+      throw new HttpError(403, "Only admins can assign workers when creating a job.");
+    }
 
-    await ensureSystemFolders(job.id);
+    const job = await db.transaction(async (tx) => {
+      const [createdJob] = await tx
+        .insert(jobs)
+        .values(toJobInsert(payload, req.auth!.userId))
+        .returning();
+
+      await insertJobAssignees(createdJob.id, assigneeIds, tx);
+
+      return createdJob;
+    });
+
+    await ensureSystemFolders(job.id, { includeJobTemplates: true });
     await writeActivity({
       entityType: "job",
       entityId: job.id,
@@ -316,6 +413,80 @@ router.post(
     const hydrated = await findJobById(job.id);
 
     res.status(201).json({ job: hydrated });
+  }),
+);
+
+const assigneePayloadSchema = z.object({
+  userId: z.string().uuid(),
+});
+
+router.get(
+  "/:id/assignees",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.id, "job id");
+    await assertCanAccessJob(req.auth!, jobId);
+    const job = await findJobById(jobId);
+
+    if (!job) {
+      throw new HttpError(404, "Job not found.");
+    }
+
+    res.json({
+      assignees: job.assignees,
+    });
+  }),
+);
+
+router.post(
+  "/:id/assignees",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const body = assigneePayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid assignee payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.id, "job id");
+    const job = await findJobById(jobId);
+
+    if (!job) {
+      throw new HttpError(404, "Job not found.");
+    }
+
+    const [userId] = await ensureAssignableUserIds([body.data.userId]);
+    await insertJobAssignees(jobId, [userId]);
+
+    res.status(201).json({
+      assignees: await listJobAssignees(jobId),
+    });
+  }),
+);
+
+router.delete(
+  "/:id/assignees/:userId",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.id, "job id");
+    const userId = getParam(req.params.userId, "user id");
+    const job = await findJobById(jobId);
+
+    if (!job) {
+      throw new HttpError(404, "Job not found.");
+    }
+
+    await db
+      .delete(jobAssignees)
+      .where(
+        and(
+          eq(jobAssignees.jobId, jobId),
+          eq(jobAssignees.userId, userId),
+        ),
+      );
+
+    res.json({
+      assignees: await listJobAssignees(jobId),
+    });
   }),
 );
 

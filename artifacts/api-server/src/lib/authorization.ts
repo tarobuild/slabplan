@@ -6,6 +6,7 @@ import {
   dailyLogs,
   files,
   folders,
+  jobAssignees,
   leadAttachments,
   leadSalespeople,
   leads,
@@ -23,6 +24,7 @@ export type AuthContext = NonNullable<Express.Request["auth"]>;
 type FolderAccessRecord = {
   id: string;
   jobId: string | null;
+  mediaType: string;
   viewingPermissions: Record<string, unknown> | null;
   uploadingPermissions: Record<string, unknown> | null;
 };
@@ -30,7 +32,9 @@ type FolderAccessRecord = {
 type FileAccessRecord = {
   id: string;
   fileUrl: string | null;
+  folderId: string | null;
   folderJobId: string | null;
+  folderMediaType: string | null;
   viewingPermissions: Record<string, unknown> | null;
   uploadingPermissions: Record<string, unknown> | null;
   leadId: string | null;
@@ -112,12 +116,30 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
   }
 
   const role = roleFromAuth(auth);
+  const assignedJobRowsPromise = db
+    .select({ id: jobAssignees.jobId })
+    .from(jobAssignees)
+    .innerJoin(jobs, eq(jobAssignees.jobId, jobs.id))
+    .where(
+      and(
+        eq(jobAssignees.userId, auth.userId),
+        isNull(jobs.deletedAt),
+      ),
+    );
 
   if (role === "project_manager") {
-    return listManagedJobIds(auth);
+    const [managedJobIds, assignedJobRows] = await Promise.all([
+      listManagedJobIds(auth),
+      assignedJobRowsPromise,
+    ]);
+
+    return uniqueIds([
+      ...(managedJobIds ?? []),
+      ...assignedJobRows.map((row) => row.id),
+    ]);
   }
 
-  const [createdRows, assignedRows, dailyLogRows, uploadedRows] = await Promise.all([
+  const [createdRows, assignedRows, dailyLogRows, uploadedRows, jobAssigneeRows] = await Promise.all([
     db
       .select({ id: jobs.id })
       .from(jobs)
@@ -158,6 +180,7 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
           isNull(jobs.deletedAt),
         ),
       ),
+    assignedJobRowsPromise,
   ]);
 
   return uniqueIds([
@@ -165,6 +188,7 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
     ...assignedRows.map((row) => row.id),
     ...dailyLogRows.map((row) => row.id),
     ...uploadedRows.map((row) => row.id),
+    ...jobAssigneeRows.map((row) => row.id),
   ]);
 }
 
@@ -353,6 +377,7 @@ async function getFolderAccessOrThrow(folderId: string, includeDeleted = false) 
     .select({
       id: folders.id,
       jobId: folders.jobId,
+      mediaType: folders.mediaType,
       viewingPermissions: folders.viewingPermissions,
       uploadingPermissions: folders.uploadingPermissions,
     })
@@ -374,11 +399,9 @@ export async function assertCanViewFolder(
 ) {
   const folder = await getFolderAccessOrThrow(folderId, includeDeleted);
 
-  if (!folder.jobId) {
-    throw new HttpError(403, "You do not have access to that folder.");
+  if (folder.jobId) {
+    await assertCanAccessJob(auth, folder.jobId);
   }
-
-  await assertCanAccessJob(auth, folder.jobId);
 
   if (!canViewFolderForRole(auth, folder)) {
     throw new HttpError(403, "You do not have access to that folder.");
@@ -420,7 +443,9 @@ async function getFileAccessRecord(params: { fileId?: string; fileUrl?: string; 
     .select({
       id: files.id,
       fileUrl: files.fileUrl,
+      folderId: folders.id,
       folderJobId: folders.jobId,
+      folderMediaType: folders.mediaType,
       viewingPermissions: folders.viewingPermissions,
       uploadingPermissions: folders.uploadingPermissions,
       leadId: leadAttachments.leadId,
@@ -445,15 +470,18 @@ async function getFileAccessRecord(params: { fileId?: string; fileUrl?: string; 
 }
 
 async function assertFileAccess(auth: AuthContext, record: FileAccessRecord, mode: "view" | "manage") {
-  if (record.folderJobId) {
-    await assertCanAccessJob(auth, record.folderJobId);
-
+  if (record.folderId) {
     const folderLike: FolderAccessRecord = {
-      id: record.id,
+      id: record.folderId,
       jobId: record.folderJobId,
+      mediaType: record.folderMediaType ?? "document",
       viewingPermissions: record.viewingPermissions,
       uploadingPermissions: record.uploadingPermissions,
     };
+
+    if (record.folderJobId) {
+      await assertCanAccessJob(auth, record.folderJobId);
+    }
 
     if (mode === "view" && !canViewFolderForRole(auth, folderLike)) {
       throw new HttpError(403, "You do not have access to that file.");

@@ -29,12 +29,17 @@ export const UPLOAD_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const RESET_TOKEN_TTL_SECONDS = 60 * 60;
 const JWT_ALGORITHMS = ["HS256"] as const;
 
-type JwtSecretEnvName = "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET" | "JWT_RESET_SECRET";
+type JwtSecretEnvName =
+  | "JWT_ACCESS_SECRET"
+  | "JWT_REFRESH_SECRET"
+  | "JWT_RESET_SECRET"
+  | "JWT_UPLOAD_SECRET";
 
 const runtimeSecrets: Record<JwtSecretEnvName, string> = {
   JWT_ACCESS_SECRET: crypto.randomBytes(64).toString("hex"),
   JWT_REFRESH_SECRET: crypto.randomBytes(64).toString("hex"),
   JWT_RESET_SECRET: crypto.randomBytes(64).toString("hex"),
+  JWT_UPLOAD_SECRET: crypto.randomBytes(64).toString("hex"),
 };
 
 const warnedMissingSecrets = new Set<JwtSecretEnvName>();
@@ -63,6 +68,7 @@ function readJwtSecret(envName: JwtSecretEnvName) {
 const accessSecret = readJwtSecret("JWT_ACCESS_SECRET");
 const refreshSecret = readJwtSecret("JWT_REFRESH_SECRET");
 const resetSecret = readJwtSecret("JWT_RESET_SECRET");
+const uploadSecret = readJwtSecret("JWT_UPLOAD_SECRET");
 
 export const refreshCookieName = "cadstone_refresh_token";
 export const uploadCookieName = "cadstone_upload_token";
@@ -169,7 +175,7 @@ export function signRefreshToken(user: PublicUser): string {
 }
 
 export function signUploadToken(user: PublicUser): string {
-  return signToken(user, "upload", accessSecret, UPLOAD_TOKEN_TTL_SECONDS);
+  return signToken(user, "upload", uploadSecret, UPLOAD_TOKEN_TTL_SECONDS);
 }
 
 export function signResetToken(user: PublicUser): string {
@@ -185,7 +191,7 @@ export function verifyRefreshToken(token: string): VerifiedToken<"refresh"> {
 }
 
 export function verifyUploadToken(token: string): VerifiedToken<"upload"> {
-  return decodeVerifiedToken(token, accessSecret, "upload");
+  return decodeVerifiedToken(token, uploadSecret, "upload");
 }
 
 export function verifyResetToken(token: string): VerifiedToken<"reset"> {

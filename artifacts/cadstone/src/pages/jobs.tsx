@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { Loader2, Plus, Search, Trash2 } from "lucide-react"
+import { Loader2, Plus, Search } from "lucide-react"
 import { api } from "@/lib/api"
+import WorkerAssignmentPicker, { type WorkerOption } from "@/components/WorkerAssignmentPicker"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,16 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -41,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { toast } from "sonner"
+import { useAuthStore } from "@/store/auth"
 
 type Job = {
   id: string
@@ -63,6 +55,7 @@ const STATUS_COLORS: Record<string, string> = {
   archived: "bg-slate-50 text-slate-400 border-slate-200",
 }
 const JOB_TYPES = ["countertops", "backsplash", "flooring", "custom"]
+const ADD_NEW_CLIENT_VALUE = "__add_new_client__"
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -87,16 +80,19 @@ type CreateJobForm = {
   projectedStart: string
   projectedCompletion: string
   clientId: string
+  assigneeIds: string[]
 }
 
 const emptyForm: CreateJobForm = {
   title: "", status: "open", jobType: "", contractType: "",
   streetAddress: "", city: "", state: "", zipCode: "",
   contractPrice: "", projectedStart: "", projectedCompletion: "",
-  clientId: "",
+  clientId: "", assigneeIds: [],
 }
 
 export default function JobsPage() {
+  const user = useAuthStore((state) => state.user)
+  const isAdmin = user?.role === "admin"
   const [jobs, setJobs] = useState<Job[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -107,11 +103,20 @@ export default function JobsPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [form, setForm] = useState<CreateJobForm>(emptyForm)
   const [saving, setSaving] = useState(false)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
+  const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([])
+  const [showCreateClient, setShowCreateClient] = useState(false)
+  const [newClientCompanyName, setNewClientCompanyName] = useState("")
+  const [creatingClient, setCreatingClient] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
+
+  const openCreateDialog = () => {
+    setForm(emptyForm)
+    setShowCreateClient(false)
+    setNewClientCompanyName("")
+    setCreateOpen(true)
+  }
 
   useEffect(() => {
     api.get("/clients?pageSize=100")
@@ -120,9 +125,19 @@ export default function JobsPage() {
   }, [])
 
   useEffect(() => {
+    if (!isAdmin) {
+      setWorkerOptions([])
+      return
+    }
+
+    api.get("/users?roles=project_manager,crew_member&limit=200")
+      .then((r) => setWorkerOptions(r.data.users ?? []))
+      .catch(() => {})
+  }, [isAdmin])
+
+  useEffect(() => {
     if ((location.state as any)?.openCreate) {
-      setForm(emptyForm)
-      setCreateOpen(true)
+      openCreateDialog()
       window.history.replaceState({}, "")
     }
   }, [location.state])
@@ -180,10 +195,13 @@ export default function JobsPage() {
         projectedStart: form.projectedStart || null,
         projectedCompletion: form.projectedCompletion || null,
         clientId: form.clientId || null,
+        assigneeIds: isAdmin ? form.assigneeIds : [],
       })
       toast.success("Job created")
       setCreateOpen(false)
       setForm(emptyForm)
+      setShowCreateClient(false)
+      setNewClientCompanyName("")
       fetchJobs(search, status, 1)
       setPage(1)
       invalidateAppData(["jobs", "navigation"])
@@ -194,19 +212,29 @@ export default function JobsPage() {
     }
   }
 
-  const handleDelete = async () => {
-    if (!deleteId) return
-    setDeleting(true)
+  const handleCreateClient = async () => {
+    if (!newClientCompanyName.trim()) {
+      toast.error("Company name is required")
+      return
+    }
+
+    setCreatingClient(true)
     try {
-      await api.delete(`/jobs/${deleteId}`)
-      toast.success("Job deleted")
-      setDeleteId(null)
-      fetchJobs()
-      invalidateAppData(["jobs", "navigation"])
-    } catch {
-      toast.error("Failed to delete job")
+      const response = await api.post("/clients", {
+        companyName: newClientCompanyName.trim(),
+      })
+      const nextClient = response.data.client
+      setClientOptions((current) =>
+        [...current, nextClient].sort((left, right) => left.companyName.localeCompare(right.companyName)),
+      )
+      setForm((current) => ({ ...current, clientId: nextClient.id }))
+      setShowCreateClient(false)
+      setNewClientCompanyName("")
+      toast.success("Client created")
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Failed to create client")
     } finally {
-      setDeleting(false)
+      setCreatingClient(false)
     }
   }
 
@@ -218,7 +246,7 @@ export default function JobsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Jobs</h1>
-        <Button size="sm" onClick={() => { setForm(emptyForm); setCreateOpen(true) }}>
+        <Button size="sm" onClick={openCreateDialog}>
           <Plus className="mr-1.5 size-3.5" />Create Job
         </Button>
       </div>
@@ -258,23 +286,22 @@ export default function JobsPage() {
               <TableHead className="font-semibold text-slate-600">Status</TableHead>
               <TableHead className="font-semibold text-slate-600 text-right">Contract Price</TableHead>
               <TableHead className="font-semibold text-slate-600">Created</TableHead>
-              <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 8 }).map((_, j) => (
+                  {Array.from({ length: 7 }).map((_, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : jobs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-slate-400 text-sm">
+                <TableCell colSpan={7} className="text-center py-12 text-slate-400 text-sm">
                   No jobs found.{" "}
-                  <button onClick={() => { setForm(emptyForm); setCreateOpen(true) }} className="text-blue-600 hover:underline">
+                  <button onClick={openCreateDialog} className="text-blue-600 hover:underline">
                     Create your first job
                   </button>
                 </TableCell>
@@ -307,14 +334,6 @@ export default function JobsPage() {
                   <TableCell className="text-sm text-slate-500">
                     {fmtDate(job.createdAt)}
                   </TableCell>
-                  <TableCell>
-                    <button
-                      onClick={() => setDeleteId(job.id)}
-                      className="text-slate-400 hover:text-red-500 transition-colors p-1"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -334,38 +353,30 @@ export default function JobsPage() {
         ) : jobs.length === 0 ? (
           <div className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center text-sm text-slate-400">
             No jobs found.{" "}
-            <button onClick={() => { setForm(emptyForm); setCreateOpen(true) }} className="text-blue-600 hover:underline">
+            <button onClick={openCreateDialog} className="text-blue-600 hover:underline">
               Create your first job
             </button>
           </div>
         ) : (
           jobs.map(job => (
             <div key={job.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <Link to={`/jobs/${job.id}/summary`} className="block truncate text-sm font-medium text-blue-600 hover:underline">
-                    {job.title}
-                  </Link>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[job.status]}`}>
-                      {STATUS_LABELS[job.status]}
-                    </Badge>
-                    {job.jobType && <span className="text-xs capitalize text-slate-500">{job.jobType}</span>}
-                  </div>
-                  <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
-                    {job.clientName && <p>{job.clientName}</p>}
-                    {(job.city || job.state) && <p>{[job.city, job.state].filter(Boolean).join(", ")}</p>}
-                    {job.contractPrice && (
-                      <p className="font-medium text-slate-700">{fmtCurrency(job.contractPrice)}</p>
-                    )}
-                  </div>
+              <div className="min-w-0 flex-1">
+                <Link to={`/jobs/${job.id}/summary`} className="block truncate text-sm font-medium text-blue-600 hover:underline">
+                  {job.title}
+                </Link>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[job.status]}`}>
+                    {STATUS_LABELS[job.status]}
+                  </Badge>
+                  {job.jobType && <span className="text-xs capitalize text-slate-500">{job.jobType}</span>}
                 </div>
-                <button
-                  onClick={() => setDeleteId(job.id)}
-                  className="shrink-0 p-1 text-slate-400 transition-colors hover:text-red-500"
-                >
-                  <Trash2 className="size-4" />
-                </button>
+                <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
+                  {job.clientName && <p>{job.clientName}</p>}
+                  {(job.city || job.state) && <p>{[job.city, job.state].filter(Boolean).join(", ")}</p>}
+                  {job.contractPrice && (
+                    <p className="font-medium text-slate-700">{fmtCurrency(job.contractPrice)}</p>
+                  )}
+                </div>
               </div>
             </div>
           ))
@@ -395,14 +406,58 @@ export default function JobsPage() {
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Client</Label>
-                <Select value={form.clientId || "_none"} onValueChange={v => setForm(f => ({ ...f, clientId: v === "_none" ? "" : v }))}>
+                <Select
+                  value={form.clientId || "_none"}
+                  onValueChange={(value) => {
+                    if (value === ADD_NEW_CLIENT_VALUE) {
+                      setShowCreateClient(true)
+                      return
+                    }
+
+                    setShowCreateClient(false)
+                    setForm((current) => ({ ...current, clientId: value === "_none" ? "" : value }))
+                  }}
+                >
                   <SelectTrigger><SelectValue placeholder="Link to a client (optional)" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">— None —</SelectItem>
                     {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
+                    {isAdmin ? (
+                      <SelectItem value={ADD_NEW_CLIENT_VALUE}>Add new client…</SelectItem>
+                    ) : null}
                   </SelectContent>
                 </Select>
+                {isAdmin && showCreateClient ? (
+                  <div className="rounded-md border border-[#E5E7EB] bg-slate-50 p-3">
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1 space-y-1.5">
+                        <Label htmlFor="new-client-company">Company Name *</Label>
+                        <Input
+                          id="new-client-company"
+                          value={newClientCompanyName}
+                          onChange={(event) => setNewClientCompanyName(event.target.value)}
+                          placeholder="e.g. Acme Builders"
+                        />
+                      </div>
+                      <Button type="button" onClick={handleCreateClient} disabled={creatingClient}>
+                        {creatingClient && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
+              {isAdmin ? (
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Assign Workers</Label>
+                  <WorkerAssignmentPicker
+                    options={workerOptions}
+                    selectedIds={form.assigneeIds}
+                    onChange={(assigneeIds) => setForm((current) => ({ ...current, assigneeIds }))}
+                    placeholder="Search project managers or crew members"
+                  />
+                </div>
+              ) : null}
               <div className="space-y-1.5">
                 <Label>Job Type</Label>
                 <Select value={form.jobType} onValueChange={v => setForm(f => ({ ...f, jobType: v }))}>
@@ -491,21 +546,6 @@ export default function JobsPage() {
           </form>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={!!deleteId} onOpenChange={open => !open && setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Job?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently delete the job and all related files and folders. This action cannot be undone.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700">
-              {deleting ? "Deleting…" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

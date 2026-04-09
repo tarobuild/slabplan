@@ -1,0 +1,31 @@
+                                                                                    
+  This is NOT a code issue — it's a Replit deployment platform issue. Your            
+  configuration is correct:                                                           
+                                                                                      
+  - .replit line 13: run = "pnpm --filter @workspace/api-server run start" — run      
+  command IS configured                                           
+  - That resolves to node --enable-source-maps ./dist/index.mjs — the built server    
+  entry point EXISTS at dist/index.mjs                                                
+  - The server binds to 0.0.0.0 on port PORT (env var) or 8080 — correct for Cloud Run
+  - deploymentTarget = "autoscale" and router = "application" — correct               
+  - The build output includes the frontend in dist/public/ — correct                  
+  - The server serves static files from dist/public/ in production mode — correct     
+                                                                                      
+  The error message "no run command is configured" is wrong — the run command is      
+  clearly defined on line 13 of .replit. This is a Replit platform issue where the    
+  deployment system isn't picking up the [deployment] run field.                      
+                                                                  
+  What you should try (via Replit Agent or Replit UI)                                 
+   
+  1. Most likely fix: Go to the Replit deployment panel and manually set the run      
+  command to pnpm --filter @workspace/api-server run start in the UI. Sometimes the
+  deployment panel doesn't sync with .replit file changes.                            
+  2. Alternative: The [deployment] section format may need the run field as an array
+  instead of a string for autoscale targets. Ask Replit Agent to change it to:        
+  [deployment]
+  run = ["pnpm", "--filter", "@workspace/api-server", "run", "start"]                 
+  3. If that doesn't work: Try a simpler direct command that doesn't go through pnpm: 
+  run = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]       
+                                                                                      
+  This is a Replit Agent fix — it's their deployment configuration/platform, not a    
+  code bug.                                       

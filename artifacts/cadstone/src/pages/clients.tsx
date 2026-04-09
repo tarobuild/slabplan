@@ -152,7 +152,7 @@ const emptyContactForm: ContactForm = {
 }
 
 const JOB_STATUS_COLORS: Record<string, string> = {
-  open: "bg-blue-50 text-blue-700 border-blue-200",
+  open: "bg-green-50 text-green-700 border-green-200",
   closed: "bg-slate-50 text-slate-600 border-slate-200",
   archived: "bg-slate-50 text-slate-400 border-slate-200",
 }
@@ -473,7 +473,7 @@ export default function ClientsPage() {
                   </TableCell>
                   <TableCell className="text-center">
                     {client.openJobCount > 0 ? (
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">
                         {client.openJobCount}
                       </Badge>
                     ) : (
@@ -546,7 +546,7 @@ export default function ClientsPage() {
                       )}
                       {client.openJobCount > 0 && (
                         <p>
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">
                             {client.openJobCount} open {client.openJobCount === 1 ? "job" : "jobs"}
                           </Badge>
                         </p>

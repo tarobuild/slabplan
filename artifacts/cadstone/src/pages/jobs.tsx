@@ -118,6 +118,7 @@ export default function JobsPage() {
   const [status, setStatus] = useState<string>("all")
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
+  const [step, setStep] = useState<1 | 2>(1)
   const [form, setForm] = useState<CreateJobForm>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
@@ -132,7 +133,18 @@ export default function JobsPage() {
     setForm(emptyForm)
     setShowCreateClient(false)
     setNewClientCompanyName("")
+    setStep(1)
     setCreateOpen(true)
+  }
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setCreateOpen(open)
+    if (!open) {
+      setForm(emptyForm)
+      setShowCreateClient(false)
+      setNewClientCompanyName("")
+      setStep(1)
+    }
   }
 
   useEffect(() => {
@@ -219,6 +231,7 @@ export default function JobsPage() {
       setForm(emptyForm)
       setShowCreateClient(false)
       setNewClientCompanyName("")
+      setStep(1)
       fetchJobs(search, status, 1)
       setPage(1)
       invalidateAppData(["jobs", "navigation"])
@@ -415,144 +428,186 @@ export default function JobsPage() {
         </div>
       )}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Job</DialogTitle>
+            <p className="text-xs text-slate-400">
+              {step === 1 ? "Step 1 of 2 — Job Basics" : "Step 2 of 2 — Location & Contract"}
+            </p>
           </DialogHeader>
-          <form onSubmit={handleCreate}>
-            <div className="grid grid-cols-2 gap-4 py-4">
-              <div className="col-span-2 space-y-1.5">
-                <Label htmlFor="title">Title *</Label>
-                <Input id="title" value={form.title} onChange={setField("title")} required placeholder="e.g. Johnson Kitchen Countertops" />
-              </div>
-              <div className="col-span-2 space-y-1.5">
-                <Label>Client</Label>
-                <Select
-                  value={form.clientId || "_none"}
-                  onValueChange={(value) => {
-                    if (value === ADD_NEW_CLIENT_VALUE) {
-                      setShowCreateClient(true)
-                      return
-                    }
+          <form
+            onSubmit={(e) => {
+              if (step === 1) {
+                e.preventDefault()
+                if (form.title.trim()) setStep(2)
+                return
+              }
+              handleCreate(e)
+            }}
+          >
+            {step === 1 ? (
+              <div className="grid grid-cols-2 gap-4 py-4">
+                <div className="col-span-2 space-y-1.5">
+                  <Label htmlFor="title">Title *</Label>
+                  <Input id="title" value={form.title} onChange={setField("title")} required placeholder="e.g. Johnson Kitchen Countertops" />
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Client</Label>
+                  <Select
+                    value={form.clientId || "_none"}
+                    onValueChange={(value) => {
+                      if (value === ADD_NEW_CLIENT_VALUE) {
+                        setShowCreateClient(true)
+                        return
+                      }
 
-                    setShowCreateClient(false)
-                    setForm((current) => ({ ...current, clientId: value === "_none" ? "" : value }))
-                  }}
-                >
-                  <SelectTrigger><SelectValue placeholder="Link to a client (optional)" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">— None —</SelectItem>
-                    {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
-                    {isAdmin ? (
-                      <SelectItem value={ADD_NEW_CLIENT_VALUE}>Add new client…</SelectItem>
-                    ) : null}
-                  </SelectContent>
-                </Select>
-                {isAdmin && showCreateClient ? (
-                  <div className="rounded-md border border-[#E5E7EB] bg-slate-50 p-3">
-                    <div className="flex items-end gap-2">
-                      <div className="flex-1 space-y-1.5">
-                        <Label htmlFor="new-client-company">Company Name *</Label>
-                        <Input
-                          id="new-client-company"
-                          value={newClientCompanyName}
-                          onChange={(event) => setNewClientCompanyName(event.target.value)}
-                          placeholder="e.g. Acme Builders"
-                        />
+                      setShowCreateClient(false)
+                      setForm((current) => ({ ...current, clientId: value === "_none" ? "" : value }))
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Link to a client (optional)" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">— None —</SelectItem>
+                      {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
+                      {isAdmin ? (
+                        <SelectItem value={ADD_NEW_CLIENT_VALUE}>Add new client…</SelectItem>
+                      ) : null}
+                    </SelectContent>
+                  </Select>
+                  {isAdmin && showCreateClient ? (
+                    <div className="rounded-md border border-[#E5E7EB] bg-slate-50 p-3">
+                      <div className="flex items-end gap-2">
+                        <div className="flex-1 space-y-1.5">
+                          <Label htmlFor="new-client-company">Company Name *</Label>
+                          <Input
+                            id="new-client-company"
+                            value={newClientCompanyName}
+                            onChange={(event) => setNewClientCompanyName(event.target.value)}
+                            placeholder="e.g. Acme Builders"
+                          />
+                        </div>
+                        <Button type="button" onClick={handleCreateClient} disabled={creatingClient}>
+                          {creatingClient && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                          Add
+                        </Button>
                       </div>
-                      <Button type="button" onClick={handleCreateClient} disabled={creatingClient}>
-                        {creatingClient && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-                        Add
-                      </Button>
                     </div>
+                  ) : null}
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Job Type</Label>
+                  <Select value={form.jobType} onValueChange={v => setForm(f => ({ ...f, jobType: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                    <SelectContent className="max-h-60 overflow-y-auto">
+                      {JOB_TYPES.map(t => <SelectItem key={t} value={t}>{toLabel(t)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {isAdmin ? (
+                  <div className="col-span-2 space-y-1.5">
+                    <Label>Assign Workers</Label>
+                    <WorkerAssignmentPicker
+                      options={workerOptions}
+                      selectedIds={form.assigneeIds}
+                      onChange={(assigneeIds) => setForm((current) => ({ ...current, assigneeIds }))}
+                      placeholder="Search project managers or crew members"
+                    />
                   </div>
                 ) : null}
               </div>
-              {isAdmin ? (
+            ) : (
+              <div className="grid grid-cols-2 gap-4 py-4">
                 <div className="col-span-2 space-y-1.5">
-                  <Label>Assign Workers</Label>
-                  <WorkerAssignmentPicker
-                    options={workerOptions}
-                    selectedIds={form.assigneeIds}
-                    onChange={(assigneeIds) => setForm((current) => ({ ...current, assigneeIds }))}
-                    placeholder="Search project managers or crew members"
-                  />
-                </div>
-              ) : null}
-              <div className="col-span-2 space-y-1.5">
-                <Label>Job Type</Label>
-                <Select value={form.jobType} onValueChange={v => setForm(f => ({ ...f, jobType: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                  <SelectContent>
-                    {JOB_TYPES.map(t => <SelectItem key={t} value={t}>{toLabel(t)}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-2 space-y-1.5">
-                <Label htmlFor="streetAddress">Street Address</Label>
-                <Input id="streetAddress" value={form.streetAddress} onChange={setField("streetAddress")} placeholder="123 Main St" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="city">City</Label>
-                <Input id="city" value={form.city} onChange={setField("city")} placeholder="Austin" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="state">State</Label>
-                  <Input id="state" value={form.state} onChange={setField("state")} placeholder="TX" maxLength={2} />
+                  <Label htmlFor="streetAddress">Street Address</Label>
+                  <Input id="streetAddress" value={form.streetAddress} onChange={setField("streetAddress")} placeholder="123 Main St" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="zipCode">Zip</Label>
-                  <Input id="zipCode" value={form.zipCode} onChange={setField("zipCode")} placeholder="78701" />
+                  <Label htmlFor="city">City</Label>
+                  <Input id="city" value={form.city} onChange={setField("city")} placeholder="Austin" />
                 </div>
-              </div>
-              <div className="col-span-2 space-y-1.5">
-                <Label>Contract Type</Label>
-                <div className="flex gap-6 pt-0.5">
-                  {(["fixed_price", "open_book"] as const).map(ct => (
-                    <label key={ct} className="flex items-start gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="createContractType"
-                        value={ct}
-                        checked={form.contractType === ct}
-                        onChange={() => setForm(f => ({ ...f, contractType: ct }))}
-                        className="mt-0.5 accent-blue-600"
-                      />
-                      <div>
-                        <div className="text-sm font-medium text-slate-800">
-                          {ct === "fixed_price" ? "Fixed price" : "Open book"}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="state">State</Label>
+                    <Input id="state" value={form.state} onChange={setField("state")} placeholder="TX" maxLength={2} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="zipCode">Zip</Label>
+                    <Input id="zipCode" value={form.zipCode} onChange={setField("zipCode")} placeholder="78701" />
+                  </div>
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Contract Type</Label>
+                  <div className="flex gap-6 pt-0.5">
+                    {(["fixed_price", "open_book"] as const).map(ct => (
+                      <label key={ct} className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="createContractType"
+                          value={ct}
+                          checked={form.contractType === ct}
+                          onChange={() => setForm(f => ({ ...f, contractType: ct }))}
+                          className="mt-0.5 accent-blue-600"
+                        />
+                        <div>
+                          <div className="text-sm font-medium text-slate-800">
+                            {ct === "fixed_price" ? "Fixed price" : "Open book"}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {ct === "fixed_price" ? "Set contract price for the client" : "Projected costs + markup"}
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-500">
-                          {ct === "fixed_price" ? "Set contract price for the client" : "Projected costs + markup"}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="contractPrice">Contract Price ($)</Label>
-                <Input id="contractPrice" value={form.contractPrice} onChange={setField("contractPrice")} placeholder="0.00" type="number" min="0" step="0.01" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="projectedStart">Start Date</Label>
-                  <Input id="projectedStart" type="date" value={form.projectedStart} onChange={setField("projectedStart")} />
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="projectedCompletion">Est. Completion</Label>
-                  <Input id="projectedCompletion" type="date" value={form.projectedCompletion} onChange={setField("projectedCompletion")} />
+                  <Label htmlFor="contractPrice">Contract Price ($)</Label>
+                  <Input id="contractPrice" value={form.contractPrice} onChange={setField("contractPrice")} placeholder="0.00" type="number" min="0" step="0.01" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="projectedStart">Start Date</Label>
+                    <Input id="projectedStart" type="date" value={form.projectedStart} onChange={setField("projectedStart")} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="projectedCompletion">Est. Completion</Label>
+                    <Input id="projectedCompletion" type="date" value={form.projectedCompletion} onChange={setField("projectedCompletion")} />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving}>
-                {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-                Create Job
-              </Button>
+              {step === 1 ? (
+                <>
+                  <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={!form.title.trim()}
+                    style={{ backgroundColor: "#E85D04", color: "#fff" }}
+                    className="hover:opacity-90 transition-opacity"
+                  >
+                    Next: Location & Contract →
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button type="button" variant="outline" onClick={() => setStep(1)}>
+                    ← Back
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={saving}
+                    style={{ backgroundColor: "#E85D04", color: "#fff" }}
+                    className="hover:opacity-90 transition-opacity"
+                  >
+                    {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                    Create Job
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </form>
         </DialogContent>

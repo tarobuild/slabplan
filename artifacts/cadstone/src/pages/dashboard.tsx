@@ -531,9 +531,6 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-500 mt-0.5">{todayDisplay}</p>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-xs h-8" asChild>
-              <Link to="/sales/leads">New Lead</Link>
-            </Button>
             <Button size="sm" variant="orange" className="text-xs h-8" asChild>
               <Link to="/jobs">New Job</Link>
             </Button>

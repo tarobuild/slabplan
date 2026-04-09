@@ -1,0 +1,63 @@
+
+  The reset/seeding work is still incomplete. Fix it end-to-end.
+
+  Current verified problems:
+  - LOCAL is not clean: `daily_log_settings` still has 1 row.
+  - PRODUCTION is not clean: it still has app data in at least `activity_log`,
+  `folders`, `jobs`, `schedule_phases`, and `schedule_settings`.
+  - The current reset script missed current schema tables, at minimum:
+    - `daily_log_settings`
+    - `job_assignees`
+  - Both databases do have the 2 admin users already, but the requirement was
+  stricter: only those 2 users and no other app data.
+
+  Do the work, don’t just analyze.
+
+  Requirements:
+  1. Fix the reset logic so it clears ALL application tables in the current schema,
+  using `lib/db/src/schema/index.ts` as the source of truth.
+  2. Do NOT clear migration metadata like `workspace_schema_migrations`.
+  3. Make sure the reset flow can target both databases safely:
+     - LOCAL via `DATABASE_URL`
+     - PRODUCTION via `SUPABASE_DATABASE_URL`
+  4. Keep `seed-users.mjs` working with:
+     - `--db=local`
+     - `--db=production`
+     - no flag = seed both sequentially
+  5. Preserve unrelated local changes. Do not touch unrelated files like `artifacts/
+  cadstone/public/cad-logo.png` or attached assets.
+
+  Implementation guidance:
+  - Prefer adding a new script like `artifacts/api-server/scripts/reset-db.mjs` with
+  an explicit `--db=local|production` flag.
+  - If you reuse `reset-local.mjs`, make sure the naming and behavior are not
+  misleading.
+  - The truncate list must include every app table from the schema, including the ones
+  currently missed (`daily_log_settings`, `job_assignees`).
+  - Use the same `pg` resolution pattern already used in the existing scripts.
+  - Keep it explicit and safe. Production reset must only happen when intentionally
+  targeted.
+
+  Then run this exact flow:
+  1. Reset LOCAL
+  2. Reset PRODUCTION
+  3. Seed both databases:
+     - `node artifacts/api-server/scripts/seed-users.mjs`
+  4. Verify both databases so the final state is:
+     - `users` has exactly 2 active rows:
+       - `anwar@cadstone.works` / admin / Anwar
+       - `cesar@cadstone.works` / admin / Cesar
+     - every other application table has 0 rows
+
+  Verification must be real, not assumed:
+  - Query all public base tables except `workspace_schema_migrations`
+  - Show row counts for both LOCAL and PRODUCTION
+  - Prove that only `users` has 2 rows and everything else is 0
+  - Show the exact `SELECT email, role, full_name, deleted_at FROM users ORDER BY
+  email;` output for both DBs
+
+  At the end, give me:
+  - what files you changed
+  - the exact commands you ran
+  - the exact final verification results for LOCAL and PRODUCTION
+  - the exact final `git status --short`

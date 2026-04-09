@@ -145,7 +145,8 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
 app.use("/api", router);
 
 if (process.env.NODE_ENV === "production") {
-  const clientDist = path.join(process.cwd(), "artifacts/cadstone/dist/public");
+  // Frontend is copied into dist/public alongside the compiled server at build time
+  const clientDist = path.join(__dirname, "public");
   app.use(express.static(clientDist));
   app.get(/.*/, (_req, res) => {
     res.sendFile(path.join(clientDist, "index.html"));

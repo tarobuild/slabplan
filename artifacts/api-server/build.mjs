@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -118,6 +118,12 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  // Copy the built frontend into dist/public so the deployment is self-contained
+  const cadstonePublic = path.resolve(artifactDir, "../cadstone/dist/public");
+  const serverPublic = path.resolve(distDir, "public");
+  await cp(cadstonePublic, serverPublic, { recursive: true });
+  console.log("✓ Copied cadstone frontend → dist/public");
 }
 
 buildAll().catch((err) => {

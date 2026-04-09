@@ -18,9 +18,6 @@ export default function AppLayout() {
         </aside>
 
         <main className="flex-1 overflow-y-auto">
-          <div data-print-hide="true" className="mb-3 lg:hidden">
-            <Sidebar mobile />
-          </div>
           <div className="p-4 lg:p-5">
             <Outlet />
           </div>

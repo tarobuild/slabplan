@@ -36,7 +36,7 @@ function getApiErrorMessage(err: unknown, fallback: string) {
   return fallback
 }
 
-export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
+export default function Sidebar() {
   const { jobId } = useParams<{ jobId?: string }>()
   const navigate = useNavigate()
   const [jobs, setJobs] = useState<Job[]>([])
@@ -76,7 +76,7 @@ export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
 
   const openCount = jobs.filter((j) => j.status === "open").length
 
-  const inner = (
+  return (
     <div className="flex h-full flex-col border-r border-[#E5E7EB] bg-white">
       <div className="border-b border-[#E5E7EB] p-2.5">
         <Button
@@ -211,10 +211,4 @@ export default function Sidebar({ mobile = false }: { mobile?: boolean }) {
       </div>
     </div>
   )
-
-  if (mobile) {
-    return <div className="h-64 overflow-hidden rounded-lg border border-[#E5E7EB] shadow-sm">{inner}</div>
-  }
-
-  return inner
 }

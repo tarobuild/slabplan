@@ -515,10 +515,10 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-full bg-slate-50">
-      <div className="mx-auto max-w-[1600px] px-6 py-5 space-y-5">
+      <div className="mx-auto max-w-[1600px] px-4 py-4 lg:px-6 lg:py-5 space-y-5">
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-xl font-semibold text-slate-900">
               Good {getGreeting()}, {user?.fullName?.split(" ")[0] ?? "there"}.
@@ -536,7 +536,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Calendar + Sidebar */}
-        <div className="flex gap-5">
+        <div className="flex flex-col gap-5 lg:flex-row">
 
           {/* Calendar panel */}
           <div className="flex-1 min-w-0 space-y-4">
@@ -633,17 +633,23 @@ export default function DashboardPage() {
                   <Skeleton className="h-4 w-3/5" />
                 </div>
               </div>
-            ) : calView === "calendar" && calPeriod === "month" ? (
-              <MonthCalendar anchor={anchor} items={calItems} navigate={navigate} />
-            ) : calView === "calendar" && calPeriod === "week" ? (
-              <WeekCalendar anchor={anchor} items={calItems} navigate={navigate} />
             ) : (
-              <ListCalendar items={calItems} navigate={navigate} />
+              <div className="overflow-x-auto">
+                <div className="min-w-[560px]">
+                  {calView === "calendar" && calPeriod === "month" ? (
+                    <MonthCalendar anchor={anchor} items={calItems} navigate={navigate} />
+                  ) : calView === "calendar" && calPeriod === "week" ? (
+                    <WeekCalendar anchor={anchor} items={calItems} navigate={navigate} />
+                  ) : (
+                    <ListCalendar items={calItems} navigate={navigate} />
+                  )}
+                </div>
+              </div>
             )}
           </div>
 
           {/* Right sidebar */}
-          <div className="w-64 shrink-0 space-y-4">
+          <div className="w-full space-y-4 lg:w-64 lg:shrink-0">
 
             {/* Recent Activity */}
             <Card className="border-[#E5E7EB] bg-white">

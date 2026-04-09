@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import {
   ChevronDown,
   ClipboardList,
@@ -5,6 +6,7 @@ import {
   FileText,
   Film,
   LogOut,
+  Menu,
   Settings,
   UserCircle2,
 } from "lucide-react"
@@ -17,6 +19,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Sheet, SheetContent } from "@/components/ui/sheet"
+import Sidebar from "./Sidebar"
 import { logoutSession } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { cn } from "@/lib/utils"
@@ -36,14 +40,38 @@ const FILES_LINKS = [
   { label: "Videos", to: "/files/videos", icon: Film },
 ]
 
+const DRAWER_NAV = [
+  { label: "Dashboard", to: "/dashboard" },
+  { label: "Jobs", to: "/jobs" },
+  { label: "Clients", to: "/clients" },
+  { label: "Leads", to: "/sales/leads" },
+  { label: "My Daily Logs", to: "/daily-logs/mine" },
+  { label: "Settings", to: "/settings" },
+]
+
 export default function TopNav() {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  useEffect(() => {
+    setDrawerOpen(false)
+  }, [location.pathname])
 
   return (
     <header className="sticky top-0 z-30 shadow-md" style={{ backgroundColor: "#1D1D1D" }}>
       <div className="flex h-12 items-center gap-1 px-3">
+
+        {/* Hamburger button — mobile only */}
+        <button
+          className="lg:hidden mr-1 flex items-center justify-center rounded p-1.5 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open navigation menu"
+        >
+          <Menu className="size-5" />
+        </button>
+
         {/* Logo */}
         <Link
           to="/dashboard"
@@ -58,9 +86,8 @@ export default function TopNav() {
           </div>
         </Link>
 
-        {/* Primary nav */}
-        <nav className="flex items-center gap-0.5">
-          {/* Jobs */}
+        {/* Primary nav — desktop only */}
+        <nav className="hidden lg:flex items-center gap-0.5">
           <NavLink
             to="/jobs"
             className={({ isActive }) =>
@@ -75,7 +102,6 @@ export default function TopNav() {
             Jobs
           </NavLink>
 
-          {/* Files dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -108,7 +134,6 @@ export default function TopNav() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Clients */}
           <NavLink
             to="/clients"
             className={({ isActive }) =>
@@ -122,24 +147,8 @@ export default function TopNav() {
           >
             Clients
           </NavLink>
-
-          {/* Sales */}
-          <NavLink
-            to="/sales/leads"
-            className={({ isActive }) =>
-              cn(
-                "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
-                isActive
-                  ? "text-[#E85D04] bg-white/10"
-                  : "text-white/70 hover:text-white hover:bg-white/10",
-              )
-            }
-          >
-            Sales
-          </NavLink>
         </nav>
 
-        {/* Spacer */}
         <div className="flex-1" />
 
         {/* User menu */}
@@ -192,6 +201,67 @@ export default function TopNav() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Mobile navigation drawer */}
+      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <SheetContent side="left" className="w-72 p-0 flex flex-col gap-0">
+          {/* Drawer header */}
+          <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 shrink-0">
+            <div className="flex items-center rounded bg-[#1D1D1D] px-2 py-1">
+              <img src="/cad-logo.png" alt="CAD Stone Networks" className="h-5 w-auto" />
+            </div>
+            <span className="text-sm font-semibold text-slate-800">CAD Stone Networks</span>
+          </div>
+
+          {/* Nav links */}
+          <nav className="flex shrink-0 flex-col gap-0.5 p-2">
+            {DRAWER_NAV.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-orange-50 text-orange-700"
+                      : "text-slate-700 hover:bg-slate-100",
+                  )
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+
+            <div className="mt-1">
+              <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                Files
+              </p>
+              {FILES_LINKS.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-orange-50 text-orange-700"
+                        : "text-slate-700 hover:bg-slate-100",
+                    )
+                  }
+                >
+                  <item.icon className="size-4 text-slate-400" />
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          </nav>
+
+          {/* Jobs list */}
+          <div className="flex-1 overflow-hidden border-t border-slate-200">
+            <Sidebar />
+          </div>
+        </SheetContent>
+      </Sheet>
     </header>
   )
 }

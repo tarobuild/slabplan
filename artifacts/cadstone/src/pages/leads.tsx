@@ -673,7 +673,8 @@ export default function LeadsPage() {
         </Select>
       </div>
 
-      <div className="rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
+      {/* Desktop table */}
+      <div className="hidden md:block rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50">
@@ -761,6 +762,57 @@ export default function LeadsPage() {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Mobile card list */}
+      <div className="md:hidden space-y-2">
+        {loading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-lg border border-[#E5E7EB] bg-white p-4 space-y-2">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          ))
+        ) : leads.length === 0 ? (
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center text-sm text-slate-400">
+            No leads found.
+          </div>
+        ) : (
+          leads.map(lead => (
+            <div
+              key={lead.id}
+              className="rounded-lg border border-[#E5E7EB] bg-white p-4 cursor-pointer active:bg-slate-50"
+              onClick={() => openLead(lead.id)}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-900">{lead.title}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <Badge variant="outline" className={`text-xs capitalize ${STAGE_COLORS[lead.status] ?? ""}`}>
+                      {STAGE_LABELS[lead.status] ?? lead.status}
+                    </Badge>
+                    {lead.jobType && <span className="text-xs capitalize text-slate-500">{lead.jobType}</span>}
+                  </div>
+                  <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
+                    {(lead.city || lead.state) && (
+                      <p>{[lead.city, lead.state].filter(Boolean).join(", ")}</p>
+                    )}
+                    {lead.clientContact?.displayName && <p>{lead.clientContact.displayName}</p>}
+                    {(lead.revenueMin || lead.revenueMax) && (
+                      <p className="font-medium text-slate-700">{revenue(lead)}</p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); setDeleteId(lead.id) }}
+                  className="shrink-0 p-1 text-slate-400 transition-colors hover:text-red-500"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {!loading && pagination.totalItems > pagination.pageSize && (

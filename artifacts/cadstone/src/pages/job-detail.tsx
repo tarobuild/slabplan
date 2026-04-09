@@ -96,7 +96,7 @@ export default function JobDetailPage() {
       </div>
 
       <div className="border-b border-[#E5E7EB]">
-        <nav className="-mb-px flex gap-0">
+        <nav className="-mb-px flex gap-0 overflow-x-auto scrollbar-none">
           {TABS.map((tab) => {
             const isActive = tab.matchPrefix
               ? location.pathname.includes(`/${tab.matchPrefix}`)
@@ -106,7 +106,7 @@ export default function JobDetailPage() {
                 key={tab.path}
                 to={`/jobs/${jobId}/${tab.path}`}
                 className={cn(
-                  "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                  "shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
                   isActive
                     ? "border-orange-500 text-orange-600"
                     : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900",

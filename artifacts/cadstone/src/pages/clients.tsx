@@ -406,7 +406,8 @@ export default function ClientsPage() {
         />
       </div>
 
-      <div className="rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
+      {/* Desktop table */}
+      <div className="hidden md:block rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50">
@@ -492,6 +493,77 @@ export default function ClientsPage() {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Mobile card list */}
+      <div className="md:hidden space-y-2">
+        {loading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-lg border border-[#E5E7EB] bg-white p-4 space-y-2">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          ))
+        ) : clients.length === 0 ? (
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center text-sm text-slate-400">
+            No clients found.{" "}
+            <button
+              onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}
+              className="text-blue-600 hover:underline"
+            >
+              Add your first client
+            </button>
+          </div>
+        ) : (
+          clients.map(client => (
+            <div
+              key={client.id}
+              className="rounded-lg border border-[#E5E7EB] bg-white p-4 cursor-pointer active:bg-slate-50"
+              onClick={() => openDetail(client.id)}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                    <Building2 className="size-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-900">{client.companyName}</p>
+                    {(client.city || client.state) && (
+                      <p className="text-xs text-slate-400">{[client.city, client.state].filter(Boolean).join(", ")}</p>
+                    )}
+                    <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
+                      {(client.phone || client.primaryContact?.phone) && (
+                        <p className="flex items-center gap-1.5">
+                          <Phone className="size-3 shrink-0 text-slate-400" />
+                          {client.phone || client.primaryContact?.phone}
+                        </p>
+                      )}
+                      {(client.email || client.primaryContact?.email) && (
+                        <p className="flex items-center gap-1.5 truncate">
+                          <Mail className="size-3 shrink-0 text-slate-400" />
+                          <span className="truncate">{client.email || client.primaryContact?.email}</span>
+                        </p>
+                      )}
+                      {client.openJobCount > 0 && (
+                        <p>
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+                            {client.openJobCount} open {client.openJobCount === 1 ? "job" : "jobs"}
+                          </Badge>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); setDeleteClientId(client.id) }}
+                  className="shrink-0 p-1 text-slate-400 transition-colors hover:text-red-500"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {!loading && total > pageSize && (
@@ -752,7 +824,7 @@ export default function ClientsPage() {
 
       {/* New Client Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Client</DialogTitle>
           </DialogHeader>
@@ -796,7 +868,7 @@ export default function ClientsPage() {
 
       {/* Add / Edit Contact Dialog */}
       <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingContact ? "Edit Contact" : "Add Contact"}</DialogTitle>
           </DialogHeader>

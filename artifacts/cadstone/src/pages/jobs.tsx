@@ -246,7 +246,8 @@ export default function JobsPage() {
         </Select>
       </div>
 
-      <div className="rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
+      {/* Desktop table */}
+      <div className="hidden md:block rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50">
@@ -321,6 +322,56 @@ export default function JobsPage() {
         </Table>
       </div>
 
+      {/* Mobile card list */}
+      <div className="md:hidden space-y-2">
+        {loading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-lg border border-[#E5E7EB] bg-white p-4 space-y-2">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          ))
+        ) : jobs.length === 0 ? (
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center text-sm text-slate-400">
+            No jobs found.{" "}
+            <button onClick={() => { setForm(emptyForm); setCreateOpen(true) }} className="text-blue-600 hover:underline">
+              Create your first job
+            </button>
+          </div>
+        ) : (
+          jobs.map(job => (
+            <div key={job.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <Link to={`/jobs/${job.id}/summary`} className="block truncate text-sm font-medium text-blue-600 hover:underline">
+                    {job.title}
+                  </Link>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[job.status]}`}>
+                      {STATUS_LABELS[job.status]}
+                    </Badge>
+                    {job.jobType && <span className="text-xs capitalize text-slate-500">{job.jobType}</span>}
+                  </div>
+                  <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
+                    {job.clientName && <p>{job.clientName}</p>}
+                    {(job.city || job.state) && <p>{[job.city, job.state].filter(Boolean).join(", ")}</p>}
+                    {job.contractPrice && (
+                      <p className="font-medium text-slate-700">{fmtCurrency(job.contractPrice)}</p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setDeleteId(job.id)}
+                  className="shrink-0 p-1 text-slate-400 transition-colors hover:text-red-500"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
       {!loading && total > pageSize && (
         <div className="flex items-center justify-between text-sm text-slate-500">
           <span>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}</span>
@@ -332,7 +383,7 @@ export default function JobsPage() {
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Job</DialogTitle>
           </DialogHeader>

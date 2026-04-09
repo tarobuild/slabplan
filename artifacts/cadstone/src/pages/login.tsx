@@ -45,7 +45,7 @@ export default function LoginPage() {
           <img
             src="/cad-logo.png"
             alt="CAD Stone Networks"
-            className="h-12 w-auto brightness-0 invert"
+            className="h-14 w-auto"
           />
         </div>
 

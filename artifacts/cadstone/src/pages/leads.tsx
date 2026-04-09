@@ -782,23 +782,23 @@ export default function LeadsPage() {
             <div
               key={lead.id}
               className="rounded-lg border border-[#E5E7EB] bg-white p-4 cursor-pointer active:bg-slate-50"
-              onClick={() => openLead(lead.id)}
+              onClick={() => openSheet(lead.id)}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-900">{lead.title}</p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" className={`text-xs capitalize ${STAGE_COLORS[lead.status] ?? ""}`}>
-                      {STAGE_LABELS[lead.status] ?? lead.status}
+                    <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[lead.status] ?? ""}`}>
+                      {STATUS_LABELS[lead.status] ?? lead.status}
                     </Badge>
-                    {lead.jobType && <span className="text-xs capitalize text-slate-500">{lead.jobType}</span>}
+                    {lead.projectType && <span className="text-xs capitalize text-slate-500">{lead.projectType}</span>}
                   </div>
                   <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
                     {(lead.city || lead.state) && (
                       <p>{[lead.city, lead.state].filter(Boolean).join(", ")}</p>
                     )}
                     {lead.clientContact?.displayName && <p>{lead.clientContact.displayName}</p>}
-                    {(lead.revenueMin || lead.revenueMax) && (
+                    {(lead.estimatedRevenueMin || lead.estimatedRevenueMax) && (
                       <p className="font-medium text-slate-700">{revenue(lead)}</p>
                     )}
                   </div>
@@ -847,7 +847,7 @@ export default function LeadsPage() {
 
       {/* Create Lead Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Lead Opportunity</DialogTitle>
           </DialogHeader>

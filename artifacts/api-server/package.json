@@ -7,7 +7,7 @@
     "dev": "export NODE_ENV=development && node ./build.mjs && pnpm run start",
     "build": "pnpm --filter @workspace/cadstone run build && node ./build.mjs",
     "build:prod": "pnpm --filter @workspace/cadstone run build && node ./build.mjs",
-    "start": "node --enable-source-maps ./dist/index.mjs",
+    "start": "NODE_ENV=production node --enable-source-maps ./dist/index.mjs",
     "test": "tsx --test ./test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

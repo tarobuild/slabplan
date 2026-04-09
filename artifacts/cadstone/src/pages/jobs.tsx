@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Loader2, Plus, Search } from "lucide-react"
+import { Loader2, Search } from "lucide-react"
 import { api } from "@/lib/api"
 import WorkerAssignmentPicker, { type WorkerOption } from "@/components/WorkerAssignmentPicker"
 import { Badge } from "@/components/ui/badge"
@@ -297,16 +297,8 @@ export default function JobsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div>
         <h1 className="text-xl font-semibold text-slate-900">Jobs</h1>
-        <Button
-          onClick={openCreateDialog}
-          style={{ backgroundColor: "#E85D04", color: "#fff" }}
-          className="hover:opacity-90 transition-opacity"
-        >
-          <Plus className="mr-1.5 size-4" />
-          Create Job
-        </Button>
       </div>
 
       <div className="flex gap-2">

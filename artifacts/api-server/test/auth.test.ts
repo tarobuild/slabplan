@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import jwt from "jsonwebtoken";
 
 const fixtureUser = {
   id: "1f4c4fb7-43cb-4f40-b373-4f42466389a1",
@@ -12,7 +13,7 @@ const fixtureUser = {
   updatedAt: new Date("2025-01-02T00:00:00.000Z"),
 };
 
-test("upload tokens use the dedicated upload secret", async () => {
+test("upload tokens use the dedicated upload secret when configured", async () => {
   const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
   const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
   const originalResetSecret = process.env.JWT_RESET_SECRET;
@@ -28,8 +29,37 @@ test("upload tokens use the dedicated upload secret", async () => {
     const uploadToken = authModule.signUploadToken(fixtureUser);
 
     assert.equal(authModule.verifyUploadToken(uploadToken).userId, fixtureUser.id);
-    assert.throws(() => authModule.verifyAccessToken(uploadToken));
+    assert.doesNotThrow(() => jwt.verify(uploadToken, "upload-secret-for-tests"));
+    assert.throws(() => jwt.verify(uploadToken, "access-secret-for-tests"));
   } finally {
+    restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);
+    restoreEnv("JWT_REFRESH_SECRET", originalRefreshSecret);
+    restoreEnv("JWT_RESET_SECRET", originalResetSecret);
+    restoreEnv("JWT_UPLOAD_SECRET", originalUploadSecret);
+  }
+});
+
+test("production falls back to the access secret when JWT_UPLOAD_SECRET is missing", async () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
+  const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
+  const originalResetSecret = process.env.JWT_RESET_SECRET;
+  const originalUploadSecret = process.env.JWT_UPLOAD_SECRET;
+
+  process.env.NODE_ENV = "production";
+  process.env.JWT_ACCESS_SECRET = "access-secret-for-tests";
+  process.env.JWT_REFRESH_SECRET = "refresh-secret-for-tests";
+  process.env.JWT_RESET_SECRET = "reset-secret-for-tests";
+  delete process.env.JWT_UPLOAD_SECRET;
+
+  try {
+    const authModule = await import(`../src/lib/auth.ts?test=fallback-${Date.now()}`);
+    const uploadToken = authModule.signUploadToken(fixtureUser);
+
+    assert.equal(authModule.verifyUploadToken(uploadToken).userId, fixtureUser.id);
+    assert.doesNotThrow(() => jwt.verify(uploadToken, "access-secret-for-tests"));
+  } finally {
+    restoreEnv("NODE_ENV", originalNodeEnv);
     restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);
     restoreEnv("JWT_REFRESH_SECRET", originalRefreshSecret);
     restoreEnv("JWT_RESET_SECRET", originalResetSecret);

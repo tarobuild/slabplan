@@ -65,10 +65,31 @@ function readJwtSecret(envName: JwtSecretEnvName) {
   return runtimeSecrets[envName];
 }
 
+function readUploadSecret(fallbackSecret: string) {
+  const value = process.env.JWT_UPLOAD_SECRET?.trim();
+
+  if (value) {
+    return value;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    if (!warnedMissingSecrets.has("JWT_UPLOAD_SECRET")) {
+      warnedMissingSecrets.add("JWT_UPLOAD_SECRET");
+      console.warn(
+        "[auth] JWT_UPLOAD_SECRET is not configured in production; falling back to JWT_ACCESS_SECRET. Configure JWT_UPLOAD_SECRET to restore secret isolation.",
+      );
+    }
+
+    return fallbackSecret;
+  }
+
+  return readJwtSecret("JWT_UPLOAD_SECRET");
+}
+
 const accessSecret = readJwtSecret("JWT_ACCESS_SECRET");
 const refreshSecret = readJwtSecret("JWT_REFRESH_SECRET");
 const resetSecret = readJwtSecret("JWT_RESET_SECRET");
-const uploadSecret = readJwtSecret("JWT_UPLOAD_SECRET");
+const uploadSecret = readUploadSecret(accessSecret);
 
 export const refreshCookieName = "cadstone_refresh_token";
 export const uploadCookieName = "cadstone_upload_token";

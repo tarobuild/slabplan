@@ -8,7 +8,6 @@ import {
   LogOut,
   Menu,
   Settings,
-  UserCircle2,
 } from "lucide-react"
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -127,7 +126,7 @@ export default function TopNav() {
                     : "text-white/70 hover:text-white hover:bg-white/10",
                 )}
               >
-                Files
+                Job Files
                 <ChevronDown className="size-3.5 opacity-70" />
               </button>
             </DropdownMenuTrigger>
@@ -162,6 +161,20 @@ export default function TopNav() {
           >
             Clients
           </NavLink>
+
+          <NavLink
+            to="/sales/leads"
+            className={({ isActive }) =>
+              cn(
+                "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
+                isActive
+                  ? "text-[#E85D04] bg-white/10"
+                  : "text-white/70 hover:text-white hover:bg-white/10",
+              )
+            }
+          >
+            Leads
+          </NavLink>
         </nav>
 
         <div className="flex-1" />
@@ -191,10 +204,6 @@ export default function TopNav() {
               </p>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/settings")}>
-              <UserCircle2 className="size-4" />
-              Profile
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate("/settings")}>
               <Settings className="size-4" />
               Settings

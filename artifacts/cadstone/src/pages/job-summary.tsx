@@ -53,7 +53,23 @@ type Job = {
 
 type ClientOption = { id: string; companyName: string }
 
-const JOB_TYPES = ["countertops", "backsplash", "flooring", "custom"]
+const JOB_TYPES = [
+  "countertops",
+  "backsplash",
+  "flooring",
+  "shower surrounds",
+  "fireplace / hearth",
+  "outdoor / patio",
+  "wall cladding",
+  "stairs / steps",
+  "window sills",
+  "bar tops",
+  "vanity tops",
+  "tub surrounds",
+  "repair / restoration",
+  "custom",
+]
+const toLabel = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase())
 const WORK_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 const WORK_DAYS_LABELS: Record<string, string> = {
   mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun"
@@ -285,7 +301,7 @@ export default function JobSummaryPage() {
                   <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">— None —</SelectItem>
-                    {JOB_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}
+                    {JOB_TYPES.map(t => <SelectItem key={t} value={t}>{toLabel(t)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

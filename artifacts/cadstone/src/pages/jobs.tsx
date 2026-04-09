@@ -50,12 +50,29 @@ type Job = {
 
 const STATUS_LABELS: Record<string, string> = { open: "Open", closed: "Closed", archived: "Archived" }
 const STATUS_COLORS: Record<string, string> = {
-  open: "bg-blue-50 text-blue-700 border-blue-200",
+  open: "bg-green-50 text-green-700 border-green-200",
   closed: "bg-slate-50 text-slate-600 border-slate-200",
   archived: "bg-slate-50 text-slate-400 border-slate-200",
 }
-const JOB_TYPES = ["countertops", "backsplash", "flooring", "custom"]
+const JOB_TYPES = [
+  "countertops",
+  "backsplash",
+  "flooring",
+  "shower surrounds",
+  "fireplace / hearth",
+  "outdoor / patio",
+  "wall cladding",
+  "stairs / steps",
+  "window sills",
+  "bar tops",
+  "vanity tops",
+  "tub surrounds",
+  "repair / restoration",
+  "custom",
+]
 const ADD_NEW_CLIENT_VALUE = "__add_new_client__"
+
+const toLabel = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase())
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -246,8 +263,13 @@ export default function JobsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Jobs</h1>
-        <Button size="sm" onClick={openCreateDialog}>
-          <Plus className="mr-1.5 size-3.5" />Create Job
+        <Button
+          onClick={openCreateDialog}
+          style={{ backgroundColor: "#E85D04", color: "#fff" }}
+          className="hover:opacity-90 transition-opacity"
+        >
+          <Plus className="mr-1.5 size-4" />
+          Create Job
         </Button>
       </div>
 
@@ -458,23 +480,12 @@ export default function JobsPage() {
                   />
                 </div>
               ) : null}
-              <div className="space-y-1.5">
+              <div className="col-span-2 space-y-1.5">
                 <Label>Job Type</Label>
                 <Select value={form.jobType} onValueChange={v => setForm(f => ({ ...f, jobType: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
-                    {JOB_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Status</Label>
-                <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                    <SelectItem value="archived">Archived</SelectItem>
+                    {JOB_TYPES.map(t => <SelectItem key={t} value={t}>{toLabel(t)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

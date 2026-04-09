@@ -403,7 +403,7 @@ export default function JobSummaryPage() {
                       value={ct}
                       checked={job.contractType === ct}
                       onChange={() => setField("contractType", ct)}
-                      className="mt-0.5 accent-blue-600"
+                      className="mt-0.5 accent-orange-600"
                     />
                     <div>
                       <div className="text-sm font-medium text-slate-800">
@@ -510,8 +510,8 @@ export default function JobSummaryPage() {
                       onClick={() => toggleWorkDay(d)}
                       className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
                         active
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-white text-slate-600 border-[#E5E7EB] hover:border-blue-300"
+                          ? "bg-orange-600 text-white border-orange-600"
+                          : "bg-white text-slate-600 border-[#E5E7EB] hover:border-orange-300"
                       }`}
                     >
                       {WORK_DAYS_LABELS[d]}

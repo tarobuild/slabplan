@@ -60,15 +60,15 @@ export default function TopNav() {
 
   return (
     <header className="sticky top-0 z-30 shadow-md" style={{ backgroundColor: "#1D1D1D" }}>
-      <div className="flex h-12 items-center gap-1 px-3">
+      <div className="flex h-14 lg:h-12 items-center gap-1 px-3">
 
         {/* Hamburger button — mobile only */}
         <button
-          className="lg:hidden mr-1 flex items-center justify-center rounded p-1.5 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          className="lg:hidden mr-1 flex items-center justify-center rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
           onClick={() => setDrawerOpen(true)}
           aria-label="Open navigation menu"
         >
-          <Menu className="size-5" />
+          <Menu className="size-6" />
         </button>
 
         {/* Logo */}

@@ -121,7 +121,7 @@ function buildWeekSegments(week: string[], items: CalItem[]): WeekSegment[] {
 }
 
 const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-const DEFAULT_COLOR = "#2563eb"
+const DEFAULT_COLOR = "#E85D04"
 
 // ---------------------------------------------------------------------------
 // Month calendar view — matches per-job design exactly
@@ -177,7 +177,7 @@ function MonthCalendar({ anchor, items, navigate }: {
                     <span
                       className={cn(
                         "flex size-7 items-center justify-center rounded-full text-xs font-medium",
-                        isToday ? "bg-blue-600 text-white" : isCurrentMonth ? "text-slate-700" : "text-slate-300",
+                        isToday ? "bg-orange-600 text-white" : isCurrentMonth ? "text-slate-700" : "text-slate-300",
                       )}
                     >
                       {parsed.getDate()}
@@ -250,7 +250,7 @@ function WeekCalendar({ anchor, items, navigate }: {
                 </p>
                 <span className={cn(
                   "flex size-7 items-center justify-center rounded-full text-xs font-medium",
-                  isToday ? "bg-blue-600 text-white" : "text-slate-600",
+                  isToday ? "bg-orange-600 text-white" : "text-slate-600",
                 )}>
                   {day.getDate()}
                 </span>
@@ -406,7 +406,7 @@ function timeAgo(d: string) {
 
 function entityBadgeColor(type: string) {
   const map: Record<string, string> = {
-    job: "bg-blue-100 text-blue-700",
+    job: "bg-orange-100 text-orange-700",
     lead: "bg-green-100 text-green-700",
     schedule_item: "bg-yellow-100 text-yellow-700",
     daily_log: "bg-purple-100 text-purple-700",

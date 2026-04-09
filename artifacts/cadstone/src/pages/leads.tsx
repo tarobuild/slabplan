@@ -150,9 +150,9 @@ type Pagination = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  open: "bg-blue-50 text-blue-700 border-blue-200",
+  open: "bg-green-50 text-green-700 border-green-200",
   in_negotiation: "bg-yellow-50 text-yellow-700 border-yellow-200",
-  won: "bg-green-50 text-green-700 border-green-200",
+  won: "bg-emerald-100 text-emerald-800 border-emerald-300",
   lost: "bg-red-50 text-red-700 border-red-200",
   archived: "bg-slate-50 text-slate-500 border-slate-200",
 }
@@ -709,7 +709,7 @@ export default function LeadsPage() {
                       setContactForm(emptyContact)
                       setCreateOpen(true)
                     }}
-                    className="text-blue-600 hover:underline"
+                    className="text-orange-600 hover:underline"
                   >
                     Create your first lead
                   </button>
@@ -1436,7 +1436,7 @@ export default function LeadsPage() {
                           {leadDetail.clientContact.email && (
                             <a
                               href={`mailto:${leadDetail.clientContact.email}`}
-                              className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline"
+                              className="flex items-center gap-1.5 text-sm text-orange-600 hover:underline"
                             >
                               <Mail className="size-3.5 text-slate-400" />
                               {leadDetail.clientContact.email}
@@ -1457,7 +1457,7 @@ export default function LeadsPage() {
                           <p>No contact added yet.</p>
                           <button
                             onClick={() => setIsEditing(true)}
-                            className="text-blue-600 hover:underline text-sm flex items-center gap-1"
+                            className="text-orange-600 hover:underline text-sm flex items-center gap-1"
                           >
                             <Edit2 className="size-3" />
                             Add contact
@@ -1536,7 +1536,7 @@ export default function LeadsPage() {
                           <button
                             onClick={() => !uploadingAttachment && fileInputRef.current?.click()}
                             disabled={uploadingAttachment}
-                            className="mt-1 text-xs text-blue-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="mt-1 text-xs text-orange-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             Upload a file
                           </button>
@@ -1556,7 +1556,7 @@ export default function LeadsPage() {
                                   href={att.fileUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-sm text-slate-800 font-medium truncate block hover:text-blue-600 hover:underline"
+                                  className="text-sm text-slate-800 font-medium truncate block hover:text-orange-600 hover:underline"
                                   title={att.originalName}
                                 >
                                   {att.originalName}

@@ -434,7 +434,7 @@ export default function ClientsPage() {
                   No clients found.{" "}
                   <button
                     onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}
-                    className="text-blue-600 hover:underline"
+                    className="text-orange-600 hover:underline"
                   >
                     Add your first client
                   </button>
@@ -449,7 +449,7 @@ export default function ClientsPage() {
                 >
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-600">
                         <Building2 className="size-3.5" />
                       </div>
                       <div>
@@ -509,7 +509,7 @@ export default function ClientsPage() {
             No clients found.{" "}
             <button
               onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}
-              className="text-blue-600 hover:underline"
+              className="text-orange-600 hover:underline"
             >
               Add your first client
             </button>
@@ -523,7 +523,7 @@ export default function ClientsPage() {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-600">
                     <Building2 className="size-4" />
                   </div>
                   <div className="min-w-0">
@@ -588,7 +588,7 @@ export default function ClientsPage() {
               <SheetHeader className="px-6 pt-6 pb-4 border-b border-[#E5E7EB]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
                       <Building2 className="size-5" />
                     </div>
                     <div className="min-w-0">
@@ -617,7 +617,7 @@ export default function ClientsPage() {
                       className={cn(
                         "px-3 py-1.5 text-xs font-medium rounded transition-colors capitalize",
                         sheetTab === tab
-                          ? "bg-blue-600 text-white"
+                          ? "bg-orange-600 text-white"
                           : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
                       )}
                     >
@@ -686,7 +686,7 @@ export default function ClientsPage() {
                         {selected.email && (
                           <div className="flex items-center gap-2.5 text-sm text-slate-700">
                             <Mail className="size-4 shrink-0 text-slate-400" />
-                            <a href={`mailto:${selected.email}`} className="text-blue-600 hover:underline">{selected.email}</a>
+                            <a href={`mailto:${selected.email}`} className="text-orange-600 hover:underline">{selected.email}</a>
                           </div>
                         )}
                         {(selected.streetAddress || selected.city) && (
@@ -728,7 +728,7 @@ export default function ClientsPage() {
                       <div className="rounded-lg border border-dashed border-[#E5E7EB] py-10 text-center">
                         <User className="mx-auto size-8 text-slate-300 mb-2" />
                         <p className="text-sm text-slate-400">No contacts yet.</p>
-                        <button onClick={() => openContactDialog()} className="mt-1 text-xs text-blue-600 hover:underline">Add the first contact</button>
+                        <button onClick={() => openContactDialog()} className="mt-1 text-xs text-orange-600 hover:underline">Add the first contact</button>
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -751,7 +751,7 @@ export default function ClientsPage() {
                                   {c.email && (
                                     <p className="text-xs text-slate-600 flex items-center gap-1.5">
                                       <Mail className="size-3 text-slate-400" />
-                                      <a href={`mailto:${c.email}`} className="hover:text-blue-600 hover:underline">{c.email}</a>
+                                      <a href={`mailto:${c.email}`} className="hover:text-orange-600 hover:underline">{c.email}</a>
                                     </p>
                                   )}
                                   {c.phone && (
@@ -790,7 +790,7 @@ export default function ClientsPage() {
                         <Link
                           key={job.id}
                           to={`/jobs/${job.id}/summary`}
-                          className="block rounded-lg border border-[#E5E7EB] bg-white p-3.5 hover:border-blue-300 hover:bg-blue-50/30 transition-colors"
+                          className="block rounded-lg border border-[#E5E7EB] bg-white p-3.5 hover:border-orange-300 hover:bg-orange-50/30 transition-colors"
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -907,7 +907,7 @@ export default function ClientsPage() {
                   type="checkbox"
                   checked={contactForm.isPrimary}
                   onChange={e => setContactForm(f => ({ ...f, isPrimary: e.target.checked }))}
-                  className="rounded accent-blue-600"
+                  className="rounded accent-orange-600"
                 />
                 <span className="text-sm text-slate-700">Primary contact</span>
               </label>

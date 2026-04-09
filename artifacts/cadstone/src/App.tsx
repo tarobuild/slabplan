@@ -31,7 +31,7 @@ function RouteLoadingScreen() {
     <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] p-4">
       <Card className="w-full max-w-md border-[#E5E7EB] shadow-sm">
         <CardContent className="flex items-center justify-center gap-3 py-10">
-          <Spinner className="size-5 text-blue-600" />
+          <Spinner className="size-5 text-orange-600" />
           <p className="text-sm text-slate-600">Restoring your session…</p>
         </CardContent>
       </Card>

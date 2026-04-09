@@ -16,7 +16,7 @@ type Job = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  open: "bg-blue-50 text-blue-700 border-blue-200",
+  open: "bg-green-50 text-green-700 border-green-200",
   closed: "bg-slate-50 text-slate-600 border-slate-200",
   archived: "bg-slate-50 text-slate-400 border-slate-200",
 }

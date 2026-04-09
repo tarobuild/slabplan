@@ -220,4 +220,42 @@ router.get(
   }),
 );
 
+router.get(
+  "/folders/:folderId/files/:fileId/view",
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.folderId, "folder id");
+    const fileId = getParam(req.params.fileId, "file id");
+
+    await assertCanViewFolder(req.auth!, folderId);
+    await assertCanViewFile(req.auth!, fileId);
+
+    const file = await getFileOrThrow(fileId);
+
+    if (file.folderId !== folderId) {
+      throw new HttpError(404, "File not found.");
+    }
+
+    if (!file.fileUrl) {
+      throw new HttpError(404, "Stored file missing.");
+    }
+
+    const absolutePath = resolveAbsolutePathFromFileUrl(file.fileUrl);
+
+    try {
+      await fs.access(absolutePath);
+    } catch {
+      throw new HttpError(404, "Stored file missing.");
+    }
+
+    const displayName = file.originalName ?? file.filename;
+    res.setHeader("Content-Type", file.mimeType ?? "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(displayName)}"`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.sendFile(absolutePath);
+  }),
+);
+
 export default router;

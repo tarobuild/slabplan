@@ -1043,7 +1043,7 @@ function MultiSelectPopover({
                     <div
                       className={cn(
                         "flex size-4 items-center justify-center rounded border border-slate-300",
-                        isSelected && "border-blue-600 bg-blue-600 text-white",
+                        isSelected && "border-orange-600 bg-orange-600 text-white",
                       )}
                     >
                       {isSelected ? <Check className="size-3" /> : null}
@@ -1093,7 +1093,7 @@ function AssigneeSelect({
                 <div
                   className={cn(
                     "flex size-4 items-center justify-center rounded border border-slate-300",
-                    value === "" && "border-blue-600 bg-blue-600 text-white",
+                    value === "" && "border-orange-600 bg-orange-600 text-white",
                   )}
                 >
                   {value === "" ? <Check className="size-3" /> : null}
@@ -1104,7 +1104,7 @@ function AssigneeSelect({
                 <div
                   className={cn(
                     "flex size-4 items-center justify-center rounded border border-slate-300",
-                    value === "__unassigned__" && "border-blue-600 bg-blue-600 text-white",
+                    value === "__unassigned__" && "border-orange-600 bg-orange-600 text-white",
                   )}
                 >
                   {value === "__unassigned__" ? <Check className="size-3" /> : null}
@@ -1116,7 +1116,7 @@ function AssigneeSelect({
                   <div
                     className={cn(
                       "flex size-4 items-center justify-center rounded border border-slate-300",
-                      value === user.id && "border-blue-600 bg-blue-600 text-white",
+                      value === user.id && "border-orange-600 bg-orange-600 text-white",
                     )}
                   >
                     {value === user.id ? <Check className="size-3" /> : null}
@@ -3104,7 +3104,7 @@ export default function JobSchedulePage() {
                     <Filter className="size-4" />
                     Filter
                     {activeFilterCount > 0 ? (
-                      <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                      <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">
                         {activeFilterCount}
                       </Badge>
                     ) : null}
@@ -3289,7 +3289,7 @@ export default function JobSchedulePage() {
                                         className={cn(
                                           "flex size-7 items-center justify-center rounded-full text-xs font-medium",
                                           isToday
-                                            ? "bg-blue-600 text-white"
+                                            ? "bg-orange-600 text-white"
                                             : isCurrentMonth
                                             ? "text-slate-700"
                                             : "text-slate-300",
@@ -3361,7 +3361,7 @@ export default function JobSchedulePage() {
                                 <span
                                   className={cn(
                                     "flex size-7 items-center justify-center rounded-full text-xs font-medium",
-                                    isToday ? "bg-blue-600 text-white" : "text-slate-600",
+                                    isToday ? "bg-orange-600 text-white" : "text-slate-600",
                                   )}
                                 >
                                   {day.getDate()}
@@ -3469,7 +3469,7 @@ export default function JobSchedulePage() {
                             })()}
                           </div>
                           {dateKey(calendarAnchorDate) === todayIso ? (
-                            <span className="flex size-8 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
+                            <span className="flex size-8 items-center justify-center rounded-full bg-orange-600 text-xs font-semibold text-white">
                               {calendarAnchorDate.getDate()}
                             </span>
                           ) : null}
@@ -3720,7 +3720,7 @@ export default function JobSchedulePage() {
                                           style={{ backgroundColor: item.displayColor || DEFAULT_SCHEDULE_COLOR }}
                                         />
                                         <span className="min-w-0">
-                                          <span className="block truncate font-medium text-blue-700 hover:underline">
+                                          <span className="block truncate font-medium text-orange-700 hover:underline">
                                             {item.title}
                                           </span>
                                           {listDisplayMode === "notes" && (item.notes || item.notesStream?.[0]?.note) ? (
@@ -3965,14 +3965,14 @@ export default function JobSchedulePage() {
                                     className="pointer-events-none absolute bottom-[-6px] z-20"
                                     style={{ left: `${todayOffsetPx - 6}px` }}
                                   >
-                                    <div className="size-3 rotate-45 bg-blue-600" />
+                                    <div className="size-3 rotate-45 bg-orange-600" />
                                   </div>
                                 </div>
                               </div>
 
                               <div className="relative">
                                 <div
-                                  className="pointer-events-none absolute inset-y-0 z-10 w-px bg-blue-500/60"
+                                  className="pointer-events-none absolute inset-y-0 z-10 w-px bg-orange-500/60"
                                   style={{ left: `${todayOffsetPx}px` }}
                                 />
                                 <svg className="pointer-events-none absolute inset-0 z-10 overflow-visible">
@@ -4049,7 +4049,7 @@ export default function JobSchedulePage() {
                         </div>
                       </div>
 
-                      <div data-print-hide="true" className="flex flex-col gap-3 border-t border-[#E5E7EB] bg-blue-50/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div data-print-hide="true" className="flex flex-col gap-3 border-t border-[#E5E7EB] bg-orange-50/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                           <p className="text-sm font-semibold text-slate-900">Try Draft mode. Make changes confidently with features like undo and redo.</p>
                         </div>
@@ -4223,7 +4223,7 @@ export default function JobSchedulePage() {
                     <div>
                       <button
                         type="button"
-                        className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:underline"
+                        className="inline-flex items-center gap-2 text-sm font-medium text-orange-700 hover:underline"
                         onClick={() => {
                           setWorkdayEditorOpen(false)
                           if (jobId) {
@@ -4454,7 +4454,7 @@ export default function JobSchedulePage() {
                       <TableBody>
                         {workdayExceptions.map((exception) => (
                           <TableRow key={exception.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openExistingWorkdayException(exception)}>
-                            <TableCell className="font-medium text-blue-700">{exception.title}</TableCell>
+                            <TableCell className="font-medium text-orange-700">{exception.title}</TableCell>
                             <TableCell>{exception.type === "non_workday" ? "Non workday" : "Extra workday"}</TableCell>
                             <TableCell>{fmtDate(exception.startDate)}</TableCell>
                             <TableCell>{fmtDate(exception.endDate)}</TableCell>

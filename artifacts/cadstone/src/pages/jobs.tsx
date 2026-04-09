@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Link, useLocation } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { Loader2, Plus, Search } from "lucide-react"
 import { api } from "@/lib/api"
 import WorkerAssignmentPicker, { type WorkerOption } from "@/components/WorkerAssignmentPicker"
@@ -128,6 +128,7 @@ export default function JobsPage() {
   const [creatingClient, setCreatingClient] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
+  const navigate = useNavigate()
 
   const openCreateDialog = () => {
     setForm(emptyForm)
@@ -165,11 +166,17 @@ export default function JobsPage() {
   }, [isAdmin])
 
   useEffect(() => {
-    if ((location.state as any)?.openCreate) {
+    const currentState = location.state as Record<string, unknown> | null
+    if (currentState && (currentState as { openCreate?: unknown }).openCreate) {
       openCreateDialog()
-      window.history.replaceState({}, "")
+      const { openCreate: _openCreate, ...rest } = currentState as { openCreate?: unknown } & Record<string, unknown>
+      const nextState = Object.keys(rest).length > 0 ? rest : null
+      navigate(
+        { pathname: location.pathname, search: location.search, hash: location.hash },
+        { replace: true, state: nextState },
+      )
     }
-  }, [location.state])
+  }, [location.state, location.pathname, location.search, location.hash, navigate])
 
   const fetchJobs = (s = search, st = status, p = page) => {
     setLoading(true)
@@ -184,7 +191,23 @@ export default function JobsPage() {
 
   useEffect(() => { fetchJobs() }, [])
 
-  useEffect(() => subscribeToDataRefresh("jobs", () => fetchJobs()), [])
+  // Track the currently visible search/status/page in refs so the data-refresh
+  // subscription reloads the dataset the user is actually looking at, rather
+  // than the values captured when the listener was first registered.
+  const searchRef = useRef(search)
+  const statusRef = useRef(status)
+  const pageRef = useRef(page)
+  useEffect(() => { searchRef.current = search }, [search])
+  useEffect(() => { statusRef.current = status }, [status])
+  useEffect(() => { pageRef.current = page }, [page])
+
+  useEffect(
+    () =>
+      subscribeToDataRefresh("jobs", () => {
+        fetchJobs(searchRef.current, statusRef.current, pageRef.current)
+      }),
+    [],
+  )
 
   useEffect(() => {
     return () => {
@@ -336,7 +359,7 @@ export default function JobsPage() {
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12 text-slate-400 text-sm">
                   No jobs found.{" "}
-                  <button onClick={openCreateDialog} className="text-blue-600 hover:underline">
+                  <button onClick={openCreateDialog} className="text-orange-600 hover:underline">
                     Create your first job
                   </button>
                 </TableCell>
@@ -345,7 +368,7 @@ export default function JobsPage() {
               jobs.map(job => (
                 <TableRow key={job.id} className="hover:bg-slate-50">
                   <TableCell>
-                    <Link to={`/jobs/${job.id}/summary`} className="font-medium text-blue-600 hover:underline">
+                    <Link to={`/jobs/${job.id}/summary`} className="font-medium text-orange-600 hover:underline">
                       {job.title}
                     </Link>
                   </TableCell>
@@ -388,7 +411,7 @@ export default function JobsPage() {
         ) : jobs.length === 0 ? (
           <div className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center text-sm text-slate-400">
             No jobs found.{" "}
-            <button onClick={openCreateDialog} className="text-blue-600 hover:underline">
+            <button onClick={openCreateDialog} className="text-orange-600 hover:underline">
               Create your first job
             </button>
           </div>
@@ -396,7 +419,7 @@ export default function JobsPage() {
           jobs.map(job => (
             <div key={job.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
               <div className="min-w-0 flex-1">
-                <Link to={`/jobs/${job.id}/summary`} className="block truncate text-sm font-medium text-blue-600 hover:underline">
+                <Link to={`/jobs/${job.id}/summary`} className="block truncate text-sm font-medium text-orange-600 hover:underline">
                   {job.title}
                 </Link>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -547,7 +570,7 @@ export default function JobsPage() {
                           value={ct}
                           checked={form.contractType === ct}
                           onChange={() => setForm(f => ({ ...f, contractType: ct }))}
-                          className="mt-0.5 accent-blue-600"
+                          className="mt-0.5 accent-orange-600"
                         />
                         <div>
                           <div className="text-sm font-medium text-slate-800">

@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { authApi } from "@/lib/api"
@@ -31,21 +30,70 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] px-4 py-10">
-      <Card className="w-full max-w-sm border-[#E5E7EB] bg-white shadow-sm">
-        <CardHeader className="space-y-3 items-center text-center">
+    <div className="flex min-h-screen">
+      {/* Left panel — brand identity (desktop only) */}
+      <div
+        className="relative hidden flex-col justify-between p-12 lg:flex lg:w-1/2"
+        style={{
+          backgroundColor: "#1D1D1D",
+          backgroundImage:
+            "repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 60px)",
+        }}
+      >
+        {/* Top: logo */}
+        <div>
           <img
             src="/cad-logo.png"
             alt="CAD Stone Networks"
-            className="h-12 w-auto mx-auto"
+            className="h-12 w-auto brightness-0 invert"
           />
-          <div>
-            <CardTitle className="text-lg text-slate-900">CAD Stone Networks</CardTitle>
-            <CardDescription className="text-sm text-slate-500 mt-0.5">Sign in to your account</CardDescription>
+        </div>
+
+        {/* Center: headline + descriptor */}
+        <div className="max-w-md">
+          <h1 className="text-3xl font-bold leading-tight text-white">
+            Built for the stone trade.
+          </h1>
+          <p className="mt-3 text-sm text-white/60">
+            Manage every job, crew, and deadline — from the office or the field.
+          </p>
+        </div>
+
+        {/* Bottom: stat pills */}
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
+            Jobs
+          </span>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
+            Daily Logs
+          </span>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
+            Scheduling
+          </span>
+        </div>
+      </div>
+
+      {/* Right panel — form */}
+      <div className="flex w-full items-center justify-center bg-white px-6 py-12 lg:w-1/2">
+        <div className="w-full max-w-sm">
+          {/* Logo — mobile only (left panel shows it on lg) */}
+          <div className="mb-8 flex justify-center lg:hidden">
+            <img
+              src="/cad-logo.png"
+              alt="CAD Stone Networks"
+              className="h-12 w-auto"
+            />
           </div>
-        </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
+
+          {/* Heading */}
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold text-slate-900">Sign in</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Welcome back to CAD Stone Networks.
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -71,14 +119,17 @@ export default function LoginPage() {
                 required
               />
             </div>
-          </CardContent>
-          <CardFooter className="flex flex-col gap-3">
-            <Button type="submit" variant="orange" className="w-full" disabled={loading}>
+            <Button
+              type="submit"
+              variant="orange"
+              className="w-full"
+              disabled={loading}
+            >
               {loading ? "Signing in…" : "Sign in"}
             </Button>
-          </CardFooter>
-        </form>
-      </Card>
+          </form>
+        </div>
+      </div>
     </div>
   )
 }

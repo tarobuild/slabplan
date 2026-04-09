@@ -96,7 +96,7 @@ export default function RegisterPage() {
             </Button>
             <p className="text-sm text-slate-500 text-center">
               Already have an account?{" "}
-              <Link to="/login" className="text-blue-600 hover:underline">
+              <Link to="/login" className="text-orange-600 hover:underline">
                 Sign in
               </Link>
             </p>

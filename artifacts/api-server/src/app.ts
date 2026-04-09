@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import path from "node:path";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import pinoHttp from "pino-http";
 import { db } from "@workspace/db";
@@ -156,7 +157,8 @@ app.use("/api", router);
 // In production the build is always present. In the dev workflow the build
 // step also copies the frontend before starting the server, so this works
 // for the workspace preview too.
-const clientDist = path.join(__dirname, "public");
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const clientDist = path.join(currentDir, "public");
 if (existsSync(path.join(clientDist, "index.html"))) {
   app.use(express.static(clientDist));
   app.get(/.*/, (_req, res) => {

@@ -22,7 +22,7 @@ type Job = {
 }
 
 const STATUS_DOT: Record<string, string> = {
-  open: "bg-blue-500",
+  open: "bg-green-500",
   closed: "bg-slate-400",
   archived: "bg-slate-300",
 }
@@ -43,6 +43,7 @@ export default function Sidebar() {
   const [search, setSearch] = useState("")
   const [sortAsc, setSortAsc] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [activeJob, setActiveJob] = useState<Job | null>(null)
   const activeRef = useRef<HTMLButtonElement | null>(null)
 
   const loadJobs = () => {
@@ -76,8 +77,76 @@ export default function Sidebar() {
 
   const openCount = jobs.filter((j) => j.status === "open").length
 
+  // Resolve the active job for the "Current Job" banner. The open-jobs list
+  // only contains status=open, so closed/archived jobs need a direct fetch.
+  useEffect(() => {
+    if (!jobId) {
+      setActiveJob(null)
+      return
+    }
+
+    const fromList = jobs.find((j) => j.id === jobId)
+    if (fromList) {
+      setActiveJob(fromList)
+      return
+    }
+
+    // Clear any stale active job from a previous route before the fetch
+    // resolves, but keep the current one if it already matches `jobId` —
+    // otherwise a background `jobs` reload would flicker the banner to
+    // "Loading…" and back to the same title.
+    setActiveJob((current) => (current?.id === jobId ? current : null))
+
+    let cancelled = false
+
+    api
+      .get(`/jobs/${jobId}`)
+      .then((r) => {
+        if (cancelled) return
+
+        const job = r.data?.job
+        if (!job) {
+          setActiveJob((current) => (current?.id === jobId ? null : current))
+          return
+        }
+
+        setActiveJob({
+          id: job.id,
+          title: job.title,
+          status: job.status,
+          city: job.city ?? null,
+          state: job.state ?? null,
+        })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setActiveJob((current) => (current?.id === jobId ? null : current))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [jobId, jobs])
+
   return (
     <div className="flex h-full flex-col border-r border-[#E5E7EB] bg-white">
+      {jobId && (
+        <div className="sticky top-0 z-10 border-b border-orange-100 bg-orange-50 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-orange-700/70">
+            Current Job
+          </p>
+          <p className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+            {activeJob?.title ?? "Loading…"}
+          </p>
+          <Link
+            to="/jobs"
+            className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-orange-700 hover:text-orange-800"
+          >
+            <ArrowLeft className="size-3.5" />
+            All Jobs
+          </Link>
+        </div>
+      )}
       <div className="border-b border-[#E5E7EB] p-2.5">
         <Button
           variant="orange"
@@ -145,22 +214,6 @@ export default function Sidebar() {
         </div>
       ) : null}
 
-      {jobId && (
-        <div className="border-b border-[#E5E7EB] px-2.5 pb-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-full justify-start px-2 text-xs text-slate-500 hover:text-slate-900"
-            asChild
-          >
-            <Link to="/jobs">
-              <ArrowLeft className="size-3.5" />
-              Back to Jobs
-            </Link>
-          </Button>
-        </div>
-      )}
-
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 && (
           <p className="px-3 py-6 text-center text-xs text-slate-400">
@@ -176,7 +229,7 @@ export default function Sidebar() {
               onClick={() => navigate(`/jobs/${job.id}/summary`)}
               className={cn(
                 "flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-slate-50",
-                isActive && "bg-blue-50 hover:bg-blue-50",
+                isActive && "bg-orange-50 hover:bg-orange-50",
               )}
             >
               <span
@@ -189,7 +242,7 @@ export default function Sidebar() {
                 <p
                   className={cn(
                     "truncate text-sm font-medium leading-snug",
-                    isActive ? "text-blue-700" : "text-slate-900",
+                    isActive ? "text-orange-700" : "text-slate-900",
                   )}
                 >
                   {job.title}
@@ -200,7 +253,7 @@ export default function Sidebar() {
                   </p>
                 )}
                 {isActive && (
-                  <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-500">
+                  <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-orange-500">
                     Open
                   </p>
                 )}

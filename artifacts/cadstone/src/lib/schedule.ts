@@ -228,7 +228,7 @@ export const SCHEDULE_DEFAULT_VIEW_OPTIONS: Array<{
   { label: "Gantt", value: "gantt" },
 ]
 
-export const DEFAULT_SCHEDULE_COLOR = "#2563eb"
+export const DEFAULT_SCHEDULE_COLOR = "#E85D04"
 
 export function dateKey(date: Date) {
   const year = date.getUTCFullYear()

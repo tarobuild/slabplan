@@ -807,7 +807,7 @@ function TagEditor({
       ) : (
         <div className="flex flex-wrap gap-2">
           {tags.map((tag) => (
-            <Badge key={tag} variant="outline" className="gap-1 border-blue-200 bg-blue-50 text-blue-700">
+            <Badge key={tag} variant="outline" className="gap-1 border-orange-200 bg-orange-50 text-orange-700">
               {tag}
               <button type="button" onClick={() => onRemoveTag(tag)}>
                 <X className="size-3" />
@@ -1624,7 +1624,7 @@ function CommentsSheet({
                 href={link}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700"
               >
                 <Link2 className="size-3.5" />
                 {link}
@@ -1731,7 +1731,7 @@ function CommentsSheet({
               </Button>
             </div>
             {replyTo ? (
-              <button type="button" className="text-xs text-blue-600" onClick={() => setReplyTo(null)}>
+              <button type="button" className="text-xs text-orange-600" onClick={() => setReplyTo(null)}>
                 Replying to {replyTo.author.fullName || "comment"} · Cancel
               </button>
             ) : null}
@@ -2298,7 +2298,7 @@ function DailyLogDialog({
                     {...onDrop.getRootProps()}
                     className={cn(
                       "rounded-2xl border border-dashed px-4 py-6 text-center",
-                      onDrop.isDragActive ? "border-blue-400 bg-blue-50" : "border-slate-300 bg-slate-50",
+                      onDrop.isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 bg-slate-50",
                     )}
                   >
                     <input {...onDrop.getInputProps({ accept: uploadAcceptForMediaType("document") })} />
@@ -2346,7 +2346,7 @@ function DailyLogDialog({
                 <div className="space-y-2 rounded-2xl border border-slate-200 p-4">
                   <div className="text-sm font-semibold text-slate-950">Notes</div>
                   {!currentLog && settings.stampLocation && locationStampPreview ? (
-                    <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                    <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
                       Location stamp will be added on publish: <span className="font-medium">{locationStampPreview}</span>
                     </div>
                   ) : null}
@@ -2379,7 +2379,7 @@ function DailyLogDialog({
 
                   {!values.includeWeather ? null : weatherLoading ? (
                     <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                      <Loader2 className="size-4 animate-spin text-blue-600" />
+                      <Loader2 className="size-4 animate-spin text-orange-600" />
                       Fetching weather conditions…
                     </div>
                   ) : values.weatherData ? (
@@ -2760,7 +2760,7 @@ export default function JobDailyLogsPage() {
             <Button variant="outline" size="sm" onClick={() => setFilterOpen(true)}>
               <Filter className="size-4" />
               {activeFilterCount(appliedFilters) > 0 ? (
-                <Badge variant="outline" className="ml-1 border-blue-200 bg-blue-50 text-blue-700">
+                <Badge variant="outline" className="ml-1 border-orange-200 bg-orange-50 text-orange-700">
                   {activeFilterCount(appliedFilters)}
                 </Badge>
               ) : null}
@@ -2817,7 +2817,7 @@ export default function JobDailyLogsPage() {
                               className="min-w-0 text-left"
                               onClick={() => void loadDetail(log.id)}
                             >
-                              <div className="truncate text-lg font-semibold text-slate-950 hover:text-blue-700">
+                              <div className="truncate text-lg font-semibold text-slate-950 hover:text-orange-700">
                                 {titleForLog(log.logDate, log.title)}
                               </div>
                             </button>
@@ -2997,7 +2997,7 @@ export default function JobDailyLogsPage() {
                               href={attachment.fileId ? `/api/files/${attachment.fileId}/download` : attachment.fileUrl || "#"}
                               target="_blank"
                               rel="noreferrer"
-                              className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-blue-300"
+                              className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-orange-300"
                             >
                               <div className="flex items-center gap-3">
                                 <FileText className="size-5 text-slate-400" />

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import {
+  ChevronLeft,
   ChevronRight,
   Download,
   File,
@@ -136,6 +137,57 @@ function displayName(file: FileItem) {
   return file.originalName || file.filename
 }
 
+function useAuthenticatedUrl(viewUrl: string | null): {
+  blobUrl: string | null
+  loading: boolean
+  error: boolean
+} {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    if (!viewUrl) {
+      setBlobUrl(null)
+      setLoading(false)
+      setError(false)
+      return
+    }
+
+    let cancelled = false
+    setLoading(true)
+    setError(false)
+    setBlobUrl(null)
+
+    api
+      .get<Blob>(viewUrl, { responseType: "blob" })
+      .then((res) => {
+        if (cancelled) return
+        const url = URL.createObjectURL(res.data)
+        setBlobUrl(url)
+      })
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [viewUrl])
+
+  // Revoke blob URLs when they change or on unmount.
+  useEffect(() => {
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl)
+    }
+  }, [blobUrl])
+
+  return { blobUrl, loading, error }
+}
+
 export default function FileBrowser({
   mediaType,
   defaultView,
@@ -188,6 +240,7 @@ export default function FileBrowser({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [lightboxFile, setLightboxFile] = useState<FileItem | null>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number>(0)
   const [videoPlayerFile, setVideoPlayerFile] = useState<FileItem | null>(null)
 
   const loadFolders = (parentId: string | null = null) => {
@@ -235,16 +288,23 @@ export default function FileBrowser({
     setUploadError(null)
     setSelectedUploadFiles([])
     setUploadNote("")
+    setLightboxFile(null)
+    setLightboxIndex(0)
+    setVideoPlayerFile(null)
     loadFolders(null)
   }, [jobId, mediaType, scope])
 
   const openFolder = (folder: FolderItem) => {
+    setLightboxFile(null)
+    setVideoPlayerFile(null)
     setCurrentFolderId(folder.id)
     loadFolders(folder.id)
     loadFiles(folder.id)
   }
 
   const navigateTo = (folderId: string | null) => {
+    setLightboxFile(null)
+    setVideoPlayerFile(null)
     setCurrentFolderId(folderId)
     setFiles([])
     loadFolders(folderId)
@@ -367,6 +427,76 @@ export default function FileBrowser({
     }
   }
 
+  const buildFileViewUrl = (fileId: string): string | null => {
+    if (!currentFolderId) return null
+    return isResourceScope
+      ? `/resources/folders/${currentFolderId}/files/${fileId}/view`
+      : `/folders/${currentFolderId}/files/${fileId}/view`
+  }
+
+  const handleDownload = async (file: FileItem) => {
+    const url = buildFileViewUrl(file.id)
+    if (!url) return
+    try {
+      const res = await api.get<Blob>(url, { responseType: "blob" })
+      const objectUrl = URL.createObjectURL(res.data)
+      const anchor = document.createElement("a")
+      anchor.href = objectUrl
+      anchor.download = displayName(file)
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      URL.revokeObjectURL(objectUrl)
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Failed to download file"))
+    }
+  }
+
+  const handleViewInNewTab = (file: FileItem) => {
+    const url = buildFileViewUrl(file.id)
+    if (!url) return
+
+    // Open the new tab SYNCHRONOUSLY inside the click handler so the browser
+    // treats it as a direct user gesture. If we awaited the blob fetch before
+    // calling window.open, most browsers would block the popup. We intentionally
+    // omit "noopener" so we can assign the blob URL to newWindow.location after
+    // the fetch resolves — blob URLs are same-origin, so there's no cross-origin
+    // tab-napping risk here.
+    const newWindow = window.open("about:blank", "_blank")
+    if (!newWindow) {
+      toast.error("Please allow pop-ups to view files in a new tab.")
+      return
+    }
+
+    try {
+      newWindow.document.write(
+        '<!DOCTYPE html><title>Loading…</title>' +
+          '<body style="margin:0;display:flex;align-items:center;justify-content:center;' +
+          'height:100vh;font-family:sans-serif;color:#cbd5e1;background:#0f172a;">Loading…</body>',
+      )
+    } catch {
+      // about:blank is same-origin so this should not fail, but fall through
+      // gracefully if any browser prevents the write.
+    }
+
+    api
+      .get<Blob>(url, { responseType: "blob" })
+      .then((res) => {
+        const objectUrl = URL.createObjectURL(res.data)
+        newWindow.location.replace(objectUrl)
+        // Delay revocation so the newly opened tab has time to load the blob.
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+      })
+      .catch((err: unknown) => {
+        try {
+          newWindow.close()
+        } catch {
+          // ignore
+        }
+        toast.error(getApiErrorMessage(err, "Failed to open file"))
+      })
+  }
+
   const sortedFolders = useMemo(() => {
     const arr = [...folders]
     switch (sortBy) {
@@ -418,6 +548,46 @@ export default function FileBrowser({
     return arr
   }, [files, sortBy])
 
+  const openLightbox = (file: FileItem) => {
+    const idx = sortedFiles.findIndex((f) => f.id === file.id)
+    setLightboxFile(file)
+    setLightboxIndex(idx >= 0 ? idx : 0)
+  }
+
+  useEffect(() => {
+    if (!lightboxFile) return
+    const handler = (event: KeyboardEvent) => {
+      if (sortedFiles.length <= 1) return
+      if (event.key === "ArrowRight") {
+        event.preventDefault()
+        const next = (lightboxIndex + 1) % sortedFiles.length
+        setLightboxFile(sortedFiles[next])
+        setLightboxIndex(next)
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault()
+        const prev = (lightboxIndex - 1 + sortedFiles.length) % sortedFiles.length
+        setLightboxFile(sortedFiles[prev])
+        setLightboxIndex(prev)
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [lightboxFile, lightboxIndex, sortedFiles])
+
+  const lightboxViewUrl = lightboxFile ? buildFileViewUrl(lightboxFile.id) : null
+  const {
+    blobUrl: lightboxBlobUrl,
+    loading: lightboxLoading,
+    error: lightboxError,
+  } = useAuthenticatedUrl(lightboxViewUrl)
+
+  const videoViewUrl = videoPlayerFile ? buildFileViewUrl(videoPlayerFile.id) : null
+  const {
+    blobUrl: videoBlobUrl,
+    loading: videoLoading,
+    error: videoError,
+  } = useAuthenticatedUrl(videoViewUrl)
+
   const mediaLabel =
     mediaType === "document" ? "Documents" : mediaType === "photo" ? "Photos" : "Videos"
   const rootFolderLabel = rootLabel ?? mediaLabel
@@ -432,7 +602,7 @@ export default function FileBrowser({
           <button
             onClick={() => navigateTo(null)}
             className={`font-medium transition-colors shrink-0 ${
-              currentFolderId ? "text-blue-600 hover:underline" : "text-slate-900"
+              currentFolderId ? "text-orange-600 hover:underline" : "text-slate-900"
             }`}
           >
             {rootFolderLabel}
@@ -445,7 +615,7 @@ export default function FileBrowser({
                 className={`font-medium transition-colors truncate ${
                   crumb.id === currentFolderId
                     ? "text-slate-900"
-                    : "text-blue-600 hover:underline"
+                    : "text-orange-600 hover:underline"
                 }`}
               >
                 {crumb.title}
@@ -590,11 +760,23 @@ export default function FileBrowser({
               ) : sortedFiles.length > 0 ? (
                 <div className="mt-3">
                   {mediaType === "photo" && viewMode === "grid" ? (
-                    <PhotoGrid files={sortedFiles} onOpenLightbox={setLightboxFile} />
+                    <PhotoGrid
+                      files={sortedFiles}
+                      buildViewUrl={buildFileViewUrl}
+                      onOpenLightbox={openLightbox}
+                    />
                   ) : mediaType === "video" && viewMode === "grid" ? (
                     <VideoGrid files={sortedFiles} onOpenPlayer={setVideoPlayerFile} />
                   ) : (
-                    <FileTable files={sortedFiles} showDuration={mediaType === "video"} />
+                    <FileTable
+                      files={sortedFiles}
+                      showDuration={mediaType === "video"}
+                      mediaType={mediaType}
+                      onOpenLightbox={mediaType === "photo" ? openLightbox : undefined}
+                      onOpenPlayer={mediaType === "video" ? setVideoPlayerFile : undefined}
+                      onOpenInNewTab={handleViewInNewTab}
+                      onDownload={handleDownload}
+                    />
                   )}
                 </div>
               ) : sortedFolders.length === 0 ? (
@@ -609,7 +791,7 @@ export default function FileBrowser({
                         setUploadNote("")
                         setUploadDialogOpen(true)
                       }}
-                      className="mt-1 text-sm text-blue-600 hover:underline"
+                      className="mt-1 text-sm text-orange-600 hover:underline"
                     >
                       Upload files
                     </button>
@@ -633,7 +815,7 @@ export default function FileBrowser({
                     setNewFolderName("")
                     setCreateFolderOpen(true)
                   }}
-                  className="mt-1 text-sm text-blue-600 hover:underline"
+                  className="mt-1 text-sm text-orange-600 hover:underline"
                 >
                   Create the first folder
                 </button>
@@ -821,17 +1003,56 @@ export default function FileBrowser({
         <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black border-0">
           <button
             onClick={() => setLightboxFile(null)}
-            className="absolute top-3 right-3 z-10 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors"
+            className="absolute top-3 right-3 z-20 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors"
+            aria-label="Close"
           >
             <X className="size-4" />
           </button>
-          {lightboxFile?.fileUrl && (
-            <div className="flex flex-col items-center">
-              <img
-                src={lightboxFile.fileUrl}
-                alt={displayName(lightboxFile)}
-                className="max-h-[80vh] max-w-full object-contain"
-              />
+          {lightboxFile && (
+            <div className="relative flex flex-col items-center">
+              {sortedFiles.length > 1 && (
+                <>
+                  <button
+                    onClick={() => {
+                      const prev = (lightboxIndex - 1 + sortedFiles.length) % sortedFiles.length
+                      setLightboxFile(sortedFiles[prev])
+                      setLightboxIndex(prev)
+                    }}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
+                    aria-label="Previous photo"
+                  >
+                    <ChevronLeft className="size-5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      const next = (lightboxIndex + 1) % sortedFiles.length
+                      setLightboxFile(sortedFiles[next])
+                      setLightboxIndex(next)
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
+                    aria-label="Next photo"
+                  >
+                    <ChevronRight className="size-5" />
+                  </button>
+                </>
+              )}
+
+              <div className="flex w-full min-h-[50vh] max-h-[80vh] items-center justify-center bg-black">
+                {lightboxLoading && (
+                  <Loader2 className="size-8 text-white/50 animate-spin" />
+                )}
+                {lightboxBlobUrl && (
+                  <img
+                    src={lightboxBlobUrl}
+                    alt={displayName(lightboxFile)}
+                    className="max-h-[80vh] max-w-full object-contain"
+                  />
+                )}
+                {lightboxError && !lightboxLoading && (
+                  <p className="text-sm text-white/70">Failed to load image.</p>
+                )}
+              </div>
+
               <div className="flex w-full items-center justify-between gap-4 bg-black/80 px-4 py-3 text-white">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{displayName(lightboxFile)}</p>
@@ -839,16 +1060,21 @@ export default function FileBrowser({
                     <p className="mt-1 text-xs text-white/70">{lightboxFile.note}</p>
                   ) : null}
                 </div>
-                <a
-                  href={lightboxFile.fileUrl}
-                  download={displayName(lightboxFile)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-sm text-blue-300 hover:text-blue-200 shrink-0"
-                >
-                  <Download className="size-3.5" />
-                  Download
-                </a>
+                <div className="flex items-center gap-3 shrink-0">
+                  {sortedFiles.length > 1 && (
+                    <span className="text-xs text-white/60 tabular-nums">
+                      {lightboxIndex + 1} / {sortedFiles.length}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(lightboxFile)}
+                    className="flex items-center gap-1.5 text-sm text-orange-300 hover:text-orange-200"
+                  >
+                    <Download className="size-3.5" />
+                    Download
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -865,31 +1091,41 @@ export default function FileBrowser({
           <button
             onClick={() => setVideoPlayerFile(null)}
             className="absolute top-3 right-3 z-10 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors"
+            aria-label="Close"
           >
             <X className="size-4" />
           </button>
-          {videoPlayerFile?.fileUrl && (
+          {videoPlayerFile && (
             <div className="flex flex-col">
-              <video
-                src={videoPlayerFile.fileUrl}
-                controls
-                autoPlay
-                className="w-full max-h-[75vh] bg-black"
-              />
+              <div className="flex w-full min-h-[40vh] max-h-[75vh] items-center justify-center bg-black">
+                {videoLoading && (
+                  <Loader2 className="size-8 text-white/50 animate-spin" />
+                )}
+                {videoBlobUrl && (
+                  <video
+                    src={videoBlobUrl}
+                    controls
+                    autoPlay
+                    preload="auto"
+                    className="w-full max-h-[75vh] bg-black"
+                  />
+                )}
+                {videoError && !videoLoading && (
+                  <p className="text-sm text-white/70">Failed to load video.</p>
+                )}
+              </div>
               <div className="flex items-center justify-between px-4 py-3 bg-black/80 text-white">
                 <span className="text-sm font-medium truncate max-w-xs">
                   {displayName(videoPlayerFile)}
                 </span>
-                <a
-                  href={videoPlayerFile.fileUrl}
-                  download={displayName(videoPlayerFile)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-sm text-blue-300 hover:text-blue-200 shrink-0"
+                <button
+                  type="button"
+                  onClick={() => handleDownload(videoPlayerFile)}
+                  className="flex items-center gap-1.5 text-sm text-orange-300 hover:text-orange-200 shrink-0"
                 >
                   <Download className="size-3.5" />
                   Download
-                </a>
+                </button>
               </div>
             </div>
           )}
@@ -915,7 +1151,7 @@ function FolderCard({
   onDelete: () => void
 }) {
   return (
-    <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-blue-200 hover:bg-blue-50/30 transition-colors cursor-pointer select-none">
+    <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-orange-200 hover:bg-orange-50/30 transition-colors cursor-pointer select-none">
       <button
         className="absolute inset-0 rounded-xl"
         onClick={onOpen}
@@ -980,58 +1216,111 @@ function FolderCard({
   )
 }
 
+function AuthPhoto({
+  file,
+  viewUrl,
+  onClick,
+}: {
+  file: FileItem
+  viewUrl: string | null
+  onClick: () => void
+}) {
+  const containerRef = useRef<HTMLButtonElement | null>(null)
+  // Start as hidden — only once the card has been in (or near) the viewport
+  // do we hand a real URL to useAuthenticatedUrl. This prevents large photo
+  // folders from eagerly downloading every original image on mount.
+  const [isVisible, setIsVisible] = useState(false)
+
+  useEffect(() => {
+    if (isVisible) return
+    const node = containerRef.current
+    if (!node) return
+
+    // If the browser doesn't support IntersectionObserver, fall back to
+    // loading immediately so we never leave cards permanently blank.
+    if (typeof IntersectionObserver === "undefined") {
+      setIsVisible(true)
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setIsVisible(true)
+            observer.disconnect()
+            break
+          }
+        }
+      },
+      { rootMargin: "200px" },
+    )
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [isVisible])
+
+  const { blobUrl, loading, error } = useAuthenticatedUrl(isVisible ? viewUrl : null)
+
+  return (
+    <button
+      ref={containerRef}
+      onClick={onClick}
+      className="group flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-orange-300 transition-colors text-left"
+    >
+      <div className="relative aspect-square overflow-hidden bg-slate-100">
+        {!isVisible && (
+          <div className="w-full h-full" aria-hidden="true" />
+        )}
+        {isVisible && loading && (
+          <div className="w-full h-full flex items-center justify-center">
+            <Loader2 className="size-5 text-slate-300 animate-spin" />
+          </div>
+        )}
+        {blobUrl && (
+          <img
+            src={blobUrl}
+            alt={displayName(file)}
+            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+          />
+        )}
+        {isVisible && error && !loading && (
+          <div className="w-full h-full flex items-center justify-center text-slate-300">
+            <span className="text-3xl">🖼️</span>
+          </div>
+        )}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
+      </div>
+      <div className="px-2.5 py-2 border-t border-[#E5E7EB] bg-white">
+        <p className="text-xs font-medium text-slate-800 truncate">{displayName(file)}</p>
+        <p className="text-xs text-slate-400">{formatFileSize(file.fileSize)}</p>
+        {file.note ? (
+          <p className="mt-1 line-clamp-2 text-xs text-slate-500">{file.note}</p>
+        ) : null}
+      </div>
+    </button>
+  )
+}
+
 function PhotoGrid({
   files,
+  buildViewUrl,
   onOpenLightbox,
 }: {
   files: FileItem[]
+  buildViewUrl: (fileId: string) => string | null
   onOpenLightbox: (file: FileItem) => void
 }) {
-  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set())
-
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-      {files.map((file) => {
-        const isBroken = brokenImages.has(file.id)
-        const hasUrl = !!file.fileUrl && !isBroken
-
-        return (
-          <button
-            key={file.id}
-            onClick={() => onOpenLightbox(file)}
-            className="group flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-blue-300 transition-colors text-left"
-          >
-            <div className="relative aspect-square overflow-hidden bg-slate-100">
-              {hasUrl ? (
-                <img
-                  src={file.fileUrl!}
-                  alt={displayName(file)}
-                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                  onError={() =>
-                    setBrokenImages((prev) => {
-                      const next = new Set(prev)
-                      next.add(file.id)
-                      return next
-                    })
-                  }
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-300">
-                  <span className="text-3xl">🖼️</span>
-                </div>
-              )}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
-            </div>
-            <div className="px-2.5 py-2 border-t border-[#E5E7EB] bg-white">
-              <p className="text-xs font-medium text-slate-800 truncate">{displayName(file)}</p>
-              <p className="text-xs text-slate-400">{formatFileSize(file.fileSize)}</p>
-              {file.note ? (
-                <p className="mt-1 line-clamp-2 text-xs text-slate-500">{file.note}</p>
-              ) : null}
-            </div>
-          </button>
-        )
-      })}
+      {files.map((file) => (
+        <AuthPhoto
+          key={file.id}
+          file={file}
+          viewUrl={buildViewUrl(file.id)}
+          onClick={() => onOpenLightbox(file)}
+        />
+      ))}
     </div>
   )
 }
@@ -1049,7 +1338,7 @@ function VideoGrid({
         <button
           key={file.id}
           onClick={() => onOpenPlayer(file)}
-          className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-blue-300 transition-colors text-left"
+          className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-orange-300 transition-colors text-left"
         >
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="size-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/30 transition-colors">
@@ -1069,9 +1358,19 @@ function VideoGrid({
 function FileTable({
   files,
   showDuration,
+  mediaType,
+  onOpenLightbox,
+  onOpenPlayer,
+  onOpenInNewTab,
+  onDownload,
 }: {
   files: FileItem[]
   showDuration?: boolean
+  mediaType?: MediaType
+  onOpenLightbox?: (file: FileItem) => void
+  onOpenPlayer?: (file: FileItem) => void
+  onOpenInNewTab: (file: FileItem) => void
+  onDownload: (file: FileItem) => void
 }) {
   const showNotes = files.some((file) => !!file.note)
 
@@ -1090,41 +1389,73 @@ function FileTable({
             )}
             <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Uploaded By</th>
             <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Date</th>
+            <th className="px-4 py-2.5 text-right font-semibold text-slate-600 w-16">Download</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {files.map((file) => (
-            <tr key={file.id} className="hover:bg-slate-50">
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <FileIcon mimeType={file.mimeType} />
-                  {file.fileUrl ? (
-                    <a
-                      href={file.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline truncate max-w-xs"
-                    >
-                      {displayName(file)}
-                    </a>
-                  ) : (
-                    <span className="text-slate-700 truncate max-w-xs">{displayName(file)}</span>
-                  )}
-                </div>
-              </td>
-              <td className="px-4 py-3 text-slate-500 tabular-nums">
-                {formatFileSize(file.fileSize)}
-              </td>
-              {showDuration && <td className="px-4 py-3 text-slate-400">—</td>}
-              {showNotes && (
-                <td className="px-4 py-3 text-slate-500">
-                  {file.note ? <span className="line-clamp-2">{file.note}</span> : "—"}
+          {files.map((file) => {
+            const label = displayName(file)
+            const canPhoto = mediaType === "photo" && !!onOpenLightbox
+            const canVideo = mediaType === "video" && !!onOpenPlayer
+            return (
+              <tr key={file.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <FileIcon mimeType={file.mimeType} />
+                    {canPhoto ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenLightbox!(file)}
+                        className="text-orange-600 hover:underline truncate max-w-xs text-left"
+                      >
+                        {label}
+                      </button>
+                    ) : canVideo ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenPlayer!(file)}
+                        className="text-orange-600 hover:underline truncate max-w-xs text-left"
+                      >
+                        {label}
+                      </button>
+                    ) : file.fileUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenInNewTab(file)}
+                        className="text-orange-600 hover:underline truncate max-w-xs text-left"
+                      >
+                        {label}
+                      </button>
+                    ) : (
+                      <span className="text-slate-700 truncate max-w-xs">{label}</span>
+                    )}
+                  </div>
                 </td>
-              )}
-              <td className="px-4 py-3 text-slate-500">{file.uploadedByName ?? "—"}</td>
-              <td className="px-4 py-3 text-slate-500">{fmtDate(file.createdAt)}</td>
-            </tr>
-          ))}
+                <td className="px-4 py-3 text-slate-500 tabular-nums">
+                  {formatFileSize(file.fileSize)}
+                </td>
+                {showDuration && <td className="px-4 py-3 text-slate-400">—</td>}
+                {showNotes && (
+                  <td className="px-4 py-3 text-slate-500">
+                    {file.note ? <span className="line-clamp-2">{file.note}</span> : "—"}
+                  </td>
+                )}
+                <td className="px-4 py-3 text-slate-500">{file.uploadedByName ?? "—"}</td>
+                <td className="px-4 py-3 text-slate-500">{fmtDate(file.createdAt)}</td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onDownload(file)}
+                    className="inline-flex items-center justify-center rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                    aria-label={`Download ${label}`}
+                    title="Download"
+                  >
+                    <Download className="size-4" />
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

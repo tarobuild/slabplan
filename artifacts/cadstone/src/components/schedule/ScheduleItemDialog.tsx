@@ -924,7 +924,7 @@ export function ScheduleItemDialog({
 
         {loadingItem ? (
           <div className="flex min-h-[420px] items-center justify-center">
-            <Loader2 className="size-5 animate-spin text-blue-600" />
+            <Loader2 className="size-5 animate-spin text-orange-600" />
           </div>
         ) : (
           <>
@@ -1032,7 +1032,7 @@ export function ScheduleItemDialog({
                           size="sm"
                           className={cn(
                             "h-9 px-3",
-                            notifyAssignees && "border-blue-200 bg-blue-50 text-blue-700",
+                            notifyAssignees && "border-orange-200 bg-orange-50 text-orange-700",
                           )}
                           onClick={() => setNotifyAssignees((current) => !current)}
                         >
@@ -1417,14 +1417,14 @@ export function ScheduleItemDialog({
                           <div className="flex items-center gap-4 text-sm">
                             <button
                               type="button"
-                              className="text-blue-600 hover:underline"
+                              className="text-orange-600 hover:underline"
                               onClick={() => setShowAddPhase((current) => !current)}
                             >
                               Add
                             </button>
                             <button
                               type="button"
-                              className="text-blue-600 hover:underline"
+                              className="text-orange-600 hover:underline"
                               onClick={() => setShowEditPhases((current) => !current)}
                             >
                               Edit
@@ -1509,14 +1509,14 @@ export function ScheduleItemDialog({
                           <div className="flex items-center gap-4 text-sm">
                             <button
                               type="button"
-                              className="text-blue-600 hover:underline"
+                              className="text-orange-600 hover:underline"
                               onClick={() => setShowAddTag((current) => !current)}
                             >
                               Add
                             </button>
                             <button
                               type="button"
-                              className="text-blue-600 hover:underline"
+                              className="text-orange-600 hover:underline"
                               onClick={() => setShowEditTags((current) => !current)}
                             >
                               Edit
@@ -1541,7 +1541,7 @@ export function ScheduleItemDialog({
                               <button
                                 key={tag.id}
                                 type="button"
-                                className="rounded-full border border-[#E5E7EB] bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-blue-200 hover:text-blue-700"
+                                className="rounded-full border border-[#E5E7EB] bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-orange-200 hover:text-orange-700"
                                 onClick={() =>
                                   updateValues((current) => {
                                     const tags = cleanTags(current.tagsInput)
@@ -1752,7 +1752,7 @@ export function ScheduleItemDialog({
                                       href={attachment.fileUrl || "#"}
                                       target="_blank"
                                       rel="noreferrer"
-                                      className="text-sm font-medium text-slate-900 hover:text-blue-700"
+                                      className="text-sm font-medium text-slate-900 hover:text-orange-700"
                                     >
                                       {attachment.originalName}
                                     </a>

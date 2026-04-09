@@ -1,13 +1,16 @@
+import { promises as fs } from "node:fs";
 import multer from "multer";
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import {
   assertCanManageFile,
   assertCanUploadToFolder,
+  assertCanViewFile,
   assertCanViewFolder,
 } from "../lib/authorization";
 import {
   createResourceFolder,
+  getFileOrThrow,
   listFilesForFolder,
   listResourceFolders,
   saveUploadedFiles,
@@ -15,6 +18,7 @@ import {
 } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { requireAdmin } from "../middleware/require-auth";
+import { resolveAbsolutePathFromFileUrl } from "../lib/storage";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -166,6 +170,49 @@ router.delete(
     });
 
     res.json({ success: true });
+  }),
+);
+
+router.get(
+  "/resources/folders/:folderId/files/:fileId/view",
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.folderId, "folder id");
+    const fileId = getParam(req.params.fileId, "file id");
+
+    const folder = await assertCanViewFolder(req.auth!, folderId);
+
+    if (folder.jobId) {
+      throw new HttpError(400, "Not a resource folder.");
+    }
+
+    await assertCanViewFile(req.auth!, fileId);
+
+    const file = await getFileOrThrow(fileId);
+
+    if (file.folderId !== folderId) {
+      throw new HttpError(404, "File not found.");
+    }
+
+    if (!file.fileUrl) {
+      throw new HttpError(404, "Stored file missing.");
+    }
+
+    const absolutePath = resolveAbsolutePathFromFileUrl(file.fileUrl);
+
+    try {
+      await fs.access(absolutePath);
+    } catch {
+      throw new HttpError(404, "Stored file missing.");
+    }
+
+    const displayName = file.originalName ?? file.filename;
+    res.setHeader("Content-Type", file.mimeType ?? "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(displayName)}"`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.sendFile(absolutePath);
   }),
 );
 

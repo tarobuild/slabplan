@@ -124,7 +124,7 @@ export default function MyDailyLogsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
                       to={log.jobId ? `/jobs/${log.jobId}/daily-logs` : "/jobs"}
-                      className="text-lg font-semibold text-slate-950 hover:text-blue-700"
+                      className="text-lg font-semibold text-slate-950 hover:text-orange-700"
                     >
                       {titleForLog(log)}
                     </Link>

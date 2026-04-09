@@ -1,0 +1,97 @@
+ 1. Static HTML Has No HTTP Security Headers — Clickjacking Risk — MEDIUM                                                                                                                                  
+
+                                                                                                                                                                                                            
+
+  This is the most important remaining issue. I confirmed that the static HTML pages (served by Google Frontend) have zero security headers via HTTP — only the API routes (/api/*) get helmet headers.     
+
+  
+
+  You added CSP and X-Frame-Options via <meta http-equiv> tags, which was a smart workaround, but there's a catch:                                                                                          
+
+                                                                                                                                                                                                            
+
+  ┌────────────────────────────────┬───────────────────────────────────────────────────────────────────────┐                                                                                                
+
+  │            Meta Tag            │                            Browser Support                            │                                                                                              
+
+  ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤                                                                                                
+
+  │ Content-Security-Policy (meta) │ Works — except frame-ancestors which is ignored in meta tags per spec │                                                                                              
+
+  ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+
+  │ X-Frame-Options (meta)         │ Does NOT work — browsers only honor this as an HTTP header            │                                                                                                
+
+  ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤                                                                                                
+
+  │ X-Content-Type-Options (meta)  │ Does NOT work — HTTP header only                                      │
+
+  ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤                                                                                                
+
+  │ Referrer-Policy (meta)         │ Works                                                                 │                                                                                                
+
+  └────────────────────────────────┴───────────────────────────────────────────────────────────────────────┘                                                                                                
+
+                                                                                                                                                                                                          
+
+  This means your HTML page has no effective clickjacking protection. An attacker can iframe your site and overlay it with a deceptive UI to trick logged-in users into performing actions.                 
+
+                                                                                                                                                                                                          
+
+  The CSP meta tag script-src 'self' does work and effectively blocks the Replit widget from executing — that's a win. But frame-ancestors 'none' in the meta tag is silently ignored.                      
+
+   
+
+  Fix: You need to add HTTP-level headers to the static HTML responses. Since your static files are served directly by the hosting platform (not through Express), you have a few options:                  
+
+  - Route all traffic through Express (serve the HTML via Express, not as a static file) so helmet applies to everything                                                                                  
+
+  - Add a reverse proxy / CDN (Cloudflare) that injects headers on all responses                                                                                                                            
+
+  - If Replit supports custom headers in deployment config, set them there                                                                                                                                  
+
+                                                                                                                                                                                                            
+
+  ---                                                                                                                                                                                                       
+
+  2. Replit Feedback Widget Still in HTML Source — LOW                                                                                                                                                      
+
+   
+
+  <script src="https://replit-cdn.com/feedback-widget/widget.global.js"                                                                                                                                     
+
+    data-deployment-id="875655b7-350e-4627-ba7a-597e8f823754"                                                                                                                                               
+
+    data-repl-id="cc18f63a-dbfa-4897-b723-1f269c1f301a">                                                                                                                                                    
+
+  </script>                                                                                                                                                                                                 
+
+   
+
+  The good news: your CSP script-src 'self' blocks this script from executing since replit-cdn.com is not whitelisted. So it's inert.                                                                       
+
+                                                                                                                                                                                                            
+
+  The bad news: the HTML source still shows anyone that you use Replit and exposes your exact deployment ID and repl ID. This is information disclosure only (not exploitable), but view-source reveals it  
+
+  instantly.
+
+                                                                                                                                                                                                            
+
+  Fix: Delete the script tag from your index.html.                                                                                                                                                          
+
+                                                                                                                                                                                                            
+
+  ---
+
+  3. server: Google Frontend + x-cloud-trace-context — LOW
+
+                                                                                                                                                                                                            
+
+  These infrastructure-level headers still reveal Google Cloud hosting. Not controllable from Express.
+
+                                                                                                                                                                                                            
+
+  Fix: Only addressable by putting Cloudflare or another CDN/proxy in front, which would also solve issue #1 above (injecting security headers on static files). This is a good two-for-one if you decide to
+
+   do it.

@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
+import path from "node:path";
 import { eq } from "drizzle-orm";
 import pinoHttp from "pino-http";
 import { db } from "@workspace/db";
@@ -142,6 +143,14 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
 });
 
 app.use("/api", router);
+
+if (process.env.NODE_ENV === "production") {
+  const clientDist = path.join(process.cwd(), "artifacts/cadstone/dist/public");
+  app.use(express.static(clientDist));
+  app.get(/.*/, (_req, res) => {
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof HttpError) {

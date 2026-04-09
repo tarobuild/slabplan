@@ -9,13 +9,13 @@
     "./seed": "./src/seed.ts"
   },
   "scripts": {
-    "db:generate": "drizzle-kit generate --config ./drizzle.config.ts",
+    "db:generate": "drizzle-kit generate --config ./drizzle.config.js",
     "db:migrate": "tsx ./src/migrate-cli.ts",
-    "db:push": "drizzle-kit push --config ./drizzle.config.ts",
-    "generate": "drizzle-kit generate --config ./drizzle.config.ts",
+    "db:push": "drizzle-kit push --config ./drizzle.config.js",
+    "generate": "drizzle-kit generate --config ./drizzle.config.js",
     "migrate": "tsx ./src/migrate-cli.ts",
-    "push": "drizzle-kit push --config ./drizzle.config.ts",
-    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
+    "push": "drizzle-kit push --config ./drizzle.config.js",
+    "push-force": "drizzle-kit push --force --config ./drizzle.config.js",
     "seed": "tsx ./src/seed-cli.ts"
   },
   "dependencies": {

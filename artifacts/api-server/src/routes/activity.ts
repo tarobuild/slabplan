@@ -42,8 +42,8 @@ router.get(
     }
 
     const [accessibleJobIds, accessibleLeadIds] = await Promise.all([
-      listAccessibleJobIds(req.auth),
-      listAccessibleLeadIds(req.auth),
+      listAccessibleJobIds(req.auth!),
+      listAccessibleLeadIds(req.auth!),
     ]);
     const allowedScopeIds =
       accessibleJobIds === null

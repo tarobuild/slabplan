@@ -142,6 +142,12 @@ export default function JobsPage() {
 
   useEffect(() => subscribeToDataRefresh("jobs", () => fetchJobs()), [])
 
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
   const handleSearch = (v: string) => {
     setSearch(v)
     setPage(1)

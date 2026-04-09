@@ -358,7 +358,7 @@ export async function writeActivity(params: {
   entityId: string;
   action: string;
   userId: string;
-  jobId: string;
+  jobId: string | null;
   mediaType?: string | null;
   folderId?: string | null;
   fileId?: string | null;
@@ -366,14 +366,16 @@ export async function writeActivity(params: {
   extra?: Record<string, unknown>;
 }) {
   const [jobRecord, userRecord] = await Promise.all([
-    db
-      .select({
-        title: jobs.title,
-      })
-      .from(jobs)
-      .where(eq(jobs.id, params.jobId))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
+    params.jobId
+      ? db
+          .select({
+            title: jobs.title,
+          })
+          .from(jobs)
+          .where(eq(jobs.id, params.jobId))
+          .limit(1)
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
     db
       .select({
         fullName: users.fullName,
@@ -758,8 +760,14 @@ export async function copyFolder(params: {
     }
 
     for (const currentFile of subtreeFiles) {
+      const nextFolderId = createdMap.get(currentFile.folderId ?? "")
+
+      if (!nextFolderId) {
+        throw new HttpError(500, "Unable to copy folder files.")
+      }
+
       await tx.insert(files).values({
-        folderId: currentFile.folderId ? createdMap.get(currentFile.folderId) ?? null : null,
+        folderId: nextFolderId,
         filename: currentFile.filename,
         originalName: currentFile.originalName,
         fileUrl: currentFile.fileUrl,

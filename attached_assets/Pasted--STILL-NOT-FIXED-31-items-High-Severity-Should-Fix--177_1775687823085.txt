@@ -1,0 +1,502 @@
+ STILL NOT FIXED (31 items)
+
+  High Severity — Should Fix
+
+  ┌─────┬─────────────────────────────┬─────────────────────────────────────────────────────────────────────────┐
+  │  #  │           Finding           │                                 Details                                 │
+  ├─────┼─────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+  │ 5   │ Hardcoded JWT dev secrets   │ auth.ts:42-50 — still has "cadstone-dev-access-secret-change-me" etc.   │
+  │     │                             │ as fallbacks                                                            │
+  ├─────┼─────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+  │ 8   │ OpenAPI spec is a stub      │ Still only defines GET /healthz. ~80 endpoints undocumented. Generated  │
+  │     │                             │ client is useless.                                                      │
+  ├─────┼─────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+  │ 14  │ Race conditions / missing   │ clients.ts (primary contact), jobs.ts (deletion), daily-logs.ts (like   │
+  │     │ transactions                │ toggle, reactions) — none use db.transaction                            │
+  ├─────┼─────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+  │ 15b │ dailyLog.jobId! non-null    │ daily-logs.ts:1318, 1394, 1497, 1610, 1673 — still using ! on nullable  │
+  │     │ assertions                  │ field                                                                   │
+  ├─────┼─────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+  │ 16b │ leadId passed as jobId in   │ leads.ts:724, 776, 825, 891, 947, 986, 1063, 1110, 1207 — lead IDs      │
+  │     │ activity logging            │ stored in jobId field                                                   │
+  ├─────┼─────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+  │ 16c │ Missing pagination on users │ users.ts returns ALL users (no LIMIT); schedule.ts returns all items    │
+  │     │  + schedule                 │ with N+1 queries; daily-log-admin.ts /mine paginates in JS not SQL      │
+  ├─────┼─────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+  │ 23  │ strictFunctionTypes: false  │ tsconfig.base.json:16 — still disabled                                  │
+  ├─────┼─────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+  │ 39  │ Sequential API calls in     │ job-schedule.tsx handlePublishDraft — still sequential await in         │
+  │     │ schedule publish            │ for-loops                                                               │
+  └─────┴─────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+
+  Medium Severity
+
+  ┌─────┬──────────────────────────────────────────┬────────────────────────────────────────────────────────────┐
+  │  #  │                 Finding                  │                          Details                           │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 17b │ Comment attachment URL not validated     │ daily-logs.ts:89-91 — z.string().trim().min(1), no .url()  │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 18b │ Folder permissions accept arbitrary      │ folders.ts:39-43 — still z.record(z.string(), z.unknown()) │
+  │     │ objects                                  │                                                            │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 19b │ Schedule self-referencing predecessors   │ No check prevents an item from being its own predecessor   │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 20b │ Users endpoint loads passwordHash into   │ users.ts:58 — db.select().from(users) without column       │
+  │     │ memory                                   │ selection                                                  │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 27  │ dailyLogSettings singleton no constraint │ No mechanism to enforce single row                         │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 28  │ No check constraints on enum varchar     │ users.role, jobs.status, leads.status — still plain        │
+  │     │ columns                                  │ varchar                                                    │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 29  │ confidence / progress no bounds          │ No CHECK constraint for 0-100 range                        │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 35  │ UTC vs local timezone mixing in schedule │ isWeekend() uses UTC, dateKey() uses local — still         │
+  │     │                                          │ inconsistent                                               │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 41  │ NotFound route outside auth protection   │ App.tsx:101 — <Route path="*"> still outside               │
+  │     │                                          │ ProtectedRoute                                             │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 48  │ normalizeExceptionMatchDate inverted     │ Dead code but latent bug — !sameEveryYear branch returns   │
+  │     │ logic                                    │ month-day only                                             │
+  ├─────┼──────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ 52  │ express.d.ts auth type not optional      │ req.auth is non-optional — no TS warning on                │
+  │     │                                          │ unauthenticated routes                                     │
+  └─────┴──────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
+  Low Severity
+
+  ┌─────┬──────────────────────────────────────────────────┬───────────────────────────────────────────┐
+  │  #  │                     Finding                      │                  Details                  │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 30  │ drizzle.config.ts uses __dirname in ESM          │ Should use import.meta.url                │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 42  │ No client-side password validation on register   │ No minLength attribute or JS check        │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 43  │ TOAST_REMOVE_DELAY is ~17 minutes                │ Still 1000000 — slow memory leak          │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 44  │ runtimeErrorOverlay in production                │ Still unconditional in vite config        │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 45  │ Edit button in TagEditor has no onClick          │ Dead button                               │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 46  │ formatFileSize treats 0 as no size               │ !bytes is falsy for 0                     │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 47  │ dateKey and isoDate duplicate functions          │ Both still exist                          │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 49  │ Email changes have no verification flow          │ Direct update, no confirmation            │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 50  │ All runtime packages in devDependencies          │ React, Axios, Zustand etc. miscategorized │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 53  │ Port validation incomplete                       │ No Number.isInteger or <= 65535 check     │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 54  │ Seed data wrong file in wrong folder             │ Brown file still in Johnson folder        │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 55  │ Seed data color names vs hex codes               │ Still "blue" and "green"                  │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 56  │ Jobs page debounce timer no cleanup on unmount   │ No useEffect cleanup                      │
+  ├─────┼──────────────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ 57  │ Dashboard today memo never updates past midnight │ useMemo(() => new Date(), [])             │
+  └─────┴──────────────────────────────────────────────────┴───────────────────────────────────────────┘
+
+  Missing Index
+
+  ┌─────┬─────────────────────────────────────────┬──────────────────────────────────────────────────────┐
+  │  #  │                 Finding                 │                       Details                        │
+  ├─────┼─────────────────────────────────────────┼──────────────────────────────────────────────────────┤
+  │ 26b │ activityLog.entityId still has no index │ All other FK indexes were added, this one was missed │
+  └─────┴─────────────────────────────────────────┴──────────────────────────────────────────────────────┘
+
+  ---
+  Score: 25 fixed, 31 remaining
+
+  The major security issues (CORS, JWT algo, rate limiting, CSRF, helmet, upload validation, file serving, schema
+  hardening) are all fixed. The remaining items are mostly:
+  - Code quality / robustness (transactions, non-null assertions, typescript strictness)
+  - Lower-priority schema issues (check constraints, singleton enforcement, enum types)
+  - Frontend polish (dead buttons, stale memos, timezone consistency, 404 route placement)
+  - Deferred spec work (OpenAPI still a stub)
+
+  The codebase is in substantially better shape security-wise. Want me to start fixing any of the remaining 31
+  items?
+
+✻ Crunched for 3m 26s
+
+❯ can you give me everything that needs to be fixed and what codex needs to do so that way we can confirm this is   
+  100% complete and done, nothing left behind, no shortcuts                                                         
+
+● Let me get the exact current line numbers for every remaining issue so the instructions are precise.
+
+● 3 agents finished (ctrl+o to expand)
+   ├─ Get exact lines for backend fixes · 33 tool uses · 52.3k tokens
+   │  ⎿  Done                                       
+   ├─ Get exact lines for frontend fixes · 24 tool uses · 72.7k tokens
+   │  ⎿  Done
+   └─ Get exact lines for seed/spec fixes · 3 tool uses · 8.1k tokens
+      ⎿  Done
+
+● Here is the complete, line-by-line fix list for every remaining issue. Nothing omitted, no shortcuts.
+                                                                                          
+  ---
+  Complete Remaining Fix List (31 Items)                                                                            
+                                                                                                                    
+  Every item includes the exact file, line number(s), what's wrong, and exactly what to change.                     
+                                                                                                                    
+  ---             
+  GROUP A: Backend Security & Correctness (12 items)                                                                
+                                                    
+  A1. Hardcoded JWT dev secrets
+                                                                                                                    
+  File: artifacts/api-server/src/lib/auth.ts:41-50                                                                  
+  Problem: Hardcoded fallback secrets are well-known and forgeable.                                                 
+  Fix: Generate random secrets at startup in dev mode instead of using static strings. Replace lines 41-50:         
+  // Instead of returning static strings, generate random dev secrets once at startup                               
+  import crypto from "node:crypto";                                                                                 
+  const devSecrets = {                                                                                              
+    JWT_ACCESS_SECRET: crypto.randomBytes(32).toString("hex"),
+    JWT_REFRESH_SECRET: crypto.randomBytes(32).toString("hex"),                                                     
+    JWT_RESET_SECRET: crypto.randomBytes(32).toString("hex"),  
+  };                                                                                                                
+  // In the fallback branch:                                                                                        
+  return devSecrets[envName];
+  Log a warning that dev secrets are auto-generated so developers know tokens won't survive restarts.               
+                                                                                                                    
+  ---                                                                                                               
+  A2. dailyLog.jobId! non-null assertions on nullable field                                                         
+                                                                                                                    
+  File: artifacts/api-server/src/routes/daily-logs.ts:1318, 1394, 1497, 1610, 1673
+  Problem: jobId is nullable in the schema. Using ! skips the null check and passes potentially null values to      
+  writeActivity.                                                                                                    
+  Fix: At each of the 5 locations, replace jobId: dailyLog.jobId! with a guarded version:                           
+  ...(dailyLog.jobId ? { jobId: dailyLog.jobId } : {}),                                                             
+  Or, if writeActivity requires jobId, add an early guard at the top of each handler:
+  if (!dailyLog.jobId) {                                                                                            
+    throw new HttpError(400, "Daily log is not associated with a job.");                                            
+  }
+                                                                                                                    
+  ---             
+  A3. leadId passed as jobId in activity logging                                                                    
+                                                                                                                    
+  File: artifacts/api-server/src/routes/leads.ts:724, 776, 825, 891, 947, 986, 1063, 1110, 1207
+  Problem: Lead IDs are stored in the jobId field of activityLog, corrupting the activity feed.                     
+  Fix: The writeActivity function (in file-manager.ts or wherever it's defined) needs to accept an optional leadId  
+  parameter alongside jobId. Update its signature to add leadId?: string. Then in all 9 writeActivity calls in      
+  leads.ts, change jobId: leadId to leadId: leadId (and remove jobId). The single correct usage at line 1171 (jobId:
+   job.id for convert-to-job) stays as-is. Also update the activityLog schema if needed to store leadId separately, 
+  or use the existing entityId field consistently.
+
+  ---
+  A4. Missing transactions on multi-step mutations
+                                                                                                                    
+  File: artifacts/api-server/src/routes/clients.ts:402-421, 445-465
+  Fix: Wrap the primary contact clear + insert/update in db.transaction():                                          
+  await db.transaction(async (tx) => {                                                                              
+    if (body.data.isPrimary) {                                                                                      
+      await tx.update(clientContacts).set({ isPrimary: false, updatedAt: new Date() })                              
+        .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
+    }                                                                                                               
+    const [contact] = await tx.insert(clientContacts).values({...}).returning();                                    
+    // ...                                                                                                          
+  });                                                                                                               
+  Do the same for the PUT handler at lines 445-465.                                                                 
+                                                   
+  File: artifacts/api-server/src/routes/jobs.ts:411-430                                                             
+  Fix: Wrap the job + folders + files soft-delete in db.transaction():                                              
+  await db.transaction(async (tx) => {                                                                              
+    await tx.update(jobs).set({...}).where(eq(jobs.id, jobId));                                                     
+    // ... folders and files updates using tx instead of db                                                         
+  });                                                                                                               
+     
+  File: artifacts/api-server/src/routes/daily-logs.ts:1284-1328 (like toggle)                                       
+  Fix: Use db.transaction() around the check-then-insert/delete:                                                    
+  await db.transaction(async (tx) => {                                                                              
+    const [existing] = await tx.select(...)...;                                                                     
+    if (existing) { await tx.delete(...)...; }                                                                      
+    else { await tx.insert(...)...; }         
+  });                                                                                                               
+                  
+  File: artifacts/api-server/src/routes/daily-logs.ts:1421-1461 (reactions)                                         
+  Fix: Same pattern — wrap read-modify-write in db.transaction().                                                   
+                                                                                                                    
+  ---                                                                                                               
+  A5. Missing SQL-level pagination                                                                                  
+                                                                                                                    
+  File: artifacts/api-server/src/routes/users.ts:57-61
+  Fix: Add .limit() and select specific columns to exclude passwordHash:                                            
+  const rows = await db                                                                                             
+    .select({ id: users.id, email: users.email, fullName: users.fullName, role: users.role, avatarUrl:
+  users.avatarUrl, phone: users.phone, createdAt: users.createdAt })                                                
+    .from(users)                                                                                                    
+    .where(isNull(users.deletedAt))
+    .orderBy(asc(users.fullName));                                                                                  
+  This also fixes the passwordHash in memory issue. Do the same for findActiveUserById at line 44-48.
+                                                                                                                    
+  File: artifacts/api-server/src/routes/daily-log-admin.ts:364-489 (GET /daily-logs/mine)                           
+  Fix: Move pagination to SQL. Replace the JS .slice() at line 489 with                                             
+  .limit(query.data.pageSize).offset((query.data.page - 1) * query.data.pageSize) on the DB query. Use a separate   
+  COUNT(*) query for total.                                                                                         
+                                                                                                                    
+  File: artifacts/api-server/src/routes/schedule.ts:2352-2377 (GET /jobs/:jobId/schedule)                           
+  Fix: Hydrate schedule items in a single batch query instead of N+1 individual hydrateScheduleItem calls at line
+  2371. Replace Promise.all(rows.map(row => hydrateScheduleItem(row.id))) with a batch function that fetches all    
+  related data (assignees, todos, predecessors, etc.) for all item IDs in bulk queries, then assembles the results.
+                                                                                                                    
+  ---             
+  A6. Comment attachment URL not validated
+                                          
+  File: artifacts/api-server/src/routes/daily-logs.ts:91
+  Fix: Change url: z.string().trim().min(1) to url: z.string().trim().url().                                        
+                                                                                                                    
+  ---                                                                                                               
+  A7. Folder permissions accept arbitrary objects                                                                   
+                                                                                                                    
+  File: artifacts/api-server/src/routes/folders.ts:41-42
+  Fix: Replace z.record(z.string(), z.unknown()) with a specific schema matching the expected permission structure, 
+  e.g.:                                                                                                             
+  viewingPermissions: z.record(z.string(), z.boolean()).nullable().optional(),
+  uploadingPermissions: z.record(z.string(), z.boolean()).nullable().optional(),                                    
+  Or define the exact shape with known role keys.                                                                   
+   
+  ---                                                                                                               
+  A8. Schedule self-referencing predecessors
+                                                                                                                    
+  File: artifacts/api-server/src/routes/schedule.ts — in the create/update handlers that call
+  assertPredecessorsBelongToJob (lines 2393, 2529)                                                                  
+  Fix: After calling assertPredecessorsBelongToJob, add a check:
+  if (predecessorIds.includes(itemId)) {                                                                            
+    throw new HttpError(400, "A schedule item cannot be its own predecessor.");
+  }                                                                                                                 
+   
+  ---                                                                                                               
+  A9. express.d.ts auth type should be optional
+                                                                                                                    
+  File: artifacts/api-server/src/types/express.d.ts:3
+  Fix: Change auth: { to auth?: {. This will surface TypeScript errors where req.auth is accessed without           
+  requireAuth middleware, which is the correct behavior.                                                            
+                                                                                                                    
+  ---                                                                                                               
+  A10. Port validation incomplete
+                                 
+  File: artifacts/api-server/src/index.ts:11
+  Fix: Change:                                                                                                      
+  if (Number.isNaN(port) || port <= 0) {
+  to:                                                                                                               
+  if (Number.isNaN(port) || !Number.isInteger(port) || port <= 0 || port > 65535) {                                 
+       
+  ---                                                                                                               
+  A11. strictFunctionTypes disabled                                                                                 
+                                   
+  File: tsconfig.base.json:16                                                                                       
+  Fix: Change "strictFunctionTypes": false to "strictFunctionTypes": true. Fix any resulting type errors (likely in 
+  callback-heavy code). Alternatively, replace all the individual strict flags with just "strict": true which       
+  enables everything including strictFunctionTypes.                                                                 
+                                                                                                                    
+  ---             
+  A12. Missing index on activityLog.entityId
+                                                                                                                    
+  File: lib/db/src/schema/index.ts:706
+  Fix: Add an index alongside the existing userId index:                                                            
+  (table) => ({                                                                                                     
+    userIdIdx: index("activity_log_user_id_idx").on(table.userId),
+    entityIdIdx: index("activity_log_entity_id_idx").on(table.entityId),                                            
+  }),                                                                                                               
+  Add the corresponding CREATE INDEX in a new migration.
+                                                                                                                    
+  ---                                                                                                               
+  GROUP B: Database Schema (5 items)
+                                                                                                                    
+  B1. dailyLogSettings singleton has no constraint
+                                                                                                                    
+  File: lib/db/src/schema/index.ts:567-580
+  Fix: Add a singletonKey column with a unique constraint to enforce one row:
+  singletonKey: boolean("singleton_key").default(true).notNull().unique(),                                          
+  Or use a CHECK constraint: sql\CHECK (id IS NOT NULL)`with a unique index on a constant expression. The simplest 
+  approach is to add a boolean column that is alwaystrue` with a unique constraint.                                 
+                                                                                                                    
+  B2. No check constraints on enum varchar columns
+                                                                                                                    
+  File: lib/db/src/schema/index.ts — users.role (line 76), jobs.status (line 129), leads.status (line 233)          
+  Fix: Add SQL CHECK constraints via the table definition's extra config, e.g.:                                     
+  // In the table's callback:                                                                                       
+  roleCheck: sql`CHECK (role IN ('admin', 'project_manager', 'crew_member'))`
+  Or migrate to pgEnum for these columns. Add corresponding SQL in a new migration.                                 
+                                                                                                                    
+  B3. confidence / progress no bounds                                                                               
+                                                                                                                    
+  File: lib/db/src/schema/index.ts — leads.confidence (line 223), scheduleItems.progress (line 359)                 
+  Fix: Add CHECK constraints in the migration:                                                                      
+  ALTER TABLE leads ADD CONSTRAINT leads_confidence_range CHECK (confidence >= 0 AND confidence <= 100);            
+  ALTER TABLE schedule_items ADD CONSTRAINT schedule_items_progress_range CHECK (progress >= 0 AND progress <= 100);
+                                                                                                                    
+  B4. drizzle.config.ts uses __dirname in ESM
+                                                                                                                    
+  File: lib/db/drizzle.config.ts:12
+  Fix: Replace __dirname usage with:                                                                                
+  import { fileURLToPath } from "node:url";                                                                         
+  import path from "node:path";            
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));                                                   
+  This matches the pattern already used in migrate.ts.
+                                                                                                                    
+  B5. Seed data issues
+                                                                                                                    
+  File: lib/db/src/seed.ts:665-668
+  Fix (wrong folder): Change folderId: johnsonDocs.id to the correct Brown Office Reception folder, or create a     
+  dedicated folder for it. The file brown-office-reception-proposal.pdf should not be in the Johnson docs folder.   
+   
+  File: lib/db/src/seed.ts:782, 795                                                                                 
+  Fix (color names): Change displayColor: "blue" to displayColor: "#2563eb" and displayColor: "green" to
+  displayColor: "#16a34a" to match the hex convention used by the schema default.                                   
+                  
+  ---                                                                                                               
+  GROUP C: Frontend (14 items)
+                              
+  C1. NotFound route outside auth protection
+                                                                                                                    
+  File: artifacts/cadstone/src/App.tsx:101                                                                          
+  Fix: Move <Route path="*" element={<NotFoundPage />} /> inside the ProtectedRoute wrapper (before line 99's       
+  closing </Route>). This ensures unauthenticated users hitting unknown paths get redirected to login.              
+                  
+  C2. No client-side password validation on register                                                                
+                  
+  File: artifacts/cadstone/src/pages/register.tsx:81-89                                                             
+  Fix: Add minLength={8} to the password <Input>. Optionally add JS validation in the submit handler matching the
+  server's 8-char minimum.                                                                                          
+   
+  C3. TOAST_REMOVE_DELAY is ~17 minutes                                                                             
+                  
+  File: artifacts/cadstone/src/hooks/use-toast.ts:9                                                                 
+  Fix: Change 1000000 to 5000 (5 seconds) or similar reasonable value.
+                                                                                                                    
+  C4. runtimeErrorOverlay included in production                                                                    
+                                                                                                                    
+  File: artifacts/cadstone/vite.config.ts:88                                                                        
+  Fix: Make it conditional:
+  ...(mode === "development" ? [runtimeErrorOverlay()] : []),                                                       
+                                                             
+  C5. Edit button in TagEditor has no onClick                                                                       
+                                                                                                                    
+  File: artifacts/cadstone/src/pages/job-daily-logs.tsx:803-805                                                     
+  Fix: Either add an onClick handler that opens a tag editing UI, or remove the dead button entirely.               
+                                                                                                                    
+  C6. formatFileSize treats 0 as no size
+                                                                                                                    
+  File: artifacts/cadstone/src/components/FileBrowser.tsx:109                                                       
+  Fix: Change if (!bytes) to if (bytes == null) so that 0 is handled as a valid size ("0 B").
+                                                                                                                    
+  C7. dateKey and isoDate duplicate functions
+                                                                                                                    
+  File: artifacts/cadstone/src/lib/schedule.ts:244                                                                  
+  Fix: Remove isoDate entirely. Find all call sites and replace with dateKey. (Currently isoDate just delegates to
+  dateKey.)                                                                                                         
+                  
+  C8. UTC vs local timezone mixing                                                                                  
+                  
+  File: artifacts/cadstone/src/lib/schedule.ts:233-237 (dateKey uses local) vs :313 (isWeekend uses UTC)            
+  Fix: Make dateKey use UTC methods to match isWeekend and all the business-day functions:
+  export function dateKey(date: Date) {                                                                             
+    const y = date.getUTCFullYear();   
+    const m = String(date.getUTCMonth() + 1).padStart(2, "0");                                                      
+    const d = String(date.getUTCDate()).padStart(2, "0");                                                           
+    return `${y}-${m}-${d}`;
+  }                                                                                                                 
+                  
+  C9. normalizeExceptionMatchDate inverted logic                                                                    
+                  
+  File: artifacts/cadstone/src/lib/schedule.ts:318-324                                                              
+  Fix: Swap the branches — when !sameEveryYear, return the full YYYY-MM-DD; when sameEveryYear, return MM-DD:
+  function normalizeExceptionMatchDate(date: Date, sameEveryYear: boolean) {                                        
+    if (sameEveryYear) {                                                    
+      // Only month-day matters                                                                                     
+      const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(date.getUTCDate()).padStart(2, "0");                                                         
+      return `${m}-${d}`;                                                                                           
+    }                    
+    return date.toISOString().slice(0, 10); // Full YYYY-MM-DD                                                      
+  }                                                           
+                                                                                                                    
+  C10. Email changes have no verification flow
+                                                                                                                    
+  File: artifacts/cadstone/src/pages/settings.tsx:165-175
+  Fix: At minimum, require the user to re-enter their current password when changing email. Add a currentPassword   
+  field to the profile form that is required when the email differs from the original. The backend PUT /users/me    
+  should verify the password before allowing email changes.
+                                                                                                                    
+  C11. All runtime packages in devDependencies
+
+  File: artifacts/cadstone/package.json                                                                             
+  Fix: Move these from devDependencies to dependencies: react, react-dom, react-router-dom, axios, zustand, sonner,
+  lucide-react, date-fns, recharts, framer-motion, all @radix-ui/* packages, @tanstack/react-query, react-hook-form,
+   @hookform/resolvers, zod, clsx, tailwind-merge, class-variance-authority, react-big-calendar, react-dropzone,
+  frappe-gantt, @tiptap/*, and any other packages imported at runtime. Keep only build tools (vite, typescript,     
+  tailwindcss, @types/*, etc.) in devDependencies.
+
+  C12. Jobs page debounce timer no cleanup                                                                          
+   
+  File: artifacts/cadstone/src/pages/jobs.tsx:113, 145-149                                                          
+  Fix: Add a useEffect cleanup:
+  useEffect(() => {                                                                                                 
+    return () => { 
+      if (debounceRef.current) clearTimeout(debounceRef.current);                                                   
+    };                                                           
+  }, []);
+         
+  C13. Dashboard today never updates past midnight
+                                                                                                                    
+  File: artifacts/cadstone/src/pages/dashboard.tsx:436                                                              
+  Fix: Replace the memo with state that updates at midnight:                                                        
+  const [today, setToday] = useState(() => new Date());                                                             
+  useEffect(() => {                                    
+    const now = new Date();                                                                                         
+    const msUntilMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() -
+  now.getTime();                                                                                                    
+    const timer = setTimeout(() => setToday(new Date()), msUntilMidnight);                                          
+    return () => clearTimeout(timer);                                     
+  }, [today]);                                                                                                      
+                  
+  C14. Sequential API calls in schedule publish                                                                     
+   
+  File: artifacts/cadstone/src/pages/job-schedule.tsx:2330-2358                                                     
+  Fix: The creates (lines 2330-2336) must stay sequential because later items may reference IDs from earlier creates
+   via draftIdMap. But the updates (2338-2342), note posts (2344-2353), and deletes (2356-2358) can be parallelized:
+  // After creates are done sequentially:
+  await Promise.all([                                                                                               
+    ...changedPersistedItems.map(item => api.put(`/jobs/${jobId}/schedule/${item.id}`, ...)),                       
+    ...deletedPersistedItems.map(id => api.delete(`/jobs/${jobId}/schedule/${id}`)),         
+  ]);                                                                                                               
+  // Notes can also be batched with Promise.all                                                                     
+                                                                                                                    
+  ---                                                                                                               
+  GROUP D: OpenAPI Spec (1 item)
+                                                                                                                    
+  D1. OpenAPI spec is a stub
+                                                                                                                    
+  File: lib/api-spec/openapi.yaml
+  Fix: This is a large task. The spec needs to document all ~80 endpoints from the 13 route files. At minimum, add  
+  path definitions for: /auth/register, /auth/login, /auth/logout, /auth/refresh, /auth/forgot-password,            
+  /auth/reset-password, /users, /users/me, /clients, /clients/:id, /jobs, /jobs/:id, /files, /folders, /leads,
+  /schedule, /daily-logs, /daily-logs/admin, /dashboard, /search, /activity. Define request/response schemas for    
+  each. After updating, run pnpm --filter @workspace/api-spec codegen to regenerate the client and Zod schemas so
+  they're actually useful.
+
+  Alternative: If maintaining a full spec is not feasible now, add a note in the repo documenting that the spec is  
+  incomplete and the generated client/zod packages should not be relied on for anything beyond health checks. Remove
+   unused generated packages from the workspace to avoid confusion.                                                 
+                  
+  ---
+  Verification Checklist
+
+  After all fixes, confirm:
+  - git grep 'cadstone-dev-.*-secret' returns 0 results (A1)
+  - git grep 'dailyLog\.jobId!' returns 0 results (A2)                                                              
+  - git grep 'jobId: leadId' in leads.ts returns 0 results (A3)
+  - git grep 'db\.transaction' returns results in clients.ts, jobs.ts, daily-logs.ts (A4)                           
+  - git grep '\.select()' in users.ts returns 0 results (should use .select({...})) (A5) 
+  - git grep 'strictFunctionTypes.*false' returns 0 results (A11)                                                   
+  - git grep 'TOAST_REMOVE_DELAY.*1000000' returns 0 results (C3)                                                   
+  - git grep 'runtimeErrorOverlay()' shows conditional usage only (C4)                                              
+  - git grep '!bytes' in FileBrowser.tsx returns 0 results (C6)                                                     
+  - git grep 'isoDate' in schedule.ts returns 0 results (C7)                                                        
+  - git grep 'getUTCDay\|getFullYear' in schedule.ts shows consistent UTC usage (C8)                                
+  - pnpm run typecheck passes cleanly (A9, A11 may surface new errors)                                              
+  - New migration file exists (for A12, B1, B2, B3 changes)                                                         
+  - pnpm run build succeeds across all packages                                                                     
+                                                     

@@ -800,9 +800,6 @@ function TagEditor({
           <Button type="button" size="sm" variant="outline" onClick={onAddTag}>
             Add
           </Button>
-          <Button type="button" size="sm" variant="outline">
-            Edit
-          </Button>
         </div>
       </div>
       {tags.length === 0 ? (

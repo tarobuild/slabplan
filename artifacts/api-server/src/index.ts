@@ -8,7 +8,7 @@ const rawPort = process.env["PORT"] ?? "8080";
 const port = Number(rawPort);
 const host = process.env["HOST"] || "0.0.0.0";
 
-if (Number.isNaN(port) || port <= 0) {
+if (Number.isNaN(port) || !Number.isInteger(port) || port <= 0 || port > 65535) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 

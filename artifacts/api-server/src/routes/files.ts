@@ -68,7 +68,7 @@ router.get(
     }
 
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanViewFolder(req.auth, folderId);
+    await assertCanViewFolder(req.auth!, folderId);
 
     const result = await listFilesForFolder({
       folderId,
@@ -92,13 +92,13 @@ router.post(
   upload.array("files", 20),
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanUploadToFolder(req.auth, folderId);
+    await assertCanUploadToFolder(req.auth!, folderId);
 
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
 
     const result = await saveUploadedFiles({
       folderId,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       uploadedFiles,
     });
 
@@ -116,12 +116,12 @@ router.put(
     }
 
     const fileId = getParam(req.params.id, "file id");
-    await assertCanManageFile(req.auth, fileId);
+    await assertCanManageFile(req.auth!, fileId);
 
     const file = await renameFile({
       fileId,
       originalName: body.data.originalName,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ file });
@@ -132,11 +132,11 @@ router.delete(
   "/files/:id",
   asyncHandler(async (req, res) => {
     const fileId = getParam(req.params.id, "file id");
-    await assertCanManageFile(req.auth, fileId);
+    await assertCanManageFile(req.auth!, fileId);
 
     await softDeleteFile({
       fileId,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ success: true });
@@ -147,11 +147,11 @@ router.post(
   "/files/:id/restore",
   asyncHandler(async (req, res) => {
     const fileId = getParam(req.params.id, "file id");
-    await assertCanManageFile(req.auth, fileId);
+    await assertCanManageFile(req.auth!, fileId);
 
     const file = await restoreFile({
       fileId,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ file });
@@ -162,11 +162,11 @@ router.delete(
   "/files/:id/purge",
   asyncHandler(async (req, res) => {
     const fileId = getParam(req.params.id, "file id");
-    await assertCanManageFile(req.auth, fileId);
+    await assertCanManageFile(req.auth!, fileId);
 
     await purgeFile({
       fileId,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ success: true });
@@ -177,7 +177,7 @@ router.get(
   "/files/:id/download",
   asyncHandler(async (req, res) => {
     const fileId = getParam(req.params.id, "file id");
-    await assertCanViewFile(req.auth, fileId, true);
+    await assertCanViewFile(req.auth!, fileId, true);
     const file = await getFileOrThrow(fileId, true);
 
     if (!file.fileUrl) {

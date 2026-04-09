@@ -188,7 +188,7 @@ router.get(
       throw new HttpError(400, "Invalid jobs query.", query.error.flatten());
     }
 
-    const accessibleJobIds = await listAccessibleJobIds(req.auth);
+    const accessibleJobIds = await listAccessibleJobIds(req.auth!);
     const { page, pageSize } = query.data;
 
     if (accessibleJobIds && accessibleJobIds.length === 0) {
@@ -291,16 +291,16 @@ router.post(
     }
 
     const payload =
-      req.auth.role === "project_manager"
+      req.auth!.role === "project_manager"
         ? {
             ...body.data,
-            projectManagerId: req.auth.userId,
+            projectManagerId: req.auth!.userId,
           }
         : body.data;
 
     const [job] = await db
       .insert(jobs)
-      .values(toJobInsert(payload, req.auth.userId))
+      .values(toJobInsert(payload, req.auth!.userId))
       .returning();
 
     await ensureSystemFolders(job.id);
@@ -308,7 +308,7 @@ router.post(
       entityType: "job",
       entityId: job.id,
       action: "created",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: job.id,
       description: `Created job ${job.title}`,
     });
@@ -323,7 +323,7 @@ router.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.id, "job id");
-    await assertCanAccessJob(req.auth, jobId);
+    await assertCanAccessJob(req.auth!, jobId);
     const job = await findJobById(jobId);
 
     if (!job) {
@@ -345,7 +345,7 @@ router.put(
     }
 
     const jobId = getParam(req.params.id, "job id");
-    await assertCanManageJob(req.auth, jobId);
+    await assertCanManageJob(req.auth!, jobId);
     const existing = await findJobById(jobId);
 
     if (!existing) {
@@ -353,17 +353,17 @@ router.put(
     }
 
     const payload =
-      req.auth.role === "project_manager"
+      req.auth!.role === "project_manager"
         ? {
             ...body.data,
-            projectManagerId: req.auth.userId,
+            projectManagerId: req.auth!.userId,
           }
         : body.data;
 
     const [updated] = await db
       .update(jobs)
       .set({
-        ...toJobInsert(payload, existing.createdById ?? req.auth.userId),
+        ...toJobInsert(payload, existing.createdById ?? req.auth!.userId),
         updatedAt: new Date(),
       })
       .where(eq(jobs.id, jobId))
@@ -374,7 +374,7 @@ router.put(
       entityType: "job",
       entityId: updated.id,
       action: "updated",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: updated.id,
       description: `Updated job ${updated.title}`,
     });
@@ -399,7 +399,7 @@ router.delete(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.id, "job id");
-    await assertCanAccessJob(req.auth, jobId);
+    await assertCanAccessJob(req.auth!, jobId);
     const existing = await findJobById(jobId);
 
     if (!existing) {
@@ -408,33 +408,37 @@ router.delete(
 
     const deletedAt = new Date();
 
-    await db
-      .update(jobs)
-      .set({ deletedAt, updatedAt: deletedAt })
-      .where(eq(jobs.id, jobId));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(jobs)
+        .set({ deletedAt, updatedAt: deletedAt })
+        .where(eq(jobs.id, jobId));
 
-    const relatedFolders = await db
-      .select({ id: folders.id })
-      .from(folders)
-      .where(eq(folders.jobId, jobId));
+      const relatedFolders = await tx
+        .select({ id: folders.id })
+        .from(folders)
+        .where(eq(folders.jobId, jobId));
 
-    if (relatedFolders.length > 0) {
+      if (relatedFolders.length === 0) {
+        return;
+      }
+
       const folderIds = relatedFolders.map((folder) => folder.id);
-      await db
+      await tx
         .update(folders)
         .set({ deletedAt, updatedAt: deletedAt })
         .where(inArray(folders.id, folderIds));
-      await db
+      await tx
         .update(files)
         .set({ deletedAt, updatedAt: deletedAt })
         .where(inArray(files.folderId, folderIds));
-    }
+    });
 
     await writeActivity({
       entityType: "job",
       entityId: jobId,
       action: "deleted",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId,
       description: `Archived job ${existing.title}`,
     });

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { CookieOptions, Response } from "express";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import type { User } from "@workspace/db/schema";
@@ -28,7 +29,17 @@ export const UPLOAD_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const RESET_TOKEN_TTL_SECONDS = 60 * 60;
 const JWT_ALGORITHMS = ["HS256"] as const;
 
-function readJwtSecret(envName: "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET" | "JWT_RESET_SECRET") {
+type JwtSecretEnvName = "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET" | "JWT_RESET_SECRET";
+
+const runtimeSecrets: Record<JwtSecretEnvName, string> = {
+  JWT_ACCESS_SECRET: crypto.randomBytes(64).toString("hex"),
+  JWT_REFRESH_SECRET: crypto.randomBytes(64).toString("hex"),
+  JWT_RESET_SECRET: crypto.randomBytes(64).toString("hex"),
+};
+
+const warnedMissingSecrets = new Set<JwtSecretEnvName>();
+
+function readJwtSecret(envName: JwtSecretEnvName) {
   const value = process.env[envName]?.trim();
 
   if (value) {
@@ -39,15 +50,14 @@ function readJwtSecret(envName: "JWT_ACCESS_SECRET" | "JWT_REFRESH_SECRET" | "JW
     throw new Error(`${envName} must be configured in production.`);
   }
 
-  if (envName === "JWT_ACCESS_SECRET") {
-    return "cadstone-dev-access-secret-change-me";
+  if (!warnedMissingSecrets.has(envName)) {
+    warnedMissingSecrets.add(envName);
+    console.warn(
+      "[auth] " + envName + " is not configured; using an ephemeral runtime secret for this process.",
+    );
   }
 
-  if (envName === "JWT_REFRESH_SECRET") {
-    return "cadstone-dev-refresh-secret-change-me";
-  }
-
-  return "cadstone-dev-reset-secret-change-me";
+  return runtimeSecrets[envName];
 }
 
 const accessSecret = readJwtSecret("JWT_ACCESS_SECRET");

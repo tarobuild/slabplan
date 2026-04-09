@@ -39,8 +39,8 @@ router.get(
     const limit = query.data.limit;
     const queryLimit = Math.min(limit * 3, 30);
     const [accessibleJobIds, accessibleLeadIds] = await Promise.all([
-      listAccessibleJobIds(req.auth),
-      listAccessibleLeadIds(req.auth),
+      listAccessibleJobIds(req.auth!),
+      listAccessibleLeadIds(req.auth!),
     ]);
 
     const noJobAccess = accessibleJobIds !== null && accessibleJobIds.length === 0;
@@ -186,7 +186,7 @@ router.get(
       Promise.all(
         fileRows.map(async (file) => {
           try {
-            await assertCanViewFolder(req.auth, file.folderId);
+            await assertCanViewFolder(req.auth!, file.folderId);
             return file;
           } catch (error) {
             if (error instanceof HttpError && error.statusCode === 403) {
@@ -200,7 +200,7 @@ router.get(
       Promise.all(
         scheduleRows.map(async (item) => {
           try {
-            await assertCanViewScheduleItem(req.auth, item.id);
+            await assertCanViewScheduleItem(req.auth!, item.id);
             return item;
           } catch (error) {
             if (error instanceof HttpError && error.statusCode === 403) {

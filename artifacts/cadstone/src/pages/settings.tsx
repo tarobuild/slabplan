@@ -32,7 +32,9 @@ export default function SettingsPage() {
     fullName: "",
     email: "",
     phone: "",
+    currentPassword: "",
   })
+  const [savedEmail, setSavedEmail] = useState("")
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
 
@@ -53,7 +55,9 @@ export default function SettingsPage() {
           fullName: u.fullName,
           email: u.email,
           phone: u.phone ?? "",
+          currentPassword: "",
         })
+        setSavedEmail(u.email)
       })
       .catch(() => toast.error("Failed to load profile"))
       .finally(() => setLoadingProfile(false))
@@ -61,16 +65,31 @@ export default function SettingsPage() {
 
   const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    const emailChanged = profileForm.email.trim().toLowerCase() !== savedEmail.trim().toLowerCase()
+
+    if (emailChanged && !profileForm.currentPassword.trim()) {
+      toast.error("Current password is required to change your email")
+      return
+    }
+
     setSavingProfile(true)
     try {
       const { data } = await api.put("/users/me", {
         fullName: profileForm.fullName,
         email: profileForm.email,
         phone: profileForm.phone || null,
+        currentPassword: emailChanged ? profileForm.currentPassword : null,
       })
       if (accessToken) {
         setAuth(data.user, accessToken)
       }
+      setSavedEmail(data.user.email)
+      setProfileForm({
+        fullName: data.user.fullName,
+        email: data.user.email,
+        phone: data.user.phone ?? "",
+        currentPassword: "",
+      })
       toast.success("Profile updated")
     } catch (err: unknown) {
       toast.error(getApiError(err, "Failed to update profile"))
@@ -113,6 +132,8 @@ export default function SettingsPage() {
     (k: keyof typeof passwordForm) =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setPasswordForm((f) => ({ ...f, [k]: e.target.value }))
+
+  const emailChanged = profileForm.email.trim().toLowerCase() !== savedEmail.trim().toLowerCase()
 
   return (
     <div className="max-w-2xl space-y-8">
@@ -173,6 +194,21 @@ export default function SettingsPage() {
                     placeholder="you@example.com"
                   />
                 </div>
+
+                {emailChanged ? (
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="profile-current-password">Current Password</Label>
+                    <Input
+                      id="profile-current-password"
+                      type="password"
+                      value={profileForm.currentPassword}
+                      onChange={setProfile("currentPassword")}
+                      required
+                      autoComplete="current-password"
+                      placeholder="Required to confirm your email change"
+                    />
+                  </div>
+                ) : null}
 
                 <div className="col-span-2 space-y-1.5">
                   <Label htmlFor="profile-phone">Phone Number</Label>

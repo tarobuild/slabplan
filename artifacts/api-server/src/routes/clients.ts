@@ -87,7 +87,7 @@ router.get(
 
     const { page, pageSize, search } = query.data;
     const offset = (page - 1) * pageSize;
-    const accessibleClientIds = await listAccessibleClientIds(req.auth);
+    const accessibleClientIds = await listAccessibleClientIds(req.auth!);
 
     if (accessibleClientIds && accessibleClientIds.length === 0) {
       res.json({
@@ -242,7 +242,7 @@ router.post(
         state: body.data.state,
         zipCode: body.data.zipCode,
         notes: body.data.notes,
-        createdBy: req.auth.userId,
+        createdBy: req.auth!.userId,
       })
       .returning();
 
@@ -254,7 +254,7 @@ router.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
-    await assertCanAccessClient(req.auth, clientId);
+    await assertCanAccessClient(req.auth!, clientId);
     const client = await getClientOrThrow(clientId);
 
     const [contacts, jobList] = await Promise.all([
@@ -289,7 +289,7 @@ router.put(
   "/:id",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
-    await assertCanManageClient(req.auth, clientId);
+    await assertCanManageClient(req.auth!, clientId);
     await getClientOrThrow(clientId);
 
     const body = clientPayloadSchema.safeParse(req.body);
@@ -320,7 +320,7 @@ router.delete(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
-    await assertCanAccessClient(req.auth, clientId);
+    await assertCanAccessClient(req.auth!, clientId);
     await getClientOrThrow(clientId);
 
     const now = new Date();
@@ -348,7 +348,7 @@ router.get(
   "/:id/contacts",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
-    await assertCanAccessClient(req.auth, clientId);
+    await assertCanAccessClient(req.auth!, clientId);
     await getClientOrThrow(clientId);
 
     const contacts = await db
@@ -365,7 +365,7 @@ router.get(
   "/:id/jobs",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
-    await assertCanAccessClient(req.auth, clientId);
+    await assertCanAccessClient(req.auth!, clientId);
     await getClientOrThrow(clientId);
 
     const jobList = await db
@@ -393,32 +393,34 @@ router.post(
   "/:id/contacts",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
-    await assertCanManageClient(req.auth, clientId);
+    await assertCanManageClient(req.auth!, clientId);
     await getClientOrThrow(clientId);
 
     const body = contactPayloadSchema.safeParse(req.body);
     if (!body.success) throw new HttpError(400, "Invalid contact payload.", body.error.flatten());
 
-    if (body.data.isPrimary) {
-      await db
-        .update(clientContacts)
-        .set({ isPrimary: false, updatedAt: new Date() })
-        .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
-    }
+    const [contact] = await db.transaction(async (tx) => {
+      if (body.data.isPrimary) {
+        await tx
+          .update(clientContacts)
+          .set({ isPrimary: false, updatedAt: new Date() })
+          .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
+      }
 
-    const [contact] = await db
-      .insert(clientContacts)
-      .values({
-        clientId,
-        firstName: body.data.firstName,
-        lastName: body.data.lastName,
-        title: body.data.title,
-        email: body.data.email,
-        phone: body.data.phone,
-        cellPhone: body.data.cellPhone,
-        isPrimary: body.data.isPrimary,
-      })
-      .returning();
+      return tx
+        .insert(clientContacts)
+        .values({
+          clientId,
+          firstName: body.data.firstName,
+          lastName: body.data.lastName,
+          title: body.data.title,
+          email: body.data.email,
+          phone: body.data.phone,
+          cellPhone: body.data.cellPhone,
+          isPrimary: body.data.isPrimary,
+        })
+        .returning();
+    });
 
     res.status(201).json({ contact });
   }),
@@ -429,7 +431,7 @@ router.put(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     const contactId = getParam(req.params.contactId, "contact id");
-    await assertCanManageClient(req.auth, clientId);
+    await assertCanManageClient(req.auth!, clientId);
     await getClientOrThrow(clientId);
 
     const [existing] = await db
@@ -442,27 +444,29 @@ router.put(
     const body = contactPayloadSchema.safeParse(req.body);
     if (!body.success) throw new HttpError(400, "Invalid contact payload.", body.error.flatten());
 
-    if (body.data.isPrimary) {
-      await db
-        .update(clientContacts)
-        .set({ isPrimary: false, updatedAt: new Date() })
-        .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
-    }
+    const [updated] = await db.transaction(async (tx) => {
+      if (body.data.isPrimary) {
+        await tx
+          .update(clientContacts)
+          .set({ isPrimary: false, updatedAt: new Date() })
+          .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
+      }
 
-    const [updated] = await db
-      .update(clientContacts)
-      .set({
-        firstName: body.data.firstName,
-        lastName: body.data.lastName,
-        title: body.data.title,
-        email: body.data.email,
-        phone: body.data.phone,
-        cellPhone: body.data.cellPhone,
-        isPrimary: body.data.isPrimary,
-        updatedAt: new Date(),
-      })
-      .where(eq(clientContacts.id, contactId))
-      .returning();
+      return tx
+        .update(clientContacts)
+        .set({
+          firstName: body.data.firstName,
+          lastName: body.data.lastName,
+          title: body.data.title,
+          email: body.data.email,
+          phone: body.data.phone,
+          cellPhone: body.data.cellPhone,
+          isPrimary: body.data.isPrimary,
+          updatedAt: new Date(),
+        })
+        .where(eq(clientContacts.id, contactId))
+        .returning();
+    });
 
     res.json({ contact: updated });
   }),
@@ -473,7 +477,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     const contactId = getParam(req.params.contactId, "contact id");
-    await assertCanManageClient(req.auth, clientId);
+    await assertCanManageClient(req.auth!, clientId);
     await getClientOrThrow(clientId);
 
     const [existing] = await db

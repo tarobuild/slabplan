@@ -2335,11 +2335,11 @@ export default function JobSchedulePage() {
         draftIdMap.set(item.id, response.data.item.id)
       }
 
-      for (const item of [...createdDraftItems, ...changedPersistedItems]) {
+      await Promise.all([...createdDraftItems, ...changedPersistedItems].map((item) => {
         const targetId = draftIdMap.get(item.id) || item.id
         const payload = remapDraftPayload(schedulePayloadFromItem(item), draftIdMap)
-        await api.put(`/schedule-items/${targetId}`, payload)
-      }
+        return api.put(`/schedule-items/${targetId}`, payload)
+      }))
 
       for (const item of currentDraftItems) {
         const targetId = draftIdMap.get(item.id) || item.id
@@ -2353,9 +2353,9 @@ export default function JobSchedulePage() {
         }
       }
 
-      for (const item of deletedPersistedItems) {
-        await api.delete(`/schedule-items/${item.id}`)
-      }
+      await Promise.all(deletedPersistedItems.map((item) =>
+        api.delete(`/schedule-items/${item.id}`)
+      ))
 
       setDialogOpen(false)
       setActiveItemId(null)

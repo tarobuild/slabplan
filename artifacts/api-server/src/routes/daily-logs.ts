@@ -88,7 +88,7 @@ const weatherDataSchema = z
 
 const commentAttachmentSchema = z.object({
   name: z.string().trim().min(1).max(255),
-  url: z.string().trim().min(1),
+  url: z.string().trim().url(),
   mimeType: optionalString,
 });
 
@@ -204,21 +204,29 @@ function canViewDailyLogSummary(
   return !row.isPrivate && row.shareInternalUsers !== false;
 }
 
+function requireDailyLogJobId(dailyLog: { jobId: string | null }) {
+  if (!dailyLog.jobId) {
+    throw new HttpError(400, "Daily log has no associated job.");
+  }
+
+  return dailyLog.jobId;
+}
+
 const requireDailyLogJobAccess = asyncHandler(async (req, _res, next) => {
   const jobId = getParam(req.params.jobId, "job id");
-  await assertCanAccessJob(req.auth, jobId);
+  await assertCanAccessJob(req.auth!, jobId);
   next();
 });
 
 const requireDailyLogViewAccess = asyncHandler(async (req, _res, next) => {
   const logId = getParam(req.params.id, "daily log id");
-  await assertCanViewDailyLog(req.auth, logId);
+  await assertCanViewDailyLog(req.auth!, logId);
   next();
 });
 
 const requireDailyLogEditAccess = asyncHandler(async (req, _res, next) => {
   const logId = getParam(req.params.id, "daily log id");
-  await assertCanEditDailyLog(req.auth, logId);
+  await assertCanEditDailyLog(req.auth!, logId);
   next();
 });
 
@@ -379,7 +387,7 @@ async function ensureDailyLogAttachmentFolder(dailyLogId: string) {
   const [created] = await db
     .insert(folders)
     .values({
-      jobId: null,
+      jobId: sql<string>`null`,
       title,
       mediaType: "document",
       viewingPermissions: { internal: true },
@@ -973,10 +981,10 @@ router.get(
       attachmentCountByLogId.set(row.dailyLogId, Number(row.total));
     }
 
-    const engagement = await loadDailyLogEngagement(logIds, req.auth.userId);
+    const engagement = await loadDailyLogEngagement(logIds, req.auth!.userId);
 
     let filtered = rows
-      .filter((row) => canViewDailyLogSummary(req.auth, row))
+      .filter((row) => canViewDailyLogSummary(req.auth!, row))
       .map((row) => {
       const weather = decodeWeatherPayload(
         row.weatherData as Record<string, unknown> | null | undefined,
@@ -1075,7 +1083,7 @@ router.post(
         shareSubsVendors: body.data.shareSubsVendors,
         shareClient: body.data.shareClient,
         isPrivate: body.data.isPrivate,
-        createdBy: req.auth.userId,
+        createdBy: req.auth!.userId,
       })
       .returning();
 
@@ -1085,7 +1093,7 @@ router.post(
       entityType: "daily_log",
       entityId: log.id,
       action: "created",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId,
       description: `Created daily log ${body.data.title || body.data.logDate}`,
       extra: {
@@ -1093,7 +1101,7 @@ router.post(
       },
     });
 
-    const hydrated = await hydrateDailyLog(log.id, req.auth.userId);
+    const hydrated = await hydrateDailyLog(log.id, req.auth!.userId);
     res.status(201).json(hydrated);
   }),
 );
@@ -1103,7 +1111,7 @@ router.get(
   requireDailyLogViewAccess,
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
-    const hydrated = await hydrateDailyLog(logId, req.auth.userId);
+    const hydrated = await hydrateDailyLog(logId, req.auth!.userId);
     res.json(hydrated);
   }),
 );
@@ -1127,7 +1135,7 @@ router.put(
     }
 
     await ensureJobExists(nextJobId);
-    await assertCanAccessJob(req.auth, nextJobId);
+    await assertCanAccessJob(req.auth!, nextJobId);
 
     await db
       .update(dailyLogs)
@@ -1155,7 +1163,7 @@ router.put(
       entityType: "daily_log",
       entityId: logId,
       action: "updated",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: nextJobId,
       description: `Updated daily log ${body.data.title || body.data.logDate}`,
       extra: {
@@ -1163,7 +1171,7 @@ router.put(
       },
     });
 
-    const hydrated = await hydrateDailyLog(logId, req.auth.userId);
+    const hydrated = await hydrateDailyLog(logId, req.auth!.userId);
     res.json(hydrated);
   }),
 );
@@ -1191,7 +1199,7 @@ router.delete(
       entityType: "daily_log",
       entityId: logId,
       action: "deleted",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: existing.jobId,
       description: `Deleted daily log ${existing.title || existing.logDate}`,
       extra: {
@@ -1222,7 +1230,7 @@ router.post(
       })
       .where(eq(dailyLogs.id, logId));
 
-    const hydrated = await hydrateDailyLog(logId, req.auth.userId);
+    const hydrated = await hydrateDailyLog(logId, req.auth!.userId);
 
     logger.info(
       {
@@ -1240,7 +1248,7 @@ router.post(
       entityType: "daily_log",
       entityId: logId,
       action: "published",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: existing.jobId,
       description: `Published daily log ${hydrated.log.title || hydrated.log.logDate}`,
       extra: {
@@ -1280,42 +1288,50 @@ router.post(
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
     const dailyLog = await getDailyLogOrThrow(logId);
+    const dailyLogJobId = requireDailyLogJobId(dailyLog);
 
-    const [existingLike] = await db
-      .select({ id: dailyLogLikes.id })
-      .from(dailyLogLikes)
-      .where(
-        and(
-          eq(dailyLogLikes.dailyLogId, logId),
-          eq(dailyLogLikes.userId, req.auth.userId),
-        ),
-      )
-      .limit(1);
+    const { liked, likesCount } = await db.transaction(async (tx) => {
+      const [existingLike] = await tx
+        .select({ id: dailyLogLikes.id })
+        .from(dailyLogLikes)
+        .where(
+          and(
+            eq(dailyLogLikes.dailyLogId, logId),
+            eq(dailyLogLikes.userId, req.auth!.userId),
+          ),
+        )
+        .limit(1);
 
-    let liked = false;
+      let nextLiked = false;
 
-    if (existingLike) {
-      await db.delete(dailyLogLikes).where(eq(dailyLogLikes.id, existingLike.id));
-    } else {
-      await db.insert(dailyLogLikes).values({
-        id: crypto.randomUUID(),
-        dailyLogId: logId,
-        userId: req.auth.userId,
-      });
-      liked = true;
-    }
+      if (existingLike) {
+        await tx.delete(dailyLogLikes).where(eq(dailyLogLikes.id, existingLike.id));
+      } else {
+        await tx.insert(dailyLogLikes).values({
+          id: crypto.randomUUID(),
+          dailyLogId: logId,
+          userId: req.auth!.userId,
+        });
+        nextLiked = true;
+      }
 
-    const [totalRow] = await db
-      .select({ total: count() })
-      .from(dailyLogLikes)
-      .where(eq(dailyLogLikes.dailyLogId, logId));
+      const [totalRow] = await tx
+        .select({ total: count() })
+        .from(dailyLogLikes)
+        .where(eq(dailyLogLikes.dailyLogId, logId));
+
+      return {
+        liked: nextLiked,
+        likesCount: Number(totalRow?.total ?? 0),
+      };
+    });
 
     await writeActivity({
       entityType: "daily_log",
       entityId: logId,
       action: liked ? "liked" : "unliked",
-      userId: req.auth.userId,
-      jobId: dailyLog.jobId!,
+      userId: req.auth!.userId,
+      jobId: dailyLogJobId,
       description: `${liked ? "Liked" : "Unliked"} daily log ${dailyLog.title || dailyLog.logDate}`,
       extra: {
         dailyLogId: logId,
@@ -1324,7 +1340,7 @@ router.post(
 
     res.json({
       liked,
-      likesCount: Number(totalRow?.total ?? 0),
+      likesCount,
     });
   }),
 );
@@ -1352,6 +1368,7 @@ router.post(
 
     const logId = getParam(req.params.id, "daily log id");
     const dailyLog = await getDailyLogOrThrow(logId);
+    const dailyLogJobId = requireDailyLogJobId(dailyLog);
 
     if (body.data.parentCommentId) {
       const [parent] = await db
@@ -1377,7 +1394,7 @@ router.post(
         id: crypto.randomUUID(),
         dailyLogId: logId,
         parentCommentId: body.data.parentCommentId,
-        createdBy: req.auth.userId,
+        createdBy: req.auth!.userId,
         body: body.data.body,
         mentions: body.data.mentions,
         attachments: body.data.attachments,
@@ -1390,8 +1407,8 @@ router.post(
       entityType: "daily_log_comment",
       entityId: comment.id,
       action: body.data.parentCommentId ? "replied" : "commented",
-      userId: req.auth.userId,
-      jobId: dailyLog.jobId!,
+      userId: req.auth!.userId,
+      jobId: dailyLogJobId,
       description: `${body.data.parentCommentId ? "Replied on" : "Commented on"} daily log ${dailyLog.title || dailyLog.logDate}`,
       extra: {
         dailyLogId: logId,
@@ -1418,47 +1435,49 @@ router.post(
     const commentId = getParam(req.params.commentId, "comment id");
     await getDailyLogOrThrow(logId);
 
-    const [comment] = await db
-      .select({
-        id: dailyLogComments.id,
-        reactions: dailyLogComments.reactions,
-      })
-      .from(dailyLogComments)
-      .where(
-        and(
-          eq(dailyLogComments.id, commentId),
-          eq(dailyLogComments.dailyLogId, logId),
-          isNull(dailyLogComments.deletedAt),
-        ),
-      )
-      .limit(1);
+    await db.transaction(async (tx) => {
+      const [comment] = await tx
+        .select({
+          id: dailyLogComments.id,
+          reactions: dailyLogComments.reactions,
+        })
+        .from(dailyLogComments)
+        .where(
+          and(
+            eq(dailyLogComments.id, commentId),
+            eq(dailyLogComments.dailyLogId, logId),
+            isNull(dailyLogComments.deletedAt),
+          ),
+        )
+        .limit(1);
 
-    if (!comment) {
-      throw new HttpError(404, "Comment not found.");
-    }
+      if (!comment) {
+        throw new HttpError(404, "Comment not found.");
+      }
 
-    const reactions = normalizeCommentReactions(comment.reactions);
-    const current = new Set(reactions[body.data.emoji] ?? []);
+      const reactions = normalizeCommentReactions(comment.reactions);
+      const current = new Set(reactions[body.data.emoji] ?? []);
 
-    if (current.has(req.auth.userId)) {
-      current.delete(req.auth.userId);
-    } else {
-      current.add(req.auth.userId);
-    }
+      if (current.has(req.auth!.userId)) {
+        current.delete(req.auth!.userId);
+      } else {
+        current.add(req.auth!.userId);
+      }
 
-    reactions[body.data.emoji] = Array.from(current);
+      reactions[body.data.emoji] = Array.from(current);
 
-    if (reactions[body.data.emoji].length === 0) {
-      delete reactions[body.data.emoji];
-    }
+      if (reactions[body.data.emoji].length === 0) {
+        delete reactions[body.data.emoji];
+      }
 
-    await db
-      .update(dailyLogComments)
-      .set({
-        reactions,
-        updatedAt: new Date(),
-      })
-      .where(eq(dailyLogComments.id, commentId));
+      await tx
+        .update(dailyLogComments)
+        .set({
+          reactions,
+          updatedAt: new Date(),
+        })
+        .where(eq(dailyLogComments.id, commentId));
+    });
 
     const comments = await loadDailyLogComments(logId);
     res.json({ comments });
@@ -1477,6 +1496,7 @@ router.post(
 
     const logId = getParam(req.params.id, "daily log id");
     const dailyLog = await getDailyLogOrThrow(logId);
+    const dailyLogJobId = requireDailyLogJobId(dailyLog);
 
     const [todo] = await db
       .insert(dailyLogTodos)
@@ -1485,7 +1505,7 @@ router.post(
         dailyLogId: logId,
         title: body.data.title,
         isComplete: false,
-        createdBy: req.auth.userId,
+        createdBy: req.auth!.userId,
       })
       .returning({ id: dailyLogTodos.id });
 
@@ -1493,8 +1513,8 @@ router.post(
       entityType: "daily_log_todo",
       entityId: todo.id,
       action: "created",
-      userId: req.auth.userId,
-      jobId: dailyLog.jobId!,
+      userId: req.auth!.userId,
+      jobId: dailyLogJobId,
       description: `Added to-do for daily log ${dailyLog.title || dailyLog.logDate}`,
       extra: {
         dailyLogId: logId,
@@ -1558,6 +1578,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
     const dailyLog = await getDailyLogOrThrow(logId);
+    const dailyLogJobId = requireDailyLogJobId(dailyLog);
     const attachmentFolder = await ensureDailyLogAttachmentFolder(logId);
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
 
@@ -1588,7 +1609,7 @@ router.post(
           fileUrl: uploadPath.fileUrl,
           fileSize: uploadedFile.size,
           mimeType: uploadedFile.mimetype,
-          uploadedBy: req.auth.userId,
+          uploadedBy: req.auth!.userId,
         })
         .returning();
 
@@ -1606,8 +1627,8 @@ router.post(
         entityType: "daily_log_attachment",
         entityId: attachment.id,
         action: "uploaded",
-        userId: req.auth.userId,
-        jobId: dailyLog.jobId!,
+        userId: req.auth!.userId,
+        jobId: dailyLogJobId,
         description: `Uploaded ${file.originalName} to daily log ${dailyLog.title || dailyLog.logDate}`,
         extra: {
           dailyLogId: logId,
@@ -1637,6 +1658,7 @@ router.delete(
     const logId = getParam(req.params.id, "daily log id");
     const attachmentId = getParam(req.params.attachmentId, "attachment id");
     const dailyLog = await getDailyLogOrThrow(logId);
+    const dailyLogJobId = requireDailyLogJobId(dailyLog);
 
     const [attachment] = await db
       .select({
@@ -1669,8 +1691,8 @@ router.delete(
       entityType: "daily_log_attachment",
       entityId: attachmentId,
       action: "deleted",
-      userId: req.auth.userId,
-      jobId: dailyLog.jobId!,
+      userId: req.auth!.userId,
+      jobId: dailyLogJobId,
       description: `Deleted ${attachment.originalName} from daily log ${dailyLog.title || dailyLog.logDate}`,
       extra: {
         dailyLogId: logId,

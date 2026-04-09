@@ -13,7 +13,7 @@ let io: Server | null = null;
 const adminRoom = "__cadstone_admins__";
 const REALTIME_TOKEN_REVALIDATION_INTERVAL_MS = ACCESS_TOKEN_TTL_SECONDS * 1000;
 
-async function listRealtimeScopeIds(auth: Express.Request["auth"]) {
+async function listRealtimeScopeIds(auth: NonNullable<Express.Request["auth"]>) {
   if (isAdmin(auth)) {
     return null;
   }

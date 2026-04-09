@@ -32,7 +32,9 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
 
 export function requireRole(...roles: AppRole[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
-    if (!roles.includes(req.auth.role as AppRole)) {
+    const auth = req.auth;
+
+    if (!auth || !roles.includes(auth.role as AppRole)) {
       next(new HttpError(403, "You do not have permission to perform that action."));
       return;
     }
@@ -42,7 +44,9 @@ export function requireRole(...roles: AppRole[]) {
 }
 
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
-  if (!isAdmin(req.auth)) {
+  const auth = req.auth;
+
+  if (!auth || !isAdmin(auth)) {
     next(new HttpError(403, "You do not have permission to perform that action."));
     return;
   }
@@ -51,7 +55,9 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
 }
 
 export function requireManagerOrAbove(req: Request, _res: Response, next: NextFunction) {
-  if (!isManagerOrAbove(req.auth)) {
+  const auth = req.auth;
+
+  if (!auth || !isManagerOrAbove(auth)) {
     next(new HttpError(403, "You do not have permission to perform that action."));
     return;
   }

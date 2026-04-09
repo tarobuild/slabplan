@@ -36,10 +36,15 @@ const folderBodySchema = z.object({
   parentFolderId: z.string().uuid().nullable().optional().default(null),
 });
 
+const folderPermissionSchema = z.record(
+  z.enum(["admin", "project_manager", "crew_member", "internal"]),
+  z.boolean(),
+);
+
 const folderUpdateSchema = z.object({
   title: z.string().trim().min(1).max(255).optional(),
-  viewingPermissions: z.record(z.string(), z.unknown()).nullable().optional(),
-  uploadingPermissions: z.record(z.string(), z.unknown()).nullable().optional(),
+  viewingPermissions: folderPermissionSchema.nullable().optional(),
+  uploadingPermissions: folderPermissionSchema.nullable().optional(),
 });
 
 const moveFolderSchema = z.object({
@@ -70,7 +75,7 @@ router.get(
     }
 
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJob(req.auth, jobId);
+    await assertCanAccessJob(req.auth!, jobId);
 
     const result = await listFoldersForJob({
       jobId,
@@ -94,14 +99,14 @@ router.post(
     }
 
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth, jobId);
+    await assertCanManageJob(req.auth!, jobId);
 
     const folder = await createFolder({
       jobId,
       mediaType: body.data.mediaType,
       parentFolderId: body.data.parentFolderId,
       title: body.data.title,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.status(201).json({ folder });
@@ -119,14 +124,14 @@ router.put(
     }
 
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanUploadToFolder(req.auth, folderId);
+    await assertCanUploadToFolder(req.auth!, folderId);
 
     const folder = await renameOrUpdateFolder({
       folderId,
       title: body.data.title ?? null,
       viewingPermissions: body.data.viewingPermissions,
       uploadingPermissions: body.data.uploadingPermissions,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ folder });
@@ -138,11 +143,11 @@ router.delete(
   requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanUploadToFolder(req.auth, folderId);
+    await assertCanUploadToFolder(req.auth!, folderId);
 
     await softDeleteFolder({
       folderId,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ success: true });
@@ -154,11 +159,11 @@ router.post(
   requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanUploadToFolder(req.auth, folderId);
+    await assertCanUploadToFolder(req.auth!, folderId);
 
     const folder = await copyFolder({
       folderId,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.status(201).json({ folder });
@@ -176,12 +181,12 @@ router.put(
     }
 
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanUploadToFolder(req.auth, folderId);
+    await assertCanUploadToFolder(req.auth!, folderId);
 
     const folder = await moveFolder({
       folderId,
       destinationFolderId: body.data.destinationFolderId,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ folder });
@@ -193,11 +198,11 @@ router.post(
   requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanUploadToFolder(req.auth, folderId, true);
+    await assertCanUploadToFolder(req.auth!, folderId, true);
 
     const folder = await restoreFolder({
       folderId,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ folder });
@@ -209,11 +214,11 @@ router.delete(
   requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanUploadToFolder(req.auth, folderId, true);
+    await assertCanUploadToFolder(req.auth!, folderId, true);
 
     await purgeFolder({
       folderId,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ success: true });
@@ -224,7 +229,7 @@ router.get(
   "/folders/:id/download",
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanViewFolder(req.auth, folderId);
+    await assertCanViewFolder(req.auth!, folderId);
 
     await streamFolderZip({
       folderId,
@@ -243,7 +248,7 @@ router.get(
     }
 
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJob(req.auth, jobId);
+    await assertCanAccessJob(req.auth!, jobId);
 
     const items = await listTrash({
       jobId,
@@ -265,12 +270,12 @@ router.delete(
     }
 
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth, jobId);
+    await assertCanManageJob(req.auth!, jobId);
 
     await emptyTrash({
       jobId,
       mediaType: query.data.mediaType,
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
     });
 
     res.json({ success: true });

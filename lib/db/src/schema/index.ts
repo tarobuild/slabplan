@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   date,
   foreignKey,
   index,
@@ -81,6 +82,7 @@ export const users = pgTable(
   },
   (table) => [
     uniqueIndex("users_email_unique").on(table.email).where(sql`${table.deletedAt} is null`),
+    check("users_role_check", sql`${table.role} in ('admin', 'project_manager', 'crew_member')`),
   ],
 );
 
@@ -153,6 +155,7 @@ export const jobs = pgTable(
     index("jobs_client_id_idx").on(table.clientId),
     index("jobs_created_by_idx").on(table.createdBy),
     index("jobs_project_manager_id_idx").on(table.projectManagerId),
+    check("jobs_status_check", sql`${table.status} in ('open', 'closed', 'archived')`),
   ],
 );
 
@@ -238,7 +241,11 @@ export const leads = pgTable(
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },
-  (table) => [index("leads_created_by_idx").on(table.createdBy)],
+  (table) => [
+    index("leads_created_by_idx").on(table.createdBy),
+    check("leads_status_check", sql`${table.status} in ('open', 'in_negotiation', 'won', 'lost', 'archived')`),
+    check("leads_confidence_range", sql`${table.confidence} >= 0 and ${table.confidence} <= 100`),
+  ],
 );
 
 export const leadContacts = pgTable(
@@ -372,6 +379,7 @@ export const scheduleItems = pgTable(
     index("schedule_items_created_by_idx").on(table.createdBy),
     index("schedule_items_job_id_idx").on(table.jobId),
     index("schedule_items_schedule_phase_id_idx").on(table.schedulePhaseId),
+    check("schedule_items_progress_range", sql`${table.progress} >= 0 and ${table.progress} <= 100`),
   ],
 );
 
@@ -566,6 +574,7 @@ export const dailyLogs = pgTable(
 
 export const dailyLogSettings = pgTable("daily_log_settings", {
   id: uuid("id").primaryKey().$defaultFn(createId),
+  singleton: boolean("singleton").notNull().default(true).unique(),
   stampLocation: boolean("stamp_location").default(false),
   defaultNotes: text("default_notes").default(""),
   includeWeatherByDefault: boolean("include_weather_by_default").default(true),
@@ -703,7 +712,10 @@ export const activityLog = pgTable(
     metadata: json("metadata").$type<Record<string, unknown> | null>(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
-  (table) => [index("activity_log_user_id_idx").on(table.userId)],
+  (table) => [
+    index("activity_log_user_id_idx").on(table.userId),
+    index("activity_log_entity_id_idx").on(table.entityId),
+  ],
 );
 
 export type User = typeof users.$inferSelect;

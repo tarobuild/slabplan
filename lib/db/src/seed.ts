@@ -321,13 +321,13 @@ async function upsertLead(record: SeedLeadRecord, userMap: SeededUserMap) {
 }
 
 async function findFolder(params: {
-  jobId: string;
+  jobId: string | null;
   title: string;
   mediaType: string;
   parentFolderId?: string | null;
 }) {
   const conditions = [
-    eq(folders.jobId, params.jobId),
+    params.jobId ? eq(folders.jobId, params.jobId) : isNull(folders.jobId),
     eq(folders.title, params.title),
     eq(folders.mediaType, params.mediaType),
     isNull(folders.deletedAt),
@@ -349,7 +349,7 @@ async function findFolder(params: {
 }
 
 async function upsertFolder(params: {
-  jobId: string;
+  jobId: string | null;
   title: string;
   mediaType: string;
   isGlobal?: boolean;
@@ -357,7 +357,7 @@ async function upsertFolder(params: {
 }) {
   const existing = await findFolder(params);
   const values = {
-    jobId: params.jobId,
+    jobId: params.jobId ?? sql<string>`null`,
     title: params.title,
     mediaType: params.mediaType,
     isGlobal: params.isGlobal ?? false,
@@ -616,6 +616,11 @@ export async function seedDatabase() {
     title: "Site Photos",
     mediaType: "photo",
   });
+  const brownLeadDocs = await upsertFolder({
+    jobId: null,
+    title: `Lead ${leadsByTitle["Brown Office Reception"].id} Attachments`,
+    mediaType: "document",
+  });
 
   const smithMeasureFile = await upsertFile({
     folderId: smithDocs.id,
@@ -663,7 +668,7 @@ export async function seedDatabase() {
     uploadedBy: userMap["jake.thompson@cadstone.internal"].id,
   });
   const johnsonProposalFile = await upsertFile({
-    folderId: johnsonDocs.id,
+    folderId: brownLeadDocs.id,
     filename: "brown-office-reception-proposal.pdf",
     originalName: "Brown Office Reception Proposal.pdf",
     fileUrl: "/uploads/brown-office-reception-proposal.pdf",
@@ -778,7 +783,7 @@ export async function seedDatabase() {
   await upsertScheduleItem({
     jobId: jobsByTitle["Smith Kitchen Remodel"].id,
     title: "Finalize kitchen templates",
-    displayColor: "blue",
+    displayColor: "#2563eb",
     startDate: "2026-04-12",
     endDate: "2026-04-14",
     workDays: 3,
@@ -793,7 +798,7 @@ export async function seedDatabase() {
   await upsertScheduleItem({
     jobId: jobsByTitle["Johnson Master Bath"].id,
     title: "Install vanity tops",
-    displayColor: "green",
+    displayColor: "#22c55e",
     startDate: "2026-04-18",
     endDate: "2026-04-19",
     workDays: 2,

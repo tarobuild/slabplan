@@ -296,9 +296,9 @@ const requireScheduleJobRouteAccess = asyncHandler(async (req, _res, next) => {
   const jobId = getParam(req.params.jobId, "job id");
 
   if (req.method === "GET") {
-    await assertCanAccessJob(req.auth, jobId);
+    await assertCanAccessJob(req.auth!, jobId);
   } else {
-    await assertCanManageJob(req.auth, jobId);
+    await assertCanManageJob(req.auth!, jobId);
   }
 
   next();
@@ -311,9 +311,9 @@ const requireScheduleItemRouteAccess = asyncHandler(async (req, _res, next) => {
     path.startsWith("/notes") || path.startsWith("/todos");
 
   if (req.method === "GET" || isCollaborativeUpdate) {
-    await assertCanViewScheduleItem(req.auth, itemId);
+    await assertCanViewScheduleItem(req.auth!, itemId);
   } else {
-    await assertCanManageScheduleItem(req.auth, itemId);
+    await assertCanManageScheduleItem(req.auth!, itemId);
   }
 
   next();
@@ -844,6 +844,10 @@ async function syncPredecessors(
 
   if (predecessors.length === 0) {
     return;
+  }
+
+  if (predecessors.some((predecessor) => predecessor.scheduleItemId === scheduleItemId)) {
+    throw new HttpError(400, "A schedule item cannot be its own predecessor.");
   }
 
   await executor.insert(scheduleItemPredecessors).values(
@@ -1461,8 +1465,14 @@ async function upsertBaselineForJob(jobId: string, userId: string) {
   };
 }
 
-async function hydrateScheduleItem(itemId: string) {
-  const [row] = await db
+async function hydrateScheduleItems(itemIds: string[]) {
+  const uniqueItemIds = Array.from(new Set(itemIds))
+
+  if (uniqueItemIds.length === 0) {
+    return []
+  }
+
+  const rows = await db
     .select({
       id: scheduleItems.id,
       jobId: scheduleItems.jobId,
@@ -1495,17 +1505,15 @@ async function hydrateScheduleItem(itemId: string) {
     .from(scheduleItems)
     .leftJoin(users, eq(scheduleItems.createdBy, users.id))
     .leftJoin(schedulePhases, eq(scheduleItems.schedulePhaseId, schedulePhases.id))
-    .where(and(eq(scheduleItems.id, itemId), isNull(scheduleItems.deletedAt)))
-    .limit(1);
+    .where(and(inArray(scheduleItems.id, uniqueItemIds), isNull(scheduleItems.deletedAt)))
 
-  if (!row) {
-    throw new HttpError(404, "Schedule item not found.");
-  }
+  const rowById = new Map(rows.map((row) => [row.id, row]))
+  const jobIds = Array.from(new Set(rows.map((row) => row.jobId).filter((jobId): jobId is string => !!jobId)))
 
-  const meta = decodeScheduleMeta(row.notes);
-  const [assignees, predecessorRows, noteRows, attachmentRows, todoRows, workdayExceptions] = await Promise.all([
+  const [assigneeRows, predecessorRows, noteRows, attachmentRows, todoRows, workdayExceptionEntries] = await Promise.all([
     db
       .select({
+        scheduleItemId: scheduleItemAssignees.scheduleItemId,
         id: users.id,
         fullName: users.fullName,
         email: users.email,
@@ -1514,10 +1522,11 @@ async function hydrateScheduleItem(itemId: string) {
       })
       .from(scheduleItemAssignees)
       .innerJoin(users, eq(scheduleItemAssignees.userId, users.id))
-      .where(eq(scheduleItemAssignees.scheduleItemId, itemId))
+      .where(inArray(scheduleItemAssignees.scheduleItemId, uniqueItemIds))
       .orderBy(asc(users.fullName)),
     db
       .select({
+        itemId: scheduleItemPredecessors.scheduleItemId,
         scheduleItemId: scheduleItemPredecessors.predecessorId,
         dependencyType: scheduleItemPredecessors.dependencyType,
         lagDays: scheduleItemPredecessors.lagDays,
@@ -1527,9 +1536,10 @@ async function hydrateScheduleItem(itemId: string) {
       })
       .from(scheduleItemPredecessors)
       .innerJoin(scheduleItems, eq(scheduleItemPredecessors.predecessorId, scheduleItems.id))
-      .where(eq(scheduleItemPredecessors.scheduleItemId, itemId)),
+      .where(inArray(scheduleItemPredecessors.scheduleItemId, uniqueItemIds)),
     db
       .select({
+        scheduleItemId: scheduleItemNotes.scheduleItemId,
         id: scheduleItemNotes.id,
         note: scheduleItemNotes.note,
         createdAt: scheduleItemNotes.createdAt,
@@ -1539,10 +1549,11 @@ async function hydrateScheduleItem(itemId: string) {
       })
       .from(scheduleItemNotes)
       .leftJoin(users, eq(scheduleItemNotes.createdBy, users.id))
-      .where(eq(scheduleItemNotes.scheduleItemId, itemId))
+      .where(inArray(scheduleItemNotes.scheduleItemId, uniqueItemIds))
       .orderBy(desc(scheduleItemNotes.createdAt)),
     db
       .select({
+        scheduleItemId: scheduleItemAttachments.scheduleItemId,
         id: scheduleItemAttachments.id,
         fileId: files.id,
         filename: files.filename,
@@ -1554,10 +1565,11 @@ async function hydrateScheduleItem(itemId: string) {
       })
       .from(scheduleItemAttachments)
       .innerJoin(files, eq(scheduleItemAttachments.fileId, files.id))
-      .where(eq(scheduleItemAttachments.scheduleItemId, itemId))
+      .where(inArray(scheduleItemAttachments.scheduleItemId, uniqueItemIds))
       .orderBy(desc(files.createdAt)),
     db
       .select({
+        scheduleItemId: scheduleItemTodos.scheduleItemId,
         id: scheduleItemTodos.id,
         title: scheduleItemTodos.title,
         isComplete: scheduleItemTodos.isComplete,
@@ -1568,103 +1580,192 @@ async function hydrateScheduleItem(itemId: string) {
       })
       .from(scheduleItemTodos)
       .leftJoin(users, eq(scheduleItemTodos.createdBy, users.id))
-      .where(eq(scheduleItemTodos.scheduleItemId, itemId))
+      .where(inArray(scheduleItemTodos.scheduleItemId, uniqueItemIds))
       .orderBy(desc(scheduleItemTodos.createdAt)),
-    row.jobId ? getWorkdayExceptionsForJob(row.jobId) : Promise.resolve([]),
-  ]);
+    Promise.all(jobIds.map(async (jobId) => [jobId, await getWorkdayExceptionsForJob(jobId)] as const)),
+  ])
 
-  const fallbackPredecessors =
-    predecessorRows.length === 0
-      ? meta.predecessors.map((predecessor) => ({
-          scheduleItemId: predecessor.scheduleItemId,
-          dependencyType: predecessor.dependencyType,
-          lagDays: predecessor.lagDays,
-          title: "Unknown task",
-          startDate: row.startDate,
-          endDate: row.endDate,
-        }))
-      : [];
-  const resolvedPredecessorRows = predecessorRows.length > 0 ? predecessorRows : fallbackPredecessors;
-  const predecessorMap = new Map(
-    resolvedPredecessorRows.map((predecessor) => [
-      predecessor.scheduleItemId,
+  const assigneesByItemId = new Map<string, Array<{
+    id: string
+    fullName: string | null
+    email: string
+    role: string
+    avatarUrl: string | null
+  }>>()
+  for (const row of assigneeRows) {
+    const group = assigneesByItemId.get(row.scheduleItemId) ?? []
+    group.push({
+      id: row.id,
+      fullName: row.fullName,
+      email: row.email,
+      role: row.role,
+      avatarUrl: row.avatarUrl,
+    })
+    assigneesByItemId.set(row.scheduleItemId, group)
+  }
+
+  const predecessorsByItemId = new Map<string, typeof predecessorRows>()
+  for (const row of predecessorRows) {
+    const group = predecessorsByItemId.get(row.itemId) ?? []
+    group.push(row)
+    predecessorsByItemId.set(row.itemId, group)
+  }
+
+  const notesByItemId = new Map<string, typeof noteRows>()
+  for (const row of noteRows) {
+    const group = notesByItemId.get(row.scheduleItemId) ?? []
+    group.push(row)
+    notesByItemId.set(row.scheduleItemId, group)
+  }
+
+  const attachmentsByItemId = new Map<string, typeof attachmentRows>()
+  for (const row of attachmentRows) {
+    const group = attachmentsByItemId.get(row.scheduleItemId) ?? []
+    group.push(row)
+    attachmentsByItemId.set(row.scheduleItemId, group)
+  }
+
+  const todosByItemId = new Map<string, typeof todoRows>()
+  for (const row of todoRows) {
+    const group = todosByItemId.get(row.scheduleItemId) ?? []
+    group.push(row)
+    todosByItemId.set(row.scheduleItemId, group)
+  }
+
+  const workdayExceptionsByJobId = new Map(workdayExceptionEntries)
+
+  return uniqueItemIds.flatMap((itemId) => {
+    const row = rowById.get(itemId)
+
+    if (!row) {
+      return []
+    }
+
+    const meta = decodeScheduleMeta(row.notes)
+    const predecessorRowsForItem = predecessorsByItemId.get(itemId) ?? []
+    const fallbackPredecessors =
+      predecessorRowsForItem.length === 0
+        ? meta.predecessors.map((predecessor) => ({
+            itemId,
+            scheduleItemId: predecessor.scheduleItemId,
+            dependencyType: predecessor.dependencyType,
+            lagDays: predecessor.lagDays,
+            title: "Unknown task",
+            startDate: row.startDate,
+            endDate: row.endDate,
+          }))
+        : []
+    const resolvedPredecessorRows = predecessorRowsForItem.length > 0 ? predecessorRowsForItem : fallbackPredecessors
+    const predecessorMap = new Map(
+      resolvedPredecessorRows.map((predecessor) => [
+        predecessor.scheduleItemId,
+        {
+          title: predecessor.title ?? "Unknown task",
+          startDate: predecessor.startDate,
+          endDate: predecessor.endDate,
+        },
+      ]),
+    )
+    const predecessorEntries = resolvedPredecessorRows.map((predecessor) => ({
+      scheduleItemId: predecessor.scheduleItemId,
+      dependencyType: predecessor.dependencyType as z.infer<typeof predecessorSchema>["dependencyType"],
+      lagDays: predecessor.lagDays,
+      title: predecessor.title ?? "Unknown task",
+    }))
+    const workdayExceptions = row.jobId ? workdayExceptionsByJobId.get(row.jobId) ?? [] : []
+    const conflictReasons = predecessorConflictReasons(
       {
-        title: predecessor.title ?? "Unknown task",
-        startDate: predecessor.startDate,
-        endDate: predecessor.endDate,
-      },
-    ]),
-  );
-  const predecessorEntries = resolvedPredecessorRows.map((predecessor) => ({
-    scheduleItemId: predecessor.scheduleItemId,
-    dependencyType: predecessor.dependencyType as z.infer<typeof predecessorSchema>["dependencyType"],
-    lagDays: predecessor.lagDays,
-    title: predecessor.title ?? "Unknown task",
-  }));
-  const conflictReasons = predecessorConflictReasons(
-    {
-      title: row.title,
-      startDate: row.startDate,
-      endDate: row.endDate,
-      predecessors: predecessorEntries,
-    },
-    predecessorMap,
-    workdayExceptions,
-  );
-
-  const notesStream = [
-    ...(meta.notes
-      ? [
-          {
-            id: `legacy-${itemId}`,
-            note: meta.notes,
-            createdAt: row.createdAt,
-            authorId: row.createdBy,
-            authorName: row.createdByName,
-            authorAvatarUrl: row.createdByAvatarUrl,
-            isLegacy: true,
-          },
-        ]
-      : []),
-    ...noteRows.map((note) => ({
-      ...note,
-      isLegacy: false,
-    })),
-  ];
-
-  return {
-    item: {
-      ...row,
-      displayColor: row.displayColor ?? "#2563eb",
-      notes: meta.notes,
-      tags: meta.tags,
-      notifyUserIds: [],
-      phaseId: row.schedulePhaseId,
-      phaseName: row.phaseName,
-      phaseColor: row.phaseColor,
-      assigneeIds: assignees.map((assignee) => assignee.id),
-      assignees,
-      predecessors: predecessorEntries,
-      notesStream,
-      noteCount: notesStream.length,
-      attachments: attachmentRows.map((attachment) => ({
-        ...attachment,
-        icon: fileIconKind(attachment.mimeType),
-      })),
-      relatedTodos: todoRows,
-      relatedTodoCount: todoRows.length,
-      status: deriveScheduleStatus({
+        title: row.title,
         startDate: row.startDate,
         endDate: row.endDate,
-        progress: row.progress,
-        isComplete: row.isComplete,
-      }),
-      hasConflict: conflictReasons.length > 0,
-      conflictReasons,
-    },
-  };
+        predecessors: predecessorEntries,
+      },
+      predecessorMap,
+      workdayExceptions,
+    )
+
+    const notesStream = [
+      ...(meta.notes
+        ? [
+            {
+              id: "legacy-" + row.id,
+              note: meta.notes,
+              createdAt: row.createdAt,
+              authorId: row.createdBy,
+              authorName: row.createdByName,
+              authorAvatarUrl: row.createdByAvatarUrl,
+              isLegacy: true,
+            },
+          ]
+        : []),
+      ...(notesByItemId.get(itemId) ?? []).map((note) => ({
+        ...note,
+        isLegacy: false,
+      })),
+    ]
+
+    const assignees = assigneesByItemId.get(itemId) ?? []
+    const attachments = (attachmentsByItemId.get(itemId) ?? []).map((attachment) => ({
+      id: attachment.id,
+      fileId: attachment.fileId,
+      filename: attachment.filename,
+      originalName: attachment.originalName,
+      fileUrl: attachment.fileUrl,
+      fileSize: attachment.fileSize,
+      mimeType: attachment.mimeType,
+      createdAt: attachment.createdAt,
+      icon: fileIconKind(attachment.mimeType),
+    }))
+    const relatedTodos = (todosByItemId.get(itemId) ?? []).map((todo) => ({
+      id: todo.id,
+      title: todo.title,
+      isComplete: todo.isComplete,
+      createdAt: todo.createdAt,
+      updatedAt: todo.updatedAt,
+      createdBy: todo.createdBy,
+      createdByName: todo.createdByName,
+    }))
+
+    return [{
+      item: {
+        ...row,
+        displayColor: row.displayColor ?? "#2563eb",
+        notes: meta.notes,
+        tags: meta.tags,
+        notifyUserIds: [],
+        phaseId: row.schedulePhaseId,
+        phaseName: row.phaseName,
+        phaseColor: row.phaseColor,
+        assigneeIds: assignees.map((assignee) => assignee.id),
+        assignees,
+        predecessors: predecessorEntries,
+        notesStream,
+        noteCount: notesStream.length,
+        attachments,
+        relatedTodos,
+        relatedTodoCount: relatedTodos.length,
+        status: deriveScheduleStatus({
+          startDate: row.startDate,
+          endDate: row.endDate,
+          progress: row.progress,
+          isComplete: row.isComplete,
+        }),
+        hasConflict: conflictReasons.length > 0,
+        conflictReasons,
+      },
+    }]
+  })
 }
 
+async function hydrateScheduleItem(itemId: string) {
+  const [hydrated] = await hydrateScheduleItems([itemId])
+
+  if (!hydrated) {
+    throw new HttpError(404, "Schedule item not found.")
+  }
+
+  return hydrated
+}
 router.get(
   "/jobs/:jobId/schedule/settings",
   asyncHandler(async (req, res) => {
@@ -1776,7 +1877,7 @@ router.post(
       entityType: "schedule_phase",
       entityId: phase.id,
       action: "created",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId,
       description: `Created schedule phase ${phase.name} for ${job.title}`,
     });
@@ -1950,7 +2051,7 @@ router.post(
       entityType: "schedule_tag",
       entityId: tag.id,
       action: "created",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId,
       description: `Created schedule tag ${tag.name} for ${job.title}`,
     });
@@ -2065,7 +2166,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
-    const response = await upsertBaselineForJob(jobId, req.auth.userId);
+    const response = await upsertBaselineForJob(jobId, req.auth!.userId);
     res.status(response.statusCode).json({ baseline: response.baseline });
   }),
 );
@@ -2075,7 +2176,7 @@ router.put(
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
-    const response = await upsertBaselineForJob(jobId, req.auth.userId);
+    const response = await upsertBaselineForJob(jobId, req.auth!.userId);
     res.status(response.statusCode).json({ baseline: response.baseline });
   }),
 );
@@ -2185,7 +2286,7 @@ router.post(
         appliesToAllJobs: body.data.appliesToAllJobs,
         jobIds: body.data.appliesToAllJobs ? [] : body.data.jobIds,
         notes: body.data.notes,
-        createdBy: req.auth.userId,
+        createdBy: req.auth!.userId,
       })
       .returning();
 
@@ -2276,7 +2377,7 @@ router.post(
       .from(scheduleItems)
       .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
       .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.title));
-    const hydrated = await Promise.all(rows.map((row) => hydrateScheduleItem(row.id)));
+    const hydrated = await hydrateScheduleItems(rows.map((row) => row.id));
     const conflicts = hydrated.map((entry) => entry.item).filter((item) => item.hasConflict);
 
     res.json({
@@ -2329,7 +2430,7 @@ router.post(
         entityType: "schedule_notification",
         entityId: crypto.randomUUID(),
         action: "queued",
-        userId: req.auth.userId,
+        userId: req.auth!.userId,
         jobId,
         description: `Queued schedule notifications for ${recipients.size} assigned user${recipients.size === 1 ? "" : "s"} across ${itemsById.size} item${itemsById.size === 1 ? "" : "s"}`,
         extra: {
@@ -2368,12 +2469,12 @@ router.get(
         desc(scheduleItems.createdAt),
       );
 
-    const hydrated = await Promise.all(rows.map((row) => hydrateScheduleItem(row.id)));
+    const hydrated = await hydrateScheduleItems(rows.map((row) => row.id));
 
     res.json({
       items: hydrated
         .map((entry) => entry.item)
-        .filter((item) => canViewHydratedScheduleItem(req.auth, item)),
+        .filter((item) => canViewHydratedScheduleItem(req.auth!, item)),
     });
   }),
 );
@@ -2444,7 +2545,7 @@ router.post(
             tags: normalizeUniqueStrings(normalizedPayload.tags),
             predecessors: normalizedPayload.predecessors,
           }),
-          createdBy: req.auth.userId,
+          createdBy: req.auth!.userId,
         })
         .returning();
 
@@ -2470,7 +2571,7 @@ router.post(
         entityType: "schedule_item_notification",
         entityId: item.id,
         action: "queued",
-        userId: req.auth.userId,
+        userId: req.auth!.userId,
         jobId,
         description: `Queued schedule item notifications for ${item.title}`,
         extra: {
@@ -2486,7 +2587,7 @@ router.post(
       entityType: "schedule_item",
       entityId: item.id,
       action: "created",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId,
       description: `Created schedule item ${item.title}`,
       extra: {
@@ -2552,7 +2653,7 @@ router.put(
     );
 
     await db.transaction(async (tx) => {
-      await ensureTagSettings(existing.jobId!, normalizedPayload.tags, tx);
+      await ensureTagSettings(existing.jobId, normalizedPayload.tags, tx);
 
       await tx
         .update(scheduleItems)
@@ -2602,7 +2703,7 @@ router.put(
         entityType: "schedule_item_notification",
         entityId: itemId,
         action: "queued",
-        userId: req.auth.userId,
+        userId: req.auth!.userId,
         jobId: existing.jobId,
         description: `Queued schedule item notifications for ${body.data.title}`,
         extra: {
@@ -2620,7 +2721,7 @@ router.put(
       entityType: "schedule_item",
       entityId: itemId,
       action: markedComplete ? "completed" : "updated",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: existing.jobId,
       description: markedComplete
         ? `Marked schedule item ${body.data.title} complete`
@@ -2657,7 +2758,7 @@ router.post(
       .values({
         scheduleItemId: itemId,
         title: body.data.title ?? item.title,
-        createdBy: req.auth.userId,
+        createdBy: req.auth!.userId,
       })
       .returning({
         id: scheduleItemTodos.id,
@@ -2673,14 +2774,14 @@ router.post(
         fullName: users.fullName,
       })
       .from(users)
-      .where(eq(users.id, req.auth.userId))
+      .where(eq(users.id, req.auth!.userId))
       .limit(1);
 
     await writeActivity({
       entityType: "schedule_item_todo",
       entityId: todo.id,
       action: "created",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: item.jobId,
       description: `Created linked to-do ${todo.title} for schedule item ${item.title}`,
       extra: {
@@ -2791,7 +2892,7 @@ router.delete(
       entityType: "schedule_item_todo",
       entityId: todo.id,
       action: "deleted",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: item.jobId,
       description: `Deleted linked to-do ${todo.title} from schedule item ${item.title}`,
       extra: {
@@ -2825,7 +2926,7 @@ router.post(
       .values({
         scheduleItemId: itemId,
         note: body.data.note,
-        createdBy: req.auth.userId,
+        createdBy: req.auth!.userId,
       })
       .returning({
         id: scheduleItemNotes.id,
@@ -2840,14 +2941,14 @@ router.post(
         avatarUrl: users.avatarUrl,
       })
       .from(users)
-      .where(eq(users.id, req.auth.userId))
+      .where(eq(users.id, req.auth!.userId))
       .limit(1);
 
     await writeActivity({
       entityType: "schedule_item_note",
       entityId: note.id,
       action: "created",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: item.jobId,
       description: `Added a note to schedule item ${item.title}`,
       extra: {
@@ -2915,7 +3016,7 @@ router.post(
               fileUrl: uploadPath.fileUrl,
               fileSize: uploadedFile.size,
               mimeType: uploadedFile.mimetype,
-              uploadedBy: req.auth.userId,
+              uploadedBy: req.auth!.userId,
             })
             .returning();
 
@@ -2943,7 +3044,7 @@ router.post(
         entityType: "schedule_item_attachment",
         entityId: attachment.id,
         action: "uploaded",
-        userId: req.auth.userId,
+        userId: req.auth!.userId,
         jobId: item.jobId,
         description: `Uploaded ${file.originalName} to schedule item ${item.title}`,
         extra: {
@@ -3022,7 +3123,7 @@ router.post(
             fileUrl: uploadPath.fileUrl,
             fileSize: Buffer.byteLength(documentContents, "utf8"),
             mimeType: "text/plain",
-            uploadedBy: req.auth.userId,
+            uploadedBy: req.auth!.userId,
           })
           .returning();
 
@@ -3050,7 +3151,7 @@ router.post(
       entityType: "schedule_item_attachment",
       entityId: attachment.id,
       action: "created",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: item.jobId,
       description: `Created ${file.originalName} for schedule item ${item.title}`,
       extra: {
@@ -3133,7 +3234,7 @@ router.delete(
       entityType: "schedule_item_attachment",
       entityId: attachmentId,
       action: "deleted",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: item.jobId,
       description: `Deleted ${attachment.originalName} from schedule item ${item.title}`,
       extra: {
@@ -3169,7 +3270,7 @@ router.delete(
       entityType: "schedule_item",
       entityId: itemId,
       action: "deleted",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: existing.jobId,
       description: `Deleted schedule item ${existing.title}`,
       extra: {

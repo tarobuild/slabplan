@@ -7,7 +7,7 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal"
 const rawPort = process.env.PORT ?? "21903"
 const port = Number(rawPort)
 
-if (Number.isNaN(port) || port <= 0) {
+if (Number.isNaN(port) || !Number.isInteger(port) || port <= 0 || port > 65535) {
   throw new Error(`Invalid PORT value: "${rawPort}"`)
 }
 
@@ -80,12 +80,12 @@ function buildChunkName(id: string) {
     : "vendor"
 }
 
-export default defineConfig({
+export default defineConfig(async ({ mode }) => ({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
-    runtimeErrorOverlay(),
+    ...(mode === "development" ? [runtimeErrorOverlay()] : []),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
@@ -139,4 +139,4 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
   },
-});
+}))

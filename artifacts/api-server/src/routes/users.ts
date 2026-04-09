@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, count, eq, isNull, ne } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
@@ -13,6 +13,16 @@ const router: IRouter = Router();
 const updateProfileSchema = z.object({
   fullName: z.string().trim().min(2).max(255).optional(),
   email: z.string().trim().email().max(255).optional(),
+  currentPassword: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value) => {
+      if (typeof value !== "string") {
+        return null;
+      }
+
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }),
   phone: z
     .union([z.string(), z.null(), z.undefined()])
     .transform((value) => {
@@ -40,6 +50,11 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(8, "New password must be at least 8 characters."),
 });
 
+const userListQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional().default(50),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
 async function findActiveUserById(id: string) {
   const [user] = await db
     .select()
@@ -53,15 +68,34 @@ async function findActiveUserById(id: string) {
 router.get(
   "/",
   requireManagerOrAbove,
-  asyncHandler(async (_req, res) => {
-    const rows = await db
-      .select()
-      .from(users)
-      .where(isNull(users.deletedAt))
-      .orderBy(asc(users.fullName));
+  asyncHandler(async (req, res) => {
+    const query = userListQuerySchema.safeParse(req.query);
+
+    if (!query.success) {
+      throw new HttpError(400, "Invalid user list query.", query.error.flatten());
+    }
+
+    const [[totalRow], rows] = await Promise.all([
+      db
+        .select({ total: count() })
+        .from(users)
+        .where(isNull(users.deletedAt)),
+      db
+        .select()
+        .from(users)
+        .where(isNull(users.deletedAt))
+        .orderBy(asc(users.fullName))
+        .limit(query.data.limit)
+        .offset(query.data.offset),
+    ]);
 
     res.json({
       users: rows.map(toPublicUser),
+      pagination: {
+        limit: query.data.limit,
+        offset: query.data.offset,
+        totalItems: Number(totalRow?.total ?? 0),
+      },
     });
   }),
 );
@@ -69,7 +103,7 @@ router.get(
 router.get(
   "/me",
   asyncHandler(async (req, res) => {
-    const user = await findActiveUserById(req.auth.userId);
+    const user = await findActiveUserById(req.auth!.userId);
 
     if (!user) {
       throw new HttpError(404, "User not found.");
@@ -82,7 +116,7 @@ router.get(
 router.put(
   "/me",
   asyncHandler(async (req, res) => {
-    const user = await findActiveUserById(req.auth.userId);
+    const user = await findActiveUserById(req.auth!.userId);
 
     if (!user) {
       throw new HttpError(404, "User not found.");
@@ -97,6 +131,16 @@ router.put(
     const email = body.data.email?.toLowerCase() ?? user.email;
 
     if (email !== user.email) {
+      if (!body.data.currentPassword) {
+        throw new HttpError(400, "Current password is required to change your email.");
+      }
+
+      const isValid = await bcrypt.compare(body.data.currentPassword, user.passwordHash);
+
+      if (!isValid) {
+        throw new HttpError(400, "Current password is incorrect.");
+      }
+
       const [existing] = await db
         .select({ id: users.id })
         .from(users)
@@ -127,7 +171,7 @@ router.put(
 router.post(
   "/me/password",
   asyncHandler(async (req, res) => {
-    const user = await findActiveUserById(req.auth.userId);
+    const user = await findActiveUserById(req.auth!.userId);
 
     if (!user) {
       throw new HttpError(404, "User not found.");

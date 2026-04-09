@@ -17,8 +17,8 @@ router.get(
   "/dashboard/stats",
   asyncHandler(async (req, res) => {
     const [accessibleJobIds, accessibleLeadIds] = await Promise.all([
-      listAccessibleJobIds(req.auth),
-      listAccessibleLeadIds(req.auth),
+      listAccessibleJobIds(req.auth!),
+      listAccessibleLeadIds(req.auth!),
     ]);
 
     if (accessibleJobIds && accessibleJobIds.length === 0) {
@@ -74,7 +74,7 @@ router.get(
           .where(
             and(
               isNull(dailyLogs.deletedAt),
-              eq(dailyLogs.createdBy, req.auth.userId),
+              eq(dailyLogs.createdBy, req.auth!.userId),
               accessibleJobIds ? inArray(dailyLogs.jobId, accessibleJobIds) : undefined,
             ),
           )
@@ -95,7 +95,7 @@ router.get(
 router.get(
   "/dashboard/agenda",
   asyncHandler(async (req, res) => {
-    const accessibleJobIds = await listAccessibleJobIds(req.auth);
+    const accessibleJobIds = await listAccessibleJobIds(req.auth!);
     const today = new Date().toISOString().split("T")[0];
     const in14Days = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
       .toISOString()
@@ -183,7 +183,7 @@ router.get(
 router.get(
   "/dashboard/schedule",
   asyncHandler(async (req, res) => {
-    const accessibleJobIds = await listAccessibleJobIds(req.auth);
+    const accessibleJobIds = await listAccessibleJobIds(req.auth!);
     const startParam = (req.query.start as string) ?? new Date().toISOString().split("T")[0];
     const endParam = (req.query.end as string) ?? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 

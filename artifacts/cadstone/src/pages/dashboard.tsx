@@ -433,7 +433,14 @@ type CalPeriod = "month" | "week"
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user)
   const navigate = useNavigate()
-  const today = useMemo(() => new Date(), [])
+  const [today, setToday] = useState(() => new Date())
+
+  useEffect(() => {
+    const now = new Date()
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    const timer = window.setTimeout(() => setToday(new Date()), nextMidnight.getTime() - now.getTime())
+    return () => window.clearTimeout(timer)
+  }, [today])
 
   const [activity, setActivity] = useState<ActivityEntry[]>([])
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])

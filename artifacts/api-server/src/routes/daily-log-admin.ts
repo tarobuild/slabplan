@@ -350,7 +350,7 @@ router.get(
     }
 
     const conditions = [
-      eq(dailyLogs.createdBy, req.auth.userId),
+      eq(dailyLogs.createdBy, req.auth!.userId),
       isNull(dailyLogs.deletedAt),
     ];
 
@@ -361,34 +361,45 @@ router.get(
       );
     }
 
-    const rows = await db
-      .select({
-        id: dailyLogs.id,
-        jobId: dailyLogs.jobId,
-        jobTitle: jobs.title,
-        logDate: dailyLogs.logDate,
-        title: dailyLogs.title,
-        notes: dailyLogs.notes,
-        weatherData: dailyLogs.weatherData,
-        includeWeather: dailyLogs.includeWeather,
-        includeWeatherNotes: dailyLogs.includeWeatherNotes,
-        weatherNotes: dailyLogs.weatherNotes,
-        customFieldValues: dailyLogs.customFieldValues,
-        shareInternalUsers: dailyLogs.shareInternalUsers,
-        shareSubsVendors: dailyLogs.shareSubsVendors,
-        shareClient: dailyLogs.shareClient,
-        isPrivate: dailyLogs.isPrivate,
-        createdBy: dailyLogs.createdBy,
-        createdAt: dailyLogs.createdAt,
-        updatedAt: dailyLogs.updatedAt,
-        publishedAt: dailyLogs.publishedAt,
-        createdByName: users.fullName,
-      })
-      .from(dailyLogs)
-      .leftJoin(users, eq(dailyLogs.createdBy, users.id))
-      .leftJoin(jobs, eq(dailyLogs.jobId, jobs.id))
-      .where(and(...conditions))
-      .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt));
+    const offset = (query.data.page - 1) * query.data.pageSize;
+
+    const [[totalRow], rows] = await Promise.all([
+      db
+        .select({ total: count() })
+        .from(dailyLogs)
+        .leftJoin(jobs, eq(dailyLogs.jobId, jobs.id))
+        .where(and(...conditions)),
+      db
+        .select({
+          id: dailyLogs.id,
+          jobId: dailyLogs.jobId,
+          jobTitle: jobs.title,
+          logDate: dailyLogs.logDate,
+          title: dailyLogs.title,
+          notes: dailyLogs.notes,
+          weatherData: dailyLogs.weatherData,
+          includeWeather: dailyLogs.includeWeather,
+          includeWeatherNotes: dailyLogs.includeWeatherNotes,
+          weatherNotes: dailyLogs.weatherNotes,
+          customFieldValues: dailyLogs.customFieldValues,
+          shareInternalUsers: dailyLogs.shareInternalUsers,
+          shareSubsVendors: dailyLogs.shareSubsVendors,
+          shareClient: dailyLogs.shareClient,
+          isPrivate: dailyLogs.isPrivate,
+          createdBy: dailyLogs.createdBy,
+          createdAt: dailyLogs.createdAt,
+          updatedAt: dailyLogs.updatedAt,
+          publishedAt: dailyLogs.publishedAt,
+          createdByName: users.fullName,
+        })
+        .from(dailyLogs)
+        .leftJoin(users, eq(dailyLogs.createdBy, users.id))
+        .leftJoin(jobs, eq(dailyLogs.jobId, jobs.id))
+        .where(and(...conditions))
+        .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt))
+        .limit(query.data.pageSize)
+        .offset(offset),
+    ]);
 
     const logIds = rows.map((row) => row.id);
     const [tagRows, attachmentRows, likeRows, commentRows, todoRows] = await Promise.all([
@@ -470,7 +481,7 @@ router.get(
 
     for (const row of likeRows) {
       likesCountByLogId.set(row.dailyLogId, (likesCountByLogId.get(row.dailyLogId) ?? 0) + 1);
-      if (row.userId === req.auth.userId) {
+      if (row.userId === req.auth!.userId) {
         likedByCurrentUser.add(row.dailyLogId);
       }
     }
@@ -484,9 +495,8 @@ router.get(
       completedTodosCountByLogId.set(row.dailyLogId, Number(row.complete ?? 0));
     }
 
-    const totalItems = rows.length;
-    const offset = (query.data.page - 1) * query.data.pageSize;
-    const paged = rows.slice(offset, offset + query.data.pageSize).map((row) => ({
+    const totalItems = Number(totalRow?.total ?? 0);
+    const paged = rows.map((row) => ({
       ...row,
       tags: normalizeUniqueStrings(tagsByLogId.get(row.id) ?? []),
       customFieldValues:

@@ -299,7 +299,7 @@ async function ensureLeadAttachmentFolder(leadId: string) {
   const [created] = await db
     .insert(folders)
     .values({
-      jobId: null,
+      jobId: sql<string>`null`,
       title,
       mediaType: "document",
       viewingPermissions: { internal: true },
@@ -507,7 +507,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const query =
       typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
-    const accessibleLeadIds = await listAccessibleLeadIds(req.auth);
+    const accessibleLeadIds = await listAccessibleLeadIds(req.auth!);
 
     if (accessibleLeadIds && accessibleLeadIds.length === 0) {
       res.json({ contacts: [] });
@@ -559,7 +559,7 @@ router.get(
       throw new HttpError(400, "Invalid leads query.", query.error.flatten());
     }
 
-    const accessibleLeadIds = await listAccessibleLeadIds(req.auth);
+    const accessibleLeadIds = await listAccessibleLeadIds(req.auth!);
     const { page, pageSize } = query.data;
 
     if (accessibleLeadIds && accessibleLeadIds.length === 0) {
@@ -707,7 +707,7 @@ router.post(
 
     const [lead] = await db
       .insert(leads)
-      .values(toLeadValues(body.data, req.auth.userId))
+      .values(toLeadValues(body.data, req.auth!.userId))
       .returning();
 
     await Promise.all([
@@ -720,8 +720,8 @@ router.post(
       entityType: "lead",
       entityId: lead.id,
       action: "created",
-      userId: req.auth.userId,
-      jobId: lead.id,
+      userId: req.auth!.userId,
+      jobId: null,
       description: `Created lead ${lead.title}`,
       extra: {
         leadId: lead.id,
@@ -736,7 +736,7 @@ router.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
-    await assertCanAccessLead(req.auth, leadId);
+    await assertCanAccessLead(req.auth!, leadId);
     res.json(await hydrateLead(leadId));
   }),
 );
@@ -751,13 +751,13 @@ router.put(
     }
 
     const leadId = getParam(req.params.id, "lead id");
-    await assertCanManageLead(req.auth, leadId);
+    await assertCanManageLead(req.auth!, leadId);
     const existing = await getLeadOrThrow(leadId);
 
     await db
       .update(leads)
       .set({
-        ...toLeadValues(body.data, existing.createdBy ?? req.auth.userId),
+        ...toLeadValues(body.data, existing.createdBy ?? req.auth!.userId),
         updatedAt: new Date(),
       })
       .where(eq(leads.id, leadId));
@@ -772,8 +772,8 @@ router.put(
       entityType: "lead",
       entityId: leadId,
       action: "updated",
-      userId: req.auth.userId,
-      jobId: leadId,
+      userId: req.auth!.userId,
+      jobId: null,
       description: `Updated lead ${body.data.title}`,
       extra: {
         leadId,
@@ -797,7 +797,7 @@ router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
-    await assertCanManageLead(req.auth, leadId);
+    await assertCanManageLead(req.auth!, leadId);
     const lead = await getLeadOrThrow(leadId);
     const deletedAt = new Date();
 
@@ -821,8 +821,8 @@ router.delete(
       entityType: "lead",
       entityId: leadId,
       action: "deleted",
-      userId: req.auth.userId,
-      jobId: leadId,
+      userId: req.auth!.userId,
+      jobId: null,
       description: `Deleted lead ${lead.title}`,
       extra: {
         leadId,
@@ -843,7 +843,7 @@ router.post(
     }
 
     const leadId = getParam(req.params.id, "lead id");
-    await assertCanManageLead(req.auth, leadId);
+    await assertCanManageLead(req.auth!, leadId);
     await getLeadOrThrow(leadId);
 
     let values;
@@ -887,8 +887,8 @@ router.post(
       entityType: "lead",
       entityId: leadId,
       action: "contact_added",
-      userId: req.auth.userId,
-      jobId: leadId,
+      userId: req.auth!.userId,
+      jobId: null,
       description: `Added contact ${contact.displayName}`,
       extra: {
         leadId,
@@ -911,7 +911,7 @@ router.put(
 
     const leadId = getParam(req.params.id, "lead id");
     const contactId = getParam(req.params.contactId, "contact id");
-    await assertCanManageLead(req.auth, leadId);
+    await assertCanManageLead(req.auth!, leadId);
     await getLeadOrThrow(leadId);
 
     const existing = await getContactOrThrow(contactId);
@@ -943,8 +943,8 @@ router.put(
       entityType: "lead",
       entityId: leadId,
       action: "contact_updated",
-      userId: req.auth.userId,
-      jobId: leadId,
+      userId: req.auth!.userId,
+      jobId: null,
       description: `Updated contact ${contact.displayName}`,
       extra: {
         leadId,
@@ -961,7 +961,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     const contactId = getParam(req.params.contactId, "contact id");
-    await assertCanManageLead(req.auth, leadId);
+    await assertCanManageLead(req.auth!, leadId);
     await getLeadOrThrow(leadId);
 
     const contact = await getContactOrThrow(contactId);
@@ -982,8 +982,8 @@ router.delete(
       entityType: "lead",
       entityId: leadId,
       action: "contact_deleted",
-      userId: req.auth.userId,
-      jobId: leadId,
+      userId: req.auth!.userId,
+      jobId: null,
       description: `Deleted contact ${contact.displayName}`,
       extra: {
         leadId,
@@ -1000,7 +1000,7 @@ router.post(
   upload.array("files", 20),
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
-    await assertCanManageLead(req.auth, leadId);
+    await assertCanManageLead(req.auth!, leadId);
     await getLeadOrThrow(leadId);
 
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
@@ -1033,7 +1033,7 @@ router.post(
           fileUrl,
           fileSize: uploadedFile.size,
           mimeType: uploadedFile.mimetype,
-          uploadedBy: req.auth.userId,
+          uploadedBy: req.auth!.userId,
         })
         .returning();
 
@@ -1059,8 +1059,8 @@ router.post(
         entityType: "lead",
         entityId: leadId,
         action: "attachment_uploaded",
-        userId: req.auth.userId,
-        jobId: leadId,
+        userId: req.auth!.userId,
+        jobId: null,
         description: `Uploaded attachment ${file.originalName}`,
         extra: {
           leadId,
@@ -1079,7 +1079,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     const attachmentId = getParam(req.params.attachmentId, "attachment id");
-    await assertCanManageLead(req.auth, leadId);
+    await assertCanManageLead(req.auth!, leadId);
     await getLeadOrThrow(leadId);
 
     const [attachment] = await db
@@ -1106,8 +1106,8 @@ router.delete(
       entityType: "lead",
       entityId: leadId,
       action: "attachment_deleted",
-      userId: req.auth.userId,
-      jobId: leadId,
+      userId: req.auth!.userId,
+      jobId: null,
       description: `Deleted attachment ${attachment.originalName}`,
       extra: {
         leadId,
@@ -1124,7 +1124,7 @@ router.post(
   "/:id/convert-to-job",
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
-    await assertCanManageLead(req.auth, leadId);
+    await assertCanManageLead(req.auth!, leadId);
     const lead = await getLeadOrThrow(leadId);
 
     const [job] = await db
@@ -1140,7 +1140,7 @@ router.post(
         jobType: lead.projectType,
         projectedStart: lead.projectedSalesDate,
         workDays: ["mon", "tue", "wed", "thu", "fri"],
-        createdBy: req.auth.userId,
+        createdBy: req.auth!.userId,
       })
       .returning();
 
@@ -1167,7 +1167,7 @@ router.post(
       entityType: "lead",
       entityId: leadId,
       action: "converted_to_job",
-      userId: req.auth.userId,
+      userId: req.auth!.userId,
       jobId: job.id,
       description: `Converted lead ${lead.title} to job ${job.title}`,
       extra: {
@@ -1196,15 +1196,15 @@ router.post(
     }
 
     const leadId = getParam(req.params.id, "lead id");
-    await assertCanManageLead(req.auth, leadId);
+    await assertCanManageLead(req.auth!, leadId);
     await getLeadOrThrow(leadId);
 
     await writeActivity({
       entityType: "lead",
       entityId: leadId,
       action: "activity_logged",
-      userId: req.auth.userId,
-      jobId: leadId,
+      userId: req.auth!.userId,
+      jobId: null,
       description: body.data.notes
         ? `${body.data.title}: ${body.data.notes}`
         : body.data.title,

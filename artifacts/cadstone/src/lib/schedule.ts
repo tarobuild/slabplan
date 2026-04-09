@@ -231,18 +231,14 @@ export const SCHEDULE_DEFAULT_VIEW_OPTIONS: Array<{
 export const DEFAULT_SCHEDULE_COLOR = "#2563eb"
 
 export function dateKey(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(date.getUTCDate()).padStart(2, "0")
   return `${year}-${month}-${day}`
 }
 
 export function todayStr() {
   return dateKey(new Date())
-}
-
-export function isoDate(date: Date) {
-  return dateKey(date)
 }
 
 export function fmtDate(value: string | null | undefined) {
@@ -316,11 +312,11 @@ function isWeekend(date: Date) {
 }
 
 function normalizeExceptionMatchDate(date: Date, sameEveryYear: boolean) {
-  if (!sameEveryYear) {
-    return date.toISOString().slice(5, 10)
+  if (sameEveryYear) {
+    return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`
   }
 
-  return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`
+  return date.toISOString().slice(0, 10)
 }
 
 function dateMatchesException(date: Date, exception: ScheduleWorkdayException) {

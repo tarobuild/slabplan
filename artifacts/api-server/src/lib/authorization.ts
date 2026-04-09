@@ -18,7 +18,7 @@ import { HttpError } from "./http";
 
 export type AppRole = "admin" | "project_manager" | "crew_member";
 
-export type AuthContext = Express.Request["auth"];
+export type AuthContext = NonNullable<Express.Request["auth"]>;
 
 type FolderAccessRecord = {
   id: string;

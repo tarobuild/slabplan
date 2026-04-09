@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "ZWSpv4aNy1yVsuD--wEJ1"
+uri = "file://artifacts/cadstone/public/cad-logo-new.png"
+type = "image"
+title = "cadstone-logo-icon"

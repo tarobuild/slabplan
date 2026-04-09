@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,16 +29,40 @@ const SEED_USERS = [
   },
 ];
 
-async function main() {
-  const connectionString =
-    process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+const TARGETS = {
+  local: {
+    label: "LOCAL",
+    envVar: "DATABASE_URL",
+  },
+  production: {
+    label: "PRODUCTION",
+    envVar: "SUPABASE_DATABASE_URL",
+  },
+};
+
+function parseDbFlag(argv) {
+  for (const arg of argv) {
+    if (arg === "--db=local") return "local";
+    if (arg === "--db=production") return "production";
+    if (arg.startsWith("--db=")) {
+      throw new Error(
+        `Unknown --db value: ${arg}. Expected --db=local or --db=production.`,
+      );
+    }
+  }
+  return null;
+}
+
+async function seedTarget(target) {
+  const connectionString = process.env[target.envVar];
 
   if (!connectionString) {
     throw new Error(
-      "SUPABASE_DATABASE_URL (or DATABASE_URL) must be set to seed users.",
+      `${target.envVar} must be set to seed the ${target.label} database.`,
     );
   }
 
+  console.log(`\n[${target.label}] Seeding users (${target.envVar})…`);
   const client = new Client({ connectionString });
   await client.connect();
 
@@ -49,22 +74,42 @@ async function main() {
       );
 
       if (existing.rowCount && existing.rowCount > 0) {
-        console.log(`User already exists: ${user.email}`);
+        console.log(`[${target.label}] User already exists: ${user.email}`);
         continue;
       }
 
       const passwordHash = await bcrypt.hash(user.password, SALT_ROUNDS);
 
+      // The `users.id` column has no database-level default (the schema uses
+      // Drizzle's `$defaultFn` which only runs inside the ORM), so generate a
+      // UUID here for raw SQL inserts.
       await client.query(
-        `INSERT INTO users (email, password_hash, full_name, role)
-         VALUES ($1, $2, $3, $4)`,
-        [user.email, passwordHash, user.fullName, user.role],
+        `INSERT INTO users (id, email, password_hash, full_name, role)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          crypto.randomUUID(),
+          user.email,
+          passwordHash,
+          user.fullName,
+          user.role,
+        ],
       );
 
-      console.log(`Created user: ${user.email} (${user.role})`);
+      console.log(
+        `[${target.label}] Created user: ${user.email} (${user.role})`,
+      );
     }
   } finally {
     await client.end();
+  }
+}
+
+async function main() {
+  const selected = parseDbFlag(process.argv.slice(2));
+  const targetKeys = selected ? [selected] : ["local", "production"];
+
+  for (const key of targetKeys) {
+    await seedTarget(TARGETS[key]);
   }
 }
 

@@ -1,4 +1,3 @@
-import { useEffect } from "react"
 import { useBeforeUnload } from "react-router-dom"
 
 export function useUnsavedChangesGuard(

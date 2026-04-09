@@ -3,6 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import pinoHttp from "pino-http";
 import { db } from "@workspace/db";
@@ -16,6 +17,8 @@ import { logger } from "./lib/logger";
 import { HttpError } from "./lib/http";
 import { readBearerToken } from "./middleware/require-auth";
 import { ensureUploadRoot, resolveAbsolutePathFromFileUrl } from "./lib/storage";
+
+const isProd = process.env.NODE_ENV === "production";
 
 const app: Express = express();
 
@@ -59,7 +62,9 @@ app.use(
         connectSrc: ["'self'", "wss:", "ws:"],
         workerSrc: ["'self'", "blob:"],
         objectSrc: ["'none'"],
-        frameAncestors: ["'none'"],
+        frameAncestors: isProd
+          ? ["'none'"]
+          : ["'self'", "https://*.replit.dev", "https://*.kirk.replit.dev", "https://*.repl.co"],
       },
     },
   }),
@@ -147,9 +152,12 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
 
 app.use("/api", router);
 
-if (process.env.NODE_ENV === "production") {
-  // Frontend is copied into dist/public alongside the compiled server at build time
-  const clientDist = path.join(__dirname, "public");
+// Serve the compiled React frontend whenever the build output is present.
+// In production the build is always present. In the dev workflow the build
+// step also copies the frontend before starting the server, so this works
+// for the workspace preview too.
+const clientDist = path.join(__dirname, "public");
+if (existsSync(path.join(clientDist, "index.html"))) {
   app.use(express.static(clientDist));
   app.get(/.*/, (_req, res) => {
     res.sendFile(path.join(clientDist, "index.html"));

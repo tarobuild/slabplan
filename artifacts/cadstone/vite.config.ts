@@ -116,6 +116,8 @@ export default defineConfig(async ({ mode }) => ({
         manualChunks(id) {
           return buildChunkName(id)
         },
+        chunkFileNames: "assets/[hash].js",
+        assetFileNames: "assets/[hash][extname]",
       },
     },
   },

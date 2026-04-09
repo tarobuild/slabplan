@@ -1,0 +1,174 @@
+
+Cruz Hernandez <cruzhernandez90210@gmail.com>
+5:38 PM (0 minutes ago)
+to me
+
+1. Replit Feedback Widget Still in HTML — MEDIUM
+
+                                                                                                                                                                                                            
+
+  The HTML still contains:
+
+  <script src="https://replit-cdn.com/feedback-widget/widget.global.js"
+
+    data-deployment-id="875655b7-350e-4627-ba7a-597e8f823754"          
+
+    data-repl-id="cc18f63a-dbfa-4897-b723-1f269c1f301a">                                                                                                                                                    
+
+  </script>                                             
+
+  This tells anyone that your app is built/deployed via Replit and leaks your specific deployment ID and repl ID. An attacker could use these to search for your Replit project, identify collaborators, or
+
+  attempt Replit-specific attack vectors.                                                                                                                                                                  
+
+                                                                                                                                                                                                            
+
+  Fix: Remove this script tag from your index.html unless you actively need it for feedback collection.
+
+                                                                                                                                                                                                            
+
+  ---                                                                                                                                                                                                       
+
+  2. No Content-Security-Policy Header — MEDIUM                                                                                                                                                             
+
+                                               
+
+  Helmet was added but CSP was not configured. Without CSP, if an XSS vulnerability is ever found, there's no browser-level defense to limit what injected scripts can do.                                  
+
+                                                                                                                                                                                                            
+
+  Fix: Add a CSP to your helmet config:
+
+  helmet({
+
+    contentSecurityPolicy: {
+
+      directives: {                                                                                                                                                                                         
+
+        defaultSrc: ["'self'"],
+
+        scriptSrc: ["'self'"],                                                                                                                                                                              
+
+        styleSrc: ["'self'", "https://fonts.googleapis.com"],
+
+        fontSrc: ["https://fonts.gstatic.com"],              
+
+        imgSrc: ["'self'", "data:", "https://storage.googleapis.com"],
+
+        connectSrc: ["'self'"],                                                                                                                                                                             
+
+      }                        
+
+    }
+
+  })                                                                                                                                                                                                        
+
+                                                                                                                                                                                                            
+
+  ---
+
+  3. Static HTML Doesn't Get Security Headers — MEDIUM
+
+                                                                                                                                                                                                            
+
+  The security headers (helmet) only apply to API routes (/api/*). The homepage HTML itself is served directly by Google Frontend without:
+
+  - Content-Security-Policy                                                                                                                                                                                 
+
+  - X-Content-Type-Options 
+
+  - X-Frame-Options       
+
+  - Referrer-Policy                                                                                                                                                                                         
+
+                                                                                                                                                                                                            
+
+  This means the main page can still be iframed (clickjacking) and doesn't benefit from CSP protection.
+
+                                                                                                                                                                                                            
+
+  Fix: Configure your hosting layer (Replit/Google Cloud Run) to add headers to static file responses, or serve the HTML through Express as well.                                                           
+
+  
+
+  ---
+
+  4. Duplicate Strict-Transport-Security Headers — LOW                                                                                                                                                      
+
+                                                                                                                                                                                                            
+
+  Two HSTS headers are sent with different max-age values:
+
+  strict-transport-security: max-age=63072000; includeSubDomains
+
+  strict-transport-security: max-age=31536000; includeSubDomains                                                                                                                                            
+
+  One is from the hosting layer, one from helmet. Browsers typically use the last one, but this is ambiguous.                                                                                               
+
+                                                                                                             
+
+  Fix: Disable HSTS in helmet since the hosting platform already sets it:                                                                                                                                   
+
+  helmet({ hsts: false })                                                                                                                                                                                   
+
+  
+
+  ---
+
+  5. server: Google Frontend and x-cloud-trace-context Still Exposed — LOW                                                                                                                                  
+
+                                                                                                                                                                                                            
+
+  These are set by the hosting infrastructure and can't be removed at the Express level. They confirm you're on Google Cloud.
+
+                                                                                                                                                                                                            
+
+  Fix: If this matters to you, put a CDN/reverse proxy like Cloudflare in front, which would strip these and replace with its own headers. This also hides your origin IP (34.111.179.208). Note: your      
+
+  domain is registered on GoDaddy but the site actually runs on Replit's Google Cloud infrastructure — a Cloudflare proxy would mask all of that.                                                           
+
+   
+
+  ---                                                                                                                                                                                                       
+
+  6. Full Technology Stack Still Fingerprinted via JS Filenames — LOW                                                                                                                                       
+
+                                                                                                                                                                                                            
+
+  All vendor chunk filenames still reveal every library in use (React, Zustand, Radix, Tailwind, Axios, Sonner, jsPDF, react-dropzone, etc.) and the full API route surface is readable in the main bundle.
+
+  This is inherent to how Vite builds SPAs and is low severity since the API is properly authenticated.                                                                                                     
+
+   
+
+  Fix (optional, low priority): Configure Vite to use generic chunk names:                                                                                                                                  
+
+  // vite.config.js
+
+  build: {                                                                                                                                                                                                  
+
+    rollupOptions: {
+
+      output: {                                                                                                                                                                                             
+
+        chunkFileNames: 'assets/chunk-[hash].js'                                                                                                                                                            
+
+      }
+
+    }
+
+  }
+
+                                                                                                                                                                                                            
+
+  ---
+
+  7. User Roles Visible in JS — LOW
+
+                                                                                                                                                                                                            
+
+  The role strings admin, project_manager, crew_member are readable in the bundle. This is minor since role enforcement should be server-side.
+
+                                                                                                                                                                                                            
+
+  Fix: No action needed as long as role checks are enforced on the backend, not just the frontend.                                                                                                          

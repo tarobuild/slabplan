@@ -1,0 +1,52 @@
+#22 - Platform Enhancements: Roles, Folders & Resources
+What & Why
+Six tightly-coupled features that complete the two-tier access model and standardize job structure for the Cadstone team:
+
+10 template folders on job creation — Every new job auto-populates the standard folder set (01. PLANS through 10. PICTURES) so all jobs have a consistent file structure from day one.
+Resources tab — A global, job-independent area for SOPs, company-wide documents, and reference files. Admins can upload/manage; all users (including non-admins assigned to jobs) can view (read-only).
+Inline "Add new client" — In the Create Job form's client dropdown, a quick-create option lets the admin add a brand-new client without leaving the dialog.
+Remove job delete button — The trash-can/delete action is removed from the Jobs list UI entirely. The backend DELETE route remains (admin-only) but the frontend should no longer expose it.
+Worker assignment on jobs — Admins can assign crew members and project managers to a job both at creation time (in the Create Job dialog) and later (on the Job Summary page). The backend's access-control system already uses projectManagerId; this adds a job_assignees join table for additional workers (crew_members), extends the listAccessibleJobIds function to include crew members assigned through this table, and adds API endpoints to manage assignments.
+Crew-member photo note requirement — When a crew_member uploads a photo to the PICTURES folder, they must supply a free-text note describing the area/work. The upload is rejected (backend 400) and blocked (frontend validation) if the note is empty. Admins and project managers are not required to add a note. The files table gets a nullable note column (text). The photo upload UI shows a "Note (required)" field for crew members.
+Recent activity actor name — The Recent Activity sidebar on the dashboard already has userName in the API response but it is not rendered. Show "by [name]" beneath each activity description.
+Done looks like
+Creating a new job immediately shows 10 numbered folders (01. PLANS, 02. TAKE OFFS & PRICING, 03. ESTIMATES, 04. CONTRACT, 05. PRELIM NOTICE, 06. COI's, 07. INVOICES & WAIVERS, 08. CHANGE ORDERS, 09. MATERIALS & EXPENSES, 10. PICTURES) plus the existing Global Documents/Global Videos folders. Admins can rename and delete any of the 10 (they are NOT locked).
+A "Resources" nav item appears in the top nav between Jobs and Files. Clicking it opens a file-browser–style page at /resources with folder creation and file upload for admins; all logged-in users can browse and download.
+The Create Job dialog client dropdown has an "Add new client…" option at the bottom that opens an inline mini-form (company name required) to create the client and auto-select it.
+No trash-can icon or Delete button appears on the Jobs list page.
+The Create Job dialog includes a multi-select "Assign workers" field listing all users with project_manager or crew_member roles. Job Summary page has an "Assigned Workers" card where the admin can add or remove workers.
+A crew_member who tries to upload a photo without a note sees a validation error and the upload is blocked. The note is saved with the file and visible in the file's detail view.
+Each activity entry in the Recent Activity sidebar shows "by [Full Name]" (or "by You" for the current user's own actions) next to the time-ago label.
+Out of scope
+Role changes / user management (admin promoting a crew_member to project_manager) — that is a separate settings task.
+Rich text or structured notes for photos (free text only).
+Resources tab for non-admin roles having upload access.
+Public/external sharing of resources.
+Tasks
+DB migration — Add note (text, nullable) column to files table. Add job_assignees table (id uuid PK, job_id FK → jobs, user_id FK → users, created_at timestamp). Run via executeSql (direct SQL, not drizzle-kit push). Update Drizzle schema (lib/db/src/schema/index.ts) and re-export from lib/db/src/index.ts to match.
+
+10 template folders + Resources backend — Replace ensureSystemFolders in file-manager.ts to also seed the 10 named folders (01. PLANS … 10. PICTURES) on every job. These 10 folders are NOT marked isGlobal, so admins can rename/delete them. Add a new concept of "resource folders" — folders with jobId = NULL (requires making jobId nullable in schema and DB, or a separate resource_folders table). Implement GET /api/resources/folders, POST /api/resources/folders, GET /api/resources/folders/:id/files, POST /api/resources/folders/:id/upload, DELETE /api/resources/files/:id. All non-admin users get read-only access (list + download); only admins can create folders or upload. The assertCanViewFolder / assertCanUploadToFolder auth helpers need to handle null-jobId resource folders.
+
+Job assignees backend — Add API endpoints GET /api/jobs/:id/assignees (list users assigned to the job), POST /api/jobs/:id/assignees (add a user, admin only), DELETE /api/jobs/:id/assignees/:userId (remove, admin only). Extend listAccessibleJobIds in authorization.ts so crew_member role also gains access to jobs via job_assignees rows. Expose an assignees array in findJobById. Accept an optional assigneeIds array in the job creation payload and bulk-insert job_assignees rows after creating the job.
+
+Photo note enforcement backend — Add note to the file upload Zod schema (optional string). In the file upload route, if the folder's mediaType === 'photo' and req.auth.role === 'crew_member', reject with HTTP 400 if note is absent or empty. Save the note value to files.note on insert.
+
+Frontend — Create Job dialog enhancements — Add inline "Add new client" option to the client dropdown (renders a small inline form or popover). Add a multi-select "Assign Workers" field (fetches GET /api/users filtered to non-admin roles). Pass assigneeIds in the job creation payload. Remove the trash/delete button and the associated confirmation dialog.
+
+Frontend — Job Summary assigned workers — Add an "Assigned Workers" card to the Job Summary page. Show avatar list with names. Admins see an "Add / Remove" button that opens a multi-select popover fetching from GET /api/jobs/:id/assignees and GET /api/users.
+
+Frontend — Resources tab & page — Add a "Resources" nav link to TopNav (desktop + mobile drawer). Create resources.tsx page at /resources. Reuse the existing folder/file-browser UI patterns for listing resource folders and their files. Admins see upload and folder-creation controls; non-admins see a read-only view (download only, no upload/create buttons).
+
+Frontend — Photo upload note + recent activity actor — When a crew_member opens the file upload dialog for a PICTURES folder, show a required "Note" text field. Validate before submit. Display the saved note in the file list/detail if present. In dashboard.tsx, render entry.userName as "by [name]" (or "by You") next to the time-ago label in the Recent Activity list.
+
+Relevant files
+lib/db/src/schema/index.ts
+artifacts/api-server/src/lib/file-manager.ts:165-185
+artifacts/api-server/src/lib/authorization.ts:109-169
+artifacts/api-server/src/routes/jobs.ts:283-320
+artifacts/api-server/src/routes/files.ts
+artifacts/api-server/src/routes/index.ts
+artifacts/cadstone/src/components/layout/TopNav.tsx
+artifacts/cadstone/src/pages/jobs.tsx
+artifacts/cadstone/src/pages/job-summary.tsx
+artifacts/cadstone/src/pages/dashboard.tsx:650-680

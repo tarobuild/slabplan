@@ -1,0 +1,194 @@
+Build succeeds. Here's a summary of all changes made:                               
+                                                                                      
+  Part 1 - Tab reorder & default route:                                               
+  - job-detail.tsx: Reordered TABS to put "Daily Logs" first                          
+  - App.tsx: Changed index redirect from schedule to daily-logs                       
+                                                                                      
+  Part 2 - Most recent logs first:                                                    
+  - job-daily-logs.tsx: Added .sort() to filterLogs() — descending by logDate, then by
+   createdAt                                                                          
+                                                                  
+  Part 3 - Activity feed redesign:                                                    
+  - Added helper functions: avatarColorForName(), formatFeedDate()
+  (Today/Yesterday/date), formatFeedTime(), formatLogDateShort(), groupLogsByDate()   
+  - Added AttachmentThumbnail component — fetches images as authenticated blobs and
+  renders inline thumbnails (150px, object-cover, rounded), video placeholders with   
+  icon, and file placeholders                                                         
+  - Added ActivityFeedItem component — avatar circle on left, header with user
+  name/timestamp, "added a new Daily Log" action text, log date subheading, notes in  
+  blockquote style (border-l-4 border-slate-200 bg-slate-50), image grid (3 per row), 
+  stats footer                                                                       
+  - Replaced the card-based list with date-grouped activity feed, with bold date      
+  headers and subtle separators between entries                                 
+  - Existing detail view, comments, edit/create dialogs, filters, settings, search,   
+  and pagination all preserved
+                                                                                      
+✻ Crunched for 5m 5s                                              
+                                                                                      
+❯ Please go review your work and double check it for any bugs, thorough audit         
+                                                                              
+● Let me read through all the changed code carefully.                                 
+                                                                             
+  Read 1 file (ctrl+o to expand)                                                      
+                                                                                      
+● I've found several issues. Let me fix them:
+                                                                                      
+  Bug 1: formatFeedDate uses local timezone for "today/yesterday" but UTC-based       
+  toISOString() for comparison. If the user is in a timezone behind UTC,              
+  toISOString().slice(0,10) could return tomorrow's date. The existing codebase uses  
+  todayString() which has the same pattern, but let me align it properly.             
+                                                                                      
+  Bug 2: AttachmentThumbnail cleanup has a subtle race condition. The .finally(() =>  
+  setLoading(false)) runs even after unmount when revoked = true. This is a
+  setState-on-unmounted-component issue.                                              
+                                                                  
+  Bug 3: AttachmentThumbnail for images does a double-fetch on click — it already has 
+  the blob URL for the thumbnail but handleClick fetches the blob again. For images,
+  it should reuse the existing blob URL.                                              
+                                                                  
+  Bug 4: groupLogsByDate preserves Map insertion order which mirrors the              
+  already-sorted array, but the group order itself isn't explicitly guaranteed. Since
+  pagedLogs comes from a pagination slice of already-sorted data, the groups should   
+  maintain order — but this is fragile.                           
+
+  Bug 5: Pagination interacts oddly with date grouping. A page boundary could split a 
+  date group, showing the same date header on two pages. This is minor UX but worth
+  noting — not a code bug per se.                                                     
+                                                                  
+  Let me fix bugs 2 and 3:                                                            
+   
+● Update(artifacts/cadstone/src/pages/job-daily-logs.tsx)                             
+  ⎿  Added 13 lines, removed 5 lines                                                  
+      872                         
+      873    useEffect(() => {                                                        
+      874      if (!isImage || !attachment.fileUrl) return                            
+      875 -    let revoked = false                                             
+      875 +    let cancelled = false                                                  
+      876      setLoading(true)                                   
+      877      api                                                                    
+      878        .get<Blob>(attachment.fileUrl, { responseType: "blob" })
+      879        .then((res) => {
+      880 -        if (!revoked) {                                             
+      880 +        if (!cancelled) {                                           
+      881            setBlobUrl(URL.createObjectURL(res.data))
+      882          }
+      883        })
+      884        .catch(() => {})
+      885 -      .finally(() => setLoading(false))                             
+      885 +      .finally(() => {                                              
+      886 +        if (!cancelled) setLoading(false)                           
+      887 +      })                                                            
+      888  
+      889      return () => {
+      888 -      revoked = true                                                
+      890 +      cancelled = true                                              
+      891        setBlobUrl((prev) => {
+      892          if (prev) URL.revokeObjectURL(prev)
+      893          return null
+     ...
+      896    }, [attachment.fileUrl, isImage])
+      897  
+      898    const handleClick = async () => {
+      899 +    // For images we already have a blob URL from the thumbnail fetc
+          +h — reuse it                                                        
+      900 +    if (isImage && blobUrl) {                                       
+      901 +      window.open(blobUrl, "_blank")                                
+      902 +      return                                                        
+      903 +    }                                                               
+      904 +                                                                    
+      905      const url = attachment.fileUrl || (attachment.fileId ? `/files/$
+           {attachment.fileId}/download` : null)
+      906      if (!url) return
+      907      try {
+      908        const res = await api.get<Blob>(url, { responseType: "blob" })
+      909        const objUrl = URL.createObjectURL(res.data)
+      902 -      if (isImage || isVideo) {                                     
+      910 +      if (isVideo) {                                                
+      911          const w = window.open(objUrl, "_blank")
+      912          if (w) setTimeout(() => URL.revokeObjectURL(objUrl), 60_000)
+      913          else URL.revokeObjectURL(objUrl)
+
+● Now let me fix the timezone issue in formatFeedDate. The existing todayString() uses
+   toISOString() which is UTC. I should use local date parts to match user's          
+  perception of "today":
+
+● Update(artifacts/cadstone/src/pages/job-daily-logs.tsx)                             
+  ⎿  Added 4 lines, removed 5 lines                                                   
+      811                                                                             
+      812  function formatFeedDate(dateStr: string) {                                 
+      813    const logDate = new Date(`${dateStr}T12:00:00`)                          
+      814 -  const today = new Date()                                          
+      815 -  const todayStr = today.toISOString().slice(0, 10)                        
+      816 -  const yesterday = new Date(today)                                 
+      817 -  yesterday.setDate(yesterday.getDate() - 1)                               
+      818 -  const yesterdayStr = yesterday.toISOString().slice(0, 10)         
+      814 +  const now = new Date()                                            
+      815 +  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1
+          +).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`      
+      816 +  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.
+          +getDate() - 1)                                                      
+      817 +  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterda
+          +y.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).pa
+          +dStart(2, "0")}`                                                    
+      818  
+      819    if (dateStr === todayStr) return "Today"
+      820    if (dateStr === yesterdayStr) return "Yesterday"
+
+● Now let me also check the App.tsx and job-detail.tsx edits:
+                                                                                      
+  Read 2 files (ctrl+o to expand)    
+                                                                                      
+● Those look correct. Let me also check for one more issue — the mimeType on          
+  attachments can be null, and I'm calling .startsWith() on it via optional chaining  
+  in the filter, but that should be fine since ?.startsWith() returns undefined which 
+  is falsy. Let me also verify there's no issue with normalizeWeatherData and
+  normalizeCustomFieldValues being called before they're used in ActivityFeedItem:    
+                                                                                      
+  Searched for 1 pattern (ctrl+o to expand)                                           
+                                                                                      
+● Both are defined at lines 393 and 484, before the ActivityFeedItem component at
+  ~962. Good — no hoisting issue since these are function declarations used inside    
+  component functions.                                                                
+         
+  Now let me do a final build:                                                        
+                                                                                      
+● Bash(pnpm --filter @workspace/cadstone run build 2>&1)                              
+  ⎿  > @workspace/cadstone@0.0.0 build /home/runner/workspace/artifacts/cadstone      
+     > vite build --config vite.config.ts                                             
+     … +38 lines (ctrl+o to expand) 
+  ⎿  (timeout 2m)                                                                     
+                                  
+● Build passes cleanly. Here's the audit summary:                                     
+                                                                                      
+  Bugs found and fixed:                                                               
+                                                                                      
+  1. setState after unmount in AttachmentThumbnail — The .finally(() =>               
+  setLoading(false)) would fire even after the component unmounted. Fixed by guarding 
+  with the cancelled flag.                                                            
+  2. Double blob fetch for images on click — handleClick was re-fetching the blob from
+   the API even for images that already had a blobUrl from the thumbnail load. Fixed  
+  to reuse the existing blob URL for images, saving a network request.                
+  3. Timezone mismatch in formatFeedDate — Was using toISOString().slice(0,10) which  
+  returns UTC dates. If a user is in e.g. UTC-8 at 11pm, "today" would compute as     
+  tomorrow. Fixed to use local date components (getFullYear/getMonth/getDate).
+                                                                                      
+  Issues noted but not bugs:                                      
+  - Pagination can split a date group across two pages (same date header appears on
+  both). This is cosmetic and acceptable given the existing pagination model.         
+  - groupLogsByDate relies on Map insertion order matching the already-sorted input —
+  this is correct per JS spec (Maps preserve insertion order) and the input is        
+  pre-sorted by filterLogs.                                                           
+   
+✻ Worked for 1m 50s                                                                   
+                                                                                      
+❯ there should be no issues if they turly are issues                                  
+                                                     
+● You're right — neither is actually a problem:                                       
+                                                                                  
+  1. Pagination + date groups: Each page independently groups its logs by date via    
+  groupLogsByDate(pagedLogs). If a date spans two pages, the header simply appears on 
+  both — standard pagination behavior, not a bug.                                     
+  2. Map insertion order: JS Maps guarantee insertion order per spec, and the input is
+   pre-sorted. No issue.                                                              
+                                                                                      
+  Both are working as expected. Nothing else to fix.  

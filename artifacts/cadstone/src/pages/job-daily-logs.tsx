@@ -28,6 +28,8 @@ import {
   Smile,
   Sun,
   Users,
+  Video,
+  FolderOpen,
   X,
 } from "lucide-react"
 import { api } from "@/lib/api"
@@ -703,14 +705,20 @@ function formatCustomFieldValue(value: CustomFieldScalar) {
 }
 
 function filterLogs(logs: DailyLogListItem[], filters: FilterValues) {
-  return logs.filter((log) => {
-    if (filters.standardFilter === "published" && log.status !== "published") return false
-    if (filters.standardFilter === "draft" && log.status !== "draft") return false
-    if (filters.standardFilter === "with_attachments" && log.attachmentCount < 1) return false
-    if (filters.standardFilter === "weather_included" && !log.includeWeather) return false
-    if (filters.tags.length > 0 && !filters.tags.every((tag) => log.tags.includes(tag))) return false
-    return true
-  })
+  return logs
+    .filter((log) => {
+      if (filters.standardFilter === "published" && log.status !== "published") return false
+      if (filters.standardFilter === "draft" && log.status !== "draft") return false
+      if (filters.standardFilter === "with_attachments" && log.attachmentCount < 1) return false
+      if (filters.standardFilter === "weather_included" && !log.includeWeather) return false
+      if (filters.tags.length > 0 && !filters.tags.every((tag) => log.tags.includes(tag))) return false
+      return true
+    })
+    .sort((a, b) => {
+      const dateCompare = b.logDate.localeCompare(a.logDate)
+      if (dateCompare !== 0) return dateCompare
+      return b.createdAt.localeCompare(a.createdAt)
+    })
 }
 
 function activeFilterCount(filters: FilterValues) {
@@ -775,6 +783,350 @@ function EmptyState({
           {actionLabel}
         </Button>
       ) : null}
+    </div>
+  )
+}
+
+// ── Activity Feed helpers ──────────────────────────────────────────────
+
+const AVATAR_COLORS = [
+  "bg-orange-500",
+  "bg-blue-500",
+  "bg-emerald-500",
+  "bg-violet-500",
+  "bg-rose-500",
+  "bg-amber-500",
+  "bg-cyan-500",
+  "bg-pink-500",
+]
+
+function avatarColorForName(name: string | null | undefined) {
+  if (!name) return AVATAR_COLORS[0]
+  let hash = 0
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
+
+function formatFeedDate(dateStr: string) {
+  const logDate = new Date(`${dateStr}T12:00:00`)
+  const now = new Date()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`
+
+  if (dateStr === todayStr) return "Today"
+  if (dateStr === yesterdayStr) return "Yesterday"
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(logDate)
+}
+
+function formatFeedTime(dateTimeStr: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(dateTimeStr))
+}
+
+function formatLogDateShort(dateStr: string) {
+  const parts = dateStr.split("-")
+  if (parts.length === 3) {
+    return `${parseInt(parts[1], 10)}-${parseInt(parts[2], 10)}-${parts[0]}`
+  }
+  return dateStr
+}
+
+function groupLogsByDate(logs: DailyLogListItem[]) {
+  const groups: Array<{ date: string; label: string; logs: DailyLogListItem[] }> = []
+  const map = new Map<string, DailyLogListItem[]>()
+
+  for (const log of logs) {
+    const key = log.logDate
+    if (!map.has(key)) {
+      map.set(key, [])
+    }
+    map.get(key)!.push(log)
+  }
+
+  for (const [date, dateLogs] of map) {
+    groups.push({ date, label: formatFeedDate(date), logs: dateLogs })
+  }
+
+  return groups
+}
+
+function AttachmentThumbnail({ attachment }: { attachment: DailyLogAttachment }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const mime = attachment.mimeType || ""
+  const isImage = mime.startsWith("image/")
+  const isVideo = mime.startsWith("video/")
+
+  useEffect(() => {
+    if (!isImage || !attachment.fileUrl) return
+    let cancelled = false
+    setLoading(true)
+    api
+      .get<Blob>(attachment.fileUrl, { responseType: "blob" })
+      .then((res) => {
+        if (!cancelled) {
+          setBlobUrl(URL.createObjectURL(res.data))
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      setBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
+    }
+  }, [attachment.fileUrl, isImage])
+
+  const handleClick = async () => {
+    // For images we already have a blob URL from the thumbnail fetch — reuse it
+    if (isImage && blobUrl) {
+      window.open(blobUrl, "_blank")
+      return
+    }
+
+    const url = attachment.fileUrl || (attachment.fileId ? `/files/${attachment.fileId}/download` : null)
+    if (!url) return
+    try {
+      const res = await api.get<Blob>(url, { responseType: "blob" })
+      const objUrl = URL.createObjectURL(res.data)
+      if (isVideo) {
+        const w = window.open(objUrl, "_blank")
+        if (w) setTimeout(() => URL.revokeObjectURL(objUrl), 60_000)
+        else URL.revokeObjectURL(objUrl)
+      } else {
+        const anchor = document.createElement("a")
+        anchor.href = objUrl
+        anchor.download = attachment.originalName || "download"
+        document.body.appendChild(anchor)
+        anchor.click()
+        document.body.removeChild(anchor)
+        URL.revokeObjectURL(objUrl)
+      }
+    } catch {
+      toast.error("Failed to open attachment")
+    }
+  }
+
+  if (isImage) {
+    return (
+      <button type="button" onClick={handleClick} className="group flex flex-col items-stretch">
+        <div className="relative h-[150px] overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+          {loading || !blobUrl ? (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="size-5 animate-spin text-slate-400" />
+            </div>
+          ) : (
+            <img
+              src={blobUrl}
+              alt={attachment.originalName}
+              className="h-full w-full object-cover transition-transform group-hover:scale-105"
+            />
+          )}
+        </div>
+        <div className="mt-1.5 truncate text-xs text-slate-500">{attachment.originalName}</div>
+      </button>
+    )
+  }
+
+  if (isVideo) {
+    return (
+      <button type="button" onClick={handleClick} className="group flex flex-col items-stretch">
+        <div className="flex h-[150px] items-center justify-center rounded-lg border border-slate-200 bg-slate-100">
+          <Video className="size-8 text-slate-400" />
+        </div>
+        <div className="mt-1.5 truncate text-xs text-slate-500">{attachment.originalName}</div>
+      </button>
+    )
+  }
+
+  return (
+    <button type="button" onClick={handleClick} className="group flex flex-col items-stretch">
+      <div className="flex h-[150px] items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
+        <FolderOpen className="size-8 text-slate-400" />
+      </div>
+      <div className="mt-1.5 truncate text-xs text-slate-500">{attachment.originalName}</div>
+    </button>
+  )
+}
+
+function ActivityFeedItem({
+  log,
+  onSelect,
+  onEdit,
+  onPrint,
+}: {
+  log: DailyLogListItem
+  onSelect: (logId: string) => void
+  onEdit: (logId: string) => void
+  onPrint: (logId: string) => void
+}) {
+  const [detail, setDetail] = useState<DailyLogDetail | null>(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
+
+  useEffect(() => {
+    if (log.attachmentCount === 0) return
+    let cancelled = false
+    setLoadingDetail(true)
+    api
+      .get<{ log: DailyLogDetail }>(`/daily-logs/${log.id}`)
+      .then((res) => {
+        if (!cancelled) {
+          setDetail({
+            ...res.data.log,
+            weatherData: normalizeWeatherData(res.data.log.weatherData),
+            customFieldValues: normalizeCustomFieldValues(res.data.log.customFieldValues),
+          })
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoadingDetail(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [log.id, log.attachmentCount])
+
+  const attachments = detail?.attachments || []
+  const imageAttachments = attachments.filter((a) => a.mimeType?.startsWith("image/"))
+  const videoAttachments = attachments.filter((a) => a.mimeType?.startsWith("video/"))
+  const otherAttachments = attachments.filter(
+    (a) => !a.mimeType?.startsWith("image/") && !a.mimeType?.startsWith("video/"),
+  )
+  const colorClass = avatarColorForName(log.createdByName)
+
+  return (
+    <div className="flex gap-4 py-5">
+      {/* Avatar */}
+      <div className="shrink-0">
+        <div
+          className={cn(
+            "flex size-10 items-center justify-center rounded-full text-sm font-semibold text-white",
+            colorClass,
+          )}
+        >
+          {getInitials(log.createdByName)}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="min-w-0 flex-1">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-sm text-slate-500">
+              {log.createdByName || "Unknown"}{" "}
+              <span className="mx-1 text-slate-300">&middot;</span>{" "}
+              {formatFeedTime(log.createdAt)}
+            </div>
+            <button
+              type="button"
+              className="text-sm font-semibold text-slate-900 hover:text-orange-700"
+              onClick={() => onSelect(log.id)}
+            >
+              added a new Daily Log
+            </button>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button variant="ghost" size="sm" className="size-8 p-0" onClick={() => onPrint(log.id)}>
+              <Printer className="size-3.5 text-slate-400" />
+            </Button>
+            <Button variant="ghost" size="sm" className="size-8 p-0" onClick={() => onEdit(log.id)}>
+              <Pencil className="size-3.5 text-slate-400" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Log date subheading */}
+        <div className="mt-3 text-sm font-semibold text-slate-800">
+          {formatLogDateShort(log.logDate)}
+        </div>
+
+        {/* Notes blockquote */}
+        {log.notes ? (
+          <div className="mt-2 rounded border-l-4 border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+            {truncateText(log.notes, 400)}
+          </div>
+        ) : null}
+
+        {/* Image thumbnails */}
+        {loadingDetail && log.attachmentCount > 0 ? (
+          <div className="mt-3 flex items-center gap-2 text-sm text-slate-400">
+            <Loader2 className="size-4 animate-spin" />
+            Loading attachments...
+          </div>
+        ) : null}
+
+        {imageAttachments.length > 0 ? (
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            {imageAttachments.map((att) => (
+              <AttachmentThumbnail key={att.id} attachment={att} />
+            ))}
+          </div>
+        ) : null}
+
+        {/* Video attachments */}
+        {videoAttachments.length > 0 ? (
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            {videoAttachments.map((att) => (
+              <AttachmentThumbnail key={att.id} attachment={att} />
+            ))}
+          </div>
+        ) : null}
+
+        {/* Other file attachments */}
+        {otherAttachments.length > 0 ? (
+          <div className="mt-3 space-y-1.5">
+            {otherAttachments.map((att) => (
+              <AttachmentThumbnail key={att.id} attachment={att} />
+            ))}
+          </div>
+        ) : null}
+
+        {/* Footer stats */}
+        <div className="mt-3 flex items-center gap-4 text-xs text-slate-400">
+          <span className="inline-flex items-center gap-1">
+            <Heart className="size-3.5" />
+            {log.likesCount}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <MessageSquare className="size-3.5" />
+            {log.commentsCount}
+          </span>
+          {log.attachmentCount > 0 ? (
+            <span className="inline-flex items-center gap-1">
+              <Paperclip className="size-3.5" />
+              {log.attachmentCount}
+            </span>
+          ) : null}
+          {log.tags.length > 0 ? (
+            <div className="flex items-center gap-1.5">
+              {log.tags.map((tag) => (
+                <Badge key={tag} variant="outline" className="border-slate-200 bg-slate-50 text-xs text-slate-500">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }
@@ -2723,58 +3075,24 @@ export default function JobDailyLogsPage() {
               />
             ) : (
               <>
-                <div className="space-y-4">
-                  {pagedLogs.map((log) => (
-                    <div key={log.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <button
-                              type="button"
-                              className="min-w-0 text-left"
-                              onClick={() => void loadDetail(log.id)}
-                            >
-                              <div className="truncate text-lg font-semibold text-slate-950 hover:text-orange-700">
-                                {titleForLog(log.logDate, log.title)}
-                              </div>
-                            </button>
-                            <div data-print-hide="true" className="flex items-center gap-1">
-                              <Button variant="ghost" size="sm" onClick={() => void handlePrintDetail(log.id)}>
-                                <Printer className="size-4" />
-                              </Button>
-                              <Button variant="ghost" size="sm" onClick={() => openEditDialog(log.id)}>
-                                <Pencil className="size-4" />
-                              </Button>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 flex flex-wrap items-center gap-3">
-                            <AvatarLabel name={log.createdByName} className="mr-1" />
-                            <Badge variant="outline" className="gap-1 border-slate-200 bg-slate-50 text-slate-700">
-                              <Users className="size-3.5" />
-                              {log.visibilityLabel || "Internal"}
-                            </Badge>
-                          </div>
-
-                          <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-500">
-                            <div className="inline-flex items-center gap-1.5">
-                              <Heart className="size-4" />
-                              {log.likesCount}
-                            </div>
-                            <div className="inline-flex items-center gap-1.5">
-                              <MessageSquare className="size-4" />
-                              {log.commentsCount}
-                            </div>
-                            <div className="inline-flex items-center gap-1.5">
-                              <FileText className="size-4" />
-                              {log.attachmentCount}
-                            </div>
-                          </div>
-
-                          <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600 line-clamp-2">{truncateText(log.notes, 220)}</p>
-                        </div>
-
+                <div className="rounded-3xl border border-slate-200 bg-white px-5 shadow-sm">
+                  {groupLogsByDate(pagedLogs).map((group, groupIndex) => (
+                    <div key={group.date}>
+                      {/* Date section header */}
+                      <div className={cn("border-b border-slate-200 pb-2 pt-5", groupIndex > 0 && "mt-2")}>
+                        <h3 className="text-lg font-bold text-slate-900">{group.label}</h3>
                       </div>
+                      {/* Log entries */}
+                      {group.logs.map((log, logIndex) => (
+                        <div key={log.id} className={cn(logIndex < group.logs.length - 1 && "border-b border-slate-100")}>
+                          <ActivityFeedItem
+                            log={log}
+                            onSelect={(logId) => void loadDetail(logId)}
+                            onEdit={openEditDialog}
+                            onPrint={(logId) => void handlePrintDetail(logId)}
+                          />
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>

@@ -94,4 +94,4 @@ Seed credentials: `cruz.martinez@cadstone.internal` / `Cadstone123!` (also maria
 - ✅ Jobs: Create, view, edit, delete with full form
 - ✅ Leads: Create, view, delete with status badges and revenue tracking
 - ✅ Schedule: Full dialog with 2-column layout (left: title/assignees/sub-tabs, right: dates/time range/color/progress/reminder), start+end time support, multi-day via work days
-- ✅ Daily Logs: Create logs with weather notes, privacy setting, keyword search
+- ✅ Daily Logs: Default tab when opening a job, BuilderTrend-style activity feed (date-grouped, avatars, inline photo thumbnails, blockquote notes), most recent first, create/edit with weather notes, privacy, keyword search

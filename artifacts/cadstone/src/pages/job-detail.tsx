@@ -22,10 +22,10 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const TABS = [
+  { label: "Daily Logs", path: "daily-logs" },
   { label: "Schedule", path: "schedule" },
   { label: "Summary", path: "summary" },
   { label: "Files", path: "files/documents", matchPrefix: "files/" },
-  { label: "Daily Logs", path: "daily-logs" },
 ]
 
 export default function JobDetailPage() {

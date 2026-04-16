@@ -152,7 +152,7 @@ function defaultForm(startDate: string, workdayExceptions: ScheduleWorkdayExcept
     startDate,
     workDays: 1,
     endDate: calculateBusinessEndDate(startDate, 1, workdayExceptions),
-    isHourly: false,
+    isHourly: true,
     startTime: "08:00",
     endTime: "17:00",
     progress: 0,

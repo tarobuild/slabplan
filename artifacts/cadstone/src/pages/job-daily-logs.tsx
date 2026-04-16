@@ -2955,16 +2955,25 @@ export default function JobDailyLogsPage() {
       await api.post(`/daily-logs/${selectedLog.id}/todos`, { title: title.trim() })
 
       if (dueDate && jobId) {
+        const timeMap: Record<string, { start: string; end: string }> = {
+          "First thing in the morning": { start: "07:00", end: "09:00" },
+          "Midday": { start: "11:00", end: "13:00" },
+          "End of day": { start: "15:00", end: "17:00" },
+        }
+        const mapped = timeOfDay ? timeMap[timeOfDay] : undefined
         try {
-          await api.post(`/jobs/${jobId}/schedule-items`, {
+          await api.post(`/jobs/${jobId}/schedule`, {
             title: title.trim(),
             startDate: dueDate,
-            endDate: dueDate,
             workDays: 1,
+            isHourly: !!mapped,
+            startTime: mapped?.start ?? null,
+            endTime: mapped?.end ?? null,
             notes: `Auto-created from daily log to-do${timeOfDay ? ` (${timeOfDay})` : ""}`,
           })
+          toast.success("To-do also added to schedule")
         } catch {
-          // Silently ignore schedule item creation failure
+          toast.error("To-do saved but failed to add to schedule")
         }
       }
 

@@ -54,20 +54,11 @@ type Job = {
 type ClientOption = { id: string; companyName: string }
 
 const JOB_TYPES = [
-  "countertops",
-  "backsplash",
-  "flooring",
-  "shower surrounds",
-  "fireplace / hearth",
-  "outdoor / patio",
-  "wall cladding",
-  "stairs / steps",
-  "window sills",
-  "bar tops",
-  "vanity tops",
-  "tub surrounds",
-  "repair / restoration",
-  "custom",
+  "Kitchen Countertops",
+  "Flooring",
+  "Bathrooms",
+  "Full House Projects",
+  "Custom",
 ]
 const toLabel = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase())
 const WORK_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]

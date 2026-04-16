@@ -55,20 +55,11 @@ const STATUS_COLORS: Record<string, string> = {
   archived: "bg-slate-50 text-slate-400 border-slate-200",
 }
 const JOB_TYPES = [
-  "countertops",
-  "backsplash",
-  "flooring",
-  "shower surrounds",
-  "fireplace / hearth",
-  "outdoor / patio",
-  "wall cladding",
-  "stairs / steps",
-  "window sills",
-  "bar tops",
-  "vanity tops",
-  "tub surrounds",
-  "repair / restoration",
-  "custom",
+  "Kitchen Countertops",
+  "Flooring",
+  "Bathrooms",
+  "Full House Projects",
+  "Custom",
 ]
 const ADD_NEW_CLIENT_VALUE = "__add_new_client__"
 
@@ -125,6 +116,9 @@ export default function JobsPage() {
   const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([])
   const [showCreateClient, setShowCreateClient] = useState(false)
   const [newClientCompanyName, setNewClientCompanyName] = useState("")
+  const [newClientContactName, setNewClientContactName] = useState("")
+  const [newClientEmail, setNewClientEmail] = useState("")
+  const [newClientPhone, setNewClientPhone] = useState("")
   const [creatingClient, setCreatingClient] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
@@ -134,6 +128,9 @@ export default function JobsPage() {
     setForm(emptyForm)
     setShowCreateClient(false)
     setNewClientCompanyName("")
+    setNewClientContactName("")
+    setNewClientEmail("")
+    setNewClientPhone("")
     setStep(1)
     setCreateOpen(true)
   }
@@ -144,6 +141,9 @@ export default function JobsPage() {
       setForm(emptyForm)
       setShowCreateClient(false)
       setNewClientCompanyName("")
+      setNewClientContactName("")
+      setNewClientEmail("")
+      setNewClientPhone("")
       setStep(1)
     }
   }
@@ -254,6 +254,9 @@ export default function JobsPage() {
       setForm(emptyForm)
       setShowCreateClient(false)
       setNewClientCompanyName("")
+      setNewClientContactName("")
+      setNewClientEmail("")
+      setNewClientPhone("")
       setStep(1)
       fetchJobs(search, status, 1)
       setPage(1)
@@ -275,14 +278,37 @@ export default function JobsPage() {
     try {
       const response = await api.post("/clients", {
         companyName: newClientCompanyName.trim(),
+        email: newClientEmail.trim() || null,
+        phone: newClientPhone.trim() || null,
       })
       const nextClient = response.data.client
+
+      if (newClientContactName.trim()) {
+        const nameParts = newClientContactName.trim().split(/\s+/)
+        const firstName = nameParts[0] || null
+        const lastName = nameParts.slice(1).join(" ") || null
+        try {
+          await api.post(`/clients/${nextClient.id}/contacts`, {
+            firstName,
+            lastName,
+            email: newClientEmail.trim() || null,
+            phone: newClientPhone.trim() || null,
+            isPrimary: true,
+          })
+        } catch {
+          // Contact creation is best-effort; client was already created
+        }
+      }
+
       setClientOptions((current) =>
         [...current, nextClient].sort((left, right) => left.companyName.localeCompare(right.companyName)),
       )
       setForm((current) => ({ ...current, clientId: nextClient.id }))
       setShowCreateClient(false)
       setNewClientCompanyName("")
+      setNewClientContactName("")
+      setNewClientEmail("")
+      setNewClientPhone("")
       toast.success("Client created")
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to create client")
@@ -491,20 +517,51 @@ export default function JobsPage() {
                     </SelectContent>
                   </Select>
                   {isAdmin && showCreateClient ? (
-                    <div className="rounded-md border border-[#E5E7EB] bg-slate-50 p-3">
-                      <div className="flex items-end gap-2">
-                        <div className="flex-1 space-y-1.5">
-                          <Label htmlFor="new-client-company">Company Name *</Label>
+                    <div className="rounded-md border border-[#E5E7EB] bg-slate-50 p-3 space-y-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-client-company">Company Name *</Label>
+                        <Input
+                          id="new-client-company"
+                          value={newClientCompanyName}
+                          onChange={(event) => setNewClientCompanyName(event.target.value)}
+                          placeholder="e.g. Acme Builders"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="new-client-contact">Contact Name</Label>
+                        <Input
+                          id="new-client-contact"
+                          value={newClientContactName}
+                          onChange={(event) => setNewClientContactName(event.target.value)}
+                          placeholder="e.g. John Smith"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="new-client-email">Email</Label>
                           <Input
-                            id="new-client-company"
-                            value={newClientCompanyName}
-                            onChange={(event) => setNewClientCompanyName(event.target.value)}
-                            placeholder="e.g. Acme Builders"
+                            id="new-client-email"
+                            type="email"
+                            value={newClientEmail}
+                            onChange={(event) => setNewClientEmail(event.target.value)}
+                            placeholder="john@example.com"
                           />
                         </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="new-client-phone">Phone Number</Label>
+                          <Input
+                            id="new-client-phone"
+                            type="tel"
+                            value={newClientPhone}
+                            onChange={(event) => setNewClientPhone(event.target.value)}
+                            placeholder="(555) 123-4567"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end">
                         <Button type="button" onClick={handleCreateClient} disabled={creatingClient}>
                           {creatingClient && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-                          Add
+                          Add Client
                         </Button>
                       </div>
                     </div>

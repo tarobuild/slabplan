@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
+import { useDropzone } from "react-dropzone"
 import {
   ChevronLeft,
   ChevronRight,
@@ -595,6 +596,29 @@ export default function FileBrowser({
   const canManageFolders = !isReadOnly
   const canUploadFiles = !!currentFolderId && !isReadOnly
 
+  const onDrop = useCallback(
+    (droppedFiles: File[]) => {
+      if (!currentFolderId || isReadOnly) return
+      const validationError = validateSelectedFiles(droppedFiles, mediaType)
+      if (validationError) {
+        setUploadError(validationError)
+        setSelectedUploadFiles([])
+        return
+      }
+      setUploadError(null)
+      setSelectedUploadFiles(droppedFiles)
+      setUploadDialogOpen(true)
+    },
+    [currentFolderId, isReadOnly, mediaType],
+  )
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    noClick: true,
+    noKeyboard: true,
+    disabled: !currentFolderId || isReadOnly,
+  })
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -750,15 +774,24 @@ export default function FileBrowser({
           )}
 
           {currentFolderId && (
-            <>
+            <div
+              {...getRootProps()}
+              className={`relative mt-3 rounded-lg transition-colors ${isDragActive ? "ring-2 ring-blue-400 ring-dashed bg-blue-50/50" : ""}`}
+            >
+              <input {...getInputProps()} />
+              {isDragActive && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-400 bg-blue-50/80">
+                  <span className="text-sm font-medium text-blue-600">Drop files here</span>
+                </div>
+              )}
               {filesLoading ? (
-                <div className="space-y-2 mt-3">
+                <div className="space-y-2">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <Skeleton key={i} className="h-10 w-full rounded" />
                   ))}
                 </div>
               ) : sortedFiles.length > 0 ? (
-                <div className="mt-3">
+                <div>
                   {mediaType === "photo" && viewMode === "grid" ? (
                     <PhotoGrid
                       files={sortedFiles}
@@ -780,7 +813,7 @@ export default function FileBrowser({
                   )}
                 </div>
               ) : sortedFolders.length === 0 ? (
-                <div className="py-16 text-center mt-3">
+                <div className="py-16 text-center">
                   <FolderOpen className="mx-auto mb-3 size-8 text-slate-200" />
                   <p className="text-sm text-slate-400">This folder is empty.</p>
                   {canUploadFiles ? (
@@ -802,7 +835,7 @@ export default function FileBrowser({
                   No files in this folder yet. Upload files to get started.
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {!currentFolderId && sortedFolders.length === 0 && (

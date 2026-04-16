@@ -117,6 +117,7 @@ type ScheduleItemDialogProps = {
   onOpenChange: (open: boolean) => void
   jobId: string
   itemId: string | null
+  initialStartDate?: string | null
   items: ScheduleItemRecord[]
   users: UserOption[]
   settings: ScheduleSettings
@@ -213,6 +214,7 @@ export function ScheduleItemDialog({
   onOpenChange,
   jobId,
   itemId,
+  initialStartDate,
   items,
   users,
   settings,
@@ -288,7 +290,7 @@ export function ScheduleItemDialog({
 
   function resetForNewItem() {
     setItem(null)
-    setValues(defaultForm(today, workdayExceptions))
+    setValues(defaultForm(initialStartDate || today, workdayExceptions))
     setAssigneeQuery("")
     setNotifyAssignees(false)
     setNoteDraft("")
@@ -316,7 +318,7 @@ export function ScheduleItemDialog({
     }
 
     resetForNewItem()
-  }, [itemId, open, today, workdayExceptions])
+  }, [itemId, open, today, initialStartDate, workdayExceptions])
 
   useEffect(() => {
     if (!open) {

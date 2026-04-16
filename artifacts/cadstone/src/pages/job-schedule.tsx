@@ -1567,6 +1567,7 @@ export default function JobSchedulePage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
+  const [dialogInitDate, setDialogInitDate] = useState<string | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -2837,13 +2838,15 @@ export default function JobSchedulePage() {
     }
   }
 
-  function openNewItem() {
+  function openNewItem(startDate?: string) {
     setActiveItemId(null)
+    setDialogInitDate(startDate ?? null)
     setDialogOpen(true)
   }
 
   function openExistingItem(itemId: string) {
     setActiveItemId(itemId)
+    setDialogInitDate(null)
     setDialogOpen(true)
   }
 
@@ -3109,7 +3112,7 @@ export default function JobSchedulePage() {
                       </Badge>
                     ) : null}
                   </Button>
-                  <Button type="button" size="sm" onClick={openNewItem}>
+                  <Button type="button" size="sm" onClick={() => openNewItem()}>
                     <Plus className="size-4" />
                     New Schedule Item
                   </Button>
@@ -3227,7 +3230,7 @@ export default function JobSchedulePage() {
                       actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
                       onAction={
                         activeItems.length === 0
-                          ? openNewItem
+                          ? () => openNewItem()
                           : () => {
                               const reset = buildFilterPreset("all")
                               setAppliedFilters(reset)
@@ -3276,13 +3279,14 @@ export default function JobSchedulePage() {
                                   <div
                                     key={day}
                                     className={cn(
-                                      "border-r border-[#E5E7EB] p-2 last:border-r-0",
+                                      "border-r border-[#E5E7EB] p-2 last:border-r-0 cursor-pointer group/cell relative hover:bg-blue-50/40 transition-colors",
                                       workday.isWorkday
                                         ? isCurrentMonth
                                           ? "bg-white"
                                           : "bg-slate-50/70"
                                         : "bg-amber-50/70",
                                     )}
+                                    onClick={() => openNewItem(day)}
                                   >
                                     <div className="flex items-start justify-between gap-2">
                                       <span
@@ -3303,6 +3307,7 @@ export default function JobSchedulePage() {
                                         </span>
                                       ) : null}
                                     </div>
+                                    <span className="absolute bottom-1 right-1.5 text-slate-300 text-lg leading-none opacity-0 group-hover/cell:opacity-100 transition-opacity">+</span>
                                   </div>
                                 )
                               })}
@@ -3638,7 +3643,7 @@ export default function JobSchedulePage() {
                       actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
                       onAction={
                         activeItems.length === 0
-                          ? openNewItem
+                          ? () => openNewItem()
                           : () => {
                               const reset = buildFilterPreset("all")
                               setAppliedFilters(reset)
@@ -3856,7 +3861,7 @@ export default function JobSchedulePage() {
                       actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
                       onAction={
                         activeItems.length === 0
-                          ? openNewItem
+                          ? () => openNewItem()
                           : () => {
                               const reset = buildFilterPreset("all")
                               setAppliedFilters(reset)
@@ -4888,10 +4893,12 @@ export default function JobSchedulePage() {
 
             if (!nextOpen) {
               setActiveItemId(null)
+              setDialogInitDate(null)
             }
           }}
           jobId={jobId}
           itemId={activeItemId}
+          initialStartDate={dialogInitDate}
           items={activeItems}
           users={users}
           settings={settings}

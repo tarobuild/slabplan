@@ -1,0 +1,52 @@
+ Task 1 — Jobs page & Create Job fixes                           
+                                                                                      
+  - A) Job types simplified in both jobs.tsx and job-summary.tsx to: Kitchen          
+  Countertops, Flooring, Bathrooms, Full House Projects, Custom                       
+  - B) Status filter verified — handleStatus correctly calls fetchJobs(search, v, 1)  
+  which passes status to the API. Already working correctly.                          
+  - C) Expanded "Add new client" form — Now collects Company Name, Contact Name,
+  Email, and Phone Number. Creates the client with email/phone, then creates a primary
+   contact with the contact name. The POST /clients endpoint already accepted email
+  and phone. Contact is created via POST /clients/:id/contacts.                       
+                                                                  
+  Task 2 — Schedule calendar click-to-create                                          
+  
+  - Calendar is already the default view (useState<ViewMode>("calendar"))             
+  - Added initialStartDate prop to ScheduleItemDialog component   
+  - Added dialogInitDate state and openNewItem(startDate?) parameter                  
+  - Month calendar date cells now have onClick that opens the dialog with the clicked 
+  date pre-filled                                                                     
+  - Cells show cursor-pointer and a subtle + indicator on hover                       
+  - Existing schedule items still open for editing (their buttons have                
+  pointer-events-auto above the cell)                                                 
+                                                                                      
+  Task 3 — Daily Logs improvements                                                    
+                                                                  
+  - A) Weather removed from: create/edit dialog weather section, log card weather     
+  badge, detail panel weather sidebar, "Weather included" filter option, and settings
+  dialog weather defaults. No backend/schema changes.                                 
+  - B) File attachment auth fixed — Replaced raw <a href> links with a new
+  DailyLogAttachmentCard component that fetches via api.get(url, { responseType:      
+  "blob" }) then opens/downloads using blob URLs. Images and videos open in new tab,
+  documents trigger download.                                                         
+  - C) To-do date + time-of-day — AddTodoButton now includes a date picker and
+  time-of-day select (First thing in the morning / Midday / End of day). When saved   
+  with a date, automatically calls POST /jobs/:jobId/schedule-items to create a linked
+   schedule item. Failure is silently ignored.                                        
+                                                                  
+  Task 4 — File browser drag-and-drop
+
+  - Added useDropzone hook from react-dropzone (already a dependency)                 
+  - Wrapped file content area with dropzone when a folder is open
+  - Shows blue dashed border overlay with "Drop files here" label on drag             
+  - On drop, validates files and opens the existing upload dialog                     
+  - Upload button continues to work unchanged                                         
+  - Drop zone only active when a folder is open                                       
+                                                                                      
+  Task 5 — Sales nav link                                                             
+                                                                  
+  - Added "Sales" NavLink in TopNav.tsx between Resources and Clients (both desktop   
+  nav and mobile drawer)                                          
+  - Added /sales route in App.tsx mapping to the existing LeadsPage component         
+  - Existing /sales/leads route preserved                                             
+                                            

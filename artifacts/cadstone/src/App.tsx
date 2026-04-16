@@ -94,6 +94,7 @@ function AppRoutes({ ready }: { ready: boolean }) {
             <Route path="schedule" element={<JobSchedulePage />} />
             <Route path="daily-logs" element={<JobDailyLogsPage />} />
           </Route>
+          <Route path="/sales" element={<LeadsPage />} />
           <Route path="/sales/leads" element={<LeadsPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/settings" element={<SettingsPage />} />

@@ -1,0 +1,18 @@
+CAD Stone Networks — New Features Ready to Test
+1. Consistent Job Folder Structure
+Every new job you create now automatically comes with 10 pre-built folders in the correct order:
+PLANS · 02. TAKE OFFS & PRICING · 03. ESTIMATES · 04. CONTRACT · 05. PRELIM NOTICE · 06. COI's · 07. INVOICES & WAIVERS · 08. CHANGE ORDERS · 09. MATERIALS & EXPENSES · 10. PICTURES
+No more setting up folders manually — they're there the moment you create the job. Admins can still rename or delete any of them.
+2. Resources Section
+A new "Resources" tab appears in the top navigation bar. This is a company-wide area for SOPs, templates, and reference documents that aren't tied to any specific job. Admins can upload files and create folders here. Everyone else (crew members, project managers) can browse and download — but not upload.
+3. Add a New Client on the Fly
+When creating a job, if the client isn't in the dropdown yet, you no longer need to leave the form. There's now an "Add new client…" option at the bottom of the client list that lets you create the client right there and auto-selects them.
+4. Job Delete Button Removed
+The trash/delete button is gone from the Jobs list. Jobs can no longer be accidentally deleted from the interface.
+5. Assign Workers to Jobs
+When creating a job, you can now select crew members and project managers to assign to it. On any existing job's summary page, there's an "Assigned Workers" section where admins can add or remove people at any time. Assigned workers automatically get access to that job.
+6. Photo Notes for Crew Members
+When a crew member uploads a photo to the PICTURES folder, they're required to add a short note describing the area or work shown. The upload won't go through without it. The note is saved with the file and visible when viewing it. Admins and project managers are not required to add a note.
+7. Activity Feed Shows Who Did What
+The Recent Activity panel on the dashboard now shows the name of the person who performed each action — so instead of just "File uploaded · 2 hours ago" you'll see "File uploaded by John Reyes · 2 hours ago."
+

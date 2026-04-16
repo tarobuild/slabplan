@@ -1020,33 +1020,6 @@ function SettingsDialog({
 
           <div className="space-y-4 rounded-2xl border border-slate-200 p-4">
             <div className="space-y-1">
-              <div className="text-sm font-semibold text-slate-950">Weather</div>
-              <div className="text-sm text-slate-500">Control whether new daily logs auto-fetch weather and weather notes by default.</div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3">
-                <span className="text-sm text-slate-700">Include Weather Conditions</span>
-                <Checkbox
-                  checked={draft.includeWeatherByDefault}
-                  onCheckedChange={(checked) =>
-                    setDraft((current) => ({ ...current, includeWeatherByDefault: !!checked }))
-                  }
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3">
-                <span className="text-sm text-slate-700">Include Weather Condition Notes</span>
-                <Checkbox
-                  checked={draft.includeWeatherNotesByDefault}
-                  onCheckedChange={(checked) =>
-                    setDraft((current) => ({ ...current, includeWeatherNotesByDefault: !!checked }))
-                  }
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="space-y-4 rounded-2xl border border-slate-200 p-4">
-            <div className="space-y-1">
               <div className="text-sm font-semibold text-slate-950">Default Daily Log Share Settings</div>
               <div className="text-sm text-slate-500">Choose which audiences are shared and notified by default for new logs.</div>
             </div>
@@ -1305,7 +1278,6 @@ function FilterSheet({
                 <SelectItem value="published">Published</SelectItem>
                 <SelectItem value="draft">Drafts</SelectItem>
                 <SelectItem value="with_attachments">With attachments</SelectItem>
-                <SelectItem value="weather_included">Weather included</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -2358,76 +2330,6 @@ function DailyLogDialog({
                   />
                 </div>
 
-                <div className="space-y-4 rounded-2xl border border-slate-200 p-4">
-                  <div className="text-sm font-semibold text-slate-950">Weather</div>
-                  <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3">
-                    <div>
-                      <div className="font-medium text-slate-900">Include Weather Conditions</div>
-                      <div className="text-sm text-slate-500">Auto-populates weather data for the selected job and date.</div>
-                    </div>
-                    <Checkbox
-                      checked={values.includeWeather}
-                      onCheckedChange={(checked) =>
-                        setValues((current) => ({
-                          ...current,
-                          includeWeather: !!checked,
-                          weatherData: checked ? current.weatherData : null,
-                        }))
-                      }
-                    />
-                  </label>
-
-                  {!values.includeWeather ? null : weatherLoading ? (
-                    <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                      <Loader2 className="size-4 animate-spin text-orange-600" />
-                      Fetching weather conditions…
-                    </div>
-                  ) : values.weatherData ? (
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                      <div className="mb-4 flex items-center gap-3 text-amber-800">
-                        {getWeatherIcon(deriveWeatherIcon(values.weatherData), "size-6")}
-                        <div>
-                          <div className="font-semibold">{values.weatherData.condition}</div>
-                          <div className="text-xs text-amber-700">{formatDateTime(values.weatherData.fetchedAt)}</div>
-                        </div>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="text-sm text-slate-700">High: <span className="font-semibold">{values.weatherData.temperatureHigh ?? "—"}°F</span></div>
-                        <div className="text-sm text-slate-700">Low: <span className="font-semibold">{values.weatherData.temperatureLow ?? "—"}°F</span></div>
-                        <div className="text-sm text-slate-700">Wind: <span className="font-semibold">{values.weatherData.windMph ?? "—"} mph</span></div>
-                        <div className="text-sm text-slate-700">Humidity: <span className="font-semibold">{values.weatherData.humidity ?? "—"}%</span></div>
-                        <div className="text-sm text-slate-700 sm:col-span-2">
-                          Total Precip: <span className="font-semibold">{values.weatherData.precipitation ?? 0}"</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                      {weatherMessage || "Weather data is unavailable for this log."}
-                    </div>
-                  )}
-
-                  <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3">
-                    <div>
-                      <div className="font-medium text-slate-900">Include Weather Notes</div>
-                      <div className="text-sm text-slate-500">Capture any manual notes about weather conditions.</div>
-                    </div>
-                    <Checkbox
-                      checked={values.includeWeatherNotes}
-                      onCheckedChange={(checked) =>
-                        setValues((current) => ({ ...current, includeWeatherNotes: !!checked }))
-                      }
-                    />
-                  </label>
-                  {values.includeWeatherNotes ? (
-                    <Textarea
-                      rows={3}
-                      value={values.weatherNotes}
-                      onChange={(event) => setValues((current) => ({ ...current, weatherNotes: event.target.value }))}
-                      placeholder="Weather notes"
-                    />
-                  ) : null}
-                </div>
               </div>
             </div>
 
@@ -2686,10 +2588,25 @@ export default function JobDailyLogsPage() {
     }
   }
 
-  async function handleAddTodo(title: string) {
+  async function handleAddTodo(title: string, dueDate?: string, timeOfDay?: string) {
     if (!selectedLog || !title.trim()) return
     try {
       await api.post(`/daily-logs/${selectedLog.id}/todos`, { title: title.trim() })
+
+      if (dueDate && jobId) {
+        try {
+          await api.post(`/jobs/${jobId}/schedule-items`, {
+            title: title.trim(),
+            startDate: dueDate,
+            endDate: dueDate,
+            workDays: 1,
+            notes: `Auto-created from daily log to-do${timeOfDay ? ` (${timeOfDay})` : ""}`,
+          })
+        } catch {
+          // Silently ignore schedule item creation failure
+        }
+      }
+
       await refreshAll(selectedLog.id)
     } catch (error) {
       toast.error(apiError(error, "Failed to add to-do"))
@@ -2800,7 +2717,7 @@ export default function JobDailyLogsPage() {
             ) : pagedLogs.length === 0 ? (
               <EmptyState
                 title="No daily logs yet"
-                description="Create a daily log to capture site progress, observations, and weather conditions."
+                description="Create a daily log to capture site progress and observations."
                 actionLabel="Daily Log"
                 onAction={openCreateDialog}
               />
@@ -2857,12 +2774,6 @@ export default function JobDailyLogsPage() {
                           <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600 line-clamp-2">{truncateText(log.notes, 220)}</p>
                         </div>
 
-                        <div className="flex shrink-0 items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
-                          {getWeatherIcon(deriveWeatherIcon(log.weatherData), "size-5")}
-                          <div className="text-sm font-medium">
-                            {(log.weatherData?.temperatureHigh ?? "—")}°F↑ {(log.weatherData?.temperatureLow ?? "—")}°F↓
-                          </div>
-                        </div>
                       </div>
                     </div>
                   ))}
@@ -2992,21 +2903,7 @@ export default function JobDailyLogsPage() {
                         <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Attachments</div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           {selectedLog.attachments.map((attachment) => (
-                            <a
-                              key={attachment.id}
-                              href={attachment.fileId ? `/api/files/${attachment.fileId}/download` : attachment.fileUrl || "#"}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-orange-300"
-                            >
-                              <div className="flex items-center gap-3">
-                                <FileText className="size-5 text-slate-400" />
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-medium text-slate-900">{attachment.originalName}</div>
-                                  <div className="text-xs text-slate-500">{attachment.uploadedByName || "Unknown"} · {formatDateTime(attachment.createdAt)}</div>
-                                </div>
-                              </div>
-                            </a>
+                            <DailyLogAttachmentCard key={attachment.id} attachment={attachment} />
                           ))}
                         </div>
                       </div>
@@ -3017,25 +2914,6 @@ export default function JobDailyLogsPage() {
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 text-amber-800">
-                    {getWeatherIcon(deriveWeatherIcon(selectedLog.weatherData), "size-10")}
-                    <div>
-                      <div className="text-3xl font-semibold">{selectedLog.weatherData?.temperatureHigh ?? "—"}°</div>
-                      <div className="text-sm text-amber-700">{selectedLog.weatherData?.temperatureLow ?? "—"}° low</div>
-                    </div>
-                  </div>
-                  <Info className="size-4 text-amber-700" />
-                </div>
-                <div className="mt-4 space-y-1 text-sm text-amber-900">
-                  <div>Condition: <span className="font-medium">{selectedLog.weatherData?.condition || "Unavailable"}</span></div>
-                  <div>Wind: <span className="font-medium">{selectedLog.weatherData?.windMph ?? "—"} mph</span></div>
-                  <div>Humidity: <span className="font-medium">{selectedLog.weatherData?.humidity ?? "—"}%</span></div>
-                  <div>Total precipitation: <span className="font-medium">{selectedLog.weatherData?.precipitation ?? 0}"</span></div>
-                </div>
-              </div>
-
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -3134,32 +3012,107 @@ export default function JobDailyLogsPage() {
   )
 }
 
-function AddTodoButton({ onAdd }: { onAdd: (title: string) => Promise<void> | void }) {
+function DailyLogAttachmentCard({ attachment }: { attachment: DailyLogAttachment }) {
+  const handleClick = async () => {
+    const url = attachment.fileUrl || (attachment.fileId ? `/files/${attachment.fileId}/download` : null)
+    if (!url) return
+
+    try {
+      const res = await api.get<Blob>(url, { responseType: "blob" })
+      const blobUrl = URL.createObjectURL(res.data)
+      const mime = attachment.mimeType || ""
+
+      if (mime.startsWith("image/")) {
+        const w = window.open(blobUrl, "_blank")
+        if (w) setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+        else URL.revokeObjectURL(blobUrl)
+      } else if (mime.startsWith("video/")) {
+        const w = window.open(blobUrl, "_blank")
+        if (w) setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+        else URL.revokeObjectURL(blobUrl)
+      } else {
+        const anchor = document.createElement("a")
+        anchor.href = blobUrl
+        anchor.download = attachment.originalName || "download"
+        document.body.appendChild(anchor)
+        anchor.click()
+        document.body.removeChild(anchor)
+        URL.revokeObjectURL(blobUrl)
+      }
+    } catch {
+      toast.error("Failed to open attachment")
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-orange-300 text-left"
+    >
+      <div className="flex items-center gap-3">
+        <FileText className="size-5 text-slate-400" />
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-slate-900">{attachment.originalName}</div>
+          <div className="text-xs text-slate-500">{attachment.uploadedByName || "Unknown"} · {formatDateTime(attachment.createdAt)}</div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function AddTodoButton({ onAdd }: { onAdd: (title: string, dueDate?: string, timeOfDay?: string) => Promise<void> | void }) {
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState("")
+  const [dueDate, setDueDate] = useState("")
+  const [timeOfDay, setTimeOfDay] = useState("")
 
   return open ? (
-    <div className="flex items-center gap-2">
-      <Input
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Add to-do"
-        className="h-9 w-44"
-      />
-      <Button
-        size="sm"
-        onClick={async () => {
-          if (!value.trim()) return
-          await onAdd(value)
-          setValue("")
-          setOpen(false)
-        }}
-      >
-        <Check className="size-4" />
-      </Button>
-      <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
-        <X className="size-4" />
-      </Button>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="Add to-do"
+          className="h-9 w-44"
+        />
+        <Button
+          size="sm"
+          onClick={async () => {
+            if (!value.trim()) return
+            await onAdd(value, dueDate || undefined, timeOfDay || undefined)
+            setValue("")
+            setDueDate("")
+            setTimeOfDay("")
+            setOpen(false)
+          }}
+        >
+          <Check className="size-4" />
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => { setOpen(false); setValue(""); setDueDate(""); setTimeOfDay("") }}>
+          <X className="size-4" />
+        </Button>
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          type="date"
+          value={dueDate}
+          onChange={(event) => setDueDate(event.target.value)}
+          className="h-8 w-36 text-xs"
+          placeholder="Due date"
+        />
+        <Select value={timeOfDay || "_none"} onValueChange={(v) => setTimeOfDay(v === "_none" ? "" : v)}>
+          <SelectTrigger className="h-8 w-44 text-xs">
+            <SelectValue placeholder="Time of day" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_none">No time preference</SelectItem>
+            <SelectItem value="First thing in the morning">First thing in the morning</SelectItem>
+            <SelectItem value="Midday">Midday</SelectItem>
+            <SelectItem value="End of day">End of day</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   ) : (
     <Button size="sm" variant="outline" onClick={() => setOpen(true)}>

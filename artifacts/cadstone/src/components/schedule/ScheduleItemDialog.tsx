@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useDropzone } from "react-dropzone"
 import {
   Check,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
   Plus,
   Send,
   Trash2,
+  Upload,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import {
@@ -589,6 +591,43 @@ export function ScheduleItemDialog({
       setSaving(false)
     }
   }
+
+  const onDropFiles = useCallback(
+    async (droppedFiles: File[]) => {
+      if (draftMode) {
+        toast.info("Publish draft changes before managing attachments")
+        return
+      }
+      if (!item || droppedFiles.length === 0) return
+      const validationError = validateSelectedFiles(droppedFiles, "document")
+      if (validationError) {
+        setAttachmentError(validationError)
+        return
+      }
+      setAttachmentError(null)
+      const formData = new FormData()
+      droppedFiles.forEach((file) => formData.append("files", file))
+      setSaving(true)
+      try {
+        await api.post(`/schedule-items/${item.id}/attachments`, formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        })
+        await Promise.all([loadItem(item.id), onRefresh()])
+        toast.success("Files uploaded")
+      } catch (err) {
+        toast.error(getApiError(err, "Failed to upload files"))
+      } finally {
+        setSaving(false)
+      }
+    },
+    [item, draftMode, onRefresh],
+  )
+
+  const attachmentDropzone = useDropzone({
+    onDrop: onDropFiles,
+    noKeyboard: true,
+    disabled: !item || draftMode,
+  })
 
   async function handleUploadFiles(event: React.ChangeEvent<HTMLInputElement>) {
     if (draftMode) {
@@ -1558,44 +1597,68 @@ export function ScheduleItemDialog({
 
                       {!item ? (
                         <p className="text-sm text-slate-500">Attachments are available after save.</p>
-                      ) : item.attachments.length > 0 ? (
-                        <div className="space-y-2">
-                          {item.attachments.map((attachment) => {
-                            const Icon = attachmentIcon(attachment.icon)
-
-                            return (
-                              <div key={attachment.id} className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-4 py-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="rounded-lg bg-slate-100 p-2 text-slate-500">
-                                    <Icon className="size-4" />
-                                  </div>
-                                  <div>
-                                    <a
-                                      href={attachment.fileUrl || "#"}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-sm font-medium text-slate-900 hover:text-orange-700"
-                                    >
-                                      {attachment.originalName}
-                                    </a>
-                                    <p className="text-xs text-slate-500">
-                                      {attachment.mimeType || "Unknown"} • {fmtDateTime(attachment.createdAt)}
-                                    </p>
-                                  </div>
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  onClick={() => void handleDeleteAttachment(attachment.id)}
-                                >
-                                  <Trash2 className="size-4" />
-                                </Button>
-                              </div>
-                            )
-                          })}
-                        </div>
                       ) : (
-                        <p className="text-sm text-slate-500">No attachments yet.</p>
+                        <>
+                          <div
+                            {...attachmentDropzone.getRootProps()}
+                            className={cn(
+                              "relative cursor-pointer rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors",
+                              attachmentDropzone.isDragActive
+                                ? "border-orange-400 bg-orange-50"
+                                : "border-slate-300 bg-slate-50 hover:border-orange-400 hover:bg-orange-50/50",
+                            )}
+                          >
+                            <input {...attachmentDropzone.getInputProps({ accept: uploadAcceptForMediaType("document") })} />
+                            {attachmentDropzone.isDragActive ? (
+                              <>
+                                <Upload className="mx-auto size-5 text-orange-500" />
+                                <div className="mt-2 text-sm font-medium text-orange-600">Drop files here</div>
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="mx-auto size-5 text-slate-400" />
+                                <div className="mt-2 text-sm text-slate-500">Drag & drop files here, or click to browse</div>
+                              </>
+                            )}
+                          </div>
+                          {item.attachments.length > 0 ? (
+                            <div className="space-y-2">
+                              {item.attachments.map((attachment) => {
+                                const Icon = attachmentIcon(attachment.icon)
+
+                                return (
+                                  <div key={attachment.id} className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-4 py-3">
+                                    <div className="flex items-center gap-3">
+                                      <div className="rounded-lg bg-slate-100 p-2 text-slate-500">
+                                        <Icon className="size-4" />
+                                      </div>
+                                      <div>
+                                        <a
+                                          href={attachment.fileUrl || "#"}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-sm font-medium text-slate-900 hover:text-orange-700"
+                                        >
+                                          {attachment.originalName}
+                                        </a>
+                                        <p className="text-xs text-slate-500">
+                                          {attachment.mimeType || "Unknown"} • {fmtDateTime(attachment.createdAt)}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      onClick={() => void handleDeleteAttachment(attachment.id)}
+                                    >
+                                      <Trash2 className="size-4" />
+                                    </Button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : null}
+                        </>
                       )}
                     </TabsContent>
                   </Tabs>

@@ -1,0 +1,34 @@
+Everything is clean. Here's a summary of all changes:
+                                                                                      
+  Task 1 — Instant upload on drop (FileBrowser):                                      
+  - Added uploadFilesImmediately() function for direct upload without dialog
+  - onDrop callback now uploads instantly; only shows dialog for crew photo notes     
+  - handleUploadSelection (button click) also uploads instantly; only shows dialog for
+   crew photos                                                                        
+  - Upload button now opens native file picker directly instead of a dialog           
+  - Upload confirmation dialog simplified to a minimal crew-photo-note prompt         
+                                                                                      
+  Task 2 — Schedule Item drag-and-drop:                                               
+  - Added useDropzone and useCallback imports, plus Paperclip and Upload icons        
+  - Added onDropFiles callback and attachmentDropzone hook                            
+  - Attachments tab now has a drop zone with visual feedback (orange border/bg on     
+  drag)                                                                               
+  - Files dropped are validated and uploaded immediately to the schedule item         
+                                                                                      
+  Task 3 — Page-level drop zone on job detail:                                        
+  - Wrapped the entire job detail page with a useDropzone zone                        
+  - Shows a full-page overlay when dragging files ("Drop files to upload — Files will 
+  be saved to Documents")                                                             
+  - Uploads to the root documents folder of the job                                   
+  - Disabled on the Files tab to avoid conflicts with FileBrowser's own drop zone
+  - Shows an uploading indicator toast in the bottom-right corner                     
+                                                                                      
+  Task 4 — Unified drop zone visual design:                                           
+  - FileBrowser: Changed from blue to orange (border-orange-400 bg-orange-50), added  
+  Upload icon                                                                         
+  - Daily logs: Added Upload icon and "Drop files here" text on drag, with            
+  transition-colors                                                                   
+  - Schedule dialog: New drop zone uses same orange styling                           
+  - All drop zones: dashed orange border, light orange background, centered "Drop
+  files here" + Upload icon                                                           
+                                 

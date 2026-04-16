@@ -378,13 +378,20 @@ export default function FileBrowser({
 
     if (validationError) {
       setUploadError(validationError)
-      setSelectedUploadFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ""
       return
     }
 
-    setUploadError(null)
-    setSelectedUploadFiles(nextFiles)
+    if (showCrewPhotoNote) {
+      setUploadError(null)
+      setSelectedUploadFiles(nextFiles)
+      setUploadDialogOpen(true)
+      return
+    }
+
+    // Instant upload — no dialog
+    if (fileInputRef.current) fileInputRef.current.value = ""
+    void uploadFilesImmediately(nextFiles)
   }
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
@@ -596,23 +603,54 @@ export default function FileBrowser({
   const canManageFolders = !isReadOnly
   const canUploadFiles = !!currentFolderId && !isReadOnly
 
+  async function uploadFilesImmediately(files: File[], note?: string) {
+    if (!currentFolderId || files.length === 0) return
+    const formData = new FormData()
+    files.forEach((file) => formData.append("files", file))
+    if (note?.trim()) {
+      formData.append("note", note.trim())
+    }
+    setUploading(true)
+    setUploadError(null)
+    try {
+      await api.post(
+        isResourceScope
+          ? `/resources/folders/${currentFolderId}/upload`
+          : `/folders/${currentFolderId}/files`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      )
+      toast.success(`${files.length} file(s) uploaded`)
+      loadFiles(currentFolderId)
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Upload failed"))
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const onDrop = useCallback(
     (droppedFiles: File[]) => {
       if (!currentFolderId || isReadOnly) return
       const validationError = validateSelectedFiles(droppedFiles, mediaType)
       if (validationError) {
         setUploadError(validationError)
-        setSelectedUploadFiles([])
         return
       }
-      setUploadError(null)
-      setSelectedUploadFiles(droppedFiles)
-      setUploadDialogOpen(true)
+      if (showCrewPhotoNote) {
+        // Crew photo uploads need a note — show the inline prompt
+        setUploadError(null)
+        setSelectedUploadFiles(droppedFiles)
+        setUploadDialogOpen(true)
+        return
+      }
+      // Instant upload — no dialog
+      void uploadFilesImmediately(droppedFiles)
     },
-    [currentFolderId, isReadOnly, mediaType],
+    [currentFolderId, isReadOnly, mediaType, showCrewPhotoNote],
   )
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open: openDropzone } = useDropzone({
     onDrop,
     noClick: true,
     noKeyboard: true,
@@ -710,9 +748,7 @@ export default function FileBrowser({
                 variant="outline"
                 onClick={() => {
                   setUploadError(null)
-                  setSelectedUploadFiles([])
-                  setUploadNote("")
-                  setUploadDialogOpen(true)
+                  fileInputRef.current?.click()
                 }}
                 disabled={uploading}
               >
@@ -776,12 +812,13 @@ export default function FileBrowser({
           {currentFolderId && (
             <div
               {...getRootProps()}
-              className={`relative mt-3 rounded-lg transition-colors ${isDragActive ? "ring-2 ring-blue-400 ring-dashed bg-blue-50/50" : ""}`}
+              className={`relative mt-3 rounded-lg transition-colors ${isDragActive ? "ring-2 ring-orange-400 ring-dashed bg-orange-50/50" : ""}`}
             >
               <input {...getInputProps()} />
               {isDragActive && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-400 bg-blue-50/80">
-                  <span className="text-sm font-medium text-blue-600">Drop files here</span>
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-orange-400 bg-orange-50/80">
+                  <Upload className="mb-2 size-6 text-orange-500" />
+                  <span className="text-sm font-medium text-orange-600">Drop files here</span>
                 </div>
               )}
               {filesLoading ? (
@@ -811,28 +848,48 @@ export default function FileBrowser({
                       onDownload={handleDownload}
                     />
                   )}
+                  {canUploadFiles && (
+                    <div
+                      onClick={() => { setUploadError(null); openDropzone() }}
+                      className={`mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-3 transition-colors ${
+                        isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 hover:border-orange-400 hover:bg-orange-50/50"
+                      }`}
+                    >
+                      <Upload className="size-4 text-slate-400" />
+                      <span className="text-sm text-slate-500">Drag files here or click to upload</span>
+                    </div>
+                  )}
                 </div>
               ) : sortedFolders.length === 0 ? (
-                <div className="py-16 text-center">
-                  <FolderOpen className="mx-auto mb-3 size-8 text-slate-200" />
-                  <p className="text-sm text-slate-400">This folder is empty.</p>
-                  {canUploadFiles ? (
-                    <button
-                      onClick={() => {
-                        setUploadError(null)
-                        setSelectedUploadFiles([])
-                        setUploadNote("")
-                        setUploadDialogOpen(true)
-                      }}
-                      className="mt-1 text-sm text-orange-600 hover:underline"
-                    >
-                      Upload files
-                    </button>
-                  ) : null}
+                canUploadFiles ? (
+                  <div
+                    onClick={() => { setUploadError(null); openDropzone() }}
+                    className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed py-16 text-center transition-colors ${
+                      isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 hover:border-orange-400 hover:bg-orange-50/50"
+                    }`}
+                  >
+                    <Upload className="mx-auto mb-3 size-8 text-slate-300" />
+                    <p className="text-sm font-medium text-slate-500">Drag & drop files here, or click to upload</p>
+                  </div>
+                ) : (
+                  <div className="py-16 text-center">
+                    <FolderOpen className="mx-auto mb-3 size-8 text-slate-200" />
+                    <p className="text-sm text-slate-400">This folder is empty.</p>
+                  </div>
+                )
+              ) : canUploadFiles ? (
+                <div
+                  onClick={() => { setUploadError(null); openDropzone() }}
+                  className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed py-8 text-center transition-colors ${
+                    isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 hover:border-orange-400 hover:bg-orange-50/50"
+                  }`}
+                >
+                  <Upload className="mb-2 size-5 text-slate-300" />
+                  <p className="text-sm text-slate-500">Drag & drop files here, or click to upload</p>
                 </div>
               ) : (
                 <div className="py-8 text-center text-sm text-slate-400">
-                  No files in this folder yet. Upload files to get started.
+                  No files in this folder yet.
                 </div>
               )}
             </div>
@@ -870,47 +927,26 @@ export default function FileBrowser({
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Upload {mediaLabel}</DialogTitle>
+            <DialogTitle>Add a note for your photos</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleUploadSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Files</Label>
-              <div className="rounded-lg border border-dashed border-[#E5E7EB] bg-slate-50 p-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Choose Files
-                </Button>
-                {selectedUploadFiles.length > 0 ? (
-                  <div className="mt-3 space-y-1">
-                    {selectedUploadFiles.map((file) => (
-                      <p key={`${file.name}-${file.size}`} className="truncate text-sm text-slate-600">
-                        {file.name}
-                      </p>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-sm text-slate-400">No files selected.</p>
-                )}
-              </div>
+            <div className="text-sm text-slate-500">
+              {selectedUploadFiles.length} file{selectedUploadFiles.length === 1 ? "" : "s"} selected
             </div>
 
-            {showCrewPhotoNote ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="upload-note">Note (required)</Label>
-                <Input
-                  id="upload-note"
-                  value={uploadNote}
-                  onChange={(event) => setUploadNote(event.target.value)}
-                  placeholder="Describe the area or work shown in these photos"
-                  required
-                />
-              </div>
-            ) : null}
+            <div className="space-y-1.5">
+              <Label htmlFor="upload-note">Note (required)</Label>
+              <Input
+                id="upload-note"
+                value={uploadNote}
+                autoFocus
+                onChange={(event) => setUploadNote(event.target.value)}
+                placeholder="Describe the area or work shown in these photos"
+                required
+              />
+            </div>
 
             {uploadError ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

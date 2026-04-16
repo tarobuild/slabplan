@@ -27,6 +27,7 @@ import {
   Settings2,
   Smile,
   Sun,
+  Upload,
   Users,
   Video,
   FolderOpen,
@@ -2286,7 +2287,6 @@ function DailyLogDialog({
       setAttachmentError(null)
       setPendingFiles((current) => [...current, ...files])
     },
-    noClick: true,
     noKeyboard: true,
   })
 
@@ -2621,13 +2621,22 @@ function DailyLogDialog({
                   <div
                     {...onDrop.getRootProps()}
                     className={cn(
-                      "rounded-2xl border border-dashed px-4 py-6 text-center",
-                      onDrop.isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 bg-slate-50",
+                      "cursor-pointer rounded-2xl border-2 border-dashed px-4 py-6 text-center transition-colors",
+                      onDrop.isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 bg-slate-50 hover:border-orange-400 hover:bg-orange-50/50",
                     )}
                   >
                     <input {...onDrop.getInputProps({ accept: uploadAcceptForMediaType("document") })} />
-                    <Paperclip className="mx-auto size-5 text-slate-400" />
-                    <div className="mt-2 text-sm text-slate-600">Drag and drop files here, or use Add.</div>
+                    {onDrop.isDragActive ? (
+                      <>
+                        <Upload className="mx-auto size-5 text-orange-500" />
+                        <div className="mt-2 text-sm font-medium text-orange-600">Drop files here</div>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="mx-auto size-5 text-slate-400" />
+                        <div className="mt-2 text-sm text-slate-500">Drag & drop files here, or click to browse</div>
+                      </>
+                    )}
                   </div>
                   {attachmentError ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

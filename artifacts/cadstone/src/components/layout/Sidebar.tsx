@@ -226,7 +226,7 @@ export default function Sidebar() {
             <button
               key={job.id}
               ref={isActive ? activeRef : undefined}
-              onClick={() => navigate(`/jobs/${job.id}/summary`)}
+              onClick={() => navigate(`/jobs/${job.id}`)}
               className={cn(
                 "flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-slate-50",
                 isActive && "bg-orange-50 hover:bg-orange-50",

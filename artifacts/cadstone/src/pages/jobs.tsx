@@ -386,7 +386,7 @@ export default function JobsPage() {
               jobs.map(job => (
                 <TableRow key={job.id} className="hover:bg-slate-50">
                   <TableCell>
-                    <Link to={`/jobs/${job.id}/summary`} className="font-medium text-orange-600 hover:underline">
+                    <Link to={`/jobs/${job.id}`} className="font-medium text-orange-600 hover:underline">
                       {job.title}
                     </Link>
                   </TableCell>
@@ -437,7 +437,7 @@ export default function JobsPage() {
           jobs.map(job => (
             <div key={job.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
               <div className="min-w-0 flex-1">
-                <Link to={`/jobs/${job.id}/summary`} className="block truncate text-sm font-medium text-orange-600 hover:underline">
+                <Link to={`/jobs/${job.id}`} className="block truncate text-sm font-medium text-orange-600 hover:underline">
                   {job.title}
                 </Link>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

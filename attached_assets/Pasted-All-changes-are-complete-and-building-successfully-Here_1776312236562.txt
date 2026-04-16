@@ -1,0 +1,166 @@
+All changes are complete and building successfully. Here's a summary of everything
+  implemented:
+
+  Part 1 — Fix navigation defaulting to Summary:
+  - Sidebar.tsx:229 — Changed /jobs/${job.id}/summary to /jobs/${job.id}
+  - jobs.tsx:389,440 — Both desktop and mobile links changed (replace_all)
+  - clients.tsx:792 — Changed link target
+  - These all now hit the index route which redirects to daily-logs
+
+  Part 2 — Day/week view: all-day items separated from time grid:
+  - Day view: Added an "All Day" bar between the header and the hourly grid, showing
+  non-hourly items as compact colored chips with title and workday count
+  - Day view: buildDayTimelineSegments now receives only filteredItems.filter(item =>
+  item.isHourly)
+  - Week view: Added an "All Day" row between day headers and the time grid, with
+  per-day columns showing non-hourly items
+  - Week view: Same hourly-only filtering for the time grid
+
+  Part 3 — Click-to-create on empty time slots:
+  - Day/week view hour cells now have hover:bg-blue-50/50 cursor-pointer
+  transition-colors and an onClick that calls openNewItem(day, startTime, endTime)
+  - openNewItem extended to accept startTime and endTime
+  - New state variables dialogInitStartTime and dialogInitEndTime passed to
+  ScheduleItemDialog
+  - Dialog's resetForNewItem() uses these to set isHourly: true with the correct times
+
+  Part 4 — Month view improvements:
+  - Item bar height: h-6 to h-7 for bigger click targets
+  - "+N more" is now a clickable <button> styled orange, finds the day in the week
+  with the most items, and switches to day view for that date
+
+  Part 5 — Auto-focus title:
+  - Added autoFocus={!item} to the title Input in ScheduleItemDialog
+
+  Part 6 — Multi-day toggle:
+  - Added multiDay state, synced from item.workDays > 1 for existing items, false for
+  new
+  - Added a "Multi-day" Switch toggle at the top of the date card
+  - When OFF: End Date and Work Days hidden; workDays=1, endDate=startDate
+  - When ON: End Date and Work Days shown as before
+
+✻ Brewed for 7m 19s
+
+❯ Please go review your work thoroughly and check for bugs or issues you missed       
+
+● Let me read through every changed section carefully.
+
+  Read 3 files (ctrl+o to expand)
+
+● Part 1 looks correct. Now the schedule changes:
+
+  Read 1 file (ctrl+o to expand)
+
+● Good. Now check openExistingItem — does it clear the time state? It doesn't set
+  dialogInitStartTime/dialogInitEndTime to null. If user clicks an empty slot (setting
+   times), closes dialog, then clicks an existing item, the stale time values would
+  persist. But the dialog only uses them in resetForNewItem() which is only called
+  when itemId is null. So editing an existing item calls loadItem(itemId) which calls
+  formFromItem(), bypassing resetForNewItem() entirely. Not a bug.
+
+  But what about the onOpenChange cleanup?
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Good — time state is cleaned up on close. Now let me check the dialog component more
+   carefully:
+
+  Read 1 file (ctrl+o to expand)
+
+● Good. Now let me check the multiDay toggle and the date section:
+
+  Read 1 file (ctrl+o to expand)
+
+● I see an issue. When the user opens an existing item with workDays > 1, the multiDay
+   state gets set to true via the useEffect. But what if the user then changes the
+  workDays field to 1 manually (via the number input)? The multiDay toggle would still
+   show true — there's a desync. That's fine actually — the toggle controls UI
+  visibility, and the user intentionally left multi-day mode on while typing "1". Not
+  a bug.
+
+  But there's a more important issue: When multiDay is OFF and the user saves,
+  workDays is 1 and endDate === startDate. That's correct. But when multiDay is
+  toggled ON, the End Date should be recalculated from current startDate + current
+  workDays. Since workDays is already 1 at that point, the End Date will just be
+  startDate. That's correct — the user then changes Work Days to extend the schedule.
+
+  Let me now check the week view changes more carefully:
+
+  Read 1 file (ctrl+o to expand)
+
+● I found an issue. In the week view, a multi-day all-day item that spans the whole
+  week would appear as a separate chip in each of the 7 day columns — duplicated 7
+  times. That's because I'm filtering per-day independently. A 3-day install would
+  show the same chip 3 times across 3 columns. That's actually the intended behavior
+  for a per-column all-day row (Google Calendar does this), but the duplicate
+  key={item.id} across columns is fine since each column is a separate React parent.
+
+  However, there's a subtle React key issue: if the same all-day item appears in the
+  same day column twice (e.g. through some filter overlap), React would complain about
+   duplicate keys. That shouldn't happen with itemOverlapsDateRange for a single day,
+  so this is fine.
+
+  Let me now check the month view "+N more" button:
+
+  Read 1 file (ctrl+o to expand)
+
+● Found a problem. The "+N more" button click handler does e.stopPropagation() — wait,
+   it doesn't! The button is inside the pointer-events-none absolute inset-x-0
+  container, but the button itself has pointer-events-auto. However, the parent of
+  that container is the week row div, which contains day cell divs with onClick={() =>
+   openNewItem(day)}. The button click will bubble up to the week row div but not to a
+   specific day cell since the button is positioned absolutely. Let me check the
+  parent structure:
+
+  Read 1 file (ctrl+o to expand)
+
+● The week row div itself doesn't have an onClick. The day cells inside it do. The
+  button is inside an absolutely positioned overlay div (pointer-events-none absolute
+  inset-x-0 top-10 bottom-2) which is a sibling of the day cell divs. Since the button
+   has pointer-events-auto, the click goes to the button. The button's parent chain
+  is: button → .pointer-events-none div → .relative.grid week-row div. The week row
+  has no onClick, so bubbling is harmless. No issue.
+
+  Now let me check if the h-7 change affects the rowHeight calculation. The lane
+  stacking uses top: ${segment.lane * 30}px. With h-7 = 28px + 2px gap = 30px per lane
+   — that works. But wait, 30 is hardcoded and h-7 is 1.75rem = 28px. So there's a 2px
+   gap between items, which is fine visually.
+
+  Now let me verify the title autoFocus:
+
+  Read 1 file (ctrl+o to expand)
+
+● Hmm, the line numbers shifted since I added code. Let me find the title input:
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Good. Now let me also check: are there any other places in the codebase that link to
+   /summary that I might have missed?
+
+  Searched for 1 pattern (ctrl+o to expand)  
+                     
+● Good — no remaining /summary hardcoded links.
+                                                                                      
+  Let me also verify there are no remaining references to dayKey variable name        
+  conflicts in the week view (I renamed to dk in several places):
+                                                                                      
+  Searched for 1 pattern (ctrl+o to expand)                                           
+                                                                                      
+● That one remaining const dayKey = dateKey(day) is in the week header section (above 
+  the all-day row), which is a different scope than the time grid columns. It's used  
+  for the key and isToday check. No conflict.                                         
+         
+  Let me verify there are no issues with the calculateBusinessEndDate import in the   
+  dialog:                                                                             
+                                                                                      
+  Searched for 1 pattern (ctrl+o to expand)                                           
+                                                                                      
+● All properly imported and used.      
+                                                                                      
+  One last thing — let me verify the month view rowHeight calculation is still correct
+   with h-7. The formula is 88 + laneCount * 30 + (hiddenCount > 0 ? 18 : 0). Each
+  lane takes 30px of space (top: ${segment.lane * 30}px), and items are h-7 (28px). So
+   30px spacing with 28px items = 2px gap. The 88px base covers the date numbers area 
+  (top-10 = 40px offset + padding). This all works fine.                              
+                                                                                      
+  Everything checks out. No bugs found. 

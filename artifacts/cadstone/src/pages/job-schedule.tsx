@@ -1568,6 +1568,8 @@ export default function JobSchedulePage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
   const [dialogInitDate, setDialogInitDate] = useState<string | null>(null)
+  const [dialogInitStartTime, setDialogInitStartTime] = useState<string | null>(null)
+  const [dialogInitEndTime, setDialogInitEndTime] = useState<string | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -2838,9 +2840,11 @@ export default function JobSchedulePage() {
     }
   }
 
-  function openNewItem(startDate?: string) {
+  function openNewItem(startDate?: string, startTime?: string, endTime?: string) {
     setActiveItemId(null)
     setDialogInitDate(startDate ?? null)
+    setDialogInitStartTime(startTime ?? null)
+    setDialogInitEndTime(endTime ?? null)
     setDialogOpen(true)
   }
 
@@ -3318,7 +3322,7 @@ export default function JobSchedulePage() {
                                     key={`${segment.item.id}-${segment.startIndex}-${segment.endIndex}-${segment.lane}`}
                                     type="button"
                                     className={cn(
-                                      "pointer-events-auto absolute flex h-6 items-center overflow-hidden rounded-full px-3 text-left text-xs font-medium text-white shadow-sm transition hover:opacity-95",
+                                      "pointer-events-auto absolute flex h-7 items-center overflow-hidden rounded-full px-3 text-left text-xs font-medium text-white shadow-sm transition hover:opacity-95",
                                       activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
                                     )}
                                     style={{
@@ -3337,9 +3341,26 @@ export default function JobSchedulePage() {
                                 ))}
 
                                 {hiddenCount > 0 ? (
-                                  <div className="absolute bottom-0 right-3 text-[11px] font-medium text-slate-400">
+                                  <button
+                                    type="button"
+                                    className="pointer-events-auto absolute bottom-0 right-3 text-[11px] font-medium text-orange-600 hover:text-orange-700 cursor-pointer"
+                                    onClick={() => {
+                                      // Find the day in this week with the most items
+                                      let bestDay = week[0]
+                                      let bestCount = 0
+                                      for (const day of week) {
+                                        const count = filteredItems.filter((item) => itemOverlapsDateRange(item, day, day)).length
+                                        if (count > bestCount) {
+                                          bestCount = count
+                                          bestDay = day
+                                        }
+                                      }
+                                      setCalendarPeriod("day")
+                                      setCalendarAnchorDate(parseDate(bestDay))
+                                    }}
+                                  >
                                     +{hiddenCount} more item{hiddenCount === 1 ? "" : "s"}
-                                  </div>
+                                  </button>
                                 ) : null}
                               </div>
                             </div>
@@ -3382,6 +3403,45 @@ export default function JobSchedulePage() {
                         })}
                       </div>
 
+                      {/* All-day items row */}
+                      {(() => {
+                        const weekStart = startOfWeek(calendarAnchorDate)
+                        const weekAllDayItems = Array.from({ length: 7 }).map((_, index) => {
+                          const day = addDays(weekStart, index)
+                          const dk = dateKey(day)
+                          return {
+                            dayKey: dk,
+                            items: filteredItems.filter((item) => !item.isHourly && itemOverlapsDateRange(item, dk, dk)),
+                          }
+                        })
+                        const hasAnyAllDay = weekAllDayItems.some((d) => d.items.length > 0)
+                        return hasAnyAllDay ? (
+                          <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))] border-b border-[#E5E7EB]">
+                            <div className="border-r border-[#E5E7EB] bg-[#F8FAFC] px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400 flex items-start justify-end">
+                              All Day
+                            </div>
+                            {weekAllDayItems.map(({ dayKey: dk, items: dayItems }) => (
+                              <div key={dk} className="border-r border-[#E5E7EB] last:border-r-0 px-1 py-1.5 space-y-1">
+                                {dayItems.map((item) => (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    className="flex w-full items-center rounded-full border px-2 py-0.5 text-[10px] font-medium text-white shadow-sm hover:opacity-90 transition-opacity truncate"
+                                    style={{
+                                      backgroundColor: item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                      borderColor: colorWithAlpha(item.displayColor, 0.75),
+                                    }}
+                                    onClick={() => openExistingItem(item.id)}
+                                  >
+                                    <span className="truncate">{item.title}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null
+                      })()}
+
                       <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))]">
                         <div className="border-r border-[#E5E7EB] bg-[#F8FAFC]">
                           {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }).map((_, index) => {
@@ -3400,13 +3460,13 @@ export default function JobSchedulePage() {
 
                         {Array.from({ length: 7 }).map((_, index) => {
                           const day = addDays(startOfWeek(calendarAnchorDate), index)
-                          const dayKey = dateKey(day)
-                          const segments = buildDayTimelineSegments(dayKey, filteredItems)
+                          const dk = dateKey(day)
+                          const segments = buildDayTimelineSegments(dk, filteredItems.filter((item) => item.isHourly))
                           const workday = classifyWorkday(day, workdayExceptions)
 
                           return (
                             <div
-                              key={dayKey}
+                              key={dk}
                               className="relative border-r border-[#E5E7EB] last:border-r-0"
                               style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
                             >
@@ -3414,9 +3474,15 @@ export default function JobSchedulePage() {
                                 <div
                                   key={hourIndex}
                                   className={cn(
-                                    "h-14 border-b border-[#E5E7EB] last:border-b-0",
+                                    "h-14 border-b border-[#E5E7EB] last:border-b-0 hover:bg-blue-50/50 cursor-pointer transition-colors",
                                     !workday.isWorkday && "bg-amber-50/50",
                                   )}
+                                  onClick={() => {
+                                    const hour = DAY_START_HOUR + hourIndex
+                                    const startTime = `${String(hour).padStart(2, "0")}:00`
+                                    const endTime = `${String(Math.min(hour + 1, DAY_END_HOUR)).padStart(2, "0")}:00`
+                                    openNewItem(dk, startTime, endTime)
+                                  }}
                                 />
                               ))}
 
@@ -3481,6 +3547,33 @@ export default function JobSchedulePage() {
                         </div>
                       </div>
 
+                      {/* All-day items bar */}
+                      {(() => {
+                        const dayAllDayItems = filteredItems.filter((item) => !item.isHourly && itemOverlapsDateRange(item, dateKey(calendarAnchorDate), dateKey(calendarAnchorDate)))
+                        return dayAllDayItems.length > 0 ? (
+                          <div className="border-b border-[#E5E7EB] bg-slate-50/50 px-4 py-2">
+                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">All Day</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {dayAllDayItems.map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium text-white shadow-sm hover:opacity-90 transition-opacity"
+                                  style={{
+                                    backgroundColor: item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                    borderColor: colorWithAlpha(item.displayColor, 0.75),
+                                  }}
+                                  onClick={() => openExistingItem(item.id)}
+                                >
+                                  <span className="truncate max-w-[200px]">{item.title}</span>
+                                  <span className="text-white/70">({item.workDays}d)</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null
+                      })()}
+
                       <div className="grid grid-cols-[88px_minmax(0,1fr)]">
                         <div className="border-r border-[#E5E7EB] bg-[#F8FAFC]">
                           {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }).map((_, index) => {
@@ -3505,10 +3598,19 @@ export default function JobSchedulePage() {
                           style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
                         >
                           {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }).map((_, hourIndex) => (
-                            <div key={hourIndex} className="h-14 border-b border-[#E5E7EB] last:border-b-0" />
+                            <div
+                              key={hourIndex}
+                              className="h-14 border-b border-[#E5E7EB] last:border-b-0 hover:bg-blue-50/50 cursor-pointer transition-colors"
+                              onClick={() => {
+                                const hour = DAY_START_HOUR + hourIndex
+                                const startTime = `${String(hour).padStart(2, "0")}:00`
+                                const endTime = `${String(Math.min(hour + 1, DAY_END_HOUR)).padStart(2, "0")}:00`
+                                openNewItem(dateKey(calendarAnchorDate), startTime, endTime)
+                              }}
+                            />
                           ))}
 
-                          {buildDayTimelineSegments(dateKey(calendarAnchorDate), filteredItems).map((segment) => {
+                          {buildDayTimelineSegments(dateKey(calendarAnchorDate), filteredItems.filter((item) => item.isHourly)).map((segment) => {
                             const top = (segment.startHour - DAY_START_HOUR) * HOUR_HEIGHT + 6
                             const height = Math.max((segment.endHour - segment.startHour) * HOUR_HEIGHT - 10, 34)
                             const width = `calc(${100 / segment.laneCount}% - 12px)`
@@ -4894,11 +4996,15 @@ export default function JobSchedulePage() {
             if (!nextOpen) {
               setActiveItemId(null)
               setDialogInitDate(null)
+              setDialogInitStartTime(null)
+              setDialogInitEndTime(null)
             }
           }}
           jobId={jobId}
           itemId={activeItemId}
           initialStartDate={dialogInitDate}
+          initialStartTime={dialogInitStartTime}
+          initialEndTime={dialogInitEndTime}
           items={activeItems}
           users={users}
           settings={settings}

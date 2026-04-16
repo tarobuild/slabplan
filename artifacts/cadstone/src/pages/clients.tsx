@@ -789,7 +789,7 @@ export default function ClientsPage() {
                       selected.jobs.map(job => (
                         <Link
                           key={job.id}
-                          to={`/jobs/${job.id}/summary`}
+                          to={`/jobs/${job.id}`}
                           className="block rounded-lg border border-[#E5E7EB] bg-white p-3.5 hover:border-orange-300 hover:bg-orange-50/30 transition-colors"
                         >
                           <div className="flex items-start justify-between gap-2">

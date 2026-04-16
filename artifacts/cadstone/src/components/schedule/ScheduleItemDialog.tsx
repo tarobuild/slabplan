@@ -119,6 +119,8 @@ type ScheduleItemDialogProps = {
   jobId: string
   itemId: string | null
   initialStartDate?: string | null
+  initialStartTime?: string | null
+  initialEndTime?: string | null
   items: ScheduleItemRecord[]
   users: UserOption[]
   settings: ScheduleSettings
@@ -218,6 +220,8 @@ export function ScheduleItemDialog({
   jobId,
   itemId,
   initialStartDate,
+  initialStartTime,
+  initialEndTime,
   items,
   users,
   settings,
@@ -252,12 +256,22 @@ export function ScheduleItemDialog({
   const [showAddTag, setShowAddTag] = useState(false)
   const [showEditTags, setShowEditTags] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [multiDay, setMultiDay] = useState(false)
 
   useEffect(() => {
     if (!open) {
       setAttachmentError(null)
     }
   }, [open])
+
+  // Sync multiDay toggle with loaded item or form values
+  useEffect(() => {
+    if (item) {
+      setMultiDay(item.workDays > 1)
+    } else {
+      setMultiDay(false)
+    }
+  }, [item])
 
   async function loadItem(nextItemId: string) {
     setLoadingItem(true)
@@ -293,7 +307,13 @@ export function ScheduleItemDialog({
 
   function resetForNewItem() {
     setItem(null)
-    setValues(defaultForm(initialStartDate || today, workdayExceptions))
+    const form = defaultForm(initialStartDate || today, workdayExceptions)
+    if (initialStartTime) {
+      form.isHourly = true
+      form.startTime = initialStartTime
+      form.endTime = initialEndTime || "17:00"
+    }
+    setValues(form)
     setAssigneeQuery("")
     setNotifyAssignees(false)
     setNoteDraft("")
@@ -321,7 +341,7 @@ export function ScheduleItemDialog({
     }
 
     resetForNewItem()
-  }, [itemId, open, today, initialStartDate, workdayExceptions])
+  }, [itemId, open, today, initialStartDate, initialStartTime, initialEndTime, workdayExceptions])
 
   useEffect(() => {
     if (!open) {
@@ -987,6 +1007,7 @@ export function ScheduleItemDialog({
                           id="schedule-item-title"
                           value={values.title}
                           required
+                          autoFocus={!item}
                           placeholder='e.g. "Granite Countertop Template"'
                           onChange={(event) =>
                             updateValues((current) => ({
@@ -1583,6 +1604,23 @@ export function ScheduleItemDialog({
                     {/* Right column — Dates, Time, Color, Progress, Reminder */}
                     <div className="space-y-4">
                       <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Multi-day</Label>
+                          <Switch
+                            checked={multiDay}
+                            onCheckedChange={(checked) => {
+                              setMultiDay(checked)
+                              if (!checked) {
+                                setManualEndDate(false)
+                                updateValues((current) => ({
+                                  ...current,
+                                  workDays: 1,
+                                  endDate: current.startDate,
+                                }))
+                              }
+                            }}
+                          />
+                        </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="schedule-item-start-date" className="text-xs">Start Date</Label>
                           <Input
@@ -1596,55 +1634,61 @@ export function ScheduleItemDialog({
                                 return {
                                   ...current,
                                   startDate,
-                                  endDate: calculateBusinessEndDate(startDate, current.workDays, workdayExceptions),
+                                  endDate: multiDay
+                                    ? calculateBusinessEndDate(startDate, current.workDays, workdayExceptions)
+                                    : startDate,
                                 }
                               })
                             }
                           />
                         </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="schedule-item-end-date" className="text-xs">End Date</Label>
-                          <Input
-                            id="schedule-item-end-date"
-                            type="date"
-                            value={values.endDate}
-                            className="h-9"
-                            onChange={(event) => {
-                              const endDate = event.target.value
-                              setManualEndDate(true)
-                              updateValues((current) => ({
-                                ...current,
-                                endDate,
-                                workDays: calculateWorkDaysBetween(current.startDate, endDate, workdayExceptions),
-                              }))
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="schedule-item-work-days" className="text-xs">Work Days</Label>
-                          <div className="relative">
-                            <Input
-                              id="schedule-item-work-days"
-                              type="number"
-                              min="1"
-                              max="365"
-                              value={values.workDays}
-                              className="h-9"
-                              onChange={(event) => {
-                                const workDays = Math.max(1, Number(event.target.value) || 1)
-                                setManualEndDate(false)
-                                updateValues((current) => ({
-                                  ...current,
-                                  workDays,
-                                  endDate: calculateBusinessEndDate(current.startDate, workDays, workdayExceptions),
-                                }))
-                              }}
-                            />
-                            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
-                              {values.workDays === 1 ? "day" : "days"}
-                            </span>
-                          </div>
-                        </div>
+                        {multiDay ? (
+                          <>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="schedule-item-end-date" className="text-xs">End Date</Label>
+                              <Input
+                                id="schedule-item-end-date"
+                                type="date"
+                                value={values.endDate}
+                                className="h-9"
+                                onChange={(event) => {
+                                  const endDate = event.target.value
+                                  setManualEndDate(true)
+                                  updateValues((current) => ({
+                                    ...current,
+                                    endDate,
+                                    workDays: calculateWorkDaysBetween(current.startDate, endDate, workdayExceptions),
+                                  }))
+                                }}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="schedule-item-work-days" className="text-xs">Work Days</Label>
+                              <div className="relative">
+                                <Input
+                                  id="schedule-item-work-days"
+                                  type="number"
+                                  min="1"
+                                  max="365"
+                                  value={values.workDays}
+                                  className="h-9"
+                                  onChange={(event) => {
+                                    const workDays = Math.max(1, Number(event.target.value) || 1)
+                                    setManualEndDate(false)
+                                    updateValues((current) => ({
+                                      ...current,
+                                      workDays,
+                                      endDate: calculateBusinessEndDate(current.startDate, workDays, workdayExceptions),
+                                    }))
+                                  }}
+                                />
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+                                  {values.workDays === 1 ? "day" : "days"}
+                                </span>
+                              </div>
+                            </div>
+                          </>
+                        ) : null}
                       </div>
 
                       <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 space-y-3">

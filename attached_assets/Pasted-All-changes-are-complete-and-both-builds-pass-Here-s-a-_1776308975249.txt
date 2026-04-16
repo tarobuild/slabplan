@@ -1,0 +1,42 @@
+All changes are complete and both builds pass. Here's a summary:                    
+                                                                                      
+  Step 1: Removed Quick-Create Popover                                                
+                                                                                      
+  - Deleted ScheduleQuickCreate.tsx entirely                                          
+  - Removed from job-schedule.tsx: import, QuickCreateDraft type,                     
+  quickCreateOpen/quickCreateDate states,                                             
+  dialogInitTitle/dialogInitColor/dialogInitIsHourly/dialogInitStartTime states,      
+  handleQuickSave function, handleQuickMoreOptions function, and the                  
+  <ScheduleQuickCreate> JSX block                                                     
+  - Simplified openNewItem: Now always opens the full dialog directly with the clicked
+   date pre-filled — no intermediate popover                                          
+  - Cleaned up onOpenChange to only clear activeItemId and dialogInitDate
+  - Removed unused calculateWorkDaysBetween import                                    
+                                                                  
+  Step 2: Reorganized Dialog Layout (2-Column)                                        
+                                                                  
+  - Left column (~60%): Title, Complete toggle, Assignees (with search), and Sub-tabs 
+  (Predecessors, Phases & Tags, Viewing, Notes, Files) — the sub-tabs can scroll
+  independently                                                                       
+  - Right column (320px):                                         
+    - Date section: Start Date, End Date, Work Days — stacked in a bg-[#F8FAFC] card  
+    - Time Range section: "Set time range" toggle (renamed from "Hourly"), with       
+  Start/End time inputs side-by-side when enabled                                     
+    - Display Color: compact dot selector (clickable circles instead of full-width    
+  dropdown)                                                                           
+    - Progress: slider with percentage label                      
+    - Reminder: dropdown                                                              
+                                                                  
+  Step 3: Added End Time Support                                                      
+                                                                  
+  - Added endTime: string to ScheduleFormValues (default "17:00")                     
+  - Initialized in defaultForm() and formFromItem() (reads item.endTime)
+  - buildPayload() now sends endTime: values.isHourly ? values.endTime : null instead 
+  of always null                                                                      
+  - End Time input shows with a Clock3 icon, side-by-side with Start Time             
+                                                                                      
+  Step 4: Build verified                                          
+                                                                                      
+  - pnpm --filter @workspace/cadstone run build — passes                              
+  - pnpm --filter @workspace/api-server run build — passes
+                                                           

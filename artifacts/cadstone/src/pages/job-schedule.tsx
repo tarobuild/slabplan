@@ -27,7 +27,6 @@ import { api } from "@/lib/api"
 import {
   addBusinessDays,
   calculateBusinessEndDate,
-  calculateWorkDaysBetween,
   classifyWorkday,
   dateKey,
   DEFAULT_SCHEDULE_COLOR,
@@ -50,7 +49,6 @@ import {
 } from "@/lib/schedule"
 import { cn } from "@/lib/utils"
 import { ScheduleItemDialog } from "@/components/schedule/ScheduleItemDialog"
-import { ScheduleQuickCreate, type QuickCreateDraft } from "@/components/schedule/ScheduleQuickCreate"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -1209,7 +1207,7 @@ function schedulePayloadFromItem(item: ScheduleItemRecord): ScheduleItemPayload 
     endDate: null,
     isHourly: !!item.isHourly,
     startTime: item.isHourly ? item.startTime : null,
-    endTime: null,
+    endTime: item.isHourly ? item.endTime : null,
     progress: Math.max(0, Math.min(100, item.progress ?? 0)),
     reminder: item.reminder || "none",
     notes: item.notes ?? null,
@@ -1570,12 +1568,6 @@ export default function JobSchedulePage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
   const [dialogInitDate, setDialogInitDate] = useState<string | null>(null)
-  const [dialogInitTitle, setDialogInitTitle] = useState<string | undefined>(undefined)
-  const [dialogInitColor, setDialogInitColor] = useState<string | undefined>(undefined)
-  const [dialogInitIsHourly, setDialogInitIsHourly] = useState<boolean | undefined>(undefined)
-  const [dialogInitStartTime, setDialogInitStartTime] = useState<string | undefined>(undefined)
-  const [quickCreateOpen, setQuickCreateOpen] = useState(false)
-  const [quickCreateDate, setQuickCreateDate] = useState<string>("")
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -2215,7 +2207,7 @@ export default function JobSchedulePage() {
         workDays: payload.workDays,
         isHourly: payload.isHourly,
         startTime: payload.isHourly ? payload.startTime : null,
-        endTime: null,
+        endTime: payload.isHourly ? payload.endTime : null,
         progress: payload.progress,
         reminder: payload.reminder,
         showOnGantt: payload.showOnGantt,
@@ -2847,55 +2839,8 @@ export default function JobSchedulePage() {
   }
 
   function openNewItem(startDate?: string) {
-    if (startDate) {
-      setQuickCreateDate(startDate)
-      setQuickCreateOpen(true)
-    } else {
-      setActiveItemId(null)
-      setDialogInitDate(null)
-      setDialogInitTitle(undefined)
-      setDialogInitColor(undefined)
-      setDialogInitIsHourly(undefined)
-      setDialogInitStartTime(undefined)
-      setDialogOpen(true)
-    }
-  }
-
-  async function handleQuickSave(draft: QuickCreateDraft) {
-    const workDays = Math.max(1, calculateWorkDaysBetween(draft.startDate, draft.endDate, workdayExceptions))
-    await api.post(`/jobs/${jobId}/schedule`, {
-      title: draft.title.trim(),
-      displayColor: draft.displayColor,
-      assigneeIds: [],
-      startDate: draft.startDate,
-      workDays,
-      endDate: null,
-      isHourly: !draft.isAllDay,
-      startTime: draft.isAllDay ? null : draft.startTime,
-      endTime: draft.isAllDay ? null : draft.endTime,
-      progress: 0,
-      reminder: "none",
-      notes: null,
-      notifyUserIds: [],
-      tags: [],
-      predecessors: [],
-      phaseId: null,
-      showOnGantt: true,
-      visibleToEstimators: true,
-      visibleToInstallers: true,
-      visibleToOfficeStaff: true,
-      isComplete: false,
-    })
-    await fetchItems()
-  }
-
-  function handleQuickMoreOptions(draft: QuickCreateDraft) {
     setActiveItemId(null)
-    setDialogInitDate(draft.startDate)
-    setDialogInitTitle(draft.title.trim() || undefined)
-    setDialogInitColor(draft.displayColor)
-    setDialogInitIsHourly(draft.isAllDay ? false : true)
-    setDialogInitStartTime(draft.isAllDay ? undefined : draft.startTime)
+    setDialogInitDate(startDate ?? null)
     setDialogOpen(true)
   }
 
@@ -4949,19 +4894,11 @@ export default function JobSchedulePage() {
             if (!nextOpen) {
               setActiveItemId(null)
               setDialogInitDate(null)
-              setDialogInitTitle(undefined)
-              setDialogInitColor(undefined)
-              setDialogInitIsHourly(undefined)
-              setDialogInitStartTime(undefined)
             }
           }}
           jobId={jobId}
           itemId={activeItemId}
           initialStartDate={dialogInitDate}
-          initialTitle={dialogInitTitle}
-          initialDisplayColor={dialogInitColor}
-          initialIsHourly={dialogInitIsHourly}
-          initialStartTime={dialogInitStartTime}
           items={activeItems}
           users={users}
           settings={settings}
@@ -4975,15 +4912,6 @@ export default function JobSchedulePage() {
         />
       ) : null}
 
-      {quickCreateDate ? (
-        <ScheduleQuickCreate
-          open={quickCreateOpen}
-          onOpenChange={setQuickCreateOpen}
-          initialDate={quickCreateDate}
-          onSave={handleQuickSave}
-          onMoreOptions={handleQuickMoreOptions}
-        />
-      ) : null}
     </>
   )
 }

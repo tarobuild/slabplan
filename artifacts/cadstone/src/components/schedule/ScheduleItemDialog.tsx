@@ -94,6 +94,7 @@ type ScheduleFormValues = {
   endDate: string
   isHourly: boolean
   startTime: string
+  endTime: string
   progress: number
   reminder: string
   phaseId: string | null
@@ -118,10 +119,6 @@ type ScheduleItemDialogProps = {
   jobId: string
   itemId: string | null
   initialStartDate?: string | null
-  initialTitle?: string
-  initialDisplayColor?: string
-  initialIsHourly?: boolean
-  initialStartTime?: string
   items: ScheduleItemRecord[]
   users: UserOption[]
   settings: ScheduleSettings
@@ -157,6 +154,7 @@ function defaultForm(startDate: string, workdayExceptions: ScheduleWorkdayExcept
     endDate: calculateBusinessEndDate(startDate, 1, workdayExceptions),
     isHourly: false,
     startTime: "08:00",
+    endTime: "17:00",
     progress: 0,
     reminder: "none",
     phaseId: null,
@@ -180,6 +178,7 @@ function formFromItem(item: ScheduleItemRecord): ScheduleFormValues {
     endDate: item.endDate,
     isHourly: !!item.isHourly,
     startTime: item.startTime?.slice(0, 5) || "08:00",
+    endTime: item.endTime?.slice(0, 5) || "17:00",
     progress: item.progress ?? 0,
     reminder: item.reminder || "none",
     phaseId: item.phaseId,
@@ -219,10 +218,6 @@ export function ScheduleItemDialog({
   jobId,
   itemId,
   initialStartDate,
-  initialTitle,
-  initialDisplayColor,
-  initialIsHourly,
-  initialStartTime,
   items,
   users,
   settings,
@@ -298,12 +293,7 @@ export function ScheduleItemDialog({
 
   function resetForNewItem() {
     setItem(null)
-    const form = defaultForm(initialStartDate || today, workdayExceptions)
-    if (initialTitle) form.title = initialTitle
-    if (initialDisplayColor) form.displayColor = initialDisplayColor
-    if (initialIsHourly !== undefined) form.isHourly = initialIsHourly
-    if (initialStartTime) form.startTime = initialStartTime
-    setValues(form)
+    setValues(defaultForm(initialStartDate || today, workdayExceptions))
     setAssigneeQuery("")
     setNotifyAssignees(false)
     setNoteDraft("")
@@ -456,7 +446,7 @@ export function ScheduleItemDialog({
       endDate: null,
       isHourly: values.isHourly,
       startTime: values.isHourly ? values.startTime : null,
-      endTime: null,
+      endTime: values.isHourly ? values.endTime : null,
       progress: values.progress,
       reminder: values.reminder,
       notes: item?.notes ?? null,
@@ -950,332 +940,128 @@ export function ScheduleItemDialog({
                   <TabsTrigger value="related">Related Items ({relatedCount})</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="details" className="mt-5 space-y-5">
-                  <div className="space-y-5">
-                    {item ? (
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          className={cn(
-                            "inline-flex size-7 items-center justify-center rounded-full border transition-colors",
-                            values.isComplete
-                              ? "border-emerald-600 bg-emerald-600 text-white"
-                              : "border-slate-300 bg-white text-slate-400 hover:border-slate-400",
-                          )}
-                          onClick={() =>
-                            updateValues((current) => ({
-                              ...current,
-                              isComplete: !current.isComplete,
-                              progress: current.isComplete
-                                ? current.progress >= 100
-                                  ? 99
-                                  : current.progress
-                                : 100,
-                            }))
-                          }
-                        >
-                          {values.isComplete ? (
-                            <Check className="size-4" />
-                          ) : (
-                            <Circle className="size-4" />
-                          )}
-                        </button>
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">Complete</p>
-                          <p className="text-xs text-slate-500">
-                            Mark this item done without leaving the modal
-                          </p>
+                <TabsContent value="details" className="mt-5">
+                  <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+                    {/* Left column — Title, Assignees, Sub-tabs */}
+                    <div className="space-y-5 min-w-0">
+                      {item ? (
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            className={cn(
+                              "inline-flex size-7 items-center justify-center rounded-full border transition-colors shrink-0",
+                              values.isComplete
+                                ? "border-emerald-600 bg-emerald-600 text-white"
+                                : "border-slate-300 bg-white text-slate-400 hover:border-slate-400",
+                            )}
+                            onClick={() =>
+                              updateValues((current) => ({
+                                ...current,
+                                isComplete: !current.isComplete,
+                                progress: current.isComplete
+                                  ? current.progress >= 100
+                                    ? 99
+                                    : current.progress
+                                  : 100,
+                              }))
+                            }
+                          >
+                            {values.isComplete ? (
+                              <Check className="size-4" />
+                            ) : (
+                              <Circle className="size-4" />
+                            )}
+                          </button>
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">Complete</p>
+                            <p className="text-xs text-slate-500">
+                              Mark this item done
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
+                      ) : null}
 
-                    <div className="space-y-2">
-                      <Label htmlFor="schedule-item-title">Title</Label>
-                      <Input
-                        id="schedule-item-title"
-                        value={values.title}
-                        required
-                        placeholder='e.g. "Granite Countertop Template"'
-                        onChange={(event) =>
-                          updateValues((current) => ({
-                            ...current,
-                            title: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Display Color</Label>
-                      <Select
-                        value={values.displayColor}
-                        onValueChange={(value) =>
-                          updateValues((current) => ({ ...current, displayColor: value }))
-                        }
-                      >
-                        <SelectTrigger>
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="size-3 rounded-full"
-                              style={{ backgroundColor: values.displayColor }}
-                            />
-                            <SelectValue />
-                          </div>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SCHEDULE_COLOR_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="size-3 rounded-full"
-                                  style={{ backgroundColor: option.value }}
-                                />
-                                <span>{option.label}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label>Assignees</Label>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className={cn(
-                            "h-9 px-3",
-                            notifyAssignees && "border-orange-200 bg-orange-50 text-orange-700",
-                          )}
-                          onClick={() => setNotifyAssignees((current) => !current)}
-                        >
-                          <Send className="mr-1.5 size-3.5" />
-                          Notify
-                        </Button>
-                      </div>
-                      <div className="rounded-md border border-[#E5E7EB] px-3 py-2">
-                        {selectedAssignees.length > 0 ? (
-                          <div className="mb-2 flex flex-wrap gap-2">
-                            {selectedAssignees.map((user) => (
-                              <button
-                                key={user.id}
-                                type="button"
-                                className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
-                                onClick={() => removeAssignee(user.id)}
-                              >
-                                {user.fullName}
-                                <span className="text-slate-400">×</span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                        <Input
-                          value={assigneeQuery}
-                          placeholder="Search users"
-                          className="border-0 px-0 shadow-none focus-visible:ring-0"
-                          onChange={(event) => setAssigneeQuery(event.target.value)}
-                        />
-                        {assigneeMatches.length > 0 ? (
-                          <div className="mt-2 rounded-md border border-[#E5E7EB] bg-white">
-                            {assigneeMatches.map((user) => (
-                              <button
-                                key={user.id}
-                                type="button"
-                                className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-slate-50"
-                                onClick={() => addAssignee(user.id)}
-                              >
-                                <div>
-                                  <p className="text-sm font-medium text-slate-900">
-                                    {user.fullName}
-                                  </p>
-                                  <p className="text-xs text-slate-500">{user.email}</p>
-                                </div>
-                                <span className="text-xs text-slate-400">
-                                  {user.role.replaceAll("_", " ")}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-3">
                       <div className="space-y-2">
-                        <Label htmlFor="schedule-item-start-date">Start Date</Label>
+                        <Label htmlFor="schedule-item-title">Title</Label>
                         <Input
-                          id="schedule-item-start-date"
-                          type="date"
-                          value={values.startDate}
+                          id="schedule-item-title"
+                          value={values.title}
+                          required
+                          placeholder='e.g. "Granite Countertop Template"'
                           onChange={(event) =>
-                            updateValues((current) => {
-                              const startDate = event.target.value
-    return {
-      ...current,
-      startDate,
-      endDate: calculateBusinessEndDate(startDate, current.workDays, workdayExceptions),
-    }
-  })
-}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="schedule-item-work-days">Work Days</Label>
-                        <div className="relative">
-                          <Input
-                            id="schedule-item-work-days"
-                            type="number"
-                            min="1"
-                            max="365"
-                            value={values.workDays}
-                            onChange={(event) => {
-                              const workDays = Math.max(1, Number(event.target.value) || 1)
-                              setManualEndDate(false)
-                              updateValues((current) => ({
-                                ...current,
-                                workDays,
-                                endDate: calculateBusinessEndDate(current.startDate, workDays, workdayExceptions),
-                              }))
-                            }}
-                          />
-                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
-                            {values.workDays === 1 ? "day" : "days"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="schedule-item-end-date">End Date</Label>
-                        <Input
-                          id="schedule-item-end-date"
-                          type="date"
-                          value={values.endDate}
-                          onChange={(event) => {
-                            const endDate = event.target.value
-                            setManualEndDate(true)
                             updateValues((current) => ({
                               ...current,
-                              endDate,
-                              workDays: calculateWorkDaysBetween(current.startDate, endDate, workdayExceptions),
-                            }))
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">Hourly</p>
-                          <p className="text-xs text-slate-500">
-                            Add a start time to this schedule item
-                          </p>
-                        </div>
-                        <Switch
-                          checked={values.isHourly}
-                          onCheckedChange={(checked) =>
-                            updateValues((current) => ({
-                              ...current,
-                              isHourly: checked,
-                              startTime: checked ? current.startTime : "08:00",
+                              title: event.target.value,
                             }))
                           }
                         />
                       </div>
-                    </div>
 
-                    {values.isHourly ? (
                       <div className="space-y-2">
-                        <Label htmlFor="schedule-item-start-time">Start Time</Label>
-                        <div className="relative">
-                          <Clock3 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                        <div className="flex items-center justify-between">
+                          <Label>Assignees</Label>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className={cn(
+                              "h-8 px-2.5 text-xs",
+                              notifyAssignees && "border-orange-200 bg-orange-50 text-orange-700",
+                            )}
+                            onClick={() => setNotifyAssignees((current) => !current)}
+                          >
+                            <Send className="mr-1 size-3" />
+                            Notify
+                          </Button>
+                        </div>
+                        <div className="rounded-md border border-[#E5E7EB] px-3 py-2">
+                          {selectedAssignees.length > 0 ? (
+                            <div className="mb-2 flex flex-wrap gap-1.5">
+                              {selectedAssignees.map((user) => (
+                                <button
+                                  key={user.id}
+                                  type="button"
+                                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700"
+                                  onClick={() => removeAssignee(user.id)}
+                                >
+                                  {user.fullName}
+                                  <span className="text-slate-400">×</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                           <Input
-                            id="schedule-item-start-time"
-                            type="time"
-                            value={values.startTime}
-                            className="pl-10"
-                            onChange={(event) =>
-                              updateValues((current) => ({
-                                ...current,
-                                startTime: event.target.value,
-                              }))
-                            }
+                            value={assigneeQuery}
+                            placeholder="Search users"
+                            className="border-0 px-0 shadow-none focus-visible:ring-0 h-8"
+                            onChange={(event) => setAssigneeQuery(event.target.value)}
                           />
+                          {assigneeMatches.length > 0 ? (
+                            <div className="mt-1.5 rounded-md border border-[#E5E7EB] bg-white max-h-36 overflow-y-auto">
+                              {assigneeMatches.map((user) => (
+                                <button
+                                  key={user.id}
+                                  type="button"
+                                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-slate-50"
+                                  onClick={() => addAssignee(user.id)}
+                                >
+                                  <div>
+                                    <p className="text-sm font-medium text-slate-900">
+                                      {user.fullName}
+                                    </p>
+                                    <p className="text-xs text-slate-500">{user.email}</p>
+                                  </div>
+                                  <span className="text-xs text-slate-400">
+                                    {user.role.replaceAll("_", " ")}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
-                    ) : null}
 
-                    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_120px]">
-                      <div className="space-y-2">
-                        <Label>Progress</Label>
-                        <div className="rounded-lg border border-[#E5E7EB] px-4 py-3">
-                          <Slider
-                            value={[values.progress]}
-                            min={0}
-                            max={100}
-                            step={1}
-                            onValueChange={([nextProgress]) =>
-                              updateValues((current) => ({
-                                ...current,
-                                progress: nextProgress ?? 0,
-                                isComplete: (nextProgress ?? 0) >= 100 ? true : current.isComplete,
-                              }))
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="schedule-item-progress-number">Percent</Label>
-                        <div className="relative">
-                          <Input
-                            id="schedule-item-progress-number"
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={values.progress}
-                            onChange={(event) => {
-                              const progress = Math.max(
-                                0,
-                                Math.min(100, Number(event.target.value) || 0),
-                              )
-                              updateValues((current) => ({
-                                ...current,
-                                progress,
-                                isComplete: progress >= 100 ? true : current.isComplete,
-                              }))
-                            }}
-                          />
-                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
-                            %
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Reminder</Label>
-                      <Select
-                        value={values.reminder}
-                        onValueChange={(value) =>
-                          updateValues((current) => ({ ...current, reminder: value }))
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SCHEDULE_REMINDER_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <Tabs value={subTab} onValueChange={setSubTab}>
+                      <Tabs value={subTab} onValueChange={setSubTab}>
                     <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-md border border-[#E5E7EB] bg-[#F8FAFC] p-1">
                       <TabsTrigger value="predecessors">Predecessors &amp; Links</TabsTrigger>
                       <TabsTrigger value="phases">Phases &amp; Tags</TabsTrigger>
@@ -1792,6 +1578,193 @@ export function ScheduleItemDialog({
                       )}
                     </TabsContent>
                   </Tabs>
+                    </div>
+
+                    {/* Right column — Dates, Time, Color, Progress, Reminder */}
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 space-y-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="schedule-item-start-date" className="text-xs">Start Date</Label>
+                          <Input
+                            id="schedule-item-start-date"
+                            type="date"
+                            value={values.startDate}
+                            className="h-9"
+                            onChange={(event) =>
+                              updateValues((current) => {
+                                const startDate = event.target.value
+                                return {
+                                  ...current,
+                                  startDate,
+                                  endDate: calculateBusinessEndDate(startDate, current.workDays, workdayExceptions),
+                                }
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="schedule-item-end-date" className="text-xs">End Date</Label>
+                          <Input
+                            id="schedule-item-end-date"
+                            type="date"
+                            value={values.endDate}
+                            className="h-9"
+                            onChange={(event) => {
+                              const endDate = event.target.value
+                              setManualEndDate(true)
+                              updateValues((current) => ({
+                                ...current,
+                                endDate,
+                                workDays: calculateWorkDaysBetween(current.startDate, endDate, workdayExceptions),
+                              }))
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="schedule-item-work-days" className="text-xs">Work Days</Label>
+                          <div className="relative">
+                            <Input
+                              id="schedule-item-work-days"
+                              type="number"
+                              min="1"
+                              max="365"
+                              value={values.workDays}
+                              className="h-9"
+                              onChange={(event) => {
+                                const workDays = Math.max(1, Number(event.target.value) || 1)
+                                setManualEndDate(false)
+                                updateValues((current) => ({
+                                  ...current,
+                                  workDays,
+                                  endDate: calculateBusinessEndDate(current.startDate, workDays, workdayExceptions),
+                                }))
+                              }}
+                            />
+                            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+                              {values.workDays === 1 ? "day" : "days"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Set time range</Label>
+                          <Switch
+                            checked={values.isHourly}
+                            onCheckedChange={(checked) =>
+                              updateValues((current) => ({
+                                ...current,
+                                isHourly: checked,
+                                startTime: checked ? current.startTime : "08:00",
+                                endTime: checked ? current.endTime : "17:00",
+                              }))
+                            }
+                          />
+                        </div>
+                        {values.isHourly ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-medium text-slate-500">Start</label>
+                              <div className="relative">
+                                <Clock3 className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+                                <Input
+                                  type="time"
+                                  value={values.startTime}
+                                  className="h-9 pl-8 text-sm"
+                                  onChange={(event) =>
+                                    updateValues((current) => ({
+                                      ...current,
+                                      startTime: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-medium text-slate-500">End</label>
+                              <div className="relative">
+                                <Clock3 className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+                                <Input
+                                  type="time"
+                                  value={values.endTime}
+                                  className="h-9 pl-8 text-sm"
+                                  onChange={(event) =>
+                                    updateValues((current) => ({
+                                      ...current,
+                                      endTime: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Display Color</Label>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {SCHEDULE_COLOR_OPTIONS.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() =>
+                                updateValues((current) => ({ ...current, displayColor: option.value }))
+                              }
+                              title={option.label}
+                              className={cn(
+                                "size-6 rounded-full transition-all hover:scale-110 shrink-0",
+                                values.displayColor === option.value && "ring-2 ring-offset-2 ring-slate-400 scale-110",
+                              )}
+                              style={{ backgroundColor: option.value }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Progress</Label>
+                          <span className="text-xs font-medium text-slate-500 tabular-nums">{values.progress}%</span>
+                        </div>
+                        <Slider
+                          value={[values.progress]}
+                          min={0}
+                          max={100}
+                          step={1}
+                          onValueChange={([nextProgress]) =>
+                            updateValues((current) => ({
+                              ...current,
+                              progress: nextProgress ?? 0,
+                              isComplete: (nextProgress ?? 0) >= 100 ? true : current.isComplete,
+                            }))
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Reminder</Label>
+                        <Select
+                          value={values.reminder}
+                          onValueChange={(value) =>
+                            updateValues((current) => ({ ...current, reminder: value }))
+                          }
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SCHEDULE_REMINDER_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="related" className="mt-5 rounded-xl border border-[#E5E7EB] p-4">

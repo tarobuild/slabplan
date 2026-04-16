@@ -93,5 +93,5 @@ Seed credentials: `cruz.martinez@cadstone.internal` / `Cadstone123!` (also maria
 - ✅ File management: Folder browser + file upload on all three file tabs
 - ✅ Jobs: Create, view, edit, delete with full form
 - ✅ Leads: Create, view, delete with status badges and revenue tracking
-- ✅ Schedule: Add items with color, dates, progress tracking
+- ✅ Schedule: Full dialog with 2-column layout (left: title/assignees/sub-tabs, right: dates/time range/color/progress/reminder), start+end time support, multi-day via work days
 - ✅ Daily Logs: Create logs with weather notes, privacy setting, keyword search

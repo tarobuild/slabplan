@@ -1570,6 +1570,10 @@ export default function JobSchedulePage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
   const [dialogInitDate, setDialogInitDate] = useState<string | null>(null)
+  const [dialogInitTitle, setDialogInitTitle] = useState<string | undefined>(undefined)
+  const [dialogInitColor, setDialogInitColor] = useState<string | undefined>(undefined)
+  const [dialogInitIsHourly, setDialogInitIsHourly] = useState<boolean | undefined>(undefined)
+  const [dialogInitStartTime, setDialogInitStartTime] = useState<string | undefined>(undefined)
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const [quickCreateDate, setQuickCreateDate] = useState<string>("")
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
@@ -2849,6 +2853,10 @@ export default function JobSchedulePage() {
     } else {
       setActiveItemId(null)
       setDialogInitDate(null)
+      setDialogInitTitle(undefined)
+      setDialogInitColor(undefined)
+      setDialogInitIsHourly(undefined)
+      setDialogInitStartTime(undefined)
       setDialogOpen(true)
     }
   }
@@ -2884,6 +2892,10 @@ export default function JobSchedulePage() {
   function handleQuickMoreOptions(draft: QuickCreateDraft) {
     setActiveItemId(null)
     setDialogInitDate(draft.startDate)
+    setDialogInitTitle(draft.title.trim() || undefined)
+    setDialogInitColor(draft.displayColor)
+    setDialogInitIsHourly(draft.isAllDay ? false : true)
+    setDialogInitStartTime(draft.isAllDay ? undefined : draft.startTime)
     setDialogOpen(true)
   }
 
@@ -4937,11 +4949,19 @@ export default function JobSchedulePage() {
             if (!nextOpen) {
               setActiveItemId(null)
               setDialogInitDate(null)
+              setDialogInitTitle(undefined)
+              setDialogInitColor(undefined)
+              setDialogInitIsHourly(undefined)
+              setDialogInitStartTime(undefined)
             }
           }}
           jobId={jobId}
           itemId={activeItemId}
           initialStartDate={dialogInitDate}
+          initialTitle={dialogInitTitle}
+          initialDisplayColor={dialogInitColor}
+          initialIsHourly={dialogInitIsHourly}
+          initialStartTime={dialogInitStartTime}
           items={activeItems}
           users={users}
           settings={settings}

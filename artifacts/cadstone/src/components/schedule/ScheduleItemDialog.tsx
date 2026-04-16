@@ -118,6 +118,10 @@ type ScheduleItemDialogProps = {
   jobId: string
   itemId: string | null
   initialStartDate?: string | null
+  initialTitle?: string
+  initialDisplayColor?: string
+  initialIsHourly?: boolean
+  initialStartTime?: string
   items: ScheduleItemRecord[]
   users: UserOption[]
   settings: ScheduleSettings
@@ -215,6 +219,10 @@ export function ScheduleItemDialog({
   jobId,
   itemId,
   initialStartDate,
+  initialTitle,
+  initialDisplayColor,
+  initialIsHourly,
+  initialStartTime,
   items,
   users,
   settings,
@@ -290,7 +298,12 @@ export function ScheduleItemDialog({
 
   function resetForNewItem() {
     setItem(null)
-    setValues(defaultForm(initialStartDate || today, workdayExceptions))
+    const form = defaultForm(initialStartDate || today, workdayExceptions)
+    if (initialTitle) form.title = initialTitle
+    if (initialDisplayColor) form.displayColor = initialDisplayColor
+    if (initialIsHourly !== undefined) form.isHourly = initialIsHourly
+    if (initialStartTime) form.startTime = initialStartTime
+    setValues(form)
     setAssigneeQuery("")
     setNotifyAssignees(false)
     setNoteDraft("")

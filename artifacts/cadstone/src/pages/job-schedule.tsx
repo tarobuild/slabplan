@@ -3345,13 +3345,12 @@ export default function JobSchedulePage() {
                                     type="button"
                                     className="pointer-events-auto absolute bottom-0 right-3 text-[11px] font-medium text-orange-600 hover:text-orange-700 cursor-pointer"
                                     onClick={() => {
-                                      // Find the day in this week with the most items
                                       let bestDay = week[0]
                                       let bestCount = 0
                                       for (const day of week) {
-                                        const count = filteredItems.filter((item) => itemOverlapsDateRange(item, day, day)).length
-                                        if (count > bestCount) {
-                                          bestCount = count
+                                        const dayItemCount = filteredItems.filter((item) => itemOverlapsDateRange(item, day, day)).length
+                                        if (dayItemCount > bestCount) {
+                                          bestCount = dayItemCount
                                           bestDay = day
                                         }
                                       }
@@ -3480,7 +3479,7 @@ export default function JobSchedulePage() {
                                   onClick={() => {
                                     const hour = DAY_START_HOUR + hourIndex
                                     const startTime = `${String(hour).padStart(2, "0")}:00`
-                                    const endTime = `${String(Math.min(hour + 1, DAY_END_HOUR)).padStart(2, "0")}:00`
+                                    const endTime = `${String(hour + 1).padStart(2, "0")}:00`
                                     openNewItem(dk, startTime, endTime)
                                   }}
                                 />
@@ -3604,7 +3603,7 @@ export default function JobSchedulePage() {
                               onClick={() => {
                                 const hour = DAY_START_HOUR + hourIndex
                                 const startTime = `${String(hour).padStart(2, "0")}:00`
-                                const endTime = `${String(Math.min(hour + 1, DAY_END_HOUR)).padStart(2, "0")}:00`
+                                const endTime = `${String(hour + 1).padStart(2, "0")}:00`
                                 openNewItem(dateKey(calendarAnchorDate), startTime, endTime)
                               }}
                             />

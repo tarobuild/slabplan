@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && node ./build.mjs && node --enable-source-maps ./dist/index.mjs",
+    "dev": "export NODE_ENV=development && pnpm --filter @workspace/cadstone run build && node ./build.mjs && node --enable-source-maps ./dist/index.mjs",
     "build": "pnpm --filter @workspace/cadstone run build && node ./build.mjs",
     "build:prod": "pnpm --filter @workspace/cadstone run build && node ./build.mjs",
     "start": "NODE_ENV=production node --enable-source-maps ./dist/index.mjs",

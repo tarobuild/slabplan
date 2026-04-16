@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { invalidateAppData, subscribeToDataRefresh } from "@/lib/data-refresh"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import {
   Table,
   TableBody,
@@ -99,6 +100,7 @@ const emptyForm: CreateJobForm = {
 }
 
 export default function JobsPage() {
+  useDocumentTitle("Jobs")
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === "admin"
   const [jobs, setJobs] = useState<Job[]>([])

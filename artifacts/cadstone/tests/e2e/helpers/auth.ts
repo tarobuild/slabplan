@@ -1,0 +1,115 @@
+import type { Page, APIRequestContext } from "@playwright/test"
+import fs from "node:fs"
+import { ANWAR_STATE, CESAR_STATE } from "./storage"
+
+export type Credentials = { email: string; password: string }
+
+const REFRESH_COOKIE = "cadstone_refresh_token"
+
+export const CESAR: Credentials = {
+  email: "cesar@cadstone.works",
+  password: "Test1!",
+}
+
+export const ANWAR: Credentials = {
+  email: "anwar@cadstone.works",
+  password: "Test2!",
+}
+
+// Module-level memoization: the API server rate-limits /auth/login to
+// 5 attempts per email per 10 minutes, so hitting it once per test would
+// trip the limiter long before the suite finishes. With workers=1 every
+// spec shares this process, so one login per user covers everything.
+const tokenCache = new Map<string, { accessToken: string; userId: string }>()
+
+/**
+ * Log in via the UI. After this resolves we are sitting on /dashboard.
+ * Use sparingly — prefer `loginViaApi` + the auth token for anything
+ * that doesn't genuinely need to click through the sign-in form.
+ */
+export async function loginViaUi(page: Page, creds: Credentials) {
+  // Seed the auth state directly by calling /auth/login from within the
+  // browser context. This piggy-backs on the refresh-token cookie, so a
+  // subsequent visit to /dashboard hydrates via bootstrapAuthSession —
+  // and we still hold the assertion that "user can log in" because the
+  // UI-driven test in auth.spec.ts posts to the real form.
+  await page.goto("/login")
+  await page.getByLabel(/email/i).fill(creds.email)
+  await page.getByLabel(/password/i).fill(creds.password)
+  await page.getByRole("button", { name: /sign in/i }).click()
+  await page.waitForURL(/\/dashboard(\?|$|\/)/)
+}
+
+function stateFileFor(creds: Credentials) {
+  if (creds.email === CESAR.email) return CESAR_STATE
+  if (creds.email === ANWAR.email) return ANWAR_STATE
+  return null
+}
+
+function readRefreshTokenFromState(statePath: string): string | null {
+  try {
+    const raw = fs.readFileSync(statePath, "utf8")
+    const parsed = JSON.parse(raw) as {
+      cookies?: Array<{ name: string; value: string }>
+    }
+    return (
+      parsed.cookies?.find((c) => c.name === REFRESH_COOKIE)?.value ?? null
+    )
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Memoized API login. Reuses the refresh cookie provisioned by
+ * auth.setup.ts to mint a fresh access token via /auth/refresh (which
+ * is NOT rate limited), avoiding the per-email 5-attempt cap on
+ * /auth/login. Falls back to /auth/login for credentials that don't
+ * have a provisioned state file.
+ */
+export async function loginViaApi(
+  request: APIRequestContext,
+  creds: Credentials,
+): Promise<{ accessToken: string; userId: string }> {
+  const cached = tokenCache.get(creds.email)
+  if (cached) return cached
+
+  const statePath = stateFileFor(creds)
+  const refreshToken = statePath ? readRefreshTokenFromState(statePath) : null
+
+  if (refreshToken) {
+    const res = await request.post("/api/auth/refresh", {
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        Cookie: `${REFRESH_COOKIE}=${refreshToken}`,
+      },
+    })
+    if (res.ok()) {
+      const body = await res.json()
+      const record = { accessToken: body.accessToken, userId: body.user.id }
+      tokenCache.set(creds.email, record)
+      return record
+    }
+    // Fall through to /auth/login if refresh rejects the cookie (e.g.
+    // server restarted and the refresh secret rotated).
+  }
+
+  const res = await request.post("/api/auth/login", {
+    data: creds,
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+  })
+  if (!res.ok()) {
+    throw new Error(`Login failed for ${creds.email}: ${res.status()}`)
+  }
+  const body = await res.json()
+  const record = { accessToken: body.accessToken, userId: body.user.id }
+  tokenCache.set(creds.email, record)
+  return record
+}
+
+export function authHeaders(accessToken: string) {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    "X-Requested-With": "XMLHttpRequest",
+  }
+}

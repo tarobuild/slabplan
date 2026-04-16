@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react"
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom"
+import {
+  BrowserRouter,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useNavigate,
+} from "react-router-dom"
 import { Toaster } from "sonner"
 import AppLayout from "@/components/layout/AppLayout"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
-import { bootstrapAuthSession } from "@/lib/api"
+import { bootstrapAuthSession, FORBIDDEN_EVENT } from "@/lib/api"
 import ClientsPage from "@/pages/clients"
 import DashboardPage from "@/pages/dashboard"
 import FilesDocumentsPage from "@/pages/files-documents"
@@ -52,6 +59,23 @@ function ProtectedRoute({ ready }: { ready: boolean }) {
   }
 
   return <Outlet />
+}
+
+function ForbiddenListener() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    function handleForbidden() {
+      navigate("/403", { replace: true })
+    }
+
+    window.addEventListener(FORBIDDEN_EVENT, handleForbidden)
+    return () => {
+      window.removeEventListener(FORBIDDEN_EVENT, handleForbidden)
+    }
+  }, [navigate])
+
+  return null
 }
 
 function PublicOnlyRoute({ ready }: { ready: boolean }) {
@@ -128,6 +152,7 @@ function App() {
 
   return (
     <BrowserRouter basename={basename}>
+      <ForbiddenListener />
       <AppRoutes ready={ready} />
       <Toaster
         position="top-right"

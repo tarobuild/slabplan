@@ -65,7 +65,7 @@ function readJwtSecret(envName: JwtSecretEnvName) {
   return runtimeSecrets[envName];
 }
 
-function readUploadSecret(fallbackSecret: string) {
+function readUploadSecret(_fallbackSecret: string) {
   const value = process.env.JWT_UPLOAD_SECRET?.trim();
 
   if (value) {
@@ -73,14 +73,7 @@ function readUploadSecret(fallbackSecret: string) {
   }
 
   if (process.env.NODE_ENV === "production") {
-    if (!warnedMissingSecrets.has("JWT_UPLOAD_SECRET")) {
-      warnedMissingSecrets.add("JWT_UPLOAD_SECRET");
-      console.warn(
-        "[auth] JWT_UPLOAD_SECRET is not configured in production; falling back to JWT_ACCESS_SECRET. Configure JWT_UPLOAD_SECRET to restore secret isolation.",
-      );
-    }
-
-    return fallbackSecret;
+    throw new Error("JWT_UPLOAD_SECRET must be configured in production.");
   }
 
   return readJwtSecret("JWT_UPLOAD_SECRET");

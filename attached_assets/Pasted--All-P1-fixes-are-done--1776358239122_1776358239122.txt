@@ -1,0 +1,80 @@
+
+● All P1 fixes are done.                                              
+                                                
+  Summary of Pass 2 completion:          
+                                             
+  - Typecheck: pnpm -r typecheck → clean across all 4 projects
+  - E2E suite: 11/11 Playwright tests pass in ~25s (2 setup + 9 spec tests covering
+  auth, jobs, personal-todo isolation × 3, file upload, daily log, schedule)
+  - API workflow: Rebuilt and restarted; PID 43628 serving on :8080
+  - AUDIT_REPORT.md: Appended "Pass 2 — P1 fixes" section documenting all 8 changes
+  (hard-fail JWT_UPLOAD_SECRET, graceful shutdown, schedule pagination, workday N+1 fix,
+   global 403 handler, AdminRoute, per-route titles, Playwright suite) with run evidence
+   and the updated verdict.                                                             
+  - Updated verdict: GO. Only remaining launch-blocking item is the production-secrets
+  ops checklist, now enforced at boot by hard-fail rather than silent fallback.         
+                                                                                        
+  Key fixes made this turn to get the suite green:                                      
+  - tests/e2e/helpers/api.ts — deleteScheduleItem URL corrected to                      
+  /api/schedule-items/:id                                                               
+  - schedule.spec.ts — switched PATCH /jobs/:jobId/schedule/:id → PUT                   
+  /schedule-items/:id with full payload (PUT is a full replacement); UI assertion now   
+  clicks the List view button since the default month calendar caps lanes               
+  - personal-todo-isolation.spec.ts — direct GET and delete URLs corrected to           
+  /schedule-items/:id                                                                   
+  - auth.spec.ts — context.addCookies now uses the cookie's domain (Playwright rejected 
+  url: "about:blank")                                                                  
+  - daily-log.spec.ts — assert on notes text (rendered in the feed blockquote) instead  
+  of title (only in detail panel)                                                     
+  - file-upload.spec.ts — click the folder's aria-labelled overlay button to navigate   
+  in, since the root view only lists folders                                         
+  - auth.setup.ts — prefer /api/auth/refresh using persisted refresh cookie, so         
+  re-running the suite doesn't trip the login rate limiter        
+                                                                                        
+✻ Churned for 40m 17s                                             
+                                                                                        
+✻ Running scheduled task (Apr 16 4:50pm)                                                
+                                                                                        
+● Pass 2 is already complete — all 9 tasks (#16-24) are marked completed. Let me verify 
+  everything is still in place.                                                         
+                                                                                        
+● Bash(ps -ef | grep -v grep | grep -E "node .*index\.mjs" | head -3; echo "---"; curl  
+      -s -o /dev/null -w "api /api/auth/me: %{http_code}\n" http://localhost:8080/api/…)
+  ⎿  runner     43628   43627  0 16:48 ?        00:00:00 /nix/store/9cyx2v23dip6p9q     
+     98384k9v06c96qskb-nodejs-24.13.0/bin/node --enable-source-maps ./dist/index.mj     
+     s                                                                                  
+     … +2 lines (ctrl+o to expand)                                                      
+                                                                                        
+  Searched for 1 pattern (ctrl+o to expand)                                             
+                 
+● Everything is in place. There's nothing left to resume — Pass 2 finished cleanly.     
+  Here's the current state:                                                           
+                                                                                        
+  Task list — all 9 items done:                                                         
+  - #16 Hard-fail JWT_UPLOAD_SECRET ✅                                                  
+  - #17 Graceful shutdown (SIGTERM/SIGINT) ✅                                           
+  - #18 Paginate GET /jobs/:jobId/schedule ✅                                           
+  - #19 Fix workday-exceptions N+1 ✅                                                   
+  - #20 Global 403 handler ✅                                                           
+  - #21 AdminRoute wrapper ✅                                                           
+  - #22 Per-route document.title ✅                                                     
+  - #23 Playwright critical-path suite ✅                                               
+  - #24 Verify: typecheck + e2e + restart + report update ✅      
+                                                                                        
+  Verification artifacts:                                                               
+  - pnpm -r typecheck — clean across 4 projects                                         
+  - Playwright — 11/11 green in ~25s                                                    
+  - API server — PID 43628 running on :8080, probe returns expected 401 on /api/auth/me
+  - AUDIT_REPORT.md:234 — "Pass 2 — P1 fixes" section present with run evidence and     
+  updated GO verdict                                                                    
+                                                                                        
+  What's left (not part of Pass 2):                                                     
+  - Ops checklist item §7.1 — confirm all four JWT secrets are set in the Supabase      
+  production env before DNS cutover. The API now hard-fails at boot if any are missing  
+  in production, so this will surface immediately rather than silently falling back.    
+  - Post-launch backlog in §"Recommended post-launch work" (Sentry, route-level         
+  React.lazy, shared-store rate-limiting, auth-routes Zod migration, composite indexes).
+                                                                                        
+  If you'd like me to pick up any of the post-launch items or run an additional
+  verification sweep (e.g., a longer soak of the e2e suite, or a diff review of all Pass
+   2 changes in one place), tell me which one.               

@@ -1,0 +1,25 @@
+{
+  "cookies": [
+    {
+      "name": "cadstone_refresh_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoicmVmcmVzaCIsImVtYWlsIjoiYW53YXJAY2Fkc3RvbmUud29ya3MiLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NzYzNTgwMzksImV4cCI6MTc3ODk1MDAzOSwic3ViIjoiZDc4Y2JlYzctOTQwMy00YjhkLWIzMTItYjJhZThkMmM2ZThmIn0.f5_TCWqJxox7XeFy0QaQvadfO1Is4W0ILSviTHfyINo",
+      "domain": "localhost",
+      "path": "/api/auth",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "cadstone_upload_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoidXBsb2FkIiwiZW1haWwiOiJhbndhckBjYWRzdG9uZS53b3JrcyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NjM1ODAzOSwiZXhwIjoxNzc2NDQ0NDM5LCJzdWIiOiJkNzhjYmVjNy05NDAzLTRiOGQtYjMxMi1iMmFlOGQyYzZlOGYifQ.NCv4IOS72NYrBrUUq98R7k8pZa-pjVm3go_QTyWOoeg",
+      "domain": "localhost",
+      "path": "/uploads",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

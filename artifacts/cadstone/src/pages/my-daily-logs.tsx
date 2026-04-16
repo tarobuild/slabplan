@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { ChevronRight, FileText, Search, Users } from "lucide-react"
 import { api } from "@/lib/api"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,6 +49,7 @@ function apiError(error: unknown, fallback: string) {
 }
 
 export default function MyDailyLogsPage() {
+  useDocumentTitle("My daily logs")
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")

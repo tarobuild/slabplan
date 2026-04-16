@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import FileBrowser from "@/components/FileBrowser"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 
 const FILE_TABS = [
   { label: "Documents", path: "files/documents" },
@@ -9,6 +10,7 @@ const FILE_TABS = [
 ]
 
 export default function JobFilesDocumentsPage() {
+  useDocumentTitle("Job documents")
   const { jobId } = useParams<{ jobId: string }>()
   return (
     <div className="space-y-4">

@@ -25,6 +25,7 @@ import {
   Settings2,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import {
   addBusinessDays,
   calculateBusinessEndDate,
@@ -1517,6 +1518,7 @@ function remapDraftPayload(
 }
 
 export default function JobSchedulePage() {
+  useDocumentTitle("Schedule")
   const { jobId } = useParams<{ jobId: string }>()
   const currentUser = useAuthStore((s) => s.user)
   const monthPickerRef = useRef<HTMLInputElement | null>(null)
@@ -1678,8 +1680,27 @@ export default function JobSchedulePage() {
       return
     }
 
-    const response = await api.get<{ items: ScheduleItemRecord[] }>(`/jobs/${jobId}/schedule`)
-    const nextItems = response.data.items ?? []
+    const collected: ScheduleItemRecord[] = []
+    let cursor: string | null = null
+    // The backend caps each page at 500 items. Fetch pages in sequence until
+    // drained so the calendar continues to see the full job schedule.
+    // Safety cap prevents an infinite loop if the server returns a stuck cursor.
+    for (let pageGuard = 0; pageGuard < 20; pageGuard += 1) {
+      const query: Record<string, string> = { limit: "500" }
+      if (cursor) {
+        query.cursor = cursor
+      }
+      const response = await api.get<{
+        items: ScheduleItemRecord[]
+        nextCursor: string | null
+      }>(`/jobs/${jobId}/schedule`, { params: query })
+      collected.push(...(response.data.items ?? []))
+      cursor = response.data.nextCursor ?? null
+      if (!cursor) {
+        break
+      }
+    }
+    const nextItems = collected
     setItems(nextItems)
 
     if (!scheduleOffline) {

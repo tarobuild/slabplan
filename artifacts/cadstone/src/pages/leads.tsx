@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -312,6 +313,7 @@ function DetailRow({
 }
 
 export default function LeadsPage() {
+  useDocumentTitle("Leads")
   const [leads, setLeads] = useState<Lead[]>([])
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,

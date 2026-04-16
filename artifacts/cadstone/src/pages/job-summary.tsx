@@ -2,6 +2,7 @@ import { type Dispatch, type SetStateAction, useEffect, useState } from "react"
 import { useOutletContext, useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { api } from "@/lib/api"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import WorkerAssignmentPicker, { type WorkerOption } from "@/components/WorkerAssignmentPicker"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -118,6 +119,7 @@ type JobDetailContext = {
 }
 
 export default function JobSummaryPage() {
+  useDocumentTitle("Job summary")
   const { jobId } = useParams<{ jobId: string }>()
   const { setJob: setParentJob } = useOutletContext<JobDetailContext>()
   const user = useAuthStore((state) => state.user)

@@ -1,7 +1,9 @@
 import { LibraryBig } from "lucide-react"
 import FileBrowser from "@/components/FileBrowser"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 
 export default function ResourcesPage() {
+  useDocumentTitle("Resources")
   return (
     <div className="space-y-4">
       <div>

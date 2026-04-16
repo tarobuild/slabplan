@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { useAuthStore } from "@/store/auth"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { cn } from "@/lib/utils"
 import {
   dateKey,
@@ -431,6 +432,7 @@ type CalView = "calendar" | "list"
 type CalPeriod = "month" | "week"
 
 export default function DashboardPage() {
+  useDocumentTitle("Dashboard")
   const user = useAuthStore((s) => s.user)
   const navigate = useNavigate()
   const [today, setToday] = useState(() => new Date())

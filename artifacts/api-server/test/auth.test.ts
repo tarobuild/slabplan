@@ -39,7 +39,7 @@ test("upload tokens use the dedicated upload secret when configured", async () =
   }
 });
 
-test("production falls back to the access secret when JWT_UPLOAD_SECRET is missing", async () => {
+test("production throws on missing JWT_UPLOAD_SECRET", async () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
   const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
@@ -53,11 +53,10 @@ test("production falls back to the access secret when JWT_UPLOAD_SECRET is missi
   delete process.env.JWT_UPLOAD_SECRET;
 
   try {
-    const authModule = await import(`../src/lib/auth.ts?test=fallback-${Date.now()}`);
-    const uploadToken = authModule.signUploadToken(fixtureUser);
-
-    assert.equal(authModule.verifyUploadToken(uploadToken).userId, fixtureUser.id);
-    assert.doesNotThrow(() => jwt.verify(uploadToken, "access-secret-for-tests"));
+    await assert.rejects(
+      () => import(`../src/lib/auth.ts?test=fallback-${Date.now()}`),
+      /JWT_UPLOAD_SECRET must be configured in production/,
+    );
   } finally {
     restoreEnv("NODE_ENV", originalNodeEnv);
     restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);

@@ -4,7 +4,10 @@ import {
   type InternalAxiosRequestConfig,
 } from "axios"
 import axios from "axios"
+import { toast } from "sonner"
 import { useAuthStore, type AuthUser } from "@/store/auth"
+
+export const FORBIDDEN_EVENT = "cadstone:forbidden"
 
 type AuthResponse = {
   accessToken: string
@@ -75,6 +78,14 @@ function initializeInterceptors() {
       const requestUrl = request.url || ""
 
       if (
+        error.response?.status === 403 &&
+        !requestUrl.includes("/auth/")
+      ) {
+        notifyForbidden()
+        return Promise.reject(error)
+      }
+
+      if (
         error.response?.status !== 401 ||
         request._retry ||
         requestUrl.includes("/auth/")
@@ -97,6 +108,25 @@ function initializeInterceptors() {
 }
 
 initializeInterceptors()
+
+let lastForbiddenAt = 0
+
+function notifyForbidden() {
+  const now = Date.now()
+  // Debounce: a batch of parallel 403s (e.g. page load firing several queries)
+  // should result in a single toast + one route change, not a cascade.
+  if (now - lastForbiddenAt < 500) {
+    return
+  }
+  lastForbiddenAt = now
+
+  if (typeof window === "undefined") {
+    return
+  }
+
+  toast.error("You don't have permission to view that.")
+  window.dispatchEvent(new CustomEvent(FORBIDDEN_EVENT))
+}
 
 export async function refreshSession(): Promise<string | null> {
   if (refreshPromise) {

@@ -35,6 +35,7 @@ import {
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { useAuthStore } from "@/store/auth"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -2716,6 +2717,7 @@ function DailyLogDialog({
 
 export default function JobDailyLogsPage() {
   const { job, jobId } = useOutletContext<JobContext>()
+  useDocumentTitle(job?.title ? `${job.title} · Daily logs` : "Daily logs")
   const currentUser = useAuthStore((state) => state.user)
   const [settings, setSettings] = useState<DailyLogSettings>(DEFAULT_SETTINGS)
   const [customFields, setCustomFields] = useState<DailyLogCustomField[]>([])

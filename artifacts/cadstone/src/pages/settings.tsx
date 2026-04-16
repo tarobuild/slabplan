@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toast } from "sonner"
 
 type AuthUser = {
@@ -26,6 +27,7 @@ function getApiError(err: unknown, fallback: string): string {
 }
 
 export default function SettingsPage() {
+  useDocumentTitle("Settings")
   const { user: authUser, accessToken, setAuth } = useAuthStore()
 
   const [profileForm, setProfileForm] = useState({

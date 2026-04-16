@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { authApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toast } from "sonner"
 
 export default function RegisterPage() {
+  useDocumentTitle("Create account")
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
   const [fullName, setFullName] = useState("")

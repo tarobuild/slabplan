@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -166,6 +167,7 @@ function fmtCurrency(v: string | null) {
 }
 
 export default function ClientsPage() {
+  useDocumentTitle("Clients")
   const [clients, setClients] = useState<ClientListItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)

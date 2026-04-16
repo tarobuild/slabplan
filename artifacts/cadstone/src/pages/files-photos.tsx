@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/lib/api"
+import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toast } from "sonner"
 
 type Job = {
@@ -27,6 +28,7 @@ function getApiError(err: unknown, fallback: string): string {
 }
 
 export default function FilesPhotosPage() {
+  useDocumentTitle("Photos")
   const [jobs, setJobs] = useState<Job[]>([])
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)

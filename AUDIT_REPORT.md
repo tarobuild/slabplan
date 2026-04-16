@@ -231,15 +231,44 @@ Do these before flipping DNS to `cadstonesystems.com`:
 
 ---
 
+## Pass 2 — P1 fixes
+
+**Date:** 2026-04-16. Typecheck ✅ clean across 4 projects. Playwright suite ✅ 11/11 green (2 setup + 9 spec tests). API workflow restarted with fresh build on PID 43628.
+
+### Changes landed
+
+| # | Layer | File / Location | Change |
+|---|---|---|---|
+| 1 | API — secrets | `artifacts/api-server/src/lib/auth.ts` | `JWT_UPLOAD_SECRET` now hard-fails at boot in production instead of silently falling back to `JWT_ACCESS_SECRET`. Closes §7.1 secret-isolation gap. |
+| 2 | API — lifecycle | `artifacts/api-server/src/index.ts` | Graceful shutdown wired: `SIGTERM` / `SIGINT` stop the HTTP listener, drain in-flight requests, close the DB pool, then `process.exit(0)`. 10s hard-kill timer as a safety net. Closes §7.4. |
+| 3 | API — perf | `artifacts/api-server/src/routes/schedule.ts` — `GET /jobs/:jobId/schedule` | Pagination added (`page`/`pageSize` with `pageSize<=500`, returns `{items, pagination}`). Closes §8.2. |
+| 4 | API — perf | `artifacts/api-server/src/routes/schedule.ts` — `hydrateScheduleItems` | Replaced per-job workday-exceptions loop with one `inArray(jobIds)` query. Closes §8.1. |
+| 5 | Frontend — UX | `artifacts/cadstone/src/lib/api.ts` | Global 403 interceptor: any `403` from `apiFetch` routes the user to `/403` via the new branded page. Closes §5.1. |
+| 6 | Frontend — UX | `artifacts/cadstone/src/components/AdminRoute.tsx` (new) | Role-gated route wrapper reading the auth store; renders `<Outlet />` for admins, `<Navigate to="/403" replace />` otherwise. Wiring left available for the next admin-only route; no current admin-only routes to adopt it. Closes §1.3. |
+| 7 | Frontend — UX | `artifacts/cadstone/src/hooks/use-document-title.ts` (new) + 20 page components | Per-route `document.title` hook using the format `<Page> · CAD Stone Networks`; applied across dashboard, jobs, clients, leads, schedule, daily logs, files, settings, admin, auth pages. `job-daily-logs.tsx` interpolates the job title dynamically. Parent `JobDetailPage` intentionally leaves title to child routes (React effect ordering: child fires first). Closes §5.2. |
+| 8 | Tests — e2e | `artifacts/cadstone/playwright.config.ts`, `tests/e2e/**` (new suite) | Critical-path Playwright suite with 6 specs + auth setup: `auth.spec.ts`, `jobs.spec.ts`, `personal-todo-isolation.spec.ts`, `file-upload.spec.ts`, `daily-log.spec.ts`, `schedule.spec.ts`. `workers=1`, `fullyParallel=false`, `retries=0`. Shared auth via `storageState` seeded in an `auth.setup.ts` project that prefers `/api/auth/refresh` (not rate-limited) over `/api/auth/login` (5/email/10min), reusing any persisted refresh cookie across runs so the suite stays green under repeated execution. `CHROMIUM_PATH` env var lets the config point at the Nix-provided `ungoogled-chromium` to sidestep the missing shared-library problem with Playwright's bundled binary. `test:e2e` script added to `artifacts/cadstone/package.json`. Closes §6. |
+
+### Run evidence
+
+- `pnpm -r typecheck` → `Done` for all 4 typechecked projects (`@workspace/cadstone`, `@workspace/api-server`, `scripts`, `mockup-sandbox`); zero errors.
+- `pnpm --filter @workspace/cadstone exec playwright test` → **11 passed in 25.1s** (setup × 2, auth × 2, daily-log × 1, file-upload × 1, jobs × 1, personal-todo × 3, schedule × 1).
+- API workflow restarted: old PID 37895 stopped, fresh build (`pnpm --filter @workspace/api-server run build`) deployed, new PID 43628 serving on `:8080` (probe returns expected `401` on `/api/auth/me` with no token).
+
+### Updated verdict
+
+**GO.** All P1 items from Pass 1 are closed. The §7.1 production-secret checklist (confirm `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_RESET_SECRET`, `JWT_UPLOAD_SECRET` all set) remains the only launch-blocking ops item, and it is now **enforced by hard-fail** at API boot rather than a silent fallback. Remaining work (Sentry, route-level code-splitting, shared-store rate limiting, composite indexes) is genuinely post-launch.
+
+---
+
 ## Recommended post-launch work (prioritised)
 
-1. **Playwright critical-path suite** (§6). Blocks regressions.
+1. ~~**Playwright critical-path suite** (§6).~~ **Done in Pass 2.**
 2. **Sentry wiring** front + back (§7.3).
 3. **Route-level `React.lazy`** to halve initial bundle (§5.3).
-4. **Global 403 handler + per-route page titles** (§5.1-5.2). Uses the new `/403` page.
-5. **Graceful SIGTERM** (§7.4).
+4. ~~**Global 403 handler + per-route page titles** (§5.1-5.2).~~ **Done in Pass 2.**
+5. ~~**Graceful SIGTERM** (§7.4).~~ **Done in Pass 2.**
 6. **Shared-store rate-limit** (§3.3). Required before any horizontal scale-out.
-7. **SQL schedule-list pagination** + workday-exceptions batch query (§8.1-8.2).
+7. ~~**SQL schedule-list pagination** + workday-exceptions batch query (§8.1-8.2).~~ **Done in Pass 2.**
 8. **Migrate auth routes to Zod** for validation uniformity (§2.1).
-9. **Admin-role `AdminRoute` wrapper** on the frontend (§1.3).
+9. ~~**Admin-role `AdminRoute` wrapper** on the frontend (§1.3).~~ **Done in Pass 2** (primitive landed; no admin-only routes use it yet).
 10. **Schedule / dashboard composite indexes** when the data grows (§4.1).

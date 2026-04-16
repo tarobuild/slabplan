@@ -801,7 +801,7 @@ async function ensureDefaultScheduleSettings(jobId: string) {
   return created;
 }
 
-async function getWorkdayExceptionsForJob(jobId: string): Promise<WorkdayExceptionRecord[]> {
+async function loadAllWorkdayExceptions(): Promise<WorkdayExceptionRecord[]> {
   const rows = await db
     .select({
       id: scheduleWorkdayExceptions.id,
@@ -823,15 +823,42 @@ async function getWorkdayExceptionsForJob(jobId: string): Promise<WorkdayExcepti
     )
     .orderBy(asc(scheduleWorkdayExceptions.startDate), asc(scheduleWorkdayExceptions.title));
 
-  return rows
-    .map((row): WorkdayExceptionRecord => ({
-      ...row,
-      type: row.type === "extra_workday" ? "extra_workday" : "non_workday",
-      sameEveryYear: !!row.sameEveryYear,
-      appliesToAllJobs: !!row.appliesToAllJobs,
-      jobIds: Array.isArray(row.jobIds) ? row.jobIds.filter((jobIdValue): jobIdValue is string => typeof jobIdValue === "string") : [],
-    }))
-    .filter((row) => row.appliesToAllJobs || row.jobIds.includes(jobId));
+  return rows.map((row): WorkdayExceptionRecord => ({
+    ...row,
+    type: row.type === "extra_workday" ? "extra_workday" : "non_workday",
+    sameEveryYear: !!row.sameEveryYear,
+    appliesToAllJobs: !!row.appliesToAllJobs,
+    jobIds: Array.isArray(row.jobIds)
+      ? row.jobIds.filter((jobIdValue): jobIdValue is string => typeof jobIdValue === "string")
+      : [],
+  }));
+}
+
+async function getWorkdayExceptionsForJob(jobId: string): Promise<WorkdayExceptionRecord[]> {
+  const all = await loadAllWorkdayExceptions();
+  return all.filter((row) => row.appliesToAllJobs || row.jobIds.includes(jobId));
+}
+
+async function getWorkdayExceptionsByJob(
+  jobIds: string[],
+): Promise<Map<string, WorkdayExceptionRecord[]>> {
+  const unique = Array.from(new Set(jobIds));
+  const byJob = new Map<string, WorkdayExceptionRecord[]>();
+
+  if (unique.length === 0) {
+    return byJob;
+  }
+
+  const all = await loadAllWorkdayExceptions();
+
+  for (const jobId of unique) {
+    byJob.set(
+      jobId,
+      all.filter((row) => row.appliesToAllJobs || row.jobIds.includes(jobId)),
+    );
+  }
+
+  return byJob;
 }
 
 async function syncPredecessors(
@@ -1526,7 +1553,7 @@ async function hydrateScheduleItems(itemIds: string[], requestingUserId?: string
   const rowById = new Map(rows.map((row) => [row.id, row]))
   const jobIds = Array.from(new Set(rows.map((row) => row.jobId).filter((jobId): jobId is string => !!jobId)))
 
-  const [assigneeRows, predecessorRows, noteRows, attachmentRows, todoRows, workdayExceptionEntries] = await Promise.all([
+  const [assigneeRows, predecessorRows, noteRows, attachmentRows, todoRows, workdayExceptionsByJobId] = await Promise.all([
     db
       .select({
         scheduleItemId: scheduleItemAssignees.scheduleItemId,
@@ -1609,7 +1636,7 @@ async function hydrateScheduleItems(itemIds: string[], requestingUserId?: string
       .leftJoin(users, eq(scheduleItemTodos.createdBy, users.id))
       .where(inArray(scheduleItemTodos.scheduleItemId, uniqueItemIds))
       .orderBy(desc(scheduleItemTodos.createdAt)),
-    Promise.all(jobIds.map(async (jobId) => [jobId, await getWorkdayExceptionsForJob(jobId)] as const)),
+    getWorkdayExceptionsByJob(jobIds),
   ])
 
   const assigneesByItemId = new Map<string, Array<{
@@ -1658,8 +1685,6 @@ async function hydrateScheduleItems(itemIds: string[], requestingUserId?: string
     group.push(row)
     todosByItemId.set(row.scheduleItemId, group)
   }
-
-  const workdayExceptionsByJobId = new Map(workdayExceptionEntries)
 
   return uniqueItemIds.flatMap((itemId) => {
     const row = rowById.get(itemId)
@@ -2481,6 +2506,34 @@ router.post(
   }),
 );
 
+const SCHEDULE_LIST_DEFAULT_LIMIT = 200;
+const SCHEDULE_LIST_MAX_LIMIT = 500;
+
+const scheduleListQuerySchema = z.object({
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(SCHEDULE_LIST_MAX_LIMIT)
+    .optional()
+    .default(SCHEDULE_LIST_DEFAULT_LIMIT),
+  cursor: z.string().min(1).optional(),
+});
+
+function parseScheduleCursor(raw: string | undefined): { startDate: string; id: string } | null {
+  if (!raw) {
+    return null;
+  }
+
+  const [startDate, id] = raw.split("|");
+
+  if (!startDate || !id || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+    throw new HttpError(400, "Invalid schedule cursor.");
+  }
+
+  return { startDate, id };
+}
+
 router.get(
   "/jobs/:jobId/schedule",
   asyncHandler(async (req, res) => {
@@ -2488,27 +2541,53 @@ router.get(
     await ensureJobExists(jobId);
     await synchronizeJobSchedule(jobId);
 
+    const parsedQuery = scheduleListQuerySchema.safeParse(req.query);
+
+    if (!parsedQuery.success) {
+      throw new HttpError(400, "Invalid schedule list query.", parsedQuery.error.flatten());
+    }
+
+    const { limit } = parsedQuery.data;
+    const cursor = parseScheduleCursor(parsedQuery.data.cursor);
+
     const rows = await db
       .select({
         id: scheduleItems.id,
+        startDate: scheduleItems.startDate,
       })
       .from(scheduleItems)
-      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
-      .orderBy(
-        asc(scheduleItems.startDate),
-        asc(scheduleItems.title),
-        desc(scheduleItems.createdAt),
-      );
+      .where(
+        and(
+          eq(scheduleItems.jobId, jobId),
+          isNull(scheduleItems.deletedAt),
+          cursor
+            ? or(
+                sql`${scheduleItems.startDate} > ${cursor.startDate}`,
+                and(
+                  eq(scheduleItems.startDate, cursor.startDate),
+                  sql`${scheduleItems.id} > ${cursor.id}`,
+                ),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id))
+      .limit(limit + 1);
 
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const currentUserId = req.auth!.userId;
-    const hydrated = await hydrateScheduleItems(rows.map((row) => row.id), currentUserId);
+    const hydrated = await hydrateScheduleItems(pageRows.map((row) => row.id), currentUserId);
 
-    res.json({
-      items: hydrated
-        .map((entry) => entry.item)
-        .filter((item) => canViewHydratedScheduleItem(req.auth!, item))
-        .filter((item) => !item.isPersonalTodo || item.createdBy === currentUserId),
-    });
+    const items = hydrated
+      .map((entry) => entry.item)
+      .filter((item) => canViewHydratedScheduleItem(req.auth!, item))
+      .filter((item) => !item.isPersonalTodo || item.createdBy === currentUserId);
+
+    const lastRow = pageRows[pageRows.length - 1];
+    const nextCursor = hasMore && lastRow ? `${lastRow.startDate}|${lastRow.id}` : null;
+
+    res.json({ items, nextCursor });
   }),
 );
 

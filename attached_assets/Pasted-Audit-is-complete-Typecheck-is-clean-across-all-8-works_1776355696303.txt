@@ -1,0 +1,38 @@
+Audit is complete. Typecheck is clean across all 8 workspace projects and all 19
+  checked-in tests still pass.
+
+  What was fixed in this pass
+  - artifacts/api-server/src/routes/schedule.ts:1510-1524 — added a defense-in-depth SQL
+   filter to hydrateScheduleItems' main SELECT so a future caller that forgets to
+  pre-filter cannot leak another user's personal to-do. Uses the existing
+  requestingUserId parameter.
+  - artifacts/cadstone/src/pages/forbidden.tsx (new) + src/App.tsx — branded /403 route
+  so role-denied navigation lands somewhere useful instead of falling through to 404.
+
+  What the audit found (full detail in AUDIT_REPORT.md at the repo root)
+
+  - P0 (config, not code): JWT_ACCESS_SECRET / JWT_REFRESH_SECRET / JWT_RESET_SECRET /
+  JWT_UPLOAD_SECRET must all be set in production — code hard-errors if the first three
+  are missing, but JWT_UPLOAD_SECRET silently falls back to the access secret.
+  - No P0 code-level data leaks found. Previous personal-todo hardening (8 vectors) is
+  intact; I verified every vector and added one more DB-level layer.
+  - P1 items to tackle post-launch: global 403 handler in src/lib/api.ts, per-route
+  document.title, route-level React.lazy for the 1.16 MB bundle, Sentry wiring,
+  SIGTERM/DB-pool graceful shutdown in src/index.ts, AdminRoute wrapper on the frontend,
+   shared-store rate limiting if the API ever scales horizontally.
+  - Performance: hydrateScheduleItems loops per-job for workday exceptions — replace
+  with a single inArray query. GET /jobs/:jobId/schedule is unbounded — add
+  pagination/cap.
+  - Database: no composite index on (schedule_items.job_id, start_date) or on
+  schedule_items.is_personal_todo; acceptable at current scale, add at 50k+ rows.
+  - Input validation: auth routes use ad-hoc validators instead of Zod (P2,
+  consistency). Path-param UUIDs not format-validated (P2, defense-in-depth).
+
+  E2E section 6: no Playwright harness is in the repo. The report lists the minimum
+  critical-path suite (6 tests) worth adding before launch: login/logout, session
+  refresh, job CRUD, personal-todo isolation cross-user, file upload/download, daily-log
+   create/comment.
+
+  Verdict: Conditional GO — no launch-blocking code issues, but ops must confirm the
+  four JWT env vars, NODE_ENV=production, the production CORS_ALLOWED_ORIGINS, and
+  Supabase PITR before DNS cutover. Full checklist at the bottom of AUDIT_REPORT.md.

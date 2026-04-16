@@ -10,6 +10,7 @@ import DashboardPage from "@/pages/dashboard"
 import FilesDocumentsPage from "@/pages/files-documents"
 import FilesPhotosPage from "@/pages/files-photos"
 import FilesVideosPage from "@/pages/files-videos"
+import ForbiddenPage from "@/pages/forbidden"
 import JobDailyLogsPage from "@/pages/job-daily-logs"
 import JobDetailPage from "@/pages/job-detail"
 import JobFilesDocumentsPage from "@/pages/job-files-documents"
@@ -98,6 +99,7 @@ function AppRoutes({ ready }: { ready: boolean }) {
           <Route path="/sales/leads" element={<LeadsPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/403" element={<ForbiddenPage />} />
         </Route>
       </Route>
 

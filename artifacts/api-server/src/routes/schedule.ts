@@ -1507,7 +1507,21 @@ async function hydrateScheduleItems(itemIds: string[], requestingUserId?: string
     .from(scheduleItems)
     .leftJoin(users, eq(scheduleItems.createdBy, users.id))
     .leftJoin(schedulePhases, eq(scheduleItems.schedulePhaseId, schedulePhases.id))
-    .where(and(inArray(scheduleItems.id, uniqueItemIds), isNull(scheduleItems.deletedAt)))
+    .where(
+      and(
+        inArray(scheduleItems.id, uniqueItemIds),
+        isNull(scheduleItems.deletedAt),
+        // Defense-in-depth: never return another user's personal to-do row,
+        // even if the caller forgot to pre-filter upstream.
+        requestingUserId
+          ? or(
+              eq(scheduleItems.isPersonalTodo, false),
+              isNull(scheduleItems.isPersonalTodo),
+              eq(scheduleItems.createdBy, requestingUserId),
+            )
+          : undefined,
+      ),
+    )
 
   const rowById = new Map(rows.map((row) => [row.id, row]))
   const jobIds = Array.from(new Set(rows.map((row) => row.jobId).filter((jobId): jobId is string => !!jobId)))

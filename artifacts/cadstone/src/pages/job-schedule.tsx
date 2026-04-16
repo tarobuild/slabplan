@@ -27,6 +27,7 @@ import { api } from "@/lib/api"
 import {
   addBusinessDays,
   calculateBusinessEndDate,
+  calculateWorkDaysBetween,
   classifyWorkday,
   dateKey,
   DEFAULT_SCHEDULE_COLOR,
@@ -49,6 +50,7 @@ import {
 } from "@/lib/schedule"
 import { cn } from "@/lib/utils"
 import { ScheduleItemDialog } from "@/components/schedule/ScheduleItemDialog"
+import { ScheduleQuickCreate, type QuickCreateDraft } from "@/components/schedule/ScheduleQuickCreate"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -1568,6 +1570,8 @@ export default function JobSchedulePage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
   const [dialogInitDate, setDialogInitDate] = useState<string | null>(null)
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false)
+  const [quickCreateDate, setQuickCreateDate] = useState<string>("")
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -2839,8 +2843,47 @@ export default function JobSchedulePage() {
   }
 
   function openNewItem(startDate?: string) {
+    if (startDate) {
+      setQuickCreateDate(startDate)
+      setQuickCreateOpen(true)
+    } else {
+      setActiveItemId(null)
+      setDialogInitDate(null)
+      setDialogOpen(true)
+    }
+  }
+
+  async function handleQuickSave(draft: QuickCreateDraft) {
+    const workDays = Math.max(1, calculateWorkDaysBetween(draft.startDate, draft.endDate, workdayExceptions))
+    await api.post(`/jobs/${jobId}/schedule`, {
+      title: draft.title.trim(),
+      displayColor: draft.displayColor,
+      assigneeIds: [],
+      startDate: draft.startDate,
+      workDays,
+      endDate: null,
+      isHourly: !draft.isAllDay,
+      startTime: draft.isAllDay ? null : draft.startTime,
+      endTime: draft.isAllDay ? null : draft.endTime,
+      progress: 0,
+      reminder: "none",
+      notes: null,
+      notifyUserIds: [],
+      tags: [],
+      predecessors: [],
+      phaseId: null,
+      showOnGantt: true,
+      visibleToEstimators: true,
+      visibleToInstallers: true,
+      visibleToOfficeStaff: true,
+      isComplete: false,
+    })
+    await fetchItems()
+  }
+
+  function handleQuickMoreOptions(draft: QuickCreateDraft) {
     setActiveItemId(null)
-    setDialogInitDate(startDate ?? null)
+    setDialogInitDate(draft.startDate)
     setDialogOpen(true)
   }
 
@@ -4909,6 +4952,16 @@ export default function JobSchedulePage() {
           onDraftSave={handleDraftSaveItem}
           onDraftAddNote={handleDraftAddNote}
           onDraftDelete={handleDraftDeleteItem}
+        />
+      ) : null}
+
+      {quickCreateDate ? (
+        <ScheduleQuickCreate
+          open={quickCreateOpen}
+          onOpenChange={setQuickCreateOpen}
+          initialDate={quickCreateDate}
+          onSave={handleQuickSave}
+          onMoreOptions={handleQuickMoreOptions}
         />
       ) : null}
     </>

@@ -403,6 +403,7 @@ export const scheduleItems = pgTable(
     visibleToInstallers: boolean("visible_to_installers").default(true),
     visibleToOfficeStaff: boolean("visible_to_office_staff").default(true),
     isComplete: boolean("is_complete").default(false),
+    isPersonalTodo: boolean("is_personal_todo").default(false),
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     ...baseTimestamps,

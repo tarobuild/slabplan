@@ -1,0 +1,53 @@
+Good. The lib/db/dist/ changes aren't tracked (gitignored), and all 5 source files are
+   modified as expected. Here's a summary of everything that was done:                  
+         
+  ---                                                                                   
+  Summary of Changes                                                                    
+                                                                                        
+  1. Schema (lib/db/src/schema/index.ts)                                                
+                                                                                        
+  - Added isPersonalTodo boolean column (default false) to the schedule_items table     
+   
+  2. Backend (artifacts/api-server/src/routes/schedule.ts)                              
+                                                                  
+  - Added isPersonalTodo to the Zod validation schema for schedule item creation        
+  - Added isPersonalTodo to the hydration select query so it's returned in API responses
+  - Added isPersonalTodo to the POST insert values when creating schedule items         
+  - Added filtering in GET /jobs/:jobId/schedule to exclude personal items unless
+  createdBy === currentUserId                                                           
+                                                                  
+  3. Frontend Types (artifacts/cadstone/src/lib/schedule.ts)                            
+                                                                  
+  - Added isPersonalTodo: boolean | null to ScheduleItemRecord                          
+  - Added isPersonalTodo?: boolean to ScheduleItemPayload
+                                                                                        
+  4. Daily Logs Cleanup (artifacts/cadstone/src/pages/job-daily-logs.tsx)               
+   
+  - Removed the DailyLogTodo type (replaced reference with unknown[])                   
+  - Removed the handleAddTodo function                            
+  - Removed the handleToggleTodo function
+  - Removed the entire To-Do's card from the detail panel                               
+  - Removed the AddTodoButton component                                                 
+  - Removed unused CalendarIcon import                                                  
+                                                                                        
+  5. Schedule Page (artifacts/cadstone/src/pages/job-schedule.tsx)                      
+   
+  - Auth: Added useAuthStore import and currentUser from auth store                     
+  - New state: todosPanelOpen, todoTitle, todoDueDate, todoScheduleMode, todoTimeOfDay,
+  todoSpecificTime, todoSaving                                                          
+  - Computed values: myTodos (filtered by isPersonalTodo && createdBy === 
+  currentUser.id) and incompleteTodoCount                                               
+  - Handlers: handleAddPersonalTodo (creates schedule item with isPersonalTodo: true,
+  assigneeIds: [currentUser.id], showOnGantt: false) and handleTogglePersonalTodo       
+  (toggles isComplete)                                            
+  - Toolbar: Added "My To-Do's" button with badge showing incomplete count              
+  - Sheet panel: Full "My To-Do's" side panel with add form (title, due date, time      
+  picker), checklist sorted by completion/date, edit button per item                    
+  - Calendar styling: All 5 calendar rendering spots (month bars, week all-day, week    
+  hourly, day all-day, day hourly) plus agenda view and list view now render personal   
+  items with:                                                     
+    - Dashed borders instead of solid                                                   
+    - Muted background color (colorWithAlpha(..., 0.18) instead of solid)               
+    - Dark text (text-slate-700) instead of white                                       
+    - Checkbox icon prefix (☐/☑) instead of checkmark                                   
+  - Draft mode: Added isPersonalTodo: false to draft item construction (2 spots)   

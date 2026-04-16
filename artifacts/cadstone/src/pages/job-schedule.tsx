@@ -14,6 +14,7 @@ import {
   Download,
   Edit3,
   Filter,
+  ListChecks,
   Loader2,
   Maximize2,
   Minimize2,
@@ -48,6 +49,7 @@ import {
   type ScheduleWorkdayException,
 } from "@/lib/schedule"
 import { cn } from "@/lib/utils"
+import { useAuthStore } from "@/store/auth"
 import { ScheduleItemDialog } from "@/components/schedule/ScheduleItemDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -1516,6 +1518,7 @@ function remapDraftPayload(
 
 export default function JobSchedulePage() {
   const { jobId } = useParams<{ jobId: string }>()
+  const currentUser = useAuthStore((s) => s.user)
   const monthPickerRef = useRef<HTMLInputElement | null>(null)
   const ganttTimelineRef = useRef<HTMLDivElement | null>(null)
   const scheduleExportRef = useRef<HTMLDivElement | null>(null)
@@ -1564,6 +1567,13 @@ export default function JobSchedulePage() {
   const [templateApplyingId, setTemplateApplyingId] = useState<string | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [todosPanelOpen, setTodosPanelOpen] = useState(false)
+  const [todoTitle, setTodoTitle] = useState("")
+  const [todoDueDate, setTodoDueDate] = useState("")
+  const [todoScheduleMode, setTodoScheduleMode] = useState<"preset" | "specific">("preset")
+  const [todoTimeOfDay, setTodoTimeOfDay] = useState("")
+  const [todoSpecificTime, setTodoSpecificTime] = useState("")
+  const [todoSaving, setTodoSaving] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
@@ -1575,6 +1585,93 @@ export default function JobSchedulePage() {
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
   const draftPastRef = useRef<ScheduleItemRecord[][]>([])
   const draftFutureRef = useRef<ScheduleItemRecord[][]>([])
+
+  const myTodos = useMemo(
+    () => items.filter((item) => item.isPersonalTodo && item.createdBy === currentUser?.id),
+    [items, currentUser?.id],
+  )
+
+  const incompleteTodoCount = useMemo(
+    () => myTodos.filter((t) => !t.isComplete).length,
+    [myTodos],
+  )
+
+  function resetTodoForm() {
+    setTodoTitle("")
+    setTodoDueDate("")
+    setTodoScheduleMode("preset")
+    setTodoTimeOfDay("")
+    setTodoSpecificTime("")
+  }
+
+  async function handleAddPersonalTodo() {
+    if (!todoTitle.trim() || !jobId || todoSaving) return
+    setTodoSaving(true)
+    try {
+      const presetMap: Record<string, { start: string; end: string }> = {
+        "First thing in the morning": { start: "07:00", end: "09:00" },
+        "Midday": { start: "11:00", end: "13:00" },
+        "End of day": { start: "15:00", end: "17:00" },
+      }
+      let startTime: string | null = null
+      let endTime: string | null = null
+      let isHourly = false
+
+      const resolvedTime = todoScheduleMode === "specific" && todoSpecificTime
+        ? `Specific: ${todoSpecificTime}`
+        : todoTimeOfDay || undefined
+
+      if (resolvedTime?.startsWith("Specific: ")) {
+        const raw = resolvedTime.replace("Specific: ", "")
+        startTime = raw.length === 5 ? raw : raw.substring(0, 5)
+        const hour = parseInt(startTime.split(":")[0], 10)
+        endTime = `${String(Math.min(hour + 1, 23)).padStart(2, "0")}:${startTime.split(":")[1]}`
+        isHourly = true
+      } else if (resolvedTime && presetMap[resolvedTime]) {
+        startTime = presetMap[resolvedTime].start
+        endTime = presetMap[resolvedTime].end
+        isHourly = true
+      }
+
+      await api.post(`/jobs/${jobId}/schedule`, {
+        title: todoTitle.trim(),
+        startDate: todoDueDate || todayStr(),
+        workDays: 1,
+        isHourly,
+        startTime,
+        endTime,
+        isPersonalTodo: true,
+        assigneeIds: currentUser ? [currentUser.id] : [],
+        showOnGantt: false,
+      })
+      resetTodoForm()
+      await refreshScheduleData()
+      toast.success("Personal to-do added")
+    } catch (err) {
+      toast.error(getApiError(err, "Failed to add to-do"))
+    } finally {
+      setTodoSaving(false)
+    }
+  }
+
+  async function handleTogglePersonalTodo(item: ScheduleItemRecord) {
+    try {
+      await api.put(`/schedule-items/${item.id}`, {
+        title: item.title,
+        startDate: item.startDate,
+        workDays: item.workDays,
+        isComplete: !item.isComplete,
+        isHourly: item.isHourly ?? false,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        assigneeIds: item.assigneeIds,
+        progress: item.isComplete ? 0 : 100,
+      })
+      await refreshScheduleData()
+    } catch (err) {
+      toast.error(getApiError(err, "Failed to update to-do"))
+    }
+  }
 
   async function fetchItems() {
     if (!jobId) {
@@ -2199,6 +2296,7 @@ export default function JobSchedulePage() {
           assignees: [],
           phaseName: null,
           phaseColor: null,
+          isPersonalTodo: false,
         }),
         id: nextId,
         jobId: jobId ?? existing?.jobId ?? null,
@@ -2705,6 +2803,7 @@ export default function JobSchedulePage() {
               visibleToInstallers: true,
               visibleToOfficeStaff: true,
               isComplete: false,
+              isPersonalTodo: false,
               notes: null,
               tags: [],
               phaseId: null,
@@ -3035,6 +3134,21 @@ export default function JobSchedulePage() {
                   >
                     <Clock3 className="size-4" />
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-[#E5E7EB] bg-white"
+                    onClick={() => setTodosPanelOpen(true)}
+                  >
+                    <ListChecks className="size-4" />
+                    My To-Do&apos;s
+                    {incompleteTodoCount > 0 ? (
+                      <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">
+                        {incompleteTodoCount}
+                      </Badge>
+                    ) : null}
+                  </Button>
                   <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
                     <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
                     <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
@@ -3322,11 +3436,19 @@ export default function JobSchedulePage() {
                                     key={`${segment.item.id}-${segment.startIndex}-${segment.endIndex}-${segment.lane}`}
                                     type="button"
                                     className={cn(
-                                      "pointer-events-auto absolute flex h-7 items-center overflow-hidden rounded-full px-3 text-left text-xs font-medium text-white shadow-sm transition hover:opacity-95",
+                                      "pointer-events-auto absolute flex h-7 items-center overflow-hidden rounded-full px-3 text-left text-xs font-medium shadow-sm transition hover:opacity-95",
+                                      segment.item.isPersonalTodo
+                                        ? "border-2 border-dashed text-slate-700"
+                                        : "text-white",
                                       activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
                                     )}
                                     style={{
-                                      backgroundColor: segment.item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                      backgroundColor: segment.item.isPersonalTodo
+                                        ? colorWithAlpha(segment.item.displayColor || DEFAULT_SCHEDULE_COLOR, 0.18)
+                                        : segment.item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                      borderColor: segment.item.isPersonalTodo
+                                        ? (segment.item.displayColor || DEFAULT_SCHEDULE_COLOR)
+                                        : undefined,
                                       left: `calc(${(segment.startIndex / 7) * 100}% + 4px)`,
                                       width: `calc(${((segment.endIndex - segment.startIndex + 1) / 7) * 100}% - 8px)`,
                                       top: `${segment.lane * 30}px`,
@@ -3334,7 +3456,7 @@ export default function JobSchedulePage() {
                                     onClick={() => openExistingItem(segment.item.id)}
                                   >
                                     <span className="truncate">
-                                      {segment.item.isComplete ? "✓ " : ""}
+                                      {segment.item.isPersonalTodo ? (segment.item.isComplete ? "☑ " : "☐ ") : segment.item.isComplete ? "✓ " : ""}
                                       {segment.item.title}
                                     </span>
                                   </button>
@@ -3425,14 +3547,24 @@ export default function JobSchedulePage() {
                                   <button
                                     key={item.id}
                                     type="button"
-                                    className="flex w-full items-center rounded-full border px-2 py-0.5 text-[10px] font-medium text-white shadow-sm hover:opacity-90 transition-opacity truncate"
+                                    className={cn(
+                                      "flex w-full items-center rounded-full border px-2 py-0.5 text-[10px] font-medium shadow-sm hover:opacity-90 transition-opacity truncate",
+                                      item.isPersonalTodo ? "border-dashed text-slate-700" : "text-white",
+                                    )}
                                     style={{
-                                      backgroundColor: item.displayColor || DEFAULT_SCHEDULE_COLOR,
-                                      borderColor: colorWithAlpha(item.displayColor, 0.75),
+                                      backgroundColor: item.isPersonalTodo
+                                        ? colorWithAlpha(item.displayColor || DEFAULT_SCHEDULE_COLOR, 0.18)
+                                        : item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                      borderColor: item.isPersonalTodo
+                                        ? (item.displayColor || DEFAULT_SCHEDULE_COLOR)
+                                        : colorWithAlpha(item.displayColor, 0.75),
                                     }}
                                     onClick={() => openExistingItem(item.id)}
                                   >
-                                    <span className="truncate">{item.title}</span>
+                                    <span className="truncate">
+                                      {item.isPersonalTodo ? (item.isComplete ? "☑ " : "☐ ") : ""}
+                                      {item.title}
+                                    </span>
                                   </button>
                                 ))}
                               </div>
@@ -3496,7 +3628,10 @@ export default function JobSchedulePage() {
                                     key={`${segment.item.id}-${segment.lane}`}
                                     type="button"
                                     className={cn(
-                                      "absolute overflow-hidden rounded-xl border px-2 py-1 text-left text-xs font-medium text-white shadow-sm",
+                                      "absolute overflow-hidden rounded-xl border px-2 py-1 text-left text-xs font-medium shadow-sm",
+                                      segment.item.isPersonalTodo
+                                        ? "border-dashed text-slate-700"
+                                        : "text-white",
                                       activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
                                     )}
                                     style={{
@@ -3504,13 +3639,20 @@ export default function JobSchedulePage() {
                                       height,
                                       width,
                                       left,
-                                      backgroundColor: segment.item.displayColor || DEFAULT_SCHEDULE_COLOR,
-                                      borderColor: colorWithAlpha(segment.item.displayColor, 0.75),
+                                      backgroundColor: segment.item.isPersonalTodo
+                                        ? colorWithAlpha(segment.item.displayColor || DEFAULT_SCHEDULE_COLOR, 0.18)
+                                        : segment.item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                      borderColor: segment.item.isPersonalTodo
+                                        ? (segment.item.displayColor || DEFAULT_SCHEDULE_COLOR)
+                                        : colorWithAlpha(segment.item.displayColor, 0.75),
                                     }}
                                     onClick={() => openExistingItem(segment.item.id)}
                                   >
-                                    <span className="block truncate">{segment.item.title}</span>
-                                    <span className="block truncate text-[10px] text-white/80">
+                                    <span className="block truncate">
+                                      {segment.item.isPersonalTodo ? (segment.item.isComplete ? "☑ " : "☐ ") : ""}
+                                      {segment.item.title}
+                                    </span>
+                                    <span className={cn("block truncate text-[10px]", segment.item.isPersonalTodo ? "text-slate-500" : "text-white/80")}>
                                       {segment.item.isHourly && segment.item.startTime
                                         ? fmtClockRange(segment.item.startTime, segment.item.endTime)
                                         : `${segment.item.workDays} workday${segment.item.workDays === 1 ? "" : "s"}`}
@@ -3557,15 +3699,25 @@ export default function JobSchedulePage() {
                                 <button
                                   key={item.id}
                                   type="button"
-                                  className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium text-white shadow-sm hover:opacity-90 transition-opacity"
+                                  className={cn(
+                                    "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium shadow-sm hover:opacity-90 transition-opacity",
+                                    item.isPersonalTodo ? "border-dashed text-slate-700" : "text-white",
+                                  )}
                                   style={{
-                                    backgroundColor: item.displayColor || DEFAULT_SCHEDULE_COLOR,
-                                    borderColor: colorWithAlpha(item.displayColor, 0.75),
+                                    backgroundColor: item.isPersonalTodo
+                                      ? colorWithAlpha(item.displayColor || DEFAULT_SCHEDULE_COLOR, 0.18)
+                                      : item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                    borderColor: item.isPersonalTodo
+                                      ? (item.displayColor || DEFAULT_SCHEDULE_COLOR)
+                                      : colorWithAlpha(item.displayColor, 0.75),
                                   }}
                                   onClick={() => openExistingItem(item.id)}
                                 >
-                                  <span className="truncate max-w-[200px]">{item.title}</span>
-                                  <span className="text-white/70">({item.workDays}d)</span>
+                                  <span className="truncate max-w-[200px]">
+                                    {item.isPersonalTodo ? (item.isComplete ? "☑ " : "☐ ") : ""}
+                                    {item.title}
+                                  </span>
+                                  <span className={cn(item.isPersonalTodo ? "text-slate-500" : "text-white/70")}>({item.workDays}d)</span>
                                 </button>
                               ))}
                             </div>
@@ -3620,7 +3772,10 @@ export default function JobSchedulePage() {
                                 key={`${segment.item.id}-${segment.lane}`}
                                 type="button"
                                 className={cn(
-                                  "absolute overflow-hidden rounded-xl border px-3 py-2 text-left text-sm font-medium text-white shadow-sm",
+                                  "absolute overflow-hidden rounded-xl border px-3 py-2 text-left text-sm font-medium shadow-sm",
+                                  segment.item.isPersonalTodo
+                                    ? "border-dashed text-slate-700"
+                                    : "text-white",
                                   activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
                                 )}
                                 style={{
@@ -3628,13 +3783,20 @@ export default function JobSchedulePage() {
                                   height,
                                   width,
                                   left,
-                                  backgroundColor: segment.item.displayColor || DEFAULT_SCHEDULE_COLOR,
-                                  borderColor: colorWithAlpha(segment.item.displayColor, 0.75),
+                                  backgroundColor: segment.item.isPersonalTodo
+                                    ? colorWithAlpha(segment.item.displayColor || DEFAULT_SCHEDULE_COLOR, 0.18)
+                                    : segment.item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                  borderColor: segment.item.isPersonalTodo
+                                    ? (segment.item.displayColor || DEFAULT_SCHEDULE_COLOR)
+                                    : colorWithAlpha(segment.item.displayColor, 0.75),
                                 }}
                                 onClick={() => openExistingItem(segment.item.id)}
                               >
-                                <span className="block truncate">{segment.item.title}</span>
-                                <span className="mt-1 block text-xs text-white/80">
+                                <span className="block truncate">
+                                  {segment.item.isPersonalTodo ? (segment.item.isComplete ? "☑ " : "☐ ") : ""}
+                                  {segment.item.title}
+                                </span>
+                                <span className={cn("mt-1 block text-xs", segment.item.isPersonalTodo ? "text-slate-500" : "text-white/80")}>
                                   {segment.item.isHourly && segment.item.startTime
                                     ? fmtClockRange(segment.item.startTime, segment.item.endTime)
                                     : `${segment.item.workDays} workday${segment.item.workDays === 1 ? "" : "s"}`}
@@ -3669,10 +3831,18 @@ export default function JobSchedulePage() {
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span
-                                    className="size-2.5 rounded-full"
-                                    style={{ backgroundColor: item.displayColor || DEFAULT_SCHEDULE_COLOR }}
+                                    className={cn("size-2.5 rounded-full", item.isPersonalTodo && "border border-dashed")}
+                                    style={{
+                                      backgroundColor: item.isPersonalTodo
+                                        ? colorWithAlpha(item.displayColor || DEFAULT_SCHEDULE_COLOR, 0.18)
+                                        : item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                      borderColor: item.isPersonalTodo ? (item.displayColor || DEFAULT_SCHEDULE_COLOR) : undefined,
+                                    }}
                                   />
-                                  <span className="truncate font-medium text-slate-900">{item.title}</span>
+                                  <span className="truncate font-medium text-slate-900">
+                                    {item.isPersonalTodo ? (item.isComplete ? "☑ " : "☐ ") : ""}
+                                    {item.title}
+                                  </span>
                                 </div>
                                 <p className="mt-1 text-xs text-slate-500">
                                   {item.workDays} workday{item.workDays === 1 ? "" : "s"} • ends {fmtDate(itemEndDate(item))}
@@ -3822,11 +3992,17 @@ export default function JobSchedulePage() {
                                         onClick={() => openExistingItem(item.id)}
                                       >
                                         <span
-                                          className="mt-1 size-2.5 shrink-0 rounded-full"
-                                          style={{ backgroundColor: item.displayColor || DEFAULT_SCHEDULE_COLOR }}
+                                          className={cn("mt-1 size-2.5 shrink-0 rounded-full", item.isPersonalTodo && "border border-dashed")}
+                                          style={{
+                                            backgroundColor: item.isPersonalTodo
+                                              ? colorWithAlpha(item.displayColor || DEFAULT_SCHEDULE_COLOR, 0.18)
+                                              : item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                            borderColor: item.isPersonalTodo ? (item.displayColor || DEFAULT_SCHEDULE_COLOR) : undefined,
+                                          }}
                                         />
                                         <span className="min-w-0">
                                           <span className="block truncate font-medium text-orange-700 hover:underline">
+                                            {item.isPersonalTodo ? (item.isComplete ? "☑ " : "☐ ") : ""}
                                             {item.title}
                                           </span>
                                           {listDisplayMode === "notes" && (item.notes || item.notesStream?.[0]?.note) ? (
@@ -4982,6 +5158,144 @@ export default function JobSchedulePage() {
                 Apply filter
               </Button>
             </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={todosPanelOpen} onOpenChange={setTodosPanelOpen}>
+        <SheetContent side="right" className="w-full max-w-xl border-[#E5E7EB] bg-white p-0 sm:max-w-xl">
+          <div className="flex h-full flex-col">
+            <SheetHeader className="border-b border-[#E5E7EB] px-6 py-5">
+              <SheetTitle>My To-Do&apos;s</SheetTitle>
+              <SheetDescription>Personal to-do items for this job. Only visible to you.</SheetDescription>
+            </SheetHeader>
+            <ScrollArea className="flex-1">
+              <div className="space-y-5 p-6">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-600">What needs to be done?</label>
+                    <Input
+                      value={todoTitle}
+                      onChange={(e) => setTodoTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") void handleAddPersonalTodo() }}
+                      placeholder="e.g. Pick up materials from supplier"
+                      className="h-10"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-600">Due date</label>
+                      <Input
+                        type="date"
+                        value={todoDueDate}
+                        onChange={(e) => setTodoDueDate(e.target.value)}
+                        className="h-9 text-sm"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-600">When</label>
+                      <Select
+                        value={todoScheduleMode === "specific" ? "_specific" : (todoTimeOfDay || "_none")}
+                        onValueChange={(v) => {
+                          if (v === "_specific") {
+                            setTodoScheduleMode("specific")
+                            setTodoTimeOfDay("")
+                          } else {
+                            setTodoScheduleMode("preset")
+                            setTodoSpecificTime("")
+                            setTodoTimeOfDay(v === "_none" ? "" : v)
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue placeholder="Anytime" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">Anytime</SelectItem>
+                          <SelectItem value="First thing in the morning">Morning (7 - 9 AM)</SelectItem>
+                          <SelectItem value="Midday">Midday (11 AM - 1 PM)</SelectItem>
+                          <SelectItem value="End of day">End of day (3 - 5 PM)</SelectItem>
+                          <SelectItem value="_specific">Pick a specific time...</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {todoScheduleMode === "specific" && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-slate-600">Specific time</label>
+                      <Input
+                        type="time"
+                        value={todoSpecificTime}
+                        onChange={(e) => setTodoSpecificTime(e.target.value)}
+                        className="h-9 w-36 text-sm"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <Button size="sm" variant="ghost" onClick={resetTodoForm} disabled={todoSaving}>
+                      Clear
+                    </Button>
+                    <Button size="sm" onClick={() => void handleAddPersonalTodo()} disabled={!todoTitle.trim() || todoSaving}>
+                      {todoSaving ? "Saving..." : "Add To-Do"}
+                    </Button>
+                  </div>
+                </div>
+
+                {myTodos.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                    <ListChecks className="mx-auto mb-2 size-6 text-slate-400" />
+                    No personal to-do&apos;s yet. Add one above.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {myTodos
+                      .sort((a, b) => {
+                        if (!!a.isComplete !== !!b.isComplete) return a.isComplete ? 1 : -1
+                        return a.startDate.localeCompare(b.startDate)
+                      })
+                      .map((todo) => (
+                        <label
+                          key={todo.id}
+                          className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                        >
+                          <Checkbox
+                            checked={!!todo.isComplete}
+                            onCheckedChange={() => void handleTogglePersonalTodo(todo)}
+                            className="mt-0.5"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className={cn("text-sm font-medium text-slate-900", todo.isComplete && "line-through text-slate-400")}>
+                              {todo.title}
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+                              <span>{fmtDate(todo.startDate)}</span>
+                              {todo.isHourly && todo.startTime ? (
+                                <span>{fmtClockRange(todo.startTime, todo.endTime)}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              openExistingItem(todo.id)
+                              setTodosPanelOpen(false)
+                            }}
+                          >
+                            <Edit3 className="size-3.5" />
+                          </button>
+                        </label>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
           </div>
         </SheetContent>
       </Sheet>

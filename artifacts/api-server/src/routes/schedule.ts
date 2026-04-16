@@ -151,6 +151,7 @@ const schedulePayloadSchema = z
     visibleToInstallers: z.coerce.boolean().optional().default(true),
     visibleToOfficeStaff: z.coerce.boolean().optional().default(true),
     isComplete: z.coerce.boolean().optional().default(false),
+    isPersonalTodo: z.coerce.boolean().optional().default(false),
   })
   .superRefine((value, ctx) => {
     if (value.isHourly && !value.startTime) {
@@ -1492,6 +1493,7 @@ async function hydrateScheduleItems(itemIds: string[]) {
       visibleToInstallers: scheduleItems.visibleToInstallers,
       visibleToOfficeStaff: scheduleItems.visibleToOfficeStaff,
       isComplete: scheduleItems.isComplete,
+      isPersonalTodo: scheduleItems.isPersonalTodo,
       notes: scheduleItems.notes,
       createdBy: scheduleItems.createdBy,
       createdAt: scheduleItems.createdAt,
@@ -2471,10 +2473,12 @@ router.get(
 
     const hydrated = await hydrateScheduleItems(rows.map((row) => row.id));
 
+    const currentUserId = req.auth!.userId;
     res.json({
       items: hydrated
         .map((entry) => entry.item)
-        .filter((item) => canViewHydratedScheduleItem(req.auth!, item)),
+        .filter((item) => canViewHydratedScheduleItem(req.auth!, item))
+        .filter((item) => !item.isPersonalTodo || item.createdBy === currentUserId),
     });
   }),
 );
@@ -2540,6 +2544,7 @@ router.post(
           visibleToInstallers: normalizedPayload.visibleToInstallers,
           visibleToOfficeStaff: normalizedPayload.visibleToOfficeStaff,
           isComplete: normalizedPayload.isComplete,
+          isPersonalTodo: normalizedPayload.isPersonalTodo,
           notes: encodeScheduleMeta({
             notes: normalizedPayload.notes,
             tags: normalizeUniqueStrings(normalizedPayload.tags),

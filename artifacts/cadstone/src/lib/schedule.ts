@@ -64,6 +64,7 @@ export type ScheduleItemRecord = {
   visibleToInstallers: boolean | null
   visibleToOfficeStaff: boolean | null
   isComplete: boolean | null
+  isPersonalTodo: boolean | null
   notes: string | null
   tags: string[]
   phaseId: string | null
@@ -114,6 +115,7 @@ export type ScheduleItemPayload = {
   visibleToInstallers: boolean
   visibleToOfficeStaff: boolean
   isComplete: boolean
+  isPersonalTodo?: boolean
 }
 
 export type ScheduleSettingsOption = {

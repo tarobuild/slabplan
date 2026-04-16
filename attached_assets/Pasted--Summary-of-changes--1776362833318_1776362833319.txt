@@ -1,0 +1,52 @@
+ Summary of changes                                                                    
+                                                                                        
+  File: src/components/FileBrowser.tsx                                                  
+  Change: Added uploadedBy on FileItem, fetch of job's projectManagerId, canManageFile  
+    gate (admin / PM-of-job / uploader, resource scope = admin-only), shared          
+    FileActionsMenu wired into AuthPhoto, VideoGrid, and FileTable via hover-reveal     
+    three-dot pattern, and soft-delete AlertDialog mirroring the folder-delete dialog 
+    copy.                                                                               
+  ────────────────────────────────────────                                            
+  File: src/pages/job-detail.tsx                                                        
+  Change: Rewrote header: row 1 back link ← All jobs, row 2 H1 with status badge +      
+    location + admin-only Job actions DropdownMenu (Mark project complete / Delete      
+    project). Tabs gained lucide icons (ClipboardList, CalendarDays, FileText,          
+    FolderOpen). handleMarkComplete now re-hydrates the job and sends the full schema   
+    payload so missing fields aren't nulled by toJobInsert. handleDeleteJob uses        
+    typed-title confirmation.                                                           
+  ────────────────────────────────────────                                              
+  File: src/pages/job-summary.tsx                                                       
+  Change: Removed the green ✓ Mark as Complete button and its handleMarkComplete        
+  function                                                                              
+    (that ability now lives exclusively in the header menu). Save bar is sticky at the
+    bottom when hasUnsavedChanges is true (white bg, top border, "Unsaved changes" left,
+
+    Save right), inline when clean.
+
+  Verification
+
+  - pnpm -r typecheck — clean (cadstone, api-server, mockup-sandbox, scripts).          
+  - pnpm exec playwright test — 11/11 passing in 25.7s.
+                                                                                        
+  Manual QA script                                                                      
+   
+  1. Photo delete (admin) — open a job → Files → Photos → hover a photo → click ⋯ →     
+  Delete file. Confirm dialog says "moved to trash, admin can restore within 30 days."
+  Confirm → toast, photo disappears.                                                    
+  2. Photo delete (non-uploader PM of a different job) — the ⋯ menu should only show
+  Open / Download (no Delete).                                                          
+  3. Photo delete (uploader, any role) — delete option appears for your own upload.
+  4. Resource-scope files (non-admin) — no ⋯ menu on any tile/row.                      
+  5. Job actions menu (admin, open job) — Mark project complete → orange confirm dialog 
+  → status badge flips to Closed, toast "Project marked as complete", navigation/jobs   
+  list refreshes.                                                                       
+  6. Job actions menu (admin) — Delete project → red dialog with typed-confirmation     
+  (must match title exactly, case-insensitive). Delete button stays disabled until match
+   → confirm → navigate to /jobs, project gone from list.
+  7. Non-admin (manager/crew) — no "Job actions" button visible in the header.          
+  8. Header layout — ← All jobs small grey link on row 1; H1 + status badge + city/state
+   + menu on row 2; tabs show icons; active tab has orange underline.                   
+  9. Job Summary sticky save — edit a field → save bar sticks to bottom of viewport with
+   "Unsaved changes" left, Save Changes right; save → bar returns to inline.            
+  10. Rate limit / refresh — reload the page while dirty → unsaved-changes guard still
+  fires; after save, no stale save bar.   

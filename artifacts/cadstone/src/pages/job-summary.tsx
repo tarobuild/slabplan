@@ -229,57 +229,6 @@ export default function JobSummaryPage() {
     }
   }
 
-  const handleMarkComplete = async () => {
-    if (!job || !jobId) return
-    const confirmed = window.confirm("Mark this job as complete?")
-    if (!confirmed) return
-    setSaving(true)
-    try {
-      const res = await api.put(`/jobs/${jobId}`, {
-        title: job.title,
-        status: "closed",
-        jobType: job.jobType || null,
-        streetAddress: job.streetAddress || null,
-        city: job.city || null,
-        state: job.state || null,
-        zipCode: job.zipCode || null,
-        contractPrice: job.contractPrice || null,
-        projectedStart: job.projectedStart || null,
-        projectedCompletion: job.projectedCompletion || null,
-        actualStart: job.actualStart || null,
-        actualCompletion: job.actualCompletion || null,
-        workDays: job.workDays,
-        contractType: job.contractType || null,
-        internalNotes: job.internalNotes || null,
-        subVendorNotes: job.subVendorNotes || null,
-        squareFeet: job.squareFeet || null,
-        permitNumber: job.permitNumber || null,
-        projectManagerId: job.projectManagerId || null,
-        clientId: job.clientId || null,
-      })
-      const updatedJob = res.data.job ?? res.data
-      setJob(updatedJob)
-      setSavedJob(updatedJob)
-      setParentJob((current) =>
-        current
-          ? {
-              ...current,
-              title: updatedJob.title,
-              status: updatedJob.status,
-              city: updatedJob.city,
-              state: updatedJob.state,
-            }
-          : current,
-      )
-      invalidateAppData(["jobs", "navigation"])
-      toast.success("Job marked as complete")
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to update job")
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const handleSaveAssignees = async () => {
     if (!jobId || !job) return
 
@@ -324,21 +273,6 @@ export default function JobSummaryPage() {
 
   return (
     <div className="space-y-5">
-      {isAdmin && job.status === "open" && (
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            onClick={handleMarkComplete}
-            disabled={saving}
-            style={{ backgroundColor: "#16a34a", color: "#fff" }}
-            className="hover:opacity-90 transition-opacity"
-          >
-            {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-            ✓ Mark as Complete
-          </Button>
-        </div>
-      )}
-
       {/* Two-panel layout */}
       <div className="flex gap-5 items-start">
 
@@ -636,15 +570,28 @@ export default function JobSummaryPage() {
         </div>
       </div>
 
-      <div>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-          Save Changes
-        </Button>
-        {unsavedChanges.isDirty ? (
-          <p className="mt-2 text-sm font-medium text-amber-700">Unsaved changes</p>
-        ) : null}
-      </div>
+      {unsavedChanges.isDirty ? (
+        <>
+          {/* Spacer so page content isn't obscured by the sticky bar */}
+          <div aria-hidden className="h-16" />
+          <div className="sticky bottom-0 left-0 right-0 z-30 -mx-4 border-t border-[#E5E7EB] bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] sm:-mx-6 sm:px-6">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-amber-700">Unsaved changes</p>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+            Save Changes
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

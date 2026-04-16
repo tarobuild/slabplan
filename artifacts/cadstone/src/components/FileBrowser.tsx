@@ -80,6 +80,7 @@ type FileItem = {
   fileSize: number | null
   mimeType: string | null
   note: string | null
+  uploadedBy: string | null
   uploadedByName: string | null
   createdAt: string
 }
@@ -233,6 +234,15 @@ export default function FileBrowser({
   const [deleteConfirmFolder, setDeleteConfirmFolder] = useState<FolderItem | null>(null)
   const [deletingFolder, setDeletingFolder] = useState(false)
 
+  const [deleteConfirmFile, setDeleteConfirmFile] = useState<FileItem | null>(null)
+  const [deletingFile, setDeletingFile] = useState(false)
+
+  // The backend's `assertCanManageFile` ends in `canUploadToFolderForRole`,
+  // which for admin-owned folders admits admins, PMs-of-the-job, and the
+  // original uploader. To mirror that UI-side we need the job's PM id.
+  // Resource scope is admin-only write, so we skip the fetch there.
+  const [jobProjectManagerId, setJobProjectManagerId] = useState<string | null>(null)
+
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
@@ -294,6 +304,63 @@ export default function FileBrowser({
     setVideoPlayerFile(null)
     loadFolders(null)
   }, [jobId, mediaType, scope])
+
+  // Fetch the job's project-manager id once so we can mirror the backend's
+  // manage-file rule client-side (admin / PM of this job / uploader).
+  useEffect(() => {
+    if (isResourceScope || !jobId) {
+      setJobProjectManagerId(null)
+      return
+    }
+    let cancelled = false
+    api
+      .get(`/jobs/${jobId}`)
+      .then((r) => {
+        if (cancelled) return
+        const j = r.data.job ?? r.data
+        setJobProjectManagerId(j?.projectManagerId ?? null)
+      })
+      .catch(() => {
+        // Non-fatal — failing closed just means the overflow won't show
+        // for a PM whose job-fetch failed. Admins stay unaffected.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [jobId, isResourceScope])
+
+  const canManageFile = useCallback(
+    (file: FileItem): boolean => {
+      if (!user) return false
+      if (user.role === "admin") return true
+      // Resource-scope folders are admin-write-only; mirror that here.
+      if (isResourceScope) return false
+      if (file.uploadedBy && file.uploadedBy === user.id) return true
+      if (
+        user.role === "project_manager" &&
+        jobProjectManagerId &&
+        jobProjectManagerId === user.id
+      )
+        return true
+      return false
+    },
+    [user, isResourceScope, jobProjectManagerId],
+  )
+
+  const handleDeleteFile = async () => {
+    if (!deleteConfirmFile) return
+    setDeletingFile(true)
+    try {
+      await api.delete(`/files/${deleteConfirmFile.id}`)
+      toast.success("File deleted")
+      setDeleteConfirmFile(null)
+      if (currentFolderId) loadFiles(currentFolderId)
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Failed to delete file"))
+    } finally {
+      setDeletingFile(false)
+    }
+  }
 
   const openFolder = (folder: FolderItem) => {
     setLightboxFile(null)
@@ -834,9 +901,18 @@ export default function FileBrowser({
                       files={sortedFiles}
                       buildViewUrl={buildFileViewUrl}
                       onOpenLightbox={openLightbox}
+                      onDownload={handleDownload}
+                      onRequestDelete={setDeleteConfirmFile}
+                      canManageFile={canManageFile}
                     />
                   ) : mediaType === "video" && viewMode === "grid" ? (
-                    <VideoGrid files={sortedFiles} onOpenPlayer={setVideoPlayerFile} />
+                    <VideoGrid
+                      files={sortedFiles}
+                      onOpenPlayer={setVideoPlayerFile}
+                      onDownload={handleDownload}
+                      onRequestDelete={setDeleteConfirmFile}
+                      canManageFile={canManageFile}
+                    />
                   ) : (
                     <FileTable
                       files={sortedFiles}
@@ -846,6 +922,8 @@ export default function FileBrowser({
                       onOpenPlayer={mediaType === "video" ? setVideoPlayerFile : undefined}
                       onOpenInNewTab={handleViewInNewTab}
                       onDownload={handleDownload}
+                      onRequestDelete={setDeleteConfirmFile}
+                      canManageFile={canManageFile}
                     />
                   )}
                   {canUploadFiles && (
@@ -1057,6 +1135,40 @@ export default function FileBrowser({
               className="bg-red-600 hover:bg-red-700"
             >
               {deletingFolder && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!deleteConfirmFile}
+        onOpenChange={(open) => {
+          if (!open && !deletingFile) setDeleteConfirmFile(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this file?</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{deleteConfirmFile ? displayName(deleteConfirmFile) : ""}" will be
+              moved to trash. An admin can restore it from the database within
+              30 days.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFile}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Stop the AlertDialog's default close-on-click so we can await
+                // the network call and show a spinner on the button.
+                e.preventDefault()
+                void handleDeleteFile()
+              }}
+              disabled={deletingFile}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deletingFile && <Loader2 className="mr-2 size-3.5 animate-spin" />}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1289,12 +1401,18 @@ function AuthPhoto({
   file,
   viewUrl,
   onClick,
+  onDownload,
+  onRequestDelete,
+  canManage,
 }: {
   file: FileItem
   viewUrl: string | null
   onClick: () => void
+  onDownload: (file: FileItem) => void
+  onRequestDelete: (file: FileItem) => void
+  canManage: boolean
 }) {
-  const containerRef = useRef<HTMLButtonElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
   // Start as hidden — only once the card has been in (or near) the viewport
   // do we hand a real URL to useAuthenticatedUrl. This prevents large photo
   // folders from eagerly downloading every original image on mount.
@@ -1332,42 +1450,54 @@ function AuthPhoto({
   const { blobUrl, loading, error } = useAuthenticatedUrl(isVisible ? viewUrl : null)
 
   return (
-    <button
+    <div
       ref={containerRef}
-      onClick={onClick}
-      className="group flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-orange-300 transition-colors text-left"
+      className="group relative flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-orange-300 transition-colors text-left"
     >
-      <div className="relative aspect-square overflow-hidden bg-slate-100">
-        {!isVisible && (
-          <div className="w-full h-full" aria-hidden="true" />
-        )}
-        {isVisible && loading && (
-          <div className="w-full h-full flex items-center justify-center">
-            <Loader2 className="size-5 text-slate-300 animate-spin" />
-          </div>
-        )}
-        {blobUrl && (
-          <img
-            src={blobUrl}
-            alt={displayName(file)}
-            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-          />
-        )}
-        {isVisible && error && !loading && (
-          <div className="w-full h-full flex items-center justify-center text-slate-300">
-            <span className="text-3xl">🖼️</span>
-          </div>
-        )}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
+      <button onClick={onClick} className="flex flex-col text-left">
+        <div className="relative aspect-square overflow-hidden bg-slate-100">
+          {!isVisible && (
+            <div className="w-full h-full" aria-hidden="true" />
+          )}
+          {isVisible && loading && (
+            <div className="w-full h-full flex items-center justify-center">
+              <Loader2 className="size-5 text-slate-300 animate-spin" />
+            </div>
+          )}
+          {blobUrl && (
+            <img
+              src={blobUrl}
+              alt={displayName(file)}
+              className="w-full h-full object-cover transition-transform group-hover:scale-105"
+            />
+          )}
+          {isVisible && error && !loading && (
+            <div className="w-full h-full flex items-center justify-center text-slate-300">
+              <span className="text-3xl">🖼️</span>
+            </div>
+          )}
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
+        </div>
+        <div className="px-2.5 py-2 border-t border-[#E5E7EB] bg-white w-full">
+          <p className="text-xs font-medium text-slate-800 truncate">{displayName(file)}</p>
+          <p className="text-xs text-slate-400">{formatFileSize(file.fileSize)}</p>
+          {file.note ? (
+            <p className="mt-1 line-clamp-2 text-xs text-slate-500">{file.note}</p>
+          ) : null}
+        </div>
+      </button>
+
+      <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <FileActionsMenu
+          file={file}
+          canManage={canManage}
+          onOpen={onClick}
+          onDownload={onDownload}
+          onRequestDelete={onRequestDelete}
+          triggerClassName="p-1 rounded-md bg-white/90 text-slate-600 hover:text-slate-900 hover:bg-white shadow-sm"
+        />
       </div>
-      <div className="px-2.5 py-2 border-t border-[#E5E7EB] bg-white">
-        <p className="text-xs font-medium text-slate-800 truncate">{displayName(file)}</p>
-        <p className="text-xs text-slate-400">{formatFileSize(file.fileSize)}</p>
-        {file.note ? (
-          <p className="mt-1 line-clamp-2 text-xs text-slate-500">{file.note}</p>
-        ) : null}
-      </div>
-    </button>
+    </div>
   )
 }
 
@@ -1375,10 +1505,16 @@ function PhotoGrid({
   files,
   buildViewUrl,
   onOpenLightbox,
+  onDownload,
+  onRequestDelete,
+  canManageFile,
 }: {
   files: FileItem[]
   buildViewUrl: (fileId: string) => string | null
   onOpenLightbox: (file: FileItem) => void
+  onDownload: (file: FileItem) => void
+  onRequestDelete: (file: FileItem) => void
+  canManageFile: (file: FileItem) => boolean
 }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -1388,6 +1524,9 @@ function PhotoGrid({
           file={file}
           viewUrl={buildViewUrl(file.id)}
           onClick={() => onOpenLightbox(file)}
+          onDownload={onDownload}
+          onRequestDelete={onRequestDelete}
+          canManage={canManageFile(file)}
         />
       ))}
     </div>
@@ -1397,30 +1536,128 @@ function PhotoGrid({
 function VideoGrid({
   files,
   onOpenPlayer,
+  onDownload,
+  onRequestDelete,
+  canManageFile,
 }: {
   files: FileItem[]
   onOpenPlayer: (file: FileItem) => void
+  onDownload: (file: FileItem) => void
+  onRequestDelete: (file: FileItem) => void
+  canManageFile: (file: FileItem) => boolean
 }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
       {files.map((file) => (
-        <button
+        <div
           key={file.id}
-          onClick={() => onOpenPlayer(file)}
           className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-orange-300 transition-colors text-left"
         >
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="size-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/30 transition-colors">
-              <Play className="size-5 text-white fill-white ml-0.5" />
+          <button
+            onClick={() => onOpenPlayer(file)}
+            className="absolute inset-0 text-left"
+            aria-label={`Play ${displayName(file)}`}
+          >
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="size-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/30 transition-colors">
+                <Play className="size-5 text-white fill-white ml-0.5" />
+              </div>
             </div>
+            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2">
+              <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
+              <p className="text-white/60 text-xs">{formatFileSize(file.fileSize)}</p>
+            </div>
+          </button>
+
+          <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+            <FileActionsMenu
+              file={file}
+              canManage={canManageFile(file)}
+              onOpen={() => onOpenPlayer(file)}
+              onDownload={onDownload}
+              onRequestDelete={onRequestDelete}
+              triggerClassName="p-1 rounded-md bg-white/90 text-slate-600 hover:text-slate-900 hover:bg-white shadow-sm"
+            />
           </div>
-          <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2">
-            <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
-            <p className="text-white/60 text-xs">{formatFileSize(file.fileSize)}</p>
-          </div>
-        </button>
+        </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * Shared three-dot overflow menu for a single file, used by AuthPhoto,
+ * VideoGrid tile, and FileTable row. Renders Open / Download and, when
+ * `canManage` is true, a red "Delete file" item that delegates the
+ * confirmation dialog back to the parent via onRequestDelete.
+ */
+function FileActionsMenu({
+  file,
+  canManage,
+  onOpen,
+  onDownload,
+  onRequestDelete,
+  triggerClassName,
+  triggerAriaLabel,
+}: {
+  file: FileItem
+  canManage: boolean
+  onOpen?: () => void
+  onDownload: (file: FileItem) => void
+  onRequestDelete: (file: FileItem) => void
+  triggerClassName?: string
+  triggerAriaLabel?: string
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          className={
+            triggerClassName ??
+            "p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          }
+          aria-label={triggerAriaLabel ?? `Actions for ${displayName(file)}`}
+        >
+          <MoreHorizontal className="size-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        {onOpen && (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpen()
+            }}
+          >
+            Open
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation()
+            onDownload(file)
+          }}
+        >
+          Download
+        </DropdownMenuItem>
+        {canManage && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                onRequestDelete(file)
+              }}
+              className="text-red-600 focus:text-red-600"
+            >
+              Delete file
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -1432,6 +1669,8 @@ function FileTable({
   onOpenPlayer,
   onOpenInNewTab,
   onDownload,
+  onRequestDelete,
+  canManageFile,
 }: {
   files: FileItem[]
   showDuration?: boolean
@@ -1440,6 +1679,8 @@ function FileTable({
   onOpenPlayer?: (file: FileItem) => void
   onOpenInNewTab: (file: FileItem) => void
   onDownload: (file: FileItem) => void
+  onRequestDelete: (file: FileItem) => void
+  canManageFile: (file: FileItem) => boolean
 }) {
   const showNotes = files.some((file) => !!file.note)
 
@@ -1458,7 +1699,7 @@ function FileTable({
             )}
             <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Uploaded By</th>
             <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Date</th>
-            <th className="px-4 py-2.5 text-right font-semibold text-slate-600 w-16">Download</th>
+            <th className="px-4 py-2.5 text-right font-semibold text-slate-600 w-16">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -1466,8 +1707,13 @@ function FileTable({
             const label = displayName(file)
             const canPhoto = mediaType === "photo" && !!onOpenLightbox
             const canVideo = mediaType === "video" && !!onOpenPlayer
+            const handleOpen = canPhoto
+              ? () => onOpenLightbox!(file)
+              : canVideo
+                ? () => onOpenPlayer!(file)
+                : () => onOpenInNewTab(file)
             return (
-              <tr key={file.id} className="hover:bg-slate-50">
+              <tr key={file.id} className="group hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <FileIcon mimeType={file.mimeType} />
@@ -1512,15 +1758,25 @@ function FileTable({
                 <td className="px-4 py-3 text-slate-500">{file.uploadedByName ?? "—"}</td>
                 <td className="px-4 py-3 text-slate-500">{fmtDate(file.createdAt)}</td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => onDownload(file)}
-                    className="inline-flex items-center justify-center rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-                    aria-label={`Download ${label}`}
-                    title="Download"
-                  >
-                    <Download className="size-4" />
-                  </button>
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onDownload(file)}
+                      className="inline-flex items-center justify-center rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                      aria-label={`Download ${label}`}
+                      title="Download"
+                    >
+                      <Download className="size-4" />
+                    </button>
+                    <FileActionsMenu
+                      file={file}
+                      canManage={canManageFile(file)}
+                      onOpen={handleOpen}
+                      onDownload={onDownload}
+                      onRequestDelete={onRequestDelete}
+                      triggerAriaLabel={`Actions for ${label}`}
+                    />
+                  </div>
                 </td>
               </tr>
             )

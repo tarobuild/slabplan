@@ -65,6 +65,11 @@ router.get(
               isNull(scheduleItems.deletedAt),
               or(isNull(scheduleItems.progress), lt(scheduleItems.progress, 100)),
               accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
+              or(
+                eq(scheduleItems.isPersonalTodo, false),
+                isNull(scheduleItems.isPersonalTodo),
+                eq(scheduleItems.createdBy, req.auth!.userId),
+              ),
             ),
           )
           .then((rows) => rows[0]),
@@ -128,6 +133,11 @@ router.get(
             lte(scheduleItems.startDate, in14Days),
             or(isNull(scheduleItems.isComplete), eq(scheduleItems.isComplete, false)),
             accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
+            or(
+              eq(scheduleItems.isPersonalTodo, false),
+              isNull(scheduleItems.isPersonalTodo),
+              eq(scheduleItems.createdBy, req.auth!.userId),
+            ),
           ),
         )
         .orderBy(scheduleItems.startDate)
@@ -219,6 +229,11 @@ router.get(
           or(
             gte(scheduleItems.endDate, startParam),
             gte(scheduleItems.startDate, startParam),
+          ),
+          or(
+            eq(scheduleItems.isPersonalTodo, false),
+            isNull(scheduleItems.isPersonalTodo),
+            eq(scheduleItems.createdBy, req.auth!.userId),
           ),
         ),
       )

@@ -54,6 +54,7 @@ type ScheduleItemAccessRecord = {
   id: string;
   jobId: string | null;
   createdBy: string | null;
+  isPersonalTodo: boolean | null;
   visibleToEstimators: boolean | null;
   visibleToInstallers: boolean | null;
   visibleToOfficeStaff: boolean | null;
@@ -606,6 +607,7 @@ async function getScheduleItemAccessOrThrow(auth: AuthContext, itemId: string) {
       id: scheduleItems.id,
       jobId: scheduleItems.jobId,
       createdBy: scheduleItems.createdBy,
+      isPersonalTodo: scheduleItems.isPersonalTodo,
       visibleToEstimators: scheduleItems.visibleToEstimators,
       visibleToInstallers: scheduleItems.visibleToInstallers,
       visibleToOfficeStaff: scheduleItems.visibleToOfficeStaff,
@@ -633,6 +635,10 @@ async function getScheduleItemAccessOrThrow(auth: AuthContext, itemId: string) {
 }
 
 function canViewScheduleItem(auth: AuthContext, item: ScheduleItemAccessRecord) {
+  if (item.isPersonalTodo === true && item.createdBy !== auth.userId) {
+    return false;
+  }
+
   if (isAdmin(auth) || item.createdBy === auth.userId || item.isAssignedToCurrentUser) {
     return true;
   }

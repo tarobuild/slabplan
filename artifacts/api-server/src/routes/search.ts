@@ -176,6 +176,11 @@ router.get(
                 isNull(jobs.deletedAt),
                 accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
                 ilike(scheduleItems.title, search),
+                or(
+                  eq(scheduleItems.isPersonalTodo, false),
+                  isNull(scheduleItems.isPersonalTodo),
+                  eq(scheduleItems.createdBy, req.auth!.userId),
+                ),
               ),
             )
             .orderBy(desc(scheduleItems.updatedAt), asc(scheduleItems.title))

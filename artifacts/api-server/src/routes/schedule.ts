@@ -1466,7 +1466,7 @@ async function upsertBaselineForJob(jobId: string, userId: string) {
   };
 }
 
-async function hydrateScheduleItems(itemIds: string[]) {
+async function hydrateScheduleItems(itemIds: string[], requestingUserId?: string) {
   const uniqueItemIds = Array.from(new Set(itemIds))
 
   if (uniqueItemIds.length === 0) {
@@ -1538,7 +1538,18 @@ async function hydrateScheduleItems(itemIds: string[]) {
       })
       .from(scheduleItemPredecessors)
       .innerJoin(scheduleItems, eq(scheduleItemPredecessors.predecessorId, scheduleItems.id))
-      .where(inArray(scheduleItemPredecessors.scheduleItemId, uniqueItemIds)),
+      .where(
+        and(
+          inArray(scheduleItemPredecessors.scheduleItemId, uniqueItemIds),
+          requestingUserId
+            ? or(
+                eq(scheduleItems.isPersonalTodo, false),
+                isNull(scheduleItems.isPersonalTodo),
+                eq(scheduleItems.createdBy, requestingUserId),
+              )
+            : undefined,
+        ),
+      ),
     db
       .select({
         scheduleItemId: scheduleItemNotes.scheduleItemId,
@@ -1759,8 +1770,8 @@ async function hydrateScheduleItems(itemIds: string[]) {
   })
 }
 
-async function hydrateScheduleItem(itemId: string) {
-  const [hydrated] = await hydrateScheduleItems([itemId])
+async function hydrateScheduleItem(itemId: string, requestingUserId?: string) {
+  const [hydrated] = await hydrateScheduleItems([itemId], requestingUserId)
 
   if (!hydrated) {
     throw new HttpError(404, "Schedule item not found.")
@@ -2379,8 +2390,12 @@ router.post(
       .from(scheduleItems)
       .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
       .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.title));
-    const hydrated = await hydrateScheduleItems(rows.map((row) => row.id));
-    const conflicts = hydrated.map((entry) => entry.item).filter((item) => item.hasConflict);
+    const currentUserId = req.auth!.userId;
+    const hydrated = await hydrateScheduleItems(rows.map((row) => row.id), currentUserId);
+    const conflicts = hydrated
+      .map((entry) => entry.item)
+      .filter((item) => !item.isPersonalTodo || item.createdBy === currentUserId)
+      .filter((item) => item.hasConflict);
 
     res.json({
       conflicts,
@@ -2471,9 +2486,9 @@ router.get(
         desc(scheduleItems.createdAt),
       );
 
-    const hydrated = await hydrateScheduleItems(rows.map((row) => row.id));
-
     const currentUserId = req.auth!.userId;
+    const hydrated = await hydrateScheduleItems(rows.map((row) => row.id), currentUserId);
+
     res.json({
       items: hydrated
         .map((entry) => entry.item)
@@ -2587,7 +2602,7 @@ router.post(
       });
     }
 
-    const hydrated = await hydrateScheduleItem(item.id);
+    const hydrated = await hydrateScheduleItem(item.id, req.auth!.userId);
     await writeActivity({
       entityType: "schedule_item",
       entityId: item.id,
@@ -2609,7 +2624,12 @@ router.get(
   "/schedule-items/:id",
   asyncHandler(async (req, res) => {
     const itemId = getParam(req.params.id, "schedule item id");
-    const hydrated = await hydrateScheduleItem(itemId);
+    const hydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
+
+    if (hydrated.item.isPersonalTodo && hydrated.item.createdBy !== req.auth!.userId) {
+      throw new HttpError(403, "You do not have access to that schedule item.");
+    }
+
     res.json(hydrated);
   }),
 );
@@ -2625,7 +2645,11 @@ router.put(
 
     const itemId = getParam(req.params.id, "schedule item id");
     const existing = await getScheduleItemOrThrow(itemId);
-    const existingHydrated = await hydrateScheduleItem(itemId);
+    const existingHydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
+
+    if (existingHydrated.item.isPersonalTodo && existingHydrated.item.createdBy !== req.auth!.userId) {
+      throw new HttpError(403, "You do not have access to that schedule item.");
+    }
 
     if (!existing.jobId) {
       throw new HttpError(400, "Schedule item is missing a job.");
@@ -2719,7 +2743,7 @@ router.put(
       });
     }
 
-    const hydrated = await hydrateScheduleItem(itemId);
+    const hydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
     const changes = buildScheduleHistoryChanges(existingHydrated.item, hydrated.item);
     const markedComplete = !existingHydrated.item.isComplete && hydrated.item.isComplete;
     await writeActivity({
@@ -3256,8 +3280,12 @@ router.delete(
   "/schedule-items/:id",
   asyncHandler(async (req, res) => {
     const itemId = getParam(req.params.id, "schedule item id");
-    const hydrated = await hydrateScheduleItem(itemId);
+    const hydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
     const existing = await getScheduleItemOrThrow(itemId);
+
+    if (hydrated.item.isPersonalTodo && hydrated.item.createdBy !== req.auth!.userId) {
+      throw new HttpError(403, "You do not have access to that schedule item.");
+    }
 
     if (!existing.jobId) {
       throw new HttpError(400, "Schedule item is missing a job.");

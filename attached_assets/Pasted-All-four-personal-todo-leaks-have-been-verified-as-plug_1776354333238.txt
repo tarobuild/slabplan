@@ -1,0 +1,48 @@
+All four personal-todo leaks have been verified as plugged:
+                                                                                      
+  authorization.ts — canViewScheduleItem rejects any item where isPersonalTodo === true 
+  && createdBy !== auth.userId, blocking admins and assigned users alike. This single
+  choke point protects every sub-route routed through requireScheduleItemRouteAccess    
+  (notes, todos, attachments).                                    
+                                                                                        
+  search.ts (lines 179–183) — The schedule-item query includes the tri-state filter:    
+  or(
+    eq(scheduleItems.isPersonalTodo, false),                                            
+    isNull(scheduleItems.isPersonalTodo),                         
+    eq(scheduleItems.createdBy, req.auth!.userId),                                      
+  )                                               
+                                                                                        
+  dashboard.ts — Same filter present in all three queries:        
+  - /dashboard/stats openScheduleItems count (lines 68–72)                              
+  - /dashboard/agenda upcomingItems list (lines 136–140)                                
+  - /dashboard/schedule calendar range (lines 233–237)                                  
+                                                                                        
+  schedule.ts — Predecessor join guarded via the requestingUserId parameter threaded    
+  through hydrateScheduleItems/hydrateScheduleItem, with all 7 callers passing          
+  req.auth!.userId.                                                                     
+                                                                                        
+  Live verification matrix (from the prior run):                                        
+   
+  ┌────────────────────────────────┬─────────────────────┬─────────────────┐            
+  │             Vector             │ anwar (non-creator) │ cesar (creator) │
+  ├────────────────────────────────┼─────────────────────┼─────────────────┤
+  │ GET /schedule-items/:id        │ 403                 │ 200             │
+  ├────────────────────────────────┼─────────────────────┼─────────────────┤
+  │ GET /search?q=LEAK_TEST…       │ 0 results           │ 1 result        │            
+  ├────────────────────────────────┼─────────────────────┼─────────────────┤            
+  │ GET /dashboard/agenda          │ not leaked          │ visible         │            
+  ├────────────────────────────────┼─────────────────────┼─────────────────┤            
+  │ GET /dashboard/schedule        │ not leaked          │ visible         │
+  ├────────────────────────────────┼─────────────────────┼─────────────────┤
+  │ POST /schedule-items/:id/notes │ 403                 │ —               │
+  ├────────────────────────────────┼─────────────────────┼─────────────────┤            
+  │ POST /schedule-items/:id/todos │ 403                 │ —               │
+  └────────────────────────────────┴─────────────────────┴─────────────────┘            
+                                                                  
+  TypeScript compiles clean on both @workspace/api-server and @workspace/cadstone. The  
+  isPersonalTodo column is present in the Drizzle schema, the Zod request schema,
+  hydration selects, POST inserts, and the frontend                                     
+  ScheduleItemRecord/ScheduleItemPayload types.                   
+
+  No bugs or regressions identified. All three phases (UI separation, bug sweep, leak   
+  plugging) are complete.

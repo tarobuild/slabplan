@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import { useDropzone } from "react-dropzone"
 import {
+  Calendar as CalendarIcon,
   Check,
   ChevronLeft,
   Cloud,
@@ -2955,23 +2956,41 @@ export default function JobDailyLogsPage() {
       await api.post(`/daily-logs/${selectedLog.id}/todos`, { title: title.trim() })
 
       if (dueDate && jobId) {
-        const timeMap: Record<string, { start: string; end: string }> = {
+        const presetMap: Record<string, { start: string; end: string }> = {
           "First thing in the morning": { start: "07:00", end: "09:00" },
           "Midday": { start: "11:00", end: "13:00" },
           "End of day": { start: "15:00", end: "17:00" },
         }
-        const mapped = timeOfDay ? timeMap[timeOfDay] : undefined
+        let startTime: string | null = null
+        let endTime: string | null = null
+        let isHourly = false
+        let notesSuffix = ""
+
+        if (timeOfDay?.startsWith("Specific: ")) {
+          const raw = timeOfDay.replace("Specific: ", "")
+          startTime = raw.length === 5 ? raw : raw.substring(0, 5)
+          const hour = parseInt(startTime.split(":")[0], 10)
+          endTime = `${String(Math.min(hour + 1, 23)).padStart(2, "0")}:${startTime.split(":")[1]}`
+          isHourly = true
+          notesSuffix = ` (${new Date(`2000-01-01T${startTime}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })})`
+        } else if (timeOfDay && presetMap[timeOfDay]) {
+          startTime = presetMap[timeOfDay].start
+          endTime = presetMap[timeOfDay].end
+          isHourly = true
+          notesSuffix = ` (${timeOfDay})`
+        }
+
         try {
           await api.post(`/jobs/${jobId}/schedule`, {
             title: title.trim(),
             startDate: dueDate,
             workDays: 1,
-            isHourly: !!mapped,
-            startTime: mapped?.start ?? null,
-            endTime: mapped?.end ?? null,
-            notes: `Auto-created from daily log to-do${timeOfDay ? ` (${timeOfDay})` : ""}`,
+            isHourly,
+            startTime,
+            endTime,
+            notes: `Auto-created from daily log to-do${notesSuffix}`,
           })
-          toast.success("To-do also added to schedule")
+          toast.success("To-do added to schedule")
         } catch {
           toast.error("To-do saved but failed to add to schedule")
         }
@@ -3399,61 +3418,133 @@ function DailyLogAttachmentCard({ attachment }: { attachment: DailyLogAttachment
 
 function AddTodoButton({ onAdd }: { onAdd: (title: string, dueDate?: string, timeOfDay?: string) => Promise<void> | void }) {
   const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [value, setValue] = useState("")
   const [dueDate, setDueDate] = useState("")
+  const [scheduleMode, setScheduleMode] = useState<"preset" | "specific">("preset")
   const [timeOfDay, setTimeOfDay] = useState("")
+  const [specificTime, setSpecificTime] = useState("")
 
-  return open ? (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
+  function reset() {
+    setValue("")
+    setDueDate("")
+    setScheduleMode("preset")
+    setTimeOfDay("")
+    setSpecificTime("")
+    setOpen(false)
+  }
+
+  async function handleSave() {
+    if (!value.trim() || saving) return
+    setSaving(true)
+    try {
+      const resolvedTime = scheduleMode === "specific" && specificTime
+        ? `Specific: ${specificTime}`
+        : timeOfDay || undefined
+      await onAdd(value, dueDate || undefined, resolvedTime)
+      reset()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)} className="shrink-0">
+        <Plus className="size-4" />
+        Add
+      </Button>
+    )
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-slate-600">What needs to be done?</label>
         <Input
           value={value}
+          autoFocus
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Add to-do"
-          className="h-9 w-44"
+          onKeyDown={(event) => { if (event.key === "Enter") void handleSave() }}
+          placeholder="e.g. Pick up materials from supplier"
+          className="h-10"
         />
-        <Button
-          size="sm"
-          onClick={async () => {
-            if (!value.trim()) return
-            await onAdd(value, dueDate || undefined, timeOfDay || undefined)
-            setValue("")
-            setDueDate("")
-            setTimeOfDay("")
-            setOpen(false)
-          }}
-        >
-          <Check className="size-4" />
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => { setOpen(false); setValue(""); setDueDate(""); setTimeOfDay("") }}>
-          <X className="size-4" />
-        </Button>
       </div>
-      <div className="flex items-center gap-2">
-        <Input
-          type="date"
-          value={dueDate}
-          onChange={(event) => setDueDate(event.target.value)}
-          className="h-8 w-36 text-xs"
-          placeholder="Due date"
-        />
-        <Select value={timeOfDay || "_none"} onValueChange={(v) => setTimeOfDay(v === "_none" ? "" : v)}>
-          <SelectTrigger className="h-8 w-44 text-xs">
-            <SelectValue placeholder="Time of day" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_none">No time preference</SelectItem>
-            <SelectItem value="First thing in the morning">First thing in the morning</SelectItem>
-            <SelectItem value="Midday">Midday</SelectItem>
-            <SelectItem value="End of day">End of day</SelectItem>
-          </SelectContent>
-        </Select>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-slate-600">Due date</label>
+          <Input
+            type="date"
+            value={dueDate}
+            onChange={(event) => setDueDate(event.target.value)}
+            className="h-9 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-slate-600">When</label>
+          <Select
+            value={scheduleMode === "specific" ? "_specific" : (timeOfDay || "_none")}
+            onValueChange={(v) => {
+              if (v === "_specific") {
+                setScheduleMode("specific")
+                setTimeOfDay("")
+              } else {
+                setScheduleMode("preset")
+                setSpecificTime("")
+                setTimeOfDay(v === "_none" ? "" : v)
+              }
+            }}
+          >
+            <SelectTrigger className="h-9 text-sm">
+              <SelectValue placeholder="Anytime" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_none">Anytime</SelectItem>
+              <SelectItem value="First thing in the morning">Morning (7 - 9 AM)</SelectItem>
+              <SelectItem value="Midday">Midday (11 AM - 1 PM)</SelectItem>
+              <SelectItem value="End of day">End of day (3 - 5 PM)</SelectItem>
+              <SelectItem value="_specific">Pick a specific time...</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {scheduleMode === "specific" && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-slate-600">Specific time</label>
+          <Input
+            type="time"
+            value={specificTime}
+            onChange={(event) => setSpecificTime(event.target.value)}
+            className="h-9 w-36 text-sm"
+          />
+        </div>
+      )}
+
+      {dueDate && (
+        <p className="text-xs text-slate-500">
+          <CalendarIcon className="mr-1 inline-block size-3.5 -translate-y-px text-orange-500" />
+          This to-do will be added to the job schedule{timeOfDay || specificTime ? ` for ${
+            scheduleMode === "specific" && specificTime
+              ? new Date(`2000-01-01T${specificTime}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+              : timeOfDay === "First thing in the morning" ? "morning (7 - 9 AM)"
+              : timeOfDay === "Midday" ? "midday (11 AM - 1 PM)"
+              : timeOfDay === "End of day" ? "end of day (3 - 5 PM)"
+              : ""
+          }` : ""}.
+        </p>
+      )}
+
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <Button size="sm" variant="ghost" onClick={reset} disabled={saving}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={() => void handleSave()} disabled={!value.trim() || saving}>
+          {saving ? "Saving..." : "Add To-Do"}
+        </Button>
       </div>
     </div>
-  ) : (
-    <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-      <Plus className="size-4" />
-      Add
-    </Button>
   )
 }

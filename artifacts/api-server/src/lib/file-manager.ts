@@ -1,5 +1,4 @@
 import archiver from "archiver";
-import { promises as fs } from "node:fs";
 import path from "node:path";
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 import type { Response } from "express";
@@ -18,7 +17,8 @@ import {
   buildStoredFileName,
   buildUploadPath,
   deletePhysicalFile,
-  resolveAbsolutePathFromFileUrl,
+  openStoredFileReadStream,
+  storedFileExists,
   writeUploadedBuffer,
 } from "./storage";
 import { emitRealtimeEvent } from "./realtime";
@@ -1117,7 +1117,9 @@ export async function saveUploadedFiles(params: {
       storedFileName: storedName,
     });
 
-    await writeUploadedBuffer(fileUrl, uploadedFile.buffer);
+    await writeUploadedBuffer(fileUrl, uploadedFile.buffer, {
+      contentType: uploadedFile.mimetype,
+    });
     let file: File;
 
     try {
@@ -1499,10 +1501,7 @@ export async function streamFolderZip(params: {
       continue;
     }
 
-    const absolutePath = resolveAbsolutePathFromFileUrl(file.fileUrl);
-    try {
-      await fs.access(absolutePath);
-    } catch {
+    if (!(await storedFileExists(file.fileUrl))) {
       continue;
     }
 
@@ -1516,7 +1515,7 @@ export async function streamFolderZip(params: {
       ? path.posix.join(folder.title, relativeTrail, file.originalName)
       : path.posix.join(folder.title, file.originalName);
 
-    archive.file(absolutePath, { name: zipName });
+    archive.append(openStoredFileReadStream(file.fileUrl), { name: zipName });
   }
 
   await archive.finalize();

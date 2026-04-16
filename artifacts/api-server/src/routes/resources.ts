@@ -1,4 +1,3 @@
-import { promises as fs } from "node:fs";
 import multer from "multer";
 import { z } from "zod";
 import { Router, type IRouter } from "express";
@@ -18,7 +17,7 @@ import {
 } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { requireAdmin } from "../middleware/require-auth";
-import { resolveAbsolutePathFromFileUrl } from "../lib/storage";
+import { streamStoredFileToResponse } from "../lib/storage";
 
 const router: IRouter = Router();
 const upload = multer({
@@ -197,22 +196,12 @@ router.get(
       throw new HttpError(404, "Stored file missing.");
     }
 
-    const absolutePath = resolveAbsolutePathFromFileUrl(file.fileUrl);
-
-    try {
-      await fs.access(absolutePath);
-    } catch {
-      throw new HttpError(404, "Stored file missing.");
-    }
-
     const displayName = file.originalName ?? file.filename;
-    res.setHeader("Content-Type", file.mimeType ?? "application/octet-stream");
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${encodeURIComponent(displayName)}"`,
-    );
-    res.setHeader("Cache-Control", "private, max-age=3600");
-    res.sendFile(absolutePath);
+    await streamStoredFileToResponse(res, file.fileUrl, {
+      disposition: "inline",
+      filename: displayName,
+      contentType: file.mimeType,
+    });
   }),
 );
 

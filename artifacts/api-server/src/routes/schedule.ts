@@ -3122,7 +3122,9 @@ router.post(
         storedFileName,
       });
 
-      await writeUploadedBuffer(uploadPath.fileUrl, uploadedFile.buffer);
+      await writeUploadedBuffer(uploadPath.fileUrl, uploadedFile.buffer, {
+        contentType: uploadedFile.mimetype,
+      });
 
       let file: typeof files.$inferSelect;
       let attachment: { id: string };
@@ -3229,7 +3231,9 @@ router.post(
       `Created: ${new Date().toISOString()}`,
     ].join("\n");
 
-    await writeUploadedBuffer(uploadPath.fileUrl, Buffer.from(documentContents, "utf8"));
+    await writeUploadedBuffer(uploadPath.fileUrl, Buffer.from(documentContents, "utf8"), {
+      contentType: "text/plain; charset=utf-8",
+    });
 
     let file: typeof files.$inferSelect;
     let attachment: { id: string };

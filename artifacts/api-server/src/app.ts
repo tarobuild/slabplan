@@ -17,7 +17,7 @@ import { sanitizeDownloadFilename } from "./lib/downloads";
 import { logger } from "./lib/logger";
 import { HttpError } from "./lib/http";
 import { readBearerToken } from "./middleware/require-auth";
-import { ensureUploadRoot, resolveAbsolutePathFromFileUrl } from "./lib/storage";
+import { ensureUploadRoot, streamStoredFileToResponse } from "./lib/storage";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -119,10 +119,10 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
 
     const fileUrl = `/uploads/${pathname}`;
     await assertCanAccessUploadPath(auth, fileUrl);
-    const absolutePath = resolveAbsolutePathFromFileUrl(fileUrl);
     const [storedFile] = await db
       .select({
         originalName: files.originalName,
+        mimeType: files.mimeType,
       })
       .from(files)
       .where(eq(files.fileUrl, fileUrl))
@@ -134,17 +134,10 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
 
     const safeName = sanitizeDownloadFilename(storedFile.originalName);
 
-    res.download(absolutePath, safeName, (error) => {
-      if (!error) {
-        return;
-      }
-
-      if ("statusCode" in error && error.statusCode === 404) {
-        next(new HttpError(404, "Stored file missing."));
-        return;
-      }
-
-      next(error);
+    await streamStoredFileToResponse(res, fileUrl, {
+      disposition: "attachment",
+      filename: safeName,
+      contentType: storedFile.mimeType,
     });
   } catch (error) {
     next(error);

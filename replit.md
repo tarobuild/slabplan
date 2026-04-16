@@ -20,6 +20,7 @@ pnpm workspace monorepo — TypeScript, Express 5 backend, React + Vite + shadcn
 ### `artifacts/api-server`
 Express 5 REST API server running on port 8080. All routes mounted at `/api`.
 Auth: JWT (access token in-memory + httpOnly refresh cookie via bcrypt).
+File storage: Replit App Storage (GCS via sidecar). All uploads write to `$PRIVATE_OBJECT_DIR/cadstone/uploads/...`; the `files.fileUrl` column keeps the `/uploads/<jobId>/<mediaType>/<filename>` shape and is mapped to a GCS object at read time. Do NOT write to local disk — the deployed filesystem is ephemeral. Always pass `contentType: uploadedFile.mimetype` to `writeUploadedBuffer`.
 
 Routes:
 - `GET /api/healthz` — health check

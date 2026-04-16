@@ -1598,7 +1598,9 @@ router.post(
         storedFileName,
       });
 
-      await writeUploadedBuffer(uploadPath.fileUrl, uploadedFile.buffer);
+      await writeUploadedBuffer(uploadPath.fileUrl, uploadedFile.buffer, {
+        contentType: uploadedFile.mimetype,
+      });
 
       const [file] = await db
         .insert(files)

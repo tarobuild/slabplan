@@ -142,9 +142,9 @@ export function ScheduleQuickCreate({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="p-0 gap-0 max-w-sm w-full overflow-hidden rounded-2xl shadow-2xl border border-slate-200">
-        {/* Color bar at top */}
-        <div className="h-1.5 w-full" style={{ backgroundColor: color }} />
+      <DialogContent className="p-0 gap-0 max-w-md w-full rounded-2xl shadow-2xl border border-slate-200">
+        {/* Color bar at top — rounded to match dialog corners */}
+        <div className="h-1.5 w-full rounded-t-2xl" style={{ backgroundColor: color }} />
 
         <div className="px-5 pt-4 pb-5 space-y-4">
           {/* Title row */}
@@ -267,7 +267,7 @@ export function ScheduleQuickCreate({
           </div>
 
           {/* Color picker */}
-          <div className="flex items-center gap-1.5 pl-2">
+          <div className="flex flex-wrap items-center gap-2 pl-2">
             {SCHEDULE_COLOR_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -275,8 +275,8 @@ export function ScheduleQuickCreate({
                 onClick={() => setColor(opt.value)}
                 title={opt.label}
                 className={cn(
-                  "size-5 rounded-full transition-transform hover:scale-110",
-                  color === opt.value && "ring-2 ring-offset-2 ring-slate-400",
+                  "size-5 rounded-full transition-transform hover:scale-110 shrink-0",
+                  color === opt.value && "ring-2 ring-offset-2 ring-slate-400 scale-110",
                 )}
                 style={{ backgroundColor: opt.value }}
               />

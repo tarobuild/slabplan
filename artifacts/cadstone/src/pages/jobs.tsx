@@ -154,7 +154,7 @@ export default function JobsPage() {
   useEffect(() => {
     api.get("/clients?pageSize=100")
       .then(r => setClientOptions(r.data.clients ?? []))
-      .catch(() => {})
+      .catch((err: unknown) => toastApiError(err, "Failed to load clients"))
   }, [])
 
   useEffect(() => {
@@ -165,7 +165,7 @@ export default function JobsPage() {
 
     api.get("/users?roles=project_manager,crew_member&limit=200")
       .then((r) => setWorkerOptions(r.data.users ?? []))
-      .catch(() => {})
+      .catch((err: unknown) => toastApiError(err, "Failed to load workers"))
   }, [isAdmin])
 
   useEffect(() => {

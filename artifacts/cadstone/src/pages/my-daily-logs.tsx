@@ -2,12 +2,12 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { ChevronRight, FileText, Search, Users } from "lucide-react"
 import { api } from "@/lib/api"
+import { apiErrorMessage } from "@/lib/api-errors"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { apiErrorMessage } from "@/lib/api-errors"
 
 type MyDailyLogItem = {
   id: string

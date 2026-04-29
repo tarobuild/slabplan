@@ -34,7 +34,7 @@ import {
   X,
 } from "lucide-react"
 import { api } from "@/lib/api"
-import { apiErrorMessage as apiError } from "@/lib/api-errors"
+import { apiErrorMessage as apiError, toastApiError } from "@/lib/api-errors"
 import { cn } from "@/lib/utils"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { useAuthStore } from "@/store/auth"
@@ -1816,7 +1816,7 @@ function CommentsSheet({
       const response = await api.get<{ comments: CommentRecord[] }>(`/daily-logs/${log.id}/comments`)
       setComments(response.data.comments)
     } catch (error) {
-      toast.error(apiError(error, "Failed to load comments"))
+      toastApiError(error, "Failed to load comments")
     } finally {
       setLoading(false)
     }
@@ -1897,7 +1897,7 @@ function CommentsSheet({
       setSelectedMentionIds([])
       await onChanged()
     } catch (error) {
-      toast.error(apiError(error, "Failed to add comment"))
+      toastApiError(error, "Failed to add comment")
     } finally {
       setSending(false)
     }
@@ -1913,7 +1913,7 @@ function CommentsSheet({
       setComments(response.data.comments)
       await onChanged()
     } catch (error) {
-      toast.error(apiError(error, "Failed to update reaction"))
+      toastApiError(error, "Failed to update reaction")
     }
   }
 
@@ -2222,7 +2222,7 @@ function DailyLogDialog({
 
     setLoading(true)
     void loadLog(logId)
-      .catch((error) => toast.error(apiError(error, "Failed to load daily log")))
+      .catch((error) => toastApiError(error, "Failed to load daily log"))
       .finally(() => setLoading(false))
   }, [open, logId, jobId, settings, users])
 
@@ -2336,7 +2336,7 @@ function DailyLogDialog({
       await onSaved(savedId)
       onOpenChange(false)
     } catch (error) {
-      toast.error(apiError(error, currentLog ? "Failed to save daily log" : "Failed to publish daily log"))
+      toastApiError(error, currentLog ? "Failed to save daily log" : "Failed to publish daily log")
     } finally {
       setSaving(false)
     }
@@ -2351,7 +2351,7 @@ function DailyLogDialog({
       onOpenChange(false)
       await onDeleted()
     } catch (error) {
-      toast.error(apiError(error, "Failed to delete daily log"))
+      toastApiError(error, "Failed to delete daily log")
     } finally {
       setDeleting(false)
     }
@@ -2796,7 +2796,7 @@ export default function JobDailyLogsPage() {
       setSettings(normalizeDailyLogSettings(settingsResponse.data.settings))
       setCustomFields(normalizeDailyLogCustomFields(customFieldsResponse.data.fields))
     } catch (error) {
-      toast.error(apiError(error, "Failed to load daily log settings, jobs, or team members"))
+      toastApiError(error, "Failed to load daily log settings, jobs, or team members")
     }
   }
 
@@ -2860,7 +2860,7 @@ export default function JobDailyLogsPage() {
       setSettingsOpen(false)
       toast.success("Daily log settings saved")
     } catch (error) {
-      toast.error(apiError(error, "Failed to save daily log settings"))
+      toastApiError(error, "Failed to save daily log settings")
     } finally {
       setSettingsSaving(false)
     }
@@ -2889,7 +2889,7 @@ export default function JobDailyLogsPage() {
         })),
       )
     } catch (error) {
-      toast.error(apiError(error, "Failed to load daily logs"))
+      toastApiError(error, "Failed to load daily logs")
     } finally {
       setLoading(false)
     }
@@ -2905,7 +2905,7 @@ export default function JobDailyLogsPage() {
         customFieldValues: normalizeCustomFieldValues(response.data.log.customFieldValues),
       })
     } catch (error) {
-      toast.error(apiError(error, "Failed to load daily log"))
+      toastApiError(error, "Failed to load daily log")
     } finally {
       setDetailLoading(false)
     }
@@ -2949,7 +2949,7 @@ export default function JobDailyLogsPage() {
       await api.post(`/daily-logs/${selectedLog.id}/like`)
       await refreshAll(selectedLog.id)
     } catch (error) {
-      toast.error(apiError(error, "Failed to update like"))
+      toastApiError(error, "Failed to update like")
     }
   }
 
@@ -3134,7 +3134,7 @@ export default function JobDailyLogsPage() {
                                   setSelectedLog(null)
                                   await loadLogs()
                                 } catch (error) {
-                                  toast.error(apiError(error, "Failed to delete daily log"))
+                                  toastApiError(error, "Failed to delete daily log")
                                 }
                               }}
                             >

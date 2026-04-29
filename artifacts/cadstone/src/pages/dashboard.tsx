@@ -8,6 +8,7 @@ import {
   MapPin,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { toastApiError } from "@/lib/api-errors"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -472,7 +473,7 @@ export default function DashboardPage() {
     setCalLoading(true)
     api.get(`/dashboard/schedule?start=${fetchRange.start}&end=${fetchRange.end}`)
       .then(r => setCalItems((r.data.items ?? []).filter((i: any) => i.startDate)))
-      .catch(() => {})
+      .catch((err: unknown) => toastApiError(err, "Failed to load schedule"))
       .finally(() => setCalLoading(false))
   }, [fetchRange])
 
@@ -489,7 +490,7 @@ export default function DashboardPage() {
         setActivity(activityResponse.data.data ?? [])
         setRecentJobs(agendaResponse.data.recentJobs ?? [])
       })
-      .catch(() => {})
+      .catch((err: unknown) => toastApiError(err, "Failed to load dashboard data"))
       .finally(() => setSidebarLoading(false))
   }, [])
 

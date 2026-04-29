@@ -42,6 +42,27 @@ const crewDailyLogIds = [
   crypto.randomUUID(),
 ];
 
+// Schedule items seeded into `accessibleJobId` to exercise the SQL-side
+// visibility filter on `GET /jobs/:jobId/schedule`. Each item has a unique
+// startDate so ordering is deterministic across pages.
+const scheduleVisibleAllId = crypto.randomUUID(); // default flags, createdBy PM
+const scheduleHiddenFromCrewId = crypto.randomUUID(); // installers=false, createdBy PM
+const scheduleHiddenFromPmId = crypto.randomUUID(); // office/estimators=false, createdBy other admin
+const scheduleAssignedCrewId = crypto.randomUUID(); // installers=false, but crew is assigned
+const scheduleCrewCreatedHiddenId = crypto.randomUUID(); // all flags false, createdBy crew
+const schedulePmPersonalTodoId = crypto.randomUUID(); // personal to-do owned by PM
+const scheduleAdminPersonalTodoId = crypto.randomUUID(); // personal to-do owned by admin
+
+const scheduleItemIds = [
+  scheduleVisibleAllId,
+  scheduleHiddenFromCrewId,
+  scheduleHiddenFromPmId,
+  scheduleAssignedCrewId,
+  scheduleCrewCreatedHiddenId,
+  schedulePmPersonalTodoId,
+  scheduleAdminPersonalTodoId,
+];
+
 const pmOwnedLeadId = crypto.randomUUID();
 const pmAssignedLeadId = crypto.randomUUID();
 const otherAdminLeadIds = [
@@ -102,6 +123,8 @@ before(async () => {
     leads,
     leadSalespeople,
     clients,
+    scheduleItems,
+    scheduleItemAssignees,
   } = await import("@workspace/db/schema");
   const { eq: eqOp } = await import("drizzle-orm");
 
@@ -258,6 +281,89 @@ before(async () => {
     }),
   );
 
+  // Seven schedule items in `accessibleJobId` covering each visibility branch
+  // exercised by `buildScheduleListVisibilityFilter`. Distinct startDates
+  // guarantee a deterministic order in the SQL `ORDER BY startDate, id` clause.
+  await db.insert(scheduleItems).values([
+    {
+      id: scheduleVisibleAllId,
+      jobId: accessibleJobId,
+      title: "ZZZ Pagination Schedule Visible To All",
+      startDate: "2025-03-01",
+      workDays: 1,
+      endDate: "2025-03-01",
+      createdBy: pmUserId,
+    },
+    {
+      id: scheduleHiddenFromCrewId,
+      jobId: accessibleJobId,
+      title: "ZZZ Pagination Schedule Hidden From Crew",
+      startDate: "2025-03-02",
+      workDays: 1,
+      endDate: "2025-03-02",
+      visibleToInstallers: false,
+      createdBy: pmUserId,
+    },
+    {
+      id: scheduleHiddenFromPmId,
+      jobId: accessibleJobId,
+      title: "ZZZ Pagination Schedule Hidden From PM",
+      startDate: "2025-03-03",
+      workDays: 1,
+      endDate: "2025-03-03",
+      visibleToOfficeStaff: false,
+      visibleToEstimators: false,
+      createdBy: otherAdminId,
+    },
+    {
+      id: scheduleAssignedCrewId,
+      jobId: accessibleJobId,
+      title: "ZZZ Pagination Schedule Assigned To Crew",
+      startDate: "2025-03-04",
+      workDays: 1,
+      endDate: "2025-03-04",
+      visibleToInstallers: false,
+      createdBy: otherAdminId,
+    },
+    {
+      id: scheduleCrewCreatedHiddenId,
+      jobId: accessibleJobId,
+      title: "ZZZ Pagination Schedule Crew Created Hidden",
+      startDate: "2025-03-05",
+      workDays: 1,
+      endDate: "2025-03-05",
+      visibleToOfficeStaff: false,
+      visibleToEstimators: false,
+      visibleToInstallers: false,
+      createdBy: crewUserId,
+    },
+    {
+      id: schedulePmPersonalTodoId,
+      jobId: accessibleJobId,
+      title: "ZZZ Pagination Schedule PM Personal Todo",
+      startDate: "2025-03-06",
+      workDays: 1,
+      endDate: "2025-03-06",
+      isPersonalTodo: true,
+      createdBy: pmUserId,
+    },
+    {
+      id: scheduleAdminPersonalTodoId,
+      jobId: accessibleJobId,
+      title: "ZZZ Pagination Schedule Admin Personal Todo",
+      startDate: "2025-03-07",
+      workDays: 1,
+      endDate: "2025-03-07",
+      isPersonalTodo: true,
+      createdBy: adminUserId,
+    },
+  ]);
+
+  await db.insert(scheduleItemAssignees).values({
+    scheduleItemId: scheduleAssignedCrewId,
+    userId: crewUserId,
+  });
+
   adminToken = auth.signAccessToken(
     makePublicUser(adminUserId, "admin", adminEmail, "ZZZ Pagination Admin"),
   );
@@ -298,6 +404,8 @@ after(async () => {
     leadSources,
     leadTags,
     leads,
+    scheduleItemAssignees,
+    scheduleItems,
     users,
   } = await import("@workspace/db/schema");
   const { inArray } = await import("drizzle-orm");
@@ -307,6 +415,12 @@ after(async () => {
       .delete(activityLog)
       .where(inArray(activityLog.id, testActivityIds));
     await db.delete(dailyLogs).where(inArray(dailyLogs.id, crewDailyLogIds));
+    await db
+      .delete(scheduleItemAssignees)
+      .where(inArray(scheduleItemAssignees.scheduleItemId, scheduleItemIds));
+    await db
+      .delete(scheduleItems)
+      .where(inArray(scheduleItems.id, scheduleItemIds));
     await db.delete(jobAssignees).where(inArray(jobAssignees.jobId, testJobIds));
     await db
       .delete(leadSalespeople)
@@ -983,6 +1097,7 @@ test("GET /search returns no results when the caller has no scope", async () => 
   assert.deepEqual(body.results, []);
 });
 
+
 test("GET /clients returns the {clients, pagination} envelope with admin scope", async () => {
   const response = await fetch(
     `${baseUrl}/api/clients?pageSize=100&search=ZZZ%20Pagination`,
@@ -1124,4 +1239,243 @@ test("GET /clients rejects pageSize above the configured cap", async () => {
   });
 
   assert.equal(response.status, 400);
+});
+
+// Expected visibility per role for the seven seeded schedule items in
+// `accessibleJobId`, derived from `buildScheduleListVisibilityFilter`.
+//
+//                                  admin  PM   crew
+//   Visible To All                    Y    Y    Y
+//   Hidden From Crew (installers=F)   Y    Y    .   (PM is creator)
+//   Hidden From PM (office/est.=F)    Y    .    Y   (other admin created)
+//   Assigned To Crew (installers=F)   Y    Y    Y   (crew is assignee; PM via roleVisibility)
+//   Crew Created Hidden (all flags F) Y    .    Y   (crew is creator)
+//   PM Personal Todo                  .    Y    .   (creator-only)
+//   Admin Personal Todo               Y    .    .   (creator-only)
+const adminVisibleScheduleIds = [
+  scheduleVisibleAllId,
+  scheduleHiddenFromCrewId,
+  scheduleHiddenFromPmId,
+  scheduleAssignedCrewId,
+  scheduleCrewCreatedHiddenId,
+  scheduleAdminPersonalTodoId,
+];
+const pmVisibleScheduleIds = [
+  scheduleVisibleAllId,
+  scheduleHiddenFromCrewId,
+  scheduleAssignedCrewId,
+  schedulePmPersonalTodoId,
+];
+const crewVisibleScheduleIds = [
+  scheduleVisibleAllId,
+  scheduleHiddenFromPmId,
+  scheduleAssignedCrewId,
+  scheduleCrewCreatedHiddenId,
+];
+
+test("GET /jobs/:jobId/schedule returns the {data, pagination} envelope for admins", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/jobs/${accessibleJobId}/schedule?limit=100`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    data: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.ok(Array.isArray(body.data));
+  assert.equal(typeof body.pagination, "object");
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.limit, "number");
+  assert.equal(typeof body.pagination.totalItems, "number");
+  assert.equal(typeof body.pagination.totalPages, "number");
+
+  assert.equal(body.pagination.totalItems, adminVisibleScheduleIds.length);
+
+  const returnedIds = new Set(body.data.map((row) => row.id));
+  for (const id of adminVisibleScheduleIds) {
+    assert.equal(
+      returnedIds.has(id),
+      true,
+      `admin should see schedule item ${id}`,
+    );
+  }
+  assert.equal(
+    returnedIds.has(schedulePmPersonalTodoId),
+    false,
+    "admin must not see another user's personal to-do",
+  );
+});
+
+test("GET /jobs/:jobId/schedule scopes totalItems to what a project manager can see", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/jobs/${accessibleJobId}/schedule?limit=100`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    data: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(body.pagination.totalItems, pmVisibleScheduleIds.length);
+
+  const returnedIds = new Set(body.data.map((row) => row.id));
+  for (const id of pmVisibleScheduleIds) {
+    assert.equal(
+      returnedIds.has(id),
+      true,
+      `PM should see schedule item ${id}`,
+    );
+  }
+  for (const id of [
+    scheduleHiddenFromPmId,
+    scheduleCrewCreatedHiddenId,
+    scheduleAdminPersonalTodoId,
+  ]) {
+    assert.equal(
+      returnedIds.has(id),
+      false,
+      `PM must not see schedule item ${id}`,
+    );
+  }
+});
+
+test("GET /jobs/:jobId/schedule scopes totalItems to what a crew member can see", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/jobs/${accessibleJobId}/schedule?limit=100`,
+    { headers: { authorization: `Bearer ${crewToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    data: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(body.pagination.totalItems, crewVisibleScheduleIds.length);
+
+  const returnedIds = new Set(body.data.map((row) => row.id));
+  for (const id of crewVisibleScheduleIds) {
+    assert.equal(
+      returnedIds.has(id),
+      true,
+      `crew member should see schedule item ${id}`,
+    );
+  }
+  for (const id of [
+    scheduleHiddenFromCrewId,
+    schedulePmPersonalTodoId,
+    scheduleAdminPersonalTodoId,
+  ]) {
+    assert.equal(
+      returnedIds.has(id),
+      false,
+      `crew member must not see schedule item ${id}`,
+    );
+  }
+});
+
+test("GET /jobs/:jobId/schedule paginates the admin-visible rows in stable startDate order", async () => {
+  const limit = 2;
+  const expectedTotalPages = Math.ceil(adminVisibleScheduleIds.length / limit);
+  const collected: string[] = [];
+
+  for (let page = 1; page <= expectedTotalPages; page += 1) {
+    const response = await fetch(
+      `${baseUrl}/api/jobs/${accessibleJobId}/schedule?limit=${limit}&page=${page}`,
+      { headers: { authorization: `Bearer ${adminToken}` } },
+    );
+
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
+      data: Array<{ id: string }>;
+      pagination: Record<string, number>;
+    };
+
+    assert.equal(body.pagination.page, page);
+    assert.equal(body.pagination.limit, limit);
+    assert.equal(body.pagination.totalItems, adminVisibleScheduleIds.length);
+    assert.equal(body.pagination.totalPages, expectedTotalPages);
+
+    const isLastPage = page === expectedTotalPages;
+    const expectedSize = isLastPage
+      ? adminVisibleScheduleIds.length - limit * (page - 1)
+      : limit;
+    assert.equal(
+      body.data.length,
+      expectedSize,
+      `page ${page} must contain ${expectedSize} rows`,
+    );
+
+    for (const row of body.data) {
+      collected.push(row.id);
+    }
+  }
+
+  assert.deepEqual(
+    collected,
+    adminVisibleScheduleIds,
+    "paginated admin rows must be returned in stable startDate order without duplicates",
+  );
+});
+
+test("GET /jobs/:jobId/schedule returns crew-visible rows in stable order across pages", async () => {
+  const firstPage = await fetch(
+    `${baseUrl}/api/jobs/${accessibleJobId}/schedule?limit=2&page=1`,
+    { headers: { authorization: `Bearer ${crewToken}` } },
+  );
+  assert.equal(firstPage.status, 200);
+  const firstBody = (await firstPage.json()) as {
+    data: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(firstBody.data.length, 2);
+  assert.equal(firstBody.pagination.totalItems, crewVisibleScheduleIds.length);
+  assert.equal(
+    firstBody.pagination.totalPages,
+    Math.ceil(crewVisibleScheduleIds.length / 2),
+  );
+  assert.deepEqual(
+    firstBody.data.map((row) => row.id),
+    crewVisibleScheduleIds.slice(0, 2),
+    "page 1 must return the first two crew-visible rows in startDate order",
+  );
+
+  const secondPage = await fetch(
+    `${baseUrl}/api/jobs/${accessibleJobId}/schedule?limit=2&page=2`,
+    { headers: { authorization: `Bearer ${crewToken}` } },
+  );
+  assert.equal(secondPage.status, 200);
+  const secondBody = (await secondPage.json()) as {
+    data: Array<{ id: string }>;
+  };
+
+  assert.deepEqual(
+    secondBody.data.map((row) => row.id),
+    crewVisibleScheduleIds.slice(2, 4),
+    "page 2 must return the next crew-visible rows without overlapping page 1",
+  );
+
+  const firstIds = new Set(firstBody.data.map((row) => row.id));
+  for (const row of secondBody.data) {
+    assert.equal(
+      firstIds.has(row.id),
+      false,
+      "page 2 must not repeat page 1 rows",
+    );
+  }
+});
+
+test("GET /jobs/:jobId/schedule rejects requests for jobs the caller cannot see", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/jobs/${inaccessibleJobId}/schedule`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 403);
 });

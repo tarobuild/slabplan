@@ -1569,6 +1569,7 @@ export default function JobSchedulePage() {
   const appliedDefaultViewRef = useRef(false)
 
   const [items, setItems] = useState<ScheduleItemRecord[]>([])
+  const [itemsTotal, setItemsTotal] = useState(0)
   const [users, setUsers] = useState<AppUser[]>([])
   const [jobs, setJobs] = useState<JobOption[]>([])
   const [settings, setSettings] = useState<ScheduleSettings>(DEFAULT_SETTINGS)
@@ -1730,27 +1731,32 @@ export default function JobSchedulePage() {
     }
 
     const collected: ScheduleItemRecord[] = []
-    let cursor: string | null = null
+    const pageSize = 500
+    let page = 1
+    let totalPages = 1
+    let totalItems = 0
     // The backend caps each page at 500 items. Fetch pages in sequence until
-    // drained so the calendar continues to see the full job schedule.
-    // Safety cap prevents an infinite loop if the server returns a stuck cursor.
-    for (let pageGuard = 0; pageGuard < 20; pageGuard += 1) {
-      const query: Record<string, string> = { limit: "500" }
-      if (cursor) {
-        query.cursor = cursor
-      }
+    // every page has been retrieved so the calendar continues to see the full
+    // job schedule. The hard cap prevents an unbounded loop if the server
+    // reports a runaway page count.
+    while (page <= totalPages && page <= 20) {
       const response = await api.get<{
-        items: ScheduleItemRecord[]
-        nextCursor: string | null
-      }>(`/jobs/${jobId}/schedule`, { params: query })
-      collected.push(...(response.data.items ?? []))
-      cursor = response.data.nextCursor ?? null
-      if (!cursor) {
-        break
-      }
+        data: ScheduleItemRecord[]
+        pagination: {
+          page: number
+          limit: number
+          totalItems: number
+          totalPages: number
+        }
+      }>(`/jobs/${jobId}/schedule`, { params: { page: String(page), limit: String(pageSize) } })
+      collected.push(...(response.data.data ?? []))
+      totalPages = response.data.pagination?.totalPages ?? 1
+      totalItems = response.data.pagination?.totalItems ?? collected.length
+      page += 1
     }
     const nextItems = collected
     setItems(nextItems)
+    setItemsTotal(totalItems)
 
     if (!scheduleOffline) {
       setDraftItems(cloneScheduleItems(nextItems))
@@ -4232,7 +4238,12 @@ export default function JobSchedulePage() {
               <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
                 <div data-print-hide="true" className="flex flex-col gap-3 border-b border-[#E5E7EB] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-sm font-semibold text-slate-900">Schedule Items</h2>
+                    <h2 className="text-sm font-semibold text-slate-900">
+                      Schedule Items
+                      <span className="ml-2 text-xs font-normal text-slate-500">
+                        {itemsTotal} total
+                      </span>
+                    </h2>
                     <p className="text-sm text-slate-500">The list view uses the same schedule items and filters as calendar and gantt.</p>
                   </div>
 

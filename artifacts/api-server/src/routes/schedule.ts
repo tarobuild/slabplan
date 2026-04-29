@@ -2536,6 +2536,7 @@ const SCHEDULE_LIST_DEFAULT_LIMIT = 200;
 const SCHEDULE_LIST_MAX_LIMIT = 500;
 
 const scheduleListQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional().default(1),
   limit: z.coerce
     .number()
     .int()
@@ -2543,22 +2544,7 @@ const scheduleListQuerySchema = z.object({
     .max(SCHEDULE_LIST_MAX_LIMIT)
     .optional()
     .default(SCHEDULE_LIST_DEFAULT_LIMIT),
-  cursor: z.string().min(1).optional(),
 });
-
-function parseScheduleCursor(raw: string | undefined): { startDate: string; id: string } | null {
-  if (!raw) {
-    return null;
-  }
-
-  const [startDate, id] = raw.split("|");
-
-  if (!startDate || !id || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-    throw new HttpError(400, "Invalid schedule cursor.");
-  }
-
-  return { startDate, id };
-}
 
 router.get(
   "/jobs/:jobId/schedule",
@@ -2573,47 +2559,43 @@ router.get(
       throw new HttpError(400, "Invalid schedule list query.", parsedQuery.error.flatten());
     }
 
-    const { limit } = parsedQuery.data;
-    const cursor = parseScheduleCursor(parsedQuery.data.cursor);
+    const { page, limit } = parsedQuery.data;
+    const currentUserId = req.auth!.userId;
 
     const rows = await db
       .select({
         id: scheduleItems.id,
-        startDate: scheduleItems.startDate,
       })
       .from(scheduleItems)
       .where(
         and(
           eq(scheduleItems.jobId, jobId),
           isNull(scheduleItems.deletedAt),
-          cursor
-            ? or(
-                sql`${scheduleItems.startDate} > ${cursor.startDate}`,
-                and(
-                  eq(scheduleItems.startDate, cursor.startDate),
-                  sql`${scheduleItems.id} > ${cursor.id}`,
-                ),
-              )
-            : undefined,
         ),
       )
-      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id))
-      .limit(limit + 1);
+      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id));
 
-    const hasMore = rows.length > limit;
-    const pageRows = hasMore ? rows.slice(0, limit) : rows;
-    const currentUserId = req.auth!.userId;
-    const hydrated = await hydrateScheduleItems(pageRows.map((row) => row.id), currentUserId);
+    const hydrated = await hydrateScheduleItems(rows.map((row) => row.id), currentUserId);
 
-    const items = hydrated
+    const visibleItems = hydrated
       .map((entry) => entry.item)
       .filter((item) => canViewHydratedScheduleItem(req.auth!, item))
       .filter((item) => !item.isPersonalTodo || item.createdBy === currentUserId);
 
-    const lastRow = pageRows[pageRows.length - 1];
-    const nextCursor = hasMore && lastRow ? `${lastRow.startDate}|${lastRow.id}` : null;
+    const totalItems = visibleItems.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const offset = (page - 1) * limit;
+    const data = visibleItems.slice(offset, offset + limit);
 
-    res.json({ items, nextCursor });
+    res.json({
+      data,
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages,
+      },
+    });
   }),
 );
 

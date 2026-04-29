@@ -51,6 +51,16 @@ const otherAdminLeadIds = [
 ];
 const allLeadIds = [pmOwnedLeadId, pmAssignedLeadId, ...otherAdminLeadIds];
 
+const pmCreatedClientId = crypto.randomUUID();
+const pmRelatedClientId = crypto.randomUUID();
+const adminOnlyClientIds = [
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+];
+const pmAccessibleClientIds = [pmCreatedClientId, pmRelatedClientId];
+const allClientIds = [...pmAccessibleClientIds, ...adminOnlyClientIds];
+
 const testUserIds = [
   adminUserId,
   pmUserId,
@@ -91,7 +101,9 @@ before(async () => {
     dailyLogs,
     leads,
     leadSalespeople,
+    clients,
   } = await import("@workspace/db/schema");
+  const { eq: eqOp } = await import("drizzle-orm");
 
   await prepareApp();
 
@@ -186,6 +198,29 @@ before(async () => {
     },
   ]);
 
+  await db.insert(clients).values([
+    {
+      id: pmCreatedClientId,
+      companyName: "ZZZ Pagination PM Created Client",
+      createdBy: pmUserId,
+    },
+    {
+      id: pmRelatedClientId,
+      companyName: "ZZZ Pagination PM Related Client",
+      createdBy: otherAdminId,
+    },
+    ...adminOnlyClientIds.map((id, i) => ({
+      id,
+      companyName: `ZZZ Pagination Admin Only Client ${i}`,
+      createdBy: otherAdminId,
+    })),
+  ]);
+
+  await db
+    .update(jobs)
+    .set({ clientId: pmRelatedClientId })
+    .where(eqOp(jobs.id, accessibleJobId));
+
   const baseTime = Date.now();
 
   await db.insert(activityLog).values([
@@ -255,6 +290,7 @@ after(async () => {
   const { db, pool } = await import("@workspace/db");
   const {
     activityLog,
+    clients,
     dailyLogs,
     jobAssignees,
     jobs,
@@ -279,6 +315,7 @@ after(async () => {
     await db.delete(leadSources).where(inArray(leadSources.leadId, allLeadIds));
     await db.delete(leads).where(inArray(leads.id, allLeadIds));
     await db.delete(jobs).where(inArray(jobs.id, testJobIds));
+    await db.delete(clients).where(inArray(clients.id, allClientIds));
     await db.delete(users).where(inArray(users.id, testUserIds));
   } finally {
     if (server) {
@@ -944,4 +981,147 @@ test("GET /search returns no results when the caller has no scope", async () => 
   };
 
   assert.deepEqual(body.results, []);
+});
+
+test("GET /clients returns the {clients, pagination} envelope with admin scope", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/clients?pageSize=100&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    clients: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.ok(Array.isArray(body.clients));
+  assert.equal(typeof body.pagination, "object");
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.pageSize, "number");
+  assert.equal(typeof body.pagination.totalItems, "number");
+  assert.equal(typeof body.pagination.totalPages, "number");
+  assert.equal(body.pagination.totalItems, allClientIds.length);
+  assert.equal(
+    body.pagination.totalPages,
+    Math.max(1, Math.ceil(allClientIds.length / 100)),
+  );
+
+  const returnedIds = new Set(body.clients.map((row) => row.id));
+  for (const id of allClientIds) {
+    assert.equal(
+      returnedIds.has(id),
+      true,
+      `admin should see seeded client ${id}`,
+    );
+  }
+});
+
+test("GET /clients limits returned rows in SQL via pageSize", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/clients?pageSize=1&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    clients: unknown[];
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(body.clients.length, 1, "pageSize=1 must return exactly one row");
+  assert.equal(body.pagination.page, 1);
+  assert.equal(body.pagination.pageSize, 1);
+  assert.equal(body.pagination.totalItems, allClientIds.length);
+  assert.equal(body.pagination.totalPages, allClientIds.length);
+});
+
+test("GET /clients paginates without duplicates across pages", async () => {
+  const firstResponse = await fetch(
+    `${baseUrl}/api/clients?pageSize=2&page=1&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+  assert.equal(firstResponse.status, 200);
+  const firstBody = (await firstResponse.json()) as {
+    clients: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(firstBody.clients.length, 2);
+  assert.equal(firstBody.pagination.page, 1);
+  assert.equal(firstBody.pagination.pageSize, 2);
+  assert.equal(firstBody.pagination.totalItems, allClientIds.length);
+  assert.equal(
+    firstBody.pagination.totalPages,
+    Math.ceil(allClientIds.length / 2),
+  );
+
+  const lastResponse = await fetch(
+    `${baseUrl}/api/clients?pageSize=2&page=${firstBody.pagination.totalPages}&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+  assert.equal(lastResponse.status, 200);
+  const lastBody = (await lastResponse.json()) as {
+    clients: Array<{ id: string }>;
+  };
+
+  assert.ok(lastBody.clients.length > 0);
+
+  const firstIds = new Set(firstBody.clients.map((row) => row.id));
+  for (const row of lastBody.clients) {
+    assert.equal(
+      firstIds.has(row.id),
+      false,
+      "subsequent pages must not repeat earlier rows",
+    );
+  }
+});
+
+test("GET /clients hides clients the project manager cannot see", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/clients?pageSize=100&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    clients: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  const returnedIds = new Set(body.clients.map((row) => row.id));
+  assert.equal(
+    returnedIds.has(pmCreatedClientId),
+    true,
+    "PM should see clients they created",
+  );
+  assert.equal(
+    returnedIds.has(pmRelatedClientId),
+    true,
+    "PM should see clients linked to jobs they manage",
+  );
+  for (const id of adminOnlyClientIds) {
+    assert.equal(
+      returnedIds.has(id),
+      false,
+      `PM must not see admin-only client ${id}`,
+    );
+  }
+  assert.equal(body.pagination.totalItems, pmAccessibleClientIds.length);
+});
+
+test("GET /clients forbids crew members at the route layer", async () => {
+  const response = await fetch(`${baseUrl}/api/clients`, {
+    headers: { authorization: `Bearer ${crewToken}` },
+  });
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /clients rejects pageSize above the configured cap", async () => {
+  const response = await fetch(`${baseUrl}/api/clients?pageSize=500`, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+
+  assert.equal(response.status, 400);
 });

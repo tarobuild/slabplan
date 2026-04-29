@@ -49,6 +49,8 @@ const EMPTY_COPY: Record<StatusFilter, string> = {
 }
 
 const STATUS_FILTER_STORAGE_KEY = "cadstone:sidebar:statusFilter"
+const SEARCH_STORAGE_KEY = "cadstone:sidebar:search"
+const SORT_ASC_STORAGE_KEY = "cadstone:sidebar:sortAsc"
 
 function isStatusFilter(value: unknown): value is StatusFilter {
   return (
@@ -69,6 +71,27 @@ function readStoredStatusFilter(): StatusFilter {
   }
 }
 
+function readStoredSearch(): string {
+  if (typeof window === "undefined") return ""
+  try {
+    return window.localStorage.getItem(SEARCH_STORAGE_KEY) ?? ""
+  } catch {
+    return ""
+  }
+}
+
+function readStoredSortAsc(): boolean {
+  if (typeof window === "undefined") return true
+  try {
+    const stored = window.localStorage.getItem(SORT_ASC_STORAGE_KEY)
+    if (stored === "true") return true
+    if (stored === "false") return false
+    return true
+  } catch {
+    return true
+  }
+}
+
 function getApiErrorMessage(err: unknown, fallback: string) {
   if (typeof err === "object" && err !== null) {
     const value = err as { response?: { data?: { message?: string } }; message?: string }
@@ -82,8 +105,8 @@ export default function Sidebar() {
   const { jobId } = useParams<{ jobId?: string }>()
   const navigate = useNavigate()
   const [jobs, setJobs] = useState<Job[]>([])
-  const [search, setSearch] = useState("")
-  const [sortAsc, setSortAsc] = useState(true)
+  const [search, setSearch] = useState(readStoredSearch)
+  const [sortAsc, setSortAsc] = useState(readStoredSortAsc)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(
     readStoredStatusFilter,
   )
@@ -117,6 +140,24 @@ export default function Sidebar() {
       // Ignore storage failures (e.g. private mode quota errors).
     }
   }, [statusFilter])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(SEARCH_STORAGE_KEY, search)
+    } catch {
+      // Ignore storage failures (e.g. private mode quota errors).
+    }
+  }, [search])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(SORT_ASC_STORAGE_KEY, sortAsc ? "true" : "false")
+    } catch {
+      // Ignore storage failures (e.g. private mode quota errors).
+    }
+  }, [sortAsc])
 
   useEffect(() => {
     if (activeRef.current) {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { isAxiosError } from "axios"
 import { Loader2, X } from "lucide-react"
 import { api } from "@/lib/api"
 import { getInitials, type ScheduleItemRecord } from "@/lib/schedule"
@@ -46,13 +47,55 @@ type Props = {
   onMoreOptions: (state: QuickCreateState) => void
 }
 
-function getApiError(err: unknown, fallback: string) {
-  if (typeof err === "object" && err !== null) {
-    const value = err as { response?: { data?: { message?: string } }; message?: string }
-    return value.response?.data?.message ?? value.message ?? fallback
+type QuickSaveError =
+  | { kind: "forbidden" }
+  | { kind: "toast"; message: string }
+
+function classifyQuickSaveError(err: unknown, fallback: string): QuickSaveError {
+  if (isAxiosError(err)) {
+    const status = err.response?.status
+    const serverMessage =
+      typeof err.response?.data === "object" && err.response?.data !== null
+        ? ((err.response.data as { message?: unknown }).message)
+        : undefined
+
+    if (status === 401) {
+      return {
+        kind: "toast",
+        message: "Your session expired — please sign in again.",
+      }
+    }
+
+    if (status === 403) {
+      // The global axios interceptor already surfaces a 403 toast and
+      // navigates the user away; avoid double-toasting from here.
+      return { kind: "forbidden" }
+    }
+
+    if (typeof serverMessage === "string" && serverMessage.trim().length > 0) {
+      return { kind: "toast", message: serverMessage }
+    }
+
+    if (status && status >= 500) {
+      return {
+        kind: "toast",
+        message: "Server error — please try again in a moment.",
+      }
+    }
+
+    if (err.code === "ERR_NETWORK" || err.message === "Network Error") {
+      return {
+        kind: "toast",
+        message: "Couldn't reach the server. Check your connection and try again.",
+      }
+    }
   }
 
-  return fallback
+  if (err instanceof Error && err.message) {
+    return { kind: "toast", message: err.message }
+  }
+
+  return { kind: "toast", message: fallback }
 }
 
 function formatLongDate(value: string) {
@@ -84,6 +127,8 @@ export function ScheduleQuickCreate({
   const [assigneeIds, setAssigneeIds] = useState<string[]>([])
   const [assigneeQuery, setAssigneeQuery] = useState("")
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [titleInvalid, setTitleInvalid] = useState(false)
   const titleRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -100,6 +145,8 @@ export function ScheduleQuickCreate({
     setAssigneeIds([])
     setAssigneeQuery("")
     setSaving(false)
+    setSaveError(null)
+    setTitleInvalid(false)
     const timeout = window.setTimeout(() => titleRef.current?.focus(), 60)
     return () => window.clearTimeout(timeout)
   }, [open, initialDate, initialStartTime, initialEndTime])
@@ -153,12 +200,16 @@ export function ScheduleQuickCreate({
   async function handleQuickSave() {
     const trimmed = title.trim()
     if (!trimmed) {
+      setSaveError("Title is required")
+      setTitleInvalid(true)
       toast.error("Title is required")
       titleRef.current?.focus()
       return
     }
 
     setSaving(true)
+    setSaveError(null)
+    setTitleInvalid(false)
 
     try {
       const response = await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, {
@@ -174,7 +225,14 @@ export function ScheduleQuickCreate({
       toast.success("Schedule item created")
       onOpenChange(false)
     } catch (err) {
-      toast.error(getApiError(err, "Failed to create schedule item"))
+      const classified = classifyQuickSaveError(err, "Failed to create schedule item")
+      if (classified.kind === "toast") {
+        toast.error(classified.message)
+        setSaveError(classified.message)
+      } else {
+        // 403: global interceptor already shows a toast and routes the user away.
+        setSaveError("You don't have permission to create schedule items here.")
+      }
     } finally {
       setSaving(false)
     }
@@ -206,7 +264,17 @@ export function ScheduleQuickCreate({
               ref={titleRef}
               value={title}
               placeholder="What needs to happen?"
-              onChange={(event) => setTitle(event.target.value)}
+              aria-invalid={titleInvalid ? true : undefined}
+              aria-describedby={saveError ? "quick-create-error" : undefined}
+              onChange={(event) => {
+                setTitle(event.target.value)
+                if (titleInvalid) {
+                  setTitleInvalid(false)
+                }
+                if (saveError) {
+                  setSaveError(null)
+                }
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !saving) {
                   event.preventDefault()
@@ -215,6 +283,16 @@ export function ScheduleQuickCreate({
               }}
             />
           </div>
+
+          {saveError ? (
+            <div
+              id="quick-create-error"
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+            >
+              {saveError}
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">

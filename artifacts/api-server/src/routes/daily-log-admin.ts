@@ -516,10 +516,13 @@ router.get(
     }));
 
     res.json({
+      data: paged,
       logs: paged,
       pagination: {
         page: query.data.page,
         pageSize: query.data.pageSize,
+        limit: query.data.pageSize,
+        total: totalItems,
         totalItems,
         totalPages: Math.max(1, Math.ceil(totalItems / query.data.pageSize)),
       },

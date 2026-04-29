@@ -1406,16 +1406,16 @@ export async function getActivityEntries(params: {
     conditions.push(eq(activityLog.entityId, params.entityId));
   }
 
-  if (!params.entityType && !params.entityId && params.jobId) {
+  if (params.jobId) {
     conditions.push(eq(metadataJobId, params.jobId));
+  }
 
-    if (params.mediaType) {
-      conditions.push(eq(metadataMediaType, params.mediaType));
-    }
+  if (params.mediaType) {
+    conditions.push(eq(metadataMediaType, params.mediaType));
+  }
 
-    if (params.folderId) {
-      conditions.push(eq(metadataFolderId, params.folderId));
-    }
+  if (params.folderId) {
+    conditions.push(eq(metadataFolderId, params.folderId));
   }
 
   if (params.allowedScopeIds) {
@@ -1459,6 +1459,7 @@ export async function getActivityEntries(params: {
     pagination: {
       page,
       limit,
+      total: totalItems,
       totalItems,
       totalPages: Math.max(1, Math.ceil(totalItems / limit)),
     },

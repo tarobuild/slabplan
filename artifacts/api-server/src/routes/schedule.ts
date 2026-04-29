@@ -1149,7 +1149,12 @@ async function synchronizeJobSchedule(jobId: string) {
         dependencyType: scheduleItemPredecessors.dependencyType,
         lagDays: scheduleItemPredecessors.lagDays,
       })
-      .from(scheduleItemPredecessors),
+      .from(scheduleItemPredecessors)
+      .innerJoin(
+        scheduleItems,
+        eq(scheduleItemPredecessors.scheduleItemId, scheduleItems.id),
+      )
+      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt))),
   ]);
 
   if (items.length === 0) {
@@ -1256,15 +1261,19 @@ async function synchronizeJobSchedule(jobId: string) {
     return original && (original.startDate !== item.startDate || original.endDate !== item.endDate);
   });
 
-  for (const update of updates) {
-    await db
-      .update(scheduleItems)
-      .set({
-        startDate: update.startDate,
-        endDate: update.endDate,
-        updatedAt: new Date(),
-      })
-      .where(eq(scheduleItems.id, update.id));
+  if (updates.length > 0) {
+    await Promise.all(
+      updates.map((update) =>
+        db
+          .update(scheduleItems)
+          .set({
+            startDate: update.startDate,
+            endDate: update.endDate,
+            updatedAt: new Date(),
+          })
+          .where(eq(scheduleItems.id, update.id)),
+      ),
+    );
   }
 
   await applyAutomaticCompletionIfEnabled(jobId);

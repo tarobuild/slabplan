@@ -50,28 +50,39 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(8, "New password must be at least 8 characters."),
 });
 
-const userListQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(200).optional().default(50),
-  offset: z.coerce.number().int().min(0).optional().default(0),
-  roles: z
-    .union([z.string(), z.array(z.string())])
-    .optional()
-    .transform((value) => {
-      if (!value) {
-        return [];
-      }
+const userListQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().positive().max(200).optional().default(100),
+    offset: z.coerce.number().int().min(0).optional(),
+    page: z.coerce.number().int().positive().optional(),
+    roles: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .transform((value) => {
+        if (!value) {
+          return [];
+        }
 
-      const items = Array.isArray(value)
-        ? value.flatMap((item) => item.split(","))
-        : value.split(",");
+        const items = Array.isArray(value)
+          ? value.flatMap((item) => item.split(","))
+          : value.split(",");
 
-      return items
-        .map((item) => item.trim())
-        .filter((item): item is "admin" | "project_manager" | "crew_member" =>
-          item === "admin" || item === "project_manager" || item === "crew_member",
-        );
-    }),
-});
+        return items
+          .map((item) => item.trim())
+          .filter((item): item is "admin" | "project_manager" | "crew_member" =>
+            item === "admin" || item === "project_manager" || item === "crew_member",
+          );
+      }),
+  })
+  .superRefine((value, ctx) => {
+    if (value.page !== undefined && value.offset !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide either page or offset, not both.",
+        path: ["page"],
+      });
+    }
+  });
 
 async function findActiveUserById(id: string) {
   const [user] = await db
@@ -103,6 +114,10 @@ router.get(
       throw new HttpError(400, "Invalid user list query.", query.error.flatten());
     }
 
+    const limit = query.data.limit;
+    const page = query.data.page ?? (query.data.offset !== undefined ? Math.floor(query.data.offset / limit) + 1 : 1);
+    const offset = query.data.offset ?? (page - 1) * limit;
+
     const [[totalRow], rows] = await Promise.all([
       db
         .select({ total: count() })
@@ -123,16 +138,23 @@ router.get(
           ),
         )
         .orderBy(asc(users.fullName))
-        .limit(query.data.limit)
-        .offset(query.data.offset),
+        .limit(limit)
+        .offset(offset),
     ]);
 
+    const total = Number(totalRow?.total ?? 0);
+    const publicUsers = rows.map(toPublicUser);
+
     res.json({
-      users: rows.map(toPublicUser),
+      data: publicUsers,
+      users: publicUsers,
       pagination: {
-        limit: query.data.limit,
-        offset: query.data.offset,
-        totalItems: Number(totalRow?.total ?? 0),
+        page,
+        limit,
+        offset,
+        total,
+        totalItems: total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
       },
     });
   }),

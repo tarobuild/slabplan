@@ -56,6 +56,7 @@ router.get(
         pagination: {
           page: query.data.page ?? 1,
           limit: query.data.limit ?? 50,
+          total: 0,
           totalItems: 0,
           totalPages: 1,
         },

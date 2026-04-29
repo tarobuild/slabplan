@@ -62,3 +62,12 @@ export function toastApiError(err: unknown, fallback: string): void {
     toast.error(classified.message)
   }
 }
+
+// Returns a string for inline error displays (e.g. setErrorMessage,
+// setWeatherMessage). For 403s the global axios interceptor handles the
+// redirect, so we just fall back to the caller-supplied label.
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  const classified = classifyApiError(err, fallback)
+  if (classified.kind === "toast") return classified.message
+  return fallback
+}

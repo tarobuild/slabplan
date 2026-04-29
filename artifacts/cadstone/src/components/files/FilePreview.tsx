@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
+import { toastApiError } from "@/lib/api-errors"
 import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/AnnotationLayer.css"
 import "react-pdf/dist/Page/TextLayer.css"
@@ -266,8 +267,8 @@ function PreviewHeader({
       a.click()
       document.body.removeChild(a)
       setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
-    } catch {
-      toast.error("Failed to download file.")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to download file.")
     }
   }
 
@@ -292,8 +293,8 @@ function PreviewHeader({
       const signedUrl = res.data.url
       const w = window.open(signedUrl, "_blank", "noopener")
       if (!w) toast.error("Please allow pop-ups to open this file.")
-    } catch {
-      toast.error("Failed to open file in a new tab.")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to open file in a new tab.")
     }
   }
 
@@ -700,8 +701,8 @@ function UnsupportedView({ file }: { file: PreviewFile }) {
       a.click()
       document.body.removeChild(a)
       setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
-    } catch {
-      toast.error("Failed to download file.")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to download file.")
     }
   }
 
@@ -715,8 +716,8 @@ function UnsupportedView({ file }: { file: PreviewFile }) {
       if (!fileId) return
       const res = await api.post<{ url: string }>(`/files/${fileId}/signed-view`)
       window.open(res.data.url, "_blank", "noopener")
-    } catch {
-      toast.error("Failed to open file.")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to open file.")
     }
   }
 

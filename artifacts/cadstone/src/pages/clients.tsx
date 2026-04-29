@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/table"
 import { invalidateAppData } from "@/lib/data-refresh"
 import { toast } from "sonner"
+import { toastApiError } from "@/lib/api-errors"
 import { cn } from "@/lib/utils"
 
 type Contact = {
@@ -204,7 +205,7 @@ export default function ClientsPage() {
     if (s) params.set("search", s)
     api.get(`/clients?${params}`)
       .then(r => { setClients(r.data.clients); setTotal(r.data.pagination?.totalItems ?? 0) })
-      .catch(() => toast.error("Failed to load clients"))
+      .catch((err: unknown) => toastApiError(err, "Failed to load clients"))
       .finally(() => setLoading(false))
   }
 
@@ -226,8 +227,8 @@ export default function ClientsPage() {
     try {
       const r = await api.get(`/clients/${id}`)
       setSelected(r.data.client)
-    } catch {
-      toast.error("Failed to load client")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to load client")
     } finally {
       setLoadingDetail(false)
     }
@@ -254,8 +255,8 @@ export default function ClientsPage() {
       setPage(1)
       invalidateAppData(["clients", "navigation"])
       await openDetail(r.data.client.id)
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to create client")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to create client")
     } finally {
       setSaving(false)
     }
@@ -296,8 +297,8 @@ export default function ClientsPage() {
       setSelected(prev => prev ? { ...prev, ...r.data.client } : prev)
       fetchClients(search, page)
       invalidateAppData(["clients", "navigation"])
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to update client")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to update client")
     } finally {
       setPatchSaving(false)
     }
@@ -313,8 +314,8 @@ export default function ClientsPage() {
       if (selected?.id === deleteClientId) setSelected(null)
       fetchClients(search, page)
       invalidateAppData(["clients", "navigation"])
-    } catch {
-      toast.error("Failed to delete client")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to delete client")
     } finally {
       setDeleting(false)
     }
@@ -363,8 +364,8 @@ export default function ClientsPage() {
       setContactDialogOpen(false)
       const r = await api.get(`/clients/${selected.id}`)
       setSelected(r.data.client)
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to save contact")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to save contact")
     } finally {
       setContactSaving(false)
     }
@@ -379,8 +380,8 @@ export default function ClientsPage() {
       setDeleteContactId(null)
       const r = await api.get(`/clients/${selected.id}`)
       setSelected(r.data.client)
-    } catch {
-      toast.error("Failed to delete contact")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to delete contact")
     } finally {
       setDeleting(false)
     }

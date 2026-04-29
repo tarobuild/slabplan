@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { apiErrorMessage } from "@/lib/api-errors"
 
 type MyDailyLogItem = {
   id: string
@@ -40,14 +41,6 @@ function titleForLog(log: MyDailyLogItem) {
   return `${formatDate(log.logDate)} | ${log.title || "Daily Log"}`
 }
 
-function apiError(error: unknown, fallback: string) {
-  if (typeof error === "object" && error !== null) {
-    const value = error as { response?: { data?: { message?: string } }; message?: string }
-    return value.response?.data?.message ?? value.message ?? fallback
-  }
-  return fallback
-}
-
 export default function MyDailyLogsPage() {
   useDocumentTitle("My daily logs")
   const [loading, setLoading] = useState(true)
@@ -79,7 +72,7 @@ export default function MyDailyLogsPage() {
         },
       })
       .then((response) => setLogs(response.data.logs ?? []))
-      .catch((error) => setErrorMessage(apiError(error, "Failed to load your daily logs")))
+      .catch((error) => setErrorMessage(apiErrorMessage(error, "Failed to load your daily logs")))
       .finally(() => setLoading(false))
   }, [debouncedSearch])
 

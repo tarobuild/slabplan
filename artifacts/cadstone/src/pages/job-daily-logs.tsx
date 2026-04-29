@@ -34,6 +34,7 @@ import {
   X,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { apiErrorMessage as apiError } from "@/lib/api-errors"
 import { cn } from "@/lib/utils"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { useAuthStore } from "@/store/auth"
@@ -462,14 +463,6 @@ function getDateRangeForPreset(preset: FilterPreset) {
   if (preset === "past_90") return { from: toQueryDate(addDays(now, -90)), to: toQueryDate(now) }
   if (preset === "past_180") return { from: toQueryDate(addDays(now, -180)), to: toQueryDate(now) }
   return { from: toQueryDate(addDays(now, -365)), to: toQueryDate(now) }
-}
-
-function apiError(err: unknown, fallback: string) {
-  if (typeof err === "object" && err !== null) {
-    const value = err as { response?: { data?: { message?: string } }; message?: string }
-    return value.response?.data?.message ?? value.message ?? fallback
-  }
-  return fallback
 }
 
 function uniqueStrings(values: string[]) {

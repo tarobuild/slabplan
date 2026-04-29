@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { toast } from "sonner"
+import { toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
 
 type Job = {
@@ -187,7 +188,7 @@ export default function JobsPage() {
     if (st !== "all") params.set("status", st)
     api.get(`/jobs?${params}`)
       .then(r => { setJobs(r.data.jobs); setTotal(r.data.pagination?.totalItems ?? 0) })
-      .catch(() => toast.error("Failed to load jobs"))
+      .catch((err: unknown) => toastApiError(err, "Failed to load jobs"))
       .finally(() => setLoading(false))
   }
 
@@ -263,8 +264,8 @@ export default function JobsPage() {
       fetchJobs(search, status, 1)
       setPage(1)
       invalidateAppData(["jobs", "navigation"])
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to create job")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to create job")
     } finally {
       setSaving(false)
     }
@@ -312,8 +313,8 @@ export default function JobsPage() {
       setNewClientEmail("")
       setNewClientPhone("")
       toast.success("Client created")
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to create client")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to create client")
     } finally {
       setCreatingClient(false)
     }

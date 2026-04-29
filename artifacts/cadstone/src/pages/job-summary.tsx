@@ -22,6 +22,7 @@ import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
 import { invalidateAppData } from "@/lib/data-refresh"
 import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
+import { toastApiError } from "@/lib/api-errors"
 
 type Job = {
   id: string
@@ -164,7 +165,7 @@ export default function JobSummaryPage() {
         setAssigneeDraftIds((nextJob.assignees ?? []).map((assignee: WorkerOption) => assignee.id))
       })
       .then(() => loadAssignees(jobId).catch(() => {}))
-      .catch(() => toast.error("Failed to load job"))
+      .catch((err: unknown) => toastApiError(err, "Failed to load job"))
       .finally(() => setLoading(false))
   }, [jobId])
 
@@ -222,8 +223,8 @@ export default function JobSummaryPage() {
       )
       invalidateAppData(["jobs", "navigation"])
       toast.success("Job saved")
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to save")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to save")
     } finally {
       setSaving(false)
     }
@@ -249,8 +250,8 @@ export default function JobSummaryPage() {
       setAssigneeDraftIds(assignees.map((assignee: WorkerOption) => assignee.id))
       setAssigneePopoverOpen(false)
       toast.success("Assigned workers updated")
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to update assigned workers")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to update assigned workers")
     } finally {
       setSavingAssignees(false)
     }

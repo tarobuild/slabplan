@@ -3,6 +3,7 @@ import { toast } from "sonner"
 
 export type ApiErrorClassification =
   | { kind: "forbidden" }
+  | { kind: "session-expired" }
   | { kind: "toast"; message: string }
 
 export function classifyApiError(
@@ -17,10 +18,11 @@ export function classifyApiError(
         : undefined
 
     if (status === 401) {
-      return {
-        kind: "toast",
-        message: "Your session expired — please sign in again.",
-      }
+      // The global axios interceptor attempts a token refresh and, on
+      // failure, surfaces a single (debounced) "session expired" toast and
+      // clears auth so the route guard sends the user back to /login.
+      // Avoid double-toasting from here.
+      return { kind: "session-expired" }
     }
 
     if (status === 403) {

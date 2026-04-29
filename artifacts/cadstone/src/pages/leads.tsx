@@ -554,7 +554,9 @@ export default function LeadsPage() {
             })
           } catch (err: unknown) {
             const classified = classifyApiError(err, "Lead created but failed to add contact")
-            // 403 is already toasted by the global axios interceptor; stay silent here.
+            // 401 (session expired) and 403 (forbidden) are already toasted by
+            // the global axios interceptor; stay silent here so we don't
+            // double-toast.
             if (classified.kind === "toast") {
               toast.error(`Lead created, but couldn't add the contact: ${classified.message}`)
             }
@@ -581,10 +583,10 @@ export default function LeadsPage() {
         successfulIndexes.push(i)
       } catch (err) {
         const classified = classifyApiError(err, "Upload failed")
-        // 403 is already toasted (debounced) by the global axios interceptor;
-        // skip adding to local failures so we don't duplicate that feedback.
-        // The file stays in createFiles (not in successfulIndexes), so the user
-        // can retry it.
+        // 401 (session expired) and 403 (forbidden) are already toasted
+        // (debounced) by the global axios interceptor; skip adding to local
+        // failures so we don't duplicate that feedback. The file stays in
+        // createFiles (not in successfulIndexes), so the user can retry it.
         if (classified.kind === "toast") {
           failures.push({ name: file.name, error: classified.message })
         }

@@ -178,6 +178,10 @@ export function ScheduleQuickCreate({
       if (classified.kind === "toast") {
         toast.error(classified.message)
         setSaveError(classified.message)
+      } else if (classified.kind === "session-expired") {
+        // The global interceptor already toasts a debounced "session
+        // expired" message and clears auth; mirror that as the inline error.
+        setSaveError("Your session expired — please sign in again.")
       } else {
         // 403: global interceptor already shows a toast and routes the user away.
         setSaveError("You don't have permission to create schedule items here.")

@@ -115,11 +115,18 @@ export default function Sidebar() {
       .then((r) => setJobs(r.data.jobs ?? r.data ?? []))
       .catch((err: unknown) => {
         const classified = classifyApiError(err, "Couldn't refresh jobs right now.")
-        setErrorMessage(
-          classified.kind === "toast"
-            ? classified.message
-            : "You don't have permission to view jobs.",
-        )
+        // The global axios interceptor already toasts (and, for 403, redirects)
+        // for forbidden / session-expired responses. Mirror that here with an
+        // inline note that matches what the toast just said.
+        let message: string
+        if (classified.kind === "toast") {
+          message = classified.message
+        } else if (classified.kind === "session-expired") {
+          message = "Your session expired — please sign in again."
+        } else {
+          message = "You don't have permission to view jobs."
+        }
+        setErrorMessage(message)
       })
   }
 

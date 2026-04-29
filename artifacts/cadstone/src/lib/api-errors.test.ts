@@ -33,15 +33,15 @@ function buildAxiosError(options: {
 }
 
 describe("classifyApiError", () => {
-  test("returns the session-expired toast for 401 responses", () => {
+  test("returns the session-expired marker for 401 responses (no toast)", () => {
+    // The global axios interceptor handles 401s: it tries a token refresh
+    // and, on failure, surfaces a single debounced "session expired" toast.
+    // The classifier must therefore stay silent so we don't double-toast.
     const result = classifyApiError(
       buildAxiosError({ status: 401, data: { message: "unauthorized" } }),
       "fallback",
     )
-    assert.deepEqual(result, {
-      kind: "toast",
-      message: "Your session expired — please sign in again.",
-    })
+    assert.deepEqual(result, { kind: "session-expired" })
   })
 
   test("returns the forbidden marker for 403 responses (no toast)", () => {
@@ -212,6 +212,15 @@ describe("toastApiError", () => {
     installSpy()
     toastApiError(
       buildAxiosError({ status: 403, data: { message: "nope" } }),
+      "fallback",
+    )
+    assert.equal(calls.length, 0)
+  })
+
+  test("stays silent on 401 responses (interceptor toasts session-expired)", () => {
+    installSpy()
+    toastApiError(
+      buildAxiosError({ status: 401, data: { message: "unauthorized" } }),
       "fallback",
     )
     assert.equal(calls.length, 0)

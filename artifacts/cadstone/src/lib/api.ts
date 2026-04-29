@@ -98,6 +98,7 @@ function initializeInterceptors() {
       const refreshedToken = await refreshSession()
 
       if (!refreshedToken) {
+        notifySessionExpired()
         return Promise.reject(error)
       }
 
@@ -126,6 +127,26 @@ function notifyForbidden() {
 
   toast.error("You don't have permission to view that.")
   window.dispatchEvent(new CustomEvent(FORBIDDEN_EVENT))
+}
+
+let lastSessionExpiredAt = 0
+
+function notifySessionExpired() {
+  const now = Date.now()
+  // Debounce: a batch of parallel 401s (e.g. several queries firing on a
+  // page load with an expired session) should result in a single toast,
+  // not one per request. Per-call helpers like toastApiError treat 401 as
+  // "handled here" so they don't fire their own copy.
+  if (now - lastSessionExpiredAt < 500) {
+    return
+  }
+  lastSessionExpiredAt = now
+
+  if (typeof window === "undefined") {
+    return
+  }
+
+  toast.error("Your session expired — please sign in again.")
 }
 
 export async function refreshSession(): Promise<string | null> {

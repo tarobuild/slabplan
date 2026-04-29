@@ -9,7 +9,7 @@
     "build:prod": "pnpm --filter @workspace/cadstone run build && node ./build.mjs",
     "start": "NODE_ENV=production node --enable-source-maps ./dist/index.mjs",
     "test": "tsx --test ./test/**/*.test.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc --build ../../lib/db ../../lib/api-zod && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",

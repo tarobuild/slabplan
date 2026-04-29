@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import {
   createBrowserRouter,
   createRoutesFromElements,
@@ -14,27 +14,28 @@ import { FilePreviewProvider } from "@/components/files/file-preview-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { bootstrapAuthSession, FORBIDDEN_EVENT } from "@/lib/api"
-import ClientsPage from "@/pages/clients"
-import DashboardPage from "@/pages/dashboard"
-import FilesDocumentsPage from "@/pages/files-documents"
-import FilesPhotosPage from "@/pages/files-photos"
-import FilesVideosPage from "@/pages/files-videos"
-import ForbiddenPage from "@/pages/forbidden"
-import JobDailyLogsPage from "@/pages/job-daily-logs"
-import JobDetailPage from "@/pages/job-detail"
-import JobFilesDocumentsPage from "@/pages/job-files-documents"
-import JobFilesPhotosPage from "@/pages/job-files-photos"
-import JobFilesVideosPage from "@/pages/job-files-videos"
-import JobSchedulePage from "@/pages/job-schedule"
-import JobSummaryPage from "@/pages/job-summary"
-import JobsPage from "@/pages/jobs"
-import LeadsPage from "@/pages/leads"
-import LoginPage from "@/pages/login"
-import MyDailyLogsPage from "@/pages/my-daily-logs"
-import NotFoundPage from "@/pages/not-found"
-import ResourcesPage from "@/pages/resources"
-import SettingsPage from "@/pages/settings"
 import { useAuthStore } from "@/store/auth"
+
+const ClientsPage = lazy(() => import("@/pages/clients"))
+const DashboardPage = lazy(() => import("@/pages/dashboard"))
+const FilesDocumentsPage = lazy(() => import("@/pages/files-documents"))
+const FilesPhotosPage = lazy(() => import("@/pages/files-photos"))
+const FilesVideosPage = lazy(() => import("@/pages/files-videos"))
+const ForbiddenPage = lazy(() => import("@/pages/forbidden"))
+const JobDailyLogsPage = lazy(() => import("@/pages/job-daily-logs"))
+const JobDetailPage = lazy(() => import("@/pages/job-detail"))
+const JobFilesDocumentsPage = lazy(() => import("@/pages/job-files-documents"))
+const JobFilesPhotosPage = lazy(() => import("@/pages/job-files-photos"))
+const JobFilesVideosPage = lazy(() => import("@/pages/job-files-videos"))
+const JobSchedulePage = lazy(() => import("@/pages/job-schedule"))
+const JobSummaryPage = lazy(() => import("@/pages/job-summary"))
+const JobsPage = lazy(() => import("@/pages/jobs"))
+const LeadsPage = lazy(() => import("@/pages/leads"))
+const LoginPage = lazy(() => import("@/pages/login"))
+const MyDailyLogsPage = lazy(() => import("@/pages/my-daily-logs"))
+const NotFoundPage = lazy(() => import("@/pages/not-found"))
+const ResourcesPage = lazy(() => import("@/pages/resources"))
+const SettingsPage = lazy(() => import("@/pages/settings"))
 
 function RouteLoadingScreen() {
   return (
@@ -84,7 +85,9 @@ function RootShell() {
   return (
     <FilePreviewProvider>
       <ForbiddenListener />
-      <Outlet />
+      <Suspense fallback={<RouteLoadingScreen />}>
+        <Outlet />
+      </Suspense>
     </FilePreviewProvider>
   )
 }

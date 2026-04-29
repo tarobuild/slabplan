@@ -1890,3 +1890,313 @@ test("DELETE /clients/:id/contacts/:contactId enforces client scope", async () =
   );
   assert.equal(pmAllowedResponse.status, 200);
 });
+
+// Single schedule item endpoints (`GET/PUT/DELETE /schedule-items/:id`) defer
+// to `assertCanViewScheduleItem` / `assertCanManageScheduleItem` rather than the
+// SQL-side filter exercised above. The cases below cover the same visibility
+// branches against the per-item helper so a future change to either path is
+// caught by automated tests.
+
+test("GET /schedule-items/:id allows admins to read a regular schedule item", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleVisibleAllId}`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { item: { id: string } };
+  assert.equal(body.item.id, scheduleVisibleAllId);
+});
+
+test("GET /schedule-items/:id allows the project manager (creator) to read it", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleVisibleAllId}`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { item: { id: string } };
+  assert.equal(body.item.id, scheduleVisibleAllId);
+});
+
+test("GET /schedule-items/:id allows a crew member when role visibility flags allow it", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleVisibleAllId}`,
+    { headers: { authorization: `Bearer ${crewToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { item: { id: string } };
+  assert.equal(body.item.id, scheduleVisibleAllId);
+});
+
+test("GET /schedule-items/:id allows the crew creator even when every visibility flag is off", async () => {
+  // scheduleCrewCreatedHiddenId has all role-visibility flags set to false but
+  // the crew member is the creator, so they must still be able to read it.
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleCrewCreatedHiddenId}`,
+    { headers: { authorization: `Bearer ${crewToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { item: { id: string } };
+  assert.equal(body.item.id, scheduleCrewCreatedHiddenId);
+});
+
+test("GET /schedule-items/:id allows an assigned crew member even when installers visibility is off", async () => {
+  // scheduleAssignedCrewId has visibleToInstallers=false but the crew member
+  // is an explicit assignee, which must override the role flag.
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleAssignedCrewId}`,
+    { headers: { authorization: `Bearer ${crewToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { item: { id: string } };
+  assert.equal(body.item.id, scheduleAssignedCrewId);
+});
+
+test("GET /schedule-items/:id returns 403 for a crew member blocked by visibleToInstallers", async () => {
+  // scheduleHiddenFromCrewId has visibleToInstallers=false. The crew member
+  // is neither creator nor assignee, so the role visibility flag must reject.
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleHiddenFromCrewId}`,
+    { headers: { authorization: `Bearer ${crewToken}` } },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /schedule-items/:id returns 403 for a project manager blocked by office/estimator visibility flags", async () => {
+  // scheduleHiddenFromPmId has both visibleToOfficeStaff and
+  // visibleToEstimators set to false. The PM is neither creator nor assignee,
+  // so the role visibility flags must reject.
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleHiddenFromPmId}`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /schedule-items/:id returns 403 for an admin trying to read another user's personal to-do", async () => {
+  // The personal-to-do guard must block even an admin from reading a personal
+  // to-do they did not create.
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${schedulePmPersonalTodoId}`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /schedule-items/:id returns 403 for a project manager trying to read an admin's personal to-do", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleAdminPersonalTodoId}`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /schedule-items/:id allows the personal to-do creator to read their own item", async () => {
+  // The PM's own personal to-do must remain readable to them.
+  const pmResponse = await fetch(
+    `${baseUrl}/api/schedule-items/${schedulePmPersonalTodoId}`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+  assert.equal(pmResponse.status, 200);
+  const pmBody = (await pmResponse.json()) as { item: { id: string } };
+  assert.equal(pmBody.item.id, schedulePmPersonalTodoId);
+
+  // The admin's own personal to-do must remain readable to them.
+  const adminResponse = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleAdminPersonalTodoId}`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+  assert.equal(adminResponse.status, 200);
+  const adminBody = (await adminResponse.json()) as { item: { id: string } };
+  assert.equal(adminBody.item.id, scheduleAdminPersonalTodoId);
+});
+
+function jsonHeaders(token: string) {
+  return {
+    authorization: `Bearer ${token}`,
+    "content-type": "application/json",
+    "x-requested-with": "XMLHttpRequest",
+  };
+}
+
+function xhrHeaders(token: string) {
+  return {
+    authorization: `Bearer ${token}`,
+    "x-requested-with": "XMLHttpRequest",
+  };
+}
+
+test("PUT /schedule-items/:id returns 403 for an admin modifying another user's personal to-do", async () => {
+  // The personal-to-do guard must block modification by admins too. Middleware
+  // rejects before the body is parsed, so an empty body is fine.
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${schedulePmPersonalTodoId}`,
+    {
+      method: "PUT",
+      headers: jsonHeaders(adminToken),
+      body: JSON.stringify({}),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("PUT /schedule-items/:id returns 403 for a project manager modifying an admin's personal to-do", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleAdminPersonalTodoId}`,
+    {
+      method: "PUT",
+      headers: jsonHeaders(pmToken),
+      body: JSON.stringify({}),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("PUT /schedule-items/:id returns 403 for a project manager blocked by role visibility flags", async () => {
+  // scheduleHiddenFromPmId is hidden from the PM by the visibility flags, so
+  // attempting to modify it must 403 before any DB write.
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleHiddenFromPmId}`,
+    {
+      method: "PUT",
+      headers: jsonHeaders(pmToken),
+      body: JSON.stringify({}),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("PUT /schedule-items/:id returns 403 for a crew member who can view but not manage", async () => {
+  // Crew members can view scheduleVisibleAllId but `assertCanManageScheduleItem`
+  // restricts modification to admins and PMs that manage the job.
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleVisibleAllId}`,
+    {
+      method: "PUT",
+      headers: jsonHeaders(crewToken),
+      body: JSON.stringify({}),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("DELETE /schedule-items/:id returns 403 for an admin trying to delete another user's personal to-do", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${schedulePmPersonalTodoId}`,
+    {
+      method: "DELETE",
+      headers: xhrHeaders(adminToken),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("DELETE /schedule-items/:id returns 403 for a project manager trying to delete an admin's personal to-do", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleAdminPersonalTodoId}`,
+    {
+      method: "DELETE",
+      headers: xhrHeaders(pmToken),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("DELETE /schedule-items/:id returns 403 for a crew member who can view but not manage", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleVisibleAllId}`,
+    {
+      method: "DELETE",
+      headers: xhrHeaders(crewToken),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("POST /schedule-items/:id/notes returns 403 for an admin posting to another user's personal to-do", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${schedulePmPersonalTodoId}/notes`,
+    {
+      method: "POST",
+      headers: jsonHeaders(adminToken),
+      body: JSON.stringify({ note: "should not be allowed" }),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("POST /schedule-items/:id/notes returns 403 for a project manager posting to an admin's personal to-do", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleAdminPersonalTodoId}/notes`,
+    {
+      method: "POST",
+      headers: jsonHeaders(pmToken),
+      body: JSON.stringify({ note: "should not be allowed" }),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("POST /schedule-items/:id/todos returns 403 for a crew member blocked by visibleToInstallers", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleHiddenFromCrewId}/todos`,
+    {
+      method: "POST",
+      headers: jsonHeaders(crewToken),
+      body: JSON.stringify({ title: "should not be allowed" }),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("POST /schedule-items/:id/notes allows the project manager (creator) to add a collaborative note", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleVisibleAllId}/notes`,
+    {
+      method: "POST",
+      headers: jsonHeaders(pmToken),
+      body: JSON.stringify({ note: "PM collaborative note" }),
+    },
+  );
+
+  assert.equal(response.status, 201);
+  const body = (await response.json()) as { note: { id: string; note: string } };
+  assert.equal(body.note.note, "PM collaborative note");
+  assert.ok(body.note.id);
+});
+
+test("POST /schedule-items/:id/todos allows an assigned crew member to add a collaborative to-do even when installers visibility is off", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleAssignedCrewId}/todos`,
+    {
+      method: "POST",
+      headers: jsonHeaders(crewToken),
+      body: JSON.stringify({ title: "Crew assignee follow-up" }),
+    },
+  );
+
+  assert.equal(response.status, 201);
+  const body = (await response.json()) as {
+    todo: { id: string; title: string };
+  };
+  assert.equal(body.todo.title, "Crew assignee follow-up");
+  assert.ok(body.todo.id);
+});

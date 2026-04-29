@@ -1262,18 +1262,22 @@ async function synchronizeJobSchedule(jobId: string) {
   });
 
   if (updates.length > 0) {
-    await Promise.all(
-      updates.map((update) =>
-        db
-          .update(scheduleItems)
-          .set({
-            startDate: update.startDate,
-            endDate: update.endDate,
-            updatedAt: new Date(),
-          })
-          .where(eq(scheduleItems.id, update.id)),
+    const valuesSql = sql.join(
+      updates.map(
+        (update) => sql`(${update.id}, ${update.startDate}, ${update.endDate})`,
       ),
+      sql`, `,
     );
+
+    await db.execute(sql`
+      UPDATE ${scheduleItems}
+      SET
+        start_date = data.start_date::date,
+        end_date = data.end_date::date,
+        updated_at = NOW()
+      FROM (VALUES ${valuesSql}) AS data(id, start_date, end_date)
+      WHERE ${scheduleItems.id} = data.id::uuid
+    `);
   }
 
   await applyAutomaticCompletionIfEnabled(jobId);

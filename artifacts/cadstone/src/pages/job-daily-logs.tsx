@@ -81,6 +81,8 @@ import {
 } from "@/components/ui/tooltip"
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
 import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
+import { useFilePreview } from "@/components/files/file-preview-context"
+import type { PreviewFile } from "@/components/files/FilePreview"
 import { toast } from "sonner"
 
 type JobContext = {
@@ -855,7 +857,16 @@ function groupLogsByDate(logs: DailyLogListItem[]) {
   return groups
 }
 
-function AttachmentThumbnail({ attachment }: { attachment: DailyLogAttachment }) {
+function AttachmentThumbnail({
+  attachment,
+  attachments,
+  index,
+}: {
+  attachment: DailyLogAttachment
+  attachments: DailyLogAttachment[]
+  index: number
+}) {
+  const filePreview = useFilePreview()
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const mime = attachment.mimeType || ""
@@ -887,34 +898,8 @@ function AttachmentThumbnail({ attachment }: { attachment: DailyLogAttachment })
     }
   }, [attachment.fileUrl, isImage])
 
-  const handleClick = async () => {
-    // For images we already have a blob URL from the thumbnail fetch — reuse it
-    if (isImage && blobUrl) {
-      window.open(blobUrl, "_blank")
-      return
-    }
-
-    const url = attachment.fileUrl || (attachment.fileId ? `/files/${attachment.fileId}/download` : null)
-    if (!url) return
-    try {
-      const res = await api.get<Blob>(url, { responseType: "blob" })
-      const objUrl = URL.createObjectURL(res.data)
-      if (isVideo) {
-        const w = window.open(objUrl, "_blank")
-        if (w) setTimeout(() => URL.revokeObjectURL(objUrl), 60_000)
-        else URL.revokeObjectURL(objUrl)
-      } else {
-        const anchor = document.createElement("a")
-        anchor.href = objUrl
-        anchor.download = attachment.originalName || "download"
-        document.body.appendChild(anchor)
-        anchor.click()
-        document.body.removeChild(anchor)
-        URL.revokeObjectURL(objUrl)
-      }
-    } catch {
-      toast.error("Failed to open attachment")
-    }
+  const handleClick = () => {
+    filePreview.open(dailyLogAttachmentsToPreviewFiles(attachments), index)
   }
 
   if (isImage) {
@@ -1070,7 +1055,12 @@ function ActivityFeedItem({
         {imageAttachments.length > 0 ? (
           <div className="mt-3 grid grid-cols-3 gap-3">
             {imageAttachments.map((att) => (
-              <AttachmentThumbnail key={att.id} attachment={att} />
+              <AttachmentThumbnail
+                key={att.id}
+                attachment={att}
+                attachments={attachments}
+                index={attachments.indexOf(att)}
+              />
             ))}
           </div>
         ) : null}
@@ -1079,7 +1069,12 @@ function ActivityFeedItem({
         {videoAttachments.length > 0 ? (
           <div className="mt-3 grid grid-cols-3 gap-3">
             {videoAttachments.map((att) => (
-              <AttachmentThumbnail key={att.id} attachment={att} />
+              <AttachmentThumbnail
+                key={att.id}
+                attachment={att}
+                attachments={attachments}
+                index={attachments.indexOf(att)}
+              />
             ))}
           </div>
         ) : null}
@@ -1088,7 +1083,12 @@ function ActivityFeedItem({
         {otherAttachments.length > 0 ? (
           <div className="mt-3 space-y-1.5">
             {otherAttachments.map((att) => (
-              <AttachmentThumbnail key={att.id} attachment={att} />
+              <AttachmentThumbnail
+                key={att.id}
+                attachment={att}
+                attachments={attachments}
+                index={attachments.indexOf(att)}
+              />
             ))}
           </div>
         ) : null}
@@ -1803,6 +1803,7 @@ function CommentsSheet({
   users: UserOption[]
   onChanged: () => Promise<void>
 }) {
+  const filePreview = useFilePreview()
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [comments, setComments] = useState<CommentRecord[]>([])
@@ -1951,24 +1952,35 @@ function CommentsSheet({
         ) : null}
         {comment.attachments.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            {comment.attachments.map((attachment) => (
-              <a
-                key={`${comment.id}-${attachment.url}`}
-                href={attachment.url}
-                target="_blank"
-                rel="noreferrer"
-                className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
-              >
-                {attachment.mimeType?.startsWith("image/") ? (
-                  <img src={attachment.url} alt={attachment.name} className="h-36 w-full object-cover" />
-                ) : (
-                  <div className="flex h-36 items-center justify-center text-slate-400">
-                    <FileText className="size-8" />
-                  </div>
-                )}
-                <div className="truncate border-t border-slate-200 px-3 py-2 text-xs text-slate-600">{attachment.name}</div>
-              </a>
-            ))}
+            {comment.attachments.map((attachment, attIndex) => {
+              const previewFiles: PreviewFile[] = comment.attachments.map((a) => ({
+                name: a.name,
+                mimeType: a.mimeType,
+                // Comment attachments historically store either an inline data
+                // URL or an absolute server URL. We pass it as `directUrl` so
+                // the preview renders without an authenticated fetch (data
+                // URLs need no auth; absolute URLs that point at our /uploads
+                // would 401 anyway and we have no fileId here).
+                directUrl: a.url,
+              }))
+              return (
+                <button
+                  key={`${comment.id}-${attachment.url}`}
+                  type="button"
+                  onClick={() => filePreview.open(previewFiles, attIndex)}
+                  className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 text-left"
+                >
+                  {attachment.mimeType?.startsWith("image/") ? (
+                    <img src={attachment.url} alt={attachment.name} className="h-36 w-full object-cover" />
+                  ) : (
+                    <div className="flex h-36 items-center justify-center text-slate-400">
+                      <FileText className="size-8" />
+                    </div>
+                  )}
+                  <div className="truncate border-t border-slate-200 px-3 py-2 text-xs text-slate-600">{attachment.name}</div>
+                </button>
+              )
+            })}
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
@@ -3185,8 +3197,13 @@ export default function JobDailyLogsPage() {
                       <div className="mt-8 space-y-3">
                         <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Attachments</div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          {selectedLog.attachments.map((attachment) => (
-                            <DailyLogAttachmentCard key={attachment.id} attachment={attachment} />
+                          {selectedLog.attachments.map((attachment, idx) => (
+                            <DailyLogAttachmentCard
+                              key={attachment.id}
+                              attachment={attachment}
+                              attachments={selectedLog.attachments}
+                              index={idx}
+                            />
                           ))}
                         </div>
                       </div>
@@ -3266,36 +3283,31 @@ export default function JobDailyLogsPage() {
   )
 }
 
-function DailyLogAttachmentCard({ attachment }: { attachment: DailyLogAttachment }) {
-  const handleClick = async () => {
-    const url = attachment.fileUrl || (attachment.fileId ? `/files/${attachment.fileId}/download` : null)
-    if (!url) return
+function dailyLogAttachmentsToPreviewFiles(attachments: DailyLogAttachment[]): PreviewFile[] {
+  return attachments.map((a) => ({
+    id: a.id,
+    fileId: a.fileId,
+    name: a.originalName,
+    mimeType: a.mimeType,
+    fileSize: a.fileSize,
+    uploadedByName: a.uploadedByName,
+    createdAt: a.createdAt,
+  }))
+}
 
-    try {
-      const res = await api.get<Blob>(url, { responseType: "blob" })
-      const blobUrl = URL.createObjectURL(res.data)
-      const mime = attachment.mimeType || ""
+function DailyLogAttachmentCard({
+  attachment,
+  attachments,
+  index,
+}: {
+  attachment: DailyLogAttachment
+  attachments: DailyLogAttachment[]
+  index: number
+}) {
+  const filePreview = useFilePreview()
 
-      if (mime.startsWith("image/")) {
-        const w = window.open(blobUrl, "_blank")
-        if (w) setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
-        else URL.revokeObjectURL(blobUrl)
-      } else if (mime.startsWith("video/")) {
-        const w = window.open(blobUrl, "_blank")
-        if (w) setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
-        else URL.revokeObjectURL(blobUrl)
-      } else {
-        const anchor = document.createElement("a")
-        anchor.href = blobUrl
-        anchor.download = attachment.originalName || "download"
-        document.body.appendChild(anchor)
-        anchor.click()
-        document.body.removeChild(anchor)
-        URL.revokeObjectURL(blobUrl)
-      }
-    } catch {
-      toast.error("Failed to open attachment")
-    }
+  const handleClick = () => {
+    filePreview.open(dailyLogAttachmentsToPreviewFiles(attachments), index)
   }
 
   return (

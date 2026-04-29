@@ -10,6 +10,7 @@ import {
 } from "react-router-dom"
 import { Toaster } from "sonner"
 import AppLayout from "@/components/layout/AppLayout"
+import { FilePreviewProvider } from "@/components/files/file-preview-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { bootstrapAuthSession, FORBIDDEN_EVENT } from "@/lib/api"
@@ -81,10 +82,10 @@ function ForbiddenListener() {
 
 function RootShell() {
   return (
-    <>
+    <FilePreviewProvider>
       <ForbiddenListener />
       <Outlet />
-    </>
+    </FilePreviewProvider>
   )
 }
 

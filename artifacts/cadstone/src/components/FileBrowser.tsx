@@ -16,9 +16,10 @@ import {
   Play,
   Plus,
   Upload,
-  X,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { useFilePreview } from "@/components/files/file-preview-context"
+import type { PreviewFile } from "@/components/files/FilePreview"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -250,9 +251,7 @@ export default function FileBrowser({
   const [uploadNote, setUploadNote] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [lightboxFile, setLightboxFile] = useState<FileItem | null>(null)
-  const [lightboxIndex, setLightboxIndex] = useState<number>(0)
-  const [videoPlayerFile, setVideoPlayerFile] = useState<FileItem | null>(null)
+  const filePreview = useFilePreview()
 
   const loadFolders = (parentId: string | null = null) => {
     setLoading(true)
@@ -299,9 +298,6 @@ export default function FileBrowser({
     setUploadError(null)
     setSelectedUploadFiles([])
     setUploadNote("")
-    setLightboxFile(null)
-    setLightboxIndex(0)
-    setVideoPlayerFile(null)
     loadFolders(null)
   }, [jobId, mediaType, scope])
 
@@ -363,16 +359,12 @@ export default function FileBrowser({
   }
 
   const openFolder = (folder: FolderItem) => {
-    setLightboxFile(null)
-    setVideoPlayerFile(null)
     setCurrentFolderId(folder.id)
     loadFolders(folder.id)
     loadFiles(folder.id)
   }
 
   const navigateTo = (folderId: string | null) => {
-    setLightboxFile(null)
-    setVideoPlayerFile(null)
     setCurrentFolderId(folderId)
     setFiles([])
     loadFolders(folderId)
@@ -623,45 +615,29 @@ export default function FileBrowser({
     return arr
   }, [files, sortBy])
 
-  const openLightbox = (file: FileItem) => {
+  const fileItemToPreview = useCallback(
+    (file: FileItem): PreviewFile => ({
+      id: file.id,
+      fileId: file.id,
+      viewUrl: buildFileViewUrl(file.id),
+      name: displayName(file),
+      mimeType: file.mimeType,
+      fileSize: file.fileSize,
+      uploadedByName: file.uploadedByName,
+      createdAt: file.createdAt,
+    }),
+    // buildFileViewUrl depends on currentFolderId / scope which are stable
+    // within this render; the resulting preview list is also rebuilt below
+    // each time it's opened, so no stale-closure risk.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentFolderId, isResourceScope],
+  )
+
+  const openFilePreview = (file: FileItem) => {
     const idx = sortedFiles.findIndex((f) => f.id === file.id)
-    setLightboxFile(file)
-    setLightboxIndex(idx >= 0 ? idx : 0)
+    const previewFiles = sortedFiles.map(fileItemToPreview)
+    filePreview.open(previewFiles, idx >= 0 ? idx : 0)
   }
-
-  useEffect(() => {
-    if (!lightboxFile) return
-    const handler = (event: KeyboardEvent) => {
-      if (sortedFiles.length <= 1) return
-      if (event.key === "ArrowRight") {
-        event.preventDefault()
-        const next = (lightboxIndex + 1) % sortedFiles.length
-        setLightboxFile(sortedFiles[next])
-        setLightboxIndex(next)
-      } else if (event.key === "ArrowLeft") {
-        event.preventDefault()
-        const prev = (lightboxIndex - 1 + sortedFiles.length) % sortedFiles.length
-        setLightboxFile(sortedFiles[prev])
-        setLightboxIndex(prev)
-      }
-    }
-    window.addEventListener("keydown", handler)
-    return () => window.removeEventListener("keydown", handler)
-  }, [lightboxFile, lightboxIndex, sortedFiles])
-
-  const lightboxViewUrl = lightboxFile ? buildFileViewUrl(lightboxFile.id) : null
-  const {
-    blobUrl: lightboxBlobUrl,
-    loading: lightboxLoading,
-    error: lightboxError,
-  } = useAuthenticatedUrl(lightboxViewUrl)
-
-  const videoViewUrl = videoPlayerFile ? buildFileViewUrl(videoPlayerFile.id) : null
-  const {
-    blobUrl: videoBlobUrl,
-    loading: videoLoading,
-    error: videoError,
-  } = useAuthenticatedUrl(videoViewUrl)
 
   const mediaLabel =
     mediaType === "document" ? "Documents" : mediaType === "photo" ? "Photos" : "Videos"
@@ -900,7 +876,7 @@ export default function FileBrowser({
                     <PhotoGrid
                       files={sortedFiles}
                       buildViewUrl={buildFileViewUrl}
-                      onOpenLightbox={openLightbox}
+                      onOpenLightbox={openFilePreview}
                       onDownload={handleDownload}
                       onRequestDelete={setDeleteConfirmFile}
                       canManageFile={canManageFile}
@@ -908,7 +884,7 @@ export default function FileBrowser({
                   ) : mediaType === "video" && viewMode === "grid" ? (
                     <VideoGrid
                       files={sortedFiles}
-                      onOpenPlayer={setVideoPlayerFile}
+                      onOpenPlayer={openFilePreview}
                       onDownload={handleDownload}
                       onRequestDelete={setDeleteConfirmFile}
                       canManageFile={canManageFile}
@@ -918,8 +894,8 @@ export default function FileBrowser({
                       files={sortedFiles}
                       showDuration={mediaType === "video"}
                       mediaType={mediaType}
-                      onOpenLightbox={mediaType === "photo" ? openLightbox : undefined}
-                      onOpenPlayer={mediaType === "video" ? setVideoPlayerFile : undefined}
+                      onOpenLightbox={mediaType === "photo" ? openFilePreview : undefined}
+                      onOpenPlayer={mediaType === "video" ? openFilePreview : undefined}
                       onOpenInNewTab={handleViewInNewTab}
                       onDownload={handleDownload}
                       onRequestDelete={setDeleteConfirmFile}
@@ -1175,143 +1151,6 @@ export default function FileBrowser({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog
-        open={!!lightboxFile}
-        onOpenChange={(open) => {
-          if (!open) setLightboxFile(null)
-        }}
-      >
-        <DialogContent className="max-w-4xl p-0 overflow-hidden bg-black border-0">
-          <button
-            onClick={() => setLightboxFile(null)}
-            className="absolute top-3 right-3 z-20 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors"
-            aria-label="Close"
-          >
-            <X className="size-4" />
-          </button>
-          {lightboxFile && (
-            <div className="relative flex flex-col items-center">
-              {sortedFiles.length > 1 && (
-                <>
-                  <button
-                    onClick={() => {
-                      const prev = (lightboxIndex - 1 + sortedFiles.length) % sortedFiles.length
-                      setLightboxFile(sortedFiles[prev])
-                      setLightboxIndex(prev)
-                    }}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
-                    aria-label="Previous photo"
-                  >
-                    <ChevronLeft className="size-5" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      const next = (lightboxIndex + 1) % sortedFiles.length
-                      setLightboxFile(sortedFiles[next])
-                      setLightboxIndex(next)
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
-                    aria-label="Next photo"
-                  >
-                    <ChevronRight className="size-5" />
-                  </button>
-                </>
-              )}
-
-              <div className="flex w-full min-h-[50vh] max-h-[80vh] items-center justify-center bg-black">
-                {lightboxLoading && (
-                  <Loader2 className="size-8 text-white/50 animate-spin" />
-                )}
-                {lightboxBlobUrl && (
-                  <img
-                    src={lightboxBlobUrl}
-                    alt={displayName(lightboxFile)}
-                    className="max-h-[80vh] max-w-full object-contain"
-                  />
-                )}
-                {lightboxError && !lightboxLoading && (
-                  <p className="text-sm text-white/70">Failed to load image.</p>
-                )}
-              </div>
-
-              <div className="flex w-full items-center justify-between gap-4 bg-black/80 px-4 py-3 text-white">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{displayName(lightboxFile)}</p>
-                  {lightboxFile.note ? (
-                    <p className="mt-1 text-xs text-white/70">{lightboxFile.note}</p>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  {sortedFiles.length > 1 && (
-                    <span className="text-xs text-white/60 tabular-nums">
-                      {lightboxIndex + 1} / {sortedFiles.length}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleDownload(lightboxFile)}
-                    className="flex items-center gap-1.5 text-sm text-orange-300 hover:text-orange-200"
-                  >
-                    <Download className="size-3.5" />
-                    Download
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!videoPlayerFile}
-        onOpenChange={(open) => {
-          if (!open) setVideoPlayerFile(null)
-        }}
-      >
-        <DialogContent className="max-w-3xl p-0 overflow-hidden bg-black border-0">
-          <button
-            onClick={() => setVideoPlayerFile(null)}
-            className="absolute top-3 right-3 z-10 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80 transition-colors"
-            aria-label="Close"
-          >
-            <X className="size-4" />
-          </button>
-          {videoPlayerFile && (
-            <div className="flex flex-col">
-              <div className="flex w-full min-h-[40vh] max-h-[75vh] items-center justify-center bg-black">
-                {videoLoading && (
-                  <Loader2 className="size-8 text-white/50 animate-spin" />
-                )}
-                {videoBlobUrl && (
-                  <video
-                    src={videoBlobUrl}
-                    controls
-                    autoPlay
-                    preload="auto"
-                    className="w-full max-h-[75vh] bg-black"
-                  />
-                )}
-                {videoError && !videoLoading && (
-                  <p className="text-sm text-white/70">Failed to load video.</p>
-                )}
-              </div>
-              <div className="flex items-center justify-between px-4 py-3 bg-black/80 text-white">
-                <span className="text-sm font-medium truncate max-w-xs">
-                  {displayName(videoPlayerFile)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleDownload(videoPlayerFile)}
-                  className="flex items-center gap-1.5 text-sm text-orange-300 hover:text-orange-200 shrink-0"
-                >
-                  <Download className="size-3.5" />
-                  Download
-                </button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

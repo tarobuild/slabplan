@@ -6,6 +6,7 @@ import dashboardRouter from "./dashboard";
 import dailyLogAdminRouter from "./daily-log-admin";
 import dailyLogsRouter from "./daily-logs";
 import filesRouter from "./files";
+import filesSignedRouter from "./files-signed";
 import foldersRouter from "./folders";
 import healthRouter from "./health";
 import jobsRouter from "./jobs";
@@ -20,6 +21,9 @@ const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use("/auth", authRouter);
+// Signed-file viewing carries its own short-lived token in the query string,
+// so it must be mounted BEFORE the global Bearer-token requirement.
+router.use(filesSignedRouter);
 router.use(requireAuth);
 router.use(activityRouter);
 router.use(dashboardRouter);

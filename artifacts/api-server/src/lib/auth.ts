@@ -4,18 +4,20 @@ import jwt, { type JwtPayload } from "jsonwebtoken";
 import type { User } from "@workspace/db/schema";
 import { HttpError } from "./http";
 
-type TokenType = "access" | "refresh" | "reset" | "upload";
+type TokenType = "access" | "refresh" | "reset" | "upload" | "file_view";
 
 type TokenClaims = {
   type: TokenType;
   email: string;
   role: string;
   version?: string;
+  fileId?: string;
 };
 
 type VerifiedToken<TType extends TokenType = TokenType> = TokenClaims & {
   type: TType;
   userId: string;
+  jti?: string;
 };
 
 type PublicUser = Pick<
@@ -27,6 +29,7 @@ export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const UPLOAD_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 const RESET_TOKEN_TTL_SECONDS = 60 * 60;
+export const FILE_VIEW_TOKEN_TTL_SECONDS = 5 * 60;
 const JWT_ALGORITHMS = ["HS256"] as const;
 
 type JwtSecretEnvName =
@@ -105,7 +108,11 @@ const uploadCookieOptions: CookieOptions = {
   maxAge: UPLOAD_TOKEN_TTL_SECONDS * 1000,
 };
 
-function buildTokenPayload(user: PublicUser, type: TokenType): TokenClaims {
+function buildTokenPayload(
+  user: PublicUser,
+  type: TokenType,
+  extra: { fileId?: string } = {},
+): TokenClaims {
   const basePayload: TokenClaims = {
     type,
     email: user.email,
@@ -116,6 +123,10 @@ function buildTokenPayload(user: PublicUser, type: TokenType): TokenClaims {
     basePayload.version = String(user.updatedAt?.getTime() ?? 0);
   }
 
+  if (extra.fileId) {
+    basePayload.fileId = extra.fileId;
+  }
+
   return basePayload;
 }
 
@@ -124,11 +135,16 @@ function signToken(
   type: TokenType,
   secret: string,
   expiresIn: number,
+  extra: { fileId?: string; jti?: string } = {},
 ): string {
-  return jwt.sign(buildTokenPayload(user, type), secret, {
+  const options: jwt.SignOptions = {
     subject: user.id,
     expiresIn,
-  });
+  };
+  if (extra.jti) {
+    options.jwtid = extra.jti;
+  }
+  return jwt.sign(buildTokenPayload(user, type, extra), secret, options);
 }
 
 function decodeVerifiedToken<TType extends TokenType>(
@@ -164,7 +180,31 @@ function decodeVerifiedToken<TType extends TokenType>(
     role: payload.role,
     type: payload.type,
     version: typeof payload.version === "string" ? payload.version : undefined,
+    fileId: typeof payload.fileId === "string" ? payload.fileId : undefined,
+    jti: typeof payload.jti === "string" ? payload.jti : undefined,
   };
+}
+
+const usedFileViewJtis = new Map<string, number>();
+
+function pruneUsedJtis(now: number) {
+  if (usedFileViewJtis.size < 1000) return;
+  for (const [jti, expiresAt] of usedFileViewJtis) {
+    if (expiresAt <= now) {
+      usedFileViewJtis.delete(jti);
+    }
+  }
+}
+
+export function consumeFileViewJti(jti: string): boolean {
+  const now = Date.now();
+  pruneUsedJtis(now);
+  const existing = usedFileViewJtis.get(jti);
+  if (existing && existing > now) {
+    return false;
+  }
+  usedFileViewJtis.set(jti, now + (FILE_VIEW_TOKEN_TTL_SECONDS + 60) * 1000);
+  return true;
 }
 
 export function toPublicUser(user: PublicUser | User): PublicUser {
@@ -196,8 +236,17 @@ export function signResetToken(user: PublicUser): string {
   return signToken(user, "reset", resetSecret, RESET_TOKEN_TTL_SECONDS);
 }
 
+export function signFileViewToken(user: PublicUser, fileId: string): string {
+  const jti = crypto.randomBytes(16).toString("hex");
+  return signToken(user, "file_view", accessSecret, FILE_VIEW_TOKEN_TTL_SECONDS, { fileId, jti });
+}
+
 export function verifyAccessToken(token: string): VerifiedToken<"access"> {
   return decodeVerifiedToken(token, accessSecret, "access");
+}
+
+export function verifyFileViewToken(token: string): VerifiedToken<"file_view"> {
+  return decodeVerifiedToken(token, accessSecret, "file_view");
 }
 
 export function verifyRefreshToken(token: string): VerifiedToken<"refresh"> {

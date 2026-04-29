@@ -38,6 +38,8 @@ import {
   type ScheduleWorkdayException,
 } from "@/lib/schedule"
 import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
+import { useFilePreview } from "@/components/files/file-preview-context"
+import type { PreviewFile } from "@/components/files/FilePreview"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -249,6 +251,7 @@ export function ScheduleItemDialog({
 }: ScheduleItemDialogProps) {
   const today = dateKey(new Date())
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const filePreview = useFilePreview()
 
   const [topTab, setTopTab] = useState("details")
   const [subTab, setSubTab] = useState("predecessors")
@@ -1673,8 +1676,16 @@ export function ScheduleItemDialog({
                           </div>
                           {item.attachments.length > 0 ? (
                             <div className="space-y-2">
-                              {item.attachments.map((attachment) => {
+                              {item.attachments.map((attachment, attIndex) => {
                                 const Icon = attachmentIcon(attachment.icon)
+                                const previewFiles: PreviewFile[] = item.attachments.map((a) => ({
+                                  id: a.id,
+                                  fileId: a.fileId,
+                                  name: a.originalName || a.filename,
+                                  mimeType: a.mimeType,
+                                  fileSize: a.fileSize,
+                                  createdAt: a.createdAt,
+                                }))
 
                                 return (
                                   <div key={attachment.id} className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-4 py-3">
@@ -1683,14 +1694,13 @@ export function ScheduleItemDialog({
                                         <Icon className="size-4" />
                                       </div>
                                       <div>
-                                        <a
-                                          href={attachment.fileUrl || "#"}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-sm font-medium text-slate-900 hover:text-orange-700"
+                                        <button
+                                          type="button"
+                                          onClick={() => filePreview.open(previewFiles, attIndex)}
+                                          className="text-left text-sm font-medium text-slate-900 hover:text-orange-700"
                                         >
                                           {attachment.originalName}
-                                        </a>
+                                        </button>
                                         <p className="text-xs text-slate-500">
                                           {attachment.mimeType || "Unknown"} • {fmtDateTime(attachment.createdAt)}
                                         </p>

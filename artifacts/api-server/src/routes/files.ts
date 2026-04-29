@@ -7,6 +7,14 @@ import {
   assertCanViewFile,
   assertCanViewFolder,
 } from "../lib/authorization";
+import {
+  FILE_VIEW_TOKEN_TTL_SECONDS,
+  signFileViewToken,
+  toPublicUser,
+} from "../lib/auth";
+import { db } from "@workspace/db";
+import { users } from "@workspace/db/schema";
+import { and, eq, isNull } from "drizzle-orm";
 import { sanitizeDownloadFilename } from "../lib/downloads";
 import { getFileOrThrow, listFilesForFolder, purgeFile, renameFile, restoreFile, saveUploadedFiles, softDeleteFile } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
@@ -239,6 +247,53 @@ router.get(
       disposition: "inline",
       filename: displayName,
       contentType: file.mimeType,
+    });
+  }),
+);
+
+router.get(
+  "/files/:id/view",
+  asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanViewFile(req.auth!, fileId);
+    const file = await getFileOrThrow(fileId);
+
+    if (!file.fileUrl) {
+      throw new HttpError(404, "Stored file missing.");
+    }
+
+    const displayName = file.originalName ?? file.filename;
+    await streamStoredFileToResponse(res, file.fileUrl, {
+      disposition: "inline",
+      filename: displayName,
+      contentType: file.mimeType,
+    });
+  }),
+);
+
+router.post(
+  "/files/:id/signed-view",
+  asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanViewFile(req.auth!, fileId);
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, req.auth!.userId), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!user) {
+      throw new HttpError(401, "Authentication required.");
+    }
+
+    const token = signFileViewToken(toPublicUser(user), fileId);
+    const expiresAt = new Date(Date.now() + FILE_VIEW_TOKEN_TTL_SECONDS * 1000).toISOString();
+
+    res.json({
+      url: `/api/files/${fileId}/view-signed?token=${encodeURIComponent(token)}`,
+      expiresAt,
+      expiresIn: FILE_VIEW_TOKEN_TTL_SECONDS,
     });
   }),
 );

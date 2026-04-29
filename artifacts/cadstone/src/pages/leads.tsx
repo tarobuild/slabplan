@@ -73,6 +73,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
 import { invalidateAppData } from "@/lib/data-refresh"
 import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
+import { useFilePreview } from "@/components/files/file-preview-context"
+import type { PreviewFile } from "@/components/files/FilePreview"
 import { toast } from "sonner"
 
 type LeadContact = {
@@ -314,6 +316,7 @@ function DetailRow({
 
 export default function LeadsPage() {
   useDocumentTitle("Leads")
+  const filePreview = useFilePreview()
   const [leads, setLeads] = useState<Lead[]>([])
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -1762,7 +1765,17 @@ export default function LeadsPage() {
                         </div>
                       ) : (
                         <div className="space-y-1">
-                          {leadDetail.attachments.map((att) => (
+                          {leadDetail.attachments.map((att, attIdx) => {
+                            const previewFiles: PreviewFile[] = leadDetail.attachments.map((a) => ({
+                              id: a.id,
+                              fileId: a.fileId,
+                              name: a.originalName,
+                              mimeType: a.mimeType,
+                              fileSize: a.fileSize,
+                              uploadedByName: a.uploadedByName,
+                              createdAt: a.createdAt,
+                            }))
+                            return (
                             <div
                               key={att.id}
                               className="flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-slate-50 group"
@@ -1771,15 +1784,14 @@ export default function LeadsPage() {
                                 {getAttachmentIcon(att.mimeType)}
                               </span>
                               <div className="flex-1 min-w-0">
-                                <a
-                                  href={att.fileUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-sm text-slate-800 font-medium truncate block hover:text-orange-600 hover:underline"
+                                <button
+                                  type="button"
+                                  onClick={() => filePreview.open(previewFiles, attIdx)}
+                                  className="text-sm text-slate-800 font-medium truncate block hover:text-orange-600 hover:underline text-left w-full"
                                   title={att.originalName}
                                 >
                                   {att.originalName}
-                                </a>
+                                </button>
                                 <p className="text-xs text-slate-400 mt-0.5">
                                   {[
                                     fmtFileSize(att.fileSize),
@@ -1803,7 +1815,8 @@ export default function LeadsPage() {
                                 )}
                               </button>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )}
                     </div>

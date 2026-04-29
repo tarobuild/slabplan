@@ -22,6 +22,11 @@ const isolatedUserId = crypto.randomUUID();
 
 const accessibleJobId = crypto.randomUUID();
 const inaccessibleJobId = crypto.randomUUID();
+const adminOnlyJobIds = [
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+];
 
 const accessibleActivityIds = [
   crypto.randomUUID(),
@@ -37,6 +42,15 @@ const crewDailyLogIds = [
   crypto.randomUUID(),
 ];
 
+const pmOwnedLeadId = crypto.randomUUID();
+const pmAssignedLeadId = crypto.randomUUID();
+const otherAdminLeadIds = [
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+];
+const allLeadIds = [pmOwnedLeadId, pmAssignedLeadId, ...otherAdminLeadIds];
+
 const testUserIds = [
   adminUserId,
   pmUserId,
@@ -44,7 +58,7 @@ const testUserIds = [
   otherAdminId,
   isolatedUserId,
 ];
-const testJobIds = [accessibleJobId, inaccessibleJobId];
+const testJobIds = [accessibleJobId, inaccessibleJobId, ...adminOnlyJobIds];
 const testActivityIds = [...accessibleActivityIds, ...inaccessibleActivityIds];
 
 function makePublicUser(id: string, role: string, email: string, fullName: string) {
@@ -70,9 +84,14 @@ before(async () => {
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
   const { db } = await import("@workspace/db");
-  const { users, jobs, activityLog, dailyLogs } = await import(
-    "@workspace/db/schema"
-  );
+  const {
+    users,
+    jobs,
+    activityLog,
+    dailyLogs,
+    leads,
+    leadSalespeople,
+  } = await import("@workspace/db/schema");
 
   await prepareApp();
 
@@ -133,6 +152,37 @@ before(async () => {
       title: "ZZZ Pagination Inaccessible Job",
       createdBy: otherAdminId,
       projectManagerId: otherAdminId,
+    },
+    ...adminOnlyJobIds.map((id, i) => ({
+      id,
+      title: `ZZZ Pagination Admin Only Job ${i}`,
+      createdBy: otherAdminId,
+      projectManagerId: otherAdminId,
+    })),
+  ]);
+
+  await db.insert(leads).values([
+    {
+      id: pmOwnedLeadId,
+      title: "ZZZ Pagination PM Owned Lead",
+      createdBy: pmUserId,
+    },
+    {
+      id: pmAssignedLeadId,
+      title: "ZZZ Pagination PM Assigned Lead",
+      createdBy: otherAdminId,
+    },
+    ...otherAdminLeadIds.map((id, i) => ({
+      id,
+      title: `ZZZ Pagination Admin Only Lead ${i}`,
+      createdBy: otherAdminId,
+    })),
+  ]);
+
+  await db.insert(leadSalespeople).values([
+    {
+      leadId: pmAssignedLeadId,
+      userId: pmUserId,
     },
   ]);
 
@@ -203,9 +253,17 @@ before(async () => {
 
 after(async () => {
   const { db, pool } = await import("@workspace/db");
-  const { activityLog, dailyLogs, jobAssignees, jobs, users } = await import(
-    "@workspace/db/schema"
-  );
+  const {
+    activityLog,
+    dailyLogs,
+    jobAssignees,
+    jobs,
+    leadSalespeople,
+    leadSources,
+    leadTags,
+    leads,
+    users,
+  } = await import("@workspace/db/schema");
   const { inArray } = await import("drizzle-orm");
 
   try {
@@ -214,6 +272,12 @@ after(async () => {
       .where(inArray(activityLog.id, testActivityIds));
     await db.delete(dailyLogs).where(inArray(dailyLogs.id, crewDailyLogIds));
     await db.delete(jobAssignees).where(inArray(jobAssignees.jobId, testJobIds));
+    await db
+      .delete(leadSalespeople)
+      .where(inArray(leadSalespeople.leadId, allLeadIds));
+    await db.delete(leadTags).where(inArray(leadTags.leadId, allLeadIds));
+    await db.delete(leadSources).where(inArray(leadSources.leadId, allLeadIds));
+    await db.delete(leads).where(inArray(leads.id, allLeadIds));
     await db.delete(jobs).where(inArray(jobs.id, testJobIds));
     await db.delete(users).where(inArray(users.id, testUserIds));
   } finally {
@@ -504,4 +568,380 @@ test("GET /daily-logs/mine never returns logs created by other users", async () 
       "PM must not see daily logs the crew member created",
     );
   }
+});
+
+test("GET /jobs returns the {jobs, pagination} envelope with admin scope", async () => {
+  const response = await fetch(`${baseUrl}/api/jobs?pageSize=100`, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    jobs: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.ok(Array.isArray(body.jobs));
+  assert.equal(typeof body.pagination, "object");
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.pageSize, "number");
+  assert.equal(typeof body.pagination.totalItems, "number");
+  assert.equal(typeof body.pagination.totalPages, "number");
+
+  const returnedIds = new Set(body.jobs.map((row) => row.id));
+  for (const id of testJobIds) {
+    assert.equal(
+      returnedIds.has(id),
+      true,
+      `admin should see seeded job ${id}`,
+    );
+  }
+});
+
+test("GET /jobs limits returned rows in SQL via pageSize", async () => {
+  const response = await fetch(`${baseUrl}/api/jobs?pageSize=1`, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    jobs: unknown[];
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(body.jobs.length, 1, "pageSize=1 must return exactly one row");
+  assert.equal(body.pagination.pageSize, 1);
+  assert.equal(body.pagination.page, 1);
+  assert.ok(
+    body.pagination.totalItems >= testJobIds.length,
+    "totalItems should at least include our seeded jobs",
+  );
+  assert.equal(
+    body.pagination.totalPages,
+    Math.max(1, Math.ceil(body.pagination.totalItems / 1)),
+  );
+});
+
+test("GET /jobs paginates without duplicates across pages", async () => {
+  const firstPage = await fetch(
+    `${baseUrl}/api/jobs?pageSize=2&page=1&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+  assert.equal(firstPage.status, 200);
+  const firstBody = (await firstPage.json()) as {
+    jobs: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(firstBody.jobs.length, 2);
+  assert.equal(firstBody.pagination.page, 1);
+  assert.equal(firstBody.pagination.pageSize, 2);
+  assert.ok(firstBody.pagination.totalItems >= testJobIds.length);
+
+  const secondPage = await fetch(
+    `${baseUrl}/api/jobs?pageSize=2&page=2&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+  assert.equal(secondPage.status, 200);
+  const secondBody = (await secondPage.json()) as {
+    jobs: Array<{ id: string }>;
+  };
+
+  assert.ok(secondBody.jobs.length > 0);
+
+  const firstIds = new Set(firstBody.jobs.map((row) => row.id));
+  for (const row of secondBody.jobs) {
+    assert.equal(
+      firstIds.has(row.id),
+      false,
+      "page 2 must not repeat page 1 ids",
+    );
+  }
+});
+
+test("GET /jobs hides jobs the project manager cannot see", async () => {
+  const response = await fetch(`${baseUrl}/api/jobs?pageSize=100`, {
+    headers: { authorization: `Bearer ${pmToken}` },
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    jobs: Array<{ id: string }>;
+  };
+
+  const returnedIds = new Set(body.jobs.map((row) => row.id));
+  assert.equal(
+    returnedIds.has(accessibleJobId),
+    true,
+    "PM should see jobs they manage",
+  );
+  for (const id of [inaccessibleJobId, ...adminOnlyJobIds]) {
+    assert.equal(
+      returnedIds.has(id),
+      false,
+      `PM must not see jobs they do not manage (${id})`,
+    );
+  }
+});
+
+test("GET /jobs returns an empty page when the caller has no scope", async () => {
+  const response = await fetch(`${baseUrl}/api/jobs`, {
+    headers: { authorization: `Bearer ${isolatedToken}` },
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    jobs: unknown[];
+    pagination: Record<string, number>;
+  };
+
+  assert.deepEqual(body.jobs, []);
+  assert.equal(body.pagination.totalItems, 0);
+  assert.equal(body.pagination.totalPages, 1);
+});
+
+test("GET /jobs rejects pageSize above the configured cap", async () => {
+  const response = await fetch(`${baseUrl}/api/jobs?pageSize=500`, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+
+  assert.equal(response.status, 400);
+});
+
+test("GET /leads returns the {leads, pagination, summary} envelope", async () => {
+  const response = await fetch(`${baseUrl}/api/leads?pageSize=100`, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    leads: Array<{ id: string }>;
+    pagination: Record<string, number>;
+    summary: Record<string, string>;
+  };
+
+  assert.ok(Array.isArray(body.leads));
+  assert.equal(typeof body.pagination, "object");
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.pageSize, "number");
+  assert.equal(typeof body.pagination.totalItems, "number");
+  assert.equal(typeof body.pagination.totalPages, "number");
+  assert.equal(typeof body.summary, "object");
+
+  const returnedIds = new Set(body.leads.map((row) => row.id));
+  for (const id of allLeadIds) {
+    assert.equal(returnedIds.has(id), true, `admin should see lead ${id}`);
+  }
+});
+
+test("GET /leads limits returned rows in SQL via pageSize", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/leads?pageSize=1&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    leads: unknown[];
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(body.leads.length, 1, "pageSize=1 must return exactly one row");
+  assert.equal(body.pagination.page, 1);
+  assert.equal(body.pagination.pageSize, 1);
+  assert.equal(body.pagination.totalItems, allLeadIds.length);
+  assert.equal(body.pagination.totalPages, allLeadIds.length);
+});
+
+test("GET /leads paginates without duplicates across pages", async () => {
+  const firstResponse = await fetch(
+    `${baseUrl}/api/leads?pageSize=2&page=1&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+  assert.equal(firstResponse.status, 200);
+  const firstBody = (await firstResponse.json()) as {
+    leads: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(firstBody.leads.length, 2);
+  assert.equal(firstBody.pagination.totalItems, allLeadIds.length);
+  assert.equal(
+    firstBody.pagination.totalPages,
+    Math.ceil(allLeadIds.length / 2),
+  );
+
+  const lastResponse = await fetch(
+    `${baseUrl}/api/leads?pageSize=2&page=${firstBody.pagination.totalPages}&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+  const lastBody = (await lastResponse.json()) as {
+    leads: Array<{ id: string }>;
+  };
+
+  assert.ok(lastBody.leads.length > 0);
+
+  const firstIds = new Set(firstBody.leads.map((row) => row.id));
+  for (const row of lastBody.leads) {
+    assert.equal(
+      firstIds.has(row.id),
+      false,
+      "subsequent pages must not repeat earlier rows",
+    );
+  }
+});
+
+test("GET /leads hides leads the project manager cannot see", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/leads?pageSize=100&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    leads: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  const returnedIds = new Set(body.leads.map((row) => row.id));
+  assert.equal(
+    returnedIds.has(pmOwnedLeadId),
+    true,
+    "PM should see leads they created",
+  );
+  assert.equal(
+    returnedIds.has(pmAssignedLeadId),
+    true,
+    "PM should see leads where they are a salesperson",
+  );
+  for (const id of otherAdminLeadIds) {
+    assert.equal(
+      returnedIds.has(id),
+      false,
+      `PM must not see other admin's lead ${id}`,
+    );
+  }
+  assert.equal(body.pagination.totalItems, 2);
+});
+
+test("GET /leads forbids crew members at the route layer", async () => {
+  const response = await fetch(`${baseUrl}/api/leads`, {
+    headers: { authorization: `Bearer ${crewToken}` },
+  });
+
+  assert.equal(response.status, 403);
+});
+
+test("GET /leads rejects pageSize above the configured cap", async () => {
+  const response = await fetch(`${baseUrl}/api/leads?pageSize=500`, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+
+  assert.equal(response.status, 400);
+});
+
+test("GET /search returns the documented {results} envelope", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    results: Array<{ id: string; type: string; title: string; href: string }>;
+  };
+
+  assert.ok(Array.isArray(body.results));
+  assert.ok(body.results.length > 0, "search must return seeded matches");
+  for (const result of body.results) {
+    assert.equal(typeof result.id, "string");
+    assert.equal(typeof result.type, "string");
+    assert.equal(typeof result.title, "string");
+    assert.equal(typeof result.href, "string");
+  }
+});
+
+test("GET /search caps results at the configured limit", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&limit=2`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    results: unknown[];
+  };
+
+  assert.ok(
+    body.results.length <= 2,
+    `limit=2 must cap results, got ${body.results.length}`,
+  );
+});
+
+test("GET /search rejects limits above the documented maximum", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&limit=100`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 400);
+});
+
+test("GET /search hides jobs and leads the project manager cannot see", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&limit=10`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    results: Array<{ id: string; type: string }>;
+  };
+
+  const returnedIds = new Set(body.results.map((result) => result.id));
+
+  assert.equal(
+    returnedIds.has(accessibleJobId),
+    true,
+    "PM search must still return jobs the PM can access",
+  );
+  assert.equal(
+    returnedIds.has(pmOwnedLeadId),
+    true,
+    "PM search must still return leads the PM created",
+  );
+  assert.equal(
+    returnedIds.has(pmAssignedLeadId),
+    true,
+    "PM search must still return leads where the PM is a salesperson",
+  );
+
+  for (const id of [inaccessibleJobId, ...adminOnlyJobIds]) {
+    assert.equal(
+      returnedIds.has(id),
+      false,
+      `PM search must not return inaccessible job ${id}`,
+    );
+  }
+  for (const id of otherAdminLeadIds) {
+    assert.equal(
+      returnedIds.has(id),
+      false,
+      `PM search must not return inaccessible lead ${id}`,
+    );
+  }
+});
+
+test("GET /search returns no results when the caller has no scope", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${isolatedToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    results: unknown[];
+  };
+
+  assert.deepEqual(body.results, []);
 });

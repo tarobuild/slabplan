@@ -9277,14 +9277,80 @@
           "search"
         ],
         "summary": "GET /search",
-        "description": "Route defined in artifacts/api-server/src/routes/search.ts. Validated query with querySchema.",
+        "description": "Route defined in artifacts/api-server/src/routes/search.ts. Validated query with querySchema. Returns results paged through the {results, pagination} envelope so callers can scroll past the first page of matches.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Search term. 1-100 characters, trimmed.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "1-indexed page of results. Capped at 20.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "Number of results per page. Capped at 25.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25,
+              "default": 10
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Successful response",
+            "description": "Paged search results.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "type": "object",
+                  "required": ["results", "pagination"],
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "type", "title", "href"],
+                        "properties": {
+                          "id": { "type": "string" },
+                          "type": {
+                            "type": "string",
+                            "enum": ["job", "lead", "file", "schedule"]
+                          },
+                          "title": { "type": "string" },
+                          "subtitle": { "type": "string" },
+                          "href": { "type": "string" }
+                        }
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "required": ["page", "pageSize", "hasMore"],
+                      "properties": {
+                        "page": { "type": "integer", "minimum": 1 },
+                        "pageSize": { "type": "integer", "minimum": 1 },
+                        "hasMore": { "type": "boolean" }
+                      }
+                    }
+                  }
                 }
               }
             }

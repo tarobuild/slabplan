@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
+import GlobalSearch from "./GlobalSearch"
 import Sidebar from "./Sidebar"
 import { logoutSession } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
@@ -178,6 +179,11 @@ export default function TopNav() {
         </nav>
 
         <div className="flex-1" />
+
+        {/* Global search — desktop only */}
+        <div className="hidden lg:block w-72 mr-1">
+          <GlobalSearch />
+        </div>
 
         {/* User menu */}
         <DropdownMenu>

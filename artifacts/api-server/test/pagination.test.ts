@@ -991,16 +991,27 @@ test("GET /leads rejects pageSize above the configured cap", async () => {
   assert.equal(response.status, 400);
 });
 
-test("GET /search returns the documented {results} envelope", async () => {
+type SearchResult = {
+  id: string;
+  type: string;
+  title: string;
+  subtitle?: string;
+  href: string;
+};
+
+type SearchResponse = {
+  results: SearchResult[];
+  pagination: { page: number; pageSize: number; hasMore: boolean };
+};
+
+test("GET /search returns the documented {results, pagination} envelope", async () => {
   const response = await fetch(
     `${baseUrl}/api/search?q=ZZZ%20Pagination`,
     { headers: { authorization: `Bearer ${adminToken}` } },
   );
 
   assert.equal(response.status, 200);
-  const body = (await response.json()) as {
-    results: Array<{ id: string; type: string; title: string; href: string }>;
-  };
+  const body = (await response.json()) as SearchResponse;
 
   assert.ok(Array.isArray(body.results));
   assert.ok(body.results.length > 0, "search must return seeded matches");
@@ -1010,44 +1021,93 @@ test("GET /search returns the documented {results} envelope", async () => {
     assert.equal(typeof result.title, "string");
     assert.equal(typeof result.href, "string");
   }
+
+  assert.equal(typeof body.pagination, "object");
+  assert.equal(body.pagination.page, 1);
+  assert.equal(body.pagination.pageSize, 10);
+  assert.equal(typeof body.pagination.hasMore, "boolean");
 });
 
-test("GET /search caps results at the configured limit", async () => {
+test("GET /search caps results at the configured pageSize", async () => {
   const response = await fetch(
-    `${baseUrl}/api/search?q=ZZZ%20Pagination&limit=2`,
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=2`,
     { headers: { authorization: `Bearer ${adminToken}` } },
   );
 
   assert.equal(response.status, 200);
-  const body = (await response.json()) as {
-    results: unknown[];
-  };
+  const body = (await response.json()) as SearchResponse;
 
   assert.ok(
     body.results.length <= 2,
-    `limit=2 must cap results, got ${body.results.length}`,
+    `pageSize=2 must cap results, got ${body.results.length}`,
   );
+  assert.equal(body.pagination.pageSize, 2);
 });
 
-test("GET /search rejects limits above the documented maximum", async () => {
+test("GET /search rejects pageSize above the documented maximum", async () => {
   const response = await fetch(
-    `${baseUrl}/api/search?q=ZZZ%20Pagination&limit=100`,
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=100`,
     { headers: { authorization: `Bearer ${adminToken}` } },
   );
 
   assert.equal(response.status, 400);
 });
 
+test("GET /search rejects page numbers above the documented maximum", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&page=21`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 400);
+});
+
+test("GET /search lets the caller page past the first 10 results", async () => {
+  const firstResponse = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=2&page=1`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(firstResponse.status, 200);
+  const firstBody = (await firstResponse.json()) as SearchResponse;
+  assert.ok(firstBody.results.length <= 2);
+  assert.equal(firstBody.pagination.page, 1);
+  assert.equal(firstBody.pagination.pageSize, 2);
+  assert.equal(
+    firstBody.pagination.hasMore,
+    true,
+    "seeded data must produce more than one page at pageSize=2",
+  );
+
+  const secondResponse = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=2&page=2`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(secondResponse.status, 200);
+  const secondBody = (await secondResponse.json()) as SearchResponse;
+  assert.equal(secondBody.pagination.page, 2);
+  assert.equal(secondBody.pagination.pageSize, 2);
+  assert.ok(secondBody.results.length > 0, "second page must include at least one result");
+
+  const firstIds = new Set(firstBody.results.map((result) => result.id));
+  for (const result of secondBody.results) {
+    assert.equal(
+      firstIds.has(result.id),
+      false,
+      `second page must not repeat first page result ${result.id}`,
+    );
+  }
+});
+
 test("GET /search hides jobs and leads the project manager cannot see", async () => {
   const response = await fetch(
-    `${baseUrl}/api/search?q=ZZZ%20Pagination&limit=10`,
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=25`,
     { headers: { authorization: `Bearer ${pmToken}` } },
   );
 
   assert.equal(response.status, 200);
-  const body = (await response.json()) as {
-    results: Array<{ id: string; type: string }>;
-  };
+  const body = (await response.json()) as SearchResponse;
 
   const returnedIds = new Set(body.results.map((result) => result.id));
 
@@ -1090,11 +1150,11 @@ test("GET /search returns no results when the caller has no scope", async () => 
   );
 
   assert.equal(response.status, 200);
-  const body = (await response.json()) as {
-    results: unknown[];
-  };
+  const body = (await response.json()) as SearchResponse;
 
   assert.deepEqual(body.results, []);
+  assert.equal(body.pagination.page, 1);
+  assert.equal(body.pagination.hasMore, false);
 });
 
 

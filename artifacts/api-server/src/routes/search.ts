@@ -21,9 +21,20 @@ import { buildContainsLikePattern } from "../lib/search";
 
 const router: IRouter = Router();
 
+const MAX_PAGE_SIZE = 25;
+const MAX_PAGE = 20;
+const MAX_PER_SOURCE_FETCH = 200;
+
 const querySchema = z.object({
   q: z.string().trim().min(1).max(100),
-  limit: z.coerce.number().int().positive().max(10).optional().default(10),
+  page: z.coerce.number().int().positive().max(MAX_PAGE).optional().default(1),
+  pageSize: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(MAX_PAGE_SIZE)
+    .optional()
+    .default(10),
 });
 
 router.get(
@@ -36,8 +47,14 @@ router.get(
     }
 
     const search = buildContainsLikePattern(query.data.q);
-    const limit = query.data.limit;
-    const queryLimit = Math.min(limit * 3, 30);
+    const { page, pageSize } = query.data;
+    const offset = (page - 1) * pageSize;
+    const endIndex = offset + pageSize;
+    // Fetch enough rows from each source to cover the requested page plus a
+    // lookahead row used to compute `hasMore`. We bound per-source fetches so
+    // a query that matches every row in a giant table cannot blow up memory.
+    const queryLimit = Math.min(endIndex + 1, MAX_PER_SOURCE_FETCH);
+
     const [accessibleJobIds, accessibleLeadIds] = await Promise.all([
       listAccessibleJobIds(req.auth!),
       listAccessibleLeadIds(req.auth!),
@@ -47,7 +64,10 @@ router.get(
     const noLeadAccess = accessibleLeadIds !== null && accessibleLeadIds.length === 0;
 
     if (noJobAccess && noLeadAccess) {
-      res.json({ results: [] });
+      res.json({
+        results: [],
+        pagination: { page, pageSize, hasMore: false },
+      });
       return;
     }
 
@@ -257,7 +277,7 @@ router.get(
       }
     }
 
-    const results = [
+    const merged = [
       ...jobRows.map((job) => ({
         id: job.id,
         type: "job" as const,
@@ -291,9 +311,15 @@ router.get(
         subtitle: `${item.jobTitle} • ${item.startDate} to ${item.endDate}`,
         href: `/jobs/${item.jobId}/schedule?item=${item.id}`,
       })),
-    ].slice(0, limit);
+    ];
 
-    res.json({ results });
+    const results = merged.slice(offset, endIndex);
+    const hasMore = page < MAX_PAGE && merged.length > endIndex;
+
+    res.json({
+      results,
+      pagination: { page, pageSize, hasMore },
+    });
   }),
 );
 

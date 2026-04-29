@@ -161,6 +161,19 @@ const schedulePayloadSchema = z
         path: ["startTime"],
       });
     }
+
+    const seenPredecessorIds = new Set<string>();
+    value.predecessors.forEach((predecessor, index) => {
+      if (seenPredecessorIds.has(predecessor.scheduleItemId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Duplicate predecessors are not allowed.",
+          path: ["predecessors", index, "scheduleItemId"],
+        });
+        return;
+      }
+      seenPredecessorIds.add(predecessor.scheduleItemId);
+    });
   });
 
 const scheduleSettingPayloadSchema = z.object({
@@ -2737,6 +2750,11 @@ router.put(
     }
 
     const itemId = getParam(req.params.id, "schedule item id");
+
+    if (body.data.predecessors.some((predecessor) => predecessor.scheduleItemId === itemId)) {
+      throw new HttpError(400, "A schedule item cannot be its own predecessor.");
+    }
+
     const existing = await getScheduleItemOrThrow(itemId);
     const existingHydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
 

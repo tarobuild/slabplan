@@ -2,7 +2,7 @@ import bcrypt from "bcrypt";
 import { and, eq, isNull } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { users } from "@workspace/db/schema";
+import { safeUserColumns, users } from "@workspace/db/schema";
 import {
   clearRefreshTokenCookie,
   clearUploadTokenCookie,
@@ -111,7 +111,7 @@ function normalizeFullName(value: unknown): string {
   return trimmed;
 }
 
-async function findActiveUserByEmail(email: string) {
+async function findActiveUserByEmailWithPasswordHash(email: string) {
   const [user] = await db
     .select()
     .from(users)
@@ -121,9 +121,19 @@ async function findActiveUserByEmail(email: string) {
   return user ?? null;
 }
 
+async function findActiveUserByEmail(email: string) {
+  const [user] = await db
+    .select(safeUserColumns)
+    .from(users)
+    .where(and(eq(users.email, email), isNull(users.deletedAt)))
+    .limit(1);
+
+  return user ?? null;
+}
+
 async function findActiveUserById(id: string) {
   const [user] = await db
-    .select()
+    .select(safeUserColumns)
     .from(users)
     .where(and(eq(users.id, id), isNull(users.deletedAt)))
     .limit(1);
@@ -169,7 +179,7 @@ router.post(
     const email = normalizeEmail(req.body.email);
     const password = normalizeLoginPassword(req.body.password);
 
-    const user = await findActiveUserByEmail(email);
+    const user = await findActiveUserByEmailWithPasswordHash(email);
 
     if (!user) {
       throw new HttpError(401, "Invalid email or password.");

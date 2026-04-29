@@ -3,7 +3,7 @@ import { and, asc, count, eq, inArray, isNull, ne } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
-import { users } from "@workspace/db/schema";
+import { safeUserColumns, users } from "@workspace/db/schema";
 import { toPublicUser } from "../lib/auth";
 import { HttpError, asyncHandler } from "../lib/http";
 import { requireManagerOrAbove } from "../middleware/require-auth";
@@ -75,6 +75,16 @@ const userListQuerySchema = z.object({
 
 async function findActiveUserById(id: string) {
   const [user] = await db
+    .select(safeUserColumns)
+    .from(users)
+    .where(and(eq(users.id, id), isNull(users.deletedAt)))
+    .limit(1);
+
+  return user ?? null;
+}
+
+async function findActiveUserWithPasswordHash(id: string) {
+  const [user] = await db
     .select()
     .from(users)
     .where(and(eq(users.id, id), isNull(users.deletedAt)))
@@ -104,7 +114,7 @@ router.get(
           ),
         ),
       db
-        .select()
+        .select(safeUserColumns)
         .from(users)
         .where(
           and(
@@ -144,7 +154,7 @@ router.get(
 router.put(
   "/me",
   asyncHandler(async (req, res) => {
-    const user = await findActiveUserById(req.auth!.userId);
+    const user = await findActiveUserWithPasswordHash(req.auth!.userId);
 
     if (!user) {
       throw new HttpError(404, "User not found.");
@@ -199,7 +209,7 @@ router.put(
 router.post(
   "/me/password",
   asyncHandler(async (req, res) => {
-    const user = await findActiveUserById(req.auth!.userId);
+    const user = await findActiveUserWithPasswordHash(req.auth!.userId);
 
     if (!user) {
       throw new HttpError(404, "User not found.");

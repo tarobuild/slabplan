@@ -86,6 +86,18 @@ export const users = pgTable(
   ],
 );
 
+export const safeUserColumns = {
+  id: users.id,
+  email: users.email,
+  fullName: users.fullName,
+  role: users.role,
+  avatarUrl: users.avatarUrl,
+  phone: users.phone,
+  createdAt: users.createdAt,
+  updatedAt: users.updatedAt,
+  deletedAt: users.deletedAt,
+} as const;
+
 export const clients = pgTable(
   "clients",
   {

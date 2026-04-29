@@ -167,7 +167,7 @@ function decodeVerifiedToken<TType extends TokenType>(
   };
 }
 
-export function toPublicUser(user: User): PublicUser {
+export function toPublicUser(user: PublicUser | User): PublicUser {
   return {
     id: user.id,
     email: user.email,
@@ -228,7 +228,7 @@ export function clearUploadTokenCookie(res: Response): void {
   res.clearCookie(uploadCookieName, uploadCookieOptions);
 }
 
-export function sendAuthResponse(res: Response, user: User): void {
+export function sendAuthResponse(res: Response, user: PublicUser | User): void {
   const publicUser = toPublicUser(user);
   const accessToken = signAccessToken(publicUser);
   const refreshToken = signRefreshToken(publicUser);

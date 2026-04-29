@@ -23,6 +23,7 @@ import {
   RotateCcw,
   RotateCw,
   Settings2,
+  X,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { useDocumentTitle } from "@/hooks/use-document-title"
@@ -1551,6 +1552,7 @@ export default function JobSchedulePage() {
   const [calendarPeriod, setCalendarPeriod] = useState<CalendarPeriod>("month")
   const [calendarAnchorDate, setCalendarAnchorDate] = useState(() => new Date())
   const [calendarExpanded, setCalendarExpanded] = useState(false)
+  const [calendarHintDismissed, setCalendarHintDismissed] = useState(false)
   const [listDisplayMode, setListDisplayMode] = useState<ListDisplayMode>("phases")
   const [sortKey, setSortKey] = useState<SortKey>("start")
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
@@ -1826,6 +1828,17 @@ export default function JobSchedulePage() {
     setWorkdayForm(defaultExceptionForm(jobId))
     setWorkdayEditorOpen(false)
     setTrackedConflictIds([])
+
+    if (typeof window !== "undefined") {
+      try {
+        const dismissed = window.sessionStorage.getItem(`cadstone:job-schedule:hint-dismissed:${jobId}`) === "1"
+        setCalendarHintDismissed(dismissed)
+      } catch {
+        setCalendarHintDismissed(false)
+      }
+    } else {
+      setCalendarHintDismissed(false)
+    }
   }, [jobId])
 
   useEffect(() => {
@@ -3358,26 +3371,57 @@ export default function JobSchedulePage() {
                         <Skeleton key={index} className="h-28 w-full" />
                       ))}
                     </div>
-                  ) : isEmpty ? (
-                    <EmptyState
-                      title={activeItems.length === 0 ? "No schedule items yet" : "No schedule items match this filter"}
-                      description={
-                        activeItems.length === 0
-                          ? "Add the first schedule item to start coordinating fabrication, delivery, and install work."
-                          : "Adjust your filters or create another schedule item to populate this calendar."
-                      }
-                      actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
-                      onAction={
-                        activeItems.length === 0
-                          ? () => openNewItem()
-                          : () => {
-                              const reset = buildFilterPreset("all")
-                              setAppliedFilters(reset)
-                              setDraftFilters(reset)
+                  ) : (
+                  <div className="space-y-3">
+                  {activeItems.length === 0 && !calendarHintDismissed ? (
+                    <div className="flex items-start justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-sm text-blue-900">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays className="size-4 text-blue-600" />
+                        <span>Click any day to add a schedule item.</span>
+                      </div>
+                      <button
+                        type="button"
+                        aria-label="Dismiss hint"
+                        className="rounded p-0.5 text-blue-700/70 hover:bg-blue-100 hover:text-blue-900"
+                        onClick={() => {
+                          setCalendarHintDismissed(true)
+                          if (typeof window !== "undefined" && jobId) {
+                            try {
+                              window.sessionStorage.setItem(`cadstone:job-schedule:hint-dismissed:${jobId}`, "1")
+                            } catch {
+                              /* ignore storage errors */
                             }
-                      }
-                    />
-                  ) : calendarPeriod === "month" ? (
+                          }
+                        }}
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  ) : null}
+                  {activeItems.length > 0 && filteredItems.length === 0 ? (
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-100 bg-amber-50/70 px-3 py-2 text-sm text-amber-900">
+                      <div className="flex items-center gap-2">
+                        <Filter className="size-4 text-amber-600" />
+                        <span>
+                          0 of {activeItems.length} item{activeItems.length === 1 ? "" : "s"} match your filter
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 border-amber-200 bg-white text-amber-900 hover:bg-amber-50"
+                        onClick={() => {
+                          const reset = buildFilterPreset("all")
+                          setAppliedFilters(reset)
+                          setDraftFilters(reset)
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    </div>
+                  ) : null}
+                  {calendarPeriod === "month" ? (
                     <div className="overflow-hidden rounded-xl border border-[#E5E7EB]">
                       <div className="grid grid-cols-7 border-b border-[#E5E7EB] bg-[#F8FAFC]">
                         {DAYS_OF_WEEK.map((day, index) => (
@@ -3884,6 +3928,8 @@ export default function JobSchedulePage() {
                           ))}
                       </div>
                     </div>
+                  )}
+                  </div>
                   )}
                 </div>
               </div>

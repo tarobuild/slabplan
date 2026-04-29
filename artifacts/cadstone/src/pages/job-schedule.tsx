@@ -312,6 +312,44 @@ const STATUS_OPTIONS = [
 const DAY_START_HOUR = 6
 const DAY_END_HOUR = 19
 const HOUR_HEIGHT = 56
+const TIMED_GRID_TOTAL_MINUTES = (DAY_END_HOUR - DAY_START_HOUR + 1) * 60
+const DRAG_SNAP_MINUTES = 15
+const DRAG_MOVE_THRESHOLD_MINUTES = 8
+
+type DragSelection = {
+  dayKey: string
+  pointerId: number
+  rectTop: number
+  rectHeight: number
+  anchorMinutes: number
+  startMinutes: number
+  endMinutes: number
+  moved: boolean
+}
+
+function snapMinutes(min: number, step = DRAG_SNAP_MINUTES) {
+  return Math.round(min / step) * step
+}
+
+function clampMinutes(min: number) {
+  return Math.max(0, Math.min(TIMED_GRID_TOTAL_MINUTES, min))
+}
+
+function minutesFromClientY(clientY: number, rectTop: number, rectHeight: number) {
+  if (rectHeight <= 0) {
+    return 0
+  }
+  const offset = Math.max(0, Math.min(rectHeight, clientY - rectTop))
+  const minutes = (offset / rectHeight) * TIMED_GRID_TOTAL_MINUTES
+  return clampMinutes(snapMinutes(minutes))
+}
+
+function minutesToTimeString(absMin: number) {
+  const total = DAY_START_HOUR * 60 + clampMinutes(absMin)
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+}
 const LIST_PAGE_SIZE = 10
 const DAY_WIDTH_BY_SCALE: Record<GanttScale, number> = {
   day: 48,
@@ -1632,6 +1670,8 @@ export default function JobSchedulePage() {
   const [quickCreateDate, setQuickCreateDate] = useState<string | null>(null)
   const [quickCreateStartTime, setQuickCreateStartTime] = useState<string | null>(null)
   const [quickCreateEndTime, setQuickCreateEndTime] = useState<string | null>(null)
+  const [dragSelection, setDragSelection] = useState<DragSelection | null>(null)
+  const dragSelectionRef = useRef<DragSelection | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -1905,6 +1945,54 @@ export default function JobSchedulePage() {
   useEffect(() => {
     draftFutureRef.current = draftFuture
   }, [draftFuture])
+
+  useEffect(() => {
+    if (!dragSelection) {
+      return
+    }
+
+    function handleMove(event: PointerEvent) {
+      const current = dragSelectionRef.current
+      if (!current || current.pointerId !== event.pointerId) {
+        return
+      }
+      const minutes = minutesFromClientY(event.clientY, current.rectTop, current.rectHeight)
+      const start = Math.min(current.anchorMinutes, minutes)
+      const end = Math.max(current.anchorMinutes, minutes)
+      const moved = current.moved || Math.abs(minutes - current.anchorMinutes) >= DRAG_MOVE_THRESHOLD_MINUTES
+      const next: DragSelection = { ...current, startMinutes: start, endMinutes: end, moved }
+      dragSelectionRef.current = next
+      setDragSelection(next)
+    }
+
+    function handleUp(event: PointerEvent) {
+      const current = dragSelectionRef.current
+      if (!current || current.pointerId !== event.pointerId) {
+        return
+      }
+      dragSelectionRef.current = null
+      setDragSelection(null)
+      commitTimedSelection(current)
+    }
+
+    function handleCancel(event: PointerEvent) {
+      const current = dragSelectionRef.current
+      if (!current || current.pointerId !== event.pointerId) {
+        return
+      }
+      dragSelectionRef.current = null
+      setDragSelection(null)
+    }
+
+    window.addEventListener("pointermove", handleMove)
+    window.addEventListener("pointerup", handleUp)
+    window.addEventListener("pointercancel", handleCancel)
+    return () => {
+      window.removeEventListener("pointermove", handleMove)
+      window.removeEventListener("pointerup", handleUp)
+      window.removeEventListener("pointercancel", handleCancel)
+    }
+  }, [dragSelection?.pointerId])
 
   useEffect(() => {
     if (historyOpen) {
@@ -3079,6 +3167,62 @@ export default function JobSchedulePage() {
     setDialogOpen(true)
   }
 
+  function openHourBlockFromMinutes(dayKey: string, anchorMinutes: number) {
+    const hour = Math.min(DAY_END_HOUR, Math.floor(anchorMinutes / 60) + DAY_START_HOUR)
+    const startTime = `${String(hour).padStart(2, "0")}:00`
+    const endTime = `${String(Math.min(hour + 1, DAY_END_HOUR + 1)).padStart(2, "0")}:00`
+    openQuickCreate(dayKey, startTime, endTime)
+  }
+
+  function commitTimedSelection(dragState: DragSelection) {
+    const dayKey = dragState.dayKey
+    if (!dragState.moved) {
+      openHourBlockFromMinutes(dayKey, dragState.anchorMinutes)
+      return
+    }
+    let start = dragState.startMinutes
+    let end = dragState.endMinutes
+    if (end - start < DRAG_SNAP_MINUTES) {
+      end = Math.min(TIMED_GRID_TOTAL_MINUTES, start + DRAG_SNAP_MINUTES)
+      if (end - start < DRAG_SNAP_MINUTES) {
+        start = Math.max(0, end - DRAG_SNAP_MINUTES)
+      }
+    }
+    openQuickCreate(dayKey, minutesToTimeString(start), minutesToTimeString(end))
+  }
+
+  function handleTimedColumnPointerDown(event: React.PointerEvent<HTMLDivElement>, dayKey: string) {
+    if (event.button !== 0) {
+      return
+    }
+    const targetEl = event.target as HTMLElement | null
+    if (targetEl && targetEl !== event.currentTarget && targetEl.closest("button")) {
+      return
+    }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const anchorMinutes = minutesFromClientY(event.clientY, rect.top, rect.height)
+
+    if (event.pointerType !== "mouse") {
+      openHourBlockFromMinutes(dayKey, anchorMinutes)
+      return
+    }
+
+    event.preventDefault()
+
+    const next: DragSelection = {
+      dayKey,
+      pointerId: event.pointerId,
+      rectTop: rect.top,
+      rectHeight: rect.height,
+      anchorMinutes,
+      startMinutes: anchorMinutes,
+      endMinutes: anchorMinutes,
+      moved: false,
+    }
+    dragSelectionRef.current = next
+    setDragSelection(next)
+  }
+
   function openExistingItem(itemId: string) {
     setActiveItemId(itemId)
     setDialogInitDate(null)
@@ -3879,22 +4023,17 @@ export default function JobSchedulePage() {
                           return (
                             <div
                               key={dk}
-                              className="relative border-r border-[#E5E7EB] last:border-r-0"
+                              className="relative border-r border-[#E5E7EB] last:border-r-0 select-none touch-pan-y"
                               style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
+                              onPointerDown={(event) => handleTimedColumnPointerDown(event, dk)}
                             >
                               {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }).map((_, hourIndex) => (
                                 <div
                                   key={hourIndex}
                                   className={cn(
-                                    "h-14 border-b border-[#E5E7EB] last:border-b-0 hover:bg-blue-50/50 cursor-pointer transition-colors",
+                                    "pointer-events-none h-14 border-b border-[#E5E7EB] last:border-b-0 transition-colors",
                                     !workday.isWorkday && "bg-amber-50/50",
                                   )}
-                                  onClick={() => {
-                                    const hour = DAY_START_HOUR + hourIndex
-                                    const startTime = `${String(hour).padStart(2, "0")}:00`
-                                    const endTime = `${String(hour + 1).padStart(2, "0")}:00`
-                                    openQuickCreate(dk, startTime, endTime)
-                                  }}
                                 />
                               ))}
 
@@ -3942,8 +4081,26 @@ export default function JobSchedulePage() {
                                 )
                               })}
 
+                              {dragSelection && dragSelection.dayKey === dk ? (() => {
+                                const start = dragSelection.startMinutes
+                                const end = Math.max(dragSelection.endMinutes, start + DRAG_SNAP_MINUTES)
+                                const top = (start / 60) * HOUR_HEIGHT + 4
+                                const height = Math.max(((end - start) / 60) * HOUR_HEIGHT - 8, 18)
+                                return (
+                                  <div
+                                    className="pointer-events-none absolute inset-x-1 overflow-hidden rounded-xl border-2 border-dashed border-orange-500 bg-orange-500/15 px-2 py-1 text-[11px] font-semibold text-orange-700 shadow-sm"
+                                    style={{ top, height }}
+                                  >
+                                    {fmtClockRange(minutesToTimeString(start), minutesToTimeString(end))}
+                                  </div>
+                                )
+                              })() : null}
+
                               {(() => {
                                 if (!schedulePreview || !schedulePreview.isHourly) {
+                                  return null
+                                }
+                                if (dragSelection && dragSelection.dayKey === dk) {
                                   return null
                                 }
                                 const bounds = previewBoundsForDay(dk, schedulePreview)
@@ -4076,21 +4233,16 @@ export default function JobSchedulePage() {
 
                         <div
                           className={cn(
-                            "relative",
+                            "relative select-none touch-pan-y",
                             !classifyWorkday(calendarAnchorDate, workdayExceptions).isWorkday && "bg-amber-50/50",
                           )}
                           style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
+                          onPointerDown={(event) => handleTimedColumnPointerDown(event, dateKey(calendarAnchorDate))}
                         >
                           {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }).map((_, hourIndex) => (
                             <div
                               key={hourIndex}
-                              className="h-14 border-b border-[#E5E7EB] last:border-b-0 hover:bg-blue-50/50 cursor-pointer transition-colors"
-                              onClick={() => {
-                                const hour = DAY_START_HOUR + hourIndex
-                                const startTime = `${String(hour).padStart(2, "0")}:00`
-                                const endTime = `${String(hour + 1).padStart(2, "0")}:00`
-                                openQuickCreate(dateKey(calendarAnchorDate), startTime, endTime)
-                              }}
+                              className="pointer-events-none h-14 border-b border-[#E5E7EB] last:border-b-0 transition-colors"
                             />
                           ))}
 
@@ -4138,8 +4290,26 @@ export default function JobSchedulePage() {
                             )
                           })}
 
+                          {dragSelection && dragSelection.dayKey === dateKey(calendarAnchorDate) ? (() => {
+                            const start = dragSelection.startMinutes
+                            const end = Math.max(dragSelection.endMinutes, start + DRAG_SNAP_MINUTES)
+                            const top = (start / 60) * HOUR_HEIGHT + 6
+                            const height = Math.max(((end - start) / 60) * HOUR_HEIGHT - 10, 24)
+                            return (
+                              <div
+                                className="pointer-events-none absolute inset-x-1.5 overflow-hidden rounded-xl border-2 border-dashed border-orange-500 bg-orange-500/15 px-3 py-2 text-left text-xs font-semibold text-orange-700 shadow-sm"
+                                style={{ top, height }}
+                              >
+                                {fmtClockRange(minutesToTimeString(start), minutesToTimeString(end))}
+                              </div>
+                            )
+                          })() : null}
+
                           {(() => {
                             if (!schedulePreview || !schedulePreview.isHourly) {
+                              return null
+                            }
+                            if (dragSelection && dragSelection.dayKey === dateKey(calendarAnchorDate)) {
                               return null
                             }
                             const bounds = previewBoundsForDay(dateKey(calendarAnchorDate), schedulePreview)

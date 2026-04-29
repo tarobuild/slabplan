@@ -329,6 +329,11 @@ export default function LeadsPage() {
   const [form, setForm] = useState<CreateForm>(emptyCreate)
   const [contactForm, setContactForm] = useState<ContactForm>(emptyContact)
   const [saving, setSaving] = useState(false)
+  const [createFiles, setCreateFiles] = useState<File[]>([])
+  const [createFileError, setCreateFileError] = useState<string | null>(null)
+  const [createdLeadId, setCreatedLeadId] = useState<string | null>(null)
+  const [failedUploads, setFailedUploads] = useState<{ name: string; error: string }[]>([])
+  const createFilesInputRef = useRef<HTMLInputElement | null>(null)
 
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -470,49 +475,135 @@ export default function LeadsPage() {
     }
   }
 
+  const resetCreateDialogState = () => {
+    setForm(emptyCreate)
+    setContactForm(emptyContact)
+    setCreateFiles([])
+    setCreateFileError(null)
+    setCreatedLeadId(null)
+    setFailedUploads([])
+    if (createFilesInputRef.current) createFilesInputRef.current.value = ""
+  }
+
+  const handleCreateOpenChange = (open: boolean) => {
+    if (saving) return
+    if (!open) {
+      setCreateOpen(false)
+      resetCreateDialogState()
+    } else {
+      setCreateOpen(true)
+    }
+  }
+
+  const handleSelectCreateFiles = (fileList: FileList) => {
+    const newFiles = Array.from(fileList)
+    if (newFiles.length === 0) return
+    const combined = [...createFiles, ...newFiles]
+    const validationError = validateSelectedFiles(combined, "document")
+    if (validationError) {
+      setCreateFileError(validationError)
+      if (createFilesInputRef.current) createFilesInputRef.current.value = ""
+      return
+    }
+    setCreateFileError(null)
+    setCreateFiles(combined)
+    if (createFilesInputRef.current) createFilesInputRef.current.value = ""
+  }
+
+  const removeCreateFile = (index: number) => {
+    const next = createFiles.filter((_, i) => i !== index)
+    setCreateFiles(next)
+    const validationError = next.length > 0 ? validateSelectedFiles(next, "document") : null
+    setCreateFileError(validationError)
+  }
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (createFileError) return
     setSaving(true)
+
+    let leadId = createdLeadId
     try {
-      const { data } = await api.post("/leads", {
-        title: form.title,
-        status: form.status,
-        projectType: form.projectType || null,
-        city: form.city || null,
-        state: form.state || null,
-        estimatedRevenueMin: form.estimatedRevenueMin || null,
-        estimatedRevenueMax: form.estimatedRevenueMax || null,
-        confidence: form.confidence ? Number(form.confidence) : 0,
-        projectedSalesDate: form.projectedSalesDate || null,
-        notes: form.notes || null,
-        leadSource: form.leadSource || null,
-      })
+      if (!leadId) {
+        const { data } = await api.post("/leads", {
+          title: form.title,
+          status: form.status,
+          projectType: form.projectType || null,
+          city: form.city || null,
+          state: form.state || null,
+          estimatedRevenueMin: form.estimatedRevenueMin || null,
+          estimatedRevenueMax: form.estimatedRevenueMax || null,
+          confidence: form.confidence ? Number(form.confidence) : 0,
+          projectedSalesDate: form.projectedSalesDate || null,
+          notes: form.notes || null,
+          leadSource: form.leadSource || null,
+        })
 
-      const newLeadId = data.lead?.id ?? data.id
+        leadId = data.lead?.id ?? data.id
 
-      if (contactForm.displayName && contactForm.email && newLeadId) {
-        try {
-          await api.post(`/leads/${newLeadId}/contacts`, {
-            displayName: contactForm.displayName,
-            email: contactForm.email,
-            phone: contactForm.phone || null,
-          })
-        } catch {
-          toast.error("Lead created but failed to add contact")
+        if (!leadId) {
+          toast.error("Failed to create lead")
+          setSaving(false)
+          return
+        }
+
+        setCreatedLeadId(leadId)
+
+        if (contactForm.displayName && contactForm.email) {
+          try {
+            await api.post(`/leads/${leadId}/contacts`, {
+              displayName: contactForm.displayName,
+              email: contactForm.email,
+              phone: contactForm.phone || null,
+            })
+          } catch {
+            toast.error("Lead created but failed to add contact")
+          }
         }
       }
-
-      toast.success("Lead created")
-      setCreateOpen(false)
-      setForm(emptyCreate)
-      setContactForm(emptyContact)
-      fetchLeads()
-      invalidateAppData(["leads", "navigation"])
     } catch (err: unknown) {
       toast.error(getApiError(err, "Failed to create lead"))
-    } finally {
       setSaving(false)
+      return
     }
+
+    const successfulIndexes: number[] = []
+    const failures: { name: string; error: string }[] = []
+
+    for (let i = 0; i < createFiles.length; i++) {
+      const file = createFiles[i]
+      try {
+        const fd = new FormData()
+        fd.append("files", file)
+        await api.post(`/leads/${leadId}/attachments`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        })
+        successfulIndexes.push(i)
+      } catch (err) {
+        failures.push({ name: file.name, error: getApiError(err, "Upload failed") })
+      }
+    }
+
+    const remainingFiles = createFiles.filter((_, i) => !successfulIndexes.includes(i))
+    setCreateFiles(remainingFiles)
+
+    fetchLeads()
+    invalidateAppData(["leads", "navigation"])
+
+    if (failures.length === 0) {
+      toast.success("Lead created")
+      setCreateOpen(false)
+      resetCreateDialogState()
+    } else {
+      setFailedUploads(failures)
+      toast.error(
+        failures.length === 1
+          ? `Failed to upload ${failures[0].name}`
+          : `${failures.length} files failed to upload`,
+      )
+    }
+
+    setSaving(false)
   }
 
   const handleDelete = async () => {
@@ -640,8 +731,7 @@ export default function LeadsPage() {
         <Button
           size="sm"
           onClick={() => {
-            setForm(emptyCreate)
-            setContactForm(emptyContact)
+            resetCreateDialogState()
             setCreateOpen(true)
           }}
         >
@@ -707,8 +797,7 @@ export default function LeadsPage() {
                   No leads found.{" "}
                   <button
                     onClick={() => {
-                      setForm(emptyCreate)
-                      setContactForm(emptyContact)
+                      resetCreateDialogState()
                       setCreateOpen(true)
                     }}
                     className="text-orange-600 hover:underline"
@@ -848,7 +937,7 @@ export default function LeadsPage() {
       )}
 
       {/* Create Lead Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
         <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Lead Opportunity</DialogTitle>
@@ -1034,14 +1123,142 @@ export default function LeadsPage() {
                   </p>
                 )}
               </div>
+
+              {/* Attachments section */}
+              <div className="col-span-2 pt-2">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Paperclip className="size-3.5" />
+                    Attachments
+                    {createFiles.length > 0 && (
+                      <span className="text-slate-400 font-normal text-xs">
+                        ({createFiles.length})
+                      </span>
+                    )}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs px-2.5 gap-1.5"
+                    disabled={saving}
+                    onClick={() => createFilesInputRef.current?.click()}
+                  >
+                    <Upload className="size-3" />
+                    Add files
+                  </Button>
+                  <input
+                    ref={createFilesInputRef}
+                    type="file"
+                    multiple
+                    accept={uploadAcceptForMediaType("document")}
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        handleSelectCreateFiles(e.target.files)
+                      }
+                    }}
+                  />
+                </div>
+
+                {createFileError && (
+                  <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {createFileError}
+                  </div>
+                )}
+
+                {createdLeadId && failedUploads.length > 0 && (
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    <p className="font-medium">
+                      Lead saved, but {failedUploads.length === 1
+                        ? "1 file failed to upload"
+                        : `${failedUploads.length} files failed to upload`}:
+                    </p>
+                    <ul className="mt-1 list-disc list-inside space-y-0.5">
+                      {failedUploads.map((f, i) => (
+                        <li
+                          key={`${f.name}-${i}`}
+                          className="truncate"
+                          title={`${f.name}: ${f.error}`}
+                        >
+                          {f.name} — {f.error}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-xs text-amber-700">
+                      Retry the failed files or dismiss to finish.
+                    </p>
+                  </div>
+                )}
+
+                {createFiles.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-slate-200 rounded-lg">
+                    <Paperclip className="size-6 text-slate-300 mb-2" />
+                    <p className="text-sm text-slate-400">No files selected</p>
+                    <button
+                      type="button"
+                      onClick={() => !saving && createFilesInputRef.current?.click()}
+                      disabled={saving}
+                      className="mt-1 text-xs text-orange-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Choose files to attach
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {createFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${index}`}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-md border border-slate-200 bg-slate-50/60"
+                      >
+                        <span className="shrink-0">
+                          {getAttachmentIcon(file.type || null)}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className="text-sm text-slate-800 font-medium truncate"
+                            title={file.name}
+                          >
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {fmtFileSize(file.size)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="shrink-0 text-slate-400 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                          disabled={saving}
+                          onClick={() => removeCreateFile(index)}
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                Cancel
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving}
+                onClick={() => handleCreateOpenChange(false)}
+              >
+                {createdLeadId ? "Done" : "Cancel"}
               </Button>
-              <Button type="submit" disabled={saving}>
+              <Button
+                type="submit"
+                disabled={saving || !!createFileError || (createdLeadId !== null && createFiles.length === 0)}
+              >
                 {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-                Create Lead
+                {createdLeadId
+                  ? "Retry Failed Uploads"
+                  : createFiles.length > 0
+                    ? `Create Lead & Upload ${createFiles.length} File${createFiles.length === 1 ? "" : "s"}`
+                    : "Create Lead"}
               </Button>
             </DialogFooter>
           </form>

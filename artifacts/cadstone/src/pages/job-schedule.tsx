@@ -2103,6 +2103,26 @@ export default function JobSchedulePage() {
   )
   const todayOffsetPx = diffInDays(ganttRange.start, parseDate(todayIso)) * dayWidth
 
+  const ganttPreviewBounds = useMemo(() => {
+    if (!schedulePreview) {
+      return null
+    }
+
+    const rangeStartKey = dateKey(ganttRange.start)
+    const rangeEndKey = dateKey(ganttRange.end)
+
+    if (schedulePreview.endDate < rangeStartKey || schedulePreview.startDate > rangeEndKey) {
+      return null
+    }
+
+    const startKey = schedulePreview.startDate < rangeStartKey ? rangeStartKey : schedulePreview.startDate
+    const endKey = schedulePreview.endDate > rangeEndKey ? rangeEndKey : schedulePreview.endDate
+    const left = diffInDays(ganttRange.start, parseDate(startKey)) * dayWidth
+    const width = (diffInDays(parseDate(startKey), parseDate(endKey)) + 1) * dayWidth
+
+    return { left, width }
+  }, [schedulePreview, ganttRange.start, ganttRange.end, dayWidth])
+
   const ganttRows = useMemo(() => {
     if (!ganttShowPhases) {
       return ganttItems.map((item) => ({
@@ -4513,6 +4533,31 @@ export default function JobSchedulePage() {
                                   className="pointer-events-none absolute inset-y-0 z-10 w-px bg-orange-500/60"
                                   style={{ left: `${todayOffsetPx}px` }}
                                 />
+                                {schedulePreview && ganttPreviewBounds ? (
+                                  <div
+                                    data-testid="gantt-schedule-preview"
+                                    className="pointer-events-none absolute inset-y-0 z-20 rounded-md border-2 border-dashed"
+                                    style={{
+                                      left: `${ganttPreviewBounds.left}px`,
+                                      width: `${ganttPreviewBounds.width}px`,
+                                      backgroundColor: colorWithAlpha(schedulePreview.displayColor, 0.18),
+                                      borderColor: schedulePreview.displayColor,
+                                    }}
+                                  >
+                                    <div
+                                      className="absolute left-1 right-1 top-1 truncate rounded px-2 py-0.5 text-[11px] font-semibold"
+                                      style={{
+                                        color: schedulePreview.displayColor,
+                                        backgroundColor: colorWithAlpha(schedulePreview.displayColor, 0.12),
+                                      }}
+                                    >
+                                      {schedulePreview.title}
+                                      {schedulePreview.isHourly && schedulePreview.startTime && schedulePreview.endTime
+                                        ? ` · ${fmtClockRange(schedulePreview.startTime, schedulePreview.endTime)}`
+                                        : ""}
+                                    </div>
+                                  </div>
+                                ) : null}
                                 <svg className="pointer-events-none absolute inset-0 z-10 overflow-visible">
                                   {ganttDependencyLines.map((line) => (
                                     <Fragment key={line.key}>

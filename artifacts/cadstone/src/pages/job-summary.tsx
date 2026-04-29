@@ -273,6 +273,7 @@ export default function JobSummaryPage() {
 
   return (
     <div className="space-y-5">
+      {unsavedChanges.dialog}
       {/* Two-panel layout */}
       <div className="flex gap-5 items-start">
 

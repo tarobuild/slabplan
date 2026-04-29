@@ -2382,14 +2382,19 @@ function DailyLogDialog({
   ]
 
   const handleDialogOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen && !unsavedChanges.confirmDiscardChanges()) {
+    if (nextOpen) {
+      onOpenChange(true)
       return
     }
 
-    onOpenChange(nextOpen)
+    unsavedChanges.confirmDiscardChanges(() => {
+      onOpenChange(false)
+    })
   }
 
   return (
+    <>
+    {unsavedChanges.dialog}
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="max-h-[94vh] max-w-[1080px] overflow-y-auto border-slate-200 bg-white">
         <DialogHeader>
@@ -2724,6 +2729,7 @@ function DailyLogDialog({
         )}
       </DialogContent>
     </Dialog>
+    </>
   )
 }
 

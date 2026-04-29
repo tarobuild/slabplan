@@ -696,28 +696,26 @@ export default function LeadsPage() {
       setEditForm((f) => (f ? { ...f, [k]: e.target.value } : f))
 
   const closeLeadEditor = () => {
-    if (!leadUnsavedChanges.confirmDiscardChanges()) {
-      return
-    }
-
-    setIsEditing(false)
-    if (leadDetail) {
-      const nextEditForm = buildEditForm(leadDetail)
-      setEditForm(nextEditForm)
-      setSavedEditForm(nextEditForm)
-    }
+    leadUnsavedChanges.confirmDiscardChanges(() => {
+      setIsEditing(false)
+      if (leadDetail) {
+        const nextEditForm = buildEditForm(leadDetail)
+        setEditForm(nextEditForm)
+        setSavedEditForm(nextEditForm)
+      }
+    })
   }
 
   const handleSheetOpenChange = (open: boolean) => {
-    if (!open && !leadUnsavedChanges.confirmDiscardChanges()) {
+    if (open) {
       return
     }
 
-    if (!open) {
+    leadUnsavedChanges.confirmDiscardChanges(() => {
       setSheetLeadId(null)
       setIsEditing(false)
       setAttachmentError(null)
-    }
+    })
   }
 
   const revenue = (lead: Lead) => {
@@ -729,6 +727,7 @@ export default function LeadsPage() {
 
   return (
     <div className="space-y-4">
+      {leadUnsavedChanges.dialog}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Sales Leads</h1>
         <Button

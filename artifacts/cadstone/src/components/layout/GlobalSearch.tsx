@@ -83,13 +83,41 @@ function getApiErrorMessage(err: unknown, fallback: string) {
   return fallback
 }
 
-export default function GlobalSearch() {
+type GlobalSearchProps = {
+  /**
+   * Visual treatment for the input.
+   * - "topbar" (default): dark glass styling for the desktop top bar.
+   * - "panel": light styling for use inside a sheet/modal (mobile).
+   */
+  variant?: "topbar" | "panel"
+  /**
+   * When true, focuses the input on mount. Used by the mobile sheet so the
+   * keyboard pops up automatically when the search is opened.
+   */
+  autoFocus?: boolean
+  /**
+   * Called after the user picks a result and we have navigated to it. Used
+   * by the mobile sheet to close itself in addition to navigating.
+   */
+  onResultSelected?: () => void
+}
+
+export default function GlobalSearch({
+  variant = "topbar",
+  autoFocus = false,
+  onResultSelected,
+}: GlobalSearchProps = {}) {
   const navigate = useNavigate()
   const inputId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const [open, setOpen] = useState(false)
+  const isPanel = variant === "panel"
+
+  // In the panel variant the dropdown is always visible (the sheet provides
+  // the open/close affordance). In the top-bar variant the dropdown opens on
+  // focus and closes on outside click / Escape.
+  const [open, setOpen] = useState(isPanel)
   const [rawQuery, setRawQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [page, setPage] = useState(1)
@@ -99,6 +127,13 @@ export default function GlobalSearch() {
 
   const trimmedQuery = useMemo(() => debouncedQuery.trim(), [debouncedQuery])
   const queryReady = trimmedQuery.length >= MIN_QUERY_LENGTH
+
+  // Auto-focus the input on mount when requested (mobile sheet).
+  useEffect(() => {
+    if (autoFocus) {
+      inputRef.current?.focus()
+    }
+  }, [autoFocus])
 
   // Debounce the query and reset to page 1 when the user types something new.
   useEffect(() => {
@@ -152,8 +187,10 @@ export default function GlobalSearch() {
     }
   }, [open, trimmedQuery, queryReady, page])
 
-  // Close on outside click.
+  // Close on outside click — top-bar variant only. In panel mode the parent
+  // sheet handles dismiss.
   useEffect(() => {
+    if (isPanel) return
     if (!open) return
 
     function handlePointerDown(event: MouseEvent) {
@@ -169,10 +206,11 @@ export default function GlobalSearch() {
     return () => {
       window.removeEventListener("mousedown", handlePointerDown)
     }
-  }, [open])
+  }, [isPanel, open])
 
-  // Close on Escape.
+  // Close on Escape — top-bar variant only.
   useEffect(() => {
+    if (isPanel) return
     if (!open) return
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -185,14 +223,17 @@ export default function GlobalSearch() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown)
     }
-  }, [open])
+  }, [isPanel, open])
 
   const goToResult = useCallback(
     (result: SearchResult) => {
-      setOpen(false)
+      if (!isPanel) {
+        setOpen(false)
+      }
       navigate(result.href)
+      onResultSelected?.()
     },
-    [navigate],
+    [isPanel, navigate, onResultSelected],
   )
 
   const handleClear = useCallback(() => {
@@ -210,9 +251,20 @@ export default function GlobalSearch() {
   const showPager = queryReady && response !== null && (page > 1 || hasMore)
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-md">
+    <div
+      ref={containerRef}
+      className={cn(
+        "relative w-full",
+        isPanel ? "max-w-none" : "max-w-md",
+      )}
+    >
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-white/60" />
+        <Search
+          className={cn(
+            "pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2",
+            isPanel ? "text-slate-400" : "text-white/60",
+          )}
+        />
         <input
           id={inputId}
           ref={inputRef}
@@ -221,13 +273,15 @@ export default function GlobalSearch() {
           autoComplete="off"
           placeholder="Search jobs, leads, files, schedule…"
           value={rawQuery}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            if (!isPanel) setOpen(true)
+          }}
           onChange={(event) => {
             setRawQuery(event.target.value)
             if (!open) setOpen(true)
           }}
           onKeyDown={(event) => {
-            if (event.key === "Escape") {
+            if (event.key === "Escape" && !isPanel) {
               // Browsers clear `<input type="search">` on Escape natively, but
               // we want a single Escape press to also close the dropdown so the
               // user is not left looking at a stray empty-state panel.
@@ -240,9 +294,10 @@ export default function GlobalSearch() {
           aria-expanded={showDropdown}
           aria-controls={`${inputId}-results`}
           className={cn(
-            "h-8 w-full rounded-md border border-white/15 bg-white/10 pl-9 pr-9 text-sm text-white",
-            "placeholder:text-white/50 outline-none transition-colors",
-            "focus:border-white/40 focus:bg-white/15",
+            "w-full rounded-md pl-9 pr-9 text-sm outline-none transition-colors",
+            isPanel
+              ? "h-10 border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-200"
+              : "h-8 border border-white/15 bg-white/10 text-white placeholder:text-white/50 focus:border-white/40 focus:bg-white/15",
           )}
         />
         {rawQuery.length > 0 ? (
@@ -250,7 +305,12 @@ export default function GlobalSearch() {
             type="button"
             aria-label="Clear search"
             onClick={handleClear}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+            className={cn(
+              "absolute right-2 top-1/2 -translate-y-1/2 rounded p-1",
+              isPanel
+                ? "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                : "text-white/60 hover:bg-white/10 hover:text-white",
+            )}
           >
             <X className="size-3.5" />
           </button>
@@ -261,9 +321,19 @@ export default function GlobalSearch() {
         <div
           id={`${inputId}-results`}
           role="listbox"
-          className="absolute left-0 right-0 top-full z-40 mt-2 max-h-[28rem] overflow-hidden rounded-md border border-slate-200 bg-white text-slate-900 shadow-lg"
+          className={cn(
+            "z-40 overflow-hidden bg-white text-slate-900",
+            isPanel
+              ? "mt-3 flex flex-1 min-h-0 flex-col rounded-md border border-slate-200"
+              : "absolute left-0 right-0 top-full mt-2 max-h-[28rem] rounded-md border border-slate-200 shadow-lg",
+          )}
         >
-          <div className="max-h-80 overflow-y-auto">
+          <div
+            className={cn(
+              "overflow-y-auto",
+              isPanel ? "flex-1" : "max-h-80",
+            )}
+          >
             {!queryReady ? (
               <p className="px-4 py-6 text-center text-xs text-slate-500">
                 Type at least {MIN_QUERY_LENGTH} characters to search

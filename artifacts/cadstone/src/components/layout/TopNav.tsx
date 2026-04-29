@@ -7,6 +7,7 @@ import {
   Film,
   LogOut,
   Menu,
+  Search,
   Settings,
 } from "lucide-react"
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom"
@@ -18,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import GlobalSearch from "./GlobalSearch"
 import Sidebar from "./Sidebar"
 import { logoutSession } from "@/lib/api"
@@ -55,9 +56,11 @@ export default function TopNav() {
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
     setDrawerOpen(false)
+    setSearchOpen(false)
   }, [location.pathname])
 
   return (
@@ -185,6 +188,15 @@ export default function TopNav() {
           <GlobalSearch />
         </div>
 
+        {/* Search button — mobile only */}
+        <button
+          className="lg:hidden flex items-center justify-center rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Open search"
+        >
+          <Search className="size-5" />
+        </button>
+
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -289,6 +301,29 @@ export default function TopNav() {
           {/* Jobs list */}
           <div className="flex-1 overflow-hidden border-t border-slate-200">
             <Sidebar />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Mobile search sheet */}
+      <Sheet open={searchOpen} onOpenChange={setSearchOpen}>
+        <SheetContent
+          side="top"
+          className="flex h-[85vh] max-h-[85vh] flex-col gap-0 p-0"
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <SheetTitle className="text-base">Search</SheetTitle>
+            {/* Spacer so the built-in close (X) button has room. */}
+            <span className="size-6" aria-hidden="true" />
+          </div>
+          <div className="flex flex-1 min-h-0 flex-col p-4">
+            {searchOpen ? (
+              <GlobalSearch
+                variant="panel"
+                autoFocus
+                onResultSelected={() => setSearchOpen(false)}
+              />
+            ) : null}
           </div>
         </SheetContent>
       </Sheet>

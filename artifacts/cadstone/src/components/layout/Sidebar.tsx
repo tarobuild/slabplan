@@ -48,6 +48,27 @@ const EMPTY_COPY: Record<StatusFilter, string> = {
   all: "No jobs",
 }
 
+const STATUS_FILTER_STORAGE_KEY = "cadstone:sidebar:statusFilter"
+
+function isStatusFilter(value: unknown): value is StatusFilter {
+  return (
+    value === "open" ||
+    value === "closed" ||
+    value === "archived" ||
+    value === "all"
+  )
+}
+
+function readStoredStatusFilter(): StatusFilter {
+  if (typeof window === "undefined") return "open"
+  try {
+    const stored = window.localStorage.getItem(STATUS_FILTER_STORAGE_KEY)
+    return isStatusFilter(stored) ? stored : "open"
+  } catch {
+    return "open"
+  }
+}
+
 function getApiErrorMessage(err: unknown, fallback: string) {
   if (typeof err === "object" && err !== null) {
     const value = err as { response?: { data?: { message?: string } }; message?: string }
@@ -63,7 +84,9 @@ export default function Sidebar() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [search, setSearch] = useState("")
   const [sortAsc, setSortAsc] = useState(true)
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("open")
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    readStoredStatusFilter,
+  )
   const [filterOpen, setFilterOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [activeJob, setActiveJob] = useState<Job | null>(null)
@@ -85,6 +108,15 @@ export default function Sidebar() {
   }, [])
 
   useEffect(() => subscribeToDataRefresh("navigation", () => loadJobs()), [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(STATUS_FILTER_STORAGE_KEY, statusFilter)
+    } catch {
+      // Ignore storage failures (e.g. private mode quota errors).
+    }
+  }, [statusFilter])
 
   useEffect(() => {
     if (activeRef.current) {

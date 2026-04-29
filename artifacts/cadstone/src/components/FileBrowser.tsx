@@ -513,6 +513,14 @@ export default function FileBrowser({
   }
 
   const handleViewInNewTab = (file: FileItem) => {
+    // PDFs are previewed in-app so users can use the markup tools.
+    // Other document types (Word, Excel, plain text, etc.) still open in a
+    // new browser tab via the existing blob-URL flow below.
+    if ((file.mimeType ?? "").toLowerCase().includes("pdf")) {
+      openFilePreview(file)
+      return
+    }
+
     const url = buildFileViewUrl(file.id)
     if (!url) return
 

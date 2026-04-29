@@ -754,6 +754,59 @@ export const dailyLogTodos = pgTable(
   ],
 );
 
+export const fileAnnotationToolTypes = [
+  "highlighter",
+  "pen",
+  "line",
+  "arrow",
+  "rectangle",
+  "ellipse",
+  "sticky_note",
+  "text_label",
+] as const;
+
+export const fileAnnotations = pgTable(
+  "file_annotations",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    fileId: uuid("file_id")
+      .references(() => files.id, { onDelete: "cascade" })
+      .notNull(),
+    page: integer("page").notNull(),
+    toolType: varchar("tool_type", { length: 50 }).notNull(),
+    color: varchar("color", { length: 50 }).notNull().default("#facc15"),
+    thickness: numeric("thickness", { precision: 6, scale: 3 }).default("2"),
+    opacity: numeric("opacity", { precision: 4, scale: 3 }).default("1"),
+    normalizedX: numeric("normalized_x", { precision: 10, scale: 8 }).notNull(),
+    normalizedY: numeric("normalized_y", { precision: 10, scale: 8 }).notNull(),
+    normalizedW: numeric("normalized_w", { precision: 10, scale: 8 })
+      .notNull()
+      .default("0"),
+    normalizedH: numeric("normalized_h", { precision: 10, scale: 8 })
+      .notNull()
+      .default("0"),
+    content: text("content"),
+    pathData: json("path_data").$type<Array<[number, number]> | null>(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    ...baseTimestamps,
+    ...softDeleteTimestamp,
+  },
+  (table) => [
+    index("file_annotations_file_id_page_idx").on(table.fileId, table.page),
+    index("file_annotations_created_by_idx").on(table.createdBy),
+    check(
+      "file_annotations_tool_type_check",
+      sql`${table.toolType} in ('highlighter','pen','line','arrow','rectangle','ellipse','sticky_note','text_label')`,
+    ),
+    check(
+      "file_annotations_page_positive",
+      sql`${table.page} >= 1`,
+    ),
+  ],
+);
+
 export const activityLog = pgTable(
   "activity_log",
   {
@@ -812,4 +865,6 @@ export type DailyLogTag = typeof dailyLogTags.$inferSelect;
 export type DailyLogLike = typeof dailyLogLikes.$inferSelect;
 export type DailyLogComment = typeof dailyLogComments.$inferSelect;
 export type DailyLogTodo = typeof dailyLogTodos.$inferSelect;
+export type FileAnnotation = typeof fileAnnotations.$inferSelect;
+export type NewFileAnnotation = typeof fileAnnotations.$inferInsert;
 export type ActivityLogEntry = typeof activityLog.$inferSelect;

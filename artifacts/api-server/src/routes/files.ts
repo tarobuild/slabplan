@@ -17,6 +17,14 @@ import { users } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { sanitizeDownloadFilename } from "../lib/downloads";
 import { getFileOrThrow, listFilesForFolder, purgeFile, renameFile, restoreFile, saveUploadedFiles, softDeleteFile } from "../lib/file-manager";
+import {
+  TOOL_TYPES,
+  createAnnotation,
+  getAnnotationOrThrow,
+  listAnnotationsForFile,
+  softDeleteAnnotation,
+} from "../lib/file-annotations";
+import { isAdmin } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
 import { streamStoredFileToResponse } from "../lib/storage";
 
@@ -268,6 +276,109 @@ router.get(
       filename: displayName,
       contentType: file.mimeType,
     });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// File annotations (PDF markup)
+// ---------------------------------------------------------------------------
+
+const annotationToolEnum = z.enum(TOOL_TYPES);
+
+const normalizedCoord = z.coerce.number().min(-0.5).max(1.5);
+const normalizedSize = z.coerce.number().min(0).max(2);
+
+const pathPointSchema = z.tuple([z.coerce.number(), z.coerce.number()]);
+
+const createAnnotationSchema = z.object({
+  page: z.coerce.number().int().min(1),
+  toolType: annotationToolEnum,
+  color: z.string().trim().min(1).max(50),
+  thickness: z.coerce.number().min(0).max(64).optional().nullable(),
+  opacity: z.coerce.number().min(0).max(1).optional().nullable(),
+  normalizedX: normalizedCoord,
+  normalizedY: normalizedCoord,
+  normalizedW: normalizedSize.optional().nullable(),
+  normalizedH: normalizedSize.optional().nullable(),
+  content: z.string().max(2000).optional().nullable(),
+  pathData: z.array(pathPointSchema).max(20000).optional().nullable(),
+});
+
+router.get(
+  "/files/:id/annotations",
+  asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanViewFile(req.auth!, fileId);
+
+    const annotations = await listAnnotationsForFile(fileId);
+    res.json({ annotations });
+  }),
+);
+
+router.post(
+  "/files/:id/annotations",
+  asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    // Per spec: anyone with edit access to the file's job can add markup.
+    // `assertCanManageFile` enforces folder upload permissions, which is the
+    // closest stand-in for "edit access" on file-attached storage.
+    await assertCanManageFile(req.auth!, fileId);
+
+    const body = createAnnotationSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      throw new HttpError(400, "Invalid annotation payload.", body.error.flatten());
+    }
+
+    const annotation = await createAnnotation({
+      input: {
+        fileId,
+        page: body.data.page,
+        toolType: body.data.toolType,
+        color: body.data.color,
+        thickness: body.data.thickness ?? null,
+        opacity: body.data.opacity ?? null,
+        normalizedX: body.data.normalizedX,
+        normalizedY: body.data.normalizedY,
+        normalizedW: body.data.normalizedW ?? 0,
+        normalizedH: body.data.normalizedH ?? 0,
+        content: body.data.content ?? null,
+        pathData: body.data.pathData ?? null,
+      },
+      userId: req.auth!.userId,
+    });
+
+    res.status(201).json({ annotation });
+  }),
+);
+
+router.delete(
+  "/files/:id/annotations/:annotationId",
+  asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    const annotationId = getParam(req.params.annotationId, "annotation id");
+
+    // Must at least be able to view the file.
+    await assertCanViewFile(req.auth!, fileId);
+
+    const existing = await getAnnotationOrThrow(annotationId);
+    if (existing.fileId !== fileId) {
+      throw new HttpError(404, "Annotation not found.");
+    }
+
+    const isCreator = existing.createdBy === req.auth!.userId;
+    if (!isCreator && !isAdmin(req.auth!)) {
+      throw new HttpError(
+        403,
+        "Only the markup's author or an admin can delete it.",
+      );
+    }
+
+    await softDeleteAnnotation({
+      annotationId,
+      userId: req.auth!.userId,
+    });
+
+    res.json({ success: true });
   }),
 );
 

@@ -8,6 +8,7 @@ import {
   Loader2,
   Maximize2,
   Minus,
+  Pencil,
   Plus,
   X,
 } from "lucide-react"
@@ -17,6 +18,10 @@ import { toastApiError } from "@/lib/api-errors"
 import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/AnnotationLayer.css"
 import "react-pdf/dist/Page/TextLayer.css"
+import { PdfAnnotationLayer } from "./PdfAnnotationLayer"
+import { PdfMarkupToolbar } from "./PdfMarkupToolbar"
+import { usePdfAnnotations } from "./use-pdf-annotations"
+import { useAuthStore } from "@/store/auth"
 
 // Lazy-load the pdf.js worker so the bundle isn't bloated for users who
 // never preview a PDF.
@@ -437,7 +442,7 @@ function PreviewBody({ file }: { file: PreviewFile }) {
   }
 
   if (kind === "pdf" && blobUrl) {
-    return <PdfViewer src={blobUrl} />
+    return <PdfViewer src={blobUrl} fileId={file.fileId || file.id || null} />
   }
 
   if (kind === "text" && textContent !== null) {
@@ -563,12 +568,17 @@ function ImageViewer({ src, alt }: { src: string; alt: string }) {
   )
 }
 
-function PdfViewer({ src }: { src: string }) {
+function PdfViewer({ src, fileId }: { src: string; fileId: string | null }) {
   const [scale, setScale] = useState(1)
   const [numPages, setNumPages] = useState<number | null>(null)
   const [pageNumber, setPageNumber] = useState(1)
   const [workerReady, setWorkerReady] = useState(false)
+  const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null)
+  const [markupMode, setMarkupMode] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
+
+  const currentUser = useAuthStore((s) => s.user)
+  const annotations = usePdfAnnotations({ fileId, enabled: !!fileId })
 
   useEffect(() => {
     let cancelled = false
@@ -580,9 +590,27 @@ function PdfViewer({ src }: { src: string }) {
     }
   }, [])
 
-  // Keyboard +/- zoom.
+  // Keyboard +/- zoom and undo/redo.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const inEditable =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          (target as HTMLElement).isContentEditable)
+      if (inEditable) return
+
+      if (markupMode && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault()
+        if (e.shiftKey) {
+          annotations.redo()
+        } else {
+          annotations.undo()
+        }
+        return
+      }
+
       if (e.key === "+" || e.key === "=") {
         e.preventDefault()
         setScale((s) => Math.min(s * 1.25, 4))
@@ -593,14 +621,48 @@ function PdfViewer({ src }: { src: string }) {
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [])
+  }, [markupMode, annotations])
+
+  // Reset markup mode when the file changes.
+  useEffect(() => {
+    setMarkupMode(false)
+  }, [fileId])
 
   if (!workerReady) {
     return <Loader2 className="size-8 animate-spin text-white/60" />
   }
 
+  const visibleAnnotations = annotations.filterMine
+    ? annotations.annotations.filter(
+        (a) => a.createdBy === (currentUser?.id ?? null),
+      )
+    : annotations.annotations
+
+  const isAdminUser = currentUser?.role === "admin"
+  const annotationsAvailable = !!fileId
+
   return (
     <div className="flex h-full w-full flex-col items-stretch">
+      {markupMode && annotationsAvailable ? (
+        <PdfMarkupToolbar
+          active={annotations.active}
+          presets={annotations.presets}
+          onSelectTool={annotations.setActive}
+          onChangePreset={annotations.updatePreset}
+          showMarkup={annotations.showMarkup}
+          onToggleShowMarkup={annotations.setShowMarkup}
+          filterMine={annotations.filterMine}
+          onToggleFilterMine={annotations.setFilterMine}
+          onUndo={annotations.undo}
+          canUndo={annotations.canUndo}
+          onRedo={annotations.redo}
+          canRedo={annotations.canRedo}
+          onExitMarkup={() => setMarkupMode(false)}
+          totalAnnotations={annotations.annotations.length}
+          visibleAnnotations={visibleAnnotations.length}
+        />
+      ) : null}
+
       <div
         ref={containerRef}
         className="flex-1 overflow-auto bg-slate-800 p-4"
@@ -617,18 +679,40 @@ function PdfViewer({ src }: { src: string }) {
             }}
             loading={<Loader2 className="size-8 animate-spin text-white/60" />}
           >
-            <Page
-              pageNumber={pageNumber}
-              scale={scale}
-              renderAnnotationLayer
-              renderTextLayer
-              className="shadow-lg"
-            />
+            <div className="relative">
+              <Page
+                pageNumber={pageNumber}
+                scale={scale}
+                renderAnnotationLayer={!markupMode}
+                renderTextLayer={!markupMode}
+                onRenderSuccess={(page) => {
+                  setPageSize({ width: page.width, height: page.height })
+                }}
+                className="shadow-lg"
+              />
+              {pageSize && annotationsAvailable ? (
+                <PdfAnnotationLayer
+                  width={pageSize.width}
+                  height={pageSize.height}
+                  page={pageNumber}
+                  annotations={visibleAnnotations}
+                  drafts={annotations.drafts}
+                  enabled={markupMode}
+                  showMarkup={annotations.showMarkup}
+                  preset={annotations.presetForActive}
+                  activeTool={annotations.active}
+                  currentUserId={currentUser?.id ?? null}
+                  isAdmin={isAdminUser}
+                  onCreate={annotations.createAnnotation}
+                  onDelete={(id) => void annotations.deleteAnnotation(id)}
+                />
+              ) : null}
+            </div>
           </Document>
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-3 border-t border-white/10 bg-slate-950/80 px-4 py-2 text-white">
+      <div className="flex flex-wrap items-center justify-center gap-3 border-t border-white/10 bg-slate-950/80 px-4 py-2 text-white">
         <button
           type="button"
           onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
@@ -670,6 +754,30 @@ function PdfViewer({ src }: { src: string }) {
         >
           <Plus className="size-4" />
         </button>
+
+        {annotationsAvailable ? (
+          <>
+            <span className="mx-2 h-4 w-px bg-white/20" />
+            <button
+              type="button"
+              onClick={() => setMarkupMode((value) => !value)}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
+                markupMode
+                  ? "bg-blue-600 text-white shadow"
+                  : "text-white/80 hover:bg-white/10"
+              }`}
+              title={markupMode ? "Exit markup mode" : "Enter markup mode"}
+            >
+              <Pencil className="size-3.5" />
+              {markupMode ? "Markup" : "Markup"}
+              {!markupMode && annotations.annotations.length > 0 ? (
+                <span className="ml-1 rounded-full bg-white/15 px-1.5 text-[10px]">
+                  {annotations.annotations.length}
+                </span>
+              ) : null}
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   )

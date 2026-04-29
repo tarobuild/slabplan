@@ -60,7 +60,7 @@ app.use(
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:"],
         mediaSrc: ["'self'", "blob:"],
-        connectSrc: ["'self'", "wss:", "ws:"],
+        connectSrc: ["'self'", "wss:", "ws:", "blob:"],
         workerSrc: ["'self'", "blob:"],
         objectSrc: ["'none'"],
         frameAncestors: isProd

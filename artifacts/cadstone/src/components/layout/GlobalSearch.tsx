@@ -9,6 +9,7 @@ import {
 import { useNavigate } from "react-router-dom"
 import {
   Briefcase,
+  Building2,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -23,7 +24,7 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 
-type SearchResultType = "job" | "lead" | "file" | "schedule"
+type SearchResultType = "job" | "lead" | "file" | "schedule" | "client"
 
 type SearchResult = {
   id: string
@@ -64,6 +65,11 @@ const TYPE_META: Record<
     label: "Schedule",
     icon: CalendarClock,
     tone: "bg-violet-100 text-violet-700",
+  },
+  client: {
+    label: "Client",
+    icon: Building2,
+    tone: "bg-amber-100 text-amber-700",
   },
 }
 
@@ -271,7 +277,7 @@ export default function GlobalSearch({
           type="search"
           inputMode="search"
           autoComplete="off"
-          placeholder="Search jobs, leads, files, schedule…"
+          placeholder="Search jobs, leads, clients, files, schedule…"
           value={rawQuery}
           onFocus={() => {
             if (!isPanel) setOpen(true)

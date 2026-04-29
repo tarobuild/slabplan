@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import {
   Building2,
   Loader2,
@@ -199,6 +199,10 @@ export default function ClientsPage() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  const deepLinkClientId = searchParams.get("client")
+  const lastDeepLinkRef = useRef<string | null>(null)
+
   const fetchClients = (s = search, p = page) => {
     setLoading(true)
     const params = new URLSearchParams({ page: String(p), pageSize: String(pageSize) })
@@ -210,6 +214,20 @@ export default function ClientsPage() {
   }
 
   useEffect(() => { fetchClients() }, [])
+
+  // Open the matching client automatically when the URL carries
+  // ?client=<id> (e.g. from a global search result). Track the last id
+  // we opened so navigating with a different param re-opens the sheet,
+  // but a manual close does not immediately re-trigger.
+  useEffect(() => {
+    if (!deepLinkClientId) {
+      lastDeepLinkRef.current = null
+      return
+    }
+    if (lastDeepLinkRef.current === deepLinkClientId) return
+    lastDeepLinkRef.current = deepLinkClientId
+    void openDetail(deepLinkClientId)
+  }, [deepLinkClientId])
 
   const handleSearch = (v: string) => {
     setSearch(v)
@@ -580,7 +598,7 @@ export default function ClientsPage() {
       )}
 
       {/* Client Detail Sheet */}
-      <Sheet open={!!selected || loadingDetail} onOpenChange={open => { if (!open) { setSelected(null); setEditingClient(false) } }}>
+      <Sheet open={!!selected || loadingDetail} onOpenChange={open => { if (!open) { setSelected(null); setEditingClient(false); if (deepLinkClientId) { const next = new URLSearchParams(searchParams); next.delete("client"); setSearchParams(next, { replace: true }) } } }}>
         <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0 gap-0">
           {loadingDetail ? (
             <div className="flex flex-1 items-center justify-center">

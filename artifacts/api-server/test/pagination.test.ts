@@ -1157,6 +1157,83 @@ test("GET /search returns no results when the caller has no scope", async () => 
   assert.equal(body.pagination.hasMore, false);
 });
 
+test("GET /search returns clients with the new client result type for admins", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=25`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientResults = body.results.filter((result) => result.type === "client");
+  const clientIds = new Set(clientResults.map((result) => result.id));
+
+  for (const id of allClientIds) {
+    assert.equal(
+      clientIds.has(id),
+      true,
+      `admin search must include seeded client ${id}`,
+    );
+  }
+
+  for (const result of clientResults) {
+    assert.equal(typeof result.title, "string");
+    assert.ok(result.title.length > 0, "client results must have a title");
+    assert.equal(
+      result.href,
+      `/clients?client=${result.id}`,
+      "client results must link to the matching client detail",
+    );
+  }
+});
+
+test("GET /search hides clients the project manager cannot see", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=25`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientResults = body.results.filter((result) => result.type === "client");
+  const clientIds = new Set(clientResults.map((result) => result.id));
+
+  for (const id of pmAccessibleClientIds) {
+    assert.equal(
+      clientIds.has(id),
+      true,
+      `PM search must return client ${id} the PM can access`,
+    );
+  }
+
+  for (const id of adminOnlyClientIds) {
+    assert.equal(
+      clientIds.has(id),
+      false,
+      `PM search must not return admin-only client ${id}`,
+    );
+  }
+});
+
+test("GET /search returns no client results for crew members", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=25`,
+    { headers: { authorization: `Bearer ${crewToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientResults = body.results.filter((result) => result.type === "client");
+  assert.equal(
+    clientResults.length,
+    0,
+    "crew members must not see client results in global search",
+  );
+});
+
 
 test("GET /clients returns the {clients, pagination} envelope with admin scope", async () => {
   const response = await fetch(

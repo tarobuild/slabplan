@@ -3,6 +3,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
+  clients,
   files,
   folders,
   jobs,
@@ -13,6 +14,7 @@ import {
 import {
   assertCanViewFolder,
   assertCanViewScheduleItem,
+  listAccessibleClientIds,
   listAccessibleJobIds,
   listAccessibleLeadIds,
 } from "../lib/authorization";
@@ -55,15 +57,18 @@ router.get(
     // a query that matches every row in a giant table cannot blow up memory.
     const queryLimit = Math.min(endIndex + 1, MAX_PER_SOURCE_FETCH);
 
-    const [accessibleJobIds, accessibleLeadIds] = await Promise.all([
+    const [accessibleJobIds, accessibleLeadIds, accessibleClientIds] = await Promise.all([
       listAccessibleJobIds(req.auth!),
       listAccessibleLeadIds(req.auth!),
+      listAccessibleClientIds(req.auth!),
     ]);
 
     const noJobAccess = accessibleJobIds !== null && accessibleJobIds.length === 0;
     const noLeadAccess = accessibleLeadIds !== null && accessibleLeadIds.length === 0;
+    const noClientAccess =
+      accessibleClientIds !== null && accessibleClientIds.length === 0;
 
-    if (noJobAccess && noLeadAccess) {
+    if (noJobAccess && noLeadAccess && noClientAccess) {
       res.json({
         results: [],
         pagination: { page, pageSize, hasMore: false },
@@ -71,7 +76,8 @@ router.get(
       return;
     }
 
-    const [jobRows, leadRows, contactLeadRows, fileRows, scheduleRows] = await Promise.all([
+    const [jobRows, leadRows, contactLeadRows, fileRows, scheduleRows, clientRows] =
+      await Promise.all([
       noJobAccess
         ? Promise.resolve([])
         : db
@@ -205,6 +211,36 @@ router.get(
             )
             .orderBy(desc(scheduleItems.updatedAt), asc(scheduleItems.title))
             .limit(queryLimit),
+      noClientAccess
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: clients.id,
+              companyName: clients.companyName,
+              email: clients.email,
+              phone: clients.phone,
+              city: clients.city,
+              state: clients.state,
+            })
+            .from(clients)
+            .where(
+              and(
+                isNull(clients.deletedAt),
+                accessibleClientIds
+                  ? inArray(clients.id, accessibleClientIds)
+                  : undefined,
+                or(
+                  ilike(clients.companyName, search),
+                  ilike(clients.email, search),
+                  ilike(clients.phone, search),
+                  ilike(clients.streetAddress, search),
+                  ilike(clients.city, search),
+                  ilike(clients.state, search),
+                ),
+              ),
+            )
+            .orderBy(desc(clients.updatedAt), asc(clients.companyName))
+            .limit(queryLimit),
     ]);
 
     const [visibleFileRows, visibleScheduleRows] = await Promise.all([
@@ -310,6 +346,17 @@ router.get(
         title: item.title,
         subtitle: `${item.jobTitle} • ${item.startDate} to ${item.endDate}`,
         href: `/jobs/${item.jobId}/schedule?item=${item.id}`,
+      })),
+      ...clientRows.map((client) => ({
+        id: client.id,
+        type: "client" as const,
+        title: client.companyName,
+        subtitle:
+          [client.city, client.state].filter(Boolean).join(", ") ||
+          client.email ||
+          client.phone ||
+          "Client",
+        href: `/clients?client=${client.id}`,
       })),
     ];
 

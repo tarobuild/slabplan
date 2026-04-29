@@ -9333,7 +9333,7 @@
                           "id": { "type": "string" },
                           "type": {
                             "type": "string",
-                            "enum": ["job", "lead", "file", "schedule"]
+                            "enum": ["job", "lead", "file", "schedule", "client"]
                           },
                           "title": { "type": "string" },
                           "subtitle": { "type": "string" },

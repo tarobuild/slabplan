@@ -606,21 +606,28 @@ export const dailyLogs = pgTable(
   ],
 );
 
-export const dailyLogSettings = pgTable("daily_log_settings", {
-  id: uuid("id").primaryKey().$defaultFn(createId),
-  singleton: boolean("singleton").notNull().default(true).unique(),
-  stampLocation: boolean("stamp_location").default(false),
-  defaultNotes: text("default_notes").default(""),
-  includeWeatherByDefault: boolean("include_weather_by_default").default(true),
-  includeWeatherNotesByDefault: boolean("include_weather_notes_by_default").default(false),
-  shareInternalUsersByDefault: boolean("share_internal_users_by_default").default(true),
-  notifyInternalUsersByDefault: boolean("notify_internal_users_by_default").default(false),
-  shareEstimatorsByDefault: boolean("share_estimators_by_default").default(false),
-  notifyEstimatorsByDefault: boolean("notify_estimators_by_default").default(false),
-  shareInstallersByDefault: boolean("share_installers_by_default").default(false),
-  notifyInstallersByDefault: boolean("notify_installers_by_default").default(false),
-  ...baseTimestamps,
-});
+export const dailyLogSettings = pgTable(
+  "daily_log_settings",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    singleton: boolean("singleton").notNull().default(true),
+    stampLocation: boolean("stamp_location").default(false),
+    defaultNotes: text("default_notes").default(""),
+    includeWeatherByDefault: boolean("include_weather_by_default").default(true),
+    includeWeatherNotesByDefault: boolean("include_weather_notes_by_default").default(false),
+    shareInternalUsersByDefault: boolean("share_internal_users_by_default").default(true),
+    notifyInternalUsersByDefault: boolean("notify_internal_users_by_default").default(false),
+    shareEstimatorsByDefault: boolean("share_estimators_by_default").default(false),
+    notifyEstimatorsByDefault: boolean("notify_estimators_by_default").default(false),
+    shareInstallersByDefault: boolean("share_installers_by_default").default(false),
+    notifyInstallersByDefault: boolean("notify_installers_by_default").default(false),
+    ...baseTimestamps,
+  },
+  (table) => [
+    uniqueIndex("daily_log_settings_singleton_unique").on(table.singleton),
+    check("daily_log_settings_singleton_check", sql`${table.singleton} = true`),
+  ],
+);
 
 export const dailyLogCustomFields = pgTable(
   "daily_log_custom_fields",

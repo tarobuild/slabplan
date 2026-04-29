@@ -136,7 +136,8 @@ where deleted_at is null
   and parent_folder_id is null;
 
 alter table public.clients
-  drop constraint if exists clients_created_by_users_id_fk;
+  drop constraint if exists clients_created_by_users_id_fk,
+  drop constraint if exists clients_created_by_fkey;
 
 alter table public.clients
   add constraint clients_created_by_users_id_fk
@@ -146,7 +147,9 @@ alter table public.clients
 
 alter table public.jobs
   drop constraint if exists jobs_project_manager_id_users_id_fk,
-  drop constraint if exists jobs_created_by_users_id_fk;
+  drop constraint if exists jobs_project_manager_id_fkey,
+  drop constraint if exists jobs_created_by_users_id_fk,
+  drop constraint if exists jobs_created_by_fkey;
 
 alter table public.jobs
   add constraint jobs_project_manager_id_users_id_fk
@@ -159,7 +162,8 @@ alter table public.jobs
   on delete set null;
 
 alter table public.files
-  drop constraint if exists files_uploaded_by_users_id_fk;
+  drop constraint if exists files_uploaded_by_users_id_fk,
+  drop constraint if exists files_uploaded_by_fkey;
 
 alter table public.files
   add constraint files_uploaded_by_users_id_fk
@@ -168,7 +172,8 @@ alter table public.files
   on delete set null;
 
 alter table public.leads
-  drop constraint if exists leads_created_by_users_id_fk;
+  drop constraint if exists leads_created_by_users_id_fk,
+  drop constraint if exists leads_created_by_fkey;
 
 alter table public.leads
   add constraint leads_created_by_users_id_fk
@@ -177,7 +182,8 @@ alter table public.leads
   on delete set null;
 
 alter table public.schedule_items
-  drop constraint if exists schedule_items_created_by_users_id_fk;
+  drop constraint if exists schedule_items_created_by_users_id_fk,
+  drop constraint if exists schedule_items_created_by_fkey;
 
 alter table public.schedule_items
   add constraint schedule_items_created_by_users_id_fk
@@ -186,7 +192,8 @@ alter table public.schedule_items
   on delete set null;
 
 alter table public.schedule_item_notes
-  drop constraint if exists schedule_item_notes_created_by_users_id_fk;
+  drop constraint if exists schedule_item_notes_created_by_users_id_fk,
+  drop constraint if exists schedule_item_notes_created_by_fkey;
 
 alter table public.schedule_item_notes
   add constraint schedule_item_notes_created_by_users_id_fk
@@ -195,7 +202,8 @@ alter table public.schedule_item_notes
   on delete set null;
 
 alter table public.schedule_item_todos
-  drop constraint if exists schedule_item_todos_created_by_users_id_fk;
+  drop constraint if exists schedule_item_todos_created_by_users_id_fk,
+  drop constraint if exists schedule_item_todos_created_by_fkey;
 
 alter table public.schedule_item_todos
   add constraint schedule_item_todos_created_by_users_id_fk
@@ -204,7 +212,8 @@ alter table public.schedule_item_todos
   on delete set null;
 
 alter table public.schedule_baselines
-  drop constraint if exists schedule_baselines_captured_by_users_id_fk;
+  drop constraint if exists schedule_baselines_captured_by_users_id_fk,
+  drop constraint if exists schedule_baselines_captured_by_fkey;
 
 alter table public.schedule_baselines
   add constraint schedule_baselines_captured_by_users_id_fk
@@ -213,7 +222,8 @@ alter table public.schedule_baselines
   on delete set null;
 
 alter table public.schedule_workday_exceptions
-  drop constraint if exists schedule_workday_exceptions_created_by_users_id_fk;
+  drop constraint if exists schedule_workday_exceptions_created_by_users_id_fk,
+  drop constraint if exists schedule_workday_exceptions_created_by_fkey;
 
 alter table public.schedule_workday_exceptions
   add constraint schedule_workday_exceptions_created_by_users_id_fk
@@ -222,7 +232,8 @@ alter table public.schedule_workday_exceptions
   on delete set null;
 
 alter table public.daily_logs
-  drop constraint if exists daily_logs_created_by_users_id_fk;
+  drop constraint if exists daily_logs_created_by_users_id_fk,
+  drop constraint if exists daily_logs_created_by_fkey;
 
 alter table public.daily_logs
   add constraint daily_logs_created_by_users_id_fk
@@ -231,7 +242,8 @@ alter table public.daily_logs
   on delete set null;
 
 alter table public.daily_log_comments
-  drop constraint if exists daily_log_comments_created_by_users_id_fk;
+  drop constraint if exists daily_log_comments_created_by_users_id_fk,
+  drop constraint if exists daily_log_comments_created_by_fkey;
 
 alter table public.daily_log_comments
   add constraint daily_log_comments_created_by_users_id_fk
@@ -240,7 +252,8 @@ alter table public.daily_log_comments
   on delete set null;
 
 alter table public.daily_log_todos
-  drop constraint if exists daily_log_todos_created_by_users_id_fk;
+  drop constraint if exists daily_log_todos_created_by_users_id_fk,
+  drop constraint if exists daily_log_todos_created_by_fkey;
 
 alter table public.daily_log_todos
   add constraint daily_log_todos_created_by_users_id_fk
@@ -249,7 +262,8 @@ alter table public.daily_log_todos
   on delete set null;
 
 alter table public.activity_log
-  drop constraint if exists activity_log_user_id_users_id_fk;
+  drop constraint if exists activity_log_user_id_users_id_fk,
+  drop constraint if exists activity_log_user_id_fkey;
 
 alter table public.activity_log
   add constraint activity_log_user_id_users_id_fk
@@ -383,3 +397,65 @@ begin
   end loop;
 end
 $$;
+
+alter table public.daily_log_settings
+  add column if not exists singleton boolean not null default true;
+
+delete from public.daily_log_settings dls
+where dls.id not in (
+  select id from public.daily_log_settings
+  order by created_at asc
+  limit 1
+);
+
+update public.daily_log_settings set singleton = true where singleton is distinct from true;
+
+create unique index if not exists daily_log_settings_singleton_unique
+on public.daily_log_settings (singleton);
+
+alter table public.daily_log_settings
+  drop constraint if exists daily_log_settings_singleton_check;
+
+alter table public.daily_log_settings
+  add constraint daily_log_settings_singleton_check check (singleton = true);
+
+alter table public.users
+  drop constraint if exists users_role_check;
+
+alter table public.users
+  add constraint users_role_check
+  check (role in ('admin', 'project_manager', 'crew_member'));
+
+alter table public.jobs
+  drop constraint if exists jobs_status_check;
+
+alter table public.jobs
+  add constraint jobs_status_check
+  check (status in ('open', 'closed', 'archived'));
+
+alter table public.leads
+  drop constraint if exists leads_status_check;
+
+alter table public.leads
+  add constraint leads_status_check
+  check (status in ('open', 'in_negotiation', 'won', 'lost', 'archived'));
+
+update public.leads set confidence = 0 where confidence is null or confidence < 0;
+update public.leads set confidence = 100 where confidence > 100;
+
+alter table public.leads
+  drop constraint if exists leads_confidence_range;
+
+alter table public.leads
+  add constraint leads_confidence_range
+  check (confidence is null or (confidence >= 0 and confidence <= 100));
+
+update public.schedule_items set progress = 0 where progress is not null and progress < 0;
+update public.schedule_items set progress = 100 where progress is not null and progress > 100;
+
+alter table public.schedule_items
+  drop constraint if exists schedule_items_progress_range;
+
+alter table public.schedule_items
+  add constraint schedule_items_progress_range
+  check (progress is null or (progress >= 0 and progress <= 100));

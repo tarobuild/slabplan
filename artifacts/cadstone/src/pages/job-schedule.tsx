@@ -2071,24 +2071,35 @@ export default function JobSchedulePage() {
   const criticalPathIds = useMemo(() => computeCriticalPathIds(ganttItems), [ganttItems])
 
   const ganttRange = useMemo(() => {
+    let start: Date
+    let end: Date
+
     if (ganttItems.length === 0) {
       const today = new Date()
-      return {
-        start: addDays(startOfWeek(today), -7),
-        end: addDays(endOfWeek(today), 14),
+      start = addDays(startOfWeek(today), -7)
+      end = addDays(endOfWeek(today), 14)
+    } else {
+      const starts = ganttItems.map((item) => parseDate(item.startDate))
+      const ends = ganttItems.map((item) => parseDate(itemEndDate(item)))
+      const minStart = starts.reduce((left, right) => (left < right ? left : right))
+      const maxEnd = ends.reduce((left, right) => (left > right ? left : right))
+      start = addDays(startOfWeek(minStart), -7)
+      end = addDays(endOfWeek(maxEnd), 7)
+    }
+
+    if (schedulePreview) {
+      const previewStart = parseDate(schedulePreview.startDate)
+      const previewEnd = parseDate(schedulePreview.endDate)
+      if (previewStart < start) {
+        start = addDays(startOfWeek(previewStart), -7)
+      }
+      if (previewEnd > end) {
+        end = addDays(endOfWeek(previewEnd), 7)
       }
     }
 
-    const starts = ganttItems.map((item) => parseDate(item.startDate))
-    const ends = ganttItems.map((item) => parseDate(itemEndDate(item)))
-    const minStart = starts.reduce((left, right) => (left < right ? left : right))
-    const maxEnd = ends.reduce((left, right) => (left > right ? left : right))
-
-    return {
-      start: addDays(startOfWeek(minStart), -7),
-      end: addDays(endOfWeek(maxEnd), 7),
-    }
-  }, [ganttItems])
+    return { start, end }
+  }, [ganttItems, schedulePreview])
 
   const dayWidth = DAY_WIDTH_BY_SCALE[ganttScale]
   const timelineDays = diffInDays(ganttRange.start, ganttRange.end) + 1
@@ -3107,6 +3118,43 @@ export default function JobSchedulePage() {
       behavior: "smooth",
     })
   }
+
+  const previewLeft = ganttPreviewBounds?.left ?? null
+  const previewWidth = ganttPreviewBounds?.width ?? null
+
+  useEffect(() => {
+    if (previewLeft === null || previewWidth === null) {
+      return
+    }
+
+    const container = ganttTimelineRef.current
+
+    if (!container) {
+      return
+    }
+
+    const padding = 24
+    const previewRight = previewLeft + previewWidth
+    const visibleStart = container.scrollLeft
+    const visibleEnd = visibleStart + container.clientWidth
+
+    if (previewLeft >= visibleStart + padding && previewRight <= visibleEnd - padding) {
+      return
+    }
+
+    const maxScrollLeft = Math.max(container.scrollWidth - container.clientWidth, 0)
+    let target: number
+
+    if (previewWidth >= container.clientWidth - padding * 2) {
+      target = previewLeft - padding
+    } else {
+      target = previewLeft - (container.clientWidth - previewWidth) / 2
+    }
+
+    target = Math.max(0, Math.min(target, maxScrollLeft))
+
+    container.scrollTo({ left: target, behavior: "smooth" })
+  }, [previewLeft, previewWidth, viewMode])
 
   const isEmpty = !loading && filteredItems.length === 0
   const activeFilterCount = countActiveFilters(appliedFilters)

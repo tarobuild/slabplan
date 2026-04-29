@@ -2501,12 +2501,22 @@ export default function JobSchedulePage() {
       })
       const deletedPersistedItems = items.filter((item) => !currentDraftById.has(item.id))
 
-      for (const item of createdDraftItems) {
-        const payload = remapDraftPayload(schedulePayloadFromItem(item), draftIdMap, {
-          dropUnresolvedPredecessors: true,
-        })
-        const response = await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
-        draftIdMap.set(item.id, response.data.item.id)
+      // Create draft items concurrently. Predecessors are intentionally
+      // dropped here (`dropUnresolvedPredecessors: true`) and re-applied in
+      // the PUT pass below once every draft id is mapped, so concurrency is
+      // safe regardless of the order responses arrive in.
+      const createResults = await Promise.all(
+        createdDraftItems.map(async (item) => {
+          const payload = remapDraftPayload(schedulePayloadFromItem(item), draftIdMap, {
+            dropUnresolvedPredecessors: true,
+          })
+          const response = await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
+          return [item.id, response.data.item.id] as const
+        }),
+      )
+
+      for (const [draftId, persistedId] of createResults) {
+        draftIdMap.set(draftId, persistedId)
       }
 
       await Promise.all([...createdDraftItems, ...changedPersistedItems].map((item) => {
@@ -2515,17 +2525,18 @@ export default function JobSchedulePage() {
         return api.put(`/schedule-items/${targetId}`, payload)
       }))
 
-      for (const item of currentDraftItems) {
+      await Promise.all(currentDraftItems.map(async (item) => {
         const targetId = draftIdMap.get(item.id) || item.id
         const draftNotes = item.notesStream
           .filter((note) => isDraftScheduleNoteId(note.id))
           .map((note) => note.note.trim())
           .filter(Boolean)
 
+        // Notes are posted sequentially within an item to preserve order.
         for (const note of draftNotes) {
           await api.post(`/schedule-items/${targetId}/notes`, { note })
         }
-      }
+      }))
 
       await Promise.all(deletedPersistedItems.map((item) =>
         api.delete(`/schedule-items/${item.id}`)

@@ -233,9 +233,9 @@ export const SCHEDULE_DEFAULT_VIEW_OPTIONS: Array<{
 export const DEFAULT_SCHEDULE_COLOR = "#E85D04"
 
 export function dateKey(date: Date) {
-  const year = date.getUTCFullYear()
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0")
-  const day = String(date.getUTCDate()).padStart(2, "0")
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
   return `${year}-${month}-${day}`
 }
 
@@ -309,16 +309,16 @@ export function fmtClockRange(start: string | null | undefined, end: string | nu
 }
 
 function isWeekend(date: Date) {
-  const day = date.getUTCDay()
+  const day = date.getDay()
   return day === 0 || day === 6
 }
 
 function normalizeExceptionMatchDate(date: Date, sameEveryYear: boolean) {
   if (sameEveryYear) {
-    return `${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`
+    return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
   }
 
-  return date.toISOString().slice(0, 10)
+  return dateKey(date)
 }
 
 function dateMatchesException(date: Date, exception: ScheduleWorkdayException) {
@@ -329,7 +329,7 @@ function dateMatchesException(date: Date, exception: ScheduleWorkdayException) {
 }
 
 function sameYearComparableValue(date: Date, sameEveryYear: boolean) {
-  return sameEveryYear ? normalizeExceptionMatchDate(date, true) : date.toISOString().slice(0, 10)
+  return sameEveryYear ? normalizeExceptionMatchDate(date, true) : dateKey(date)
 }
 
 export function classifyWorkday(
@@ -368,23 +368,23 @@ export function calculateBusinessEndDate(
   workDays: number,
   exceptions: ScheduleWorkdayException[] = [],
 ) {
-  const current = new Date(`${startDate}T00:00:00.000Z`)
+  const current = new Date(`${startDate}T00:00:00`)
 
   while (!classifyWorkday(current, exceptions).isWorkday) {
-    current.setUTCDate(current.getUTCDate() + 1)
+    current.setDate(current.getDate() + 1)
   }
 
   let remaining = Math.max(workDays, 1)
 
   while (remaining > 1) {
-    current.setUTCDate(current.getUTCDate() + 1)
+    current.setDate(current.getDate() + 1)
 
     if (classifyWorkday(current, exceptions).isWorkday) {
       remaining -= 1
     }
   }
 
-  return current.toISOString().slice(0, 10)
+  return dateKey(current)
 }
 
 export function addBusinessDays(
@@ -404,15 +404,15 @@ export function calculateWorkDaysBetween(
   endDate: string,
   exceptions: ScheduleWorkdayException[] = [],
 ) {
-  let start = new Date(`${startDate}T00:00:00.000Z`)
-  const end = new Date(`${endDate}T00:00:00.000Z`)
+  const start = new Date(`${startDate}T00:00:00`)
+  const end = new Date(`${endDate}T00:00:00`)
 
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
     return 1
   }
 
   while (!classifyWorkday(start, exceptions).isWorkday) {
-    start.setUTCDate(start.getUTCDate() + 1)
+    start.setDate(start.getDate() + 1)
   }
 
   let workDays = 0
@@ -423,7 +423,7 @@ export function calculateWorkDaysBetween(
       workDays += 1
     }
 
-    cursor.setUTCDate(cursor.getUTCDate() + 1)
+    cursor.setDate(cursor.getDate() + 1)
   }
 
   return Math.max(workDays, 1)

@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
-  BrowserRouter,
+  createBrowserRouter,
+  createRoutesFromElements,
   Navigate,
   Outlet,
   Route,
-  Routes,
+  RouterProvider,
   useNavigate,
 } from "react-router-dom"
 import { Toaster } from "sonner"
@@ -78,6 +79,15 @@ function ForbiddenListener() {
   return null
 }
 
+function RootShell() {
+  return (
+    <>
+      <ForbiddenListener />
+      <Outlet />
+    </>
+  )
+}
+
 function PublicOnlyRoute({ ready }: { ready: boolean }) {
   const user = useAuthStore((state) => state.user)
 
@@ -92,43 +102,45 @@ function PublicOnlyRoute({ ready }: { ready: boolean }) {
   return <Outlet />
 }
 
-function AppRoutes({ ready }: { ready: boolean }) {
-  return (
-    <Routes>
-      <Route element={<PublicOnlyRoute ready={ready} />}>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<Navigate to="/login" replace />} />
-      </Route>
-
-      <Route element={<ProtectedRoute ready={ready} />}>
-        <Route element={<AppLayout />}>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
-          <Route path="/jobs" element={<JobsPage />} />
-          <Route path="/resources" element={<ResourcesPage />} />
-          <Route path="/files/documents" element={<FilesDocumentsPage />} />
-          <Route path="/files/photos" element={<FilesPhotosPage />} />
-          <Route path="/files/videos" element={<FilesVideosPage />} />
-          <Route path="/jobs/:jobId" element={<JobDetailPage />}>
-            <Route index element={<Navigate to="daily-logs" replace />} />
-            <Route path="summary" element={<JobSummaryPage />} />
-            <Route path="files/documents" element={<JobFilesDocumentsPage />} />
-            <Route path="files/photos" element={<JobFilesPhotosPage />} />
-            <Route path="files/videos" element={<JobFilesVideosPage />} />
-            <Route path="schedule" element={<JobSchedulePage />} />
-            <Route path="daily-logs" element={<JobDailyLogsPage />} />
-          </Route>
-          <Route path="/sales" element={<LeadsPage />} />
-          <Route path="/sales/leads" element={<LeadsPage />} />
-          <Route path="/clients" element={<ClientsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/403" element={<ForbiddenPage />} />
+function buildRouter(ready: boolean, basename: string | undefined) {
+  return createBrowserRouter(
+    createRoutesFromElements(
+      <Route element={<RootShell />}>
+        <Route element={<PublicOnlyRoute ready={ready} />}>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<Navigate to="/login" replace />} />
         </Route>
-      </Route>
 
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+        <Route element={<ProtectedRoute ready={ready} />}>
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
+            <Route path="/jobs" element={<JobsPage />} />
+            <Route path="/resources" element={<ResourcesPage />} />
+            <Route path="/files/documents" element={<FilesDocumentsPage />} />
+            <Route path="/files/photos" element={<FilesPhotosPage />} />
+            <Route path="/files/videos" element={<FilesVideosPage />} />
+            <Route path="/jobs/:jobId" element={<JobDetailPage />}>
+              <Route index element={<Navigate to="daily-logs" replace />} />
+              <Route path="summary" element={<JobSummaryPage />} />
+              <Route path="files/documents" element={<JobFilesDocumentsPage />} />
+              <Route path="files/photos" element={<JobFilesPhotosPage />} />
+              <Route path="files/videos" element={<JobFilesVideosPage />} />
+              <Route path="schedule" element={<JobSchedulePage />} />
+              <Route path="daily-logs" element={<JobDailyLogsPage />} />
+            </Route>
+            <Route path="/sales" element={<LeadsPage />} />
+            <Route path="/sales/leads" element={<LeadsPage />} />
+            <Route path="/clients" element={<ClientsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/403" element={<ForbiddenPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>
+        </Route>
+      </Route>,
+    ),
+    { basename },
   )
 }
 
@@ -150,10 +162,13 @@ function App() {
     }
   }, [])
 
+  // The router is rebuilt when `ready` flips so the route guards see the
+  // latest auth state. `basename` is stable for the app lifetime.
+  const router = useMemo(() => buildRouter(ready, basename), [ready, basename])
+
   return (
-    <BrowserRouter basename={basename}>
-      <ForbiddenListener />
-      <AppRoutes ready={ready} />
+    <>
+      <RouterProvider router={router} />
       <Toaster
         position="top-right"
         duration={4000}
@@ -166,7 +181,7 @@ function App() {
           },
         }}
       />
-    </BrowserRouter>
+    </>
   )
 }
 

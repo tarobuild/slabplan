@@ -1479,3 +1479,354 @@ test("GET /jobs/:jobId/schedule rejects requests for jobs the caller cannot see"
 
   assert.equal(response.status, 403);
 });
+
+test("POST /clients rejects crew members at the route guard", async () => {
+  const response = await fetch(`${baseUrl}/api/clients`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${crewToken}`,
+    },
+    body: JSON.stringify({ companyName: "ZZZ Pagination Crew Cannot Create" }),
+  });
+
+  assert.equal(response.status, 403);
+});
+
+test("POST /clients lets project managers create clients", async () => {
+  const response = await fetch(`${baseUrl}/api/clients`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+      authorization: `Bearer ${pmToken}`,
+    },
+    body: JSON.stringify({
+      companyName: "ZZZ Pagination PM Created Via API",
+    }),
+  });
+
+  assert.equal(response.status, 201);
+  const body = (await response.json()) as { client: { id: string } };
+  assert.equal(typeof body.client.id, "string");
+
+  // Track for cleanup so the after() hook can remove it.
+  allClientIds.push(body.client.id);
+});
+
+test("PUT /clients/:id rejects crew members at the route guard", async () => {
+  const response = await fetch(`${baseUrl}/api/clients/${pmCreatedClientId}`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+      authorization: `Bearer ${crewToken}`,
+    },
+    body: JSON.stringify({ companyName: "ZZZ Pagination Crew Cannot Edit" }),
+  });
+
+  assert.equal(response.status, 403);
+});
+
+test("PUT /clients/:id lets project managers update clients they created", async () => {
+  const response = await fetch(`${baseUrl}/api/clients/${pmCreatedClientId}`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+      authorization: `Bearer ${pmToken}`,
+    },
+    body: JSON.stringify({
+      companyName: "ZZZ Pagination PM Created Client (Edited)",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+});
+
+test("PUT /clients/:id lets project managers update clients linked to jobs they manage", async () => {
+  const response = await fetch(`${baseUrl}/api/clients/${pmRelatedClientId}`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+      authorization: `Bearer ${pmToken}`,
+    },
+    body: JSON.stringify({
+      companyName: "ZZZ Pagination PM Related Client (Edited)",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+});
+
+test("PUT /clients/:id forbids project managers from editing clients outside their scope", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/clients/${adminOnlyClientIds[0]}`,
+    {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${pmToken}`,
+      },
+      body: JSON.stringify({ companyName: "ZZZ Pagination PM Should Not Edit" }),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("DELETE /clients/:id rejects crew members at the route guard", async () => {
+  const response = await fetch(`${baseUrl}/api/clients/${pmCreatedClientId}`, {
+    method: "DELETE",
+    headers: {
+      "x-requested-with": "XMLHttpRequest",
+      authorization: `Bearer ${crewToken}`,
+    },
+  });
+
+  assert.equal(response.status, 403);
+});
+
+test("DELETE /clients/:id forbids project managers, even on accessible clients", async () => {
+  const ownClientResponse = await fetch(
+    `${baseUrl}/api/clients/${pmCreatedClientId}`,
+    {
+      method: "DELETE",
+      headers: {
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${pmToken}`,
+      },
+    },
+  );
+  assert.equal(ownClientResponse.status, 403);
+
+  const adminClientResponse = await fetch(
+    `${baseUrl}/api/clients/${adminOnlyClientIds[0]}`,
+    {
+      method: "DELETE",
+      headers: {
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${pmToken}`,
+      },
+    },
+  );
+  assert.equal(adminClientResponse.status, 403);
+});
+
+test("DELETE /clients/:id lets admins delete clients", async () => {
+  const targetId = adminOnlyClientIds[adminOnlyClientIds.length - 1];
+  const response = await fetch(`${baseUrl}/api/clients/${targetId}`, {
+    method: "DELETE",
+    headers: {
+      "x-requested-with": "XMLHttpRequest",
+      authorization: `Bearer ${adminToken}`,
+    },
+  });
+
+  assert.equal(response.status, 200);
+});
+
+test("POST /clients/:id/contacts rejects crew members at the route guard", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/clients/${pmCreatedClientId}/contacts`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${crewToken}`,
+      },
+      body: JSON.stringify({ firstName: "Crew Cannot Create Contact" }),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("POST /clients/:id/contacts lets project managers add contacts on accessible clients", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/clients/${pmCreatedClientId}/contacts`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${pmToken}`,
+      },
+      body: JSON.stringify({ firstName: "ZZZ Pagination PM Contact" }),
+    },
+  );
+
+  assert.equal(response.status, 201);
+  const body = (await response.json()) as { contact: { id: string } };
+  assert.equal(typeof body.contact.id, "string");
+});
+
+test("POST /clients/:id/contacts forbids project managers on inaccessible clients", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/clients/${adminOnlyClientIds[0]}/contacts`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${pmToken}`,
+      },
+      body: JSON.stringify({ firstName: "PM Should Not Create Contact" }),
+    },
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("PUT /clients/:id/contacts/:contactId enforces client scope", async () => {
+  const seedAdminContactResponse = await fetch(
+    `${baseUrl}/api/clients/${adminOnlyClientIds[0]}/contacts`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ firstName: "ZZZ Pagination Admin Only Contact" }),
+    },
+  );
+  assert.equal(seedAdminContactResponse.status, 201);
+  const adminContactId = (
+    (await seedAdminContactResponse.json()) as { contact: { id: string } }
+  ).contact.id;
+
+  const crewResponse = await fetch(
+    `${baseUrl}/api/clients/${adminOnlyClientIds[0]}/contacts/${adminContactId}`,
+    {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${crewToken}`,
+      },
+      body: JSON.stringify({ firstName: "Crew Cannot Edit" }),
+    },
+  );
+  assert.equal(crewResponse.status, 403);
+
+  const pmForbiddenResponse = await fetch(
+    `${baseUrl}/api/clients/${adminOnlyClientIds[0]}/contacts/${adminContactId}`,
+    {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${pmToken}`,
+      },
+      body: JSON.stringify({ firstName: "PM Cannot Edit Outside Scope" }),
+    },
+  );
+  assert.equal(pmForbiddenResponse.status, 403);
+
+  const seedPmContactResponse = await fetch(
+    `${baseUrl}/api/clients/${pmRelatedClientId}/contacts`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ firstName: "ZZZ Pagination PM Editable Contact" }),
+    },
+  );
+  assert.equal(seedPmContactResponse.status, 201);
+  const pmEditableContactId = (
+    (await seedPmContactResponse.json()) as { contact: { id: string } }
+  ).contact.id;
+
+  const pmAllowedResponse = await fetch(
+    `${baseUrl}/api/clients/${pmRelatedClientId}/contacts/${pmEditableContactId}`,
+    {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${pmToken}`,
+      },
+      body: JSON.stringify({ firstName: "PM Edited Contact" }),
+    },
+  );
+  assert.equal(pmAllowedResponse.status, 200);
+});
+
+test("DELETE /clients/:id/contacts/:contactId enforces client scope", async () => {
+  const seedAdminContactResponse = await fetch(
+    `${baseUrl}/api/clients/${adminOnlyClientIds[1]}/contacts`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ firstName: "ZZZ Pagination Admin Delete Target" }),
+    },
+  );
+  assert.equal(seedAdminContactResponse.status, 201);
+  const adminContactId = (
+    (await seedAdminContactResponse.json()) as { contact: { id: string } }
+  ).contact.id;
+
+  const crewResponse = await fetch(
+    `${baseUrl}/api/clients/${adminOnlyClientIds[1]}/contacts/${adminContactId}`,
+    {
+      method: "DELETE",
+      headers: {
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${crewToken}`,
+      },
+    },
+  );
+  assert.equal(crewResponse.status, 403);
+
+  const pmForbiddenResponse = await fetch(
+    `${baseUrl}/api/clients/${adminOnlyClientIds[1]}/contacts/${adminContactId}`,
+    {
+      method: "DELETE",
+      headers: {
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${pmToken}`,
+      },
+    },
+  );
+  assert.equal(pmForbiddenResponse.status, 403);
+
+  const seedPmContactResponse = await fetch(
+    `${baseUrl}/api/clients/${pmCreatedClientId}/contacts`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ firstName: "ZZZ Pagination PM Delete Target" }),
+    },
+  );
+  assert.equal(seedPmContactResponse.status, 201);
+  const pmDeletableContactId = (
+    (await seedPmContactResponse.json()) as { contact: { id: string } }
+  ).contact.id;
+
+  const pmAllowedResponse = await fetch(
+    `${baseUrl}/api/clients/${pmCreatedClientId}/contacts/${pmDeletableContactId}`,
+    {
+      method: "DELETE",
+      headers: {
+        "x-requested-with": "XMLHttpRequest",
+        authorization: `Bearer ${pmToken}`,
+      },
+    },
+  );
+  assert.equal(pmAllowedResponse.status, 200);
+});

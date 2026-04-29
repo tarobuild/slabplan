@@ -18,6 +18,7 @@ import {
   Upload,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { toastApiError } from "@/lib/api-errors"
 import {
   calculateBusinessEndDate,
   calculateWorkDaysBetween,
@@ -153,15 +154,6 @@ type ScheduleItemDialogProps = {
   onDraftAddNote?: (itemId: string, note: string) => Promise<ScheduleItemRecord>
   onDraftDelete?: (itemId: string) => Promise<void>
   onPreviewChange?: (preview: SchedulePreview | null) => void
-}
-
-function getApiError(err: unknown, fallback: string) {
-  if (typeof err === "object" && err !== null) {
-    const e = err as { response?: { data?: { message?: string } }; message?: string }
-    return e.response?.data?.message ?? e.message ?? fallback
-  }
-
-  return fallback
 }
 
 function defaultForm(startDate: string, workdayExceptions: ScheduleWorkdayException[] = []): ScheduleFormValues {
@@ -322,7 +314,7 @@ export function ScheduleItemDialog({
       setNotifyAssignees(false)
       setManualEndDate(false)
     } catch (err) {
-      toast.error(getApiError(err, "Failed to load schedule item"))
+      toastApiError(err, "Failed to load schedule item")
     } finally {
       setLoadingItem(false)
     }
@@ -613,7 +605,7 @@ export function ScheduleItemDialog({
       toast.success(item ? "Schedule item saved" : "Schedule item created")
       return savedItem.id
     } catch (err) {
-      toast.error(getApiError(err, "Failed to save schedule item"))
+      toastApiError(err, "Failed to save schedule item")
       return null
     } finally {
       setSaving(false)
@@ -653,7 +645,7 @@ export function ScheduleItemDialog({
       await onRefresh()
       toast.success("Note added")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to add note"))
+      toastApiError(err, "Failed to add note")
     } finally {
       setSaving(false)
     }
@@ -682,7 +674,7 @@ export function ScheduleItemDialog({
         await Promise.all([loadItem(item.id), onRefresh()])
         toast.success("Files uploaded")
       } catch (err) {
-        toast.error(getApiError(err, "Failed to upload files"))
+        toastApiError(err, "Failed to upload files")
       } finally {
         setSaving(false)
       }
@@ -732,7 +724,7 @@ export function ScheduleItemDialog({
       await Promise.all([loadItem(item.id), onRefresh()])
       toast.success("Files uploaded")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to upload files"))
+      toastApiError(err, "Failed to upload files")
     } finally {
       event.target.value = ""
       setSaving(false)
@@ -762,7 +754,7 @@ export function ScheduleItemDialog({
       await Promise.all([loadItem(item.id), onRefresh()])
       toast.success("Document created")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to create document"))
+      toastApiError(err, "Failed to create document")
     } finally {
       setSaving(false)
     }
@@ -785,7 +777,7 @@ export function ScheduleItemDialog({
       await Promise.all([loadItem(item.id), onRefresh()])
       toast.success("Attachment removed")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to remove attachment"))
+      toastApiError(err, "Failed to remove attachment")
     } finally {
       setSaving(false)
     }
@@ -825,7 +817,7 @@ export function ScheduleItemDialog({
       await loadItem(copiedItem.id)
       toast.success("Schedule item copied")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to copy schedule item"))
+      toastApiError(err, "Failed to copy schedule item")
     } finally {
       setSaving(false)
     }
@@ -851,7 +843,7 @@ export function ScheduleItemDialog({
       onOpenChange(false)
       toast.success("Schedule item deleted")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to delete schedule item"))
+      toastApiError(err, "Failed to delete schedule item")
     } finally {
       setSaving(false)
     }
@@ -885,7 +877,7 @@ export function ScheduleItemDialog({
       await Promise.all([loadItem(nextItemId), onRefresh()])
       toast.success("Linked to-do created")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to create linked to-do"))
+      toastApiError(err, "Failed to create linked to-do")
     } finally {
       setSaving(false)
     }
@@ -909,7 +901,7 @@ export function ScheduleItemDialog({
       })
       await Promise.all([loadItem(item.id), onRefresh()])
     } catch (err) {
-      toast.error(getApiError(err, "Failed to update linked to-do"))
+      toastApiError(err, "Failed to update linked to-do")
     } finally {
       setSaving(false)
     }
@@ -932,7 +924,7 @@ export function ScheduleItemDialog({
       await Promise.all([loadItem(item.id), onRefresh()])
       toast.success("Linked to-do removed")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to remove linked to-do"))
+      toastApiError(err, "Failed to remove linked to-do")
     } finally {
       setSaving(false)
     }
@@ -954,7 +946,7 @@ export function ScheduleItemDialog({
       setShowAddPhase(false)
       toast.success("Phase added")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to add phase"))
+      toastApiError(err, "Failed to add phase")
     } finally {
       setSaving(false)
     }
@@ -974,7 +966,7 @@ export function ScheduleItemDialog({
       await refreshSettings()
       toast.success("Phase updated")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to update phase"))
+      toastApiError(err, "Failed to update phase")
     } finally {
       setSaving(false)
     }
@@ -996,7 +988,7 @@ export function ScheduleItemDialog({
       setShowAddTag(false)
       toast.success("Tag added")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to add tag"))
+      toastApiError(err, "Failed to add tag")
     } finally {
       setSaving(false)
     }
@@ -1016,7 +1008,7 @@ export function ScheduleItemDialog({
       await refreshSettings()
       toast.success("Tag updated")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to update tag"))
+      toastApiError(err, "Failed to update tag")
     } finally {
       setSaving(false)
     }

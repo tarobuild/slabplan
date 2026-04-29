@@ -325,20 +325,22 @@ router.delete(
 
     const now = new Date();
 
-    await db
-      .update(jobs)
-      .set({ clientId: null, updatedAt: now })
-      .where(eq(jobs.clientId, clientId));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(jobs)
+        .set({ clientId: null, updatedAt: now })
+        .where(eq(jobs.clientId, clientId));
 
-    await db
-      .update(clientContacts)
-      .set({ deletedAt: now, updatedAt: now })
-      .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
+      await tx
+        .update(clientContacts)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
 
-    await db
-      .update(clients)
-      .set({ deletedAt: now, updatedAt: now })
-      .where(eq(clients.id, clientId));
+      await tx
+        .update(clients)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(eq(clients.id, clientId));
+    });
 
     res.json({ success: true });
   }),

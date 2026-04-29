@@ -461,6 +461,7 @@ export async function writeActivity(params: {
   action: string;
   userId: string;
   jobId: string | null;
+  leadId?: string | null;
   mediaType?: string | null;
   folderId?: string | null;
   fileId?: string | null;
@@ -492,6 +493,7 @@ export async function writeActivity(params: {
     description: params.description,
     jobId: params.jobId,
     jobTitle: jobRecord?.title ?? null,
+    leadId: params.leadId ?? null,
     mediaType: params.mediaType ?? null,
     folderId: params.folderId ?? null,
     fileId: params.fileId ?? null,

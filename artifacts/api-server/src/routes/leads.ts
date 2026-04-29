@@ -722,10 +722,8 @@ router.post(
       action: "created",
       userId: req.auth!.userId,
       jobId: null,
+      leadId: lead.id,
       description: `Created lead ${lead.title}`,
-      extra: {
-        leadId: lead.id,
-      },
     });
 
     res.status(201).json(await hydrateLead(lead.id));
@@ -774,10 +772,8 @@ router.put(
       action: "updated",
       userId: req.auth!.userId,
       jobId: null,
+      leadId,
       description: `Updated lead ${body.data.title}`,
-      extra: {
-        leadId,
-      },
     });
 
     if (existing.status !== body.data.status) {
@@ -823,10 +819,8 @@ router.delete(
       action: "deleted",
       userId: req.auth!.userId,
       jobId: null,
+      leadId,
       description: `Deleted lead ${lead.title}`,
-      extra: {
-        leadId,
-      },
     });
 
     res.json({ success: true });
@@ -889,9 +883,9 @@ router.post(
       action: "contact_added",
       userId: req.auth!.userId,
       jobId: null,
+      leadId,
       description: `Added contact ${contact.displayName}`,
       extra: {
-        leadId,
         contactId: contact.id,
       },
     });
@@ -945,9 +939,9 @@ router.put(
       action: "contact_updated",
       userId: req.auth!.userId,
       jobId: null,
+      leadId,
       description: `Updated contact ${contact.displayName}`,
       extra: {
-        leadId,
         contactId: contact.id,
       },
     });
@@ -984,9 +978,9 @@ router.delete(
       action: "contact_deleted",
       userId: req.auth!.userId,
       jobId: null,
+      leadId,
       description: `Deleted contact ${contact.displayName}`,
       extra: {
-        leadId,
         contactId,
       },
     });
@@ -1063,9 +1057,9 @@ router.post(
         action: "attachment_uploaded",
         userId: req.auth!.userId,
         jobId: null,
+        leadId,
         description: `Uploaded attachment ${file.originalName}`,
         extra: {
-          leadId,
           fileId: file.id,
           attachmentId: attachment.id,
         },
@@ -1110,9 +1104,9 @@ router.delete(
       action: "attachment_deleted",
       userId: req.auth!.userId,
       jobId: null,
+      leadId,
       description: `Deleted attachment ${attachment.originalName}`,
       extra: {
-        leadId,
         fileId: attachment.fileId,
         attachmentId,
       },
@@ -1171,9 +1165,9 @@ router.post(
       action: "converted_to_job",
       userId: req.auth!.userId,
       jobId: job.id,
+      leadId,
       description: `Converted lead ${lead.title} to job ${job.title}`,
       extra: {
-        leadId,
         convertedJobId: job.id,
       },
     });
@@ -1207,12 +1201,10 @@ router.post(
       action: "activity_logged",
       userId: req.auth!.userId,
       jobId: null,
+      leadId,
       description: body.data.notes
         ? `${body.data.title}: ${body.data.notes}`
         : body.data.title,
-      extra: {
-        leadId,
-      },
     });
 
     res.status(201).json({ success: true });

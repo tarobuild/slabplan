@@ -3,8 +3,10 @@ import multer from "multer";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
+  exists,
   inArray,
   isNull,
   ne,
@@ -285,25 +287,67 @@ function normalizeUniqueStrings(values: string[]) {
   );
 }
 
-function canViewHydratedScheduleItem(
-  auth: AuthContext,
-  item: {
-    createdBy: string | null;
-    assigneeIds: string[];
-    visibleToEstimators: boolean | null;
-    visibleToInstallers: boolean | null;
-    visibleToOfficeStaff: boolean | null;
-  },
-) {
-  if (isAdmin(auth) || item.createdBy === auth.userId || item.assigneeIds.includes(auth.userId)) {
-    return true;
+// SQL expression of the schedule item visibility rules (mirroring what the
+// hydrated `canView` checks used to do in memory) plus the personal to-do
+// filter. Pushing the predicate into SQL lets the schedule list endpoint count
+// and paginate without hydrating every row in the job.
+//
+// Visibility rules:
+//   - Admins see every row (subject to the personal to-do rule below).
+//   - Project managers see rows where `visibleToOfficeStaff` or
+//     `visibleToEstimators` is not explicitly false.
+//   - Everyone else (crew members) sees rows where `visibleToInstallers` is
+//     not explicitly false.
+//   - In all roles, the row's creator and assigned users always see it.
+//   - A personal to-do is only visible to its creator regardless of role.
+function buildScheduleListVisibilityFilter(auth: AuthContext) {
+  const userId = auth.userId;
+
+  // A personal to-do is only visible to its creator, regardless of role.
+  const personalTodoFilter = or(
+    eq(scheduleItems.isPersonalTodo, false),
+    isNull(scheduleItems.isPersonalTodo),
+    eq(scheduleItems.createdBy, userId),
+  );
+
+  if (isAdmin(auth)) {
+    return personalTodoFilter;
   }
 
-  if (auth.role === "project_manager") {
-    return item.visibleToOfficeStaff !== false || item.visibleToEstimators !== false;
-  }
+  const assignedToCurrentUser = exists(
+    db
+      .select({ marker: sql`1` })
+      .from(scheduleItemAssignees)
+      .where(
+        and(
+          eq(scheduleItemAssignees.scheduleItemId, scheduleItems.id),
+          eq(scheduleItemAssignees.userId, userId),
+        ),
+      ),
+  );
 
-  return item.visibleToInstallers !== false;
+  // Mirror the in-memory `!== false` semantics: TRUE *and* NULL count as visible.
+  const roleVisibility =
+    auth.role === "project_manager"
+      ? or(
+          ne(scheduleItems.visibleToOfficeStaff, false),
+          isNull(scheduleItems.visibleToOfficeStaff),
+          ne(scheduleItems.visibleToEstimators, false),
+          isNull(scheduleItems.visibleToEstimators),
+        )
+      : or(
+          ne(scheduleItems.visibleToInstallers, false),
+          isNull(scheduleItems.visibleToInstallers),
+        );
+
+  return and(
+    personalTodoFilter,
+    or(
+      eq(scheduleItems.createdBy, userId),
+      assignedToCurrentUser,
+      roleVisibility,
+    ),
+  );
 }
 
 const requireScheduleJobRouteAccess = asyncHandler(async (req, _res, next) => {
@@ -2560,32 +2604,42 @@ router.get(
     }
 
     const { page, limit } = parsedQuery.data;
-    const currentUserId = req.auth!.userId;
+    const auth = req.auth!;
+    const currentUserId = auth.userId;
 
-    const rows = await db
-      .select({
-        id: scheduleItems.id,
-      })
+    // Compose visibility rules in SQL so we don't have to hydrate every row in
+    // the job just to compute the total count or to filter out items the
+    // requesting user cannot see.
+    const baseWhere = and(
+      eq(scheduleItems.jobId, jobId),
+      isNull(scheduleItems.deletedAt),
+      buildScheduleListVisibilityFilter(auth),
+    );
+
+    const [{ value: totalItems }] = await db
+      .select({ value: count() })
       .from(scheduleItems)
-      .where(
-        and(
-          eq(scheduleItems.jobId, jobId),
-          isNull(scheduleItems.deletedAt),
-        ),
-      )
-      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id));
+      .where(baseWhere);
 
-    const hydrated = await hydrateScheduleItems(rows.map((row) => row.id), currentUserId);
-
-    const visibleItems = hydrated
-      .map((entry) => entry.item)
-      .filter((item) => canViewHydratedScheduleItem(req.auth!, item))
-      .filter((item) => !item.isPersonalTodo || item.createdBy === currentUserId);
-
-    const totalItems = visibleItems.length;
     const totalPages = Math.max(1, Math.ceil(totalItems / limit));
     const offset = (page - 1) * limit;
-    const data = visibleItems.slice(offset, offset + limit);
+
+    const pageRows =
+      totalItems === 0 || offset >= totalItems
+        ? []
+        : await db
+            .select({ id: scheduleItems.id })
+            .from(scheduleItems)
+            .where(baseWhere)
+            .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id))
+            .limit(limit)
+            .offset(offset);
+
+    const hydrated = await hydrateScheduleItems(
+      pageRows.map((row) => row.id),
+      currentUserId,
+    );
+    const data = hydrated.map((entry) => entry.item);
 
     res.json({
       data,

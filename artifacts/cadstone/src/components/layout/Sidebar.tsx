@@ -10,6 +10,11 @@ import {
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
 
@@ -21,10 +26,26 @@ type Job = {
   state: string | null
 }
 
+type StatusFilter = "open" | "closed" | "archived" | "all"
+
 const STATUS_DOT: Record<string, string> = {
   open: "bg-green-500",
   closed: "bg-slate-400",
   archived: "bg-slate-300",
+}
+
+const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: "open", label: "Open" },
+  { value: "closed", label: "Closed" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "All" },
+]
+
+const EMPTY_COPY: Record<StatusFilter, string> = {
+  open: "No open jobs",
+  closed: "No closed jobs",
+  archived: "No archived jobs",
+  all: "No jobs",
 }
 
 function getApiErrorMessage(err: unknown, fallback: string) {
@@ -42,6 +63,8 @@ export default function Sidebar() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [search, setSearch] = useState("")
   const [sortAsc, setSortAsc] = useState(true)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("open")
+  const [filterOpen, setFilterOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [activeJob, setActiveJob] = useState<Job | null>(null)
   const activeRef = useRef<HTMLButtonElement | null>(null)
@@ -50,7 +73,7 @@ export default function Sidebar() {
     setErrorMessage(null)
 
     api
-      .get("/jobs?limit=200&status=open")
+      .get("/jobs?limit=200")
       .then((r) => setJobs(r.data.jobs ?? r.data ?? []))
       .catch((err: unknown) => {
         setErrorMessage(getApiErrorMessage(err, "Couldn't refresh jobs right now."))
@@ -69,16 +92,22 @@ export default function Sidebar() {
     }
   }, [jobId, jobs.length])
 
-  const filtered = jobs
+  const statusFiltered = jobs.filter(
+    (j) => statusFilter === "all" || j.status === statusFilter,
+  )
+
+  const filtered = statusFiltered
     .filter((j) => j.title.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) =>
       sortAsc ? a.title.localeCompare(b.title) : b.title.localeCompare(a.title),
     )
 
-  const openCount = jobs.filter((j) => j.status === "open").length
+  const filteredCount = statusFiltered.length
+  const isFilterActive = statusFilter !== "open"
 
-  // Resolve the active job for the "Current Job" banner. The open-jobs list
-  // only contains status=open, so closed/archived jobs need a direct fetch.
+  // Resolve the active job for the "Current Job" banner. The sidebar list may
+  // be filtered (or the active job may not be in the loaded slice), so fall
+  // back to a direct fetch by id when we can't find it locally.
   useEffect(() => {
     if (!jobId) {
       setActiveJob(null)
@@ -162,17 +191,64 @@ export default function Sidebar() {
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
           <span>Jobs</span>
-          <span className="text-xs text-slate-400">({openCount})</span>
+          <span className="text-xs text-slate-400">({filteredCount})</span>
         </div>
         <div className="flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6 text-slate-400 hover:text-slate-600"
-            title="Filter"
-          >
-            <SlidersHorizontal className="size-3.5" />
-          </Button>
+          <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "relative size-6 text-slate-400 hover:text-slate-600",
+                  isFilterActive && "text-orange-600 hover:text-orange-700",
+                )}
+                title="Filter"
+                aria-label="Filter jobs by status"
+              >
+                <SlidersHorizontal className="size-3.5" />
+                {isFilterActive && (
+                  <span
+                    aria-hidden
+                    className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-orange-500"
+                  />
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-40 p-1">
+              <div role="radiogroup" aria-label="Filter jobs by status">
+                {STATUS_FILTER_OPTIONS.map((option) => {
+                  const selected = statusFilter === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => {
+                        setStatusFilter(option.value)
+                        setFilterOpen(false)
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-xs hover:bg-slate-100",
+                        selected
+                          ? "font-medium text-orange-700"
+                          : "text-slate-700",
+                      )}
+                    >
+                      <span>{option.label}</span>
+                      {selected && (
+                        <span
+                          aria-hidden
+                          className="size-1.5 rounded-full bg-orange-500"
+                        />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
           <Button
             variant="ghost"
             size="icon"
@@ -217,7 +293,7 @@ export default function Sidebar() {
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 && (
           <p className="px-3 py-6 text-center text-xs text-slate-400">
-            {search ? "No jobs match your search" : "No open jobs"}
+            {search ? "No jobs match your search" : EMPTY_COPY[statusFilter]}
           </p>
         )}
         {filtered.map((job) => {
@@ -254,7 +330,7 @@ export default function Sidebar() {
                 )}
                 {isActive && (
                   <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-orange-500">
-                    Open
+                    Current
                   </p>
                 )}
               </div>

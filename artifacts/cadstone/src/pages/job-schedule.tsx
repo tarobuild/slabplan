@@ -328,6 +328,34 @@ type DragSelection = {
   moved: boolean
 }
 
+type BlockDragColumn = {
+  dayKey: string
+  left: number
+  right: number
+  top: number
+  height: number
+}
+
+type BlockDragMode = "move" | "resize-start" | "resize-end"
+
+type BlockDrag = {
+  itemId: string
+  pointerId: number
+  mode: BlockDragMode
+  durationMinutes: number
+  anchorOffsetMinutes: number
+  startMinutes: number
+  endMinutes: number
+  dayKey: string
+  origStartMinutes: number
+  origEndMinutes: number
+  origDayKey: string
+  rectTop: number
+  rectHeight: number
+  moved: boolean
+  columns: BlockDragColumn[]
+}
+
 function snapMinutes(min: number, step = DRAG_SNAP_MINUTES) {
   return Math.round(min / step) * step
 }
@@ -345,11 +373,32 @@ function minutesFromClientY(clientY: number, rectTop: number, rectHeight: number
   return clampMinutes(snapMinutes(minutes))
 }
 
+function rawMinutesFromClientY(clientY: number, rectTop: number, rectHeight: number) {
+  if (rectHeight <= 0) {
+    return 0
+  }
+  const offset = Math.max(0, Math.min(rectHeight, clientY - rectTop))
+  return (offset / rectHeight) * TIMED_GRID_TOTAL_MINUTES
+}
+
 function minutesToTimeString(absMin: number) {
   const total = DAY_START_HOUR * 60 + clampMinutes(absMin)
   const h = Math.floor(total / 60)
   const m = total % 60
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+}
+
+function timeStringToGridMinutes(value: string | null | undefined) {
+  if (!value) {
+    return null
+  }
+  const [hStr, mStr] = value.split(":")
+  const h = Number(hStr)
+  const m = Number(mStr)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) {
+    return null
+  }
+  return (h - DAY_START_HOUR) * 60 + m
 }
 const LIST_PAGE_SIZE = 10
 const DAY_WIDTH_BY_SCALE: Record<GanttScale, number> = {
@@ -1664,6 +1713,9 @@ export default function JobSchedulePage() {
   const [quickCreateEndTime, setQuickCreateEndTime] = useState<string | null>(null)
   const [dragSelection, setDragSelection] = useState<DragSelection | null>(null)
   const dragSelectionRef = useRef<DragSelection | null>(null)
+  const [blockDrag, setBlockDrag] = useState<BlockDrag | null>(null)
+  const blockDragRef = useRef<BlockDrag | null>(null)
+  const blockClickSuppressRef = useRef<string | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -1985,6 +2037,109 @@ export default function JobSchedulePage() {
       window.removeEventListener("pointercancel", handleCancel)
     }
   }, [dragSelection?.pointerId])
+
+  useEffect(() => {
+    if (!blockDrag) {
+      return
+    }
+
+    function handleMove(event: PointerEvent) {
+      const current = blockDragRef.current
+      if (!current || current.pointerId !== event.pointerId) {
+        return
+      }
+
+      let activeColumn = current.columns.find((col) => col.dayKey === current.dayKey) ?? current.columns[0]
+      if (current.mode === "move" && current.columns.length > 1) {
+        const hit = current.columns.find(
+          (col) => event.clientX >= col.left && event.clientX <= col.right,
+        )
+        if (hit) {
+          activeColumn = hit
+        }
+      }
+
+      let nextStart = current.startMinutes
+      let nextEnd = current.endMinutes
+      let nextDayKey = current.dayKey
+
+      if (current.mode === "move") {
+        const pointerRaw = rawMinutesFromClientY(event.clientY, activeColumn.top, activeColumn.height)
+        let start = clampMinutes(snapMinutes(pointerRaw - current.anchorOffsetMinutes))
+        let end = start + current.durationMinutes
+        if (end > TIMED_GRID_TOTAL_MINUTES) {
+          end = TIMED_GRID_TOTAL_MINUTES
+          start = Math.max(0, end - current.durationMinutes)
+        }
+        nextStart = start
+        nextEnd = end
+        nextDayKey = activeColumn.dayKey
+      } else if (current.mode === "resize-start") {
+        const pointer = minutesFromClientY(event.clientY, activeColumn.top, activeColumn.height)
+        let start = pointer
+        if (start > current.endMinutes - DRAG_SNAP_MINUTES) {
+          start = current.endMinutes - DRAG_SNAP_MINUTES
+        }
+        nextStart = clampMinutes(start)
+      } else {
+        const pointer = minutesFromClientY(event.clientY, activeColumn.top, activeColumn.height)
+        let end = pointer
+        if (end < current.startMinutes + DRAG_SNAP_MINUTES) {
+          end = current.startMinutes + DRAG_SNAP_MINUTES
+        }
+        nextEnd = clampMinutes(end)
+      }
+
+      const moved =
+        current.moved ||
+        nextStart !== current.origStartMinutes ||
+        nextEnd !== current.origEndMinutes ||
+        nextDayKey !== current.origDayKey
+
+      const next: BlockDrag = {
+        ...current,
+        startMinutes: nextStart,
+        endMinutes: nextEnd,
+        dayKey: nextDayKey,
+        rectTop: activeColumn.top,
+        rectHeight: activeColumn.height,
+        moved,
+      }
+      blockDragRef.current = next
+      setBlockDrag(next)
+    }
+
+    function handleUp(event: PointerEvent) {
+      const current = blockDragRef.current
+      if (!current || current.pointerId !== event.pointerId) {
+        return
+      }
+      blockDragRef.current = null
+      setBlockDrag(null)
+      if (current.moved) {
+        blockClickSuppressRef.current = current.itemId
+        void commitBlockDrag(current)
+      }
+    }
+
+    function handleCancel(event: PointerEvent) {
+      const current = blockDragRef.current
+      if (!current || current.pointerId !== event.pointerId) {
+        return
+      }
+      blockDragRef.current = null
+      setBlockDrag(null)
+    }
+
+    window.addEventListener("pointermove", handleMove)
+    window.addEventListener("pointerup", handleUp)
+    window.addEventListener("pointercancel", handleCancel)
+    return () => {
+      window.removeEventListener("pointermove", handleMove)
+      window.removeEventListener("pointerup", handleUp)
+      window.removeEventListener("pointercancel", handleCancel)
+    }
+  }, [blockDrag?.pointerId])
 
   useEffect(() => {
     if (historyOpen) {
@@ -3183,6 +3338,157 @@ export default function JobSchedulePage() {
     openQuickCreate(dayKey, minutesToTimeString(start), minutesToTimeString(end))
   }
 
+  function isBlockDraggable(item: ScheduleItemRecord) {
+    if (!item.isHourly) {
+      return false
+    }
+    if (!item.startTime || !item.endTime) {
+      return false
+    }
+    if (itemEndDate(item) !== item.startDate) {
+      return false
+    }
+    const start = timeStringToGridMinutes(item.startTime)
+    const end = timeStringToGridMinutes(item.endTime)
+    if (start === null || end === null) {
+      return false
+    }
+    if (start < 0 || end > TIMED_GRID_TOTAL_MINUTES || end <= start) {
+      return false
+    }
+    return true
+  }
+
+  function handleBlockPointerDown(
+    event: React.PointerEvent<HTMLElement>,
+    item: ScheduleItemRecord,
+    dayKey: string,
+    mode: BlockDragMode,
+  ) {
+    if (event.button !== 0) {
+      return
+    }
+    if (event.pointerType !== "mouse") {
+      return
+    }
+    if (!isBlockDraggable(item)) {
+      return
+    }
+    const startMin = timeStringToGridMinutes(item.startTime)
+    const endMin = timeStringToGridMinutes(item.endTime)
+    if (startMin === null || endMin === null) {
+      return
+    }
+
+    const columnEl = (event.currentTarget as HTMLElement).closest<HTMLElement>("[data-timed-day]")
+    if (!columnEl) {
+      return
+    }
+
+    event.stopPropagation()
+    event.preventDefault()
+
+    const columns: BlockDragColumn[] = []
+    const parent = columnEl.parentElement
+    const siblings = parent?.querySelectorAll<HTMLElement>("[data-timed-day]")
+    if (siblings && siblings.length > 0) {
+      siblings.forEach((node) => {
+        const key = node.dataset.timedDay
+        if (!key) {
+          return
+        }
+        const rect = node.getBoundingClientRect()
+        columns.push({
+          dayKey: key,
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          height: rect.height,
+        })
+      })
+    }
+    if (columns.length === 0) {
+      const rect = columnEl.getBoundingClientRect()
+      columns.push({
+        dayKey,
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        height: rect.height,
+      })
+    }
+
+    const myColumn = columns.find((col) => col.dayKey === dayKey) ?? columns[0]
+    const pointerRaw = rawMinutesFromClientY(event.clientY, myColumn.top, myColumn.height)
+    const anchorOffset = pointerRaw - startMin
+
+    const next: BlockDrag = {
+      itemId: item.id,
+      pointerId: event.pointerId,
+      mode,
+      durationMinutes: endMin - startMin,
+      anchorOffsetMinutes: anchorOffset,
+      startMinutes: startMin,
+      endMinutes: endMin,
+      dayKey,
+      origStartMinutes: startMin,
+      origEndMinutes: endMin,
+      origDayKey: dayKey,
+      rectTop: myColumn.top,
+      rectHeight: myColumn.height,
+      moved: false,
+      columns,
+    }
+    blockDragRef.current = next
+    setBlockDrag(next)
+  }
+
+  async function commitBlockDrag(drag: BlockDrag) {
+    const target = items.find((entry) => entry.id === drag.itemId)
+    if (!target) {
+      return
+    }
+    const newStartTime = minutesToTimeString(drag.startMinutes)
+    const newEndTime = minutesToTimeString(drag.endMinutes)
+    const newStartDate = drag.mode === "move" ? drag.dayKey : target.startDate
+    if (
+      newStartDate === target.startDate &&
+      newStartTime === target.startTime &&
+      newEndTime === target.endTime
+    ) {
+      return
+    }
+
+    const previousItems = items
+    const optimistic = items.map((entry) =>
+      entry.id === target.id
+        ? {
+            ...entry,
+            startDate: newStartDate,
+            startTime: newStartTime,
+            endTime: newEndTime,
+            isHourly: true,
+          }
+        : entry,
+    )
+    setItems(optimistic)
+
+    try {
+      const payload: ScheduleItemPayload = {
+        ...schedulePayloadFromItem(target),
+        startDate: newStartDate,
+        isHourly: true,
+        startTime: newStartTime,
+        endTime: newEndTime,
+      }
+      await api.put(`/schedule-items/${target.id}`, payload)
+      await refreshScheduleData()
+    } catch (error) {
+      setItems(previousItems)
+      toastApiError(error, "Failed to update schedule item")
+    }
+  }
+
   function handleTimedColumnPointerDown(event: React.PointerEvent<HTMLDivElement>, dayKey: string) {
     if (event.button !== 0) {
       return
@@ -4015,6 +4321,7 @@ export default function JobSchedulePage() {
                           return (
                             <div
                               key={dk}
+                              data-timed-day={dk}
                               className="relative border-r border-[#E5E7EB] last:border-r-0 select-none touch-pan-y"
                               style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
                               onPointerDown={(event) => handleTimedColumnPointerDown(event, dk)}
@@ -4030,21 +4337,42 @@ export default function JobSchedulePage() {
                               ))}
 
                               {segments.map((segment) => {
-                                const top = (segment.startHour - DAY_START_HOUR) * HOUR_HEIGHT + 4
-                                const height = Math.max((segment.endHour - segment.startHour) * HOUR_HEIGHT - 8, 32)
-                                const width = `calc(${100 / segment.laneCount}% - 8px)`
-                                const left = `calc(${segment.lane * (100 / segment.laneCount)}% + 4px)`
+                                const isDragged = !!blockDrag && blockDrag.itemId === segment.item.id
+                                if (isDragged && blockDrag!.dayKey !== dk) {
+                                  return null
+                                }
+                                const draggable = isBlockDraggable(segment.item)
+                                const top = isDragged
+                                  ? (blockDrag!.startMinutes / 60) * HOUR_HEIGHT + 4
+                                  : (segment.startHour - DAY_START_HOUR) * HOUR_HEIGHT + 4
+                                const height = isDragged
+                                  ? Math.max(((blockDrag!.endMinutes - blockDrag!.startMinutes) / 60) * HOUR_HEIGHT - 8, 18)
+                                  : Math.max((segment.endHour - segment.startHour) * HOUR_HEIGHT - 8, 32)
+                                const width = isDragged
+                                  ? "calc(100% - 8px)"
+                                  : `calc(${100 / segment.laneCount}% - 8px)`
+                                const left = isDragged
+                                  ? "4px"
+                                  : `calc(${segment.lane * (100 / segment.laneCount)}% + 4px)`
+                                const displayStartTime = isDragged
+                                  ? minutesToTimeString(blockDrag!.startMinutes)
+                                  : segment.item.startTime
+                                const displayEndTime = isDragged
+                                  ? minutesToTimeString(blockDrag!.endMinutes)
+                                  : segment.item.endTime
 
                                 return (
                                   <button
                                     key={`${segment.item.id}-${segment.lane}`}
                                     type="button"
                                     className={cn(
-                                      "absolute overflow-hidden rounded-xl border px-2 py-1 text-left text-xs font-medium shadow-sm",
+                                      "group absolute overflow-hidden rounded-xl border px-2 py-1 text-left text-xs font-medium shadow-sm",
                                       segment.item.isPersonalTodo
                                         ? "border-dashed text-slate-700"
                                         : "text-white",
                                       activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
+                                      draggable && "cursor-grab active:cursor-grabbing",
+                                      isDragged && "z-20 cursor-grabbing ring-2 ring-orange-300 shadow-lg",
                                     )}
                                     style={{
                                       top,
@@ -4058,20 +4386,82 @@ export default function JobSchedulePage() {
                                         ? (segment.item.displayColor || DEFAULT_SCHEDULE_COLOR)
                                         : colorWithAlpha(segment.item.displayColor, 0.75),
                                     }}
-                                    onClick={() => openExistingItem(segment.item.id)}
+                                    onPointerDown={(event) => handleBlockPointerDown(event, segment.item, dk, "move")}
+                                    onClick={() => {
+                                      if (blockClickSuppressRef.current === segment.item.id) {
+                                        blockClickSuppressRef.current = null
+                                        return
+                                      }
+                                      openExistingItem(segment.item.id)
+                                    }}
                                   >
                                     <span className="block truncate">
                                       {segment.item.isPersonalTodo ? (segment.item.isComplete ? "☑ " : "☐ ") : ""}
                                       {segment.item.title}
                                     </span>
                                     <span className={cn("block truncate text-[10px]", segment.item.isPersonalTodo ? "text-slate-500" : "text-white/80")}>
-                                      {segment.item.isHourly && segment.item.startTime
-                                        ? fmtClockRange(segment.item.startTime, segment.item.endTime)
+                                      {segment.item.isHourly && displayStartTime
+                                        ? fmtClockRange(displayStartTime, displayEndTime)
                                         : `${segment.item.workDays} workday${segment.item.workDays === 1 ? "" : "s"}`}
                                     </span>
+                                    {draggable ? (
+                                      <>
+                                        <span
+                                          aria-hidden
+                                          className={cn(
+                                            "pointer-events-auto absolute inset-x-0 top-0 h-1.5 cursor-ns-resize transition-opacity",
+                                            isDragged ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                                            segment.item.isPersonalTodo ? "bg-slate-400/60" : "bg-white/40",
+                                          )}
+                                          onPointerDown={(event) => handleBlockPointerDown(event, segment.item, dk, "resize-start")}
+                                        />
+                                        <span
+                                          aria-hidden
+                                          className={cn(
+                                            "pointer-events-auto absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize transition-opacity",
+                                            isDragged ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                                            segment.item.isPersonalTodo ? "bg-slate-400/60" : "bg-white/40",
+                                          )}
+                                          onPointerDown={(event) => handleBlockPointerDown(event, segment.item, dk, "resize-end")}
+                                        />
+                                      </>
+                                    ) : null}
                                   </button>
                                 )
                               })}
+
+                              {blockDrag && blockDrag.dayKey === dk && blockDrag.origDayKey !== dk
+                                && !segments.some((segment) => segment.item.id === blockDrag.itemId)
+                                ? (() => {
+                                    const item = items.find((entry) => entry.id === blockDrag.itemId)
+                                    if (!item) {
+                                      return null
+                                    }
+                                    const top = (blockDrag.startMinutes / 60) * HOUR_HEIGHT + 4
+                                    const height = Math.max(((blockDrag.endMinutes - blockDrag.startMinutes) / 60) * HOUR_HEIGHT - 8, 18)
+                                    return (
+                                      <div
+                                        className="pointer-events-none absolute left-1 right-1 z-20 overflow-hidden rounded-xl border px-2 py-1 text-left text-xs font-medium shadow-lg ring-2 ring-orange-300"
+                                        style={{
+                                          top,
+                                          height,
+                                          backgroundColor: item.isPersonalTodo
+                                            ? colorWithAlpha(item.displayColor || DEFAULT_SCHEDULE_COLOR, 0.18)
+                                            : item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                          borderColor: item.isPersonalTodo
+                                            ? (item.displayColor || DEFAULT_SCHEDULE_COLOR)
+                                            : colorWithAlpha(item.displayColor, 0.75),
+                                          color: item.isPersonalTodo ? "#1f2937" : "#ffffff",
+                                        }}
+                                      >
+                                        <span className="block truncate">{item.title}</span>
+                                        <span className={cn("block truncate text-[10px]", item.isPersonalTodo ? "text-slate-500" : "text-white/80")}>
+                                          {fmtClockRange(minutesToTimeString(blockDrag.startMinutes), minutesToTimeString(blockDrag.endMinutes))}
+                                        </span>
+                                      </div>
+                                    )
+                                  })()
+                                : null}
 
                               {dragSelection && dragSelection.dayKey === dk ? (() => {
                                 const start = dragSelection.startMinutes
@@ -4224,6 +4614,7 @@ export default function JobSchedulePage() {
                         </div>
 
                         <div
+                          data-timed-day={dateKey(calendarAnchorDate)}
                           className={cn(
                             "relative select-none touch-pan-y",
                             !classifyWorkday(calendarAnchorDate, workdayExceptions).isWorkday && "bg-amber-50/50",
@@ -4239,21 +4630,40 @@ export default function JobSchedulePage() {
                           ))}
 
                           {buildDayTimelineSegments(dateKey(calendarAnchorDate), filteredItems.filter((item) => item.isHourly)).map((segment) => {
-                            const top = (segment.startHour - DAY_START_HOUR) * HOUR_HEIGHT + 6
-                            const height = Math.max((segment.endHour - segment.startHour) * HOUR_HEIGHT - 10, 34)
-                            const width = `calc(${100 / segment.laneCount}% - 12px)`
-                            const left = `calc(${segment.lane * (100 / segment.laneCount)}% + 6px)`
+                            const dayDk = dateKey(calendarAnchorDate)
+                            const isDragged = !!blockDrag && blockDrag.itemId === segment.item.id
+                            const draggable = isBlockDraggable(segment.item)
+                            const top = isDragged
+                              ? (blockDrag!.startMinutes / 60) * HOUR_HEIGHT + 6
+                              : (segment.startHour - DAY_START_HOUR) * HOUR_HEIGHT + 6
+                            const height = isDragged
+                              ? Math.max(((blockDrag!.endMinutes - blockDrag!.startMinutes) / 60) * HOUR_HEIGHT - 10, 24)
+                              : Math.max((segment.endHour - segment.startHour) * HOUR_HEIGHT - 10, 34)
+                            const width = isDragged
+                              ? "calc(100% - 12px)"
+                              : `calc(${100 / segment.laneCount}% - 12px)`
+                            const left = isDragged
+                              ? "6px"
+                              : `calc(${segment.lane * (100 / segment.laneCount)}% + 6px)`
+                            const displayStartTime = isDragged
+                              ? minutesToTimeString(blockDrag!.startMinutes)
+                              : segment.item.startTime
+                            const displayEndTime = isDragged
+                              ? minutesToTimeString(blockDrag!.endMinutes)
+                              : segment.item.endTime
 
                             return (
                               <button
                                 key={`${segment.item.id}-${segment.lane}`}
                                 type="button"
                                 className={cn(
-                                  "absolute overflow-hidden rounded-xl border px-3 py-2 text-left text-sm font-medium shadow-sm",
+                                  "group absolute overflow-hidden rounded-xl border px-3 py-2 text-left text-sm font-medium shadow-sm",
                                   segment.item.isPersonalTodo
                                     ? "border-dashed text-slate-700"
                                     : "text-white",
                                   activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
+                                  draggable && "cursor-grab active:cursor-grabbing",
+                                  isDragged && "z-20 cursor-grabbing ring-2 ring-orange-300 shadow-lg",
                                 )}
                                 style={{
                                   top,
@@ -4267,17 +4677,46 @@ export default function JobSchedulePage() {
                                     ? (segment.item.displayColor || DEFAULT_SCHEDULE_COLOR)
                                     : colorWithAlpha(segment.item.displayColor, 0.75),
                                 }}
-                                onClick={() => openExistingItem(segment.item.id)}
+                                onPointerDown={(event) => handleBlockPointerDown(event, segment.item, dayDk, "move")}
+                                onClick={() => {
+                                  if (blockClickSuppressRef.current === segment.item.id) {
+                                    blockClickSuppressRef.current = null
+                                    return
+                                  }
+                                  openExistingItem(segment.item.id)
+                                }}
                               >
                                 <span className="block truncate">
                                   {segment.item.isPersonalTodo ? (segment.item.isComplete ? "☑ " : "☐ ") : ""}
                                   {segment.item.title}
                                 </span>
                                 <span className={cn("mt-1 block text-xs", segment.item.isPersonalTodo ? "text-slate-500" : "text-white/80")}>
-                                  {segment.item.isHourly && segment.item.startTime
-                                    ? fmtClockRange(segment.item.startTime, segment.item.endTime)
+                                  {segment.item.isHourly && displayStartTime
+                                    ? fmtClockRange(displayStartTime, displayEndTime)
                                     : `${segment.item.workDays} workday${segment.item.workDays === 1 ? "" : "s"}`}
                                 </span>
+                                {draggable ? (
+                                  <>
+                                    <span
+                                      aria-hidden
+                                      className={cn(
+                                        "pointer-events-auto absolute inset-x-0 top-0 h-2 cursor-ns-resize transition-opacity",
+                                        isDragged ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                                        segment.item.isPersonalTodo ? "bg-slate-400/60" : "bg-white/40",
+                                      )}
+                                      onPointerDown={(event) => handleBlockPointerDown(event, segment.item, dayDk, "resize-start")}
+                                    />
+                                    <span
+                                      aria-hidden
+                                      className={cn(
+                                        "pointer-events-auto absolute inset-x-0 bottom-0 h-2 cursor-ns-resize transition-opacity",
+                                        isDragged ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                                        segment.item.isPersonalTodo ? "bg-slate-400/60" : "bg-white/40",
+                                      )}
+                                      onPointerDown={(event) => handleBlockPointerDown(event, segment.item, dayDk, "resize-end")}
+                                    />
+                                  </>
+                                ) : null}
                               </button>
                             )
                           })}

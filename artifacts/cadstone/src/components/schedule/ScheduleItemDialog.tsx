@@ -135,6 +135,9 @@ type ScheduleItemDialogProps = {
   initialStartDate?: string | null
   initialStartTime?: string | null
   initialEndTime?: string | null
+  initialTitle?: string | null
+  initialAssigneeIds?: string[] | null
+  initialIsHourly?: boolean | null
   items: ScheduleItemRecord[]
   users: UserOption[]
   settings: ScheduleSettings
@@ -237,6 +240,9 @@ export function ScheduleItemDialog({
   initialStartDate,
   initialStartTime,
   initialEndTime,
+  initialTitle,
+  initialAssigneeIds,
+  initialIsHourly,
   items,
   users,
   settings,
@@ -329,6 +335,14 @@ export function ScheduleItemDialog({
       form.isHourly = true
       form.startTime = initialStartTime
       form.endTime = initialEndTime || "17:00"
+    } else if (initialIsHourly === false) {
+      form.isHourly = false
+    }
+    if (initialTitle) {
+      form.title = initialTitle
+    }
+    if (initialAssigneeIds && initialAssigneeIds.length > 0) {
+      form.assigneeIds = [...initialAssigneeIds]
     }
     setValues(form)
     setAssigneeQuery("")
@@ -358,7 +372,7 @@ export function ScheduleItemDialog({
     }
 
     resetForNewItem()
-  }, [itemId, open, today, initialStartDate, initialStartTime, initialEndTime, workdayExceptions])
+  }, [itemId, open, today, initialStartDate, initialStartTime, initialEndTime, initialTitle, initialAssigneeIds, initialIsHourly, workdayExceptions])
 
   useEffect(() => {
     if (!open) {

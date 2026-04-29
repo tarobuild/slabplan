@@ -53,6 +53,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/store/auth"
 import { ScheduleItemDialog, type SchedulePreview } from "@/components/schedule/ScheduleItemDialog"
+import { ScheduleQuickCreate, type QuickCreateState } from "@/components/schedule/ScheduleQuickCreate"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -1623,6 +1624,13 @@ export default function JobSchedulePage() {
   const [dialogInitStartTime, setDialogInitStartTime] = useState<string | null>(null)
   const [dialogInitEndTime, setDialogInitEndTime] = useState<string | null>(null)
   const [schedulePreview, setSchedulePreview] = useState<SchedulePreview | null>(null)
+  const [dialogInitTitle, setDialogInitTitle] = useState<string | null>(null)
+  const [dialogInitAssigneeIds, setDialogInitAssigneeIds] = useState<string[] | null>(null)
+  const [dialogInitIsHourly, setDialogInitIsHourly] = useState<boolean | null>(null)
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false)
+  const [quickCreateDate, setQuickCreateDate] = useState<string | null>(null)
+  const [quickCreateStartTime, setQuickCreateStartTime] = useState<string | null>(null)
+  const [quickCreateEndTime, setQuickCreateEndTime] = useState<string | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -3059,12 +3067,40 @@ export default function JobSchedulePage() {
     setDialogInitDate(startDate ?? null)
     setDialogInitStartTime(startTime ?? null)
     setDialogInitEndTime(endTime ?? null)
+    setDialogInitTitle(null)
+    setDialogInitAssigneeIds(null)
+    setDialogInitIsHourly(null)
     setDialogOpen(true)
   }
 
   function openExistingItem(itemId: string) {
     setActiveItemId(itemId)
     setDialogInitDate(null)
+    setDialogInitTitle(null)
+    setDialogInitAssigneeIds(null)
+    setDialogInitIsHourly(null)
+    setDialogOpen(true)
+  }
+
+  function openQuickCreate(startDate: string, startTime?: string, endTime?: string) {
+    setQuickCreateDate(startDate)
+    setQuickCreateStartTime(startTime ?? null)
+    setQuickCreateEndTime(endTime ?? null)
+    setQuickCreateOpen(true)
+  }
+
+  async function handleQuickSave() {
+    await refreshScheduleData()
+  }
+
+  function handleQuickMoreOptions(state: QuickCreateState) {
+    setActiveItemId(null)
+    setDialogInitDate(state.date)
+    setDialogInitStartTime(state.isHourly ? state.startTime : null)
+    setDialogInitEndTime(state.isHourly ? state.endTime : null)
+    setDialogInitTitle(state.title || null)
+    setDialogInitAssigneeIds(state.assigneeIds.length > 0 ? state.assigneeIds : null)
+    setDialogInitIsHourly(state.isHourly)
     setDialogOpen(true)
   }
 
@@ -3589,7 +3625,7 @@ export default function JobSchedulePage() {
                                           : "bg-slate-50/70"
                                         : "bg-amber-50/70",
                                     )}
-                                    onClick={() => openNewItem(day)}
+                                    onClick={() => openQuickCreate(day)}
                                   >
                                     <div className="flex items-start justify-between gap-2">
                                       <span
@@ -3851,7 +3887,7 @@ export default function JobSchedulePage() {
                                     const hour = DAY_START_HOUR + hourIndex
                                     const startTime = `${String(hour).padStart(2, "0")}:00`
                                     const endTime = `${String(hour + 1).padStart(2, "0")}:00`
-                                    openNewItem(dk, startTime, endTime)
+                                    openQuickCreate(dk, startTime, endTime)
                                   }}
                                 />
                               ))}
@@ -4047,7 +4083,7 @@ export default function JobSchedulePage() {
                                 const hour = DAY_START_HOUR + hourIndex
                                 const startTime = `${String(hour).padStart(2, "0")}:00`
                                 const endTime = `${String(hour + 1).padStart(2, "0")}:00`
-                                openNewItem(dateKey(calendarAnchorDate), startTime, endTime)
+                                openQuickCreate(dateKey(calendarAnchorDate), startTime, endTime)
                               }}
                             />
                           ))}
@@ -5660,6 +5696,9 @@ export default function JobSchedulePage() {
               setDialogInitDate(null)
               setDialogInitStartTime(null)
               setDialogInitEndTime(null)
+              setDialogInitTitle(null)
+              setDialogInitAssigneeIds(null)
+              setDialogInitIsHourly(null)
             }
           }}
           jobId={jobId}
@@ -5667,6 +5706,9 @@ export default function JobSchedulePage() {
           initialStartDate={dialogInitDate}
           initialStartTime={dialogInitStartTime}
           initialEndTime={dialogInitEndTime}
+          initialTitle={dialogInitTitle}
+          initialAssigneeIds={dialogInitAssigneeIds}
+          initialIsHourly={dialogInitIsHourly}
           items={activeItems}
           users={users}
           settings={settings}
@@ -5678,6 +5720,27 @@ export default function JobSchedulePage() {
           onDraftAddNote={handleDraftAddNote}
           onDraftDelete={handleDraftDeleteItem}
           onPreviewChange={setSchedulePreview}
+        />
+      ) : null}
+
+      {jobId && quickCreateDate ? (
+        <ScheduleQuickCreate
+          open={quickCreateOpen}
+          onOpenChange={(nextOpen) => {
+            setQuickCreateOpen(nextOpen)
+            if (!nextOpen) {
+              setQuickCreateDate(null)
+              setQuickCreateStartTime(null)
+              setQuickCreateEndTime(null)
+            }
+          }}
+          jobId={jobId}
+          users={users}
+          initialDate={quickCreateDate}
+          initialStartTime={quickCreateStartTime}
+          initialEndTime={quickCreateEndTime}
+          onSaved={handleQuickSave}
+          onMoreOptions={handleQuickMoreOptions}
         />
       ) : null}
 

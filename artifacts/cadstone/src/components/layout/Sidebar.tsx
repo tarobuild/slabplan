@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/popover"
 import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
+import { classifyApiError } from "@/lib/api-errors"
 
 type Job = {
   id: string
@@ -92,15 +93,6 @@ function readStoredSortAsc(): boolean {
   }
 }
 
-function getApiErrorMessage(err: unknown, fallback: string) {
-  if (typeof err === "object" && err !== null) {
-    const value = err as { response?: { data?: { message?: string } }; message?: string }
-    return value.response?.data?.message ?? value.message ?? fallback
-  }
-
-  return fallback
-}
-
 export default function Sidebar() {
   const { jobId } = useParams<{ jobId?: string }>()
   const navigate = useNavigate()
@@ -122,7 +114,12 @@ export default function Sidebar() {
       .get("/jobs?limit=200")
       .then((r) => setJobs(r.data.jobs ?? r.data ?? []))
       .catch((err: unknown) => {
-        setErrorMessage(getApiErrorMessage(err, "Couldn't refresh jobs right now."))
+        const classified = classifyApiError(err, "Couldn't refresh jobs right now.")
+        setErrorMessage(
+          classified.kind === "toast"
+            ? classified.message
+            : "You don't have permission to view jobs.",
+        )
       })
   }
 

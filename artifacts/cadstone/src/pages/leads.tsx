@@ -76,6 +76,7 @@ import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
 import { useFilePreview } from "@/components/files/file-preview-context"
 import type { PreviewFile } from "@/components/files/FilePreview"
 import { toast } from "sonner"
+import { classifyApiError, toastApiError } from "@/lib/api-errors"
 
 type LeadContact = {
   id: string
@@ -204,14 +205,6 @@ function getAttachmentIcon(mimeType: string | null) {
   )
     return <FileText className="size-4 text-blue-500" />
   return <File className="size-4 text-slate-400" />
-}
-
-function getApiError(err: unknown, fallback: string): string {
-  if (typeof err === "object" && err !== null) {
-    const e = err as { response?: { data?: { message?: string } }; message?: string }
-    return e.response?.data?.message ?? e.message ?? fallback
-  }
-  return fallback
 }
 
 type CreateForm = {
@@ -374,7 +367,7 @@ export default function LeadsPage() {
         setLeads(r.data.leads)
         setPagination(r.data.pagination)
       })
-      .catch(() => toast.error("Failed to load leads"))
+      .catch((err: unknown) => toastApiError(err, "Failed to load leads"))
       .finally(() => setLoading(false))
   }
 
@@ -412,7 +405,7 @@ export default function LeadsPage() {
         setEditForm(nextEditForm)
         setSavedEditForm(nextEditForm)
       })
-      .catch(() => toast.error("Failed to load lead details"))
+      .catch((err: unknown) => toastApiError(err, "Failed to load lead details"))
       .finally(() => setLoadingDetail(false))
   }
 
@@ -472,7 +465,7 @@ export default function LeadsPage() {
       fetchLeads()
       invalidateAppData(["leads", "navigation"])
     } catch (err: unknown) {
-      toast.error(getApiError(err, "Failed to save changes"))
+      toastApiError(err, "Failed to save changes")
     } finally {
       setSavingEdit(false)
     }
@@ -559,13 +552,17 @@ export default function LeadsPage() {
               email: contactForm.email,
               phone: contactForm.phone || null,
             })
-          } catch {
-            toast.error("Lead created but failed to add contact")
+          } catch (err: unknown) {
+            const classified = classifyApiError(err, "Lead created but failed to add contact")
+            // 403 is already toasted by the global axios interceptor; stay silent here.
+            if (classified.kind === "toast") {
+              toast.error(`Lead created, but couldn't add the contact: ${classified.message}`)
+            }
           }
         }
       }
     } catch (err: unknown) {
-      toast.error(getApiError(err, "Failed to create lead"))
+      toastApiError(err, "Failed to create lead")
       setSaving(false)
       return
     }
@@ -583,7 +580,14 @@ export default function LeadsPage() {
         })
         successfulIndexes.push(i)
       } catch (err) {
-        failures.push({ name: file.name, error: getApiError(err, "Upload failed") })
+        const classified = classifyApiError(err, "Upload failed")
+        // 403 is already toasted (debounced) by the global axios interceptor;
+        // skip adding to local failures so we don't duplicate that feedback.
+        // The file stays in createFiles (not in successfulIndexes), so the user
+        // can retry it.
+        if (classified.kind === "toast") {
+          failures.push({ name: file.name, error: classified.message })
+        }
       }
     }
 
@@ -601,7 +605,7 @@ export default function LeadsPage() {
       setFailedUploads(failures)
       toast.error(
         failures.length === 1
-          ? `Failed to upload ${failures[0].name}`
+          ? `Failed to upload ${failures[0].name}: ${failures[0].error}`
           : `${failures.length} files failed to upload`,
       )
     }
@@ -619,8 +623,8 @@ export default function LeadsPage() {
       if (sheetLeadId === deleteId) setSheetLeadId(null)
       fetchLeads()
       invalidateAppData(["leads", "navigation"])
-    } catch {
-      toast.error("Failed to delete lead")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to delete lead")
     } finally {
       setDeleting(false)
     }
@@ -654,7 +658,7 @@ export default function LeadsPage() {
       const { data: freshData } = await api.get(`/leads/${sheetLeadId}`)
       setLeadDetail(freshData.lead)
     } catch (err: unknown) {
-      toast.error(getApiError(err, "Failed to upload file(s)"))
+      toastApiError(err, "Failed to upload file(s)")
     } finally {
       setUploadingAttachment(false)
       if (fileInputRef.current) fileInputRef.current.value = ""
@@ -678,8 +682,8 @@ export default function LeadsPage() {
           : prev,
       )
       toast.success("Attachment deleted")
-    } catch {
-      toast.error("Failed to delete attachment")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to delete attachment")
     } finally {
       setDeletingAttachmentId(null)
     }

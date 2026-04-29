@@ -39,6 +39,7 @@ import { invalidateAppData, subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
+import { toastApiError } from "@/lib/api-errors"
 
 type Job = {
   id: string
@@ -66,14 +67,6 @@ const TABS: readonly TabDef[] = [
   { label: "Summary", path: "summary", icon: FileText },
   { label: "Files", path: "files/documents", matchPrefix: "files/", icon: FolderOpen },
 ]
-
-function getApiErrorMessage(err: unknown, fallback: string): string {
-  if (typeof err === "object" && err !== null) {
-    const e = err as { response?: { data?: { message?: string } }; message?: string }
-    return e.response?.data?.message ?? e.message ?? fallback
-  }
-  return fallback
-}
 
 export default function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>()
@@ -119,8 +112,8 @@ export default function JobDetailPage() {
           headers: { "Content-Type": "multipart/form-data" },
         })
         toast.success(`${droppedFiles.length} file(s) uploaded to Documents`)
-      } catch {
-        toast.error("Failed to upload files")
+      } catch (err: unknown) {
+        toastApiError(err, "Failed to upload files")
       } finally {
         setPageUploading(false)
       }
@@ -148,9 +141,9 @@ export default function JobDetailPage() {
       .then((r) => {
         setJob(r.data.job ?? r.data)
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         setError("Unable to load this job.")
-        toast.error("Failed to load job")
+        toastApiError(err, "Failed to load job")
       })
       .finally(() => {
         if (showLoading) {
@@ -219,7 +212,7 @@ export default function JobDetailPage() {
       toast.success("Project marked as complete")
       setMarkCompleteOpen(false)
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Failed to mark project complete"))
+      toastApiError(err, "Failed to mark project complete")
     } finally {
       setMarkingComplete(false)
     }
@@ -235,7 +228,7 @@ export default function JobDetailPage() {
       setDeleteDialogOpen(false)
       navigate("/jobs")
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Failed to delete project"))
+      toastApiError(err, "Failed to delete project")
     } finally {
       setDeletingJob(false)
     }

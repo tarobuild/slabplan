@@ -114,6 +114,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
+import { toastApiError } from "@/lib/api-errors"
 
 type AppUser = {
   id: string
@@ -366,15 +367,6 @@ const DEFAULT_SETTINGS: ScheduleSettings = {
   automaticallyMarkItemsComplete: false,
   includeHeaderOnPdfExports: true,
   workdayExceptionCategories: [],
-}
-
-function getApiError(err: unknown, fallback: string) {
-  if (typeof err === "object" && err !== null) {
-    const value = err as { response?: { data?: { message?: string } }; message?: string }
-    return value.response?.data?.message ?? value.message ?? fallback
-  }
-
-  return fallback
 }
 
 function parseDate(value: string) {
@@ -1740,7 +1732,7 @@ export default function JobSchedulePage() {
       await refreshScheduleData()
       toast.success("Personal to-do added")
     } catch (err) {
-      toast.error(getApiError(err, "Failed to add to-do"))
+      toastApiError(err, "Failed to add to-do")
     } finally {
       setTodoSaving(false)
     }
@@ -1761,7 +1753,7 @@ export default function JobSchedulePage() {
       })
       await refreshScheduleData()
     } catch (err) {
-      toast.error(getApiError(err, "Failed to update to-do"))
+      toastApiError(err, "Failed to update to-do")
     }
   }
 
@@ -1879,7 +1871,7 @@ export default function JobSchedulePage() {
         (response.data.data ?? []).filter((entry) => entry.entityType.startsWith("schedule_")),
       )
     } catch (err) {
-      toast.error(getApiError(err, "Failed to load schedule history"))
+      toastApiError(err, "Failed to load schedule history")
     } finally {
       setHistoryLoading(false)
     }
@@ -1895,7 +1887,7 @@ export default function JobSchedulePage() {
     try {
       await Promise.all([fetchItems(), fetchUsers(), fetchJobs(), fetchSettings(), fetchBaseline(), fetchWorkdayExceptions()])
     } catch (err) {
-      toast.error(getApiError(err, "Failed to load schedule"))
+      toastApiError(err, "Failed to load schedule")
     } finally {
       setLoading(false)
     }
@@ -2682,7 +2674,7 @@ export default function JobSchedulePage() {
       await refreshScheduleData()
       toast.success("Draft changes published")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to publish draft changes"))
+      toastApiError(error, "Failed to publish draft changes")
     } finally {
       setDraftPublishing(false)
     }
@@ -2698,7 +2690,7 @@ export default function JobSchedulePage() {
       setBaseline(response.data.baseline)
       toast.success("Baseline captured")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to set baseline"))
+      toastApiError(error, "Failed to set baseline")
     }
   }
 
@@ -2712,7 +2704,7 @@ export default function JobSchedulePage() {
       setBaseline(null)
       toast.success("Baseline removed")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to reset baseline"))
+      toastApiError(error, "Failed to reset baseline")
     }
   }
 
@@ -2776,7 +2768,7 @@ export default function JobSchedulePage() {
       setWorkdayForm(defaultExceptionForm(jobId))
       toast.success(workdayForm.id ? "Workday exception updated" : "Workday exception saved")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to save workday exception"))
+      toastApiError(error, "Failed to save workday exception")
     } finally {
       setWorkdaySaving(false)
     }
@@ -2794,7 +2786,7 @@ export default function JobSchedulePage() {
       setWorkdayForm(defaultExceptionForm(jobId))
       toast.success("Workday exception deleted")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to delete workday exception"))
+      toastApiError(error, "Failed to delete workday exception")
     }
   }
 
@@ -2813,7 +2805,7 @@ export default function JobSchedulePage() {
       setCategoryEditorOpen(false)
       toast.success("Category added")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to add category"))
+      toastApiError(error, "Failed to add category")
     }
   }
 
@@ -2833,7 +2825,7 @@ export default function JobSchedulePage() {
       await fetchSettings()
       toast.success("Category updated")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to update category"))
+      toastApiError(error, "Failed to update category")
     }
   }
 
@@ -2883,7 +2875,7 @@ export default function JobSchedulePage() {
       setSettingsOpen(false)
       toast.success("Schedule settings saved")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to save schedule settings"))
+      toastApiError(error, "Failed to save schedule settings")
     } finally {
       setSettingsSaving(false)
     }
@@ -2920,7 +2912,7 @@ export default function JobSchedulePage() {
           : `${response.data.count} conflict${response.data.count === 1 ? "" : "s"} highlighted`,
       )
     } catch (error) {
-      toast.error(getApiError(error, "Failed to track conflicts"))
+      toastApiError(error, "Failed to track conflicts")
     }
   }
 
@@ -2950,7 +2942,7 @@ export default function JobSchedulePage() {
         await fetchHistory()
       }
     } catch (error) {
-      toast.error(getApiError(error, "Failed to notify assigned users"))
+      toastApiError(error, "Failed to notify assigned users")
     }
   }
 
@@ -2986,7 +2978,7 @@ export default function JobSchedulePage() {
       await refreshScheduleData()
       toast.success("All schedule items deleted")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to delete all schedule items"))
+      toastApiError(error, "Failed to delete all schedule items")
     }
   }
 
@@ -3114,7 +3106,7 @@ export default function JobSchedulePage() {
       await refreshScheduleData()
       toast.success(`${template.name} imported`)
     } catch (error) {
-      toast.error(getApiError(error, "Failed to import template"))
+      toastApiError(error, "Failed to import template")
     } finally {
       setTemplateApplyingId(null)
     }
@@ -3152,7 +3144,7 @@ export default function JobSchedulePage() {
       pdf.save(`cadstone-${kind}-${jobId || "job"}.pdf`)
       toast.success("PDF export ready")
     } catch (error) {
-      toast.error(getApiError(error, "Failed to export PDF"))
+      toastApiError(error, "Failed to export PDF")
     }
   }
 

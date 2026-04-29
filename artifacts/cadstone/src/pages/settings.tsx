@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toast } from "sonner"
+import { toastApiError } from "@/lib/api-errors"
 
 type AuthUser = {
   id: string
@@ -16,14 +17,6 @@ type AuthUser = {
   phone: string | null
   role: string
   avatarUrl: string | null
-}
-
-function getApiError(err: unknown, fallback: string): string {
-  if (typeof err === "object" && err !== null) {
-    const e = err as { response?: { data?: { message?: string } }; message?: string }
-    return e.response?.data?.message ?? e.message ?? fallback
-  }
-  return fallback
 }
 
 export default function SettingsPage() {
@@ -61,7 +54,7 @@ export default function SettingsPage() {
         })
         setSavedEmail(u.email)
       })
-      .catch(() => toast.error("Failed to load profile"))
+      .catch((err: unknown) => toastApiError(err, "Failed to load profile"))
       .finally(() => setLoadingProfile(false))
   }, [])
 
@@ -94,7 +87,7 @@ export default function SettingsPage() {
       })
       toast.success("Profile updated")
     } catch (err: unknown) {
-      toast.error(getApiError(err, "Failed to update profile"))
+      toastApiError(err, "Failed to update profile")
     } finally {
       setSavingProfile(false)
     }
@@ -119,7 +112,7 @@ export default function SettingsPage() {
       toast.success("Password changed successfully")
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" })
     } catch (err: unknown) {
-      toast.error(getApiError(err, "Failed to change password"))
+      toastApiError(err, "Failed to change password")
     } finally {
       setSavingPassword(false)
     }

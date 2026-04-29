@@ -58,6 +58,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
 import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
+import { toastApiError } from "@/lib/api-errors"
 
 type FolderItem = {
   id: string
@@ -102,14 +103,6 @@ type SortOption = (typeof SORT_OPTIONS)[number]
 
 function isSortOption(v: string): v is SortOption {
   return (SORT_OPTIONS as readonly string[]).includes(v)
-}
-
-function getApiErrorMessage(err: unknown, fallback: string): string {
-  if (typeof err === "object" && err !== null) {
-    const e = err as { response?: { data?: { message?: string } }; message?: string }
-    return e.response?.data?.message ?? e.message ?? fallback
-  }
-  return fallback
 }
 
 function formatFileSize(bytes: number | null) {
@@ -274,7 +267,7 @@ export default function FileBrowser({
         setFolders(r.data.folders ?? [])
         setBreadcrumb(r.data.breadcrumb ?? [])
       })
-      .catch((err: unknown) => toast.error(getApiErrorMessage(err, "Failed to load folders")))
+      .catch((err: unknown) => toastApiError(err, "Failed to load folders"))
       .finally(() => setLoading(false))
   }
 
@@ -287,7 +280,7 @@ export default function FileBrowser({
           : `/folders/${folderId}/files?page=1&limit=100`,
       )
       .then((r) => setFiles(r.data.files ?? []))
-      .catch((err: unknown) => toast.error(getApiErrorMessage(err, "Failed to load files")))
+      .catch((err: unknown) => toastApiError(err, "Failed to load files"))
       .finally(() => setFilesLoading(false))
   }
 
@@ -352,7 +345,7 @@ export default function FileBrowser({
       setDeleteConfirmFile(null)
       if (currentFolderId) loadFiles(currentFolderId)
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Failed to delete file"))
+      toastApiError(err, "Failed to delete file")
     } finally {
       setDeletingFile(false)
     }
@@ -393,7 +386,7 @@ export default function FileBrowser({
       setNewFolderName("")
       loadFolders(currentFolderId)
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Failed to create folder"))
+      toastApiError(err, "Failed to create folder")
     } finally {
       setCreatingFolder(false)
     }
@@ -409,7 +402,7 @@ export default function FileBrowser({
       setRenameFolderTarget(null)
       loadFolders(currentFolderId)
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Failed to rename folder"))
+      toastApiError(err, "Failed to rename folder")
     } finally {
       setRenamingFolder(false)
     }
@@ -424,7 +417,7 @@ export default function FileBrowser({
       setDeleteConfirmFolder(null)
       loadFolders(currentFolderId)
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Failed to delete folder"))
+      toastApiError(err, "Failed to delete folder")
     } finally {
       setDeletingFolder(false)
     }
@@ -487,7 +480,7 @@ export default function FileBrowser({
       setUploadNote("")
       loadFiles(currentFolderId)
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Upload failed"))
+      toastApiError(err, "Upload failed")
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ""
@@ -515,7 +508,7 @@ export default function FileBrowser({
       document.body.removeChild(anchor)
       URL.revokeObjectURL(objectUrl)
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Failed to download file"))
+      toastApiError(err, "Failed to download file")
     }
   }
 
@@ -560,7 +553,7 @@ export default function FileBrowser({
         } catch {
           // ignore
         }
-        toast.error(getApiErrorMessage(err, "Failed to open file"))
+        toastApiError(err, "Failed to open file")
       })
   }
 
@@ -666,7 +659,7 @@ export default function FileBrowser({
       toast.success(`${files.length} file(s) uploaded`)
       loadFiles(currentFolderId)
     } catch (err: unknown) {
-      toast.error(getApiErrorMessage(err, "Upload failed"))
+      toastApiError(err, "Upload failed")
     } finally {
       setUploading(false)
     }

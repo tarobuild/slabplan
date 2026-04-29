@@ -11,20 +11,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/lib/api"
 import { useDocumentTitle } from "@/hooks/use-document-title"
-import { toast } from "sonner"
+import { toastApiError } from "@/lib/api-errors"
 
 type Job = {
   id: string
   title: string
   status: string | null
-}
-
-function getApiError(err: unknown, fallback: string): string {
-  if (typeof err === "object" && err !== null) {
-    const e = err as { response?: { data?: { message?: string } }; message?: string }
-    return e.response?.data?.message ?? e.message ?? fallback
-  }
-  return fallback
 }
 
 export default function FilesVideosPage() {
@@ -41,7 +33,7 @@ export default function FilesVideosPage() {
         setJobs(list)
         if (list.length > 0) setSelectedJobId(list[0].id)
       })
-      .catch((err: unknown) => toast.error(getApiError(err, "Failed to load jobs")))
+      .catch((err: unknown) => toastApiError(err, "Failed to load jobs"))
       .finally(() => setLoading(false))
   }, [])
 

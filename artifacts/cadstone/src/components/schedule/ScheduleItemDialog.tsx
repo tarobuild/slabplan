@@ -115,6 +115,16 @@ type ScheduleFormValues = {
 
 const UNASSIGNED_PHASE = "__unassigned__"
 
+export type SchedulePreview = {
+  startDate: string
+  endDate: string
+  isHourly: boolean
+  startTime: string | null
+  endTime: string | null
+  displayColor: string
+  title: string
+}
+
 type ScheduleItemDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -137,6 +147,7 @@ type ScheduleItemDialogProps = {
   }) => Promise<ScheduleItemRecord>
   onDraftAddNote?: (itemId: string, note: string) => Promise<ScheduleItemRecord>
   onDraftDelete?: (itemId: string) => Promise<void>
+  onPreviewChange?: (preview: SchedulePreview | null) => void
 }
 
 function getApiError(err: unknown, fallback: string) {
@@ -234,6 +245,7 @@ export function ScheduleItemDialog({
   onDraftSave,
   onDraftAddNote,
   onDraftDelete,
+  onPreviewChange,
 }: ScheduleItemDialogProps) {
   const today = dateKey(new Date())
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -382,6 +394,44 @@ export function ScheduleItemDialog({
     setItem(draftItem)
     setValues(formFromItem(draftItem))
   }, [draftMode, itemId, items, onOpenChange, open])
+
+  useEffect(() => {
+    if (!onPreviewChange) {
+      return
+    }
+
+    if (!open || itemId) {
+      onPreviewChange(null)
+      return
+    }
+
+    onPreviewChange({
+      startDate: values.startDate,
+      endDate: values.endDate || values.startDate,
+      isHourly: values.isHourly,
+      startTime: values.isHourly ? values.startTime : null,
+      endTime: values.isHourly ? values.endTime : null,
+      displayColor: values.displayColor || DEFAULT_SCHEDULE_COLOR,
+      title: values.title.trim() || "New schedule item",
+    })
+  }, [
+    onPreviewChange,
+    open,
+    itemId,
+    values.startDate,
+    values.endDate,
+    values.isHourly,
+    values.startTime,
+    values.endTime,
+    values.displayColor,
+    values.title,
+  ])
+
+  useEffect(() => {
+    return () => {
+      onPreviewChange?.(null)
+    }
+  }, [onPreviewChange])
 
   useEffect(() => {
     if (!open) {

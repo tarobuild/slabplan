@@ -52,7 +52,7 @@ import {
 } from "@/lib/schedule"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/store/auth"
-import { ScheduleItemDialog } from "@/components/schedule/ScheduleItemDialog"
+import { ScheduleItemDialog, type SchedulePreview } from "@/components/schedule/ScheduleItemDialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -580,6 +580,44 @@ function getDaySegmentBounds(item: ScheduleItemRecord, day: string) {
   return {
     startHour: Math.max(DAY_START_HOUR, boundedStart),
     endHour: Math.max(boundedStart + 1, Math.min(DAY_END_HOUR, boundedEnd)),
+  }
+}
+
+function previewSegmentForWeek(week: string[], preview: SchedulePreview) {
+  const weekStart = week[0]
+  const weekEnd = week[6]
+
+  if (preview.endDate < weekStart || preview.startDate > weekEnd) {
+    return null
+  }
+
+  const segmentStart = preview.startDate > weekStart ? preview.startDate : weekStart
+  const segmentEnd = preview.endDate < weekEnd ? preview.endDate : weekEnd
+  const startIndex = week.indexOf(segmentStart)
+  const endIndex = week.indexOf(segmentEnd)
+
+  return { startIndex, endIndex }
+}
+
+function previewBoundsForDay(day: string, preview: SchedulePreview) {
+  if (preview.startDate > day || preview.endDate < day) {
+    return null
+  }
+
+  if (preview.isHourly) {
+    const startHour = preview.startDate === day ? parseTimeToHour(preview.startTime) ?? DAY_START_HOUR : DAY_START_HOUR
+    const endHour = preview.endDate === day ? parseTimeToHour(preview.endTime) ?? startHour + 1 : DAY_END_HOUR
+    const boundedStart = Math.max(DAY_START_HOUR, Math.min(DAY_END_HOUR, startHour))
+    const boundedEnd = Math.max(boundedStart + 0.5, Math.min(DAY_END_HOUR, endHour || boundedStart + 1))
+
+    return { startHour: boundedStart, endHour: boundedEnd }
+  }
+
+  const startHour = preview.startDate === day ? 8 : DAY_START_HOUR
+  const endHour = preview.endDate === day ? 17 : DAY_END_HOUR
+  return {
+    startHour: Math.max(DAY_START_HOUR, startHour),
+    endHour: Math.max(startHour + 1, Math.min(DAY_END_HOUR, endHour)),
   }
 }
 
@@ -1584,6 +1622,7 @@ export default function JobSchedulePage() {
   const [dialogInitDate, setDialogInitDate] = useState<string | null>(null)
   const [dialogInitStartTime, setDialogInitStartTime] = useState<string | null>(null)
   const [dialogInitEndTime, setDialogInitEndTime] = useState<string | null>(null)
+  const [schedulePreview, setSchedulePreview] = useState<SchedulePreview | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -3443,7 +3482,9 @@ export default function JobSchedulePage() {
                           const hiddenCount = segments.length - visibleSegments.length
                           const maxLane = visibleSegments.reduce((max, segment) => Math.max(max, segment.lane), -1)
                           const laneCount = Math.max(maxLane + 1, 1)
-                          const rowHeight = 88 + laneCount * 30 + (hiddenCount > 0 ? 18 : 0)
+                          const previewInWeek =
+                            schedulePreview && previewSegmentForWeek(week, schedulePreview) ? 1 : 0
+                          const rowHeight = 88 + (laneCount + previewInWeek) * 30 + (hiddenCount > 0 ? 18 : 0)
                           const currentMonthPrefix = `${calendarAnchorDate.getFullYear()}-${String(calendarAnchorDate.getMonth() + 1).padStart(2, "0")}`
 
                           return (
@@ -3548,6 +3589,38 @@ export default function JobSchedulePage() {
                                     +{hiddenCount} more item{hiddenCount === 1 ? "" : "s"}
                                   </button>
                                 ) : null}
+
+                                {(() => {
+                                  if (!schedulePreview) {
+                                    return null
+                                  }
+                                  const previewSegment = previewSegmentForWeek(week, schedulePreview)
+                                  if (!previewSegment) {
+                                    return null
+                                  }
+                                  const previewLane = laneCount
+                                  return (
+                                    <div
+                                      key="schedule-preview"
+                                      className="pointer-events-none absolute flex h-7 items-center overflow-hidden rounded-full border-2 border-dashed px-3 text-left text-xs font-medium shadow-sm animate-in fade-in"
+                                      style={{
+                                        backgroundColor: colorWithAlpha(schedulePreview.displayColor, 0.18),
+                                        borderColor: schedulePreview.displayColor,
+                                        color: schedulePreview.displayColor,
+                                        left: `calc(${(previewSegment.startIndex / 7) * 100}% + 4px)`,
+                                        width: `calc(${((previewSegment.endIndex - previewSegment.startIndex + 1) / 7) * 100}% - 8px)`,
+                                        top: `${previewLane * 30}px`,
+                                      }}
+                                    >
+                                      <span className="truncate">
+                                        {schedulePreview.title}
+                                        {schedulePreview.isHourly && schedulePreview.startTime && schedulePreview.endTime
+                                          ? ` · ${fmtClockRange(schedulePreview.startTime, schedulePreview.endTime)}`
+                                          : ""}
+                                      </span>
+                                    </div>
+                                  )
+                                })()}
                               </div>
                             </div>
                           )
@@ -3592,22 +3665,28 @@ export default function JobSchedulePage() {
                       {/* All-day items row */}
                       {(() => {
                         const weekStart = startOfWeek(calendarAnchorDate)
-                        const weekAllDayItems = Array.from({ length: 7 }).map((_, index) => {
-                          const day = addDays(weekStart, index)
-                          const dk = dateKey(day)
-                          return {
-                            dayKey: dk,
-                            items: filteredItems.filter((item) => !item.isHourly && itemOverlapsDateRange(item, dk, dk)),
-                          }
-                        })
+                        const weekDayKeys = Array.from({ length: 7 }, (_, index) =>
+                          dateKey(addDays(weekStart, index)),
+                        )
+                        const weekAllDayItems = weekDayKeys.map((dk) => ({
+                          dayKey: dk,
+                          items: filteredItems.filter((item) => !item.isHourly && itemOverlapsDateRange(item, dk, dk)),
+                        }))
                         const hasAnyAllDay = weekAllDayItems.some((d) => d.items.length > 0)
-                        return hasAnyAllDay ? (
-                          <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))] border-b border-[#E5E7EB]">
+                        const previewSegment =
+                          schedulePreview && !schedulePreview.isHourly
+                            ? previewSegmentForWeek(weekDayKeys, schedulePreview)
+                            : null
+                        if (!hasAnyAllDay && !previewSegment) {
+                          return null
+                        }
+                        return (
+                          <div className="relative grid grid-cols-[72px_repeat(7,minmax(0,1fr))] border-b border-[#E5E7EB]">
                             <div className="border-r border-[#E5E7EB] bg-[#F8FAFC] px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400 flex items-start justify-end">
                               All Day
                             </div>
                             {weekAllDayItems.map(({ dayKey: dk, items: dayItems }) => (
-                              <div key={dk} className="border-r border-[#E5E7EB] last:border-r-0 px-1 py-1.5 space-y-1">
+                              <div key={dk} className="border-r border-[#E5E7EB] last:border-r-0 px-1 py-1.5 space-y-1 min-h-[28px]">
                                 {dayItems.map((item) => (
                                   <button
                                     key={item.id}
@@ -3632,10 +3711,26 @@ export default function JobSchedulePage() {
                                     </span>
                                   </button>
                                 ))}
+                                {previewSegment &&
+                                weekDayKeys.indexOf(dk) === previewSegment.startIndex ? (
+                                  <div
+                                    className="pointer-events-none absolute z-10 flex items-center overflow-hidden rounded-full border-2 border-dashed px-2 py-0.5 text-[10px] font-medium shadow-sm animate-in fade-in"
+                                    style={{
+                                      backgroundColor: colorWithAlpha(schedulePreview!.displayColor, 0.18),
+                                      borderColor: schedulePreview!.displayColor,
+                                      color: schedulePreview!.displayColor,
+                                      left: `calc(72px + ((100% - 72px) * ${previewSegment.startIndex / 7}) + 4px)`,
+                                      width: `calc(((100% - 72px) * ${(previewSegment.endIndex - previewSegment.startIndex + 1) / 7}) - 8px)`,
+                                      top: 6,
+                                    }}
+                                  >
+                                    <span className="truncate">{schedulePreview!.title}</span>
+                                  </div>
+                                ) : null}
                               </div>
                             ))}
                           </div>
-                        ) : null
+                        )
                       })()}
 
                       <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))]">
@@ -3725,6 +3820,37 @@ export default function JobSchedulePage() {
                                   </button>
                                 )
                               })}
+
+                              {(() => {
+                                if (!schedulePreview || !schedulePreview.isHourly) {
+                                  return null
+                                }
+                                const bounds = previewBoundsForDay(dk, schedulePreview)
+                                if (!bounds) {
+                                  return null
+                                }
+                                const top = (bounds.startHour - DAY_START_HOUR) * HOUR_HEIGHT + 4
+                                const height = Math.max((bounds.endHour - bounds.startHour) * HOUR_HEIGHT - 8, 28)
+                                return (
+                                  <div
+                                    className="pointer-events-none absolute inset-x-1 overflow-hidden rounded-xl border-2 border-dashed px-2 py-1 text-left text-xs font-medium shadow-sm animate-in fade-in"
+                                    style={{
+                                      top,
+                                      height,
+                                      backgroundColor: colorWithAlpha(schedulePreview.displayColor, 0.18),
+                                      borderColor: schedulePreview.displayColor,
+                                      color: schedulePreview.displayColor,
+                                    }}
+                                  >
+                                    <span className="block truncate">{schedulePreview.title}</span>
+                                    {schedulePreview.startTime && schedulePreview.endTime ? (
+                                      <span className="block truncate text-[10px] opacity-80">
+                                        {fmtClockRange(schedulePreview.startTime, schedulePreview.endTime)}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                )
+                              })()}
                             </div>
                           )
                         })}
@@ -3755,8 +3881,17 @@ export default function JobSchedulePage() {
 
                       {/* All-day items bar */}
                       {(() => {
-                        const dayAllDayItems = filteredItems.filter((item) => !item.isHourly && itemOverlapsDateRange(item, dateKey(calendarAnchorDate), dateKey(calendarAnchorDate)))
-                        return dayAllDayItems.length > 0 ? (
+                        const anchorKey = dateKey(calendarAnchorDate)
+                        const dayAllDayItems = filteredItems.filter((item) => !item.isHourly && itemOverlapsDateRange(item, anchorKey, anchorKey))
+                        const showPreview =
+                          schedulePreview &&
+                          !schedulePreview.isHourly &&
+                          schedulePreview.startDate <= anchorKey &&
+                          schedulePreview.endDate >= anchorKey
+                        if (dayAllDayItems.length === 0 && !showPreview) {
+                          return null
+                        }
+                        return (
                           <div className="border-b border-[#E5E7EB] bg-slate-50/50 px-4 py-2">
                             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">All Day</p>
                             <div className="flex flex-wrap gap-1.5">
@@ -3785,9 +3920,21 @@ export default function JobSchedulePage() {
                                   <span className={cn(item.isPersonalTodo ? "text-slate-500" : "text-white/70")}>({item.workDays}d)</span>
                                 </button>
                               ))}
+                              {showPreview ? (
+                                <div
+                                  className="pointer-events-none flex items-center gap-1.5 rounded-full border-2 border-dashed px-3 py-1 text-xs font-medium shadow-sm animate-in fade-in"
+                                  style={{
+                                    backgroundColor: colorWithAlpha(schedulePreview!.displayColor, 0.18),
+                                    borderColor: schedulePreview!.displayColor,
+                                    color: schedulePreview!.displayColor,
+                                  }}
+                                >
+                                  <span className="truncate max-w-[240px]">{schedulePreview!.title}</span>
+                                </div>
+                              ) : null}
                             </div>
                           </div>
-                        ) : null
+                        )
                       })()}
 
                       <div className="grid grid-cols-[88px_minmax(0,1fr)]">
@@ -3869,6 +4016,37 @@ export default function JobSchedulePage() {
                               </button>
                             )
                           })}
+
+                          {(() => {
+                            if (!schedulePreview || !schedulePreview.isHourly) {
+                              return null
+                            }
+                            const bounds = previewBoundsForDay(dateKey(calendarAnchorDate), schedulePreview)
+                            if (!bounds) {
+                              return null
+                            }
+                            const top = (bounds.startHour - DAY_START_HOUR) * HOUR_HEIGHT + 6
+                            const height = Math.max((bounds.endHour - bounds.startHour) * HOUR_HEIGHT - 10, 34)
+                            return (
+                              <div
+                                className="pointer-events-none absolute inset-x-1.5 overflow-hidden rounded-xl border-2 border-dashed px-3 py-2 text-left text-sm font-medium shadow-sm animate-in fade-in"
+                                style={{
+                                  top,
+                                  height,
+                                  backgroundColor: colorWithAlpha(schedulePreview.displayColor, 0.18),
+                                  borderColor: schedulePreview.displayColor,
+                                  color: schedulePreview.displayColor,
+                                }}
+                              >
+                                <span className="block truncate">{schedulePreview.title}</span>
+                                {schedulePreview.startTime && schedulePreview.endTime ? (
+                                  <span className="mt-1 block text-xs opacity-80">
+                                    {fmtClockRange(schedulePreview.startTime, schedulePreview.endTime)}
+                                  </span>
+                                ) : null}
+                              </div>
+                            )
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -5395,6 +5573,7 @@ export default function JobSchedulePage() {
           onDraftSave={handleDraftSaveItem}
           onDraftAddNote={handleDraftAddNote}
           onDraftDelete={handleDraftDeleteItem}
+          onPreviewChange={setSchedulePreview}
         />
       ) : null}
 

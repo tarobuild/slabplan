@@ -17,6 +17,7 @@ import {
   assertCanAccessClient,
   assertCanManageClient,
   listAccessibleClientIds,
+  listAccessibleJobIds,
 } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
@@ -87,7 +88,10 @@ router.get(
 
     const { page, pageSize, search } = query.data;
     const offset = (page - 1) * pageSize;
-    const accessibleClientIds = await listAccessibleClientIds(req.auth!);
+    const [accessibleClientIds, accessibleJobIds] = await Promise.all([
+      listAccessibleClientIds(req.auth!),
+      listAccessibleJobIds(req.auth!),
+    ]);
 
     if (accessibleClientIds && accessibleClientIds.length === 0) {
       res.json({
@@ -157,6 +161,24 @@ router.get(
     let jobRows: JobCountRow[] = [];
 
     if (clientIds.length > 0) {
+      const jobRowsPromise =
+        accessibleJobIds !== null && accessibleJobIds.length === 0
+          ? Promise.resolve([])
+          : db
+              .select({
+                clientId: jobs.clientId,
+                id: jobs.id,
+                status: jobs.status,
+              })
+              .from(jobs)
+              .where(
+                and(
+                  isNull(jobs.deletedAt),
+                  inArray(jobs.clientId, clientIds),
+                  accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+                ),
+              );
+
       [contactRows, jobRows] = await Promise.all([
         db
           .select({
@@ -171,14 +193,7 @@ router.get(
           .from(clientContacts)
           .where(and(isNull(clientContacts.deletedAt), inArray(clientContacts.clientId, clientIds)))
           .orderBy(desc(clientContacts.isPrimary), asc(clientContacts.firstName)),
-        db
-          .select({
-            clientId: jobs.clientId,
-            id: jobs.id,
-            status: jobs.status,
-          })
-          .from(jobs)
-          .where(and(isNull(jobs.deletedAt), inArray(jobs.clientId, clientIds))),
+        jobRowsPromise,
       ]);
     }
 
@@ -256,6 +271,7 @@ router.get(
     const clientId = getParam(req.params.id, "client id");
     await assertCanAccessClient(req.auth!, clientId);
     const client = await getClientOrThrow(clientId);
+    const accessibleJobIds = await listAccessibleJobIds(req.auth!);
 
     const [contacts, jobList] = await Promise.all([
       db
@@ -263,22 +279,30 @@ router.get(
         .from(clientContacts)
         .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)))
         .orderBy(desc(clientContacts.isPrimary), asc(clientContacts.firstName)),
-      db
-        .select({
-          id: jobs.id,
-          title: jobs.title,
-          status: jobs.status,
-          city: jobs.city,
-          state: jobs.state,
-          jobType: jobs.jobType,
-          contractPrice: jobs.contractPrice,
-          projectedStart: jobs.projectedStart,
-          projectedCompletion: jobs.projectedCompletion,
-          createdAt: jobs.createdAt,
-        })
-        .from(jobs)
-        .where(and(eq(jobs.clientId, clientId), isNull(jobs.deletedAt)))
-        .orderBy(desc(jobs.createdAt)),
+      accessibleJobIds !== null && accessibleJobIds.length === 0
+        ? Promise.resolve([])
+        : db
+            .select({
+              id: jobs.id,
+              title: jobs.title,
+              status: jobs.status,
+              city: jobs.city,
+              state: jobs.state,
+              jobType: jobs.jobType,
+              contractPrice: jobs.contractPrice,
+              projectedStart: jobs.projectedStart,
+              projectedCompletion: jobs.projectedCompletion,
+              createdAt: jobs.createdAt,
+            })
+            .from(jobs)
+            .where(
+              and(
+                eq(jobs.clientId, clientId),
+                isNull(jobs.deletedAt),
+                accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+              ),
+            )
+            .orderBy(desc(jobs.createdAt)),
     ]);
 
     res.json({ client: { ...client, contacts, jobs: jobList } });
@@ -369,23 +393,33 @@ router.get(
     const clientId = getParam(req.params.id, "client id");
     await assertCanAccessClient(req.auth!, clientId);
     await getClientOrThrow(clientId);
+    const accessibleJobIds = await listAccessibleJobIds(req.auth!);
 
-    const jobList = await db
-      .select({
-        id: jobs.id,
-        title: jobs.title,
-        status: jobs.status,
-        city: jobs.city,
-        state: jobs.state,
-        jobType: jobs.jobType,
-        contractPrice: jobs.contractPrice,
-        projectedStart: jobs.projectedStart,
-        projectedCompletion: jobs.projectedCompletion,
-        createdAt: jobs.createdAt,
-      })
-      .from(jobs)
-      .where(and(eq(jobs.clientId, clientId), isNull(jobs.deletedAt)))
-      .orderBy(desc(jobs.createdAt));
+    const jobList =
+      accessibleJobIds !== null && accessibleJobIds.length === 0
+        ? []
+        : await db
+            .select({
+              id: jobs.id,
+              title: jobs.title,
+              status: jobs.status,
+              city: jobs.city,
+              state: jobs.state,
+              jobType: jobs.jobType,
+              contractPrice: jobs.contractPrice,
+              projectedStart: jobs.projectedStart,
+              projectedCompletion: jobs.projectedCompletion,
+              createdAt: jobs.createdAt,
+            })
+            .from(jobs)
+            .where(
+              and(
+                eq(jobs.clientId, clientId),
+                isNull(jobs.deletedAt),
+                accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+              ),
+            )
+            .orderBy(desc(jobs.createdAt));
 
     res.json({ jobs: jobList });
   }),

@@ -247,6 +247,7 @@ async function findRootSystemFolder(jobId: string | null, mediaType: string, tit
     .where(
       and(
         jobId ? eq(folders.jobId, jobId) : isNull(folders.jobId),
+        eq(folders.scope, jobId ? "job" : "resource"),
         eq(folders.mediaType, mediaType),
         eq(folders.title, title),
         isNull(folders.parentFolderId),
@@ -276,6 +277,7 @@ export async function ensureSystemFolders(
     if (!existing) {
       await db.insert(folders).values({
         jobId,
+        scope: "job",
         title: value.title,
         mediaType: value.mediaType,
         isGlobal: value.isGlobal,
@@ -345,6 +347,7 @@ export async function getAllFoldersForJob(jobId: string | null, mediaType: strin
     .where(
       and(
         jobId ? eq(folders.jobId, jobId) : isNull(folders.jobId),
+        eq(folders.scope, jobId ? "job" : "resource"),
         eq(folders.mediaType, mediaType),
         ...(includeDeleted ? [] : [isNull(folders.deletedAt)]),
       ),
@@ -745,6 +748,7 @@ export async function createFolder(params: {
     .insert(folders)
     .values({
       jobId: params.jobId,
+      scope: "job",
       parentFolderId: params.parentFolderId,
       mediaType: params.mediaType,
       title: params.title,
@@ -783,6 +787,7 @@ export async function createResourceFolder(params: {
     .insert(folders)
     .values({
       jobId: null,
+      scope: "resource",
       parentFolderId: params.parentFolderId,
       mediaType: "document",
       title: params.title,
@@ -911,6 +916,10 @@ export async function copyFolder(params: {
         .insert(folders)
         .values({
           jobId: currentFolder.jobId,
+          scope: currentFolder.scope,
+          leadId: currentFolder.leadId,
+          dailyLogId: currentFolder.dailyLogId,
+          scheduleItemId: currentFolder.scheduleItemId,
           title:
             currentFolder.id === folder.id
               ? `${currentFolder.title} Copy`

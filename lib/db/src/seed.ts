@@ -217,6 +217,7 @@ async function upsertUser(user: SeedUser, passwordHash: string) {
     })
     .onConflictDoUpdate({
       target: users.email,
+      targetWhere: sql`${users.deletedAt} IS NULL`,
       set: {
         fullName: user.fullName,
         passwordHash,
@@ -358,6 +359,7 @@ async function upsertFolder(params: {
   const existing = await findFolder(params);
   const values = {
     jobId: params.jobId ?? sql<string>`null`,
+    scope: params.jobId ? "job" : "resource",
     title: params.title,
     mediaType: params.mediaType,
     isGlobal: params.isGlobal ?? false,

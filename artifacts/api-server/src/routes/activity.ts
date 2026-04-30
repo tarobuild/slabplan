@@ -45,12 +45,10 @@ router.get(
       listAccessibleJobIds(req.auth!),
       listAccessibleLeadIds(req.auth!),
     ]);
-    const allowedScopeIds =
-      accessibleJobIds === null
-        ? null
-        : Array.from(new Set([...(accessibleJobIds ?? []), ...(accessibleLeadIds ?? [])]));
+    const noJobAccess = accessibleJobIds !== null && accessibleJobIds.length === 0;
+    const noLeadAccess = accessibleLeadIds !== null && accessibleLeadIds.length === 0;
 
-    if (allowedScopeIds && allowedScopeIds.length === 0) {
+    if (noJobAccess && noLeadAccess) {
       res.json({
         data: [],
         pagination: {
@@ -64,7 +62,7 @@ router.get(
       return;
     }
 
-    if (query.data.jobId && allowedScopeIds && !allowedScopeIds.includes(query.data.jobId)) {
+    if (query.data.jobId && accessibleJobIds && !accessibleJobIds.includes(query.data.jobId)) {
       throw new HttpError(403, "You do not have access to that activity feed.");
     }
 
@@ -74,7 +72,8 @@ router.get(
       folderId: query.data.folderId ?? null,
       entityType: query.data.entityType ?? null,
       entityId: query.data.entityId ?? null,
-      allowedScopeIds,
+      allowedJobIds: accessibleJobIds,
+      allowedLeadIds: accessibleLeadIds,
       page: query.data.page,
       limit: query.data.limit,
     });

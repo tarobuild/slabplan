@@ -128,6 +128,7 @@ before(async () => {
   await db.insert(folders).values({
     id: folderId,
     title: "ZZZ Annotation Test Folder",
+    scope: "job",
     jobId,
     mediaType: "documents",
   });

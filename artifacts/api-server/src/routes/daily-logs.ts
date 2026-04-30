@@ -31,9 +31,8 @@ import {
   assertCanAccessJob,
   assertCanEditDailyLog,
   assertCanViewDailyLog,
-  isAdmin,
-  type AuthContext,
 } from "../lib/authorization";
+import { canViewDailyLogSummary } from "../lib/daily-log-visibility";
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
@@ -187,21 +186,6 @@ function normalizeUniqueStrings(values: string[]) {
         .filter(Boolean),
     ),
   );
-}
-
-function canViewDailyLogSummary(
-  auth: AuthContext,
-  row: {
-    createdBy: string | null;
-    isPrivate: boolean | null;
-    shareInternalUsers: boolean | null;
-  },
-) {
-  if (isAdmin(auth) || row.createdBy === auth.userId) {
-    return true;
-  }
-
-  return !row.isPrivate && row.shareInternalUsers !== false;
 }
 
 function requireDailyLogJobId(dailyLog: { jobId: string | null }) {
@@ -373,6 +357,8 @@ async function ensureDailyLogAttachmentFolder(dailyLogId: string) {
     .where(
       and(
         isNull(folders.jobId),
+        eq(folders.scope, "daily_log"),
+        eq(folders.dailyLogId, dailyLogId),
         eq(folders.title, title),
         eq(folders.mediaType, "document"),
         isNull(folders.deletedAt),
@@ -388,6 +374,8 @@ async function ensureDailyLogAttachmentFolder(dailyLogId: string) {
     .insert(folders)
     .values({
       jobId: sql<string>`null`,
+      scope: "daily_log",
+      dailyLogId,
       title,
       mediaType: "document",
       viewingPermissions: { internal: true },

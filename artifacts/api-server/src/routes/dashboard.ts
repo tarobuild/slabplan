@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, inArray, isNull, lte, lt, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lte, lt, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -9,7 +9,9 @@ import {
   users,
 } from "@workspace/db/schema";
 import { listAccessibleJobIds, listAccessibleLeadIds } from "../lib/authorization";
+import { buildDailyLogVisibilityFilter } from "../lib/daily-log-visibility";
 import { asyncHandler } from "../lib/http";
+import { buildScheduleListVisibilityFilter } from "../lib/schedule-visibility";
 
 const router: IRouter = Router();
 
@@ -65,11 +67,7 @@ router.get(
               isNull(scheduleItems.deletedAt),
               or(isNull(scheduleItems.progress), lt(scheduleItems.progress, 100)),
               accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
-              or(
-                eq(scheduleItems.isPersonalTodo, false),
-                isNull(scheduleItems.isPersonalTodo),
-                eq(scheduleItems.createdBy, req.auth!.userId),
-              ),
+              buildScheduleListVisibilityFilter(req.auth!),
             ),
           )
           .then((rows) => rows[0]),
@@ -111,6 +109,9 @@ router.get(
       return;
     }
 
+    const scheduleVisibilityFilter = buildScheduleListVisibilityFilter(req.auth!);
+    const dailyLogVisibilityFilter = buildDailyLogVisibilityFilter(req.auth!);
+
     const [upcomingItems, recentLogs, recentJobs] = await Promise.all([
       db
         .select({
@@ -133,11 +134,7 @@ router.get(
             lte(scheduleItems.startDate, in14Days),
             or(isNull(scheduleItems.isComplete), eq(scheduleItems.isComplete, false)),
             accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
-            or(
-              eq(scheduleItems.isPersonalTodo, false),
-              isNull(scheduleItems.isPersonalTodo),
-              eq(scheduleItems.createdBy, req.auth!.userId),
-            ),
+            scheduleVisibilityFilter,
           ),
         )
         .orderBy(scheduleItems.startDate)
@@ -160,6 +157,7 @@ router.get(
           and(
             isNull(dailyLogs.deletedAt),
             accessibleJobIds ? inArray(dailyLogs.jobId, accessibleJobIds) : undefined,
+            dailyLogVisibilityFilter,
           ),
         )
         .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt))
@@ -202,6 +200,8 @@ router.get(
       return;
     }
 
+    const scheduleVisibilityFilter = buildScheduleListVisibilityFilter(req.auth!);
+
     const items = await db
       .select({
         id: scheduleItems.id,
@@ -230,11 +230,7 @@ router.get(
             gte(scheduleItems.endDate, startParam),
             gte(scheduleItems.startDate, startParam),
           ),
-          or(
-            eq(scheduleItems.isPersonalTodo, false),
-            isNull(scheduleItems.isPersonalTodo),
-            eq(scheduleItems.createdBy, req.auth!.userId),
-          ),
+          scheduleVisibilityFilter,
         ),
       )
       .orderBy(scheduleItems.startDate)

@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { safeUserColumns, users } from "@workspace/db/schema";
@@ -160,6 +160,7 @@ router.post(
       })
       .onConflictDoNothing({
         target: users.email,
+        where: sql`${users.deletedAt} IS NULL`,
       })
       .returning();
 

@@ -6,7 +6,6 @@ import {
   count,
   desc,
   eq,
-  exists,
   inArray,
   isNull,
   ne,
@@ -46,6 +45,7 @@ import {
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
+import { buildScheduleListVisibilityFilter } from "../lib/schedule-visibility";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -283,69 +283,6 @@ function normalizeUniqueStrings(values: string[]) {
       values
         .map((value) => value.trim())
         .filter(Boolean),
-    ),
-  );
-}
-
-// SQL expression of the schedule item visibility rules (mirroring what the
-// hydrated `canView` checks used to do in memory) plus the personal to-do
-// filter. Pushing the predicate into SQL lets the schedule list endpoint count
-// and paginate without hydrating every row in the job.
-//
-// Visibility rules:
-//   - Admins see every row (subject to the personal to-do rule below).
-//   - Project managers see rows where `visibleToOfficeStaff` or
-//     `visibleToEstimators` is not explicitly false.
-//   - Everyone else (crew members) sees rows where `visibleToInstallers` is
-//     not explicitly false.
-//   - In all roles, the row's creator and assigned users always see it.
-//   - A personal to-do is only visible to its creator regardless of role.
-function buildScheduleListVisibilityFilter(auth: AuthContext) {
-  const userId = auth.userId;
-
-  // A personal to-do is only visible to its creator, regardless of role.
-  const personalTodoFilter = or(
-    eq(scheduleItems.isPersonalTodo, false),
-    isNull(scheduleItems.isPersonalTodo),
-    eq(scheduleItems.createdBy, userId),
-  );
-
-  if (isAdmin(auth)) {
-    return personalTodoFilter;
-  }
-
-  const assignedToCurrentUser = exists(
-    db
-      .select({ marker: sql`1` })
-      .from(scheduleItemAssignees)
-      .where(
-        and(
-          eq(scheduleItemAssignees.scheduleItemId, scheduleItems.id),
-          eq(scheduleItemAssignees.userId, userId),
-        ),
-      ),
-  );
-
-  // Mirror the in-memory `!== false` semantics: TRUE *and* NULL count as visible.
-  const roleVisibility =
-    auth.role === "project_manager"
-      ? or(
-          ne(scheduleItems.visibleToOfficeStaff, false),
-          isNull(scheduleItems.visibleToOfficeStaff),
-          ne(scheduleItems.visibleToEstimators, false),
-          isNull(scheduleItems.visibleToEstimators),
-        )
-      : or(
-          ne(scheduleItems.visibleToInstallers, false),
-          isNull(scheduleItems.visibleToInstallers),
-        );
-
-  return and(
-    personalTodoFilter,
-    or(
-      eq(scheduleItems.createdBy, userId),
-      assignedToCurrentUser,
-      roleVisibility,
     ),
   );
 }
@@ -1336,6 +1273,8 @@ async function ensureScheduleAttachmentFolder(scheduleItemId: string, jobId: str
     .where(
       and(
         eq(folders.jobId, jobId),
+        eq(folders.scope, "schedule_item"),
+        eq(folders.scheduleItemId, scheduleItemId),
         eq(folders.title, title),
         eq(folders.mediaType, "document"),
         isNull(folders.deletedAt),
@@ -1351,6 +1290,8 @@ async function ensureScheduleAttachmentFolder(scheduleItemId: string, jobId: str
     .insert(folders)
     .values({
       jobId,
+      scope: "schedule_item",
+      scheduleItemId,
       title,
       mediaType: "document",
     })
@@ -1482,6 +1423,47 @@ function workdayExceptionAppliesToJob(
   },
 ) {
   return !!exception.appliesToAllJobs || (Array.isArray(exception.jobIds) && exception.jobIds.includes(jobId));
+}
+
+function uniqueJobIds(jobIds: string[]) {
+  return Array.from(new Set(jobIds));
+}
+
+async function listAllActiveJobIds() {
+  const rows = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(isNull(jobs.deletedAt));
+
+  return rows.map((row) => row.id);
+}
+
+async function resolveWorkdayExceptionTargetJobIds(
+  auth: AuthContext,
+  exception: {
+    appliesToAllJobs: boolean | null;
+    jobIds: string[] | null;
+  },
+) {
+  if (exception.appliesToAllJobs) {
+    if (!isAdmin(auth)) {
+      throw new HttpError(403, "Only admins can manage company-wide workday exceptions.");
+    }
+
+    return listAllActiveJobIds();
+  }
+
+  const jobIds = uniqueJobIds(Array.isArray(exception.jobIds) ? exception.jobIds : []);
+
+  await Promise.all(jobIds.map((targetJobId) => assertCanManageJob(auth, targetJobId)));
+
+  return jobIds;
+}
+
+async function synchronizeAffectedJobSchedules(jobIds: string[]) {
+  for (const affectedJobId of uniqueJobIds(jobIds)) {
+    await synchronizeJobSchedule(affectedJobId);
+  }
 }
 
 async function buildBaselinePayload(jobId: string) {
@@ -2394,6 +2376,10 @@ router.post(
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
     await assertWorkdayExceptionCategoryBelongsToJob(jobId, body.data.categoryId);
+    const affectedJobIds = await resolveWorkdayExceptionTargetJobIds(req.auth!, {
+      appliesToAllJobs: body.data.appliesToAllJobs,
+      jobIds: body.data.appliesToAllJobs ? [] : body.data.jobIds,
+    });
 
     const [exception] = await db
       .insert(scheduleWorkdayExceptions)
@@ -2412,7 +2398,7 @@ router.post(
       })
       .returning();
 
-    await synchronizeJobSchedule(jobId);
+    await synchronizeAffectedJobSchedules(affectedJobIds);
     res.status(201).json({ exception });
   }),
 );
@@ -2445,6 +2431,12 @@ router.put(
       throw new HttpError(400, "Select at least one job.");
     }
 
+    const previouslyAffectedJobIds = await resolveWorkdayExceptionTargetJobIds(req.auth!, existing);
+    const nextAffectedJobIds = await resolveWorkdayExceptionTargetJobIds(req.auth!, {
+      appliesToAllJobs: nextAppliesToAllJobs,
+      jobIds: nextAppliesToAllJobs ? [] : nextJobIds,
+    });
+
     const [exception] = await db
       .update(scheduleWorkdayExceptions)
       .set({
@@ -2462,7 +2454,10 @@ router.put(
       .where(eq(scheduleWorkdayExceptions.id, exceptionId))
       .returning();
 
-    await synchronizeJobSchedule(jobId);
+    await synchronizeAffectedJobSchedules([
+      ...previouslyAffectedJobIds,
+      ...nextAffectedJobIds,
+    ]);
     res.json({ exception });
   }),
 );
@@ -2479,8 +2474,10 @@ router.delete(
       throw new HttpError(404, "Workday exception not found.");
     }
 
+    const affectedJobIds = await resolveWorkdayExceptionTargetJobIds(req.auth!, existing);
+
     await db.delete(scheduleWorkdayExceptions).where(eq(scheduleWorkdayExceptions.id, exceptionId));
-    await synchronizeJobSchedule(jobId);
+    await synchronizeAffectedJobSchedules(affectedJobIds);
     res.json({ success: true });
   }),
 );

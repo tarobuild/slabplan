@@ -21,9 +21,15 @@ export type AppRole = "admin" | "project_manager" | "crew_member";
 
 export type AuthContext = NonNullable<Express.Request["auth"]>;
 
+type FolderScope = "resource" | "job" | "lead" | "daily_log" | "schedule_item";
+
 type FolderAccessRecord = {
   id: string;
+  scope: FolderScope | null;
   jobId: string | null;
+  leadId: string | null;
+  dailyLogId: string | null;
+  scheduleItemId: string | null;
   mediaType: string;
   viewingPermissions: Record<string, unknown> | null;
   uploadingPermissions: Record<string, unknown> | null;
@@ -33,12 +39,18 @@ type FileAccessRecord = {
   id: string;
   fileUrl: string | null;
   folderId: string | null;
+  folderScope: FolderScope | null;
   folderJobId: string | null;
+  folderLeadId: string | null;
+  folderDailyLogId: string | null;
+  folderScheduleItemId: string | null;
   folderMediaType: string | null;
   viewingPermissions: Record<string, unknown> | null;
   uploadingPermissions: Record<string, unknown> | null;
   leadId: string | null;
+  dailyLogId: string | null;
   dailyLogJobId: string | null;
+  scheduleItemId: string | null;
   scheduleJobId: string | null;
 };
 
@@ -367,6 +379,84 @@ function canUploadToFolderForRole(auth: AuthContext, folder: FolderAccessRecord)
   );
 }
 
+function resolveFolderScope(folder: FolderAccessRecord): FolderScope {
+  return folder.scope ?? (folder.jobId ? "job" : "resource");
+}
+
+async function assertScopedFolderAccess(
+  auth: AuthContext,
+  folder: FolderAccessRecord,
+  mode: "view" | "manage",
+  related?: {
+    leadId?: string | null;
+    dailyLogId?: string | null;
+    scheduleItemId?: string | null;
+  },
+) {
+  const scope = resolveFolderScope(folder);
+
+  if (scope === "lead") {
+    const leadId = folder.leadId ?? related?.leadId ?? null;
+    if (!leadId) {
+      throw new HttpError(403, "You do not have access to that file.");
+    }
+
+    if (mode === "view") {
+      await assertCanAccessLead(auth, leadId);
+      return;
+    }
+
+    await assertCanManageLead(auth, leadId);
+    return;
+  }
+
+  if (scope === "daily_log") {
+    const dailyLogId = folder.dailyLogId ?? related?.dailyLogId ?? null;
+    if (!dailyLogId) {
+      throw new HttpError(403, "You do not have access to that file.");
+    }
+
+    if (mode === "view") {
+      await assertCanViewDailyLog(auth, dailyLogId);
+      return;
+    }
+
+    await assertCanEditDailyLog(auth, dailyLogId);
+    return;
+  }
+
+  if (scope === "schedule_item") {
+    const scheduleItemId = folder.scheduleItemId ?? related?.scheduleItemId ?? null;
+    if (!scheduleItemId) {
+      throw new HttpError(403, "You do not have access to that file.");
+    }
+
+    if (mode === "view") {
+      await assertCanViewScheduleItem(auth, scheduleItemId);
+      return;
+    }
+
+    await assertCanManageScheduleItem(auth, scheduleItemId);
+    return;
+  }
+
+  if (scope === "job") {
+    if (!folder.jobId) {
+      throw new HttpError(403, "You do not have access to that folder.");
+    }
+
+    await assertCanAccessJob(auth, folder.jobId);
+  }
+
+  if (mode === "view" && !canViewFolderForRole(auth, folder)) {
+    throw new HttpError(403, "You do not have access to that folder.");
+  }
+
+  if (mode === "manage" && !canUploadToFolderForRole(auth, folder)) {
+    throw new HttpError(403, "You do not have permission to modify that folder.");
+  }
+}
+
 async function getFolderAccessOrThrow(folderId: string, includeDeleted = false) {
   const conditions = [eq(folders.id, folderId)];
 
@@ -377,7 +467,11 @@ async function getFolderAccessOrThrow(folderId: string, includeDeleted = false) 
   const [folder] = await db
     .select({
       id: folders.id,
+      scope: folders.scope,
       jobId: folders.jobId,
+      leadId: folders.leadId,
+      dailyLogId: folders.dailyLogId,
+      scheduleItemId: folders.scheduleItemId,
       mediaType: folders.mediaType,
       viewingPermissions: folders.viewingPermissions,
       uploadingPermissions: folders.uploadingPermissions,
@@ -399,14 +493,7 @@ export async function assertCanViewFolder(
   includeDeleted = false,
 ) {
   const folder = await getFolderAccessOrThrow(folderId, includeDeleted);
-
-  if (folder.jobId) {
-    await assertCanAccessJob(auth, folder.jobId);
-  }
-
-  if (!canViewFolderForRole(auth, folder)) {
-    throw new HttpError(403, "You do not have access to that folder.");
-  }
+  await assertScopedFolderAccess(auth, folder, "view");
 
   return folder;
 }
@@ -416,11 +503,8 @@ export async function assertCanUploadToFolder(
   folderId: string,
   includeDeleted = false,
 ) {
-  const folder = await assertCanViewFolder(auth, folderId, includeDeleted);
-
-  if (!canUploadToFolderForRole(auth, folder)) {
-    throw new HttpError(403, "You do not have permission to upload to that folder.");
-  }
+  const folder = await getFolderAccessOrThrow(folderId, includeDeleted);
+  await assertScopedFolderAccess(auth, folder, "manage");
 
   return folder;
 }
@@ -445,12 +529,18 @@ async function getFileAccessRecord(params: { fileId?: string; fileUrl?: string; 
       id: files.id,
       fileUrl: files.fileUrl,
       folderId: folders.id,
+      folderScope: folders.scope,
       folderJobId: folders.jobId,
+      folderLeadId: folders.leadId,
+      folderDailyLogId: folders.dailyLogId,
+      folderScheduleItemId: folders.scheduleItemId,
       folderMediaType: folders.mediaType,
       viewingPermissions: folders.viewingPermissions,
       uploadingPermissions: folders.uploadingPermissions,
       leadId: leadAttachments.leadId,
+      dailyLogId: dailyLogAttachments.dailyLogId,
       dailyLogJobId: dailyLogs.jobId,
+      scheduleItemId: scheduleItemAttachments.scheduleItemId,
       scheduleJobId: scheduleItems.jobId,
     })
     .from(files)
@@ -474,23 +564,21 @@ async function assertFileAccess(auth: AuthContext, record: FileAccessRecord, mod
   if (record.folderId) {
     const folderLike: FolderAccessRecord = {
       id: record.folderId,
+      scope: record.folderScope,
       jobId: record.folderJobId,
+      leadId: record.folderLeadId,
+      dailyLogId: record.folderDailyLogId,
+      scheduleItemId: record.folderScheduleItemId,
       mediaType: record.folderMediaType ?? "document",
       viewingPermissions: record.viewingPermissions,
       uploadingPermissions: record.uploadingPermissions,
     };
 
-    if (record.folderJobId) {
-      await assertCanAccessJob(auth, record.folderJobId);
-    }
-
-    if (mode === "view" && !canViewFolderForRole(auth, folderLike)) {
-      throw new HttpError(403, "You do not have access to that file.");
-    }
-
-    if (mode === "manage" && !canUploadToFolderForRole(auth, folderLike)) {
-      throw new HttpError(403, "You do not have permission to modify that file.");
-    }
+    await assertScopedFolderAccess(auth, folderLike, mode, {
+      leadId: record.leadId,
+      dailyLogId: record.dailyLogId,
+      scheduleItemId: record.scheduleItemId,
+    });
 
     return;
   }

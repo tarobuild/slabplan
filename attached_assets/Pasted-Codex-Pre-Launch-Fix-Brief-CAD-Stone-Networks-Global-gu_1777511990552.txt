@@ -1,0 +1,228 @@
+Codex Pre-Launch Fix Brief — CAD Stone Networks
+Global guardrails (read these before touching anything)
+Database changes: This project uses Drizzle with pnpm --filter db push-force. Never hand-write SQL migrations, never run drizzle-kit generate, never run a plain push without --force. Edit lib/db/src/schema/index.ts only, then push-force.
+The runtime database is Supabase. The schema is read from SUPABASE_DATABASE_URL, not DATABASE_URL. If you need to verify data, use psql "$SUPABASE_DATABASE_URL". The local Replit Postgres replica will mislead you.
+Use the helpers that already exist — do not reinvent them. Specifically:
+listAccessibleJobIds, listAccessibleLeadIds, listAccessibleClientIds (server-side scope helpers)
+buildScheduleListVisibilityFilter (role + personal-todo SQL filter)
+assertCanViewFile / assertCanManageFile / assertCanViewScheduleItem / assertFileAccess
+classifyApiError / toastApiError / apiErrorMessage from artifacts/cadstone/src/lib/api-errors.ts
+writeActivity for activity_log entries
+If you write a parallel implementation of any of these, you will create drift between endpoints. Refactor the helper if it doesn't quite fit; don't fork it.
+Do not break existing API contracts. Same query params, same response shapes, same status codes. The OpenAPI spec at lib/api-spec/openapi.yaml is authoritative — update the spec when behavior changes.
+Do not delete existing data. Several fixes touch folders/files. Migrate or categorize existing rows; don't truncate.
+Run before declaring any fix done:
+pnpm exec tsc --noEmit for both api-server and cadstone
+pnpm --filter @workspace/api-server run test
+pnpm --filter @workspace/cadstone run test
+For any auth/visibility change, add a regression test to artifacts/api-server/test/ that covers admin / PM / crew / non-member access paths.
+Test users: cesar@cadstone.works and anwar@cadstone.works, password Test1!. Both are admins. Don't change their roles or seed over them.
+Do not introduce new dependencies (Redis, BullMQ, new ORMs, new auth libs) without flagging it first. Several findings have a tempting "just add Redis" fix that is wrong for this stage.
+Critical 1 — Lead & daily-log attachments leaking through Resources
+Root cause: Lead/daily-log attachment folders are created with jobId = null, which is the same shape as a "resource" folder. /resources/folders returns every jobId IS NULL folder, and assertFileAccess short-circuits as soon as the folder check passes.
+
+Fix (do all three — defense in depth):
+
+Add a discriminator to folders. In lib/db/src/schema/index.ts, add a scope column to folders (enum: 'resource' | 'job' | 'lead' | 'daily_log' | 'schedule_item') plus optional lead_id / daily_log_id / schedule_item_id nullable FKs. Backfill existing rows: any folder created by leads.ts → scope='lead'; by daily-logs.ts → scope='daily_log'; everything else with jobId IS NULL → scope='resource'. Backfill by querying which routes created which folders — do not guess.
+Update /resources/folders (artifacts/api-server/src/routes/resources.ts:73) to filter WHERE scope = 'resource'.
+Fix assertFileAccess (artifacts/api-server/src/lib/authorization.ts:473) so it does not return early on folder access alone. The order must be: if the file's parent folder is scope='lead', run the lead-access check; if scope='daily_log', run the daily-log check; only scope='resource' may rely on folder visibility alone.
+Watch out:
+
+If you only fix #2, files inside leaked folders are still reachable via direct /api/files/:id because of the early return. You must fix #3 too.
+The backfill must run before the schema constraint becomes NOT NULL. Add the column nullable, backfill, then tighten.
+Don't drop the jobId IS NULL allowance for resource folders — that's correct for true resources.
+Critical 2 — Schedule item attachments same bypass
+Root cause: Schedule attachments save into ordinary job document folders (schedule.ts:1330). The upload route correctly uses assertCanViewScheduleItem, but later read paths fall back to job/folder access and bypass schedule-item visibility.
+
+Fix:
+
+Use the same scope column from Critical 1. Schedule attachment folders get scope='schedule_item' and schedule_item_id = <id>.
+In assertFileAccess, when scope='schedule_item', route through assertCanViewScheduleItem instead of falling back to job access.
+Backfill existing schedule attachment folders by joining folders to whatever metadata currently links them to schedule items. If no link exists, add one based on existing folder naming/parent before tightening.
+Watch out: Do not move existing files in object storage. Just update DB metadata.
+
+High 1 — Dashboard endpoints leak hidden schedule items & private daily logs
+Files: artifacts/api-server/src/routes/dashboard.ts:60, 114, 146, 193
+
+Fix: Apply the same filters the list routes use:
+
+For schedule queries: buildScheduleListVisibilityFilter(userId, role) from routes/schedule.ts:290. If it isn't already exported, extract it to artifacts/api-server/src/lib/schedule-visibility.ts and import in both places.
+For daily-log queries: extract the filter from routes/daily-logs.ts:192 to artifacts/api-server/src/lib/daily-log-visibility.ts and apply in dashboard.
+Stats counts (counts of "X items today") must use the filtered subquery, not raw COUNT(*).
+Watch out:
+
+Don't apply the filter in JS after the fact — apply it in SQL so counts are correct.
+Dashboard endpoints are hot paths. Keep them indexed. Verify with EXPLAIN if you change a WHERE clause shape.
+High 2 — Client detail leaks all jobs
+Files: artifacts/api-server/src/routes/clients.ts:253, 366
+
+Fix: In both GET /clients/:id and GET /clients/:id/jobs, intersect the returned jobs with listAccessibleJobIds(userId, role). For admins this is a no-op (returns all). For PMs/crew it limits to managed/assigned jobs.
+
+Watch out:
+
+Don't change client-level access (the caller already passed listAccessibleClientIds). Only filter the jobs list inside the response.
+Update the OpenAPI response example if it implied "all jobs."
+High 3 — Lead detail leaks all lead contacts; copy-by-sourceContactId unauthenticated
+Files: artifacts/api-server/src/routes/leads.ts:474, 830
+
+Fix:
+
+In hydrateLead, scope availableContacts to leads in listAccessibleLeadIds(userId, role).
+In the contact-copy path, before copying from sourceContactId, look up the source contact's lead_id and verify it's in listAccessibleLeadIds. If not, return 403.
+Watch out: Don't break the admin path — admins must still see all available contacts.
+
+High 4 — Workday exceptions can target unmanaged jobs
+Files: artifacts/api-server/src/routes/schedule.ts:381, 2385, 2420
+
+Fix:
+
+appliesToAllJobs: true → restrict to role === 'admin'. Anyone else gets 403.
+For an explicit jobIds: string[] payload → verify every id is in listAccessibleJobIds(userId, role) and the user has manage rights on each. Reject the whole request if any fail.
+Sync logic must run for every affected job, not just the route param. If the sync helper currently takes a single jobId, loop it (in a transaction).
+Watch out:
+
+Don't remove the cross-job feature for admins — they need it for company-wide holidays.
+Wrap the multi-job sync in a single transaction so partial failures don't leave inconsistent state.
+High 5 — ON CONFLICT (email) doesn't match partial unique index
+Files: artifacts/api-server/src/routes/auth.ts:154, lib/db/src/seed.ts:208. Index at lib/db/src/schema/index.ts:84.
+
+Fix: Postgres requires the conflict target to match the partial index predicate exactly. Change both call sites to:
+
+.onConflictDoUpdate({
+  target: users.email,
+  targetWhere: sql`${users.deletedAt} IS NULL`,
+  set: { ... }
+})
+
+(or use the named index target if Drizzle's API for this version requires it).
+
+Watch out:
+
+Test against Supabase, not the local replica. Re-running seed and re-registering the same email should hit the upsert path cleanly with no there is no unique or exclusion constraint matching the ON CONFLICT specification error.
+Do not drop the partial index — it's correct (we want soft-deleted users to free their email).
+Medium 1 — Autoscale + in-memory rate limits / JTI replay
+Files: .replit:9, artifacts/api-server/src/lib/rate-limit.ts:17, artifacts/api-server/src/lib/auth.ts:188
+
+Fix (preferred — simplest, no new infra): Change .replit deployment target from autoscale to vm (single Reserved VM). With one process, the in-memory stores are correct. Document this constraint in replit.md.
+
+Alternative (only if VM isn't acceptable): Move JTI replay protection to Postgres with a signed_url_jti_used table (jti TEXT PRIMARY KEY, used_at TIMESTAMPTZ, with a periodic cleanup). Move rate limits to a rate_limit_counters table with a sliding window. Do not introduce Redis.
+
+Watch out:
+
+If staying on autoscale without backing the stores: every multi-instance fix needs both rate limiting and JTI persisted, or signed URLs become replayable across instances.
+Do not silently change the deploy target — flag it for the user.
+Medium 2 — Password reset doesn't deliver the email
+Files: artifacts/api-server/src/routes/auth.ts:226, 250
+
+Fix: Wire a real email provider. Use the Replit integrations system (.local/skills/integrations/SKILL.md) to find the supported transactional email integration (SendGrid, Postmark, Resend, etc.). Do not add a raw SMTP dependency or hard-code an API key.
+
+Watch out:
+
+Keep the existing previewToken return in non-production for dev/test convenience.
+The reset email must use the production base URL (cadstonesystems.com), not localhost.
+Don't leak account existence — the response should be the same whether or not the email matches a user.
+Medium 3 — multer.memoryStorage 200MB DoS risk
+Files: artifacts/api-server/src/routes/files.ts:33, routes/leads.ts:48, routes/daily-logs.ts:50
+
+Fix: Switch to multer.diskStorage() with a temp directory, then stream the file to object storage and delete the temp file. Lower per-file limit to something realistic (e.g. 100 MB) and per-request total. Add a try/finally that always unlinks the temp file.
+
+Watch out:
+
+Don't just reduce the size limit — a coordinated 20-file × 100 MB upload still exhausts memory.
+Do not change the API contract (multipart field names stay the same).
+The temp directory must be writable by the process and excluded from git (see Lower 2).
+Medium 4 — Generated API clients are stale
+Files: lib/api-client-react/src/generated/api.ts, lib/api-zod/src/generated/api.ts
+
+Fix: Run the codegen script. Check lib/api-client-react/package.json and lib/api-zod/package.json for the codegen script and the turbo pipeline. After regenerating, run pnpm exec tsc --noEmit across the workspace.
+
+Watch out:
+
+The generated clients may not be imported anywhere yet (the frontend still uses hand-written axios calls). Do not "helpfully" replace existing axios calls with the generated client during this fix — that's a separate, riskier change.
+If codegen produces new files outside the generated/ directories, that's a config problem; fix the generator config rather than committing the stray output.
+Medium 5 — In-memory pagination on files & daily logs
+Files: artifacts/api-server/src/lib/file-manager.ts:621, routes/daily-logs.ts:913
+
+Fix: Push pagination into SQL: LIMIT/OFFSET on files (or keyset on (created_at, id)), with the existing visibility WHERE clause applied before pagination. Same for daily logs.
+
+Watch out:
+
+Add or confirm an index supports the order key (created_at DESC, id DESC).
+Do not change the response page-size defaults or query-param names — the frontend (sidebar, lists, search) depends on them.
+Medium 6 — Activity feed lead visibility broken for non-admins
+Files: artifacts/api-server/src/routes/activity.ts:44, lib/file-manager.ts:1395
+
+Fix: The merged allowedLeadIds must actually be applied. In the activity row filter, check:
+
+entity_type = 'lead' → entity_id IN allowedLeadIds
+entity_type IN ('file', 'file_annotation') → either metadata.jobId IN allowedJobIds or metadata.leadId IN allowedLeadIds (file uploads on leads have metadata.leadId)
+Plus the existing job-based check for everything else.
+Watch out: Audit every entity_type your activity_log emits. The file_annotation rows added in Task #40/#90 also need to respect file-scope visibility.
+
+Lower 1 — Drizzle migration metadata stale
+Files: lib/db/migrations/meta/_journal.json:4, plus orphan 0001..0003.sql
+
+Fix: This project uses push-force, so the SQL files are historical drift, not the source of truth. Delete the orphan SQL files (0001*.sql, 0002*.sql, 0003*.sql) and confirm _journal.json reflects the current schema. The custom migrator at lib/db/src/migrate.ts should still boot cleanly.
+
+Watch out:
+
+Do not run drizzle-kit generate to "regenerate" — it'll diff against an empty baseline and produce a destructive migration. Just delete the orphans.
+After cleanup, restart the api-server workflow and confirm it boots.
+Lower 2 — Test/upload artifacts tracked in git
+Fix: Add to .gitignore:
+
+artifacts/api-server/uploads/
+artifacts/cadstone/test-results/
+**/*.trace.zip
+**/playwright-report/
+
+Then git rm --cached -r the existing tracked paths.
+
+Watch out: Coordinate the git rm --cached step with the user — it's a destructive git op.
+
+Lower 3 — Frontend role gating
+Files: artifacts/cadstone/src/App.tsx:118, components/layout/TopNav.tsx:44
+
+Fix: Add a <RoleGuard allow={['admin','project_manager']}>…</RoleGuard> wrapper around the /resources, /sales, /clients routes (whatever the actual visibility rules are — confirm with backend). Hide the nav links for users who can't access them.
+
+Watch out:
+
+The backend is the source of truth — the frontend guard is only UX. Do not weaken any backend check just because the frontend now hides a link.
+Use a single shared role helper so this doesn't drift from backend rules.
+Lower 4 — Accessibility gaps
+Files: components/layout/TopNav.tsx:203, components/layout/Sidebar.tsx:329
+
+Fix: Add aria-label="Open account menu" to the account button. Replace title-only sort affordance with a visible or sr-only label (e.g. <span className="sr-only">Sort {direction}</span>).
+
+Watch out: While you're in here, do a quick sweep for any other icon-only buttons missing aria-label. Don't refactor unrelated styling.
+
+Lower 5 — pnpm audit (11 vulns)
+Fix:
+
+Direct deps: bump axios to its latest patch within the same major (test thoroughly — axios majors have broken interceptors before).
+Transitive: use pnpm.overrides in the root package.json to pin follow-redirects, dompurify, fast-xml-parser, uuid to safe versions.
+Re-run pnpm audit --prod and confirm the count drops.
+Watch out:
+
+Do not bump jspdf or @google-cloud/storage major versions without testing PDF export and file uploads end-to-end. Those are the actual feature owners of the vulnerable transitives.
+After overrides, run all tests + a manual file upload + a manual PDF export.
+Suggested fix order (dependencies matter)
+Critical 1 + 2 together — both depend on the new folders.scope column. Single schema change, single push-force, single backfill, single fix to assertFileAccess.
+High 5 — small, low risk, unblocks any further auth changes.
+High 1, 2, 3, 4 — visibility fixes; can be parallel since they touch different routes.
+Medium 6 — activity feed leak (related to High fixes).
+Medium 3 — upload memory; touches multiple routes, do as one pass.
+Medium 5 — pagination; isolated.
+Medium 1 — autoscale decision; flag to user.
+Medium 2 — email provider; needs integration setup.
+Medium 4 — codegen.
+Lower 1–5 — cleanup, batched.
+What Codex must NOT do
+Do not introduce Redis, BullMQ, or any new background-job infrastructure.
+Do not switch ORMs, replace axios with fetch wholesale, or refactor the routing layer.
+Do not regenerate Drizzle migrations with drizzle-kit generate.
+Do not "modernize" the React data router setup or migrate from react-router-dom.
+Do not delete or rewrite existing tests; add to them.
+Do not mass-rename files or reshape the monorepo.
+Do not commit secrets, change .env handling, or hard-code API keys — secrets go through Replit's env-vars system.
+Do not skip the tsc --noEmit + test runs after each change.

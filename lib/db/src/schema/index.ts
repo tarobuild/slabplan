@@ -10,6 +10,7 @@ import {
   integer,
   json,
   numeric,
+  pgEnum,
   pgTable,
   text,
   time,
@@ -35,6 +36,8 @@ const softDeleteTimestamp = {
 export const userRoles = ["admin", "project_manager", "crew_member"] as const;
 export const jobStatuses = ["open", "closed", "archived"] as const;
 export const fileMediaTypes = ["document", "photo", "video"] as const;
+export const folderScopes = ["resource", "job", "lead", "daily_log", "schedule_item"] as const;
+export const folderScopeEnum = pgEnum("folder_scope", folderScopes);
 export const leadStatuses = [
   "open",
   "in_negotiation",
@@ -191,7 +194,11 @@ export const folders = pgTable(
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
     title: varchar("title", { length: 255 }).notNull(),
+    scope: folderScopeEnum("scope").notNull(),
     jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
+    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+    dailyLogId: uuid("daily_log_id").references(() => dailyLogs.id, { onDelete: "cascade" }),
+    scheduleItemId: uuid("schedule_item_id").references(() => scheduleItems.id, { onDelete: "cascade" }),
     parentFolderId: uuid("parent_folder_id"),
     mediaType: varchar("media_type", { length: 50 }).notNull(),
     viewingPermissions: json("viewing_permissions").$type<Record<string, unknown> | null>(),
@@ -206,6 +213,10 @@ export const folders = pgTable(
       foreignColumns: [table.id],
       name: "folders_parent_folder_id_fkey",
     }).onDelete("cascade"),
+    index("folders_scope_idx").on(table.scope),
+    index("folders_lead_id_idx").on(table.leadId),
+    index("folders_daily_log_id_idx").on(table.dailyLogId),
+    index("folders_schedule_item_id_idx").on(table.scheduleItemId),
     index("folders_parent_folder_id_idx").on(table.parentFolderId),
     uniqueIndex("folders_job_title_parent_media_unique").on(
       table.jobId,
@@ -213,27 +224,27 @@ export const folders = pgTable(
       table.parentFolderId,
       table.mediaType,
     ).where(
-      sql`${table.deletedAt} is null and ${table.jobId} is not null and ${table.parentFolderId} is not null`,
+      sql`${table.deletedAt} is null and ${table.scope} = 'job' and ${table.jobId} is not null and ${table.parentFolderId} is not null`,
     ),
     uniqueIndex("folders_job_title_root_media_unique").on(
       table.jobId,
       table.title,
       table.mediaType,
     ).where(
-      sql`${table.deletedAt} is null and ${table.jobId} is not null and ${table.parentFolderId} is null`,
+      sql`${table.deletedAt} is null and ${table.scope} = 'job' and ${table.jobId} is not null and ${table.parentFolderId} is null`,
     ),
     uniqueIndex("folders_resource_title_parent_media_unique").on(
       table.title,
       table.parentFolderId,
       table.mediaType,
     ).where(
-      sql`${table.deletedAt} is null and ${table.jobId} is null and ${table.parentFolderId} is not null`,
+      sql`${table.deletedAt} is null and ${table.scope} = 'resource' and ${table.jobId} is null and ${table.parentFolderId} is not null`,
     ),
     uniqueIndex("folders_resource_title_root_media_unique").on(
       table.title,
       table.mediaType,
     ).where(
-      sql`${table.deletedAt} is null and ${table.jobId} is null and ${table.parentFolderId} is null`,
+      sql`${table.deletedAt} is null and ${table.scope} = 'resource' and ${table.jobId} is null and ${table.parentFolderId} is null`,
     ),
   ],
 );

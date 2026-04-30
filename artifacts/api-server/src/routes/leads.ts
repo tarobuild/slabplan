@@ -285,6 +285,8 @@ async function ensureLeadAttachmentFolder(leadId: string) {
     .where(
       and(
         isNull(folders.jobId),
+        eq(folders.scope, "lead"),
+        eq(folders.leadId, leadId),
         eq(folders.title, title),
         eq(folders.mediaType, "document"),
         isNull(folders.deletedAt),
@@ -300,6 +302,8 @@ async function ensureLeadAttachmentFolder(leadId: string) {
     .insert(folders)
     .values({
       jobId: sql<string>`null`,
+      scope: "lead",
+      leadId,
       title,
       mediaType: "document",
       viewingPermissions: { internal: true },
@@ -373,7 +377,8 @@ async function syncLeadSources(leadId: string, leadSource: string | null, source
   }
 }
 
-async function hydrateLead(leadId: string) {
+async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: string) {
+  const accessibleLeadIds = await listAccessibleLeadIds(auth);
   const [lead] = await db
     .select({
       id: leads.id,
@@ -484,7 +489,13 @@ async function hydrateLead(leadId: string) {
         })
         .from(leadContacts)
         .innerJoin(leads, eq(leadContacts.leadId, leads.id))
-        .where(and(isNull(leadContacts.deletedAt), isNull(leads.deletedAt)))
+        .where(
+          and(
+            isNull(leadContacts.deletedAt),
+            isNull(leads.deletedAt),
+            accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
+          ),
+        )
         .orderBy(asc(leadContacts.displayName)),
     ]);
 
@@ -726,7 +737,7 @@ router.post(
       description: `Created lead ${lead.title}`,
     });
 
-    res.status(201).json(await hydrateLead(lead.id));
+    res.status(201).json(await hydrateLead(req.auth!, lead.id));
   }),
 );
 
@@ -735,7 +746,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     await assertCanAccessLead(req.auth!, leadId);
-    res.json(await hydrateLead(leadId));
+    res.json(await hydrateLead(req.auth!, leadId));
   }),
 );
 
@@ -785,7 +796,7 @@ router.put(
       }, leadId);
     }
 
-    res.json(await hydrateLead(leadId));
+    res.json(await hydrateLead(req.auth!, leadId));
   }),
 );
 
@@ -844,6 +855,7 @@ router.post(
 
     if (body.data.sourceContactId) {
       const source = await getContactOrThrow(body.data.sourceContactId);
+      await assertCanAccessLead(req.auth!, source.leadId);
       values = {
         leadId,
         firstName: source.firstName,

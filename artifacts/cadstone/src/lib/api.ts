@@ -7,6 +7,15 @@ import axios from "axios"
 import { toast } from "sonner"
 import { useAuthStore, type AuthUser } from "@/store/auth"
 
+declare module "axios" {
+  // Lets call sites opt out of the global "/403" navigation when they
+  // legitimately expect a 403 (e.g. admin-only reference data fetched on
+  // pages that non-admins are also allowed to view).
+  interface AxiosRequestConfig {
+    suppressForbiddenRedirect?: boolean
+  }
+}
+
 export const FORBIDDEN_EVENT = "cadstone:forbidden"
 
 type AuthResponse = {
@@ -74,14 +83,27 @@ function initializeInterceptors() {
 
       const request = error.config as InternalAxiosRequestConfig & {
         _retry?: boolean
+        suppressForbiddenRedirect?: boolean
       }
       const requestUrl = request.url || ""
+      const requestMethod = (request.method || "get").toLowerCase()
 
       if (
         error.response?.status === 403 &&
-        !requestUrl.includes("/auth/")
+        !requestUrl.includes("/auth/") &&
+        !request.suppressForbiddenRedirect
       ) {
-        notifyForbidden()
+        // Page-level reads (GET) that are forbidden mean the user landed on a
+        // route they can't view at all → bounce them to /403. Mutations
+        // (POST / PUT / PATCH / DELETE) usually fire from inside an open form
+        // or dialog the user is already mid-way through; bouncing them away
+        // from that work is hostile, so just toast the denial and let the
+        // calling site surface the error inline.
+        if (requestMethod === "get") {
+          notifyForbidden()
+        } else {
+          notifyForbiddenAction()
+        }
         return Promise.reject(error)
       }
 
@@ -127,6 +149,24 @@ function notifyForbidden() {
 
   toast.error("You don't have permission to view that.")
   window.dispatchEvent(new CustomEvent(FORBIDDEN_EVENT))
+}
+
+let lastForbiddenActionAt = 0
+
+function notifyForbiddenAction() {
+  // Same debounce strategy as notifyForbidden, but for write requests we only
+  // want a toast — no navigation — so the user keeps their open form/dialog.
+  const now = Date.now()
+  if (now - lastForbiddenActionAt < 500) {
+    return
+  }
+  lastForbiddenActionAt = now
+
+  if (typeof window === "undefined") {
+    return
+  }
+
+  toast.error("You don't have permission to do that.")
 }
 
 let lastSessionExpiredAt = 0

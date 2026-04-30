@@ -152,10 +152,14 @@ export default function JobsPage() {
   }
 
   useEffect(() => {
+    if (!isAdmin) {
+      setClientOptions([])
+      return
+    }
     api.get("/clients?pageSize=100")
       .then(r => setClientOptions(r.data.clients ?? []))
       .catch((err: unknown) => toastApiError(err, "Failed to load clients"))
-  }, [])
+  }, [isAdmin])
 
   useEffect(() => {
     if (!isAdmin) {

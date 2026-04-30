@@ -126,8 +126,16 @@ export function useScheduleData({
   }
 
   async function fetchUsers() {
-    const response = await api.get<{ users: AppUser[] }>("/users")
-    setUsers(response.data.users ?? [])
+    try {
+      const response = await api.get<{ users: AppUser[] }>("/users", {
+        suppressForbiddenRedirect: true,
+      })
+      setUsers(response.data.users ?? [])
+    } catch {
+      // Crew members lack permission to list all users; that's fine —
+      // they don't need the assignee picker, so just leave the list empty.
+      setUsers([])
+    }
   }
 
   async function fetchJobs() {

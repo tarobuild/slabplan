@@ -2,7 +2,7 @@
 
 ## Overview
 
-CAD Stone Networks is an internal construction management tool built as a pnpm monorepo. It features a TypeScript, Express 5 backend and a React, Vite, shadcn/ui frontend. The project's vision is to streamline construction project management for Cadstone Works, offering capabilities for job tracking, lead management, scheduling, daily logging, and file management. It also integrates an AI-agent API and a Model Context Protocol (MCP) server to enable external integrations and AI-driven workflows. The system is designed for a single Reserved VM deployment to maintain stateful features like rate limiting and file-view JTI replay stores.
+CAD Stone Networks is a pnpm monorepo project designed to be an internal construction management tool. It aims to streamline operations for Cadstone Works by providing functionalities for job tracking, lead management, scheduling, daily logging, and file management. The system also integrates AI-agent capabilities and a Model Context Protocol (MCP) server to support external integrations and AI-driven workflows. The architecture is optimized for a single Reserved VM deployment to manage stateful features efficiently.
 
 ## User Preferences
 
@@ -14,7 +14,7 @@ Do not make changes to files related to `mcp.test.ts`.
 
 ## System Architecture
 
-The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9.
+The project is structured as a pnpm monorepo utilizing Node.js 24 and TypeScript 5.9.
 
 **Backend (`artifacts/api-server`):**
 - Built with Express 5, serving REST APIs at `/api` on port 8080.
@@ -25,15 +25,13 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 - Role-gating: All API routes use central visibility helpers (`assertCanViewJob`, etc.) to enforce access control based on user roles, preventing unauthorized data access. Admins have full access.
 - API for Agents: Features Personal Access Tokens (PATs) for authentication, RFC 7807 `application/problem+json` for error handling, `Idempotency-Key` replay for write endpoints, cursor pagination for large lists, and `X-RateLimit-*` headers.
 
-**Frontend (`artifacts/cadstone`):**
-- Built with React, Vite, Tailwind CSS v4, and shadcn/ui.
-- Runs on a dynamically assigned port, proxying `/api` requests to `localhost:8080`.
-- Routing: `react-router-dom v6` for protected and nested routes.
-- State Management: Zustand for authentication state. TanStack Query (v5) is wired in `src/lib/query-client.ts` for server-state caching/invalidation; the QueryClient is provided in `App.tsx`, the typed client's auth bridge is configured via `setAuthTokenGetter`, and `subscribeToDataRefresh` invalidates per-resource query keys.
-- Typed API & Validation: High-traffic resource pages (`clients`, `jobs`, `leads`, `schedule`, `daily logs`) consume `@workspace/api-client-react` (typed react-query hooks + imperative functions) for reads, and `@workspace/api-zod` payload schemas through the `validatePayload` helper (`src/lib/validate-payload.ts`) for client-side validation of create/update mutations. `@workspace/api-client-react` declares `@tanstack/react-query` as a **peer** dependency (not a direct dep) so consumers provide a single instance — declaring it as a regular dep caused pnpm to install a second copy resolved against the catalog react (19.x), giving the generated hooks a different `QueryClientContext` than the app's `QueryClientProvider` and producing "No QueryClient set" at runtime. Vite's `resolve.dedupe` also includes `@tanstack/react-query` as a safety net.
-- UI/UX: Adheres to shadcn/ui design principles, with a primary blue theme (`#2563EB`), light gray backgrounds, white cards, and 14px body text. All forms are in Dialog modals, and deletions use AlertDialogs.
-- Key features: Dashboard with stats and activity feed, job management (create, view, edit, delete), lead management (create, view, delete), schedule management, daily logs with BuilderTrend-style activity feeds, and a shared file browser for documents, photos, and videos.
-- In-App AI Assistant: A right-side chat drawer (`src/components/agent/ChatPanel.tsx`) opened from a Sparkles "Assistant" button in the top nav. Streams responses from the backend via SSE, renders citation chips that deep-link to the cited entity (job/lead/client/file/schedule), persists conversations per user, and shows monthly usage progress.
+**Frontend:**
+- Developed with React, Vite, Tailwind CSS v4, and shadcn/ui.
+- Uses `react-router-dom v6` for routing and Zustand for authentication state.
+- TanStack Query (v5) is used for server-state caching and invalidation, with typed API integration via `@workspace/api-client-react` and payload validation using `@workspace/api-zod`.
+- UI/UX follows shadcn/ui principles with a primary blue theme, light gray backgrounds, white cards, and consistent form/dialog patterns.
+- Key features include a dashboard, comprehensive job, lead, schedule, and daily log management, and a shared file browser.
+- An in-app AI Assistant (`src/components/agent/ChatPanel.tsx`) uses Anthropic Claude, providing read-only MCP tool access, SSE event streaming for responses, and persistence of conversations and usage. It enforces per-user token caps and rate limits.
 
 **AI Agent (in-app, read-only) — `artifacts/api-server/src/routes/agent.ts` + `lib/agent/*`:**
 - Powered by Anthropic Claude (`@workspace/integrations-anthropic-ai`, default model `claude-sonnet-4-6`, configurable via `AGENT_MODEL` env var).
@@ -237,13 +235,14 @@ invalidates every token previously signed with the old key.
 - **API Framework:** Express 5
 - **Database:** PostgreSQL
 - **ORM:** Drizzle ORM
-- **Validation:** Zod (`zod/v4`), `drizzle-zod`
+- **Validation:** Zod
 - **Frontend Framework:** React
-- **Build Tools:** Vite (frontend), esbuild (backend)
+- **Build Tools:** Vite, esbuild
 - **Styling:** Tailwind CSS v4, shadcn/ui
 - **HTTP Client:** Axios
 - **State Management:** Zustand
 - **Routing:** react-router-dom v6
-- **Notifications:** Sonner (toasts)
+- **Notifications:** Sonner
 - **Icons:** Lucide-react
-- **File Storage:** Replit App Storage (backed by Google Cloud Storage - GCS)
+- **AI Model:** Anthropic Claude
+- **File Storage:** Replit App Storage (Google Cloud Storage)

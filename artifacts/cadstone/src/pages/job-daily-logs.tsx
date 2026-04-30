@@ -2940,24 +2940,51 @@ export default function JobDailyLogsPage() {
   const loadRequestIdRef = useRef(0)
 
   async function loadReferenceData() {
-    try {
-      const [usersResponse, jobsResponse, settingsResponse, customFieldsResponse] = await Promise.all([
-        api.get<{ users: UserOption[] }>("/users"),
+    // Some of these endpoints (settings + custom-fields) are admin-only, and
+    // /users is manager-or-above. Crew members and PMs without those
+    // permissions still need to view daily logs, so request each independently
+    // and let the admin-only ones fail silently (suppressForbiddenRedirect)
+    // instead of bouncing the whole page to /403.
+    const [usersResult, jobsResult, settingsResult, customFieldsResult] =
+      await Promise.allSettled([
+        api.get<{ users: UserOption[] }>("/users", {
+          suppressForbiddenRedirect: true,
+        }),
         api.get<{ jobs: JobOption[] }>("/jobs", {
           params: {
             page: 1,
             pageSize: 100,
           },
         }),
-        api.get<{ settings: DailyLogSettings }>("/daily-logs/settings"),
-        api.get<{ fields: DailyLogCustomField[] }>("/daily-logs/custom-fields"),
+        api.get<{ settings: DailyLogSettings }>("/daily-logs/settings", {
+          suppressForbiddenRedirect: true,
+        }),
+        api.get<{ fields: DailyLogCustomField[] }>("/daily-logs/custom-fields", {
+          suppressForbiddenRedirect: true,
+        }),
       ])
-      setUsers(usersResponse.data.users)
-      setJobs(jobsResponse.data.jobs ?? [])
-      setSettings(normalizeDailyLogSettings(settingsResponse.data.settings))
-      setCustomFields(normalizeDailyLogCustomFields(customFieldsResponse.data.fields))
-    } catch (error) {
-      toastApiError(error, "Failed to load daily log settings, jobs, or team members")
+
+    if (usersResult.status === "fulfilled") {
+      setUsers(usersResult.value.data.users)
+    } else {
+      setUsers([])
+    }
+
+    if (jobsResult.status === "fulfilled") {
+      setJobs(jobsResult.value.data.jobs ?? [])
+    } else {
+      setJobs([])
+      toastApiError(jobsResult.reason, "Failed to load jobs")
+    }
+
+    if (settingsResult.status === "fulfilled") {
+      setSettings(normalizeDailyLogSettings(settingsResult.value.data.settings))
+    }
+
+    if (customFieldsResult.status === "fulfilled") {
+      setCustomFields(
+        normalizeDailyLogCustomFields(customFieldsResult.value.data.fields),
+      )
     }
   }
 

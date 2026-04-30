@@ -39,6 +39,9 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 - SSE event stream: `status`, `user_message`, `tool_call`, `tool_result`, `delta`, `done`, `error`.
 - Persistence: `agent_conversations`, `agent_messages`, `agent_usage_monthly` tables in `lib/db/src/schema/agent.ts`.
 - Per-user monthly token cap (default 500K, configurable via `AGENT_MONTHLY_TOKEN_CAP`).
+- Per-user in-flight cap on `POST /agent/conversations/:id/messages` (default 1, configurable via `AGENT_MAX_INFLIGHT`) — overflow returns 429 (`in-flight-limit`). Backed by an in-process `Map` in `lib/agent/inflight.ts`; same Reserved-VM caveat as the rate limiter.
+- Per-user agent-message rate limit (default 20/min, configurable via `AGENT_RATE_LIMIT_PER_MIN`) layered on top of the general per-user API limiter, because one assistant turn fans out into a long-running Anthropic stream + many tool calls.
+- Abort handling: `req.on("close")` aborts an `AbortController` plumbed into the orchestrator → Anthropic SDK (`messages.create({...}, { signal })`) and into every MCP tool fetch via `ApiClient`. On abort the orchestrator stops dispatching the next tool call, skips persisting a partial assistant row, but still meters consumed tokens against the monthly cap (no free retries).
 - Citations are extracted from tool results and stored on the assistant message, surfaced as deep-link chips in the UI.
 
 **Database (`lib/db`):**

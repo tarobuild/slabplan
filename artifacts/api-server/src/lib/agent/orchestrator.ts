@@ -85,10 +85,19 @@ export type AgentOrchestratorOptions = {
     outputTokens: number;
     stoppedReason?: string;
   }) => Promise<{ id: string }>;
+  /**
+   * Aborted when the SSE consumer drops the connection. Plumbed all the way
+   * down into the Anthropic SDK and the MCP `ApiClient` so an in-flight
+   * Anthropic stream and the next tool call both terminate within ~1s of
+   * `req.on("close")` firing instead of running to completion against a
+   * client that is no longer listening.
+   */
+  signal?: AbortSignal;
 };
 
 export type AgentOrchestratorResult = {
   ok: boolean;
+  aborted: boolean;
   messageId?: string;
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -113,10 +122,12 @@ export async function runAgentTurn(
   opts: AgentOrchestratorOptions,
 ): Promise<AgentOrchestratorResult> {
   const tools = buildAnthropicTools();
+  const signal = opts.signal;
   const apiClient = new ApiClient({
     baseUrl: opts.baseUrl,
     token: opts.bearerToken,
     userAgent: "cadstone-in-app-agent/0.1",
+    signal,
   });
 
   const messages = buildHistoryForApi(opts.history, opts.userMessage);
@@ -126,6 +137,7 @@ export async function runAgentTurn(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let stoppedReason: string | undefined;
+  const isAborted = () => signal?.aborted === true;
 
   function pushCitations(more: AgentCitation[]) {
     for (const c of more) {
@@ -136,20 +148,34 @@ export async function runAgentTurn(
   }
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+    if (isAborted()) {
+      stoppedReason = "aborted";
+      break;
+    }
     if (iter > 0) {
       opts.emit({ type: "status", text: "Thinking…" });
     }
 
     let response;
     try {
-      response = await anthropic.messages.create({
-        model: AGENT_MODEL,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        system: SYSTEM_PROMPT,
-        tools,
-        messages: messages as never,
-      });
+      response = await anthropic.messages.create(
+        {
+          model: AGENT_MODEL,
+          max_tokens: MAX_OUTPUT_TOKENS,
+          system: SYSTEM_PROMPT,
+          tools,
+          messages: messages as never,
+        },
+        signal ? { signal } : undefined,
+      );
     } catch (err) {
+      // If the SSE consumer dropped mid-stream the SDK rejects with an
+      // AbortError; treat that as a clean abort, not an "api_error" we'd
+      // surface in the UI.
+      if (isAborted() || isAbortError(err)) {
+        stoppedReason = "aborted";
+        break;
+      }
       logger.error({ err }, "Agent: anthropic.messages.create failed");
       const message =
         err instanceof Error ? err.message : "Failed to call the assistant.";
@@ -182,6 +208,14 @@ export async function runAgentTurn(
           assistantContentForHistory.push({ type: "text", text: block.text });
         }
       } else if (block.type === "tool_use") {
+        // Honor an abort that arrived while we were processing the previous
+        // block in the same response — stop dispatching the next tool call
+        // immediately rather than letting the loop walk the rest of the
+        // model's planned fan-out.
+        if (isAborted()) {
+          stoppedReason = "aborted";
+          break;
+        }
         const toolName = block.name;
         const input = (block.input ?? {}) as Record<string, unknown>;
         opts.emit({ type: "tool_call", id: block.id, name: toolName, input });
@@ -265,6 +299,13 @@ export async function runAgentTurn(
             content: serialized,
           });
         } catch (err) {
+          // The active tool call's underlying fetch was aborted because the
+          // SSE consumer dropped. Don't surface that as a tool error to the
+          // model (or to the UI we're no longer streaming to) — just stop.
+          if (isAborted() || isAbortError(err)) {
+            stoppedReason = "aborted";
+            break;
+          }
           const durationMs = Date.now() - startedAt;
           const status = err instanceof ApiError ? err.status : 500;
           const message =
@@ -297,6 +338,8 @@ export async function runAgentTurn(
       }
     }
 
+    if (stoppedReason === "aborted") break;
+
     if (assistantContentForHistory.length > 0) {
       messages.push({ role: "assistant", content: assistantContentForHistory });
     }
@@ -319,13 +362,30 @@ export async function runAgentTurn(
     }
   }
 
-  // Persist usage outside the streaming hot path.
+  const aborted = stoppedReason === "aborted" || isAborted();
+
+  // Always meter what we already spent, even on abort. The Anthropic call
+  // that returned the tokens has already left the building — the user's
+  // monthly cap must reflect that, or aborting becomes a free retry.
   if (totalInputTokens > 0 || totalOutputTokens > 0) {
     try {
       await recordUsage(opts.userId, totalInputTokens, totalOutputTokens);
     } catch (err) {
       logger.warn({ err }, "Agent: failed to record usage");
     }
+  }
+
+  // On abort, do NOT persist a partial assistant message and do NOT emit
+  // anything more on the SSE stream — the consumer is gone, and writing a
+  // half-baked row to the conversation would surface a mangled bubble in
+  // the UI on the next page load.
+  if (aborted) {
+    return {
+      ok: false,
+      aborted: true,
+      totalInputTokens,
+      totalOutputTokens,
+    };
   }
 
   const saved = await opts.saveAssistantMessage({
@@ -347,10 +407,24 @@ export async function runAgentTurn(
 
   return {
     ok: true,
+    aborted: false,
     messageId: saved.id,
     totalInputTokens,
     totalOutputTokens,
   };
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!err) return false;
+  if (err instanceof Error) {
+    if (err.name === "AbortError") return true;
+    // Anthropic SDK 0.x and undici both surface a `code` of "ABORT_ERR" for
+    // aborted fetches; check both shapes so a future SDK upgrade still routes
+    // cancellation through the clean-abort path.
+    const code = (err as Error & { code?: string }).code;
+    if (code === "ABORT_ERR" || code === "ECONNRESET") return true;
+  }
+  return false;
 }
 
 export function writeSse(res: Response, event: AgentOrchestratorEvent): void {

@@ -4,6 +4,16 @@ export type ApiClientOptions = {
   fetchImpl?: typeof fetch;
   userAgent?: string;
   internalSecret?: string;
+  /**
+   * Optional AbortSignal applied to every fetch issued by this client. When
+   * the in-app agent's SSE connection drops mid-turn the orchestrator aborts
+   * the controller; any in-flight tool call (often an internal API request
+   * that itself talks to the database) immediately rejects rather than
+   * running to completion and burning DB time for output the user will never
+   * see. Tool handlers do not need to be aware of this — wiring lives at the
+   * client level so a single signal cancels every downstream request.
+   */
+  signal?: AbortSignal;
 };
 
 export type ApiRequest = {
@@ -45,6 +55,7 @@ export class ApiClient {
   private readonly fetchImpl: typeof fetch;
   private readonly userAgent: string;
   private readonly internalSecret: string | undefined;
+  private readonly signal: AbortSignal | undefined;
 
   constructor(opts: ApiClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, "");
@@ -52,6 +63,7 @@ export class ApiClient {
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.userAgent = opts.userAgent ?? "cadstone-mcp/0.1";
     this.internalSecret = opts.internalSecret;
+    this.signal = opts.signal;
   }
 
   async request<T = unknown>(req: ApiRequest): Promise<ApiResponse<T>> {
@@ -69,6 +81,7 @@ export class ApiClient {
       method: req.method,
       headers,
       body: bodyToSend,
+      signal: this.signal,
     });
 
     return this.parseResponse<T>(res, req.method, req.path, req.asBase64 === true);
@@ -83,6 +96,7 @@ export class ApiClient {
       method: "POST",
       headers,
       body: req.body,
+      signal: this.signal,
     });
 
     return this.parseResponse<T>(res, "POST", req.path, false);

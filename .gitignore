@@ -47,3 +47,16 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local upload storage (api-server)
+artifacts/api-server/uploads/
+artifacts/api-server/uploads-tmp/
+artifacts/api-server/tmp/
+
+# Test artifacts (Playwright, etc.)
+artifacts/*/test-results/
+artifacts/*/playwright-report/
+artifacts/*/playwright/.cache/
+**/test-results/
+**/playwright-report/
+*.trace.zip

@@ -1,6 +1,24 @@
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { Copy, KeyRound, Loader2, Lock, Plus, Save, Trash2, User } from "lucide-react"
-import { api } from "@/lib/api"
+import { useQueryClient } from "@tanstack/react-query"
+import {
+  accountTokensCreate,
+  accountTokensRevoke,
+  getAccountTokensListQueryKey,
+  useAccountTokensList,
+  usersGetUsersMe,
+  usersPostUsersMePassword,
+  usersPutUsersMe,
+  type PersonalAccessToken,
+  type PersonalAccessTokenCreatePayload,
+  type UsersChangePasswordSchema,
+  type UsersUpdateProfileSchema,
+} from "@workspace/api-client-react"
+import {
+  AccountTokensCreateBody,
+  UsersPostUsersMePasswordBody,
+  UsersPutUsersMeBody,
+} from "@workspace/api-zod"
 import { useAuthStore } from "@/store/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,20 +27,11 @@ import { Separator } from "@/components/ui/separator"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
+import { validatePayload } from "@/lib/validate-payload"
 
-type ApiToken = {
-  id: string
-  name: string
-  scope: "read" | "read_write"
-  tokenPrefix: string
-  lastFour: string
-  expiresAt: string | null
-  lastUsedAt: string | null
-  revokedAt: string | null
-  createdAt: string
-}
+type ApiToken = PersonalAccessToken
 
-function formatTokenDate(value: string | null): string {
+function formatTokenDate(value: string | null | undefined): string {
   if (!value) return "—"
   try {
     return new Date(value).toLocaleString()
@@ -43,6 +52,7 @@ type AuthUser = {
 export default function SettingsPage() {
   useDocumentTitle("Settings")
   const { user: authUser, accessToken, setAuth } = useAuthStore()
+  const queryClient = useQueryClient()
 
   const [profileForm, setProfileForm] = useState({
     fullName: "",
@@ -61,8 +71,9 @@ export default function SettingsPage() {
   })
   const [savingPassword, setSavingPassword] = useState(false)
 
-  const [tokens, setTokens] = useState<ApiToken[]>([])
-  const [loadingTokens, setLoadingTokens] = useState(true)
+  const tokensQuery = useAccountTokensList()
+  const tokens: ApiToken[] = tokensQuery.data?.tokens ?? []
+  const loadingTokens = tokensQuery.isLoading
   const [tokenName, setTokenName] = useState("")
   const [tokenScope, setTokenScope] = useState<"read" | "read_write">("read_write")
   const [tokenExpiresInDays, setTokenExpiresInDays] = useState<"never" | "30" | "90" | "180" | "365">("never")
@@ -70,21 +81,11 @@ export default function SettingsPage() {
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
 
-  const refreshTokens = useCallback(async () => {
-    setLoadingTokens(true)
-    try {
-      const r = await api.get<{ tokens: ApiToken[] }>("/account/tokens")
-      setTokens(r.data.tokens)
-    } catch (err: unknown) {
-      toastApiError(err, "Failed to load tokens")
-    } finally {
-      setLoadingTokens(false)
-    }
-  }, [])
-
   useEffect(() => {
-    void refreshTokens()
-  }, [refreshTokens])
+    if (tokensQuery.error) {
+      toastApiError(tokensQuery.error, "Failed to load tokens")
+    }
+  }, [tokensQuery.error])
 
   const handleCreateToken = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -100,14 +101,20 @@ export default function SettingsPage() {
           ? null
           : new Date(Date.now() + Number(tokenExpiresInDays) * 24 * 60 * 60 * 1000).toISOString()
 
-      const { data } = await api.post<{ token: ApiToken; secret: string }>(
-        "/account/tokens",
-        { name, scope: tokenScope, expiresAt },
-      )
+      const payload: PersonalAccessTokenCreatePayload = {
+        name,
+        scope: tokenScope,
+        expiresAt,
+      }
+      const validated = validatePayload(AccountTokensCreateBody, payload)
+      if (!validated) return
+      const data = await accountTokensCreate(validated)
       setRevealedSecret(data.secret)
       setTokenName("")
       setTokenExpiresInDays("never")
-      setTokens((prev) => [data.token, ...prev])
+      // Refresh the list query so the newly issued token appears at the top
+      // (server already orders by createdAt desc).
+      void queryClient.invalidateQueries({ queryKey: getAccountTokensListQueryKey() })
       toast.success("Token created — copy it now, it won't be shown again.")
     } catch (err: unknown) {
       toastApiError(err, "Failed to create token")
@@ -121,9 +128,9 @@ export default function SettingsPage() {
     if (!window.confirm(`Revoke "${token.name}"? Apps using this token will stop working.`)) return
     setRevokingId(token.id)
     try {
-      await api.delete(`/account/tokens/${token.id}`)
+      await accountTokensRevoke(token.id)
       toast.success("Token revoked")
-      await refreshTokens()
+      await queryClient.invalidateQueries({ queryKey: getAccountTokensListQueryKey() })
     } catch (err: unknown) {
       toastApiError(err, "Failed to revoke token")
     } finally {
@@ -143,10 +150,9 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setLoadingProfile(true)
-    api
-      .get("/users/me")
+    usersGetUsersMe()
       .then((r) => {
-        const u: AuthUser = r.data.user
+        const u = (r as { user: AuthUser }).user
         setProfileForm({
           fullName: u.fullName,
           email: u.email,
@@ -170,12 +176,15 @@ export default function SettingsPage() {
 
     setSavingProfile(true)
     try {
-      const { data } = await api.put("/users/me", {
+      const payload: UsersUpdateProfileSchema = {
         fullName: profileForm.fullName,
         email: profileForm.email,
         phone: profileForm.phone || null,
         currentPassword: emailChanged ? profileForm.currentPassword : null,
-      })
+      }
+      const validated = validatePayload(UsersPutUsersMeBody, payload)
+      if (!validated) return
+      const data = (await usersPutUsersMe(validated)) as { user: AuthUser }
       if (accessToken) {
         setAuth(data.user, accessToken)
       }
@@ -206,10 +215,13 @@ export default function SettingsPage() {
     }
     setSavingPassword(true)
     try {
-      await api.post("/users/me/password", {
+      const payload: UsersChangePasswordSchema = {
         currentPassword: passwordForm.currentPassword,
         newPassword: passwordForm.newPassword,
-      })
+      }
+      const validated = validatePayload(UsersPostUsersMePasswordBody, payload)
+      if (!validated) return
+      await usersPostUsersMePassword(validated)
       toast.success("Password changed successfully")
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" })
     } catch (err: unknown) {

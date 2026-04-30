@@ -12,7 +12,17 @@ import {
   Upload,
   type LucideIcon,
 } from "lucide-react"
+import {
+  customFetch,
+  getFoldersGetJobsJobIdFoldersUrl,
+  jobsDeleteJobsId,
+  jobsGetJobsId,
+  jobsPutJobsId,
+  type JobsJobPayloadSchema,
+} from "@workspace/api-client-react"
+import { JobsPutJobsIdBody } from "@workspace/api-zod"
 import { api } from "@/lib/api"
+import { validatePayload } from "@/lib/validate-payload"
 import { validateSelectedFiles } from "@/lib/uploads"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -98,9 +108,17 @@ export default function JobDetailPage() {
       }
       setPageUploading(true)
       try {
-        // Get the root documents folder for this job
-        const foldersRes = await api.get(`/jobs/${jobId}/folders?mediaType=document`)
-        const folders = foldersRes.data.folders ?? []
+        // Get the root documents folder for this job. The OpenAPI spec
+        // doesn't yet capture the `mediaType` query param, so we go through
+        // the typed `customFetch` and append the param ourselves rather
+        // than calling `foldersGetJobsJobIdFolders(jobId)` (which returns
+        // every media type).
+        type FoldersResponse = { folders?: { id: string }[] }
+        const foldersUrl = `${getFoldersGetJobsJobIdFoldersUrl(jobId)}?mediaType=document`
+        const foldersData = await customFetch<FoldersResponse>(foldersUrl, {
+          method: "GET",
+        })
+        const folders = foldersData.folders ?? []
         if (folders.length === 0) {
           toast.error("No documents folder found for this job")
           return
@@ -108,6 +126,9 @@ export default function JobDetailPage() {
         const targetFolderId = folders[0].id
         const formData = new FormData()
         droppedFiles.forEach((file) => formData.append("files", file))
+        // Multipart upload: keep using axios here. The generated typed
+        // function expects a typed array body and the route is well-served
+        // by axios's automatic FormData boundary handling.
         await api.post(`/folders/${targetFolderId}/files`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
         })
@@ -136,10 +157,12 @@ export default function JobDetailPage() {
     }
     setError(null)
 
-    api
-      .get(`/jobs/${jobId}`)
+    jobsGetJobsId(jobId)
       .then((r) => {
-        setJob(r.data.job ?? r.data)
+        // The typed response is `JobDetailResponse` whose `job` shape is a
+        // superset of what this header card actually renders, so cast down
+        // to our local `Job` to keep state shape-stable.
+        setJob(r.job as unknown as Job)
       })
       .catch((err: unknown) => {
         setError("Unable to load this job.")
@@ -171,32 +194,36 @@ export default function JobDetailPage() {
       // PUT /jobs/:id replaces the whole record via toJobInsert — any field
       // missing from the payload becomes null. Fetch the current hydrated
       // job first so we can send back every field unchanged except status.
-      const currentRes = await api.get(`/jobs/${jobId}`)
-      const current = currentRes.data.job ?? currentRes.data
-      const payload = {
-        title: current.title,
-        status: "closed" as const,
-        streetAddress: current.streetAddress ?? null,
-        city: current.city ?? null,
-        state: current.state ?? null,
-        zipCode: current.zipCode ?? null,
-        contractPrice: current.contractPrice ?? null,
-        jobType: current.jobType ?? null,
-        workDays: current.workDays ?? null,
-        projectedStart: current.projectedStart ?? null,
-        projectedCompletion: current.projectedCompletion ?? null,
-        actualStart: current.actualStart ?? null,
-        actualCompletion: current.actualCompletion ?? null,
-        contractType: current.contractType ?? null,
-        internalNotes: current.internalNotes ?? null,
-        subVendorNotes: current.subVendorNotes ?? null,
-        squareFeet: current.squareFeet ?? null,
-        permitNumber: current.permitNumber ?? null,
-        projectManagerId: current.projectManagerId ?? null,
-        clientId: current.clientId ?? null,
+      const currentRes = await jobsGetJobsId(jobId)
+      const current = currentRes.job as unknown as Record<string, unknown>
+      const payload: JobsJobPayloadSchema = {
+        title: current.title as string,
+        status: "closed",
+        streetAddress: (current.streetAddress as string | null) ?? null,
+        city: (current.city as string | null) ?? null,
+        state: (current.state as string | null) ?? null,
+        zipCode: (current.zipCode as string | null) ?? null,
+        contractPrice: (current.contractPrice as string | null) ?? null,
+        jobType: (current.jobType as string | null) ?? null,
+        workDays: (current.workDays as JobsJobPayloadSchema["workDays"]) ?? null,
+        projectedStart: (current.projectedStart as string | null) ?? null,
+        projectedCompletion: (current.projectedCompletion as string | null) ?? null,
+        actualStart: (current.actualStart as string | null) ?? null,
+        actualCompletion: (current.actualCompletion as string | null) ?? null,
+        contractType: current.contractType as JobsJobPayloadSchema["contractType"],
+        internalNotes: (current.internalNotes as string | null) ?? null,
+        subVendorNotes: (current.subVendorNotes as string | null) ?? null,
+        squareFeet: (current.squareFeet as string | null) ?? null,
+        permitNumber: (current.permitNumber as string | null) ?? null,
+        projectManagerId: (current.projectManagerId as string | null) ?? null,
+        clientId: (current.clientId as string | null) ?? null,
       }
-      const res = await api.put(`/jobs/${jobId}`, payload)
-      const updatedJob = res.data.job ?? res.data
+      // Run the generated Zod schema to surface client-side validation
+      // issues (matches the pattern used by clients/jobs/leads pages).
+      const validated = validatePayload(JobsPutJobsIdBody, payload)
+      if (!validated) return
+      const res = await jobsPutJobsId(jobId, validated)
+      const updatedJob = res.job as unknown as Job
       setJob((prev) =>
         prev
           ? {
@@ -222,7 +249,7 @@ export default function JobDetailPage() {
     if (!job || !jobId) return
     setDeletingJob(true)
     try {
-      await api.delete(`/jobs/${jobId}`)
+      await jobsDeleteJobsId(jobId)
       invalidateAppData(["jobs", "navigation"])
       toast.success("Project deleted")
       setDeleteDialogOpen(false)

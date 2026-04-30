@@ -1,7 +1,20 @@
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react"
 import { useOutletContext, useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
-import { api } from "@/lib/api"
+import {
+  clientsGetClients,
+  customFetch,
+  getUsersGetUsersUrl,
+  jobsDeleteJobsIdAssigneesUserid,
+  jobsGetJobsId,
+  jobsGetJobsIdAssignees,
+  jobsPostJobsIdAssignees,
+  jobsPutJobsId,
+  type JobsAssigneePayloadSchema,
+  type JobsJobPayloadSchema,
+} from "@workspace/api-client-react"
+import { JobsPostJobsIdAssigneesBody, JobsPutJobsIdBody } from "@workspace/api-zod"
+import { validatePayload } from "@/lib/validate-payload"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import WorkerAssignmentPicker, { type WorkerOption } from "@/components/WorkerAssignmentPicker"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -139,13 +152,24 @@ export default function JobSummaryPage() {
   const projectManagerOptions = workerOptions.filter((option) => option.role === "project_manager")
 
   useEffect(() => {
-    api.get("/users?roles=project_manager,crew_member&limit=200").then(r => setWorkerOptions(r.data.users ?? [])).catch(() => {})
-    api.get("/clients?pageSize=100").then(r => setClientOptions(r.data.clients ?? [])).catch(() => {})
+    // The OpenAPI spec for `/users` doesn't yet include the `roles`/`limit`
+    // filters, so go through `customFetch` with a manual querystring rather
+    // than calling `usersGetUsers()` (which would over-fetch).
+    type UsersResponse = { users?: WorkerOption[] }
+    const usersUrl = `${getUsersGetUsersUrl()}?roles=project_manager,crew_member&limit=200`
+    customFetch<UsersResponse>(usersUrl, { method: "GET" })
+      .then((data) => setWorkerOptions(data.users ?? []))
+      .catch(() => {})
+    clientsGetClients({ pageSize: 100 })
+      .then((data) => setClientOptions((data.clients ?? []) as ClientOption[]))
+      .catch(() => {})
   }, [])
 
   const loadAssignees = async (targetJobId: string) => {
-    const response = await api.get(`/jobs/${targetJobId}/assignees`)
-    const assignees = response.data.assignees ?? []
+    const response = (await jobsGetJobsIdAssignees(targetJobId)) as {
+      assignees?: WorkerOption[]
+    }
+    const assignees = response.assignees ?? []
     setJob((current) => current ? { ...current, assignees } : current)
     setSavedJob((current) => current ? { ...current, assignees } : current)
     return assignees
@@ -157,9 +181,9 @@ export default function JobSummaryPage() {
     setJob(null)
     setSavedJob(null)
     setAssigneeDraftIds([])
-    api.get(`/jobs/${jobId}`)
-      .then(r => {
-        const nextJob = r.data.job ?? r.data
+    jobsGetJobsId(jobId)
+      .then((r) => {
+        const nextJob = r.job as unknown as Job
         setJob(nextJob)
         setSavedJob(nextJob)
         setAssigneeDraftIds((nextJob.assignees ?? []).map((assignee: WorkerOption) => assignee.id))
@@ -185,9 +209,9 @@ export default function JobSummaryPage() {
     if (!job || !jobId) return
     setSaving(true)
     try {
-      const res = await api.put(`/jobs/${jobId}`, {
+      const payload: JobsJobPayloadSchema = {
         title: job.title,
-        status: job.status,
+        status: job.status as JobsJobPayloadSchema["status"],
         jobType: job.jobType || null,
         streetAddress: job.streetAddress || null,
         city: job.city || null,
@@ -198,16 +222,19 @@ export default function JobSummaryPage() {
         projectedCompletion: job.projectedCompletion || null,
         actualStart: job.actualStart || null,
         actualCompletion: job.actualCompletion || null,
-        workDays: job.workDays,
-        contractType: job.contractType || null,
+        workDays: (job.workDays ?? null) as JobsJobPayloadSchema["workDays"],
+        contractType: (job.contractType || null) as JobsJobPayloadSchema["contractType"],
         internalNotes: job.internalNotes || null,
         subVendorNotes: job.subVendorNotes || null,
         squareFeet: job.squareFeet || null,
         permitNumber: job.permitNumber || null,
         projectManagerId: job.projectManagerId || null,
         clientId: job.clientId || null,
-      })
-      const updatedJob = res.data.job ?? res.data
+      }
+      const validated = validatePayload(JobsPutJobsIdBody, payload)
+      if (!validated) return
+      const res = await jobsPutJobsId(jobId, validated)
+      const updatedJob = res.job as unknown as Job
       setJob(updatedJob)
       setSavedJob(updatedJob)
       setParentJob((current) =>
@@ -215,7 +242,7 @@ export default function JobSummaryPage() {
           ? {
               ...current,
               title: updatedJob.title,
-              status: updatedJob.status,
+              status: updatedJob.status as "open" | "closed" | "archived",
               city: updatedJob.city,
               state: updatedJob.state,
             }
@@ -242,9 +269,22 @@ export default function JobSummaryPage() {
 
     setSavingAssignees(true)
     try {
+      const addPayloads = toAdd
+        .map((userId) =>
+          validatePayload(JobsPostJobsIdAssigneesBody, {
+            userId,
+          } satisfies JobsAssigneePayloadSchema),
+        )
+        .filter((p): p is JobsAssigneePayloadSchema => p !== null)
+      // Bail out if any add payload was rejected (validatePayload already
+      // surfaced a toast); we still allow removals to proceed in the
+      // happy-path scenario where everything validated.
+      if (addPayloads.length !== toAdd.length) return
       await Promise.all([
-        ...toAdd.map((userId) => api.post(`/jobs/${jobId}/assignees`, { userId })),
-        ...toRemove.map((userId) => api.delete(`/jobs/${jobId}/assignees/${userId}`)),
+        ...addPayloads.map((data) => jobsPostJobsIdAssignees(jobId, data)),
+        ...toRemove.map((userId) =>
+          jobsDeleteJobsIdAssigneesUserid(jobId, userId),
+        ),
       ])
       const assignees = await loadAssignees(jobId)
       setAssigneeDraftIds(assignees.map((assignee: WorkerOption) => assignee.id))

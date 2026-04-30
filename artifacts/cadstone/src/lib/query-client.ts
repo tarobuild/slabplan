@@ -69,6 +69,11 @@ const RESOURCE_URL_PREFIXES: Record<AppDataResource, string[]> = {
   clients: ["/api/clients"],
   leads: ["/api/leads"],
   navigation: [],
+  // Folder and dashboard refreshes are emitted by mutations elsewhere
+  // (folder file uploads, dashboard schedule edits) and bridged here so
+  // the corresponding typed react-query caches re-fetch automatically.
+  folders: ["/api/folders", "/api/jobs"],
+  dashboard: ["/api/dashboard", "/api/activity"],
 }
 
 function urlMatchesPrefixes(url: unknown, prefixes: string[]): boolean {
@@ -82,7 +87,7 @@ function urlMatchesPrefixes(url: unknown, prefixes: string[]): boolean {
 }
 
 function bridgeDataRefreshToReactQuery(): void {
-  const resources: AppDataResource[] = ["jobs", "clients", "leads"]
+  const resources = Object.keys(RESOURCE_URL_PREFIXES) as AppDataResource[]
 
   for (const resource of resources) {
     const prefixes = RESOURCE_URL_PREFIXES[resource]

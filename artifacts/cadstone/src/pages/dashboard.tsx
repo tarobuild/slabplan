@@ -7,7 +7,12 @@ import {
   List,
   MapPin,
 } from "lucide-react"
-import { api } from "@/lib/api"
+import {
+  activityGetActivity,
+  customFetch,
+  dashboardGetDashboardAgenda,
+  getDashboardGetDashboardScheduleUrl,
+} from "@workspace/api-client-react"
 import { toastApiError } from "@/lib/api-errors"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -471,8 +476,13 @@ export default function DashboardPage() {
 
   const fetchCal = useCallback(() => {
     setCalLoading(true)
-    api.get(`/dashboard/schedule?start=${fetchRange.start}&end=${fetchRange.end}`)
-      .then(r => setCalItems((r.data.items ?? []).filter((i: any) => i.startDate)))
+    // The /dashboard/schedule route accepts start/end query params that
+    // aren't yet captured in the OpenAPI spec, so we go through the typed
+    // `customFetch` (same auth/error handling as the generated functions)
+    // and append the query string ourselves.
+    const url = `${getDashboardGetDashboardScheduleUrl()}?start=${fetchRange.start}&end=${fetchRange.end}`
+    customFetch<{ items?: CalItem[] }>(url, { method: "GET" })
+      .then((data) => setCalItems((data.items ?? []).filter((i) => i.startDate)))
       .catch((err: unknown) => toastApiError(err, "Failed to load schedule"))
       .finally(() => setCalLoading(false))
   }, [fetchRange])
@@ -483,12 +493,12 @@ export default function DashboardPage() {
     setSidebarLoading(true)
 
     Promise.all([
-      api.get<{ data: ActivityEntry[] }>("/activity?limit=12"),
-      api.get("/dashboard/agenda"),
+      activityGetActivity({ limit: 12 }) as Promise<{ data?: ActivityEntry[] }>,
+      dashboardGetDashboardAgenda() as Promise<{ recentJobs?: RecentJob[] }>,
     ])
       .then(([activityResponse, agendaResponse]) => {
-        setActivity(activityResponse.data.data ?? [])
-        setRecentJobs(agendaResponse.data.recentJobs ?? [])
+        setActivity(activityResponse.data ?? [])
+        setRecentJobs(agendaResponse.recentJobs ?? [])
       })
       .catch((err: unknown) => toastApiError(err, "Failed to load dashboard data"))
       .finally(() => setSidebarLoading(false))

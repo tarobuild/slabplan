@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { FolderOpen, Video } from "lucide-react"
+import { useJobsGetJobs } from "@workspace/api-client-react"
 import FileBrowser from "@/components/FileBrowser"
 import {
   Select,
@@ -9,33 +10,33 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api } from "@/lib/api"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toastApiError } from "@/lib/api-errors"
 
-type Job = {
-  id: string
-  title: string
-  status: string | null
-}
-
 export default function FilesVideosPage() {
   useDocumentTitle("Videos")
-  const [jobs, setJobs] = useState<Job[]>([])
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+
+  // Use the generated typed hook so this page benefits from the same
+  // tanstack-query cache and refetch behavior as the rest of the app.
+  const jobsQuery = useJobsGetJobs()
+  const jobs = jobsQuery.data?.jobs ?? []
+  const loading = jobsQuery.isPending
 
   useEffect(() => {
-    api
-      .get("/jobs")
-      .then((r) => {
-        const list: Job[] = r.data.jobs ?? []
-        setJobs(list)
-        if (list.length > 0) setSelectedJobId(list[0].id)
-      })
-      .catch((err: unknown) => toastApiError(err, "Failed to load jobs"))
-      .finally(() => setLoading(false))
-  }, [])
+    if (jobsQuery.error) {
+      toastApiError(jobsQuery.error, "Failed to load jobs")
+    }
+  }, [jobsQuery.error])
+
+  // Auto-select the first job once the list arrives, but only when the user
+  // hasn't picked one yet (or the selection is no longer in the list).
+  useEffect(() => {
+    if (jobs.length === 0) return
+    if (!selectedJobId || !jobs.some((job) => job.id === selectedJobId)) {
+      setSelectedJobId(jobs[0].id)
+    }
+  }, [jobs, selectedJobId])
 
   const selectedJob = jobs.find((job) => job.id === selectedJobId)
 

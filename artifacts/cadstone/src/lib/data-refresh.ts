@@ -1,4 +1,10 @@
-export type AppDataResource = "jobs" | "clients" | "leads" | "navigation"
+export type AppDataResource =
+  | "jobs"
+  | "clients"
+  | "leads"
+  | "navigation"
+  | "folders"
+  | "dashboard"
 
 const refreshTarget = new EventTarget()
 

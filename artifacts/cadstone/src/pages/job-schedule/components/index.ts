@@ -1,4 +1,5 @@
 export { AssigneeSelect } from "./AssigneeSelect"
 export { EmptyState } from "./EmptyState"
 export { MultiSelectPopover } from "./MultiSelectPopover"
+export { ScheduleToolbar } from "./ScheduleToolbar"
 export { SortableHead } from "./SortableHead"

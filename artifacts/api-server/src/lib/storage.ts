@@ -5,6 +5,10 @@ import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Response } from "express";
 import { Storage } from "@google-cloud/storage";
+import {
+  FILE_RESPONSE_CSP,
+  resolveSafeFileServingHeaders,
+} from "./file-serving";
 import { HttpError } from "./http";
 import { logger } from "./logger";
 
@@ -165,6 +169,13 @@ export function openStoredFileReadStream(fileUrl: string): Readable {
 export interface SendStoredFileOptions {
   disposition: "inline" | "attachment";
   filename: string;
+  /**
+   * @deprecated Ignored. The served Content-Type is always derived
+   * from the filename's extension against the allowlist in
+   * `lib/file-serving.ts`; honouring a caller-supplied (and
+   * ultimately client-claimed) MIME type would defeat the XSS
+   * protections this helper exists to enforce.
+   */
   contentType?: string | null;
   cacheControl?: string;
 }
@@ -177,11 +188,9 @@ export async function streamStoredFileToResponse(
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   const file = storageClient.bucket(bucketName).file(objectName);
 
-  let contentType: string | undefined;
   let size: string | number | undefined;
   try {
     const [metadata] = await file.getMetadata();
-    contentType = metadata.contentType;
     size = metadata.size;
   } catch (error) {
     const code = (error as { code?: number })?.code;
@@ -192,17 +201,20 @@ export async function streamStoredFileToResponse(
   }
 
   const filename = opts.filename || objectName.split("/").pop() || "file";
-  const safeFilename = filename.replace(/["\\]/g, "");
-  const encoded = encodeURIComponent(filename);
+  const headers = resolveSafeFileServingHeaders({
+    originalName: filename,
+    requestedDisposition: opts.disposition,
+  });
 
-  res.setHeader(
-    "Content-Type",
-    opts.contentType || contentType || "application/octet-stream",
-  );
-  res.setHeader(
-    "Content-Disposition",
-    `${opts.disposition}; filename="${safeFilename}"; filename*=UTF-8''${encoded}`,
-  );
+  res.setHeader("Content-Type", headers.contentType);
+  res.setHeader("Content-Disposition", headers.contentDispositionHeader);
+  // nosniff stops browsers from second-guessing our Content-Type and
+  // running an HTML payload that we served as application/octet-stream.
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  // Even when a browser ignores the disposition (e.g. a user opens the
+  // download in a new tab and the type happens to be renderable), this
+  // CSP keeps any embedded scripts from running.
+  res.setHeader("Content-Security-Policy", FILE_RESPONSE_CSP);
   res.setHeader("Cache-Control", opts.cacheControl ?? "private, max-age=3600");
   if (size !== undefined && size !== null) {
     res.setHeader("Content-Length", String(size));

@@ -14,6 +14,7 @@ import {
 } from "@workspace/db/schema";
 import { buildFolderVisibilityCondition, type AuthContext } from "./authorization";
 import { encodeCursor, type CursorPayload } from "./cursor";
+import { FILE_RESPONSE_CSP } from "./file-serving";
 import { HttpError } from "./http";
 import {
   buildStoredFileName,
@@ -1883,6 +1884,13 @@ export async function streamFolderZip(params: {
   });
 
   params.res.attachment(`${rootTitle}.zip`);
+  // Same safe-header bundle that `streamStoredFileToResponse` applies to
+  // single-file downloads. ZIPs are inert by themselves, but the headers
+  // keep us consistent across every file-serving response and stop a
+  // browser from second-guessing the type if one ever swaps the
+  // content-type sniff to "look at the bytes".
+  params.res.setHeader("X-Content-Type-Options", "nosniff");
+  params.res.setHeader("Content-Security-Policy", FILE_RESPONSE_CSP);
 
   const archive = archiver("zip", {
     zlib: { level: 9 },

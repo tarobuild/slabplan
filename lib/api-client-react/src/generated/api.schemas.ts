@@ -8,3 +8,718 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface Error {
+  error: string;
+  details?: unknown;
+}
+
+export interface AnyValue {}
+
+export interface GenericObject {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from updateProfileSchema in artifacts/api-server/src/routes/users.ts.
+ */
+export interface UsersUpdateProfileSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from changePasswordSchema in artifacts/api-server/src/routes/users.ts.
+ */
+export interface UsersChangePasswordSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from clientPayloadSchema in artifacts/api-server/src/routes/clients.ts.
+ */
+export interface ClientsClientPayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from contactPayloadSchema in artifacts/api-server/src/routes/clients.ts.
+ */
+export interface ClientsContactPayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from jobPayloadSchema in artifacts/api-server/src/routes/jobs.ts.
+ */
+export interface JobsJobPayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from leadPayloadSchema in artifacts/api-server/src/routes/leads.ts.
+ */
+export interface LeadsLeadPayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from contactCreateSchema in artifacts/api-server/src/routes/leads.ts.
+ */
+export interface LeadsContactCreateSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from contactUpdateSchema in artifacts/api-server/src/routes/leads.ts.
+ */
+export interface LeadsContactUpdateSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from activityCreateSchema in artifacts/api-server/src/routes/leads.ts.
+ */
+export interface LeadsActivityCreateSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from folderBodySchema in artifacts/api-server/src/routes/folders.ts.
+ */
+export interface FoldersFolderBodySchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from folderUpdateSchema in artifacts/api-server/src/routes/folders.ts.
+ */
+export interface FoldersFolderUpdateSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from moveFolderSchema in artifacts/api-server/src/routes/folders.ts.
+ */
+export interface FoldersMoveFolderSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from renameFileSchema in artifacts/api-server/src/routes/files.ts.
+ */
+export interface FilesRenameFileSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from dailyLogPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ */
+export interface DailyLogsDailyLogPayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from commentPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ */
+export interface DailyLogsCommentPayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from commentReactionPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ */
+export interface DailyLogsCommentReactionPayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from todoPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ */
+export interface DailyLogsTodoPayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from todoTogglePayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ */
+export interface DailyLogsTodoTogglePayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from schedulePhasePayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ */
+export interface ScheduleSchedulePhasePayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from scheduleSettingPayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ */
+export interface ScheduleScheduleSettingPayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from schedulePayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ */
+export interface ScheduleSchedulePayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Request schema derived from scheduleNotePayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ */
+export interface ScheduleScheduleNotePayloadSchema {
+  [key: string]: unknown;
+}
+
+/**
+ * Standard pagination metadata returned with list responses.
+ */
+export interface Pagination {
+  /** @minimum 1 */
+  page: number;
+  /** @minimum 1 */
+  pageSize: number;
+  /** @minimum 0 */
+  totalItems: number;
+  /** @minimum 1 */
+  totalPages: number;
+}
+
+/**
+ * Generic success acknowledgement returned by destructive operations.
+ */
+export interface SuccessResponse {
+  success: boolean;
+}
+
+/**
+ * Summary view of a job used in client detail and client-job listings.
+ */
+export interface JobSummary {
+  id: string;
+  title: string;
+  status?: string | null;
+  city?: string | null;
+  state?: string | null;
+  jobType?: string | null;
+  /** Decimal price serialized as string. */
+  contractPrice?: string | null;
+  projectedStart?: string | null;
+  projectedCompletion?: string | null;
+  createdAt: string;
+}
+
+/**
+ * Primary contact summary surfaced on client list rows. Null when the client has no primary contact.
+ */
+export interface ClientPrimaryContact {
+  id: string;
+  clientId?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  isPrimary?: boolean | null;
+}
+
+/**
+ * Full client contact record returned on client detail and contact-management endpoints.
+ */
+export interface ClientContact {
+  id: string;
+  clientId?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  title?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  isPrimary?: boolean | null;
+  createdAt?: string;
+  updatedAt?: string | null;
+  deletedAt?: string | null;
+}
+
+/**
+ * A client row returned by the paginated `GET /clients` list. `jobCount` and `openJobCount` are computed only over jobs the caller can access.
+ */
+export interface ClientListItem {
+  id: string;
+  companyName: string;
+  phone?: string | null;
+  email?: string | null;
+  city?: string | null;
+  state?: string | null;
+  createdAt: string;
+  /** Primary contact summary, or null when the client has no primary contact. */
+  primaryContact: ClientPrimaryContact | null;
+  /** @minimum 0 */
+  contactCount: number;
+  /**
+   * Number of jobs for this client visible to the caller.
+   * @minimum 0
+   */
+  jobCount: number;
+  /**
+   * Number of open jobs for this client visible to the caller.
+   * @minimum 0
+   */
+  openJobCount: number;
+}
+
+/**
+ * Response for `GET /clients`. The `clients` array is restricted to clients the caller can access.
+ */
+export interface ClientListResponse {
+  clients: ClientListItem[];
+  pagination: Pagination;
+}
+
+/**
+ * Full client record with embedded contacts and the caller-visible jobs list.
+ */
+export interface ClientDetail {
+  id: string;
+  companyName: string;
+  phone?: string | null;
+  email?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  notes?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  deletedAt?: string | null;
+  contacts: ClientContact[];
+  /** Jobs for this client filtered to those the caller can access (admins see all). */
+  jobs: JobSummary[];
+}
+
+/**
+ * Response for `GET /clients/{id}`. The embedded `client.jobs` list is filtered to jobs the caller can access.
+ */
+export interface ClientDetailResponse {
+  client: ClientDetail;
+}
+
+/**
+ * Response for `GET /clients/{id}/jobs`. The `jobs` array is filtered to jobs the caller can access (admins see all).
+ */
+export interface ClientJobsResponse {
+  jobs: JobSummary[];
+}
+
+/**
+ * Primary contact summary surfaced on lead list rows. Null when the lead has no client contact assigned.
+ */
+export interface LeadPrimaryContact {
+  id: string;
+  leadId?: string | null;
+  displayName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  label?: string | null;
+}
+
+/**
+ * Full lead contact record returned in lead detail responses.
+ */
+export interface LeadContact {
+  id: string;
+  leadId?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  email?: string | null;
+  label?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+/**
+ * Cross-lead contact entry. Only contacts whose lead the caller can access are surfaced.
+ */
+export interface LeadAvailableContact {
+  id: string;
+  leadId?: string | null;
+  leadTitle?: string | null;
+  displayName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  label?: string | null;
+}
+
+/**
+ * User assigned to a lead as a salesperson.
+ */
+export interface LeadSalesperson {
+  id: string;
+  fullName?: string | null;
+  email?: string | null;
+  role?: string | null;
+  avatarUrl?: string | null;
+}
+
+/**
+ * Tag name applied to a lead.
+ */
+export type LeadTag = string;
+
+/**
+ * Lead source name.
+ */
+export type LeadSource = string;
+
+/**
+ * File attached to a lead via the lead-attachments table.
+ */
+export interface LeadAttachment {
+  id: string;
+  fileId?: string | null;
+  originalName?: string | null;
+  fileUrl?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
+  createdAt?: string | null;
+  uploadedByName?: string | null;
+}
+
+export type LeadListItemStatus =
+  (typeof LeadListItemStatus)[keyof typeof LeadListItemStatus];
+
+export const LeadListItemStatus = {
+  open: "open",
+  in_negotiation: "in_negotiation",
+  won: "won",
+  lost: "lost",
+  archived: "archived",
+} as const;
+
+/**
+ * A lead row returned by the paginated `GET /leads` list.
+ */
+export interface LeadListItem {
+  id: string;
+  title: string;
+  streetAddress?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  confidence?: number | null;
+  projectedSalesDate?: string | null;
+  /** Decimal serialized as string. */
+  estimatedRevenueMin?: string | null;
+  /** Decimal serialized as string. */
+  estimatedRevenueMax?: string | null;
+  status: LeadListItemStatus;
+  projectType?: string | null;
+  leadSource?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  createdByName?: string | null;
+  /** Primary client contact summary, or null when the lead has no client contact assigned. */
+  clientContact: LeadPrimaryContact | null;
+}
+
+/**
+ * Aggregate revenue totals across all leads matching the query (not just the current page).
+ */
+export interface LeadListSummary {
+  /** Decimal serialized as string. */
+  estimatedRevenueMinTotal: string;
+  /** Decimal serialized as string. */
+  estimatedRevenueMaxTotal: string;
+}
+
+/**
+ * Response for `GET /leads`. The `leads` array is restricted to leads the caller can access (admins see all).
+ */
+export interface LeadListResponse {
+  leads: LeadListItem[];
+  pagination: Pagination;
+  summary: LeadListSummary;
+}
+
+export type LeadDetailStatus =
+  (typeof LeadDetailStatus)[keyof typeof LeadDetailStatus];
+
+export const LeadDetailStatus = {
+  open: "open",
+  in_negotiation: "in_negotiation",
+  won: "won",
+  lost: "lost",
+  archived: "archived",
+} as const;
+
+/**
+ * Full lead record returned by `GET /leads/{id}`, with embedded contacts, assignments, attachments, and the caller-filtered `availableContacts` collection.
+ */
+export interface LeadDetail {
+  id: string;
+  title: string;
+  streetAddress?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  confidence?: number | null;
+  projectedSalesDate?: string | null;
+  estimatedRevenueMin?: string | null;
+  estimatedRevenueMax?: string | null;
+  status: LeadDetailStatus;
+  projectType?: string | null;
+  notes?: string | null;
+  leadSource?: string | null;
+  createdBy?: string | null;
+  createdByName?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  /** Primary client contact for the lead, or null when none is assigned. */
+  clientContact: LeadContact | null;
+  contacts: LeadContact[];
+  salespeople: LeadSalesperson[];
+  tags: LeadTag[];
+  sources: LeadSource[];
+  attachments: LeadAttachment[];
+  /** Lead contacts from across the workspace, filtered to leads the caller can access (admins see all). */
+  availableContacts: LeadAvailableContact[];
+}
+
+/**
+ * Response for `GET /leads/{id}`. The embedded `lead.availableContacts` collection is filtered to leads the caller can access.
+ */
+export interface LeadDetailResponse {
+  lead: LeadDetail;
+}
+
+/**
+ * Response for `GET /leads/contacts`. The `contacts` array is restricted to contacts that belong to leads the caller can access (admins see all).
+ */
+export interface LeadContactsListResponse {
+  contacts: LeadAvailableContact[];
+}
+
+export type WorkdayExceptionType =
+  (typeof WorkdayExceptionType)[keyof typeof WorkdayExceptionType];
+
+export const WorkdayExceptionType = {
+  non_workday: "non_workday",
+  extra_workday: "extra_workday",
+} as const;
+
+/**
+ * A workday exception (non-workday or extra-workday) attached to one or more jobs, or applied company-wide when `appliesToAllJobs` is true.
+ */
+export interface WorkdayException {
+  id: string;
+  title: string;
+  type: WorkdayExceptionType;
+  startDate: string;
+  endDate: string;
+  sameEveryYear?: boolean | null;
+  categoryId?: string | null;
+  /** When true, the exception applies to every active job. Only admins can create, update, or delete company-wide exceptions. */
+  appliesToAllJobs?: boolean | null;
+  /** When `appliesToAllJobs` is false, the explicit list of job IDs the exception applies to. */
+  jobIds?: string[] | null;
+  notes?: string | null;
+  createdBy?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+/**
+ * Response wrapper for create/update workday-exception endpoints.
+ */
+export interface WorkdayExceptionResponse {
+  exception: WorkdayException;
+}
+
+export type WorkdayExceptionPayloadType =
+  (typeof WorkdayExceptionPayloadType)[keyof typeof WorkdayExceptionPayloadType];
+
+export const WorkdayExceptionPayloadType = {
+  non_workday: "non_workday",
+  extra_workday: "extra_workday",
+} as const;
+
+/**
+ * Request body for `POST /jobs/{jobId}/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.
+ */
+export interface WorkdayExceptionPayload {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  type: WorkdayExceptionPayloadType;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  startDate: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  endDate: string;
+  sameEveryYear?: boolean;
+  categoryId?: string | null;
+  /** When true, applies the exception to every active job. Admin role required. */
+  appliesToAllJobs?: boolean;
+  jobIds?: string[];
+  notes?: string | null;
+}
+
+export type WorkdayExceptionUpdatePayloadType =
+  (typeof WorkdayExceptionUpdatePayloadType)[keyof typeof WorkdayExceptionUpdatePayloadType];
+
+export const WorkdayExceptionUpdatePayloadType = {
+  non_workday: "non_workday",
+  extra_workday: "extra_workday",
+} as const;
+
+/**
+ * Request body for `PUT /jobs/{jobId}/workday-exceptions/{exceptionId}`. All fields are optional; omitted fields keep their previous value. Toggling `appliesToAllJobs` is admin-only.
+ */
+export interface WorkdayExceptionUpdatePayload {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title?: string;
+  type?: WorkdayExceptionUpdatePayloadType;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  startDate?: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  endDate?: string;
+  sameEveryYear?: boolean;
+  categoryId?: string | null;
+  appliesToAllJobs?: boolean;
+  jobIds?: string[];
+  notes?: string | null;
+}
+
+export type ClientsGetClientsParams = {
+  /**
+   * 1-indexed page number. Defaults to 1.
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * Items per page. Defaults to 20, max 100.
+   * @minimum 1
+   * @maximum 100
+   */
+  pageSize?: number;
+  /**
+   * Case-insensitive substring filter applied across company name, email, and city.
+   */
+  search?: string;
+};
+
+export type LeadsGetLeadsContactsParams = {
+  /**
+   * Case-insensitive substring filter applied across contact display name, email, phone, and lead title.
+   */
+  search?: string;
+};
+
+export type LeadsGetLeadsParams = {
+  /**
+   * 1-indexed page number. Defaults to 1.
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * Items per page. Defaults to 10, max 100.
+   * @minimum 1
+   * @maximum 100
+   */
+  pageSize?: number;
+  /**
+   * Case-insensitive substring filter applied across lead title, city, state, and project type.
+   */
+  search?: string;
+  /**
+   * Restrict to leads with the given status.
+   */
+  status?: LeadsGetLeadsStatus;
+};
+
+export type LeadsGetLeadsStatus =
+  (typeof LeadsGetLeadsStatus)[keyof typeof LeadsGetLeadsStatus];
+
+export const LeadsGetLeadsStatus = {
+  open: "open",
+  in_negotiation: "in_negotiation",
+  won: "won",
+  lost: "lost",
+  archived: "archived",
+} as const;
+
+export type SearchGetSearchParams = {
+  /**
+   * Search term. 1-100 characters, trimmed.
+   * @minLength 1
+   * @maxLength 100
+   */
+  q: string;
+  /**
+   * 1-indexed page of results. Capped at 20.
+   * @minimum 1
+   * @maximum 20
+   */
+  page?: number;
+  /**
+   * Number of results per page. Capped at 25.
+   * @minimum 1
+   * @maximum 25
+   */
+  pageSize?: number;
+};
+
+export type SearchGetSearch200ResultsItemType =
+  (typeof SearchGetSearch200ResultsItemType)[keyof typeof SearchGetSearch200ResultsItemType];
+
+export const SearchGetSearch200ResultsItemType = {
+  job: "job",
+  lead: "lead",
+  file: "file",
+  schedule: "schedule",
+  client: "client",
+} as const;
+
+export type SearchGetSearch200ResultsItem = {
+  id: string;
+  type: SearchGetSearch200ResultsItemType;
+  title: string;
+  subtitle?: string;
+  href: string;
+};
+
+export type SearchGetSearch200Pagination = {
+  /** @minimum 1 */
+  page: number;
+  /** @minimum 1 */
+  pageSize: number;
+  hasMore: boolean;
+};
+
+export type SearchGetSearch200 = {
+  results: SearchGetSearch200ResultsItem[];
+  pagination: SearchGetSearch200Pagination;
+};

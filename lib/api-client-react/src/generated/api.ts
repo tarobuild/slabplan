@@ -5,18 +5,63 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  AnyValue,
+  ClientDetailResponse,
+  ClientJobsResponse,
+  ClientListResponse,
+  ClientsClientPayloadSchema,
+  ClientsContactPayloadSchema,
+  ClientsGetClientsParams,
+  DailyLogsCommentPayloadSchema,
+  DailyLogsCommentReactionPayloadSchema,
+  DailyLogsDailyLogPayloadSchema,
+  DailyLogsTodoPayloadSchema,
+  DailyLogsTodoTogglePayloadSchema,
+  Error,
+  FilesRenameFileSchema,
+  FoldersFolderBodySchema,
+  FoldersFolderUpdateSchema,
+  FoldersMoveFolderSchema,
+  GenericObject,
+  HealthStatus,
+  JobsJobPayloadSchema,
+  LeadContactsListResponse,
+  LeadDetailResponse,
+  LeadListResponse,
+  LeadsActivityCreateSchema,
+  LeadsContactCreateSchema,
+  LeadsContactUpdateSchema,
+  LeadsGetLeadsContactsParams,
+  LeadsGetLeadsParams,
+  LeadsLeadPayloadSchema,
+  ScheduleScheduleNotePayloadSchema,
+  ScheduleSchedulePayloadSchema,
+  ScheduleSchedulePhasePayloadSchema,
+  ScheduleScheduleSettingPayloadSchema,
+  SearchGetSearch200,
+  SearchGetSearchParams,
+  SuccessResponse,
+  UsersChangePasswordSchema,
+  UsersUpdateProfileSchema,
+  WorkdayExceptionPayload,
+  WorkdayExceptionResponse,
+  WorkdayExceptionUpdatePayload,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -25,32 +70,370 @@ type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * Returns server health status
- * @summary Health check
+ * Route defined in artifacts/api-server/src/routes/auth.ts.
+ * @summary POST /auth/register
  */
-export const getHealthCheckUrl = () => {
-  return `/api/healthz`;
+export const getAuthPostAuthRegisterUrl = () => {
+  return `/api/auth/register`;
 };
 
-export const healthCheck = async (
+export const authPostAuthRegister = async (
+  genericObject: GenericObject,
   options?: RequestInit,
-): Promise<HealthStatus> => {
-  return customFetch<HealthStatus>(getHealthCheckUrl(), {
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getAuthPostAuthRegisterUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(genericObject),
+  });
+};
+
+export const getAuthPostAuthRegisterMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthRegister>>,
+    TError,
+    { data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof authPostAuthRegister>>,
+  TError,
+  { data: BodyType<GenericObject> },
+  TContext
+> => {
+  const mutationKey = ["authPostAuthRegister"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof authPostAuthRegister>>,
+    { data: BodyType<GenericObject> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return authPostAuthRegister(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AuthPostAuthRegisterMutationResult = NonNullable<
+  Awaited<ReturnType<typeof authPostAuthRegister>>
+>;
+export type AuthPostAuthRegisterMutationBody = BodyType<GenericObject>;
+export type AuthPostAuthRegisterMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /auth/register
+ */
+export const useAuthPostAuthRegister = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthRegister>>,
+    TError,
+    { data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof authPostAuthRegister>>,
+  TError,
+  { data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(getAuthPostAuthRegisterMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/auth.ts.
+ * @summary POST /auth/login
+ */
+export const getAuthPostAuthLoginUrl = () => {
+  return `/api/auth/login`;
+};
+
+export const authPostAuthLogin = async (
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getAuthPostAuthLoginUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(genericObject),
+  });
+};
+
+export const getAuthPostAuthLoginMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthLogin>>,
+    TError,
+    { data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof authPostAuthLogin>>,
+  TError,
+  { data: BodyType<GenericObject> },
+  TContext
+> => {
+  const mutationKey = ["authPostAuthLogin"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof authPostAuthLogin>>,
+    { data: BodyType<GenericObject> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return authPostAuthLogin(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AuthPostAuthLoginMutationResult = NonNullable<
+  Awaited<ReturnType<typeof authPostAuthLogin>>
+>;
+export type AuthPostAuthLoginMutationBody = BodyType<GenericObject>;
+export type AuthPostAuthLoginMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /auth/login
+ */
+export const useAuthPostAuthLogin = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthLogin>>,
+    TError,
+    { data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof authPostAuthLogin>>,
+  TError,
+  { data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(getAuthPostAuthLoginMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/auth.ts.
+ * @summary POST /auth/logout
+ */
+export const getAuthPostAuthLogoutUrl = () => {
+  return `/api/auth/logout`;
+};
+
+export const authPostAuthLogout = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getAuthPostAuthLogoutUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAuthPostAuthLogoutMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthLogout>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof authPostAuthLogout>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["authPostAuthLogout"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof authPostAuthLogout>>,
+    void
+  > = () => {
+    return authPostAuthLogout(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AuthPostAuthLogoutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof authPostAuthLogout>>
+>;
+
+export type AuthPostAuthLogoutMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /auth/logout
+ */
+export const useAuthPostAuthLogout = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthLogout>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof authPostAuthLogout>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getAuthPostAuthLogoutMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/auth.ts.
+ * @summary POST /auth/refresh
+ */
+export const getAuthPostAuthRefreshUrl = () => {
+  return `/api/auth/refresh`;
+};
+
+export const authPostAuthRefresh = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getAuthPostAuthRefreshUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getAuthPostAuthRefreshMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthRefresh>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof authPostAuthRefresh>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["authPostAuthRefresh"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof authPostAuthRefresh>>,
+    void
+  > = () => {
+    return authPostAuthRefresh(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AuthPostAuthRefreshMutationResult = NonNullable<
+  Awaited<ReturnType<typeof authPostAuthRefresh>>
+>;
+
+export type AuthPostAuthRefreshMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /auth/refresh
+ */
+export const useAuthPostAuthRefresh = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthRefresh>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof authPostAuthRefresh>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getAuthPostAuthRefreshMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/users.ts. Validated query with userListQuerySchema.
+ * @summary GET /users
+ */
+export const getUsersGetUsersUrl = () => {
+  return `/api/users`;
+};
+
+export const usersGetUsers = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getUsersGetUsersUrl(), {
     ...options,
     method: "GET",
   });
 };
 
-export const getHealthCheckQueryKey = () => {
-  return [`/api/healthz`] as const;
+export const getUsersGetUsersQueryKey = () => {
+  return [`/api/users`] as const;
 };
 
-export const getHealthCheckQueryOptions = <
-  TData = Awaited<ReturnType<typeof healthCheck>>,
-  TError = ErrorType<unknown>,
+export const getUsersGetUsersQueryOptions = <
+  TData = Awaited<ReturnType<typeof usersGetUsers>>,
+  TError = ErrorType<Error>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof healthCheck>>,
+    Awaited<ReturnType<typeof usersGetUsers>>,
     TError,
     TData
   >;
@@ -58,40 +441,10409 @@ export const getHealthCheckQueryOptions = <
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getHealthCheckQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getUsersGetUsersQueryKey();
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof healthCheck>>> = ({
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof usersGetUsers>>> = ({
     signal,
-  }) => healthCheck({ signal, ...requestOptions });
+  }) => usersGetUsers({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof healthCheck>>,
+    Awaited<ReturnType<typeof usersGetUsers>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type HealthCheckQueryResult = NonNullable<
-  Awaited<ReturnType<typeof healthCheck>>
+export type UsersGetUsersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof usersGetUsers>>
 >;
-export type HealthCheckQueryError = ErrorType<unknown>;
+export type UsersGetUsersQueryError = ErrorType<Error>;
 
 /**
- * @summary Health check
+ * @summary GET /users
  */
 
-export function useHealthCheck<
-  TData = Awaited<ReturnType<typeof healthCheck>>,
-  TError = ErrorType<unknown>,
+export function useUsersGetUsers<
+  TData = Awaited<ReturnType<typeof usersGetUsers>>,
+  TError = ErrorType<Error>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof healthCheck>>,
+    Awaited<ReturnType<typeof usersGetUsers>>,
     TError,
     TData
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getHealthCheckQueryOptions(options);
+  const queryOptions = getUsersGetUsersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/users.ts.
+ * @summary GET /users/me
+ */
+export const getUsersGetUsersMeUrl = () => {
+  return `/api/users/me`;
+};
+
+export const usersGetUsersMe = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getUsersGetUsersMeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getUsersGetUsersMeQueryKey = () => {
+  return [`/api/users/me`] as const;
+};
+
+export const getUsersGetUsersMeQueryOptions = <
+  TData = Awaited<ReturnType<typeof usersGetUsersMe>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof usersGetUsersMe>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getUsersGetUsersMeQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof usersGetUsersMe>>> = ({
+    signal,
+  }) => usersGetUsersMe({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof usersGetUsersMe>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type UsersGetUsersMeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof usersGetUsersMe>>
+>;
+export type UsersGetUsersMeQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /users/me
+ */
+
+export function useUsersGetUsersMe<
+  TData = Awaited<ReturnType<typeof usersGetUsersMe>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof usersGetUsersMe>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getUsersGetUsersMeQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/users.ts. Validated request body with updateProfileSchema.
+ * @summary PUT /users/me
+ */
+export const getUsersPutUsersMeUrl = () => {
+  return `/api/users/me`;
+};
+
+export const usersPutUsersMe = async (
+  usersUpdateProfileSchema: UsersUpdateProfileSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getUsersPutUsersMeUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(usersUpdateProfileSchema),
+  });
+};
+
+export const getUsersPutUsersMeMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPutUsersMe>>,
+    TError,
+    { data: BodyType<UsersUpdateProfileSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersPutUsersMe>>,
+  TError,
+  { data: BodyType<UsersUpdateProfileSchema> },
+  TContext
+> => {
+  const mutationKey = ["usersPutUsersMe"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersPutUsersMe>>,
+    { data: BodyType<UsersUpdateProfileSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return usersPutUsersMe(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersPutUsersMeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersPutUsersMe>>
+>;
+export type UsersPutUsersMeMutationBody = BodyType<UsersUpdateProfileSchema>;
+export type UsersPutUsersMeMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /users/me
+ */
+export const useUsersPutUsersMe = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPutUsersMe>>,
+    TError,
+    { data: BodyType<UsersUpdateProfileSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof usersPutUsersMe>>,
+  TError,
+  { data: BodyType<UsersUpdateProfileSchema> },
+  TContext
+> => {
+  return useMutation(getUsersPutUsersMeMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/users.ts. Validated request body with changePasswordSchema.
+ * @summary POST /users/me/password
+ */
+export const getUsersPostUsersMePasswordUrl = () => {
+  return `/api/users/me/password`;
+};
+
+export const usersPostUsersMePassword = async (
+  usersChangePasswordSchema: UsersChangePasswordSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getUsersPostUsersMePasswordUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(usersChangePasswordSchema),
+  });
+};
+
+export const getUsersPostUsersMePasswordMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPostUsersMePassword>>,
+    TError,
+    { data: BodyType<UsersChangePasswordSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersPostUsersMePassword>>,
+  TError,
+  { data: BodyType<UsersChangePasswordSchema> },
+  TContext
+> => {
+  const mutationKey = ["usersPostUsersMePassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersPostUsersMePassword>>,
+    { data: BodyType<UsersChangePasswordSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return usersPostUsersMePassword(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersPostUsersMePasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersPostUsersMePassword>>
+>;
+export type UsersPostUsersMePasswordMutationBody =
+  BodyType<UsersChangePasswordSchema>;
+export type UsersPostUsersMePasswordMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /users/me/password
+ */
+export const useUsersPostUsersMePassword = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPostUsersMePassword>>,
+    TError,
+    { data: BodyType<UsersChangePasswordSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof usersPostUsersMePassword>>,
+  TError,
+  { data: BodyType<UsersChangePasswordSchema> },
+  TContext
+> => {
+  return useMutation(getUsersPostUsersMePasswordMutationOptions(options));
+};
+
+/**
+ * List clients the caller can access, paginated and optionally filtered by search term. Each row includes a primary contact summary and the per-client `jobCount` / `openJobCount`, which are computed only over jobs the caller can access (admins see every job). Requires manager role or above.
+ * @summary GET /clients
+ */
+export const getClientsGetClientsUrl = (params?: ClientsGetClientsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients?${stringifiedParams}`
+    : `/api/clients`;
+};
+
+export const clientsGetClients = async (
+  params?: ClientsGetClientsParams,
+  options?: RequestInit,
+): Promise<ClientListResponse> => {
+  return customFetch<ClientListResponse>(getClientsGetClientsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getClientsGetClientsQueryKey = (
+  params?: ClientsGetClientsParams,
+) => {
+  return [`/api/clients`, ...(params ? [params] : [])] as const;
+};
+
+export const getClientsGetClientsQueryOptions = <
+  TData = Awaited<ReturnType<typeof clientsGetClients>>,
+  TError = ErrorType<Error>,
+>(
+  params?: ClientsGetClientsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof clientsGetClients>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getClientsGetClientsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof clientsGetClients>>
+  > = ({ signal }) => clientsGetClients(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof clientsGetClients>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ClientsGetClientsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof clientsGetClients>>
+>;
+export type ClientsGetClientsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /clients
+ */
+
+export function useClientsGetClients<
+  TData = Awaited<ReturnType<typeof clientsGetClients>>,
+  TError = ErrorType<Error>,
+>(
+  params?: ClientsGetClientsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof clientsGetClients>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getClientsGetClientsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with clientPayloadSchema.
+ * @summary POST /clients
+ */
+export const getClientsPostClientsUrl = () => {
+  return `/api/clients`;
+};
+
+export const clientsPostClients = async (
+  clientsClientPayloadSchema: ClientsClientPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getClientsPostClientsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(clientsClientPayloadSchema),
+  });
+};
+
+export const getClientsPostClientsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsPostClients>>,
+    TError,
+    { data: BodyType<ClientsClientPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clientsPostClients>>,
+  TError,
+  { data: BodyType<ClientsClientPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["clientsPostClients"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clientsPostClients>>,
+    { data: BodyType<ClientsClientPayloadSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return clientsPostClients(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClientsPostClientsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clientsPostClients>>
+>;
+export type ClientsPostClientsMutationBody =
+  BodyType<ClientsClientPayloadSchema>;
+export type ClientsPostClientsMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /clients
+ */
+export const useClientsPostClients = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsPostClients>>,
+    TError,
+    { data: BodyType<ClientsClientPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clientsPostClients>>,
+  TError,
+  { data: BodyType<ClientsClientPayloadSchema> },
+  TContext
+> => {
+  return useMutation(getClientsPostClientsMutationOptions(options));
+};
+
+/**
+ * Fetch a single client with its contacts and the jobs the caller can access. Admins see every job for the client; non-admins see only jobs they have access to.
+ * @summary GET /clients/{id}
+ */
+export const getClientsGetClientsIdUrl = (id: string) => {
+  return `/api/clients/${id}`;
+};
+
+export const clientsGetClientsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<ClientDetailResponse> => {
+  return customFetch<ClientDetailResponse>(getClientsGetClientsIdUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getClientsGetClientsIdQueryKey = (id: string) => {
+  return [`/api/clients/${id}`] as const;
+};
+
+export const getClientsGetClientsIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof clientsGetClientsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof clientsGetClientsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getClientsGetClientsIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof clientsGetClientsId>>
+  > = ({ signal }) => clientsGetClientsId(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof clientsGetClientsId>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ClientsGetClientsIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof clientsGetClientsId>>
+>;
+export type ClientsGetClientsIdQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /clients/{id}
+ */
+
+export function useClientsGetClientsId<
+  TData = Awaited<ReturnType<typeof clientsGetClientsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof clientsGetClientsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getClientsGetClientsIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with clientPayloadSchema.
+ * @summary PUT /clients/{id}
+ */
+export const getClientsPutClientsIdUrl = (id: string) => {
+  return `/api/clients/${id}`;
+};
+
+export const clientsPutClientsId = async (
+  id: string,
+  clientsClientPayloadSchema: ClientsClientPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getClientsPutClientsIdUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(clientsClientPayloadSchema),
+  });
+};
+
+export const getClientsPutClientsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsPutClientsId>>,
+    TError,
+    { id: string; data: BodyType<ClientsClientPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clientsPutClientsId>>,
+  TError,
+  { id: string; data: BodyType<ClientsClientPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["clientsPutClientsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clientsPutClientsId>>,
+    { id: string; data: BodyType<ClientsClientPayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return clientsPutClientsId(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClientsPutClientsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clientsPutClientsId>>
+>;
+export type ClientsPutClientsIdMutationBody =
+  BodyType<ClientsClientPayloadSchema>;
+export type ClientsPutClientsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /clients/{id}
+ */
+export const useClientsPutClientsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsPutClientsId>>,
+    TError,
+    { id: string; data: BodyType<ClientsClientPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clientsPutClientsId>>,
+  TError,
+  { id: string; data: BodyType<ClientsClientPayloadSchema> },
+  TContext
+> => {
+  return useMutation(getClientsPutClientsIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts.
+ * @summary DELETE /clients/{id}
+ */
+export const getClientsDeleteClientsIdUrl = (id: string) => {
+  return `/api/clients/${id}`;
+};
+
+export const clientsDeleteClientsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getClientsDeleteClientsIdUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getClientsDeleteClientsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsDeleteClientsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clientsDeleteClientsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["clientsDeleteClientsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clientsDeleteClientsId>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return clientsDeleteClientsId(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClientsDeleteClientsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clientsDeleteClientsId>>
+>;
+
+export type ClientsDeleteClientsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /clients/{id}
+ */
+export const useClientsDeleteClientsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsDeleteClientsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clientsDeleteClientsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getClientsDeleteClientsIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts.
+ * @summary GET /clients/{id}/contacts
+ */
+export const getClientsGetClientsIdContactsUrl = (id: string) => {
+  return `/api/clients/${id}/contacts`;
+};
+
+export const clientsGetClientsIdContacts = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getClientsGetClientsIdContactsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getClientsGetClientsIdContactsQueryKey = (id: string) => {
+  return [`/api/clients/${id}/contacts`] as const;
+};
+
+export const getClientsGetClientsIdContactsQueryOptions = <
+  TData = Awaited<ReturnType<typeof clientsGetClientsIdContacts>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof clientsGetClientsIdContacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getClientsGetClientsIdContactsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof clientsGetClientsIdContacts>>
+  > = ({ signal }) =>
+    clientsGetClientsIdContacts(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof clientsGetClientsIdContacts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ClientsGetClientsIdContactsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof clientsGetClientsIdContacts>>
+>;
+export type ClientsGetClientsIdContactsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /clients/{id}/contacts
+ */
+
+export function useClientsGetClientsIdContacts<
+  TData = Awaited<ReturnType<typeof clientsGetClientsIdContacts>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof clientsGetClientsIdContacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getClientsGetClientsIdContactsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with contactPayloadSchema.
+ * @summary POST /clients/{id}/contacts
+ */
+export const getClientsPostClientsIdContactsUrl = (id: string) => {
+  return `/api/clients/${id}/contacts`;
+};
+
+export const clientsPostClientsIdContacts = async (
+  id: string,
+  clientsContactPayloadSchema: ClientsContactPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getClientsPostClientsIdContactsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(clientsContactPayloadSchema),
+  });
+};
+
+export const getClientsPostClientsIdContactsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsPostClientsIdContacts>>,
+    TError,
+    { id: string; data: BodyType<ClientsContactPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clientsPostClientsIdContacts>>,
+  TError,
+  { id: string; data: BodyType<ClientsContactPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["clientsPostClientsIdContacts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clientsPostClientsIdContacts>>,
+    { id: string; data: BodyType<ClientsContactPayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return clientsPostClientsIdContacts(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClientsPostClientsIdContactsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clientsPostClientsIdContacts>>
+>;
+export type ClientsPostClientsIdContactsMutationBody =
+  BodyType<ClientsContactPayloadSchema>;
+export type ClientsPostClientsIdContactsMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /clients/{id}/contacts
+ */
+export const useClientsPostClientsIdContacts = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsPostClientsIdContacts>>,
+    TError,
+    { id: string; data: BodyType<ClientsContactPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clientsPostClientsIdContacts>>,
+  TError,
+  { id: string; data: BodyType<ClientsContactPayloadSchema> },
+  TContext
+> => {
+  return useMutation(getClientsPostClientsIdContactsMutationOptions(options));
+};
+
+/**
+ * List the jobs belonging to a client, filtered to those the caller can access. Admins receive every job for the client; non-admins receive only their accessible subset.
+ * @summary GET /clients/{id}/jobs
+ */
+export const getClientsGetClientsIdJobsUrl = (id: string) => {
+  return `/api/clients/${id}/jobs`;
+};
+
+export const clientsGetClientsIdJobs = async (
+  id: string,
+  options?: RequestInit,
+): Promise<ClientJobsResponse> => {
+  return customFetch<ClientJobsResponse>(getClientsGetClientsIdJobsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getClientsGetClientsIdJobsQueryKey = (id: string) => {
+  return [`/api/clients/${id}/jobs`] as const;
+};
+
+export const getClientsGetClientsIdJobsQueryOptions = <
+  TData = Awaited<ReturnType<typeof clientsGetClientsIdJobs>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof clientsGetClientsIdJobs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getClientsGetClientsIdJobsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof clientsGetClientsIdJobs>>
+  > = ({ signal }) =>
+    clientsGetClientsIdJobs(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof clientsGetClientsIdJobs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ClientsGetClientsIdJobsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof clientsGetClientsIdJobs>>
+>;
+export type ClientsGetClientsIdJobsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /clients/{id}/jobs
+ */
+
+export function useClientsGetClientsIdJobs<
+  TData = Awaited<ReturnType<typeof clientsGetClientsIdJobs>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof clientsGetClientsIdJobs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getClientsGetClientsIdJobsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with contactPayloadSchema.
+ * @summary PUT /clients/{id}/contacts/{contactId}
+ */
+export const getClientsPutClientsIdContactsContactIdUrl = (
+  id: string,
+  contactId: string,
+) => {
+  return `/api/clients/${id}/contacts/${contactId}`;
+};
+
+export const clientsPutClientsIdContactsContactId = async (
+  id: string,
+  contactId: string,
+  clientsContactPayloadSchema: ClientsContactPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getClientsPutClientsIdContactsContactIdUrl(id, contactId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(clientsContactPayloadSchema),
+    },
+  );
+};
+
+export const getClientsPutClientsIdContactsContactIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsPutClientsIdContactsContactId>>,
+    TError,
+    {
+      id: string;
+      contactId: string;
+      data: BodyType<ClientsContactPayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clientsPutClientsIdContactsContactId>>,
+  TError,
+  {
+    id: string;
+    contactId: string;
+    data: BodyType<ClientsContactPayloadSchema>;
+  },
+  TContext
+> => {
+  const mutationKey = ["clientsPutClientsIdContactsContactId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clientsPutClientsIdContactsContactId>>,
+    {
+      id: string;
+      contactId: string;
+      data: BodyType<ClientsContactPayloadSchema>;
+    }
+  > = (props) => {
+    const { id, contactId, data } = props ?? {};
+
+    return clientsPutClientsIdContactsContactId(
+      id,
+      contactId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClientsPutClientsIdContactsContactIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clientsPutClientsIdContactsContactId>>
+>;
+export type ClientsPutClientsIdContactsContactIdMutationBody =
+  BodyType<ClientsContactPayloadSchema>;
+export type ClientsPutClientsIdContactsContactIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /clients/{id}/contacts/{contactId}
+ */
+export const useClientsPutClientsIdContactsContactId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsPutClientsIdContactsContactId>>,
+    TError,
+    {
+      id: string;
+      contactId: string;
+      data: BodyType<ClientsContactPayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clientsPutClientsIdContactsContactId>>,
+  TError,
+  {
+    id: string;
+    contactId: string;
+    data: BodyType<ClientsContactPayloadSchema>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getClientsPutClientsIdContactsContactIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts.
+ * @summary DELETE /clients/{id}/contacts/{contactId}
+ */
+export const getClientsDeleteClientsIdContactsContactIdUrl = (
+  id: string,
+  contactId: string,
+) => {
+  return `/api/clients/${id}/contacts/${contactId}`;
+};
+
+export const clientsDeleteClientsIdContactsContactId = async (
+  id: string,
+  contactId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getClientsDeleteClientsIdContactsContactIdUrl(id, contactId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getClientsDeleteClientsIdContactsContactIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsDeleteClientsIdContactsContactId>>,
+    TError,
+    { id: string; contactId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clientsDeleteClientsIdContactsContactId>>,
+  TError,
+  { id: string; contactId: string },
+  TContext
+> => {
+  const mutationKey = ["clientsDeleteClientsIdContactsContactId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clientsDeleteClientsIdContactsContactId>>,
+    { id: string; contactId: string }
+  > = (props) => {
+    const { id, contactId } = props ?? {};
+
+    return clientsDeleteClientsIdContactsContactId(
+      id,
+      contactId,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClientsDeleteClientsIdContactsContactIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clientsDeleteClientsIdContactsContactId>>
+>;
+
+export type ClientsDeleteClientsIdContactsContactIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary DELETE /clients/{id}/contacts/{contactId}
+ */
+export const useClientsDeleteClientsIdContactsContactId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientsDeleteClientsIdContactsContactId>>,
+    TError,
+    { id: string; contactId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clientsDeleteClientsIdContactsContactId>>,
+  TError,
+  { id: string; contactId: string },
+  TContext
+> => {
+  return useMutation(
+    getClientsDeleteClientsIdContactsContactIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated query with jobQuerySchema.
+ * @summary GET /jobs
+ */
+export const getJobsGetJobsUrl = () => {
+  return `/api/jobs`;
+};
+
+export const jobsGetJobs = async (options?: RequestInit): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getJobsGetJobsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getJobsGetJobsQueryKey = () => {
+  return [`/api/jobs`] as const;
+};
+
+export const getJobsGetJobsQueryOptions = <
+  TData = Awaited<ReturnType<typeof jobsGetJobs>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof jobsGetJobs>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getJobsGetJobsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof jobsGetJobs>>> = ({
+    signal,
+  }) => jobsGetJobs({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof jobsGetJobs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type JobsGetJobsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof jobsGetJobs>>
+>;
+export type JobsGetJobsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs
+ */
+
+export function useJobsGetJobs<
+  TData = Awaited<ReturnType<typeof jobsGetJobs>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof jobsGetJobs>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getJobsGetJobsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with jobPayloadSchema.
+ * @summary POST /jobs
+ */
+export const getJobsPostJobsUrl = () => {
+  return `/api/jobs`;
+};
+
+export const jobsPostJobs = async (
+  jobsJobPayloadSchema: JobsJobPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getJobsPostJobsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(jobsJobPayloadSchema),
+  });
+};
+
+export const getJobsPostJobsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsPostJobs>>,
+    TError,
+    { data: BodyType<JobsJobPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsPostJobs>>,
+  TError,
+  { data: BodyType<JobsJobPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["jobsPostJobs"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsPostJobs>>,
+    { data: BodyType<JobsJobPayloadSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return jobsPostJobs(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsPostJobsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsPostJobs>>
+>;
+export type JobsPostJobsMutationBody = BodyType<JobsJobPayloadSchema>;
+export type JobsPostJobsMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /jobs
+ */
+export const useJobsPostJobs = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsPostJobs>>,
+    TError,
+    { data: BodyType<JobsJobPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof jobsPostJobs>>,
+  TError,
+  { data: BodyType<JobsJobPayloadSchema> },
+  TContext
+> => {
+  return useMutation(getJobsPostJobsMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts.
+ * @summary GET /jobs/{id}
+ */
+export const getJobsGetJobsIdUrl = (id: string) => {
+  return `/api/jobs/${id}`;
+};
+
+export const jobsGetJobsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getJobsGetJobsIdUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getJobsGetJobsIdQueryKey = (id: string) => {
+  return [`/api/jobs/${id}`] as const;
+};
+
+export const getJobsGetJobsIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof jobsGetJobsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof jobsGetJobsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getJobsGetJobsIdQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof jobsGetJobsId>>> = ({
+    signal,
+  }) => jobsGetJobsId(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof jobsGetJobsId>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type JobsGetJobsIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof jobsGetJobsId>>
+>;
+export type JobsGetJobsIdQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs/{id}
+ */
+
+export function useJobsGetJobsId<
+  TData = Awaited<ReturnType<typeof jobsGetJobsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof jobsGetJobsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getJobsGetJobsIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with jobPayloadSchema.
+ * @summary PUT /jobs/{id}
+ */
+export const getJobsPutJobsIdUrl = (id: string) => {
+  return `/api/jobs/${id}`;
+};
+
+export const jobsPutJobsId = async (
+  id: string,
+  jobsJobPayloadSchema: JobsJobPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getJobsPutJobsIdUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(jobsJobPayloadSchema),
+  });
+};
+
+export const getJobsPutJobsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsPutJobsId>>,
+    TError,
+    { id: string; data: BodyType<JobsJobPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsPutJobsId>>,
+  TError,
+  { id: string; data: BodyType<JobsJobPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["jobsPutJobsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsPutJobsId>>,
+    { id: string; data: BodyType<JobsJobPayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return jobsPutJobsId(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsPutJobsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsPutJobsId>>
+>;
+export type JobsPutJobsIdMutationBody = BodyType<JobsJobPayloadSchema>;
+export type JobsPutJobsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /jobs/{id}
+ */
+export const useJobsPutJobsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsPutJobsId>>,
+    TError,
+    { id: string; data: BodyType<JobsJobPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof jobsPutJobsId>>,
+  TError,
+  { id: string; data: BodyType<JobsJobPayloadSchema> },
+  TContext
+> => {
+  return useMutation(getJobsPutJobsIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts.
+ * @summary DELETE /jobs/{id}
+ */
+export const getJobsDeleteJobsIdUrl = (id: string) => {
+  return `/api/jobs/${id}`;
+};
+
+export const jobsDeleteJobsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getJobsDeleteJobsIdUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getJobsDeleteJobsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsDeleteJobsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsDeleteJobsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["jobsDeleteJobsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsDeleteJobsId>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return jobsDeleteJobsId(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsDeleteJobsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsDeleteJobsId>>
+>;
+
+export type JobsDeleteJobsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /jobs/{id}
+ */
+export const useJobsDeleteJobsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsDeleteJobsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof jobsDeleteJobsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getJobsDeleteJobsIdMutationOptions(options));
+};
+
+/**
+ * List lead contacts across the workspace, optionally filtered by `search` (case-insensitive contains over name/email/phone/lead title). Only contacts whose lead the caller can access are returned; admins see every lead's contacts. Requires manager role or above.
+ * @summary GET /leads/contacts
+ */
+export const getLeadsGetLeadsContactsUrl = (
+  params?: LeadsGetLeadsContactsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/leads/contacts?${stringifiedParams}`
+    : `/api/leads/contacts`;
+};
+
+export const leadsGetLeadsContacts = async (
+  params?: LeadsGetLeadsContactsParams,
+  options?: RequestInit,
+): Promise<LeadContactsListResponse> => {
+  return customFetch<LeadContactsListResponse>(
+    getLeadsGetLeadsContactsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getLeadsGetLeadsContactsQueryKey = (
+  params?: LeadsGetLeadsContactsParams,
+) => {
+  return [`/api/leads/contacts`, ...(params ? [params] : [])] as const;
+};
+
+export const getLeadsGetLeadsContactsQueryOptions = <
+  TData = Awaited<ReturnType<typeof leadsGetLeadsContacts>>,
+  TError = ErrorType<Error>,
+>(
+  params?: LeadsGetLeadsContactsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeadsContacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getLeadsGetLeadsContactsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof leadsGetLeadsContacts>>
+  > = ({ signal }) =>
+    leadsGetLeadsContacts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof leadsGetLeadsContacts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LeadsGetLeadsContactsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof leadsGetLeadsContacts>>
+>;
+export type LeadsGetLeadsContactsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /leads/contacts
+ */
+
+export function useLeadsGetLeadsContacts<
+  TData = Awaited<ReturnType<typeof leadsGetLeadsContacts>>,
+  TError = ErrorType<Error>,
+>(
+  params?: LeadsGetLeadsContactsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeadsContacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLeadsGetLeadsContactsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * List leads the caller can access, paginated and optionally filtered by `status` and `search`. The `summary` totals reflect every lead matching the query (not just the current page). Admins see all leads; other roles see only the leads they own or are assigned to. Requires manager role or above.
+ * @summary GET /leads
+ */
+export const getLeadsGetLeadsUrl = (params?: LeadsGetLeadsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/leads?${stringifiedParams}`
+    : `/api/leads`;
+};
+
+export const leadsGetLeads = async (
+  params?: LeadsGetLeadsParams,
+  options?: RequestInit,
+): Promise<LeadListResponse> => {
+  return customFetch<LeadListResponse>(getLeadsGetLeadsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getLeadsGetLeadsQueryKey = (params?: LeadsGetLeadsParams) => {
+  return [`/api/leads`, ...(params ? [params] : [])] as const;
+};
+
+export const getLeadsGetLeadsQueryOptions = <
+  TData = Awaited<ReturnType<typeof leadsGetLeads>>,
+  TError = ErrorType<Error>,
+>(
+  params?: LeadsGetLeadsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeads>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLeadsGetLeadsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof leadsGetLeads>>> = ({
+    signal,
+  }) => leadsGetLeads(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof leadsGetLeads>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LeadsGetLeadsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof leadsGetLeads>>
+>;
+export type LeadsGetLeadsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /leads
+ */
+
+export function useLeadsGetLeads<
+  TData = Awaited<ReturnType<typeof leadsGetLeads>>,
+  TError = ErrorType<Error>,
+>(
+  params?: LeadsGetLeadsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeads>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLeadsGetLeadsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with leadPayloadSchema.
+ * @summary POST /leads
+ */
+export const getLeadsPostLeadsUrl = () => {
+  return `/api/leads`;
+};
+
+export const leadsPostLeads = async (
+  leadsLeadPayloadSchema: LeadsLeadPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getLeadsPostLeadsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(leadsLeadPayloadSchema),
+  });
+};
+
+export const getLeadsPostLeadsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeads>>,
+    TError,
+    { data: BodyType<LeadsLeadPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPostLeads>>,
+  TError,
+  { data: BodyType<LeadsLeadPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["leadsPostLeads"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPostLeads>>,
+    { data: BodyType<LeadsLeadPayloadSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return leadsPostLeads(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPostLeadsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsPostLeads>>
+>;
+export type LeadsPostLeadsMutationBody = BodyType<LeadsLeadPayloadSchema>;
+export type LeadsPostLeadsMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /leads
+ */
+export const useLeadsPostLeads = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeads>>,
+    TError,
+    { data: BodyType<LeadsLeadPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPostLeads>>,
+  TError,
+  { data: BodyType<LeadsLeadPayloadSchema> },
+  TContext
+> => {
+  return useMutation(getLeadsPostLeadsMutationOptions(options));
+};
+
+/**
+ * Fetch a single lead with its contacts, salespeople, tags, sources, attachments, and the cross-lead `availableContacts` picker. The `availableContacts` collection is restricted to leads the caller can access — admins see contacts from every lead, other roles see contacts only from leads they own or are assigned to.
+ * @summary GET /leads/{id}
+ */
+export const getLeadsGetLeadsIdUrl = (id: string) => {
+  return `/api/leads/${id}`;
+};
+
+export const leadsGetLeadsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<LeadDetailResponse> => {
+  return customFetch<LeadDetailResponse>(getLeadsGetLeadsIdUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getLeadsGetLeadsIdQueryKey = (id: string) => {
+  return [`/api/leads/${id}`] as const;
+};
+
+export const getLeadsGetLeadsIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof leadsGetLeadsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeadsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLeadsGetLeadsIdQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof leadsGetLeadsId>>> = ({
+    signal,
+  }) => leadsGetLeadsId(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof leadsGetLeadsId>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LeadsGetLeadsIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof leadsGetLeadsId>>
+>;
+export type LeadsGetLeadsIdQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /leads/{id}
+ */
+
+export function useLeadsGetLeadsId<
+  TData = Awaited<ReturnType<typeof leadsGetLeadsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeadsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLeadsGetLeadsIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with leadPayloadSchema.
+ * @summary PUT /leads/{id}
+ */
+export const getLeadsPutLeadsIdUrl = (id: string) => {
+  return `/api/leads/${id}`;
+};
+
+export const leadsPutLeadsId = async (
+  id: string,
+  leadsLeadPayloadSchema: LeadsLeadPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getLeadsPutLeadsIdUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(leadsLeadPayloadSchema),
+  });
+};
+
+export const getLeadsPutLeadsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPutLeadsId>>,
+    TError,
+    { id: string; data: BodyType<LeadsLeadPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPutLeadsId>>,
+  TError,
+  { id: string; data: BodyType<LeadsLeadPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["leadsPutLeadsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPutLeadsId>>,
+    { id: string; data: BodyType<LeadsLeadPayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return leadsPutLeadsId(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPutLeadsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsPutLeadsId>>
+>;
+export type LeadsPutLeadsIdMutationBody = BodyType<LeadsLeadPayloadSchema>;
+export type LeadsPutLeadsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /leads/{id}
+ */
+export const useLeadsPutLeadsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPutLeadsId>>,
+    TError,
+    { id: string; data: BodyType<LeadsLeadPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPutLeadsId>>,
+  TError,
+  { id: string; data: BodyType<LeadsLeadPayloadSchema> },
+  TContext
+> => {
+  return useMutation(getLeadsPutLeadsIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary DELETE /leads/{id}
+ */
+export const getLeadsDeleteLeadsIdUrl = (id: string) => {
+  return `/api/leads/${id}`;
+};
+
+export const leadsDeleteLeadsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getLeadsDeleteLeadsIdUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getLeadsDeleteLeadsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsDeleteLeadsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsDeleteLeadsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["leadsDeleteLeadsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsDeleteLeadsId>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return leadsDeleteLeadsId(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsDeleteLeadsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsDeleteLeadsId>>
+>;
+
+export type LeadsDeleteLeadsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /leads/{id}
+ */
+export const useLeadsDeleteLeadsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsDeleteLeadsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsDeleteLeadsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getLeadsDeleteLeadsIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with contactCreateSchema.
+ * @summary POST /leads/{id}/contacts
+ */
+export const getLeadsPostLeadsIdContactsUrl = (id: string) => {
+  return `/api/leads/${id}/contacts`;
+};
+
+export const leadsPostLeadsIdContacts = async (
+  id: string,
+  leadsContactCreateSchema: LeadsContactCreateSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getLeadsPostLeadsIdContactsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(leadsContactCreateSchema),
+  });
+};
+
+export const getLeadsPostLeadsIdContactsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdContacts>>,
+    TError,
+    { id: string; data: BodyType<LeadsContactCreateSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPostLeadsIdContacts>>,
+  TError,
+  { id: string; data: BodyType<LeadsContactCreateSchema> },
+  TContext
+> => {
+  const mutationKey = ["leadsPostLeadsIdContacts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPostLeadsIdContacts>>,
+    { id: string; data: BodyType<LeadsContactCreateSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return leadsPostLeadsIdContacts(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPostLeadsIdContactsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsPostLeadsIdContacts>>
+>;
+export type LeadsPostLeadsIdContactsMutationBody =
+  BodyType<LeadsContactCreateSchema>;
+export type LeadsPostLeadsIdContactsMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /leads/{id}/contacts
+ */
+export const useLeadsPostLeadsIdContacts = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdContacts>>,
+    TError,
+    { id: string; data: BodyType<LeadsContactCreateSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPostLeadsIdContacts>>,
+  TError,
+  { id: string; data: BodyType<LeadsContactCreateSchema> },
+  TContext
+> => {
+  return useMutation(getLeadsPostLeadsIdContactsMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with contactUpdateSchema.
+ * @summary PUT /leads/{id}/contacts/{contactId}
+ */
+export const getLeadsPutLeadsIdContactsContactIdUrl = (
+  id: string,
+  contactId: string,
+) => {
+  return `/api/leads/${id}/contacts/${contactId}`;
+};
+
+export const leadsPutLeadsIdContactsContactId = async (
+  id: string,
+  contactId: string,
+  leadsContactUpdateSchema: LeadsContactUpdateSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getLeadsPutLeadsIdContactsContactIdUrl(id, contactId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(leadsContactUpdateSchema),
+    },
+  );
+};
+
+export const getLeadsPutLeadsIdContactsContactIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPutLeadsIdContactsContactId>>,
+    TError,
+    { id: string; contactId: string; data: BodyType<LeadsContactUpdateSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPutLeadsIdContactsContactId>>,
+  TError,
+  { id: string; contactId: string; data: BodyType<LeadsContactUpdateSchema> },
+  TContext
+> => {
+  const mutationKey = ["leadsPutLeadsIdContactsContactId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPutLeadsIdContactsContactId>>,
+    { id: string; contactId: string; data: BodyType<LeadsContactUpdateSchema> }
+  > = (props) => {
+    const { id, contactId, data } = props ?? {};
+
+    return leadsPutLeadsIdContactsContactId(
+      id,
+      contactId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPutLeadsIdContactsContactIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsPutLeadsIdContactsContactId>>
+>;
+export type LeadsPutLeadsIdContactsContactIdMutationBody =
+  BodyType<LeadsContactUpdateSchema>;
+export type LeadsPutLeadsIdContactsContactIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /leads/{id}/contacts/{contactId}
+ */
+export const useLeadsPutLeadsIdContactsContactId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPutLeadsIdContactsContactId>>,
+    TError,
+    { id: string; contactId: string; data: BodyType<LeadsContactUpdateSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPutLeadsIdContactsContactId>>,
+  TError,
+  { id: string; contactId: string; data: BodyType<LeadsContactUpdateSchema> },
+  TContext
+> => {
+  return useMutation(
+    getLeadsPutLeadsIdContactsContactIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary DELETE /leads/{id}/contacts/{contactId}
+ */
+export const getLeadsDeleteLeadsIdContactsContactIdUrl = (
+  id: string,
+  contactId: string,
+) => {
+  return `/api/leads/${id}/contacts/${contactId}`;
+};
+
+export const leadsDeleteLeadsIdContactsContactId = async (
+  id: string,
+  contactId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getLeadsDeleteLeadsIdContactsContactIdUrl(id, contactId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getLeadsDeleteLeadsIdContactsContactIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdContactsContactId>>,
+    TError,
+    { id: string; contactId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsDeleteLeadsIdContactsContactId>>,
+  TError,
+  { id: string; contactId: string },
+  TContext
+> => {
+  const mutationKey = ["leadsDeleteLeadsIdContactsContactId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdContactsContactId>>,
+    { id: string; contactId: string }
+  > = (props) => {
+    const { id, contactId } = props ?? {};
+
+    return leadsDeleteLeadsIdContactsContactId(id, contactId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsDeleteLeadsIdContactsContactIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsDeleteLeadsIdContactsContactId>>
+>;
+
+export type LeadsDeleteLeadsIdContactsContactIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /leads/{id}/contacts/{contactId}
+ */
+export const useLeadsDeleteLeadsIdContactsContactId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdContactsContactId>>,
+    TError,
+    { id: string; contactId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsDeleteLeadsIdContactsContactId>>,
+  TError,
+  { id: string; contactId: string },
+  TContext
+> => {
+  return useMutation(
+    getLeadsDeleteLeadsIdContactsContactIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary POST /leads/{id}/attachments
+ */
+export const getLeadsPostLeadsIdAttachmentsUrl = (id: string) => {
+  return `/api/leads/${id}/attachments`;
+};
+
+export const leadsPostLeadsIdAttachments = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getLeadsPostLeadsIdAttachmentsUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getLeadsPostLeadsIdAttachmentsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["leadsPostLeadsIdAttachments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return leadsPostLeadsIdAttachments(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPostLeadsIdAttachmentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>
+>;
+
+export type LeadsPostLeadsIdAttachmentsMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /leads/{id}/attachments
+ */
+export const useLeadsPostLeadsIdAttachments = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getLeadsPostLeadsIdAttachmentsMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary DELETE /leads/{id}/attachments/{attachmentId}
+ */
+export const getLeadsDeleteLeadsIdAttachmentsAttachmentIdUrl = (
+  id: string,
+  attachmentId: string,
+) => {
+  return `/api/leads/${id}/attachments/${attachmentId}`;
+};
+
+export const leadsDeleteLeadsIdAttachmentsAttachmentId = async (
+  id: string,
+  attachmentId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getLeadsDeleteLeadsIdAttachmentsAttachmentIdUrl(id, attachmentId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getLeadsDeleteLeadsIdAttachmentsAttachmentIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsAttachmentId>>,
+    TError,
+    { id: string; attachmentId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsAttachmentId>>,
+  TError,
+  { id: string; attachmentId: string },
+  TContext
+> => {
+  const mutationKey = ["leadsDeleteLeadsIdAttachmentsAttachmentId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsAttachmentId>>,
+    { id: string; attachmentId: string }
+  > = (props) => {
+    const { id, attachmentId } = props ?? {};
+
+    return leadsDeleteLeadsIdAttachmentsAttachmentId(
+      id,
+      attachmentId,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsDeleteLeadsIdAttachmentsAttachmentIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsAttachmentId>>
+  >;
+
+export type LeadsDeleteLeadsIdAttachmentsAttachmentIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary DELETE /leads/{id}/attachments/{attachmentId}
+ */
+export const useLeadsDeleteLeadsIdAttachmentsAttachmentId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsAttachmentId>>,
+    TError,
+    { id: string; attachmentId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsAttachmentId>>,
+  TError,
+  { id: string; attachmentId: string },
+  TContext
+> => {
+  return useMutation(
+    getLeadsDeleteLeadsIdAttachmentsAttachmentIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary POST /leads/{id}/convert-to-job
+ */
+export const getLeadsPostLeadsIdConvertToJobUrl = (id: string) => {
+  return `/api/leads/${id}/convert-to-job`;
+};
+
+export const leadsPostLeadsIdConvertToJob = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getLeadsPostLeadsIdConvertToJobUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getLeadsPostLeadsIdConvertToJobMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["leadsPostLeadsIdConvertToJob"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return leadsPostLeadsIdConvertToJob(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPostLeadsIdConvertToJobMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>
+>;
+
+export type LeadsPostLeadsIdConvertToJobMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /leads/{id}/convert-to-job
+ */
+export const useLeadsPostLeadsIdConvertToJob = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getLeadsPostLeadsIdConvertToJobMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with activityCreateSchema.
+ * @summary POST /leads/{id}/activities
+ */
+export const getLeadsPostLeadsIdActivitiesUrl = (id: string) => {
+  return `/api/leads/${id}/activities`;
+};
+
+export const leadsPostLeadsIdActivities = async (
+  id: string,
+  leadsActivityCreateSchema: LeadsActivityCreateSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getLeadsPostLeadsIdActivitiesUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(leadsActivityCreateSchema),
+  });
+};
+
+export const getLeadsPostLeadsIdActivitiesMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdActivities>>,
+    TError,
+    { id: string; data: BodyType<LeadsActivityCreateSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPostLeadsIdActivities>>,
+  TError,
+  { id: string; data: BodyType<LeadsActivityCreateSchema> },
+  TContext
+> => {
+  const mutationKey = ["leadsPostLeadsIdActivities"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPostLeadsIdActivities>>,
+    { id: string; data: BodyType<LeadsActivityCreateSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return leadsPostLeadsIdActivities(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPostLeadsIdActivitiesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsPostLeadsIdActivities>>
+>;
+export type LeadsPostLeadsIdActivitiesMutationBody =
+  BodyType<LeadsActivityCreateSchema>;
+export type LeadsPostLeadsIdActivitiesMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /leads/{id}/activities
+ */
+export const useLeadsPostLeadsIdActivities = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdActivities>>,
+    TError,
+    { id: string; data: BodyType<LeadsActivityCreateSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPostLeadsIdActivities>>,
+  TError,
+  { id: string; data: BodyType<LeadsActivityCreateSchema> },
+  TContext
+> => {
+  return useMutation(getLeadsPostLeadsIdActivitiesMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated query with folderListQuerySchema.
+ * @summary GET /jobs/{jobId}/folders
+ */
+export const getFoldersGetJobsJobIdFoldersUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/folders`;
+};
+
+export const foldersGetJobsJobIdFolders = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersGetJobsJobIdFoldersUrl(jobId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getFoldersGetJobsJobIdFoldersQueryKey = (jobId: string) => {
+  return [`/api/jobs/${jobId}/folders`] as const;
+};
+
+export const getFoldersGetJobsJobIdFoldersQueryOptions = <
+  TData = Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getFoldersGetJobsJobIdFoldersQueryKey(jobId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>
+  > = ({ signal }) =>
+    foldersGetJobsJobIdFolders(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type FoldersGetJobsJobIdFoldersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>
+>;
+export type FoldersGetJobsJobIdFoldersQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs/{jobId}/folders
+ */
+
+export function useFoldersGetJobsJobIdFolders<
+  TData = Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFoldersGetJobsJobIdFoldersQueryOptions(
+    jobId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with folderBodySchema.
+ * @summary POST /jobs/{jobId}/folders
+ */
+export const getFoldersPostJobsJobIdFoldersUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/folders`;
+};
+
+export const foldersPostJobsJobIdFolders = async (
+  jobId: string,
+  foldersFolderBodySchema: FoldersFolderBodySchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersPostJobsJobIdFoldersUrl(jobId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(foldersFolderBodySchema),
+  });
+};
+
+export const getFoldersPostJobsJobIdFoldersMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPostJobsJobIdFolders>>,
+    TError,
+    { jobId: string; data: BodyType<FoldersFolderBodySchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof foldersPostJobsJobIdFolders>>,
+  TError,
+  { jobId: string; data: BodyType<FoldersFolderBodySchema> },
+  TContext
+> => {
+  const mutationKey = ["foldersPostJobsJobIdFolders"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof foldersPostJobsJobIdFolders>>,
+    { jobId: string; data: BodyType<FoldersFolderBodySchema> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return foldersPostJobsJobIdFolders(jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FoldersPostJobsJobIdFoldersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof foldersPostJobsJobIdFolders>>
+>;
+export type FoldersPostJobsJobIdFoldersMutationBody =
+  BodyType<FoldersFolderBodySchema>;
+export type FoldersPostJobsJobIdFoldersMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/folders
+ */
+export const useFoldersPostJobsJobIdFolders = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPostJobsJobIdFolders>>,
+    TError,
+    { jobId: string; data: BodyType<FoldersFolderBodySchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof foldersPostJobsJobIdFolders>>,
+  TError,
+  { jobId: string; data: BodyType<FoldersFolderBodySchema> },
+  TContext
+> => {
+  return useMutation(getFoldersPostJobsJobIdFoldersMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with folderUpdateSchema.
+ * @summary PUT /folders/{id}
+ */
+export const getFoldersPutFoldersIdUrl = (id: string) => {
+  return `/api/folders/${id}`;
+};
+
+export const foldersPutFoldersId = async (
+  id: string,
+  foldersFolderUpdateSchema: FoldersFolderUpdateSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersPutFoldersIdUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(foldersFolderUpdateSchema),
+  });
+};
+
+export const getFoldersPutFoldersIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPutFoldersId>>,
+    TError,
+    { id: string; data: BodyType<FoldersFolderUpdateSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof foldersPutFoldersId>>,
+  TError,
+  { id: string; data: BodyType<FoldersFolderUpdateSchema> },
+  TContext
+> => {
+  const mutationKey = ["foldersPutFoldersId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof foldersPutFoldersId>>,
+    { id: string; data: BodyType<FoldersFolderUpdateSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return foldersPutFoldersId(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FoldersPutFoldersIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof foldersPutFoldersId>>
+>;
+export type FoldersPutFoldersIdMutationBody =
+  BodyType<FoldersFolderUpdateSchema>;
+export type FoldersPutFoldersIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /folders/{id}
+ */
+export const useFoldersPutFoldersId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPutFoldersId>>,
+    TError,
+    { id: string; data: BodyType<FoldersFolderUpdateSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof foldersPutFoldersId>>,
+  TError,
+  { id: string; data: BodyType<FoldersFolderUpdateSchema> },
+  TContext
+> => {
+  return useMutation(getFoldersPutFoldersIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary DELETE /folders/{id}
+ */
+export const getFoldersDeleteFoldersIdUrl = (id: string) => {
+  return `/api/folders/${id}`;
+};
+
+export const foldersDeleteFoldersId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersDeleteFoldersIdUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getFoldersDeleteFoldersIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersDeleteFoldersId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof foldersDeleteFoldersId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["foldersDeleteFoldersId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof foldersDeleteFoldersId>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return foldersDeleteFoldersId(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FoldersDeleteFoldersIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof foldersDeleteFoldersId>>
+>;
+
+export type FoldersDeleteFoldersIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /folders/{id}
+ */
+export const useFoldersDeleteFoldersId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersDeleteFoldersId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof foldersDeleteFoldersId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getFoldersDeleteFoldersIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary POST /folders/{id}/copy
+ */
+export const getFoldersPostFoldersIdCopyUrl = (id: string) => {
+  return `/api/folders/${id}/copy`;
+};
+
+export const foldersPostFoldersIdCopy = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersPostFoldersIdCopyUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getFoldersPostFoldersIdCopyMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPostFoldersIdCopy>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof foldersPostFoldersIdCopy>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["foldersPostFoldersIdCopy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof foldersPostFoldersIdCopy>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return foldersPostFoldersIdCopy(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FoldersPostFoldersIdCopyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof foldersPostFoldersIdCopy>>
+>;
+
+export type FoldersPostFoldersIdCopyMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /folders/{id}/copy
+ */
+export const useFoldersPostFoldersIdCopy = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPostFoldersIdCopy>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof foldersPostFoldersIdCopy>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getFoldersPostFoldersIdCopyMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with moveFolderSchema.
+ * @summary PUT /folders/{id}/move
+ */
+export const getFoldersPutFoldersIdMoveUrl = (id: string) => {
+  return `/api/folders/${id}/move`;
+};
+
+export const foldersPutFoldersIdMove = async (
+  id: string,
+  foldersMoveFolderSchema: FoldersMoveFolderSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersPutFoldersIdMoveUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(foldersMoveFolderSchema),
+  });
+};
+
+export const getFoldersPutFoldersIdMoveMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPutFoldersIdMove>>,
+    TError,
+    { id: string; data: BodyType<FoldersMoveFolderSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof foldersPutFoldersIdMove>>,
+  TError,
+  { id: string; data: BodyType<FoldersMoveFolderSchema> },
+  TContext
+> => {
+  const mutationKey = ["foldersPutFoldersIdMove"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof foldersPutFoldersIdMove>>,
+    { id: string; data: BodyType<FoldersMoveFolderSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return foldersPutFoldersIdMove(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FoldersPutFoldersIdMoveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof foldersPutFoldersIdMove>>
+>;
+export type FoldersPutFoldersIdMoveMutationBody =
+  BodyType<FoldersMoveFolderSchema>;
+export type FoldersPutFoldersIdMoveMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /folders/{id}/move
+ */
+export const useFoldersPutFoldersIdMove = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPutFoldersIdMove>>,
+    TError,
+    { id: string; data: BodyType<FoldersMoveFolderSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof foldersPutFoldersIdMove>>,
+  TError,
+  { id: string; data: BodyType<FoldersMoveFolderSchema> },
+  TContext
+> => {
+  return useMutation(getFoldersPutFoldersIdMoveMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary POST /folders/{id}/restore
+ */
+export const getFoldersPostFoldersIdRestoreUrl = (id: string) => {
+  return `/api/folders/${id}/restore`;
+};
+
+export const foldersPostFoldersIdRestore = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersPostFoldersIdRestoreUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getFoldersPostFoldersIdRestoreMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPostFoldersIdRestore>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof foldersPostFoldersIdRestore>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["foldersPostFoldersIdRestore"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof foldersPostFoldersIdRestore>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return foldersPostFoldersIdRestore(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FoldersPostFoldersIdRestoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof foldersPostFoldersIdRestore>>
+>;
+
+export type FoldersPostFoldersIdRestoreMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /folders/{id}/restore
+ */
+export const useFoldersPostFoldersIdRestore = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPostFoldersIdRestore>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof foldersPostFoldersIdRestore>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getFoldersPostFoldersIdRestoreMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary DELETE /folders/{id}/purge
+ */
+export const getFoldersDeleteFoldersIdPurgeUrl = (id: string) => {
+  return `/api/folders/${id}/purge`;
+};
+
+export const foldersDeleteFoldersIdPurge = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersDeleteFoldersIdPurgeUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getFoldersDeleteFoldersIdPurgeMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersDeleteFoldersIdPurge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof foldersDeleteFoldersIdPurge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["foldersDeleteFoldersIdPurge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof foldersDeleteFoldersIdPurge>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return foldersDeleteFoldersIdPurge(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FoldersDeleteFoldersIdPurgeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof foldersDeleteFoldersIdPurge>>
+>;
+
+export type FoldersDeleteFoldersIdPurgeMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /folders/{id}/purge
+ */
+export const useFoldersDeleteFoldersIdPurge = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersDeleteFoldersIdPurge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof foldersDeleteFoldersIdPurge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getFoldersDeleteFoldersIdPurgeMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary GET /folders/{id}/download
+ */
+export const getFoldersGetFoldersIdDownloadUrl = (id: string) => {
+  return `/api/folders/${id}/download`;
+};
+
+export const foldersGetFoldersIdDownload = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersGetFoldersIdDownloadUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getFoldersGetFoldersIdDownloadQueryKey = (id: string) => {
+  return [`/api/folders/${id}/download`] as const;
+};
+
+export const getFoldersGetFoldersIdDownloadQueryOptions = <
+  TData = Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getFoldersGetFoldersIdDownloadQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>
+  > = ({ signal }) =>
+    foldersGetFoldersIdDownload(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type FoldersGetFoldersIdDownloadQueryResult = NonNullable<
+  Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>
+>;
+export type FoldersGetFoldersIdDownloadQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /folders/{id}/download
+ */
+
+export function useFoldersGetFoldersIdDownload<
+  TData = Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFoldersGetFoldersIdDownloadQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated query with trashQuerySchema.
+ * @summary GET /jobs/{jobId}/trash
+ */
+export const getFoldersGetJobsJobIdTrashUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/trash`;
+};
+
+export const foldersGetJobsJobIdTrash = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersGetJobsJobIdTrashUrl(jobId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getFoldersGetJobsJobIdTrashQueryKey = (jobId: string) => {
+  return [`/api/jobs/${jobId}/trash`] as const;
+};
+
+export const getFoldersGetJobsJobIdTrashQueryOptions = <
+  TData = Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getFoldersGetJobsJobIdTrashQueryKey(jobId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>
+  > = ({ signal }) =>
+    foldersGetJobsJobIdTrash(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type FoldersGetJobsJobIdTrashQueryResult = NonNullable<
+  Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>
+>;
+export type FoldersGetJobsJobIdTrashQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs/{jobId}/trash
+ */
+
+export function useFoldersGetJobsJobIdTrash<
+  TData = Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFoldersGetJobsJobIdTrashQueryOptions(jobId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated query with trashQuerySchema.
+ * @summary DELETE /jobs/{jobId}/trash
+ */
+export const getFoldersDeleteJobsJobIdTrashUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/trash`;
+};
+
+export const foldersDeleteJobsJobIdTrash = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFoldersDeleteJobsJobIdTrashUrl(jobId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getFoldersDeleteJobsJobIdTrashMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersDeleteJobsJobIdTrash>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof foldersDeleteJobsJobIdTrash>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  const mutationKey = ["foldersDeleteJobsJobIdTrash"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof foldersDeleteJobsJobIdTrash>>,
+    { jobId: string }
+  > = (props) => {
+    const { jobId } = props ?? {};
+
+    return foldersDeleteJobsJobIdTrash(jobId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FoldersDeleteJobsJobIdTrashMutationResult = NonNullable<
+  Awaited<ReturnType<typeof foldersDeleteJobsJobIdTrash>>
+>;
+
+export type FoldersDeleteJobsJobIdTrashMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /jobs/{jobId}/trash
+ */
+export const useFoldersDeleteJobsJobIdTrash = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersDeleteJobsJobIdTrash>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof foldersDeleteJobsJobIdTrash>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  return useMutation(getFoldersDeleteJobsJobIdTrashMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts. Validated query with fileListQuerySchema.
+ * @summary GET /folders/{id}/files
+ */
+export const getFilesGetFoldersIdFilesUrl = (id: string) => {
+  return `/api/folders/${id}/files`;
+};
+
+export const filesGetFoldersIdFiles = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesGetFoldersIdFilesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getFilesGetFoldersIdFilesQueryKey = (id: string) => {
+  return [`/api/folders/${id}/files`] as const;
+};
+
+export const getFilesGetFoldersIdFilesQueryOptions = <
+  TData = Awaited<ReturnType<typeof filesGetFoldersIdFiles>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof filesGetFoldersIdFiles>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getFilesGetFoldersIdFilesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof filesGetFoldersIdFiles>>
+  > = ({ signal }) => filesGetFoldersIdFiles(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof filesGetFoldersIdFiles>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type FilesGetFoldersIdFilesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof filesGetFoldersIdFiles>>
+>;
+export type FilesGetFoldersIdFilesQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /folders/{id}/files
+ */
+
+export function useFilesGetFoldersIdFiles<
+  TData = Awaited<ReturnType<typeof filesGetFoldersIdFiles>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof filesGetFoldersIdFiles>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFilesGetFoldersIdFilesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary POST /folders/{id}/files
+ */
+export const getFilesPostFoldersIdFilesUrl = (id: string) => {
+  return `/api/folders/${id}/files`;
+};
+
+export const filesPostFoldersIdFiles = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesPostFoldersIdFilesUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getFilesPostFoldersIdFilesMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFiles>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostFoldersIdFiles>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["filesPostFoldersIdFiles"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostFoldersIdFiles>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return filesPostFoldersIdFiles(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostFoldersIdFilesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostFoldersIdFiles>>
+>;
+
+export type FilesPostFoldersIdFilesMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /folders/{id}/files
+ */
+export const useFilesPostFoldersIdFiles = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFiles>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFoldersIdFiles>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getFilesPostFoldersIdFilesMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts. Validated request body with renameFileSchema.
+ * @summary PUT /files/{id}
+ */
+export const getFilesPutFilesIdUrl = (id: string) => {
+  return `/api/files/${id}`;
+};
+
+export const filesPutFilesId = async (
+  id: string,
+  filesRenameFileSchema: FilesRenameFileSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesPutFilesIdUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(filesRenameFileSchema),
+  });
+};
+
+export const getFilesPutFilesIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPutFilesId>>,
+    TError,
+    { id: string; data: BodyType<FilesRenameFileSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPutFilesId>>,
+  TError,
+  { id: string; data: BodyType<FilesRenameFileSchema> },
+  TContext
+> => {
+  const mutationKey = ["filesPutFilesId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPutFilesId>>,
+    { id: string; data: BodyType<FilesRenameFileSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return filesPutFilesId(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPutFilesIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPutFilesId>>
+>;
+export type FilesPutFilesIdMutationBody = BodyType<FilesRenameFileSchema>;
+export type FilesPutFilesIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /files/{id}
+ */
+export const useFilesPutFilesId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPutFilesId>>,
+    TError,
+    { id: string; data: BodyType<FilesRenameFileSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPutFilesId>>,
+  TError,
+  { id: string; data: BodyType<FilesRenameFileSchema> },
+  TContext
+> => {
+  return useMutation(getFilesPutFilesIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary DELETE /files/{id}
+ */
+export const getFilesDeleteFilesIdUrl = (id: string) => {
+  return `/api/files/${id}`;
+};
+
+export const filesDeleteFilesId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesDeleteFilesIdUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getFilesDeleteFilesIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesDeleteFilesId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesDeleteFilesId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["filesDeleteFilesId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesDeleteFilesId>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return filesDeleteFilesId(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesDeleteFilesIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesDeleteFilesId>>
+>;
+
+export type FilesDeleteFilesIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /files/{id}
+ */
+export const useFilesDeleteFilesId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesDeleteFilesId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesDeleteFilesId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getFilesDeleteFilesIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary POST /files/{id}/restore
+ */
+export const getFilesPostFilesIdRestoreUrl = (id: string) => {
+  return `/api/files/${id}/restore`;
+};
+
+export const filesPostFilesIdRestore = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesPostFilesIdRestoreUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getFilesPostFilesIdRestoreMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesIdRestore>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostFilesIdRestore>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["filesPostFilesIdRestore"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostFilesIdRestore>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return filesPostFilesIdRestore(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostFilesIdRestoreMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostFilesIdRestore>>
+>;
+
+export type FilesPostFilesIdRestoreMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /files/{id}/restore
+ */
+export const useFilesPostFilesIdRestore = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesIdRestore>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFilesIdRestore>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getFilesPostFilesIdRestoreMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary DELETE /files/{id}/purge
+ */
+export const getFilesDeleteFilesIdPurgeUrl = (id: string) => {
+  return `/api/files/${id}/purge`;
+};
+
+export const filesDeleteFilesIdPurge = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesDeleteFilesIdPurgeUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getFilesDeleteFilesIdPurgeMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesDeleteFilesIdPurge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesDeleteFilesIdPurge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["filesDeleteFilesIdPurge"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesDeleteFilesIdPurge>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return filesDeleteFilesIdPurge(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesDeleteFilesIdPurgeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesDeleteFilesIdPurge>>
+>;
+
+export type FilesDeleteFilesIdPurgeMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /files/{id}/purge
+ */
+export const useFilesDeleteFilesIdPurge = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesDeleteFilesIdPurge>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesDeleteFilesIdPurge>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getFilesDeleteFilesIdPurgeMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary GET /files/{id}/download
+ */
+export const getFilesGetFilesIdDownloadUrl = (id: string) => {
+  return `/api/files/${id}/download`;
+};
+
+export const filesGetFilesIdDownload = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesGetFilesIdDownloadUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getFilesGetFilesIdDownloadQueryKey = (id: string) => {
+  return [`/api/files/${id}/download`] as const;
+};
+
+export const getFilesGetFilesIdDownloadQueryOptions = <
+  TData = Awaited<ReturnType<typeof filesGetFilesIdDownload>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof filesGetFilesIdDownload>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getFilesGetFilesIdDownloadQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof filesGetFilesIdDownload>>
+  > = ({ signal }) =>
+    filesGetFilesIdDownload(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof filesGetFilesIdDownload>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type FilesGetFilesIdDownloadQueryResult = NonNullable<
+  Awaited<ReturnType<typeof filesGetFilesIdDownload>>
+>;
+export type FilesGetFilesIdDownloadQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /files/{id}/download
+ */
+
+export function useFilesGetFilesIdDownload<
+  TData = Awaited<ReturnType<typeof filesGetFilesIdDownload>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof filesGetFilesIdDownload>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFilesGetFilesIdDownloadQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with dailyLogListQuerySchema.
+ * @summary GET /jobs/{jobId}/daily-logs
+ */
+export const getDailyLogsGetJobsJobIdDailyLogsUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/daily-logs`;
+};
+
+export const dailyLogsGetJobsJobIdDailyLogs = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsGetJobsJobIdDailyLogsUrl(jobId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDailyLogsGetJobsJobIdDailyLogsQueryKey = (jobId: string) => {
+  return [`/api/jobs/${jobId}/daily-logs`] as const;
+};
+
+export const getDailyLogsGetJobsJobIdDailyLogsQueryOptions = <
+  TData = Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDailyLogsGetJobsJobIdDailyLogsQueryKey(jobId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>
+  > = ({ signal }) =>
+    dailyLogsGetJobsJobIdDailyLogs(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DailyLogsGetJobsJobIdDailyLogsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>
+>;
+export type DailyLogsGetJobsJobIdDailyLogsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs/{jobId}/daily-logs
+ */
+
+export function useDailyLogsGetJobsJobIdDailyLogs<
+  TData = Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDailyLogsGetJobsJobIdDailyLogsQueryOptions(
+    jobId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with dailyLogPayloadSchema.
+ * @summary POST /jobs/{jobId}/daily-logs
+ */
+export const getDailyLogsPostJobsJobIdDailyLogsUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/daily-logs`;
+};
+
+export const dailyLogsPostJobsJobIdDailyLogs = async (
+  jobId: string,
+  dailyLogsDailyLogPayloadSchema: DailyLogsDailyLogPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsPostJobsJobIdDailyLogsUrl(jobId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
+  });
+};
+
+export const getDailyLogsPostJobsJobIdDailyLogsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostJobsJobIdDailyLogs>>,
+    TError,
+    { jobId: string; data: BodyType<DailyLogsDailyLogPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsPostJobsJobIdDailyLogs>>,
+  TError,
+  { jobId: string; data: BodyType<DailyLogsDailyLogPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsPostJobsJobIdDailyLogs"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsPostJobsJobIdDailyLogs>>,
+    { jobId: string; data: BodyType<DailyLogsDailyLogPayloadSchema> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return dailyLogsPostJobsJobIdDailyLogs(jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsPostJobsJobIdDailyLogsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsPostJobsJobIdDailyLogs>>
+>;
+export type DailyLogsPostJobsJobIdDailyLogsMutationBody =
+  BodyType<DailyLogsDailyLogPayloadSchema>;
+export type DailyLogsPostJobsJobIdDailyLogsMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/daily-logs
+ */
+export const useDailyLogsPostJobsJobIdDailyLogs = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostJobsJobIdDailyLogs>>,
+    TError,
+    { jobId: string; data: BodyType<DailyLogsDailyLogPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsPostJobsJobIdDailyLogs>>,
+  TError,
+  { jobId: string; data: BodyType<DailyLogsDailyLogPayloadSchema> },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogsPostJobsJobIdDailyLogsMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary GET /daily-logs/{id}
+ */
+export const getDailyLogsGetDailyLogsIdUrl = (id: string) => {
+  return `/api/daily-logs/${id}`;
+};
+
+export const dailyLogsGetDailyLogsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsGetDailyLogsIdUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDailyLogsGetDailyLogsIdQueryKey = (id: string) => {
+  return [`/api/daily-logs/${id}`] as const;
+};
+
+export const getDailyLogsGetDailyLogsIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDailyLogsGetDailyLogsIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>
+  > = ({ signal }) =>
+    dailyLogsGetDailyLogsId(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DailyLogsGetDailyLogsIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>
+>;
+export type DailyLogsGetDailyLogsIdQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /daily-logs/{id}
+ */
+
+export function useDailyLogsGetDailyLogsId<
+  TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDailyLogsGetDailyLogsIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with dailyLogPayloadSchema.
+ * @summary PUT /daily-logs/{id}
+ */
+export const getDailyLogsPutDailyLogsIdUrl = (id: string) => {
+  return `/api/daily-logs/${id}`;
+};
+
+export const dailyLogsPutDailyLogsId = async (
+  id: string,
+  dailyLogsDailyLogPayloadSchema: DailyLogsDailyLogPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsPutDailyLogsIdUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
+  });
+};
+
+export const getDailyLogsPutDailyLogsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPutDailyLogsId>>,
+    TError,
+    { id: string; data: BodyType<DailyLogsDailyLogPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsPutDailyLogsId>>,
+  TError,
+  { id: string; data: BodyType<DailyLogsDailyLogPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsPutDailyLogsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsPutDailyLogsId>>,
+    { id: string; data: BodyType<DailyLogsDailyLogPayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return dailyLogsPutDailyLogsId(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsPutDailyLogsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsPutDailyLogsId>>
+>;
+export type DailyLogsPutDailyLogsIdMutationBody =
+  BodyType<DailyLogsDailyLogPayloadSchema>;
+export type DailyLogsPutDailyLogsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /daily-logs/{id}
+ */
+export const useDailyLogsPutDailyLogsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPutDailyLogsId>>,
+    TError,
+    { id: string; data: BodyType<DailyLogsDailyLogPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsPutDailyLogsId>>,
+  TError,
+  { id: string; data: BodyType<DailyLogsDailyLogPayloadSchema> },
+  TContext
+> => {
+  return useMutation(getDailyLogsPutDailyLogsIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary DELETE /daily-logs/{id}
+ */
+export const getDailyLogsDeleteDailyLogsIdUrl = (id: string) => {
+  return `/api/daily-logs/${id}`;
+};
+
+export const dailyLogsDeleteDailyLogsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsDeleteDailyLogsIdUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDailyLogsDeleteDailyLogsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsDeleteDailyLogsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsDeleteDailyLogsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsDeleteDailyLogsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsDeleteDailyLogsId>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dailyLogsDeleteDailyLogsId(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsDeleteDailyLogsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsDeleteDailyLogsId>>
+>;
+
+export type DailyLogsDeleteDailyLogsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /daily-logs/{id}
+ */
+export const useDailyLogsDeleteDailyLogsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsDeleteDailyLogsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsDeleteDailyLogsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDailyLogsDeleteDailyLogsIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary POST /daily-logs/{id}/publish
+ */
+export const getDailyLogsPostDailyLogsIdPublishUrl = (id: string) => {
+  return `/api/daily-logs/${id}/publish`;
+};
+
+export const dailyLogsPostDailyLogsIdPublish = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdPublishUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDailyLogsPostDailyLogsIdPublishMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdPublish>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdPublish>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsPostDailyLogsIdPublish"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdPublish>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dailyLogsPostDailyLogsIdPublish(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsPostDailyLogsIdPublishMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdPublish>>
+>;
+
+export type DailyLogsPostDailyLogsIdPublishMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /daily-logs/{id}/publish
+ */
+export const useDailyLogsPostDailyLogsIdPublish = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdPublish>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdPublish>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogsPostDailyLogsIdPublishMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with weatherQuerySchema.
+ * @summary GET /weather
+ */
+export const getDailyLogsGetWeatherUrl = () => {
+  return `/api/weather`;
+};
+
+export const dailyLogsGetWeather = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsGetWeatherUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDailyLogsGetWeatherQueryKey = () => {
+  return [`/api/weather`] as const;
+};
+
+export const getDailyLogsGetWeatherQueryOptions = <
+  TData = Awaited<ReturnType<typeof dailyLogsGetWeather>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogsGetWeather>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getDailyLogsGetWeatherQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dailyLogsGetWeather>>
+  > = ({ signal }) => dailyLogsGetWeather({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogsGetWeather>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DailyLogsGetWeatherQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsGetWeather>>
+>;
+export type DailyLogsGetWeatherQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /weather
+ */
+
+export function useDailyLogsGetWeather<
+  TData = Awaited<ReturnType<typeof dailyLogsGetWeather>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogsGetWeather>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDailyLogsGetWeatherQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary POST /daily-logs/{id}/like
+ */
+export const getDailyLogsPostDailyLogsIdLikeUrl = (id: string) => {
+  return `/api/daily-logs/${id}/like`;
+};
+
+export const dailyLogsPostDailyLogsIdLike = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdLikeUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDailyLogsPostDailyLogsIdLikeMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdLike>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdLike>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsPostDailyLogsIdLike"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdLike>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dailyLogsPostDailyLogsIdLike(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsPostDailyLogsIdLikeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdLike>>
+>;
+
+export type DailyLogsPostDailyLogsIdLikeMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /daily-logs/{id}/like
+ */
+export const useDailyLogsPostDailyLogsIdLike = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdLike>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdLike>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDailyLogsPostDailyLogsIdLikeMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary GET /daily-logs/{id}/comments
+ */
+export const getDailyLogsGetDailyLogsIdCommentsUrl = (id: string) => {
+  return `/api/daily-logs/${id}/comments`;
+};
+
+export const dailyLogsGetDailyLogsIdComments = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsGetDailyLogsIdCommentsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDailyLogsGetDailyLogsIdCommentsQueryKey = (id: string) => {
+  return [`/api/daily-logs/${id}/comments`] as const;
+};
+
+export const getDailyLogsGetDailyLogsIdCommentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDailyLogsGetDailyLogsIdCommentsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>
+  > = ({ signal }) =>
+    dailyLogsGetDailyLogsIdComments(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DailyLogsGetDailyLogsIdCommentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>
+>;
+export type DailyLogsGetDailyLogsIdCommentsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /daily-logs/{id}/comments
+ */
+
+export function useDailyLogsGetDailyLogsIdComments<
+  TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDailyLogsGetDailyLogsIdCommentsQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with commentPayloadSchema.
+ * @summary POST /daily-logs/{id}/comments
+ */
+export const getDailyLogsPostDailyLogsIdCommentsUrl = (id: string) => {
+  return `/api/daily-logs/${id}/comments`;
+};
+
+export const dailyLogsPostDailyLogsIdComments = async (
+  id: string,
+  dailyLogsCommentPayloadSchema: DailyLogsCommentPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdCommentsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dailyLogsCommentPayloadSchema),
+  });
+};
+
+export const getDailyLogsPostDailyLogsIdCommentsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdComments>>,
+    TError,
+    { id: string; data: BodyType<DailyLogsCommentPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdComments>>,
+  TError,
+  { id: string; data: BodyType<DailyLogsCommentPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsPostDailyLogsIdComments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdComments>>,
+    { id: string; data: BodyType<DailyLogsCommentPayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return dailyLogsPostDailyLogsIdComments(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsPostDailyLogsIdCommentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdComments>>
+>;
+export type DailyLogsPostDailyLogsIdCommentsMutationBody =
+  BodyType<DailyLogsCommentPayloadSchema>;
+export type DailyLogsPostDailyLogsIdCommentsMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /daily-logs/{id}/comments
+ */
+export const useDailyLogsPostDailyLogsIdComments = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdComments>>,
+    TError,
+    { id: string; data: BodyType<DailyLogsCommentPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdComments>>,
+  TError,
+  { id: string; data: BodyType<DailyLogsCommentPayloadSchema> },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogsPostDailyLogsIdCommentsMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with commentReactionPayloadSchema.
+ * @summary POST /daily-logs/{id}/comments/{commentId}/reactions
+ */
+export const getDailyLogsPostDailyLogsIdCommentsCommentIdReactionsUrl = (
+  id: string,
+  commentId: string,
+) => {
+  return `/api/daily-logs/${id}/comments/${commentId}/reactions`;
+};
+
+export const dailyLogsPostDailyLogsIdCommentsCommentIdReactions = async (
+  id: string,
+  commentId: string,
+  dailyLogsCommentReactionPayloadSchema: DailyLogsCommentReactionPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getDailyLogsPostDailyLogsIdCommentsCommentIdReactionsUrl(id, commentId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(dailyLogsCommentReactionPayloadSchema),
+    },
+  );
+};
+
+export const getDailyLogsPostDailyLogsIdCommentsCommentIdReactionsMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof dailyLogsPostDailyLogsIdCommentsCommentIdReactions>
+      >,
+      TError,
+      {
+        id: string;
+        commentId: string;
+        data: BodyType<DailyLogsCommentReactionPayloadSchema>;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof dailyLogsPostDailyLogsIdCommentsCommentIdReactions>
+    >,
+    TError,
+    {
+      id: string;
+      commentId: string;
+      data: BodyType<DailyLogsCommentReactionPayloadSchema>;
+    },
+    TContext
+  > => {
+    const mutationKey = ["dailyLogsPostDailyLogsIdCommentsCommentIdReactions"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof dailyLogsPostDailyLogsIdCommentsCommentIdReactions>
+      >,
+      {
+        id: string;
+        commentId: string;
+        data: BodyType<DailyLogsCommentReactionPayloadSchema>;
+      }
+    > = (props) => {
+      const { id, commentId, data } = props ?? {};
+
+      return dailyLogsPostDailyLogsIdCommentsCommentIdReactions(
+        id,
+        commentId,
+        data,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type DailyLogsPostDailyLogsIdCommentsCommentIdReactionsMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof dailyLogsPostDailyLogsIdCommentsCommentIdReactions>
+    >
+  >;
+export type DailyLogsPostDailyLogsIdCommentsCommentIdReactionsMutationBody =
+  BodyType<DailyLogsCommentReactionPayloadSchema>;
+export type DailyLogsPostDailyLogsIdCommentsCommentIdReactionsMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /daily-logs/{id}/comments/{commentId}/reactions
+ */
+export const useDailyLogsPostDailyLogsIdCommentsCommentIdReactions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof dailyLogsPostDailyLogsIdCommentsCommentIdReactions>
+    >,
+    TError,
+    {
+      id: string;
+      commentId: string;
+      data: BodyType<DailyLogsCommentReactionPayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<
+    ReturnType<typeof dailyLogsPostDailyLogsIdCommentsCommentIdReactions>
+  >,
+  TError,
+  {
+    id: string;
+    commentId: string;
+    data: BodyType<DailyLogsCommentReactionPayloadSchema>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogsPostDailyLogsIdCommentsCommentIdReactionsMutationOptions(
+      options,
+    ),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with todoPayloadSchema.
+ * @summary POST /daily-logs/{id}/todos
+ */
+export const getDailyLogsPostDailyLogsIdTodosUrl = (id: string) => {
+  return `/api/daily-logs/${id}/todos`;
+};
+
+export const dailyLogsPostDailyLogsIdTodos = async (
+  id: string,
+  dailyLogsTodoPayloadSchema: DailyLogsTodoPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdTodosUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dailyLogsTodoPayloadSchema),
+  });
+};
+
+export const getDailyLogsPostDailyLogsIdTodosMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodos>>,
+    TError,
+    { id: string; data: BodyType<DailyLogsTodoPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodos>>,
+  TError,
+  { id: string; data: BodyType<DailyLogsTodoPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsPostDailyLogsIdTodos"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodos>>,
+    { id: string; data: BodyType<DailyLogsTodoPayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return dailyLogsPostDailyLogsIdTodos(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsPostDailyLogsIdTodosMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodos>>
+>;
+export type DailyLogsPostDailyLogsIdTodosMutationBody =
+  BodyType<DailyLogsTodoPayloadSchema>;
+export type DailyLogsPostDailyLogsIdTodosMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /daily-logs/{id}/todos
+ */
+export const useDailyLogsPostDailyLogsIdTodos = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodos>>,
+    TError,
+    { id: string; data: BodyType<DailyLogsTodoPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodos>>,
+  TError,
+  { id: string; data: BodyType<DailyLogsTodoPayloadSchema> },
+  TContext
+> => {
+  return useMutation(getDailyLogsPostDailyLogsIdTodosMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with todoTogglePayloadSchema.
+ * @summary POST /daily-logs/{id}/todos/{todoId}/toggle
+ */
+export const getDailyLogsPostDailyLogsIdTodosTodoIdToggleUrl = (
+  id: string,
+  todoId: string,
+) => {
+  return `/api/daily-logs/${id}/todos/${todoId}/toggle`;
+};
+
+export const dailyLogsPostDailyLogsIdTodosTodoIdToggle = async (
+  id: string,
+  todoId: string,
+  dailyLogsTodoTogglePayloadSchema: DailyLogsTodoTogglePayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getDailyLogsPostDailyLogsIdTodosTodoIdToggleUrl(id, todoId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(dailyLogsTodoTogglePayloadSchema),
+    },
+  );
+};
+
+export const getDailyLogsPostDailyLogsIdTodosTodoIdToggleMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodosTodoIdToggle>>,
+    TError,
+    {
+      id: string;
+      todoId: string;
+      data: BodyType<DailyLogsTodoTogglePayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodosTodoIdToggle>>,
+  TError,
+  {
+    id: string;
+    todoId: string;
+    data: BodyType<DailyLogsTodoTogglePayloadSchema>;
+  },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsPostDailyLogsIdTodosTodoIdToggle"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodosTodoIdToggle>>,
+    {
+      id: string;
+      todoId: string;
+      data: BodyType<DailyLogsTodoTogglePayloadSchema>;
+    }
+  > = (props) => {
+    const { id, todoId, data } = props ?? {};
+
+    return dailyLogsPostDailyLogsIdTodosTodoIdToggle(
+      id,
+      todoId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsPostDailyLogsIdTodosTodoIdToggleMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodosTodoIdToggle>>
+  >;
+export type DailyLogsPostDailyLogsIdTodosTodoIdToggleMutationBody =
+  BodyType<DailyLogsTodoTogglePayloadSchema>;
+export type DailyLogsPostDailyLogsIdTodosTodoIdToggleMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /daily-logs/{id}/todos/{todoId}/toggle
+ */
+export const useDailyLogsPostDailyLogsIdTodosTodoIdToggle = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodosTodoIdToggle>>,
+    TError,
+    {
+      id: string;
+      todoId: string;
+      data: BodyType<DailyLogsTodoTogglePayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdTodosTodoIdToggle>>,
+  TError,
+  {
+    id: string;
+    todoId: string;
+    data: BodyType<DailyLogsTodoTogglePayloadSchema>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogsPostDailyLogsIdTodosTodoIdToggleMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary POST /daily-logs/{id}/attachments
+ */
+export const getDailyLogsPostDailyLogsIdAttachmentsUrl = (id: string) => {
+  return `/api/daily-logs/${id}/attachments`;
+};
+
+export const dailyLogsPostDailyLogsIdAttachments = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdAttachmentsUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDailyLogsPostDailyLogsIdAttachmentsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdAttachments>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdAttachments>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsPostDailyLogsIdAttachments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdAttachments>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dailyLogsPostDailyLogsIdAttachments(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsPostDailyLogsIdAttachmentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdAttachments>>
+>;
+
+export type DailyLogsPostDailyLogsIdAttachmentsMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /daily-logs/{id}/attachments
+ */
+export const useDailyLogsPostDailyLogsIdAttachments = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdAttachments>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdAttachments>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogsPostDailyLogsIdAttachmentsMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary DELETE /daily-logs/{id}/attachments/{attachmentId}
+ */
+export const getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdUrl = (
+  id: string,
+  attachmentId: string,
+) => {
+  return `/api/daily-logs/${id}/attachments/${attachmentId}`;
+};
+
+export const dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId = async (
+  id: string,
+  attachmentId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdUrl(id, attachmentId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId>
+      >,
+      TError,
+      { id: string; attachmentId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId>
+    >,
+    TError,
+    { id: string; attachmentId: string },
+    TContext
+  > => {
+    const mutationKey = ["dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId>
+      >,
+      { id: string; attachmentId: string }
+    > = (props) => {
+      const { id, attachmentId } = props ?? {};
+
+      return dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId(
+        id,
+        attachmentId,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId>
+    >
+  >;
+
+export type DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary DELETE /daily-logs/{id}/attachments/{attachmentId}
+ */
+export const useDailyLogsDeleteDailyLogsIdAttachmentsAttachmentId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId>
+    >,
+    TError,
+    { id: string; attachmentId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId>>,
+  TError,
+  { id: string; attachmentId: string },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdMutationOptions(
+      options,
+    ),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary GET /daily-logs/settings
+ */
+export const getDailyLogAdminGetDailyLogsSettingsUrl = () => {
+  return `/api/daily-logs/settings`;
+};
+
+export const dailyLogAdminGetDailyLogsSettings = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogAdminGetDailyLogsSettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDailyLogAdminGetDailyLogsSettingsQueryKey = () => {
+  return [`/api/daily-logs/settings`] as const;
+};
+
+export const getDailyLogAdminGetDailyLogsSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDailyLogAdminGetDailyLogsSettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>
+  > = ({ signal }) =>
+    dailyLogAdminGetDailyLogsSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DailyLogAdminGetDailyLogsSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>
+>;
+export type DailyLogAdminGetDailyLogsSettingsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /daily-logs/settings
+ */
+
+export function useDailyLogAdminGetDailyLogsSettings<
+  TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions =
+    getDailyLogAdminGetDailyLogsSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary PUT /daily-logs/settings
+ */
+export const getDailyLogAdminPutDailyLogsSettingsUrl = () => {
+  return `/api/daily-logs/settings`;
+};
+
+export const dailyLogAdminPutDailyLogsSettings = async (
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogAdminPutDailyLogsSettingsUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(genericObject),
+  });
+};
+
+export const getDailyLogAdminPutDailyLogsSettingsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsSettings>>,
+    TError,
+    { data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsSettings>>,
+  TError,
+  { data: BodyType<GenericObject> },
+  TContext
+> => {
+  const mutationKey = ["dailyLogAdminPutDailyLogsSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsSettings>>,
+    { data: BodyType<GenericObject> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return dailyLogAdminPutDailyLogsSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogAdminPutDailyLogsSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsSettings>>
+>;
+export type DailyLogAdminPutDailyLogsSettingsMutationBody =
+  BodyType<GenericObject>;
+export type DailyLogAdminPutDailyLogsSettingsMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /daily-logs/settings
+ */
+export const useDailyLogAdminPutDailyLogsSettings = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsSettings>>,
+    TError,
+    { data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsSettings>>,
+  TError,
+  { data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogAdminPutDailyLogsSettingsMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary GET /daily-logs/custom-fields
+ */
+export const getDailyLogAdminGetDailyLogsCustomFieldsUrl = () => {
+  return `/api/daily-logs/custom-fields`;
+};
+
+export const dailyLogAdminGetDailyLogsCustomFields = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogAdminGetDailyLogsCustomFieldsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDailyLogAdminGetDailyLogsCustomFieldsQueryKey = () => {
+  return [`/api/daily-logs/custom-fields`] as const;
+};
+
+export const getDailyLogAdminGetDailyLogsCustomFieldsQueryOptions = <
+  TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getDailyLogAdminGetDailyLogsCustomFieldsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>
+  > = ({ signal }) =>
+    dailyLogAdminGetDailyLogsCustomFields({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DailyLogAdminGetDailyLogsCustomFieldsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>
+>;
+export type DailyLogAdminGetDailyLogsCustomFieldsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /daily-logs/custom-fields
+ */
+
+export function useDailyLogAdminGetDailyLogsCustomFields<
+  TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions =
+    getDailyLogAdminGetDailyLogsCustomFieldsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary POST /daily-logs/custom-fields
+ */
+export const getDailyLogAdminPostDailyLogsCustomFieldsUrl = () => {
+  return `/api/daily-logs/custom-fields`;
+};
+
+export const dailyLogAdminPostDailyLogsCustomFields = async (
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogAdminPostDailyLogsCustomFieldsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(genericObject),
+  });
+};
+
+export const getDailyLogAdminPostDailyLogsCustomFieldsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogAdminPostDailyLogsCustomFields>>,
+    TError,
+    { data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogAdminPostDailyLogsCustomFields>>,
+  TError,
+  { data: BodyType<GenericObject> },
+  TContext
+> => {
+  const mutationKey = ["dailyLogAdminPostDailyLogsCustomFields"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogAdminPostDailyLogsCustomFields>>,
+    { data: BodyType<GenericObject> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return dailyLogAdminPostDailyLogsCustomFields(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogAdminPostDailyLogsCustomFieldsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogAdminPostDailyLogsCustomFields>>
+>;
+export type DailyLogAdminPostDailyLogsCustomFieldsMutationBody =
+  BodyType<GenericObject>;
+export type DailyLogAdminPostDailyLogsCustomFieldsMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /daily-logs/custom-fields
+ */
+export const useDailyLogAdminPostDailyLogsCustomFields = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogAdminPostDailyLogsCustomFields>>,
+    TError,
+    { data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogAdminPostDailyLogsCustomFields>>,
+  TError,
+  { data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogAdminPostDailyLogsCustomFieldsMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary PUT /daily-logs/custom-fields/{fieldId}
+ */
+export const getDailyLogAdminPutDailyLogsCustomFieldsFieldIdUrl = (
+  fieldId: string,
+) => {
+  return `/api/daily-logs/custom-fields/${fieldId}`;
+};
+
+export const dailyLogAdminPutDailyLogsCustomFieldsFieldId = async (
+  fieldId: string,
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getDailyLogAdminPutDailyLogsCustomFieldsFieldIdUrl(fieldId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(genericObject),
+    },
+  );
+};
+
+export const getDailyLogAdminPutDailyLogsCustomFieldsFieldIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsCustomFieldsFieldId>>,
+    TError,
+    { fieldId: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsCustomFieldsFieldId>>,
+  TError,
+  { fieldId: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  const mutationKey = ["dailyLogAdminPutDailyLogsCustomFieldsFieldId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsCustomFieldsFieldId>>,
+    { fieldId: string; data: BodyType<GenericObject> }
+  > = (props) => {
+    const { fieldId, data } = props ?? {};
+
+    return dailyLogAdminPutDailyLogsCustomFieldsFieldId(
+      fieldId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogAdminPutDailyLogsCustomFieldsFieldIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsCustomFieldsFieldId>>
+  >;
+export type DailyLogAdminPutDailyLogsCustomFieldsFieldIdMutationBody =
+  BodyType<GenericObject>;
+export type DailyLogAdminPutDailyLogsCustomFieldsFieldIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /daily-logs/custom-fields/{fieldId}
+ */
+export const useDailyLogAdminPutDailyLogsCustomFieldsFieldId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsCustomFieldsFieldId>>,
+    TError,
+    { fieldId: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogAdminPutDailyLogsCustomFieldsFieldId>>,
+  TError,
+  { fieldId: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogAdminPutDailyLogsCustomFieldsFieldIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary DELETE /daily-logs/custom-fields/{fieldId}
+ */
+export const getDailyLogAdminDeleteDailyLogsCustomFieldsFieldIdUrl = (
+  fieldId: string,
+) => {
+  return `/api/daily-logs/custom-fields/${fieldId}`;
+};
+
+export const dailyLogAdminDeleteDailyLogsCustomFieldsFieldId = async (
+  fieldId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getDailyLogAdminDeleteDailyLogsCustomFieldsFieldIdUrl(fieldId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDailyLogAdminDeleteDailyLogsCustomFieldsFieldIdMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof dailyLogAdminDeleteDailyLogsCustomFieldsFieldId>
+      >,
+      TError,
+      { fieldId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogAdminDeleteDailyLogsCustomFieldsFieldId>>,
+    TError,
+    { fieldId: string },
+    TContext
+  > => {
+    const mutationKey = ["dailyLogAdminDeleteDailyLogsCustomFieldsFieldId"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof dailyLogAdminDeleteDailyLogsCustomFieldsFieldId>
+      >,
+      { fieldId: string }
+    > = (props) => {
+      const { fieldId } = props ?? {};
+
+      return dailyLogAdminDeleteDailyLogsCustomFieldsFieldId(
+        fieldId,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof dailyLogAdminDeleteDailyLogsCustomFieldsFieldId>>
+  >;
+
+export type DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary DELETE /daily-logs/custom-fields/{fieldId}
+ */
+export const useDailyLogAdminDeleteDailyLogsCustomFieldsFieldId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogAdminDeleteDailyLogsCustomFieldsFieldId>>,
+    TError,
+    { fieldId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogAdminDeleteDailyLogsCustomFieldsFieldId>>,
+  TError,
+  { fieldId: string },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogAdminDeleteDailyLogsCustomFieldsFieldIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts. Validated query with myDailyLogsQuerySchema.
+ * @summary GET /daily-logs/mine
+ */
+export const getDailyLogAdminGetDailyLogsMineUrl = () => {
+  return `/api/daily-logs/mine`;
+};
+
+export const dailyLogAdminGetDailyLogsMine = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDailyLogAdminGetDailyLogsMineUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDailyLogAdminGetDailyLogsMineQueryKey = () => {
+  return [`/api/daily-logs/mine`] as const;
+};
+
+export const getDailyLogAdminGetDailyLogsMineQueryOptions = <
+  TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDailyLogAdminGetDailyLogsMineQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>
+  > = ({ signal }) =>
+    dailyLogAdminGetDailyLogsMine({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DailyLogAdminGetDailyLogsMineQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>
+>;
+export type DailyLogAdminGetDailyLogsMineQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /daily-logs/mine
+ */
+
+export function useDailyLogAdminGetDailyLogsMine<
+  TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDailyLogAdminGetDailyLogsMineQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/schedule/settings
+ */
+export const getScheduleGetJobsJobIdScheduleSettingsUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/schedule/settings`;
+};
+
+export const scheduleGetJobsJobIdScheduleSettings = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getScheduleGetJobsJobIdScheduleSettingsUrl(jobId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getScheduleGetJobsJobIdScheduleSettingsQueryKey = (
+  jobId: string,
+) => {
+  return [`/api/jobs/${jobId}/schedule/settings`] as const;
+};
+
+export const getScheduleGetJobsJobIdScheduleSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getScheduleGetJobsJobIdScheduleSettingsQueryKey(jobId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>
+  > = ({ signal }) =>
+    scheduleGetJobsJobIdScheduleSettings(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ScheduleGetJobsJobIdScheduleSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>
+>;
+export type ScheduleGetJobsJobIdScheduleSettingsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs/{jobId}/schedule/settings
+ */
+
+export function useScheduleGetJobsJobIdScheduleSettings<
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getScheduleGetJobsJobIdScheduleSettingsQueryOptions(
+    jobId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary PUT /jobs/{jobId}/schedule/settings
+ */
+export const getSchedulePutJobsJobIdScheduleSettingsUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/schedule/settings`;
+};
+
+export const schedulePutJobsJobIdScheduleSettings = async (
+  jobId: string,
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePutJobsJobIdScheduleSettingsUrl(jobId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(genericObject),
+    },
+  );
+};
+
+export const getSchedulePutJobsJobIdScheduleSettingsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettings>>,
+    TError,
+    { jobId: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettings>>,
+  TError,
+  { jobId: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  const mutationKey = ["schedulePutJobsJobIdScheduleSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettings>>,
+    { jobId: string; data: BodyType<GenericObject> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return schedulePutJobsJobIdScheduleSettings(jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePutJobsJobIdScheduleSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettings>>
+>;
+export type SchedulePutJobsJobIdScheduleSettingsMutationBody =
+  BodyType<GenericObject>;
+export type SchedulePutJobsJobIdScheduleSettingsMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /jobs/{jobId}/schedule/settings
+ */
+export const useSchedulePutJobsJobIdScheduleSettings = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettings>>,
+    TError,
+    { jobId: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettings>>,
+  TError,
+  { jobId: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePutJobsJobIdScheduleSettingsMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule/settings/phases
+ */
+export const getSchedulePostJobsJobIdScheduleSettingsPhasesUrl = (
+  jobId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/settings/phases`;
+};
+
+export const schedulePostJobsJobIdScheduleSettingsPhases = async (
+  jobId: string,
+  scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePostJobsJobIdScheduleSettingsPhasesUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
+    },
+  );
+};
+
+export const getSchedulePostJobsJobIdScheduleSettingsPhasesMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsPhases>>,
+    TError,
+    { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsPhases>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["schedulePostJobsJobIdScheduleSettingsPhases"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsPhases>>,
+    { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return schedulePostJobsJobIdScheduleSettingsPhases(
+      jobId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostJobsJobIdScheduleSettingsPhasesMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsPhases>>
+  >;
+export type SchedulePostJobsJobIdScheduleSettingsPhasesMutationBody =
+  BodyType<ScheduleSchedulePhasePayloadSchema>;
+export type SchedulePostJobsJobIdScheduleSettingsPhasesMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/schedule/settings/phases
+ */
+export const useSchedulePostJobsJobIdScheduleSettingsPhases = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsPhases>>,
+    TError,
+    { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsPhases>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostJobsJobIdScheduleSettingsPhasesMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
+ * @summary PUT /jobs/{jobId}/schedule/settings/phases/{phaseId}
+ */
+export const getSchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdUrl = (
+  jobId: string,
+  phaseId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/settings/phases/${phaseId}`;
+};
+
+export const schedulePutJobsJobIdScheduleSettingsPhasesPhaseId = async (
+  jobId: string,
+  phaseId: string,
+  scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdUrl(jobId, phaseId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
+    },
+  );
+};
+
+export const getSchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof schedulePutJobsJobIdScheduleSettingsPhasesPhaseId>
+      >,
+      TError,
+      {
+        jobId: string;
+        phaseId: string;
+        data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof schedulePutJobsJobIdScheduleSettingsPhasesPhaseId>
+    >,
+    TError,
+    {
+      jobId: string;
+      phaseId: string;
+      data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+    },
+    TContext
+  > => {
+    const mutationKey = ["schedulePutJobsJobIdScheduleSettingsPhasesPhaseId"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof schedulePutJobsJobIdScheduleSettingsPhasesPhaseId>
+      >,
+      {
+        jobId: string;
+        phaseId: string;
+        data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+      }
+    > = (props) => {
+      const { jobId, phaseId, data } = props ?? {};
+
+      return schedulePutJobsJobIdScheduleSettingsPhasesPhaseId(
+        jobId,
+        phaseId,
+        data,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof schedulePutJobsJobIdScheduleSettingsPhasesPhaseId>
+    >
+  >;
+export type SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdMutationBody =
+  BodyType<ScheduleSchedulePhasePayloadSchema>;
+export type SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /jobs/{jobId}/schedule/settings/phases/{phaseId}
+ */
+export const useSchedulePutJobsJobIdScheduleSettingsPhasesPhaseId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof schedulePutJobsJobIdScheduleSettingsPhasesPhaseId>
+    >,
+    TError,
+    {
+      jobId: string;
+      phaseId: string;
+      data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettingsPhasesPhaseId>>,
+  TError,
+  {
+    jobId: string;
+    phaseId: string;
+    data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdMutationOptions(
+      options,
+    ),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/schedule/phases
+ */
+export const getScheduleGetJobsJobIdSchedulePhasesUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/schedule/phases`;
+};
+
+export const scheduleGetJobsJobIdSchedulePhases = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getScheduleGetJobsJobIdSchedulePhasesUrl(jobId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getScheduleGetJobsJobIdSchedulePhasesQueryKey = (
+  jobId: string,
+) => {
+  return [`/api/jobs/${jobId}/schedule/phases`] as const;
+};
+
+export const getScheduleGetJobsJobIdSchedulePhasesQueryOptions = <
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getScheduleGetJobsJobIdSchedulePhasesQueryKey(jobId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>
+  > = ({ signal }) =>
+    scheduleGetJobsJobIdSchedulePhases(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ScheduleGetJobsJobIdSchedulePhasesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>
+>;
+export type ScheduleGetJobsJobIdSchedulePhasesQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs/{jobId}/schedule/phases
+ */
+
+export function useScheduleGetJobsJobIdSchedulePhases<
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getScheduleGetJobsJobIdSchedulePhasesQueryOptions(
+    jobId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule/phases
+ */
+export const getSchedulePostJobsJobIdSchedulePhasesUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/schedule/phases`;
+};
+
+export const schedulePostJobsJobIdSchedulePhases = async (
+  jobId: string,
+  scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePostJobsJobIdSchedulePhasesUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
+    },
+  );
+};
+
+export const getSchedulePostJobsJobIdSchedulePhasesMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdSchedulePhases>>,
+    TError,
+    { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdSchedulePhases>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["schedulePostJobsJobIdSchedulePhases"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdSchedulePhases>>,
+    { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return schedulePostJobsJobIdSchedulePhases(jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostJobsJobIdSchedulePhasesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdSchedulePhases>>
+>;
+export type SchedulePostJobsJobIdSchedulePhasesMutationBody =
+  BodyType<ScheduleSchedulePhasePayloadSchema>;
+export type SchedulePostJobsJobIdSchedulePhasesMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/schedule/phases
+ */
+export const useSchedulePostJobsJobIdSchedulePhases = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdSchedulePhases>>,
+    TError,
+    { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdSchedulePhases>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleSchedulePhasePayloadSchema> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostJobsJobIdSchedulePhasesMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
+ * @summary PUT /jobs/{jobId}/schedule/phases/{phaseId}
+ */
+export const getSchedulePutJobsJobIdSchedulePhasesPhaseIdUrl = (
+  jobId: string,
+  phaseId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/phases/${phaseId}`;
+};
+
+export const schedulePutJobsJobIdSchedulePhasesPhaseId = async (
+  jobId: string,
+  phaseId: string,
+  scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePutJobsJobIdSchedulePhasesPhaseIdUrl(jobId, phaseId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
+    },
+  );
+};
+
+export const getSchedulePutJobsJobIdSchedulePhasesPhaseIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdSchedulePhasesPhaseId>>,
+    TError,
+    {
+      jobId: string;
+      phaseId: string;
+      data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdSchedulePhasesPhaseId>>,
+  TError,
+  {
+    jobId: string;
+    phaseId: string;
+    data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+  },
+  TContext
+> => {
+  const mutationKey = ["schedulePutJobsJobIdSchedulePhasesPhaseId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdSchedulePhasesPhaseId>>,
+    {
+      jobId: string;
+      phaseId: string;
+      data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+    }
+  > = (props) => {
+    const { jobId, phaseId, data } = props ?? {};
+
+    return schedulePutJobsJobIdSchedulePhasesPhaseId(
+      jobId,
+      phaseId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePutJobsJobIdSchedulePhasesPhaseIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdSchedulePhasesPhaseId>>
+  >;
+export type SchedulePutJobsJobIdSchedulePhasesPhaseIdMutationBody =
+  BodyType<ScheduleSchedulePhasePayloadSchema>;
+export type SchedulePutJobsJobIdSchedulePhasesPhaseIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /jobs/{jobId}/schedule/phases/{phaseId}
+ */
+export const useSchedulePutJobsJobIdSchedulePhasesPhaseId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdSchedulePhasesPhaseId>>,
+    TError,
+    {
+      jobId: string;
+      phaseId: string;
+      data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdSchedulePhasesPhaseId>>,
+  TError,
+  {
+    jobId: string;
+    phaseId: string;
+    data: BodyType<ScheduleSchedulePhasePayloadSchema>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePutJobsJobIdSchedulePhasesPhaseIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /jobs/{jobId}/schedule/phases/{phaseId}
+ */
+export const getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdUrl = (
+  jobId: string,
+  phaseId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/phases/${phaseId}`;
+};
+
+export const scheduleDeleteJobsJobIdSchedulePhasesPhaseId = async (
+  jobId: string,
+  phaseId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdUrl(jobId, phaseId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleDeleteJobsJobIdSchedulePhasesPhaseId>>,
+    TError,
+    { jobId: string; phaseId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof scheduleDeleteJobsJobIdSchedulePhasesPhaseId>>,
+  TError,
+  { jobId: string; phaseId: string },
+  TContext
+> => {
+  const mutationKey = ["scheduleDeleteJobsJobIdSchedulePhasesPhaseId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof scheduleDeleteJobsJobIdSchedulePhasesPhaseId>>,
+    { jobId: string; phaseId: string }
+  > = (props) => {
+    const { jobId, phaseId } = props ?? {};
+
+    return scheduleDeleteJobsJobIdSchedulePhasesPhaseId(
+      jobId,
+      phaseId,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof scheduleDeleteJobsJobIdSchedulePhasesPhaseId>>
+  >;
+
+export type ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary DELETE /jobs/{jobId}/schedule/phases/{phaseId}
+ */
+export const useScheduleDeleteJobsJobIdSchedulePhasesPhaseId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleDeleteJobsJobIdSchedulePhasesPhaseId>>,
+    TError,
+    { jobId: string; phaseId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof scheduleDeleteJobsJobIdSchedulePhasesPhaseId>>,
+  TError,
+  { jobId: string; phaseId: string },
+  TContext
+> => {
+  return useMutation(
+    getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleSettingPayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule/settings/tags
+ */
+export const getSchedulePostJobsJobIdScheduleSettingsTagsUrl = (
+  jobId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/settings/tags`;
+};
+
+export const schedulePostJobsJobIdScheduleSettingsTags = async (
+  jobId: string,
+  scheduleScheduleSettingPayloadSchema: ScheduleScheduleSettingPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePostJobsJobIdScheduleSettingsTagsUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(scheduleScheduleSettingPayloadSchema),
+    },
+  );
+};
+
+export const getSchedulePostJobsJobIdScheduleSettingsTagsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsTags>>,
+    TError,
+    { jobId: string; data: BodyType<ScheduleScheduleSettingPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsTags>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleScheduleSettingPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["schedulePostJobsJobIdScheduleSettingsTags"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsTags>>,
+    { jobId: string; data: BodyType<ScheduleScheduleSettingPayloadSchema> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return schedulePostJobsJobIdScheduleSettingsTags(
+      jobId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostJobsJobIdScheduleSettingsTagsMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsTags>>
+  >;
+export type SchedulePostJobsJobIdScheduleSettingsTagsMutationBody =
+  BodyType<ScheduleScheduleSettingPayloadSchema>;
+export type SchedulePostJobsJobIdScheduleSettingsTagsMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/schedule/settings/tags
+ */
+export const useSchedulePostJobsJobIdScheduleSettingsTags = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsTags>>,
+    TError,
+    { jobId: string; data: BodyType<ScheduleScheduleSettingPayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleSettingsTags>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleScheduleSettingPayloadSchema> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostJobsJobIdScheduleSettingsTagsMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleSettingPayloadSchema.
+ * @summary PUT /jobs/{jobId}/schedule/settings/tags/{tagId}
+ */
+export const getSchedulePutJobsJobIdScheduleSettingsTagsTagIdUrl = (
+  jobId: string,
+  tagId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/settings/tags/${tagId}`;
+};
+
+export const schedulePutJobsJobIdScheduleSettingsTagsTagId = async (
+  jobId: string,
+  tagId: string,
+  scheduleScheduleSettingPayloadSchema: ScheduleScheduleSettingPayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePutJobsJobIdScheduleSettingsTagsTagIdUrl(jobId, tagId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(scheduleScheduleSettingPayloadSchema),
+    },
+  );
+};
+
+export const getSchedulePutJobsJobIdScheduleSettingsTagsTagIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettingsTagsTagId>>,
+    TError,
+    {
+      jobId: string;
+      tagId: string;
+      data: BodyType<ScheduleScheduleSettingPayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettingsTagsTagId>>,
+  TError,
+  {
+    jobId: string;
+    tagId: string;
+    data: BodyType<ScheduleScheduleSettingPayloadSchema>;
+  },
+  TContext
+> => {
+  const mutationKey = ["schedulePutJobsJobIdScheduleSettingsTagsTagId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettingsTagsTagId>>,
+    {
+      jobId: string;
+      tagId: string;
+      data: BodyType<ScheduleScheduleSettingPayloadSchema>;
+    }
+  > = (props) => {
+    const { jobId, tagId, data } = props ?? {};
+
+    return schedulePutJobsJobIdScheduleSettingsTagsTagId(
+      jobId,
+      tagId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePutJobsJobIdScheduleSettingsTagsTagIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettingsTagsTagId>>
+  >;
+export type SchedulePutJobsJobIdScheduleSettingsTagsTagIdMutationBody =
+  BodyType<ScheduleScheduleSettingPayloadSchema>;
+export type SchedulePutJobsJobIdScheduleSettingsTagsTagIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /jobs/{jobId}/schedule/settings/tags/{tagId}
+ */
+export const useSchedulePutJobsJobIdScheduleSettingsTagsTagId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettingsTagsTagId>>,
+    TError,
+    {
+      jobId: string;
+      tagId: string;
+      data: BodyType<ScheduleScheduleSettingPayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleSettingsTagsTagId>>,
+  TError,
+  {
+    jobId: string;
+    tagId: string;
+    data: BodyType<ScheduleScheduleSettingPayloadSchema>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePutJobsJobIdScheduleSettingsTagsTagIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/schedule/baseline
+ */
+export const getScheduleGetJobsJobIdScheduleBaselineUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/schedule/baseline`;
+};
+
+export const scheduleGetJobsJobIdScheduleBaseline = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getScheduleGetJobsJobIdScheduleBaselineUrl(jobId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getScheduleGetJobsJobIdScheduleBaselineQueryKey = (
+  jobId: string,
+) => {
+  return [`/api/jobs/${jobId}/schedule/baseline`] as const;
+};
+
+export const getScheduleGetJobsJobIdScheduleBaselineQueryOptions = <
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getScheduleGetJobsJobIdScheduleBaselineQueryKey(jobId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>
+  > = ({ signal }) =>
+    scheduleGetJobsJobIdScheduleBaseline(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ScheduleGetJobsJobIdScheduleBaselineQueryResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>
+>;
+export type ScheduleGetJobsJobIdScheduleBaselineQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs/{jobId}/schedule/baseline
+ */
+
+export function useScheduleGetJobsJobIdScheduleBaseline<
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getScheduleGetJobsJobIdScheduleBaselineQueryOptions(
+    jobId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /jobs/{jobId}/schedule/baseline
+ */
+export const getSchedulePostJobsJobIdScheduleBaselineUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/schedule/baseline`;
+};
+
+export const schedulePostJobsJobIdScheduleBaseline = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePostJobsJobIdScheduleBaselineUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getSchedulePostJobsJobIdScheduleBaselineMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleBaseline>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleBaseline>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  const mutationKey = ["schedulePostJobsJobIdScheduleBaseline"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleBaseline>>,
+    { jobId: string }
+  > = (props) => {
+    const { jobId } = props ?? {};
+
+    return schedulePostJobsJobIdScheduleBaseline(jobId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostJobsJobIdScheduleBaselineMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleBaseline>>
+>;
+
+export type SchedulePostJobsJobIdScheduleBaselineMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/schedule/baseline
+ */
+export const useSchedulePostJobsJobIdScheduleBaseline = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleBaseline>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleBaseline>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostJobsJobIdScheduleBaselineMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary PUT /jobs/{jobId}/schedule/baseline
+ */
+export const getSchedulePutJobsJobIdScheduleBaselineUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/schedule/baseline`;
+};
+
+export const schedulePutJobsJobIdScheduleBaseline = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePutJobsJobIdScheduleBaselineUrl(jobId),
+    {
+      ...options,
+      method: "PUT",
+    },
+  );
+};
+
+export const getSchedulePutJobsJobIdScheduleBaselineMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleBaseline>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleBaseline>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  const mutationKey = ["schedulePutJobsJobIdScheduleBaseline"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleBaseline>>,
+    { jobId: string }
+  > = (props) => {
+    const { jobId } = props ?? {};
+
+    return schedulePutJobsJobIdScheduleBaseline(jobId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePutJobsJobIdScheduleBaselineMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleBaseline>>
+>;
+
+export type SchedulePutJobsJobIdScheduleBaselineMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /jobs/{jobId}/schedule/baseline
+ */
+export const useSchedulePutJobsJobIdScheduleBaseline = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleBaseline>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdScheduleBaseline>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePutJobsJobIdScheduleBaselineMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /jobs/{jobId}/schedule/baseline
+ */
+export const getScheduleDeleteJobsJobIdScheduleBaselineUrl = (
+  jobId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/baseline`;
+};
+
+export const scheduleDeleteJobsJobIdScheduleBaseline = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getScheduleDeleteJobsJobIdScheduleBaselineUrl(jobId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getScheduleDeleteJobsJobIdScheduleBaselineMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleDeleteJobsJobIdScheduleBaseline>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof scheduleDeleteJobsJobIdScheduleBaseline>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  const mutationKey = ["scheduleDeleteJobsJobIdScheduleBaseline"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof scheduleDeleteJobsJobIdScheduleBaseline>>,
+    { jobId: string }
+  > = (props) => {
+    const { jobId } = props ?? {};
+
+    return scheduleDeleteJobsJobIdScheduleBaseline(jobId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ScheduleDeleteJobsJobIdScheduleBaselineMutationResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleDeleteJobsJobIdScheduleBaseline>>
+>;
+
+export type ScheduleDeleteJobsJobIdScheduleBaselineMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary DELETE /jobs/{jobId}/schedule/baseline
+ */
+export const useScheduleDeleteJobsJobIdScheduleBaseline = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleDeleteJobsJobIdScheduleBaseline>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof scheduleDeleteJobsJobIdScheduleBaseline>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  return useMutation(
+    getScheduleDeleteJobsJobIdScheduleBaselineMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /jobs/{jobId}/workday-exceptions/categories
+ */
+export const getSchedulePostJobsJobIdWorkdayExceptionsCategoriesUrl = (
+  jobId: string,
+) => {
+  return `/api/jobs/${jobId}/workday-exceptions/categories`;
+};
+
+export const schedulePostJobsJobIdWorkdayExceptionsCategories = async (
+  jobId: string,
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePostJobsJobIdWorkdayExceptionsCategoriesUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(genericObject),
+    },
+  );
+};
+
+export const getSchedulePostJobsJobIdWorkdayExceptionsCategoriesMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof schedulePostJobsJobIdWorkdayExceptionsCategories>
+      >,
+      TError,
+      { jobId: string; data: BodyType<GenericObject> },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof schedulePostJobsJobIdWorkdayExceptionsCategories>
+    >,
+    TError,
+    { jobId: string; data: BodyType<GenericObject> },
+    TContext
+  > => {
+    const mutationKey = ["schedulePostJobsJobIdWorkdayExceptionsCategories"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof schedulePostJobsJobIdWorkdayExceptionsCategories>
+      >,
+      { jobId: string; data: BodyType<GenericObject> }
+    > = (props) => {
+      const { jobId, data } = props ?? {};
+
+      return schedulePostJobsJobIdWorkdayExceptionsCategories(
+        jobId,
+        data,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type SchedulePostJobsJobIdWorkdayExceptionsCategoriesMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdWorkdayExceptionsCategories>>
+  >;
+export type SchedulePostJobsJobIdWorkdayExceptionsCategoriesMutationBody =
+  BodyType<GenericObject>;
+export type SchedulePostJobsJobIdWorkdayExceptionsCategoriesMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/workday-exceptions/categories
+ */
+export const useSchedulePostJobsJobIdWorkdayExceptionsCategories = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof schedulePostJobsJobIdWorkdayExceptionsCategories>
+    >,
+    TError,
+    { jobId: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdWorkdayExceptionsCategories>>,
+  TError,
+  { jobId: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostJobsJobIdWorkdayExceptionsCategoriesMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary PUT /jobs/{jobId}/workday-exceptions/categories/{categoryId}
+ */
+export const getSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdUrl = (
+  jobId: string,
+  categoryId: string,
+) => {
+  return `/api/jobs/${jobId}/workday-exceptions/categories/${categoryId}`;
+};
+
+export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId = async (
+  jobId: string,
+  categoryId: string,
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdUrl(
+      jobId,
+      categoryId,
+    ),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(genericObject),
+    },
+  );
+};
+
+export const getSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId
+        >
+      >,
+      TError,
+      { jobId: string; categoryId: string; data: BodyType<GenericObject> },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId
+      >
+    >,
+    TError,
+    { jobId: string; categoryId: string; data: BodyType<GenericObject> },
+    TContext
+  > => {
+    const mutationKey = [
+      "schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId",
+    ];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<
+          typeof schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId
+        >
+      >,
+      { jobId: string; categoryId: string; data: BodyType<GenericObject> }
+    > = (props) => {
+      const { jobId, categoryId, data } = props ?? {};
+
+      return schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId(
+        jobId,
+        categoryId,
+        data,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId
+      >
+    >
+  >;
+export type SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdMutationBody =
+  BodyType<GenericObject>;
+export type SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /jobs/{jobId}/workday-exceptions/categories/{categoryId}
+ */
+export const useSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId
+      >
+    >,
+    TError,
+    { jobId: string; categoryId: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<
+    ReturnType<typeof schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId>
+  >,
+  TError,
+  { jobId: string; categoryId: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdMutationOptions(
+      options,
+    ),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/workday-exceptions
+ */
+export const getScheduleGetJobsJobIdWorkdayExceptionsUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/workday-exceptions`;
+};
+
+export const scheduleGetJobsJobIdWorkdayExceptions = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getScheduleGetJobsJobIdWorkdayExceptionsUrl(jobId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getScheduleGetJobsJobIdWorkdayExceptionsQueryKey = (
+  jobId: string,
+) => {
+  return [`/api/jobs/${jobId}/workday-exceptions`] as const;
+};
+
+export const getScheduleGetJobsJobIdWorkdayExceptionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getScheduleGetJobsJobIdWorkdayExceptionsQueryKey(jobId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>
+  > = ({ signal }) =>
+    scheduleGetJobsJobIdWorkdayExceptions(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ScheduleGetJobsJobIdWorkdayExceptionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>
+>;
+export type ScheduleGetJobsJobIdWorkdayExceptionsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs/{jobId}/workday-exceptions
+ */
+
+export function useScheduleGetJobsJobIdWorkdayExceptions<
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getScheduleGetJobsJobIdWorkdayExceptionsQueryOptions(
+    jobId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Create a workday exception (a non-workday or extra-workday) attached to one or more jobs, or to every active job when `appliesToAllJobs` is true. The path `jobId` only scopes the call — the actual job set comes from the request body's `jobIds` (or all jobs when `appliesToAllJobs` is true). Only admins can create company-wide exceptions; other roles can only target jobs they manage.
+ * @summary POST /jobs/{jobId}/workday-exceptions
+ */
+export const getSchedulePostJobsJobIdWorkdayExceptionsUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/workday-exceptions`;
+};
+
+export const schedulePostJobsJobIdWorkdayExceptions = async (
+  jobId: string,
+  workdayExceptionPayload: WorkdayExceptionPayload,
+  options?: RequestInit,
+): Promise<WorkdayExceptionResponse> => {
+  return customFetch<WorkdayExceptionResponse>(
+    getSchedulePostJobsJobIdWorkdayExceptionsUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(workdayExceptionPayload),
+    },
+  );
+};
+
+export const getSchedulePostJobsJobIdWorkdayExceptionsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdWorkdayExceptions>>,
+    TError,
+    { jobId: string; data: BodyType<WorkdayExceptionPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdWorkdayExceptions>>,
+  TError,
+  { jobId: string; data: BodyType<WorkdayExceptionPayload> },
+  TContext
+> => {
+  const mutationKey = ["schedulePostJobsJobIdWorkdayExceptions"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdWorkdayExceptions>>,
+    { jobId: string; data: BodyType<WorkdayExceptionPayload> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return schedulePostJobsJobIdWorkdayExceptions(jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostJobsJobIdWorkdayExceptionsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdWorkdayExceptions>>
+>;
+export type SchedulePostJobsJobIdWorkdayExceptionsMutationBody =
+  BodyType<WorkdayExceptionPayload>;
+export type SchedulePostJobsJobIdWorkdayExceptionsMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/workday-exceptions
+ */
+export const useSchedulePostJobsJobIdWorkdayExceptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdWorkdayExceptions>>,
+    TError,
+    { jobId: string; data: BodyType<WorkdayExceptionPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdWorkdayExceptions>>,
+  TError,
+  { jobId: string; data: BodyType<WorkdayExceptionPayload> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostJobsJobIdWorkdayExceptionsMutationOptions(options),
+  );
+};
+
+/**
+ * Update an existing workday exception. Omitted fields keep their previous value. Only admins can flip the exception into or out of a company-wide state (`appliesToAllJobs: true`); other roles must keep it scoped to specific jobs they manage.
+ * @summary PUT /jobs/{jobId}/workday-exceptions/{exceptionId}
+ */
+export const getSchedulePutJobsJobIdWorkdayExceptionsExceptionIdUrl = (
+  jobId: string,
+  exceptionId: string,
+) => {
+  return `/api/jobs/${jobId}/workday-exceptions/${exceptionId}`;
+};
+
+export const schedulePutJobsJobIdWorkdayExceptionsExceptionId = async (
+  jobId: string,
+  exceptionId: string,
+  workdayExceptionUpdatePayload: WorkdayExceptionUpdatePayload,
+  options?: RequestInit,
+): Promise<WorkdayExceptionResponse> => {
+  return customFetch<WorkdayExceptionResponse>(
+    getSchedulePutJobsJobIdWorkdayExceptionsExceptionIdUrl(jobId, exceptionId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(workdayExceptionUpdatePayload),
+    },
+  );
+};
+
+export const getSchedulePutJobsJobIdWorkdayExceptionsExceptionIdMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof schedulePutJobsJobIdWorkdayExceptionsExceptionId>
+      >,
+      TError,
+      {
+        jobId: string;
+        exceptionId: string;
+        data: BodyType<WorkdayExceptionUpdatePayload>;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof schedulePutJobsJobIdWorkdayExceptionsExceptionId>
+    >,
+    TError,
+    {
+      jobId: string;
+      exceptionId: string;
+      data: BodyType<WorkdayExceptionUpdatePayload>;
+    },
+    TContext
+  > => {
+    const mutationKey = ["schedulePutJobsJobIdWorkdayExceptionsExceptionId"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof schedulePutJobsJobIdWorkdayExceptionsExceptionId>
+      >,
+      {
+        jobId: string;
+        exceptionId: string;
+        data: BodyType<WorkdayExceptionUpdatePayload>;
+      }
+    > = (props) => {
+      const { jobId, exceptionId, data } = props ?? {};
+
+      return schedulePutJobsJobIdWorkdayExceptionsExceptionId(
+        jobId,
+        exceptionId,
+        data,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type SchedulePutJobsJobIdWorkdayExceptionsExceptionIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePutJobsJobIdWorkdayExceptionsExceptionId>>
+  >;
+export type SchedulePutJobsJobIdWorkdayExceptionsExceptionIdMutationBody =
+  BodyType<WorkdayExceptionUpdatePayload>;
+export type SchedulePutJobsJobIdWorkdayExceptionsExceptionIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /jobs/{jobId}/workday-exceptions/{exceptionId}
+ */
+export const useSchedulePutJobsJobIdWorkdayExceptionsExceptionId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof schedulePutJobsJobIdWorkdayExceptionsExceptionId>
+    >,
+    TError,
+    {
+      jobId: string;
+      exceptionId: string;
+      data: BodyType<WorkdayExceptionUpdatePayload>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePutJobsJobIdWorkdayExceptionsExceptionId>>,
+  TError,
+  {
+    jobId: string;
+    exceptionId: string;
+    data: BodyType<WorkdayExceptionUpdatePayload>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePutJobsJobIdWorkdayExceptionsExceptionIdMutationOptions(options),
+  );
+};
+
+/**
+ * Delete a workday exception. Only admins can delete company-wide exceptions (`appliesToAllJobs: true`); other roles can only delete exceptions whose affected jobs they all manage.
+ * @summary DELETE /jobs/{jobId}/workday-exceptions/{exceptionId}
+ */
+export const getScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdUrl = (
+  jobId: string,
+  exceptionId: string,
+) => {
+  return `/api/jobs/${jobId}/workday-exceptions/${exceptionId}`;
+};
+
+export const scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId = async (
+  jobId: string,
+  exceptionId: string,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
+    getScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdUrl(
+      jobId,
+      exceptionId,
+    ),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId>
+      >,
+      TError,
+      { jobId: string; exceptionId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId>
+    >,
+    TError,
+    { jobId: string; exceptionId: string },
+    TContext
+  > => {
+    const mutationKey = ["scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId>
+      >,
+      { jobId: string; exceptionId: string }
+    > = (props) => {
+      const { jobId, exceptionId } = props ?? {};
+
+      return scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId(
+        jobId,
+        exceptionId,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type ScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId>
+    >
+  >;
+
+export type ScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary DELETE /jobs/{jobId}/workday-exceptions/{exceptionId}
+ */
+export const useScheduleDeleteJobsJobIdWorkdayExceptionsExceptionId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId>
+    >,
+    TError,
+    { jobId: string; exceptionId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<
+    ReturnType<typeof scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId>
+  >,
+  TError,
+  { jobId: string; exceptionId: string },
+  TContext
+> => {
+  return useMutation(
+    getScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdMutationOptions(
+      options,
+    ),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /jobs/{jobId}/schedule/track-conflicts
+ */
+export const getSchedulePostJobsJobIdScheduleTrackConflictsUrl = (
+  jobId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/track-conflicts`;
+};
+
+export const schedulePostJobsJobIdScheduleTrackConflicts = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePostJobsJobIdScheduleTrackConflictsUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getSchedulePostJobsJobIdScheduleTrackConflictsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleTrackConflicts>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleTrackConflicts>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  const mutationKey = ["schedulePostJobsJobIdScheduleTrackConflicts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleTrackConflicts>>,
+    { jobId: string }
+  > = (props) => {
+    const { jobId } = props ?? {};
+
+    return schedulePostJobsJobIdScheduleTrackConflicts(jobId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostJobsJobIdScheduleTrackConflictsMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleTrackConflicts>>
+  >;
+
+export type SchedulePostJobsJobIdScheduleTrackConflictsMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/schedule/track-conflicts
+ */
+export const useSchedulePostJobsJobIdScheduleTrackConflicts = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleTrackConflicts>>,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleTrackConflicts>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostJobsJobIdScheduleTrackConflictsMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /jobs/{jobId}/schedule/notify-assigned-users
+ */
+export const getSchedulePostJobsJobIdScheduleNotifyAssignedUsersUrl = (
+  jobId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/notify-assigned-users`;
+};
+
+export const schedulePostJobsJobIdScheduleNotifyAssignedUsers = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePostJobsJobIdScheduleNotifyAssignedUsersUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getSchedulePostJobsJobIdScheduleNotifyAssignedUsersMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof schedulePostJobsJobIdScheduleNotifyAssignedUsers>
+      >,
+      TError,
+      { jobId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof schedulePostJobsJobIdScheduleNotifyAssignedUsers>
+    >,
+    TError,
+    { jobId: string },
+    TContext
+  > => {
+    const mutationKey = ["schedulePostJobsJobIdScheduleNotifyAssignedUsers"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof schedulePostJobsJobIdScheduleNotifyAssignedUsers>
+      >,
+      { jobId: string }
+    > = (props) => {
+      const { jobId } = props ?? {};
+
+      return schedulePostJobsJobIdScheduleNotifyAssignedUsers(
+        jobId,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type SchedulePostJobsJobIdScheduleNotifyAssignedUsersMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleNotifyAssignedUsers>>
+  >;
+
+export type SchedulePostJobsJobIdScheduleNotifyAssignedUsersMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/schedule/notify-assigned-users
+ */
+export const useSchedulePostJobsJobIdScheduleNotifyAssignedUsers = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof schedulePostJobsJobIdScheduleNotifyAssignedUsers>
+    >,
+    TError,
+    { jobId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleNotifyAssignedUsers>>,
+  TError,
+  { jobId: string },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostJobsJobIdScheduleNotifyAssignedUsersMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/schedule
+ */
+export const getScheduleGetJobsJobIdScheduleUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/schedule`;
+};
+
+export const scheduleGetJobsJobIdSchedule = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getScheduleGetJobsJobIdScheduleUrl(jobId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getScheduleGetJobsJobIdScheduleQueryKey = (jobId: string) => {
+  return [`/api/jobs/${jobId}/schedule`] as const;
+};
+
+export const getScheduleGetJobsJobIdScheduleQueryOptions = <
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getScheduleGetJobsJobIdScheduleQueryKey(jobId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>
+  > = ({ signal }) =>
+    scheduleGetJobsJobIdSchedule(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ScheduleGetJobsJobIdScheduleQueryResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>
+>;
+export type ScheduleGetJobsJobIdScheduleQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /jobs/{jobId}/schedule
+ */
+
+export function useScheduleGetJobsJobIdSchedule<
+  TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>,
+  TError = ErrorType<Error>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getScheduleGetJobsJobIdScheduleQueryOptions(
+    jobId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule
+ */
+export const getSchedulePostJobsJobIdScheduleUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/schedule`;
+};
+
+export const schedulePostJobsJobIdSchedule = async (
+  jobId: string,
+  scheduleSchedulePayloadSchema: ScheduleSchedulePayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getSchedulePostJobsJobIdScheduleUrl(jobId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(scheduleSchedulePayloadSchema),
+  });
+};
+
+export const getSchedulePostJobsJobIdScheduleMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdSchedule>>,
+    TError,
+    { jobId: string; data: BodyType<ScheduleSchedulePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdSchedule>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleSchedulePayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["schedulePostJobsJobIdSchedule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdSchedule>>,
+    { jobId: string; data: BodyType<ScheduleSchedulePayloadSchema> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return schedulePostJobsJobIdSchedule(jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostJobsJobIdScheduleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdSchedule>>
+>;
+export type SchedulePostJobsJobIdScheduleMutationBody =
+  BodyType<ScheduleSchedulePayloadSchema>;
+export type SchedulePostJobsJobIdScheduleMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /jobs/{jobId}/schedule
+ */
+export const useSchedulePostJobsJobIdSchedule = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdSchedule>>,
+    TError,
+    { jobId: string; data: BodyType<ScheduleSchedulePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdSchedule>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleSchedulePayloadSchema> },
+  TContext
+> => {
+  return useMutation(getSchedulePostJobsJobIdScheduleMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /schedule-items/{id}
+ */
+export const getScheduleGetScheduleItemsIdUrl = (id: string) => {
+  return `/api/schedule-items/${id}`;
+};
+
+export const scheduleGetScheduleItemsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getScheduleGetScheduleItemsIdUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getScheduleGetScheduleItemsIdQueryKey = (id: string) => {
+  return [`/api/schedule-items/${id}`] as const;
+};
+
+export const getScheduleGetScheduleItemsIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getScheduleGetScheduleItemsIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>
+  > = ({ signal }) =>
+    scheduleGetScheduleItemsId(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ScheduleGetScheduleItemsIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>
+>;
+export type ScheduleGetScheduleItemsIdQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /schedule-items/{id}
+ */
+
+export function useScheduleGetScheduleItemsId<
+  TData = Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>,
+  TError = ErrorType<Error>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getScheduleGetScheduleItemsIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePayloadSchema.
+ * @summary PUT /schedule-items/{id}
+ */
+export const getSchedulePutScheduleItemsIdUrl = (id: string) => {
+  return `/api/schedule-items/${id}`;
+};
+
+export const schedulePutScheduleItemsId = async (
+  id: string,
+  scheduleSchedulePayloadSchema: ScheduleSchedulePayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getSchedulePutScheduleItemsIdUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(scheduleSchedulePayloadSchema),
+  });
+};
+
+export const getSchedulePutScheduleItemsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutScheduleItemsId>>,
+    TError,
+    { id: string; data: BodyType<ScheduleSchedulePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePutScheduleItemsId>>,
+  TError,
+  { id: string; data: BodyType<ScheduleSchedulePayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["schedulePutScheduleItemsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePutScheduleItemsId>>,
+    { id: string; data: BodyType<ScheduleSchedulePayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return schedulePutScheduleItemsId(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePutScheduleItemsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePutScheduleItemsId>>
+>;
+export type SchedulePutScheduleItemsIdMutationBody =
+  BodyType<ScheduleSchedulePayloadSchema>;
+export type SchedulePutScheduleItemsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary PUT /schedule-items/{id}
+ */
+export const useSchedulePutScheduleItemsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutScheduleItemsId>>,
+    TError,
+    { id: string; data: BodyType<ScheduleSchedulePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePutScheduleItemsId>>,
+  TError,
+  { id: string; data: BodyType<ScheduleSchedulePayloadSchema> },
+  TContext
+> => {
+  return useMutation(getSchedulePutScheduleItemsIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /schedule-items/{id}
+ */
+export const getScheduleDeleteScheduleItemsIdUrl = (id: string) => {
+  return `/api/schedule-items/${id}`;
+};
+
+export const scheduleDeleteScheduleItemsId = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getScheduleDeleteScheduleItemsIdUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getScheduleDeleteScheduleItemsIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleDeleteScheduleItemsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof scheduleDeleteScheduleItemsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["scheduleDeleteScheduleItemsId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof scheduleDeleteScheduleItemsId>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return scheduleDeleteScheduleItemsId(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ScheduleDeleteScheduleItemsIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleDeleteScheduleItemsId>>
+>;
+
+export type ScheduleDeleteScheduleItemsIdMutationError = ErrorType<Error>;
+
+/**
+ * @summary DELETE /schedule-items/{id}
+ */
+export const useScheduleDeleteScheduleItemsId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleDeleteScheduleItemsId>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof scheduleDeleteScheduleItemsId>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getScheduleDeleteScheduleItemsIdMutationOptions(options));
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /schedule-items/{id}/todos
+ */
+export const getSchedulePostScheduleItemsIdTodosUrl = (id: string) => {
+  return `/api/schedule-items/${id}/todos`;
+};
+
+export const schedulePostScheduleItemsIdTodos = async (
+  id: string,
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getSchedulePostScheduleItemsIdTodosUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(genericObject),
+  });
+};
+
+export const getSchedulePostScheduleItemsIdTodosMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdTodos>>,
+    TError,
+    { id: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdTodos>>,
+  TError,
+  { id: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  const mutationKey = ["schedulePostScheduleItemsIdTodos"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdTodos>>,
+    { id: string; data: BodyType<GenericObject> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return schedulePostScheduleItemsIdTodos(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostScheduleItemsIdTodosMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdTodos>>
+>;
+export type SchedulePostScheduleItemsIdTodosMutationBody =
+  BodyType<GenericObject>;
+export type SchedulePostScheduleItemsIdTodosMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /schedule-items/{id}/todos
+ */
+export const useSchedulePostScheduleItemsIdTodos = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdTodos>>,
+    TError,
+    { id: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdTodos>>,
+  TError,
+  { id: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostScheduleItemsIdTodosMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary PUT /schedule-items/{id}/todos/{todoId}
+ */
+export const getSchedulePutScheduleItemsIdTodosTodoIdUrl = (
+  id: string,
+  todoId: string,
+) => {
+  return `/api/schedule-items/${id}/todos/${todoId}`;
+};
+
+export const schedulePutScheduleItemsIdTodosTodoId = async (
+  id: string,
+  todoId: string,
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePutScheduleItemsIdTodosTodoIdUrl(id, todoId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(genericObject),
+    },
+  );
+};
+
+export const getSchedulePutScheduleItemsIdTodosTodoIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutScheduleItemsIdTodosTodoId>>,
+    TError,
+    { id: string; todoId: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePutScheduleItemsIdTodosTodoId>>,
+  TError,
+  { id: string; todoId: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  const mutationKey = ["schedulePutScheduleItemsIdTodosTodoId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePutScheduleItemsIdTodosTodoId>>,
+    { id: string; todoId: string; data: BodyType<GenericObject> }
+  > = (props) => {
+    const { id, todoId, data } = props ?? {};
+
+    return schedulePutScheduleItemsIdTodosTodoId(
+      id,
+      todoId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePutScheduleItemsIdTodosTodoIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePutScheduleItemsIdTodosTodoId>>
+>;
+export type SchedulePutScheduleItemsIdTodosTodoIdMutationBody =
+  BodyType<GenericObject>;
+export type SchedulePutScheduleItemsIdTodosTodoIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary PUT /schedule-items/{id}/todos/{todoId}
+ */
+export const useSchedulePutScheduleItemsIdTodosTodoId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePutScheduleItemsIdTodosTodoId>>,
+    TError,
+    { id: string; todoId: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePutScheduleItemsIdTodosTodoId>>,
+  TError,
+  { id: string; todoId: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePutScheduleItemsIdTodosTodoIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /schedule-items/{id}/todos/{todoId}
+ */
+export const getScheduleDeleteScheduleItemsIdTodosTodoIdUrl = (
+  id: string,
+  todoId: string,
+) => {
+  return `/api/schedule-items/${id}/todos/${todoId}`;
+};
+
+export const scheduleDeleteScheduleItemsIdTodosTodoId = async (
+  id: string,
+  todoId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getScheduleDeleteScheduleItemsIdTodosTodoIdUrl(id, todoId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getScheduleDeleteScheduleItemsIdTodosTodoIdMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleDeleteScheduleItemsIdTodosTodoId>>,
+    TError,
+    { id: string; todoId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof scheduleDeleteScheduleItemsIdTodosTodoId>>,
+  TError,
+  { id: string; todoId: string },
+  TContext
+> => {
+  const mutationKey = ["scheduleDeleteScheduleItemsIdTodosTodoId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof scheduleDeleteScheduleItemsIdTodosTodoId>>,
+    { id: string; todoId: string }
+  > = (props) => {
+    const { id, todoId } = props ?? {};
+
+    return scheduleDeleteScheduleItemsIdTodosTodoId(id, todoId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ScheduleDeleteScheduleItemsIdTodosTodoIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof scheduleDeleteScheduleItemsIdTodosTodoId>>
+  >;
+
+export type ScheduleDeleteScheduleItemsIdTodosTodoIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary DELETE /schedule-items/{id}/todos/{todoId}
+ */
+export const useScheduleDeleteScheduleItemsIdTodosTodoId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleDeleteScheduleItemsIdTodosTodoId>>,
+    TError,
+    { id: string; todoId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof scheduleDeleteScheduleItemsIdTodosTodoId>>,
+  TError,
+  { id: string; todoId: string },
+  TContext
+> => {
+  return useMutation(
+    getScheduleDeleteScheduleItemsIdTodosTodoIdMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleNotePayloadSchema.
+ * @summary POST /schedule-items/{id}/notes
+ */
+export const getSchedulePostScheduleItemsIdNotesUrl = (id: string) => {
+  return `/api/schedule-items/${id}/notes`;
+};
+
+export const schedulePostScheduleItemsIdNotes = async (
+  id: string,
+  scheduleScheduleNotePayloadSchema: ScheduleScheduleNotePayloadSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getSchedulePostScheduleItemsIdNotesUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(scheduleScheduleNotePayloadSchema),
+  });
+};
+
+export const getSchedulePostScheduleItemsIdNotesMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdNotes>>,
+    TError,
+    { id: string; data: BodyType<ScheduleScheduleNotePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdNotes>>,
+  TError,
+  { id: string; data: BodyType<ScheduleScheduleNotePayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["schedulePostScheduleItemsIdNotes"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdNotes>>,
+    { id: string; data: BodyType<ScheduleScheduleNotePayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return schedulePostScheduleItemsIdNotes(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostScheduleItemsIdNotesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdNotes>>
+>;
+export type SchedulePostScheduleItemsIdNotesMutationBody =
+  BodyType<ScheduleScheduleNotePayloadSchema>;
+export type SchedulePostScheduleItemsIdNotesMutationError = ErrorType<Error>;
+
+/**
+ * @summary POST /schedule-items/{id}/notes
+ */
+export const useSchedulePostScheduleItemsIdNotes = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdNotes>>,
+    TError,
+    { id: string; data: BodyType<ScheduleScheduleNotePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdNotes>>,
+  TError,
+  { id: string; data: BodyType<ScheduleScheduleNotePayloadSchema> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostScheduleItemsIdNotesMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /schedule-items/{id}/attachments
+ */
+export const getSchedulePostScheduleItemsIdAttachmentsUrl = (id: string) => {
+  return `/api/schedule-items/${id}/attachments`;
+};
+
+export const schedulePostScheduleItemsIdAttachments = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePostScheduleItemsIdAttachmentsUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getSchedulePostScheduleItemsIdAttachmentsMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachments>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachments>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["schedulePostScheduleItemsIdAttachments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachments>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return schedulePostScheduleItemsIdAttachments(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostScheduleItemsIdAttachmentsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachments>>
+>;
+
+export type SchedulePostScheduleItemsIdAttachmentsMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /schedule-items/{id}/attachments
+ */
+export const useSchedulePostScheduleItemsIdAttachments = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachments>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachments>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostScheduleItemsIdAttachmentsMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /schedule-items/{id}/attachments/new-doc
+ */
+export const getSchedulePostScheduleItemsIdAttachmentsNewDocUrl = (
+  id: string,
+) => {
+  return `/api/schedule-items/${id}/attachments/new-doc`;
+};
+
+export const schedulePostScheduleItemsIdAttachmentsNewDoc = async (
+  id: string,
+  genericObject: GenericObject,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getSchedulePostScheduleItemsIdAttachmentsNewDocUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(genericObject),
+    },
+  );
+};
+
+export const getSchedulePostScheduleItemsIdAttachmentsNewDocMutationOptions = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachmentsNewDoc>>,
+    TError,
+    { id: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachmentsNewDoc>>,
+  TError,
+  { id: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  const mutationKey = ["schedulePostScheduleItemsIdAttachmentsNewDoc"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachmentsNewDoc>>,
+    { id: string; data: BodyType<GenericObject> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return schedulePostScheduleItemsIdAttachmentsNewDoc(
+      id,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostScheduleItemsIdAttachmentsNewDocMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachmentsNewDoc>>
+  >;
+export type SchedulePostScheduleItemsIdAttachmentsNewDocMutationBody =
+  BodyType<GenericObject>;
+export type SchedulePostScheduleItemsIdAttachmentsNewDocMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary POST /schedule-items/{id}/attachments/new-doc
+ */
+export const useSchedulePostScheduleItemsIdAttachmentsNewDoc = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachmentsNewDoc>>,
+    TError,
+    { id: string; data: BodyType<GenericObject> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostScheduleItemsIdAttachmentsNewDoc>>,
+  TError,
+  { id: string; data: BodyType<GenericObject> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostScheduleItemsIdAttachmentsNewDocMutationOptions(options),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /schedule-items/{id}/attachments/{attachmentId}
+ */
+export const getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdUrl = (
+  id: string,
+  attachmentId: string,
+) => {
+  return `/api/schedule-items/${id}/attachments/${attachmentId}`;
+};
+
+export const scheduleDeleteScheduleItemsIdAttachmentsAttachmentId = async (
+  id: string,
+  attachmentId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdUrl(
+      id,
+      attachmentId,
+    ),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdMutationOptions =
+  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof scheduleDeleteScheduleItemsIdAttachmentsAttachmentId>
+      >,
+      TError,
+      { id: string; attachmentId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof scheduleDeleteScheduleItemsIdAttachmentsAttachmentId>
+    >,
+    TError,
+    { id: string; attachmentId: string },
+    TContext
+  > => {
+    const mutationKey = [
+      "scheduleDeleteScheduleItemsIdAttachmentsAttachmentId",
+    ];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof scheduleDeleteScheduleItemsIdAttachmentsAttachmentId>
+      >,
+      { id: string; attachmentId: string }
+    > = (props) => {
+      const { id, attachmentId } = props ?? {};
+
+      return scheduleDeleteScheduleItemsIdAttachmentsAttachmentId(
+        id,
+        attachmentId,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof scheduleDeleteScheduleItemsIdAttachmentsAttachmentId>
+    >
+  >;
+
+export type ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdMutationError =
+  ErrorType<Error>;
+
+/**
+ * @summary DELETE /schedule-items/{id}/attachments/{attachmentId}
+ */
+export const useScheduleDeleteScheduleItemsIdAttachmentsAttachmentId = <
+  TError = ErrorType<Error>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof scheduleDeleteScheduleItemsIdAttachmentsAttachmentId>
+    >,
+    TError,
+    { id: string; attachmentId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<
+    ReturnType<typeof scheduleDeleteScheduleItemsIdAttachmentsAttachmentId>
+  >,
+  TError,
+  { id: string; attachmentId: string },
+  TContext
+> => {
+  return useMutation(
+    getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdMutationOptions(
+      options,
+    ),
+  );
+};
+
+/**
+ * Route defined in artifacts/api-server/src/routes/dashboard.ts.
+ * @summary GET /dashboard/stats
+ */
+export const getDashboardGetDashboardStatsUrl = () => {
+  return `/api/dashboard/stats`;
+};
+
+export const dashboardGetDashboardStats = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDashboardGetDashboardStatsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDashboardGetDashboardStatsQueryKey = () => {
+  return [`/api/dashboard/stats`] as const;
+};
+
+export const getDashboardGetDashboardStatsQueryOptions = <
+  TData = Awaited<ReturnType<typeof dashboardGetDashboardStats>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDashboardGetDashboardStatsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dashboardGetDashboardStats>>
+  > = ({ signal }) => dashboardGetDashboardStats({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardStats>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DashboardGetDashboardStatsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dashboardGetDashboardStats>>
+>;
+export type DashboardGetDashboardStatsQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /dashboard/stats
+ */
+
+export function useDashboardGetDashboardStats<
+  TData = Awaited<ReturnType<typeof dashboardGetDashboardStats>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardStats>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDashboardGetDashboardStatsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/dashboard.ts.
+ * @summary GET /dashboard/agenda
+ */
+export const getDashboardGetDashboardAgendaUrl = () => {
+  return `/api/dashboard/agenda`;
+};
+
+export const dashboardGetDashboardAgenda = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDashboardGetDashboardAgendaUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDashboardGetDashboardAgendaQueryKey = () => {
+  return [`/api/dashboard/agenda`] as const;
+};
+
+export const getDashboardGetDashboardAgendaQueryOptions = <
+  TData = Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDashboardGetDashboardAgendaQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>
+  > = ({ signal }) =>
+    dashboardGetDashboardAgenda({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DashboardGetDashboardAgendaQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>
+>;
+export type DashboardGetDashboardAgendaQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /dashboard/agenda
+ */
+
+export function useDashboardGetDashboardAgenda<
+  TData = Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDashboardGetDashboardAgendaQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/dashboard.ts.
+ * @summary GET /dashboard/schedule
+ */
+export const getDashboardGetDashboardScheduleUrl = () => {
+  return `/api/dashboard/schedule`;
+};
+
+export const dashboardGetDashboardSchedule = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDashboardGetDashboardScheduleUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDashboardGetDashboardScheduleQueryKey = () => {
+  return [`/api/dashboard/schedule`] as const;
+};
+
+export const getDashboardGetDashboardScheduleQueryOptions = <
+  TData = Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDashboardGetDashboardScheduleQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>
+  > = ({ signal }) =>
+    dashboardGetDashboardSchedule({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DashboardGetDashboardScheduleQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>
+>;
+export type DashboardGetDashboardScheduleQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /dashboard/schedule
+ */
+
+export function useDashboardGetDashboardSchedule<
+  TData = Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDashboardGetDashboardScheduleQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/activity.ts. Validated query with querySchema.
+ * @summary GET /activity
+ */
+export const getActivityGetActivityUrl = () => {
+  return `/api/activity`;
+};
+
+export const activityGetActivity = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getActivityGetActivityUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getActivityGetActivityQueryKey = () => {
+  return [`/api/activity`] as const;
+};
+
+export const getActivityGetActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof activityGetActivity>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof activityGetActivity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getActivityGetActivityQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof activityGetActivity>>
+  > = ({ signal }) => activityGetActivity({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof activityGetActivity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ActivityGetActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof activityGetActivity>>
+>;
+export type ActivityGetActivityQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /activity
+ */
+
+export function useActivityGetActivity<
+  TData = Awaited<ReturnType<typeof activityGetActivity>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof activityGetActivity>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getActivityGetActivityQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/search.ts. Validated query with querySchema. Returns results paged through the {results, pagination} envelope so callers can scroll past the first page of matches.
+ * @summary GET /search
+ */
+export const getSearchGetSearchUrl = (params: SearchGetSearchParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/search?${stringifiedParams}`
+    : `/api/search`;
+};
+
+export const searchGetSearch = async (
+  params: SearchGetSearchParams,
+  options?: RequestInit,
+): Promise<SearchGetSearch200> => {
+  return customFetch<SearchGetSearch200>(getSearchGetSearchUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getSearchGetSearchQueryKey = (params?: SearchGetSearchParams) => {
+  return [`/api/search`, ...(params ? [params] : [])] as const;
+};
+
+export const getSearchGetSearchQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchGetSearch>>,
+  TError = ErrorType<Error>,
+>(
+  params: SearchGetSearchParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchGetSearch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getSearchGetSearchQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchGetSearch>>> = ({
+    signal,
+  }) => searchGetSearch(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchGetSearch>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type SearchGetSearchQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchGetSearch>>
+>;
+export type SearchGetSearchQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /search
+ */
+
+export function useSearchGetSearch<
+  TData = Awaited<ReturnType<typeof searchGetSearch>>,
+  TError = ErrorType<Error>,
+>(
+  params: SearchGetSearchParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof searchGetSearch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getSearchGetSearchQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Route defined in artifacts/api-server/src/routes/health.ts.
+ * @summary GET /healthz
+ */
+export const getHealthGetHealthzUrl = () => {
+  return `/api/healthz`;
+};
+
+export const healthGetHealthz = async (
+  options?: RequestInit,
+): Promise<HealthStatus> => {
+  return customFetch<HealthStatus>(getHealthGetHealthzUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getHealthGetHealthzQueryKey = () => {
+  return [`/api/healthz`] as const;
+};
+
+export const getHealthGetHealthzQueryOptions = <
+  TData = Awaited<ReturnType<typeof healthGetHealthz>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof healthGetHealthz>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getHealthGetHealthzQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof healthGetHealthz>>
+  > = ({ signal }) => healthGetHealthz({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof healthGetHealthz>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type HealthGetHealthzQueryResult = NonNullable<
+  Awaited<ReturnType<typeof healthGetHealthz>>
+>;
+export type HealthGetHealthzQueryError = ErrorType<Error>;
+
+/**
+ * @summary GET /healthz
+ */
+
+export function useHealthGetHealthz<
+  TData = Awaited<ReturnType<typeof healthGetHealthz>>,
+  TError = ErrorType<Error>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof healthGetHealthz>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getHealthGetHealthzQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

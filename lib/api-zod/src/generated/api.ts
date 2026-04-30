@@ -8,9 +8,2600 @@
 import * as zod from "zod";
 
 /**
- * Returns server health status
- * @summary Health check
+ * Route defined in artifacts/api-server/src/routes/auth.ts.
+ * @summary POST /auth/register
  */
-export const HealthCheckResponse = zod.object({
+export const AuthPostAuthRegisterBody = zod.record(zod.string(), zod.unknown());
+
+/**
+ * Route defined in artifacts/api-server/src/routes/auth.ts.
+ * @summary POST /auth/login
+ */
+export const AuthPostAuthLoginBody = zod.record(zod.string(), zod.unknown());
+
+export const AuthPostAuthLoginResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/auth.ts.
+ * @summary POST /auth/logout
+ */
+export const AuthPostAuthLogoutResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/auth.ts.
+ * @summary POST /auth/refresh
+ */
+export const AuthPostAuthRefreshResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/users.ts. Validated query with userListQuerySchema.
+ * @summary GET /users
+ */
+export const UsersGetUsersResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/users.ts.
+ * @summary GET /users/me
+ */
+export const UsersGetUsersMeResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/users.ts. Validated request body with updateProfileSchema.
+ * @summary PUT /users/me
+ */
+export const UsersPutUsersMeBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from updateProfileSchema in artifacts\/api-server\/src\/routes\/users.ts.",
+  );
+
+export const UsersPutUsersMeResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/users.ts. Validated request body with changePasswordSchema.
+ * @summary POST /users/me/password
+ */
+export const UsersPostUsersMePasswordBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from changePasswordSchema in artifacts\/api-server\/src\/routes\/users.ts.",
+  );
+
+export const UsersPostUsersMePasswordResponse = zod.unknown();
+
+/**
+ * List clients the caller can access, paginated and optionally filtered by search term. Each row includes a primary contact summary and the per-client `jobCount` / `openJobCount`, which are computed only over jobs the caller can access (admins see every job). Requires manager role or above.
+ * @summary GET /clients
+ */
+export const clientsGetClientsQueryPageDefault = 1;
+
+export const clientsGetClientsQueryPageSizeDefault = 20;
+export const clientsGetClientsQueryPageSizeMax = 100;
+
+export const ClientsGetClientsQueryParams = zod.object({
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(clientsGetClientsQueryPageDefault)
+    .describe("1-indexed page number. Defaults to 1."),
+  pageSize: zod.coerce
+    .number()
+    .min(1)
+    .max(clientsGetClientsQueryPageSizeMax)
+    .default(clientsGetClientsQueryPageSizeDefault)
+    .describe("Items per page. Defaults to 20, max 100."),
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Case-insensitive substring filter applied across company name, email, and city.",
+    ),
+});
+
+export const clientsGetClientsResponseClientsItemContactCountMin = 0;
+
+export const clientsGetClientsResponseClientsItemJobCountMin = 0;
+
+export const clientsGetClientsResponseClientsItemOpenJobCountMin = 0;
+
+export const clientsGetClientsResponsePaginationTotalItemsMin = 0;
+
+export const ClientsGetClientsResponse = zod
+  .object({
+    clients: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          companyName: zod.string(),
+          phone: zod.string().nullish(),
+          email: zod.string().nullish(),
+          city: zod.string().nullish(),
+          state: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          primaryContact: zod
+            .union([
+              zod
+                .object({
+                  id: zod.string().uuid(),
+                  clientId: zod.string().uuid().nullish(),
+                  firstName: zod.string().nullish(),
+                  lastName: zod.string().nullish(),
+                  email: zod.string().nullish(),
+                  phone: zod.string().nullish(),
+                  isPrimary: zod.boolean().nullish(),
+                })
+                .describe(
+                  "Primary contact summary surfaced on client list rows. Null when the client has no primary contact.",
+                ),
+              zod.null(),
+            ])
+            .describe(
+              "Primary contact summary, or null when the client has no primary contact.",
+            ),
+          contactCount: zod
+            .number()
+            .min(clientsGetClientsResponseClientsItemContactCountMin),
+          jobCount: zod
+            .number()
+            .min(clientsGetClientsResponseClientsItemJobCountMin)
+            .describe("Number of jobs for this client visible to the caller."),
+          openJobCount: zod
+            .number()
+            .min(clientsGetClientsResponseClientsItemOpenJobCountMin)
+            .describe(
+              "Number of open jobs for this client visible to the caller.",
+            ),
+        })
+        .describe(
+          "A client row returned by the paginated `GET \/clients` list. `jobCount` and `openJobCount` are computed only over jobs the caller can access.",
+        ),
+    ),
+    pagination: zod
+      .object({
+        page: zod.number().min(1),
+        pageSize: zod.number().min(1),
+        totalItems: zod
+          .number()
+          .min(clientsGetClientsResponsePaginationTotalItemsMin),
+        totalPages: zod.number().min(1),
+      })
+      .describe("Standard pagination metadata returned with list responses."),
+  })
+  .describe(
+    "Response for `GET \/clients`. The `clients` array is restricted to clients the caller can access.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with clientPayloadSchema.
+ * @summary POST /clients
+ */
+export const ClientsPostClientsBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from clientPayloadSchema in artifacts\/api-server\/src\/routes\/clients.ts.",
+  );
+
+/**
+ * Fetch a single client with its contacts and the jobs the caller can access. Admins see every job for the client; non-admins see only jobs they have access to.
+ * @summary GET /clients/{id}
+ */
+export const clientsGetClientsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ClientsGetClientsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(clientsGetClientsIdPathIdRegExp),
+});
+
+export const ClientsGetClientsIdResponse = zod
+  .object({
+    client: zod
+      .object({
+        id: zod.string().uuid(),
+        companyName: zod.string(),
+        phone: zod.string().nullish(),
+        email: zod.string().nullish(),
+        streetAddress: zod.string().nullish(),
+        city: zod.string().nullish(),
+        state: zod.string().nullish(),
+        zipCode: zod.string().nullish(),
+        notes: zod.string().nullish(),
+        createdBy: zod.string().uuid().nullish(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date().nullish(),
+        deletedAt: zod.coerce.date().nullish(),
+        contacts: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              clientId: zod.string().uuid().nullish(),
+              firstName: zod.string().nullish(),
+              lastName: zod.string().nullish(),
+              title: zod.string().nullish(),
+              email: zod.string().nullish(),
+              phone: zod.string().nullish(),
+              cellPhone: zod.string().nullish(),
+              isPrimary: zod.boolean().nullish(),
+              createdAt: zod.coerce.date().optional(),
+              updatedAt: zod.coerce.date().nullish(),
+              deletedAt: zod.coerce.date().nullish(),
+            })
+            .describe(
+              "Full client contact record returned on client detail and contact-management endpoints.",
+            ),
+        ),
+        jobs: zod
+          .array(
+            zod
+              .object({
+                id: zod.string().uuid(),
+                title: zod.string(),
+                status: zod.string().nullish(),
+                city: zod.string().nullish(),
+                state: zod.string().nullish(),
+                jobType: zod.string().nullish(),
+                contractPrice: zod
+                  .string()
+                  .nullish()
+                  .describe("Decimal price serialized as string."),
+                projectedStart: zod.coerce.date().nullish(),
+                projectedCompletion: zod.coerce.date().nullish(),
+                createdAt: zod.coerce.date(),
+              })
+              .describe(
+                "Summary view of a job used in client detail and client-job listings.",
+              ),
+          )
+          .describe(
+            "Jobs for this client filtered to those the caller can access (admins see all).",
+          ),
+      })
+      .describe(
+        "Full client record with embedded contacts and the caller-visible jobs list.",
+      ),
+  })
+  .describe(
+    "Response for `GET \/clients\/{id}`. The embedded `client.jobs` list is filtered to jobs the caller can access.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with clientPayloadSchema.
+ * @summary PUT /clients/{id}
+ */
+export const clientsPutClientsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ClientsPutClientsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(clientsPutClientsIdPathIdRegExp),
+});
+
+export const ClientsPutClientsIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from clientPayloadSchema in artifacts\/api-server\/src\/routes\/clients.ts.",
+  );
+
+export const ClientsPutClientsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts.
+ * @summary DELETE /clients/{id}
+ */
+export const clientsDeleteClientsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ClientsDeleteClientsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(clientsDeleteClientsIdPathIdRegExp),
+});
+
+export const ClientsDeleteClientsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts.
+ * @summary GET /clients/{id}/contacts
+ */
+export const clientsGetClientsIdContactsPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ClientsGetClientsIdContactsParams = zod.object({
+  id: zod.coerce.string().uuid().regex(clientsGetClientsIdContactsPathIdRegExp),
+});
+
+export const ClientsGetClientsIdContactsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with contactPayloadSchema.
+ * @summary POST /clients/{id}/contacts
+ */
+export const clientsPostClientsIdContactsPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ClientsPostClientsIdContactsParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(clientsPostClientsIdContactsPathIdRegExp),
+});
+
+export const ClientsPostClientsIdContactsBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from contactPayloadSchema in artifacts\/api-server\/src\/routes\/clients.ts.",
+  );
+
+/**
+ * List the jobs belonging to a client, filtered to those the caller can access. Admins receive every job for the client; non-admins receive only their accessible subset.
+ * @summary GET /clients/{id}/jobs
+ */
+export const clientsGetClientsIdJobsPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ClientsGetClientsIdJobsParams = zod.object({
+  id: zod.coerce.string().uuid().regex(clientsGetClientsIdJobsPathIdRegExp),
+});
+
+export const ClientsGetClientsIdJobsResponse = zod
+  .object({
+    jobs: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          title: zod.string(),
+          status: zod.string().nullish(),
+          city: zod.string().nullish(),
+          state: zod.string().nullish(),
+          jobType: zod.string().nullish(),
+          contractPrice: zod
+            .string()
+            .nullish()
+            .describe("Decimal price serialized as string."),
+          projectedStart: zod.coerce.date().nullish(),
+          projectedCompletion: zod.coerce.date().nullish(),
+          createdAt: zod.coerce.date(),
+        })
+        .describe(
+          "Summary view of a job used in client detail and client-job listings.",
+        ),
+    ),
+  })
+  .describe(
+    "Response for `GET \/clients\/{id}\/jobs`. The `jobs` array is filtered to jobs the caller can access (admins see all).",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with contactPayloadSchema.
+ * @summary PUT /clients/{id}/contacts/{contactId}
+ */
+export const clientsPutClientsIdContactsContactIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+export const clientsPutClientsIdContactsContactIdPathContactIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const ClientsPutClientsIdContactsContactIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(clientsPutClientsIdContactsContactIdPathIdRegExp),
+  contactId: zod.coerce
+    .string()
+    .uuid()
+    .regex(clientsPutClientsIdContactsContactIdPathContactIdRegExp),
+});
+
+export const ClientsPutClientsIdContactsContactIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from contactPayloadSchema in artifacts\/api-server\/src\/routes\/clients.ts.",
+  );
+
+export const ClientsPutClientsIdContactsContactIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/clients.ts.
+ * @summary DELETE /clients/{id}/contacts/{contactId}
+ */
+export const clientsDeleteClientsIdContactsContactIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+export const clientsDeleteClientsIdContactsContactIdPathContactIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const ClientsDeleteClientsIdContactsContactIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(clientsDeleteClientsIdContactsContactIdPathIdRegExp),
+  contactId: zod.coerce
+    .string()
+    .uuid()
+    .regex(clientsDeleteClientsIdContactsContactIdPathContactIdRegExp),
+});
+
+export const ClientsDeleteClientsIdContactsContactIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated query with jobQuerySchema.
+ * @summary GET /jobs
+ */
+export const JobsGetJobsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with jobPayloadSchema.
+ * @summary POST /jobs
+ */
+export const JobsPostJobsBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from jobPayloadSchema in artifacts\/api-server\/src\/routes\/jobs.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts.
+ * @summary GET /jobs/{id}
+ */
+export const jobsGetJobsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const JobsGetJobsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(jobsGetJobsIdPathIdRegExp),
+});
+
+export const JobsGetJobsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with jobPayloadSchema.
+ * @summary PUT /jobs/{id}
+ */
+export const jobsPutJobsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const JobsPutJobsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(jobsPutJobsIdPathIdRegExp),
+});
+
+export const JobsPutJobsIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from jobPayloadSchema in artifacts\/api-server\/src\/routes\/jobs.ts.",
+  );
+
+export const JobsPutJobsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/jobs.ts.
+ * @summary DELETE /jobs/{id}
+ */
+export const jobsDeleteJobsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const JobsDeleteJobsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(jobsDeleteJobsIdPathIdRegExp),
+});
+
+export const JobsDeleteJobsIdResponse = zod.unknown();
+
+/**
+ * List lead contacts across the workspace, optionally filtered by `search` (case-insensitive contains over name/email/phone/lead title). Only contacts whose lead the caller can access are returned; admins see every lead's contacts. Requires manager role or above.
+ * @summary GET /leads/contacts
+ */
+export const LeadsGetLeadsContactsQueryParams = zod.object({
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Case-insensitive substring filter applied across contact display name, email, phone, and lead title.",
+    ),
+});
+
+export const LeadsGetLeadsContactsResponse = zod
+  .object({
+    contacts: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          leadId: zod.string().uuid().nullish(),
+          leadTitle: zod.string().nullish(),
+          displayName: zod.string().nullish(),
+          email: zod.string().nullish(),
+          phone: zod.string().nullish(),
+          cellPhone: zod.string().nullish(),
+          label: zod.string().nullish(),
+        })
+        .describe(
+          "Cross-lead contact entry. Only contacts whose lead the caller can access are surfaced.",
+        ),
+    ),
+  })
+  .describe(
+    "Response for `GET \/leads\/contacts`. The `contacts` array is restricted to contacts that belong to leads the caller can access (admins see all).",
+  );
+
+/**
+ * List leads the caller can access, paginated and optionally filtered by `status` and `search`. The `summary` totals reflect every lead matching the query (not just the current page). Admins see all leads; other roles see only the leads they own or are assigned to. Requires manager role or above.
+ * @summary GET /leads
+ */
+export const leadsGetLeadsQueryPageDefault = 1;
+
+export const leadsGetLeadsQueryPageSizeDefault = 10;
+export const leadsGetLeadsQueryPageSizeMax = 100;
+
+export const LeadsGetLeadsQueryParams = zod.object({
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(leadsGetLeadsQueryPageDefault)
+    .describe("1-indexed page number. Defaults to 1."),
+  pageSize: zod.coerce
+    .number()
+    .min(1)
+    .max(leadsGetLeadsQueryPageSizeMax)
+    .default(leadsGetLeadsQueryPageSizeDefault)
+    .describe("Items per page. Defaults to 10, max 100."),
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Case-insensitive substring filter applied across lead title, city, state, and project type.",
+    ),
+  status: zod
+    .enum(["open", "in_negotiation", "won", "lost", "archived"])
+    .optional()
+    .describe("Restrict to leads with the given status."),
+});
+
+export const leadsGetLeadsResponseLeadsItemConfidenceMin = 0;
+export const leadsGetLeadsResponseLeadsItemConfidenceMax = 100;
+
+export const leadsGetLeadsResponsePaginationTotalItemsMin = 0;
+
+export const LeadsGetLeadsResponse = zod
+  .object({
+    leads: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          title: zod.string(),
+          streetAddress: zod.string().nullish(),
+          city: zod.string().nullish(),
+          state: zod.string().nullish(),
+          zipCode: zod.string().nullish(),
+          confidence: zod
+            .number()
+            .min(leadsGetLeadsResponseLeadsItemConfidenceMin)
+            .max(leadsGetLeadsResponseLeadsItemConfidenceMax)
+            .nullish(),
+          projectedSalesDate: zod.coerce.date().nullish(),
+          estimatedRevenueMin: zod
+            .string()
+            .nullish()
+            .describe("Decimal serialized as string."),
+          estimatedRevenueMax: zod
+            .string()
+            .nullish()
+            .describe("Decimal serialized as string."),
+          status: zod.enum([
+            "open",
+            "in_negotiation",
+            "won",
+            "lost",
+            "archived",
+          ]),
+          projectType: zod.string().nullish(),
+          leadSource: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date().nullish(),
+          createdByName: zod.string().nullish(),
+          clientContact: zod
+            .union([
+              zod
+                .object({
+                  id: zod.string().uuid(),
+                  leadId: zod.string().uuid().nullish(),
+                  displayName: zod.string().nullish(),
+                  email: zod.string().nullish(),
+                  phone: zod.string().nullish(),
+                  label: zod.string().nullish(),
+                })
+                .describe(
+                  "Primary contact summary surfaced on lead list rows. Null when the lead has no client contact assigned.",
+                ),
+              zod.null(),
+            ])
+            .describe(
+              "Primary client contact summary, or null when the lead has no client contact assigned.",
+            ),
+        })
+        .describe("A lead row returned by the paginated `GET \/leads` list."),
+    ),
+    pagination: zod
+      .object({
+        page: zod.number().min(1),
+        pageSize: zod.number().min(1),
+        totalItems: zod
+          .number()
+          .min(leadsGetLeadsResponsePaginationTotalItemsMin),
+        totalPages: zod.number().min(1),
+      })
+      .describe("Standard pagination metadata returned with list responses."),
+    summary: zod
+      .object({
+        estimatedRevenueMinTotal: zod
+          .string()
+          .describe("Decimal serialized as string."),
+        estimatedRevenueMaxTotal: zod
+          .string()
+          .describe("Decimal serialized as string."),
+      })
+      .describe(
+        "Aggregate revenue totals across all leads matching the query (not just the current page).",
+      ),
+  })
+  .describe(
+    "Response for `GET \/leads`. The `leads` array is restricted to leads the caller can access (admins see all).",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with leadPayloadSchema.
+ * @summary POST /leads
+ */
+export const LeadsPostLeadsBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from leadPayloadSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+  );
+
+/**
+ * Fetch a single lead with its contacts, salespeople, tags, sources, attachments, and the cross-lead `availableContacts` picker. The `availableContacts` collection is restricted to leads the caller can access — admins see contacts from every lead, other roles see contacts only from leads they own or are assigned to.
+ * @summary GET /leads/{id}
+ */
+export const leadsGetLeadsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsGetLeadsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(leadsGetLeadsIdPathIdRegExp),
+});
+
+export const leadsGetLeadsIdResponseLeadConfidenceMin = 0;
+export const leadsGetLeadsIdResponseLeadConfidenceMax = 100;
+
+export const LeadsGetLeadsIdResponse = zod
+  .object({
+    lead: zod
+      .object({
+        id: zod.string().uuid(),
+        title: zod.string(),
+        streetAddress: zod.string().nullish(),
+        city: zod.string().nullish(),
+        state: zod.string().nullish(),
+        zipCode: zod.string().nullish(),
+        confidence: zod
+          .number()
+          .min(leadsGetLeadsIdResponseLeadConfidenceMin)
+          .max(leadsGetLeadsIdResponseLeadConfidenceMax)
+          .nullish(),
+        projectedSalesDate: zod.coerce.date().nullish(),
+        estimatedRevenueMin: zod.string().nullish(),
+        estimatedRevenueMax: zod.string().nullish(),
+        status: zod.enum(["open", "in_negotiation", "won", "lost", "archived"]),
+        projectType: zod.string().nullish(),
+        notes: zod.string().nullish(),
+        leadSource: zod.string().nullish(),
+        createdBy: zod.string().uuid().nullish(),
+        createdByName: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date().nullish(),
+        clientContact: zod
+          .union([
+            zod
+              .object({
+                id: zod.string().uuid(),
+                leadId: zod.string().uuid().nullish(),
+                firstName: zod.string().nullish(),
+                lastName: zod.string().nullish(),
+                displayName: zod.string().nullish(),
+                streetAddress: zod.string().nullish(),
+                city: zod.string().nullish(),
+                state: zod.string().nullish(),
+                zipCode: zod.string().nullish(),
+                phone: zod.string().nullish(),
+                cellPhone: zod.string().nullish(),
+                email: zod.string().nullish(),
+                label: zod.string().nullish(),
+                createdAt: zod.coerce.date(),
+                updatedAt: zod.coerce.date().nullish(),
+              })
+              .describe(
+                "Full lead contact record returned in lead detail responses.",
+              ),
+            zod.null(),
+          ])
+          .describe(
+            "Primary client contact for the lead, or null when none is assigned.",
+          ),
+        contacts: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              leadId: zod.string().uuid().nullish(),
+              firstName: zod.string().nullish(),
+              lastName: zod.string().nullish(),
+              displayName: zod.string().nullish(),
+              streetAddress: zod.string().nullish(),
+              city: zod.string().nullish(),
+              state: zod.string().nullish(),
+              zipCode: zod.string().nullish(),
+              phone: zod.string().nullish(),
+              cellPhone: zod.string().nullish(),
+              email: zod.string().nullish(),
+              label: zod.string().nullish(),
+              createdAt: zod.coerce.date(),
+              updatedAt: zod.coerce.date().nullish(),
+            })
+            .describe(
+              "Full lead contact record returned in lead detail responses.",
+            ),
+        ),
+        salespeople: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fullName: zod.string().nullish(),
+              email: zod.string().nullish(),
+              role: zod.string().nullish(),
+              avatarUrl: zod.string().nullish(),
+            })
+            .describe("User assigned to a lead as a salesperson."),
+        ),
+        tags: zod.array(zod.string().describe("Tag name applied to a lead.")),
+        sources: zod.array(zod.string().describe("Lead source name.")),
+        attachments: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fileId: zod.string().uuid().nullish(),
+              originalName: zod.string().nullish(),
+              fileUrl: zod.string().nullish(),
+              fileSize: zod.number().nullish(),
+              mimeType: zod.string().nullish(),
+              createdAt: zod.coerce.date().nullish(),
+              uploadedByName: zod.string().nullish(),
+            })
+            .describe(
+              "File attached to a lead via the lead-attachments table.",
+            ),
+        ),
+        availableContacts: zod
+          .array(
+            zod
+              .object({
+                id: zod.string().uuid(),
+                leadId: zod.string().uuid().nullish(),
+                leadTitle: zod.string().nullish(),
+                displayName: zod.string().nullish(),
+                email: zod.string().nullish(),
+                phone: zod.string().nullish(),
+                cellPhone: zod.string().nullish(),
+                label: zod.string().nullish(),
+              })
+              .describe(
+                "Cross-lead contact entry. Only contacts whose lead the caller can access are surfaced.",
+              ),
+          )
+          .describe(
+            "Lead contacts from across the workspace, filtered to leads the caller can access (admins see all).",
+          ),
+      })
+      .describe(
+        "Full lead record returned by `GET \/leads\/{id}`, with embedded contacts, assignments, attachments, and the caller-filtered `availableContacts` collection.",
+      ),
+  })
+  .describe(
+    "Response for `GET \/leads\/{id}`. The embedded `lead.availableContacts` collection is filtered to leads the caller can access.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with leadPayloadSchema.
+ * @summary PUT /leads/{id}
+ */
+export const leadsPutLeadsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsPutLeadsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(leadsPutLeadsIdPathIdRegExp),
+});
+
+export const LeadsPutLeadsIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from leadPayloadSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+  );
+
+export const LeadsPutLeadsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary DELETE /leads/{id}
+ */
+export const leadsDeleteLeadsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsDeleteLeadsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(leadsDeleteLeadsIdPathIdRegExp),
+});
+
+export const LeadsDeleteLeadsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with contactCreateSchema.
+ * @summary POST /leads/{id}/contacts
+ */
+export const leadsPostLeadsIdContactsPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsPostLeadsIdContactsParams = zod.object({
+  id: zod.coerce.string().uuid().regex(leadsPostLeadsIdContactsPathIdRegExp),
+});
+
+export const LeadsPostLeadsIdContactsBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from contactCreateSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with contactUpdateSchema.
+ * @summary PUT /leads/{id}/contacts/{contactId}
+ */
+export const leadsPutLeadsIdContactsContactIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+export const leadsPutLeadsIdContactsContactIdPathContactIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsPutLeadsIdContactsContactIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsPutLeadsIdContactsContactIdPathIdRegExp),
+  contactId: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsPutLeadsIdContactsContactIdPathContactIdRegExp),
+});
+
+export const LeadsPutLeadsIdContactsContactIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from contactUpdateSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+  );
+
+export const LeadsPutLeadsIdContactsContactIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary DELETE /leads/{id}/contacts/{contactId}
+ */
+export const leadsDeleteLeadsIdContactsContactIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+export const leadsDeleteLeadsIdContactsContactIdPathContactIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const LeadsDeleteLeadsIdContactsContactIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsDeleteLeadsIdContactsContactIdPathIdRegExp),
+  contactId: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsDeleteLeadsIdContactsContactIdPathContactIdRegExp),
+});
+
+export const LeadsDeleteLeadsIdContactsContactIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary POST /leads/{id}/attachments
+ */
+export const leadsPostLeadsIdAttachmentsPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsPostLeadsIdAttachmentsParams = zod.object({
+  id: zod.coerce.string().uuid().regex(leadsPostLeadsIdAttachmentsPathIdRegExp),
+});
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary DELETE /leads/{id}/attachments/{attachmentId}
+ */
+export const leadsDeleteLeadsIdAttachmentsAttachmentIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+export const leadsDeleteLeadsIdAttachmentsAttachmentIdPathAttachmentIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const LeadsDeleteLeadsIdAttachmentsAttachmentIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsDeleteLeadsIdAttachmentsAttachmentIdPathIdRegExp),
+  attachmentId: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsDeleteLeadsIdAttachmentsAttachmentIdPathAttachmentIdRegExp),
+});
+
+export const LeadsDeleteLeadsIdAttachmentsAttachmentIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * @summary POST /leads/{id}/convert-to-job
+ */
+export const leadsPostLeadsIdConvertToJobPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsPostLeadsIdConvertToJobParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsPostLeadsIdConvertToJobPathIdRegExp),
+});
+
+/**
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with activityCreateSchema.
+ * @summary POST /leads/{id}/activities
+ */
+export const leadsPostLeadsIdActivitiesPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsPostLeadsIdActivitiesParams = zod.object({
+  id: zod.coerce.string().uuid().regex(leadsPostLeadsIdActivitiesPathIdRegExp),
+});
+
+export const LeadsPostLeadsIdActivitiesBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from activityCreateSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated query with folderListQuerySchema.
+ * @summary GET /jobs/{jobId}/folders
+ */
+export const foldersGetJobsJobIdFoldersPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersGetJobsJobIdFoldersParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(foldersGetJobsJobIdFoldersPathJobIdRegExp),
+});
+
+export const FoldersGetJobsJobIdFoldersResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with folderBodySchema.
+ * @summary POST /jobs/{jobId}/folders
+ */
+export const foldersPostJobsJobIdFoldersPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersPostJobsJobIdFoldersParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(foldersPostJobsJobIdFoldersPathJobIdRegExp),
+});
+
+export const FoldersPostJobsJobIdFoldersBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from folderBodySchema in artifacts\/api-server\/src\/routes\/folders.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with folderUpdateSchema.
+ * @summary PUT /folders/{id}
+ */
+export const foldersPutFoldersIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersPutFoldersIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(foldersPutFoldersIdPathIdRegExp),
+});
+
+export const FoldersPutFoldersIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from folderUpdateSchema in artifacts\/api-server\/src\/routes\/folders.ts.",
+  );
+
+export const FoldersPutFoldersIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary DELETE /folders/{id}
+ */
+export const foldersDeleteFoldersIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersDeleteFoldersIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(foldersDeleteFoldersIdPathIdRegExp),
+});
+
+export const FoldersDeleteFoldersIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary POST /folders/{id}/copy
+ */
+export const foldersPostFoldersIdCopyPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersPostFoldersIdCopyParams = zod.object({
+  id: zod.coerce.string().uuid().regex(foldersPostFoldersIdCopyPathIdRegExp),
+});
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with moveFolderSchema.
+ * @summary PUT /folders/{id}/move
+ */
+export const foldersPutFoldersIdMovePathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersPutFoldersIdMoveParams = zod.object({
+  id: zod.coerce.string().uuid().regex(foldersPutFoldersIdMovePathIdRegExp),
+});
+
+export const FoldersPutFoldersIdMoveBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from moveFolderSchema in artifacts\/api-server\/src\/routes\/folders.ts.",
+  );
+
+export const FoldersPutFoldersIdMoveResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary POST /folders/{id}/restore
+ */
+export const foldersPostFoldersIdRestorePathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersPostFoldersIdRestoreParams = zod.object({
+  id: zod.coerce.string().uuid().regex(foldersPostFoldersIdRestorePathIdRegExp),
+});
+
+export const FoldersPostFoldersIdRestoreResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary DELETE /folders/{id}/purge
+ */
+export const foldersDeleteFoldersIdPurgePathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersDeleteFoldersIdPurgeParams = zod.object({
+  id: zod.coerce.string().uuid().regex(foldersDeleteFoldersIdPurgePathIdRegExp),
+});
+
+export const FoldersDeleteFoldersIdPurgeResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts.
+ * @summary GET /folders/{id}/download
+ */
+export const foldersGetFoldersIdDownloadPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersGetFoldersIdDownloadParams = zod.object({
+  id: zod.coerce.string().uuid().regex(foldersGetFoldersIdDownloadPathIdRegExp),
+});
+
+export const FoldersGetFoldersIdDownloadResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated query with trashQuerySchema.
+ * @summary GET /jobs/{jobId}/trash
+ */
+export const foldersGetJobsJobIdTrashPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersGetJobsJobIdTrashParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(foldersGetJobsJobIdTrashPathJobIdRegExp),
+});
+
+export const FoldersGetJobsJobIdTrashResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/folders.ts. Validated query with trashQuerySchema.
+ * @summary DELETE /jobs/{jobId}/trash
+ */
+export const foldersDeleteJobsJobIdTrashPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersDeleteJobsJobIdTrashParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(foldersDeleteJobsJobIdTrashPathJobIdRegExp),
+});
+
+export const FoldersDeleteJobsJobIdTrashResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts. Validated query with fileListQuerySchema.
+ * @summary GET /folders/{id}/files
+ */
+export const filesGetFoldersIdFilesPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FilesGetFoldersIdFilesParams = zod.object({
+  id: zod.coerce.string().uuid().regex(filesGetFoldersIdFilesPathIdRegExp),
+});
+
+export const FilesGetFoldersIdFilesResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary POST /folders/{id}/files
+ */
+export const filesPostFoldersIdFilesPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FilesPostFoldersIdFilesParams = zod.object({
+  id: zod.coerce.string().uuid().regex(filesPostFoldersIdFilesPathIdRegExp),
+});
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts. Validated request body with renameFileSchema.
+ * @summary PUT /files/{id}
+ */
+export const filesPutFilesIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FilesPutFilesIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(filesPutFilesIdPathIdRegExp),
+});
+
+export const FilesPutFilesIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from renameFileSchema in artifacts\/api-server\/src\/routes\/files.ts.",
+  );
+
+export const FilesPutFilesIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary DELETE /files/{id}
+ */
+export const filesDeleteFilesIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FilesDeleteFilesIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(filesDeleteFilesIdPathIdRegExp),
+});
+
+export const FilesDeleteFilesIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary POST /files/{id}/restore
+ */
+export const filesPostFilesIdRestorePathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FilesPostFilesIdRestoreParams = zod.object({
+  id: zod.coerce.string().uuid().regex(filesPostFilesIdRestorePathIdRegExp),
+});
+
+export const FilesPostFilesIdRestoreResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary DELETE /files/{id}/purge
+ */
+export const filesDeleteFilesIdPurgePathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FilesDeleteFilesIdPurgeParams = zod.object({
+  id: zod.coerce.string().uuid().regex(filesDeleteFilesIdPurgePathIdRegExp),
+});
+
+export const FilesDeleteFilesIdPurgeResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/files.ts.
+ * @summary GET /files/{id}/download
+ */
+export const filesGetFilesIdDownloadPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FilesGetFilesIdDownloadParams = zod.object({
+  id: zod.coerce.string().uuid().regex(filesGetFilesIdDownloadPathIdRegExp),
+});
+
+export const FilesGetFilesIdDownloadResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with dailyLogListQuerySchema.
+ * @summary GET /jobs/{jobId}/daily-logs
+ */
+export const dailyLogsGetJobsJobIdDailyLogsPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsGetJobsJobIdDailyLogsParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsGetJobsJobIdDailyLogsPathJobIdRegExp),
+});
+
+export const DailyLogsGetJobsJobIdDailyLogsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with dailyLogPayloadSchema.
+ * @summary POST /jobs/{jobId}/daily-logs
+ */
+export const dailyLogsPostJobsJobIdDailyLogsPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsPostJobsJobIdDailyLogsParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsPostJobsJobIdDailyLogsPathJobIdRegExp),
+});
+
+export const DailyLogsPostJobsJobIdDailyLogsBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from dailyLogPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary GET /daily-logs/{id}
+ */
+export const dailyLogsGetDailyLogsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsGetDailyLogsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(dailyLogsGetDailyLogsIdPathIdRegExp),
+});
+
+export const DailyLogsGetDailyLogsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with dailyLogPayloadSchema.
+ * @summary PUT /daily-logs/{id}
+ */
+export const dailyLogsPutDailyLogsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsPutDailyLogsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(dailyLogsPutDailyLogsIdPathIdRegExp),
+});
+
+export const DailyLogsPutDailyLogsIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from dailyLogPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+  );
+
+export const DailyLogsPutDailyLogsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary DELETE /daily-logs/{id}
+ */
+export const dailyLogsDeleteDailyLogsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsDeleteDailyLogsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(dailyLogsDeleteDailyLogsIdPathIdRegExp),
+});
+
+export const DailyLogsDeleteDailyLogsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary POST /daily-logs/{id}/publish
+ */
+export const dailyLogsPostDailyLogsIdPublishPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsPostDailyLogsIdPublishParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsPostDailyLogsIdPublishPathIdRegExp),
+});
+
+export const DailyLogsPostDailyLogsIdPublishResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with weatherQuerySchema.
+ * @summary GET /weather
+ */
+export const DailyLogsGetWeatherResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary POST /daily-logs/{id}/like
+ */
+export const dailyLogsPostDailyLogsIdLikePathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsPostDailyLogsIdLikeParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsPostDailyLogsIdLikePathIdRegExp),
+});
+
+export const DailyLogsPostDailyLogsIdLikeResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary GET /daily-logs/{id}/comments
+ */
+export const dailyLogsGetDailyLogsIdCommentsPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsGetDailyLogsIdCommentsParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsGetDailyLogsIdCommentsPathIdRegExp),
+});
+
+export const DailyLogsGetDailyLogsIdCommentsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with commentPayloadSchema.
+ * @summary POST /daily-logs/{id}/comments
+ */
+export const dailyLogsPostDailyLogsIdCommentsPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsPostDailyLogsIdCommentsParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsPostDailyLogsIdCommentsPathIdRegExp),
+});
+
+export const DailyLogsPostDailyLogsIdCommentsBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from commentPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with commentReactionPayloadSchema.
+ * @summary POST /daily-logs/{id}/comments/{commentId}/reactions
+ */
+export const dailyLogsPostDailyLogsIdCommentsCommentIdReactionsPathIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const dailyLogsPostDailyLogsIdCommentsCommentIdReactionsPathCommentIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsParams =
+  zod.object({
+    id: zod.coerce
+      .string()
+      .uuid()
+      .regex(dailyLogsPostDailyLogsIdCommentsCommentIdReactionsPathIdRegExp),
+    commentId: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        dailyLogsPostDailyLogsIdCommentsCommentIdReactionsPathCommentIdRegExp,
+      ),
+  });
+
+export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from commentReactionPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+  );
+
+export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with todoPayloadSchema.
+ * @summary POST /daily-logs/{id}/todos
+ */
+export const dailyLogsPostDailyLogsIdTodosPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsPostDailyLogsIdTodosParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsPostDailyLogsIdTodosPathIdRegExp),
+});
+
+export const DailyLogsPostDailyLogsIdTodosBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from todoPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with todoTogglePayloadSchema.
+ * @summary POST /daily-logs/{id}/todos/{todoId}/toggle
+ */
+export const dailyLogsPostDailyLogsIdTodosTodoIdTogglePathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+export const dailyLogsPostDailyLogsIdTodosTodoIdTogglePathTodoIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const DailyLogsPostDailyLogsIdTodosTodoIdToggleParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsPostDailyLogsIdTodosTodoIdTogglePathIdRegExp),
+  todoId: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsPostDailyLogsIdTodosTodoIdTogglePathTodoIdRegExp),
+});
+
+export const DailyLogsPostDailyLogsIdTodosTodoIdToggleBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from todoTogglePayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+  );
+
+export const DailyLogsPostDailyLogsIdTodosTodoIdToggleResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary POST /daily-logs/{id}/attachments
+ */
+export const dailyLogsPostDailyLogsIdAttachmentsPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const DailyLogsPostDailyLogsIdAttachmentsParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsPostDailyLogsIdAttachmentsPathIdRegExp),
+});
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
+ * @summary DELETE /daily-logs/{id}/attachments/{attachmentId}
+ */
+export const dailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdPathIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const dailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdPathAttachmentIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdParams =
+  zod.object({
+    id: zod.coerce
+      .string()
+      .uuid()
+      .regex(dailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdPathIdRegExp),
+    attachmentId: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        dailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdPathAttachmentIdRegExp,
+      ),
+  });
+
+export const DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary GET /daily-logs/settings
+ */
+export const DailyLogAdminGetDailyLogsSettingsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary PUT /daily-logs/settings
+ */
+export const DailyLogAdminPutDailyLogsSettingsBody = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+export const DailyLogAdminPutDailyLogsSettingsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary GET /daily-logs/custom-fields
+ */
+export const DailyLogAdminGetDailyLogsCustomFieldsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary POST /daily-logs/custom-fields
+ */
+export const DailyLogAdminPostDailyLogsCustomFieldsBody = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary PUT /daily-logs/custom-fields/{fieldId}
+ */
+export const dailyLogAdminPutDailyLogsCustomFieldsFieldIdPathFieldIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const DailyLogAdminPutDailyLogsCustomFieldsFieldIdParams = zod.object({
+  fieldId: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogAdminPutDailyLogsCustomFieldsFieldIdPathFieldIdRegExp),
+});
+
+export const DailyLogAdminPutDailyLogsCustomFieldsFieldIdBody = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+export const DailyLogAdminPutDailyLogsCustomFieldsFieldIdResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
+ * @summary DELETE /daily-logs/custom-fields/{fieldId}
+ */
+export const dailyLogAdminDeleteDailyLogsCustomFieldsFieldIdPathFieldIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdParams = zod.object(
+  {
+    fieldId: zod.coerce
+      .string()
+      .uuid()
+      .regex(dailyLogAdminDeleteDailyLogsCustomFieldsFieldIdPathFieldIdRegExp),
+  },
+);
+
+export const DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts. Validated query with myDailyLogsQuerySchema.
+ * @summary GET /daily-logs/mine
+ */
+export const DailyLogAdminGetDailyLogsMineResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/schedule/settings
+ */
+export const scheduleGetJobsJobIdScheduleSettingsPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ScheduleGetJobsJobIdScheduleSettingsParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleGetJobsJobIdScheduleSettingsPathJobIdRegExp),
+});
+
+export const ScheduleGetJobsJobIdScheduleSettingsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary PUT /jobs/{jobId}/schedule/settings
+ */
+export const schedulePutJobsJobIdScheduleSettingsPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePutJobsJobIdScheduleSettingsParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePutJobsJobIdScheduleSettingsPathJobIdRegExp),
+});
+
+export const SchedulePutJobsJobIdScheduleSettingsBody = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+export const SchedulePutJobsJobIdScheduleSettingsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule/settings/phases
+ */
+export const schedulePostJobsJobIdScheduleSettingsPhasesPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePostJobsJobIdScheduleSettingsPhasesParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostJobsJobIdScheduleSettingsPhasesPathJobIdRegExp),
+});
+
+export const SchedulePostJobsJobIdScheduleSettingsPhasesBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from schedulePhasePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
+ * @summary PUT /jobs/{jobId}/schedule/settings/phases/{phaseId}
+ */
+export const schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdPathPhaseIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdParams =
+  zod.object({
+    jobId: zod.coerce
+      .string()
+      .uuid()
+      .regex(schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdPathJobIdRegExp),
+    phaseId: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdPathPhaseIdRegExp,
+      ),
+  });
+
+export const SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from schedulePhasePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+  );
+
+export const SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/schedule/phases
+ */
+export const scheduleGetJobsJobIdSchedulePhasesPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ScheduleGetJobsJobIdSchedulePhasesParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleGetJobsJobIdSchedulePhasesPathJobIdRegExp),
+});
+
+export const ScheduleGetJobsJobIdSchedulePhasesResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule/phases
+ */
+export const schedulePostJobsJobIdSchedulePhasesPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePostJobsJobIdSchedulePhasesParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostJobsJobIdSchedulePhasesPathJobIdRegExp),
+});
+
+export const SchedulePostJobsJobIdSchedulePhasesBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from schedulePhasePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
+ * @summary PUT /jobs/{jobId}/schedule/phases/{phaseId}
+ */
+export const schedulePutJobsJobIdSchedulePhasesPhaseIdPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const schedulePutJobsJobIdSchedulePhasesPhaseIdPathPhaseIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePutJobsJobIdSchedulePhasesPhaseIdParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePutJobsJobIdSchedulePhasesPhaseIdPathJobIdRegExp),
+  phaseId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePutJobsJobIdSchedulePhasesPhaseIdPathPhaseIdRegExp),
+});
+
+export const SchedulePutJobsJobIdSchedulePhasesPhaseIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from schedulePhasePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+  );
+
+export const SchedulePutJobsJobIdSchedulePhasesPhaseIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /jobs/{jobId}/schedule/phases/{phaseId}
+ */
+export const scheduleDeleteJobsJobIdSchedulePhasesPhaseIdPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const scheduleDeleteJobsJobIdSchedulePhasesPhaseIdPathPhaseIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleDeleteJobsJobIdSchedulePhasesPhaseIdPathJobIdRegExp),
+  phaseId: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleDeleteJobsJobIdSchedulePhasesPhaseIdPathPhaseIdRegExp),
+});
+
+export const ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleSettingPayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule/settings/tags
+ */
+export const schedulePostJobsJobIdScheduleSettingsTagsPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePostJobsJobIdScheduleSettingsTagsParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostJobsJobIdScheduleSettingsTagsPathJobIdRegExp),
+});
+
+export const SchedulePostJobsJobIdScheduleSettingsTagsBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from scheduleSettingPayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleSettingPayloadSchema.
+ * @summary PUT /jobs/{jobId}/schedule/settings/tags/{tagId}
+ */
+export const schedulePutJobsJobIdScheduleSettingsTagsTagIdPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const schedulePutJobsJobIdScheduleSettingsTagsTagIdPathTagIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePutJobsJobIdScheduleSettingsTagsTagIdParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePutJobsJobIdScheduleSettingsTagsTagIdPathJobIdRegExp),
+  tagId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePutJobsJobIdScheduleSettingsTagsTagIdPathTagIdRegExp),
+});
+
+export const SchedulePutJobsJobIdScheduleSettingsTagsTagIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from scheduleSettingPayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+  );
+
+export const SchedulePutJobsJobIdScheduleSettingsTagsTagIdResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/schedule/baseline
+ */
+export const scheduleGetJobsJobIdScheduleBaselinePathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ScheduleGetJobsJobIdScheduleBaselineParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleGetJobsJobIdScheduleBaselinePathJobIdRegExp),
+});
+
+export const ScheduleGetJobsJobIdScheduleBaselineResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /jobs/{jobId}/schedule/baseline
+ */
+export const schedulePostJobsJobIdScheduleBaselinePathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePostJobsJobIdScheduleBaselineParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostJobsJobIdScheduleBaselinePathJobIdRegExp),
+});
+
+export const SchedulePostJobsJobIdScheduleBaselineResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary PUT /jobs/{jobId}/schedule/baseline
+ */
+export const schedulePutJobsJobIdScheduleBaselinePathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePutJobsJobIdScheduleBaselineParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePutJobsJobIdScheduleBaselinePathJobIdRegExp),
+});
+
+export const SchedulePutJobsJobIdScheduleBaselineResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /jobs/{jobId}/schedule/baseline
+ */
+export const scheduleDeleteJobsJobIdScheduleBaselinePathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const ScheduleDeleteJobsJobIdScheduleBaselineParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleDeleteJobsJobIdScheduleBaselinePathJobIdRegExp),
+});
+
+export const ScheduleDeleteJobsJobIdScheduleBaselineResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /jobs/{jobId}/workday-exceptions/categories
+ */
+export const schedulePostJobsJobIdWorkdayExceptionsCategoriesPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePostJobsJobIdWorkdayExceptionsCategoriesParams =
+  zod.object({
+    jobId: zod.coerce
+      .string()
+      .uuid()
+      .regex(schedulePostJobsJobIdWorkdayExceptionsCategoriesPathJobIdRegExp),
+  });
+
+export const SchedulePostJobsJobIdWorkdayExceptionsCategoriesBody = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary PUT /jobs/{jobId}/workday-exceptions/categories/{categoryId}
+ */
+export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdPathCategoryIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdParams =
+  zod.object({
+    jobId: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdPathJobIdRegExp,
+      ),
+    categoryId: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdPathCategoryIdRegExp,
+      ),
+  });
+
+export const SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdBody =
+  zod.record(zod.string(), zod.unknown());
+
+export const SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/workday-exceptions
+ */
+export const scheduleGetJobsJobIdWorkdayExceptionsPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ScheduleGetJobsJobIdWorkdayExceptionsParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleGetJobsJobIdWorkdayExceptionsPathJobIdRegExp),
+});
+
+export const ScheduleGetJobsJobIdWorkdayExceptionsResponse = zod.unknown();
+
+/**
+ * Create a workday exception (a non-workday or extra-workday) attached to one or more jobs, or to every active job when `appliesToAllJobs` is true. The path `jobId` only scopes the call — the actual job set comes from the request body's `jobIds` (or all jobs when `appliesToAllJobs` is true). Only admins can create company-wide exceptions; other roles can only target jobs they manage.
+ * @summary POST /jobs/{jobId}/workday-exceptions
+ */
+export const schedulePostJobsJobIdWorkdayExceptionsPathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePostJobsJobIdWorkdayExceptionsParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostJobsJobIdWorkdayExceptionsPathJobIdRegExp),
+});
+
+export const schedulePostJobsJobIdWorkdayExceptionsBodyTitleMax = 255;
+
+export const schedulePostJobsJobIdWorkdayExceptionsBodyStartDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const schedulePostJobsJobIdWorkdayExceptionsBodyEndDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const schedulePostJobsJobIdWorkdayExceptionsBodySameEveryYearDefault = false;
+export const schedulePostJobsJobIdWorkdayExceptionsBodyAppliesToAllJobsDefault = false;
+export const schedulePostJobsJobIdWorkdayExceptionsBodyJobIdsDefault = [];
+
+export const SchedulePostJobsJobIdWorkdayExceptionsBody = zod
+  .object({
+    title: zod
+      .string()
+      .min(1)
+      .max(schedulePostJobsJobIdWorkdayExceptionsBodyTitleMax),
+    type: zod.enum(["non_workday", "extra_workday"]),
+    startDate: zod
+      .string()
+      .regex(schedulePostJobsJobIdWorkdayExceptionsBodyStartDateRegExp),
+    endDate: zod
+      .string()
+      .regex(schedulePostJobsJobIdWorkdayExceptionsBodyEndDateRegExp),
+    sameEveryYear: zod
+      .boolean()
+      .default(schedulePostJobsJobIdWorkdayExceptionsBodySameEveryYearDefault),
+    categoryId: zod.string().uuid().nullish(),
+    appliesToAllJobs: zod
+      .boolean()
+      .default(
+        schedulePostJobsJobIdWorkdayExceptionsBodyAppliesToAllJobsDefault,
+      )
+      .describe(
+        "When true, applies the exception to every active job. Admin role required.",
+      ),
+    jobIds: zod
+      .array(zod.string().uuid())
+      .default(schedulePostJobsJobIdWorkdayExceptionsBodyJobIdsDefault),
+    notes: zod.string().nullish(),
+  })
+  .describe(
+    "Request body for `POST \/jobs\/{jobId}\/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.",
+  );
+
+/**
+ * Update an existing workday exception. Omitted fields keep their previous value. Only admins can flip the exception into or out of a company-wide state (`appliesToAllJobs: true`); other roles must keep it scoped to specific jobs they manage.
+ * @summary PUT /jobs/{jobId}/workday-exceptions/{exceptionId}
+ */
+export const schedulePutJobsJobIdWorkdayExceptionsExceptionIdPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const schedulePutJobsJobIdWorkdayExceptionsExceptionIdPathExceptionIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePutJobsJobIdWorkdayExceptionsExceptionIdParams =
+  zod.object({
+    jobId: zod.coerce
+      .string()
+      .uuid()
+      .regex(schedulePutJobsJobIdWorkdayExceptionsExceptionIdPathJobIdRegExp),
+    exceptionId: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        schedulePutJobsJobIdWorkdayExceptionsExceptionIdPathExceptionIdRegExp,
+      ),
+  });
+
+export const schedulePutJobsJobIdWorkdayExceptionsExceptionIdBodyTitleMax = 255;
+
+export const schedulePutJobsJobIdWorkdayExceptionsExceptionIdBodyStartDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const schedulePutJobsJobIdWorkdayExceptionsExceptionIdBodyEndDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+
+export const SchedulePutJobsJobIdWorkdayExceptionsExceptionIdBody = zod
+  .object({
+    title: zod
+      .string()
+      .min(1)
+      .max(schedulePutJobsJobIdWorkdayExceptionsExceptionIdBodyTitleMax)
+      .optional(),
+    type: zod.enum(["non_workday", "extra_workday"]).optional(),
+    startDate: zod
+      .string()
+      .regex(
+        schedulePutJobsJobIdWorkdayExceptionsExceptionIdBodyStartDateRegExp,
+      )
+      .optional(),
+    endDate: zod
+      .string()
+      .regex(schedulePutJobsJobIdWorkdayExceptionsExceptionIdBodyEndDateRegExp)
+      .optional(),
+    sameEveryYear: zod.boolean().optional(),
+    categoryId: zod.string().uuid().nullish(),
+    appliesToAllJobs: zod.boolean().optional(),
+    jobIds: zod.array(zod.string().uuid()).optional(),
+    notes: zod.string().nullish(),
+  })
+  .describe(
+    "Request body for `PUT \/jobs\/{jobId}\/workday-exceptions\/{exceptionId}`. All fields are optional; omitted fields keep their previous value. Toggling `appliesToAllJobs` is admin-only.",
+  );
+
+export const SchedulePutJobsJobIdWorkdayExceptionsExceptionIdResponse = zod
+  .object({
+    exception: zod
+      .object({
+        id: zod.string().uuid(),
+        title: zod.string(),
+        type: zod.enum(["non_workday", "extra_workday"]),
+        startDate: zod.coerce.date(),
+        endDate: zod.coerce.date(),
+        sameEveryYear: zod.boolean().nullish(),
+        categoryId: zod.string().uuid().nullish(),
+        appliesToAllJobs: zod
+          .boolean()
+          .nullish()
+          .describe(
+            "When true, the exception applies to every active job. Only admins can create, update, or delete company-wide exceptions.",
+          ),
+        jobIds: zod
+          .array(zod.string().uuid())
+          .nullish()
+          .describe(
+            "When `appliesToAllJobs` is false, the explicit list of job IDs the exception applies to.",
+          ),
+        notes: zod.string().nullish(),
+        createdBy: zod.string().uuid().nullish(),
+        createdAt: zod.coerce.date().nullish(),
+        updatedAt: zod.coerce.date().nullish(),
+      })
+      .describe(
+        "A workday exception (non-workday or extra-workday) attached to one or more jobs, or applied company-wide when `appliesToAllJobs` is true.",
+      ),
+  })
+  .describe("Response wrapper for create\/update workday-exception endpoints.");
+
+/**
+ * Delete a workday exception. Only admins can delete company-wide exceptions (`appliesToAllJobs: true`); other roles can only delete exceptions whose affected jobs they all manage.
+ * @summary DELETE /jobs/{jobId}/workday-exceptions/{exceptionId}
+ */
+export const scheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const scheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdPathExceptionIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const ScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdParams =
+  zod.object({
+    jobId: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        scheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdPathJobIdRegExp,
+      ),
+    exceptionId: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        scheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdPathExceptionIdRegExp,
+      ),
+  });
+
+export const ScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /jobs/{jobId}/schedule/track-conflicts
+ */
+export const schedulePostJobsJobIdScheduleTrackConflictsPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePostJobsJobIdScheduleTrackConflictsParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostJobsJobIdScheduleTrackConflictsPathJobIdRegExp),
+});
+
+export const SchedulePostJobsJobIdScheduleTrackConflictsResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /jobs/{jobId}/schedule/notify-assigned-users
+ */
+export const schedulePostJobsJobIdScheduleNotifyAssignedUsersPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePostJobsJobIdScheduleNotifyAssignedUsersParams =
+  zod.object({
+    jobId: zod.coerce
+      .string()
+      .uuid()
+      .regex(schedulePostJobsJobIdScheduleNotifyAssignedUsersPathJobIdRegExp),
+  });
+
+export const SchedulePostJobsJobIdScheduleNotifyAssignedUsersResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /jobs/{jobId}/schedule
+ */
+export const scheduleGetJobsJobIdSchedulePathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ScheduleGetJobsJobIdScheduleParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleGetJobsJobIdSchedulePathJobIdRegExp),
+});
+
+export const ScheduleGetJobsJobIdScheduleResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule
+ */
+export const schedulePostJobsJobIdSchedulePathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePostJobsJobIdScheduleParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostJobsJobIdSchedulePathJobIdRegExp),
+});
+
+export const SchedulePostJobsJobIdScheduleBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from schedulePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary GET /schedule-items/{id}
+ */
+export const scheduleGetScheduleItemsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ScheduleGetScheduleItemsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(scheduleGetScheduleItemsIdPathIdRegExp),
+});
+
+export const ScheduleGetScheduleItemsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePayloadSchema.
+ * @summary PUT /schedule-items/{id}
+ */
+export const schedulePutScheduleItemsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePutScheduleItemsIdParams = zod.object({
+  id: zod.coerce.string().uuid().regex(schedulePutScheduleItemsIdPathIdRegExp),
+});
+
+export const SchedulePutScheduleItemsIdBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from schedulePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+  );
+
+export const SchedulePutScheduleItemsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /schedule-items/{id}
+ */
+export const scheduleDeleteScheduleItemsIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const ScheduleDeleteScheduleItemsIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleDeleteScheduleItemsIdPathIdRegExp),
+});
+
+export const ScheduleDeleteScheduleItemsIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /schedule-items/{id}/todos
+ */
+export const schedulePostScheduleItemsIdTodosPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePostScheduleItemsIdTodosParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostScheduleItemsIdTodosPathIdRegExp),
+});
+
+export const SchedulePostScheduleItemsIdTodosBody = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary PUT /schedule-items/{id}/todos/{todoId}
+ */
+export const schedulePutScheduleItemsIdTodosTodoIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+export const schedulePutScheduleItemsIdTodosTodoIdPathTodoIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePutScheduleItemsIdTodosTodoIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePutScheduleItemsIdTodosTodoIdPathIdRegExp),
+  todoId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePutScheduleItemsIdTodosTodoIdPathTodoIdRegExp),
+});
+
+export const SchedulePutScheduleItemsIdTodosTodoIdBody = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+export const SchedulePutScheduleItemsIdTodosTodoIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /schedule-items/{id}/todos/{todoId}
+ */
+export const scheduleDeleteScheduleItemsIdTodosTodoIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+export const scheduleDeleteScheduleItemsIdTodosTodoIdPathTodoIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const ScheduleDeleteScheduleItemsIdTodosTodoIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleDeleteScheduleItemsIdTodosTodoIdPathIdRegExp),
+  todoId: zod.coerce
+    .string()
+    .uuid()
+    .regex(scheduleDeleteScheduleItemsIdTodosTodoIdPathTodoIdRegExp),
+});
+
+export const ScheduleDeleteScheduleItemsIdTodosTodoIdResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleNotePayloadSchema.
+ * @summary POST /schedule-items/{id}/notes
+ */
+export const schedulePostScheduleItemsIdNotesPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePostScheduleItemsIdNotesParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostScheduleItemsIdNotesPathIdRegExp),
+});
+
+export const SchedulePostScheduleItemsIdNotesBody = zod
+  .record(zod.string(), zod.unknown())
+  .describe(
+    "Request schema derived from scheduleNotePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+  );
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /schedule-items/{id}/attachments
+ */
+export const schedulePostScheduleItemsIdAttachmentsPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const SchedulePostScheduleItemsIdAttachmentsParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostScheduleItemsIdAttachmentsPathIdRegExp),
+});
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary POST /schedule-items/{id}/attachments/new-doc
+ */
+export const schedulePostScheduleItemsIdAttachmentsNewDocPathIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePostScheduleItemsIdAttachmentsNewDocParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostScheduleItemsIdAttachmentsNewDocPathIdRegExp),
+});
+
+export const SchedulePostScheduleItemsIdAttachmentsNewDocBody = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
+ * Route defined in artifacts/api-server/src/routes/schedule.ts.
+ * @summary DELETE /schedule-items/{id}/attachments/{attachmentId}
+ */
+export const scheduleDeleteScheduleItemsIdAttachmentsAttachmentIdPathIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const scheduleDeleteScheduleItemsIdAttachmentsAttachmentIdPathAttachmentIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdParams =
+  zod.object({
+    id: zod.coerce
+      .string()
+      .uuid()
+      .regex(scheduleDeleteScheduleItemsIdAttachmentsAttachmentIdPathIdRegExp),
+    attachmentId: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        scheduleDeleteScheduleItemsIdAttachmentsAttachmentIdPathAttachmentIdRegExp,
+      ),
+  });
+
+export const ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdResponse =
+  zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/dashboard.ts.
+ * @summary GET /dashboard/stats
+ */
+export const DashboardGetDashboardStatsResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/dashboard.ts.
+ * @summary GET /dashboard/agenda
+ */
+export const DashboardGetDashboardAgendaResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/dashboard.ts.
+ * @summary GET /dashboard/schedule
+ */
+export const DashboardGetDashboardScheduleResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/activity.ts. Validated query with querySchema.
+ * @summary GET /activity
+ */
+export const ActivityGetActivityResponse = zod.unknown();
+
+/**
+ * Route defined in artifacts/api-server/src/routes/search.ts. Validated query with querySchema. Returns results paged through the {results, pagination} envelope so callers can scroll past the first page of matches.
+ * @summary GET /search
+ */
+export const searchGetSearchQueryQMax = 100;
+
+export const searchGetSearchQueryPageDefault = 1;
+export const searchGetSearchQueryPageMax = 20;
+
+export const searchGetSearchQueryPageSizeDefault = 10;
+export const searchGetSearchQueryPageSizeMax = 25;
+
+export const SearchGetSearchQueryParams = zod.object({
+  q: zod.coerce
+    .string()
+    .min(1)
+    .max(searchGetSearchQueryQMax)
+    .describe("Search term. 1-100 characters, trimmed."),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .max(searchGetSearchQueryPageMax)
+    .default(searchGetSearchQueryPageDefault)
+    .describe("1-indexed page of results. Capped at 20."),
+  pageSize: zod.coerce
+    .number()
+    .min(1)
+    .max(searchGetSearchQueryPageSizeMax)
+    .default(searchGetSearchQueryPageSizeDefault)
+    .describe("Number of results per page. Capped at 25."),
+});
+
+export const SearchGetSearchResponse = zod.object({
+  results: zod.array(
+    zod.object({
+      id: zod.string(),
+      type: zod.enum(["job", "lead", "file", "schedule", "client"]),
+      title: zod.string(),
+      subtitle: zod.string().optional(),
+      href: zod.string(),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number().min(1),
+    pageSize: zod.number().min(1),
+    hasMore: zod.boolean(),
+  }),
+});
+
+/**
+ * Route defined in artifacts/api-server/src/routes/health.ts.
+ * @summary GET /healthz
+ */
+export const HealthGetHealthzResponse = zod.object({
   status: zod.string(),
 });

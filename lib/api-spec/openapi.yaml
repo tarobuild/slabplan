@@ -564,14 +564,14 @@
           "clients"
         ],
         "summary": "GET /clients",
-        "description": "Route defined in artifacts/api-server/src/routes/clients.ts. Validated query with clientListQuerySchema.",
+        "description": "List clients the caller can access, paginated and optionally filtered by search term. Each row includes a primary contact summary and the per-client `jobCount` / `openJobCount`, which are computed only over jobs the caller can access (admins see every job). Requires manager role or above.",
         "responses": {
           "200": {
-            "description": "Successful response",
+            "description": "Paginated list of clients visible to the caller.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ClientListResponse"
                 }
               }
             }
@@ -597,7 +597,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Returned when the caller does not have the manager-or-above role required to list clients.",
             "content": {
               "application/json": {
                 "schema": {
@@ -609,6 +609,29 @@
         },
         "x-source-file": "artifacts/api-server/src/routes/clients.ts",
         "x-zod-query-schema": "clientListQuerySchema",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "1-indexed page number. Defaults to 1.",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "Items per page. Defaults to 20, max 100.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Case-insensitive substring filter applied across company name, email, and city.",
+            "schema": { "type": "string" }
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -690,14 +713,14 @@
           "clients"
         ],
         "summary": "GET /clients/{id}",
-        "description": "Route defined in artifacts/api-server/src/routes/clients.ts.",
+        "description": "Fetch a single client with its contacts and the jobs the caller can access. Admins see every job for the client; non-admins see only jobs they have access to.",
         "responses": {
           "200": {
-            "description": "Successful response",
+            "description": "Client details with embedded contacts and caller-visible jobs.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ClientDetailResponse"
                 }
               }
             }
@@ -723,7 +746,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Returned when the caller cannot access this client.",
             "content": {
               "application/json": {
                 "schema": {
@@ -733,7 +756,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Returned when the client does not exist or has been soft-deleted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1106,14 +1129,14 @@
           "clients"
         ],
         "summary": "GET /clients/{id}/jobs",
-        "description": "Route defined in artifacts/api-server/src/routes/clients.ts.",
+        "description": "List the jobs belonging to a client, filtered to those the caller can access. Admins receive every job for the client; non-admins receive only their accessible subset.",
         "responses": {
           "200": {
-            "description": "Successful response",
+            "description": "Jobs belonging to the client that are visible to the caller.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ClientJobsResponse"
                 }
               }
             }
@@ -1139,7 +1162,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Returned when the caller cannot access this client.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1149,7 +1172,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Returned when the client does not exist or has been soft-deleted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1748,14 +1771,14 @@
           "leads"
         ],
         "summary": "GET /leads/contacts",
-        "description": "Route defined in artifacts/api-server/src/routes/leads.ts.",
+        "description": "List lead contacts across the workspace, optionally filtered by `search` (case-insensitive contains over name/email/phone/lead title). Only contacts whose lead the caller can access are returned; admins see every lead's contacts. Requires manager role or above.",
         "responses": {
           "200": {
-            "description": "Successful response",
+            "description": "Lead contacts visible to the caller.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/LeadContactsListResponse"
                 }
               }
             }
@@ -1771,7 +1794,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Returned when the caller does not have the manager-or-above role required to list lead contacts.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1782,6 +1805,15 @@
           }
         },
         "x-source-file": "artifacts/api-server/src/routes/leads.ts",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Case-insensitive substring filter applied across contact display name, email, phone, and lead title.",
+            "schema": { "type": "string" }
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1796,14 +1828,14 @@
           "leads"
         ],
         "summary": "GET /leads",
-        "description": "Route defined in artifacts/api-server/src/routes/leads.ts. Validated query with leadListQuerySchema.",
+        "description": "List leads the caller can access, paginated and optionally filtered by `status` and `search`. The `summary` totals reflect every lead matching the query (not just the current page). Admins see all leads; other roles see only the leads they own or are assigned to. Requires manager role or above.",
         "responses": {
           "200": {
-            "description": "Successful response",
+            "description": "Paginated list of leads visible to the caller, with aggregate revenue summary.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/LeadListResponse"
                 }
               }
             }
@@ -1829,7 +1861,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Returned when the caller does not have the manager-or-above role required to list leads.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1841,6 +1873,39 @@
         },
         "x-source-file": "artifacts/api-server/src/routes/leads.ts",
         "x-zod-query-schema": "leadListQuerySchema",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "1-indexed page number. Defaults to 1.",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "Items per page. Defaults to 10, max 100.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Case-insensitive substring filter applied across lead title, city, state, and project type.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Restrict to leads with the given status.",
+            "schema": {
+              "type": "string",
+              "enum": ["open", "in_negotiation", "won", "lost", "archived"]
+            }
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1922,14 +1987,14 @@
           "leads"
         ],
         "summary": "GET /leads/{id}",
-        "description": "Route defined in artifacts/api-server/src/routes/leads.ts.",
+        "description": "Fetch a single lead with its contacts, salespeople, tags, sources, attachments, and the cross-lead `availableContacts` picker. The `availableContacts` collection is restricted to leads the caller can access — admins see contacts from every lead, other roles see contacts only from leads they own or are assigned to.",
         "responses": {
           "200": {
-            "description": "Successful response",
+            "description": "Lead details, with `availableContacts` filtered to the caller's accessible leads.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/LeadDetailResponse"
                 }
               }
             }
@@ -1955,7 +2020,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Returned when the caller cannot access this lead.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1965,7 +2030,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Returned when the lead does not exist or has been soft-deleted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7483,14 +7548,14 @@
           "schedule"
         ],
         "summary": "POST /jobs/{jobId}/workday-exceptions",
-        "description": "Route defined in artifacts/api-server/src/routes/schedule.ts.",
+        "description": "Create a workday exception (a non-workday or extra-workday) attached to one or more jobs, or to every active job when `appliesToAllJobs` is true. The path `jobId` only scopes the call — the actual job set comes from the request body's `jobIds` (or all jobs when `appliesToAllJobs` is true). Only admins can create company-wide exceptions; other roles can only target jobs they manage.",
         "responses": {
           "201": {
-            "description": "Created",
+            "description": "The newly-created workday exception.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/WorkdayExceptionResponse"
                 }
               }
             }
@@ -7516,7 +7581,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Returned when the caller cannot manage one or more of the target jobs, or when a non-admin caller attempts to create a company-wide exception (`appliesToAllJobs: true`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -7526,7 +7591,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Returned when one of the supplied job IDs does not exist or has been soft-deleted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7559,7 +7624,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GenericObject"
+                "$ref": "#/components/schemas/WorkdayExceptionPayload"
               }
             }
           }
@@ -7573,14 +7638,14 @@
           "schedule"
         ],
         "summary": "PUT /jobs/{jobId}/workday-exceptions/{exceptionId}",
-        "description": "Route defined in artifacts/api-server/src/routes/schedule.ts.",
+        "description": "Update an existing workday exception. Omitted fields keep their previous value. Only admins can flip the exception into or out of a company-wide state (`appliesToAllJobs: true`); other roles must keep it scoped to specific jobs they manage.",
         "responses": {
           "200": {
-            "description": "Successful response",
+            "description": "The updated workday exception.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/WorkdayExceptionResponse"
                 }
               }
             }
@@ -7606,7 +7671,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Returned when the caller cannot manage every affected job, or when a non-admin caller attempts to manage an exception whose previous or next state is company-wide (`appliesToAllJobs: true`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -7616,7 +7681,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Returned when the exception does not exist, does not apply to the supplied job, or has been deleted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7659,7 +7724,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GenericObject"
+                "$ref": "#/components/schemas/WorkdayExceptionUpdatePayload"
               }
             }
           }
@@ -7671,14 +7736,14 @@
           "schedule"
         ],
         "summary": "DELETE /jobs/{jobId}/workday-exceptions/{exceptionId}",
-        "description": "Route defined in artifacts/api-server/src/routes/schedule.ts.",
+        "description": "Delete a workday exception. Only admins can delete company-wide exceptions (`appliesToAllJobs: true`); other roles can only delete exceptions whose affected jobs they all manage.",
         "responses": {
           "200": {
-            "description": "Successful response",
+            "description": "Acknowledgement that the exception was deleted.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -7704,7 +7769,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Returned when the caller cannot manage every affected job, or when a non-admin caller attempts to delete a company-wide exception (`appliesToAllJobs: true`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -7714,7 +7779,7 @@
             }
           },
           "404": {
-            "description": "Not found",
+            "description": "Returned when the exception does not exist, does not apply to the supplied job, or has already been deleted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9468,6 +9533,490 @@
         "type": "object",
         "additionalProperties": true,
         "description": "Request schema derived from scheduleNotePayloadSchema in artifacts/api-server/src/routes/schedule.ts."
+      },
+      "Pagination": {
+        "type": "object",
+        "description": "Standard pagination metadata returned with list responses.",
+        "properties": {
+          "page": { "type": "integer", "minimum": 1 },
+          "pageSize": { "type": "integer", "minimum": 1 },
+          "totalItems": { "type": "integer", "minimum": 0 },
+          "totalPages": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["page", "pageSize", "totalItems", "totalPages"]
+      },
+      "SuccessResponse": {
+        "type": "object",
+        "description": "Generic success acknowledgement returned by destructive operations.",
+        "properties": {
+          "success": { "type": "boolean" }
+        },
+        "required": ["success"]
+      },
+      "JobSummary": {
+        "type": "object",
+        "description": "Summary view of a job used in client detail and client-job listings.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "status": { "type": "string", "nullable": true },
+          "city": { "type": "string", "nullable": true },
+          "state": { "type": "string", "nullable": true },
+          "jobType": { "type": "string", "nullable": true },
+          "contractPrice": { "type": "string", "nullable": true, "description": "Decimal price serialized as string." },
+          "projectedStart": { "type": "string", "format": "date", "nullable": true },
+          "projectedCompletion": { "type": "string", "format": "date", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "title", "createdAt"]
+      },
+      "ClientPrimaryContact": {
+        "type": "object",
+        "description": "Primary contact summary surfaced on client list rows. Null when the client has no primary contact.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "clientId": { "type": "string", "format": "uuid", "nullable": true },
+          "firstName": { "type": "string", "nullable": true },
+          "lastName": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "phone": { "type": "string", "nullable": true },
+          "isPrimary": { "type": "boolean", "nullable": true }
+        },
+        "required": ["id"]
+      },
+      "ClientContact": {
+        "type": "object",
+        "description": "Full client contact record returned on client detail and contact-management endpoints.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "clientId": { "type": "string", "format": "uuid", "nullable": true },
+          "firstName": { "type": "string", "nullable": true },
+          "lastName": { "type": "string", "nullable": true },
+          "title": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "phone": { "type": "string", "nullable": true },
+          "cellPhone": { "type": "string", "nullable": true },
+          "isPrimary": { "type": "boolean", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "deletedAt": { "type": "string", "format": "date-time", "nullable": true }
+        },
+        "required": ["id"]
+      },
+      "ClientListItem": {
+        "type": "object",
+        "description": "A client row returned by the paginated `GET /clients` list. `jobCount` and `openJobCount` are computed only over jobs the caller can access.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "companyName": { "type": "string" },
+          "phone": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "city": { "type": "string", "nullable": true },
+          "state": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "primaryContact": {
+            "description": "Primary contact summary, or null when the client has no primary contact.",
+            "oneOf": [
+              { "$ref": "#/components/schemas/ClientPrimaryContact" },
+              { "type": "null" }
+            ]
+          },
+          "contactCount": { "type": "integer", "minimum": 0 },
+          "jobCount": { "type": "integer", "minimum": 0, "description": "Number of jobs for this client visible to the caller." },
+          "openJobCount": { "type": "integer", "minimum": 0, "description": "Number of open jobs for this client visible to the caller." }
+        },
+        "required": ["id", "companyName", "createdAt", "primaryContact", "contactCount", "jobCount", "openJobCount"]
+      },
+      "ClientListResponse": {
+        "type": "object",
+        "description": "Response for `GET /clients`. The `clients` array is restricted to clients the caller can access.",
+        "properties": {
+          "clients": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientListItem" }
+          },
+          "pagination": { "$ref": "#/components/schemas/Pagination" }
+        },
+        "required": ["clients", "pagination"]
+      },
+      "ClientDetail": {
+        "type": "object",
+        "description": "Full client record with embedded contacts and the caller-visible jobs list.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "companyName": { "type": "string" },
+          "phone": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "streetAddress": { "type": "string", "nullable": true },
+          "city": { "type": "string", "nullable": true },
+          "state": { "type": "string", "nullable": true },
+          "zipCode": { "type": "string", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "createdBy": { "type": "string", "format": "uuid", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "deletedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "contacts": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientContact" }
+          },
+          "jobs": {
+            "type": "array",
+            "description": "Jobs for this client filtered to those the caller can access (admins see all).",
+            "items": { "$ref": "#/components/schemas/JobSummary" }
+          }
+        },
+        "required": ["id", "companyName", "createdAt", "contacts", "jobs"]
+      },
+      "ClientDetailResponse": {
+        "type": "object",
+        "description": "Response for `GET /clients/{id}`. The embedded `client.jobs` list is filtered to jobs the caller can access.",
+        "properties": {
+          "client": { "$ref": "#/components/schemas/ClientDetail" }
+        },
+        "required": ["client"]
+      },
+      "ClientJobsResponse": {
+        "type": "object",
+        "description": "Response for `GET /clients/{id}/jobs`. The `jobs` array is filtered to jobs the caller can access (admins see all).",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/JobSummary" }
+          }
+        },
+        "required": ["jobs"]
+      },
+      "LeadPrimaryContact": {
+        "type": "object",
+        "description": "Primary contact summary surfaced on lead list rows. Null when the lead has no client contact assigned.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "leadId": { "type": "string", "format": "uuid", "nullable": true },
+          "displayName": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "phone": { "type": "string", "nullable": true },
+          "label": { "type": "string", "nullable": true }
+        },
+        "required": ["id"]
+      },
+      "LeadContact": {
+        "type": "object",
+        "description": "Full lead contact record returned in lead detail responses.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "leadId": { "type": "string", "format": "uuid", "nullable": true },
+          "firstName": { "type": "string", "nullable": true },
+          "lastName": { "type": "string", "nullable": true },
+          "displayName": { "type": "string", "nullable": true },
+          "streetAddress": { "type": "string", "nullable": true },
+          "city": { "type": "string", "nullable": true },
+          "state": { "type": "string", "nullable": true },
+          "zipCode": { "type": "string", "nullable": true },
+          "phone": { "type": "string", "nullable": true },
+          "cellPhone": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "label": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time", "nullable": true }
+        },
+        "required": ["id", "createdAt"]
+      },
+      "LeadAvailableContact": {
+        "type": "object",
+        "description": "Cross-lead contact entry. Only contacts whose lead the caller can access are surfaced.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "leadId": { "type": "string", "format": "uuid", "nullable": true },
+          "leadTitle": { "type": "string", "nullable": true },
+          "displayName": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "phone": { "type": "string", "nullable": true },
+          "cellPhone": { "type": "string", "nullable": true },
+          "label": { "type": "string", "nullable": true }
+        },
+        "required": ["id"]
+      },
+      "LeadSalesperson": {
+        "type": "object",
+        "description": "User assigned to a lead as a salesperson.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "fullName": { "type": "string", "nullable": true },
+          "email": { "type": "string", "nullable": true },
+          "role": { "type": "string", "nullable": true },
+          "avatarUrl": { "type": "string", "nullable": true }
+        },
+        "required": ["id"]
+      },
+      "LeadTag": {
+        "type": "string",
+        "description": "Tag name applied to a lead."
+      },
+      "LeadSource": {
+        "type": "string",
+        "description": "Lead source name."
+      },
+      "LeadAttachment": {
+        "type": "object",
+        "description": "File attached to a lead via the lead-attachments table.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "fileId": { "type": "string", "format": "uuid", "nullable": true },
+          "originalName": { "type": "string", "nullable": true },
+          "fileUrl": { "type": "string", "nullable": true },
+          "fileSize": { "type": "integer", "nullable": true },
+          "mimeType": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time", "nullable": true },
+          "uploadedByName": { "type": "string", "nullable": true }
+        },
+        "required": ["id"]
+      },
+      "LeadListItem": {
+        "type": "object",
+        "description": "A lead row returned by the paginated `GET /leads` list.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "streetAddress": { "type": "string", "nullable": true },
+          "city": { "type": "string", "nullable": true },
+          "state": { "type": "string", "nullable": true },
+          "zipCode": { "type": "string", "nullable": true },
+          "confidence": { "type": "integer", "minimum": 0, "maximum": 100, "nullable": true },
+          "projectedSalesDate": { "type": "string", "format": "date", "nullable": true },
+          "estimatedRevenueMin": { "type": "string", "nullable": true, "description": "Decimal serialized as string." },
+          "estimatedRevenueMax": { "type": "string", "nullable": true, "description": "Decimal serialized as string." },
+          "status": {
+            "type": "string",
+            "enum": ["open", "in_negotiation", "won", "lost", "archived"]
+          },
+          "projectType": { "type": "string", "nullable": true },
+          "leadSource": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdByName": { "type": "string", "nullable": true },
+          "clientContact": {
+            "description": "Primary client contact summary, or null when the lead has no client contact assigned.",
+            "oneOf": [
+              { "$ref": "#/components/schemas/LeadPrimaryContact" },
+              { "type": "null" }
+            ]
+          }
+        },
+        "required": ["id", "title", "status", "createdAt", "clientContact"]
+      },
+      "LeadListSummary": {
+        "type": "object",
+        "description": "Aggregate revenue totals across all leads matching the query (not just the current page).",
+        "properties": {
+          "estimatedRevenueMinTotal": { "type": "string", "description": "Decimal serialized as string." },
+          "estimatedRevenueMaxTotal": { "type": "string", "description": "Decimal serialized as string." }
+        },
+        "required": ["estimatedRevenueMinTotal", "estimatedRevenueMaxTotal"]
+      },
+      "LeadListResponse": {
+        "type": "object",
+        "description": "Response for `GET /leads`. The `leads` array is restricted to leads the caller can access (admins see all).",
+        "properties": {
+          "leads": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/LeadListItem" }
+          },
+          "pagination": { "$ref": "#/components/schemas/Pagination" },
+          "summary": { "$ref": "#/components/schemas/LeadListSummary" }
+        },
+        "required": ["leads", "pagination", "summary"]
+      },
+      "LeadDetail": {
+        "type": "object",
+        "description": "Full lead record returned by `GET /leads/{id}`, with embedded contacts, assignments, attachments, and the caller-filtered `availableContacts` collection.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "streetAddress": { "type": "string", "nullable": true },
+          "city": { "type": "string", "nullable": true },
+          "state": { "type": "string", "nullable": true },
+          "zipCode": { "type": "string", "nullable": true },
+          "confidence": { "type": "integer", "minimum": 0, "maximum": 100, "nullable": true },
+          "projectedSalesDate": { "type": "string", "format": "date", "nullable": true },
+          "estimatedRevenueMin": { "type": "string", "nullable": true },
+          "estimatedRevenueMax": { "type": "string", "nullable": true },
+          "status": {
+            "type": "string",
+            "enum": ["open", "in_negotiation", "won", "lost", "archived"]
+          },
+          "projectType": { "type": "string", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "leadSource": { "type": "string", "nullable": true },
+          "createdBy": { "type": "string", "format": "uuid", "nullable": true },
+          "createdByName": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "clientContact": {
+            "description": "Primary client contact for the lead, or null when none is assigned.",
+            "oneOf": [
+              { "$ref": "#/components/schemas/LeadContact" },
+              { "type": "null" }
+            ]
+          },
+          "contacts": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/LeadContact" }
+          },
+          "salespeople": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/LeadSalesperson" }
+          },
+          "tags": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/LeadTag" }
+          },
+          "sources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/LeadSource" }
+          },
+          "attachments": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/LeadAttachment" }
+          },
+          "availableContacts": {
+            "type": "array",
+            "description": "Lead contacts from across the workspace, filtered to leads the caller can access (admins see all).",
+            "items": { "$ref": "#/components/schemas/LeadAvailableContact" }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "createdAt",
+          "clientContact",
+          "contacts",
+          "salespeople",
+          "tags",
+          "sources",
+          "attachments",
+          "availableContacts"
+        ]
+      },
+      "LeadDetailResponse": {
+        "type": "object",
+        "description": "Response for `GET /leads/{id}`. The embedded `lead.availableContacts` collection is filtered to leads the caller can access.",
+        "properties": {
+          "lead": { "$ref": "#/components/schemas/LeadDetail" }
+        },
+        "required": ["lead"]
+      },
+      "LeadContactsListResponse": {
+        "type": "object",
+        "description": "Response for `GET /leads/contacts`. The `contacts` array is restricted to contacts that belong to leads the caller can access (admins see all).",
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/LeadAvailableContact" }
+          }
+        },
+        "required": ["contacts"]
+      },
+      "WorkdayException": {
+        "type": "object",
+        "description": "A workday exception (non-workday or extra-workday) attached to one or more jobs, or applied company-wide when `appliesToAllJobs` is true.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["non_workday", "extra_workday"]
+          },
+          "startDate": { "type": "string", "format": "date" },
+          "endDate": { "type": "string", "format": "date" },
+          "sameEveryYear": { "type": "boolean", "nullable": true },
+          "categoryId": { "type": "string", "format": "uuid", "nullable": true },
+          "appliesToAllJobs": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "When true, the exception applies to every active job. Only admins can create, update, or delete company-wide exceptions."
+          },
+          "jobIds": {
+            "type": "array",
+            "nullable": true,
+            "description": "When `appliesToAllJobs` is false, the explicit list of job IDs the exception applies to.",
+            "items": { "type": "string", "format": "uuid" }
+          },
+          "notes": { "type": "string", "nullable": true },
+          "createdBy": { "type": "string", "format": "uuid", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time", "nullable": true },
+          "updatedAt": { "type": "string", "format": "date-time", "nullable": true }
+        },
+        "required": ["id", "title", "type", "startDate", "endDate"]
+      },
+      "WorkdayExceptionResponse": {
+        "type": "object",
+        "description": "Response wrapper for create/update workday-exception endpoints.",
+        "properties": {
+          "exception": { "$ref": "#/components/schemas/WorkdayException" }
+        },
+        "required": ["exception"]
+      },
+      "WorkdayExceptionPayload": {
+        "type": "object",
+        "description": "Request body for `POST /jobs/{jobId}/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.",
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "type": {
+            "type": "string",
+            "enum": ["non_workday", "extra_workday"]
+          },
+          "startDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "endDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "sameEveryYear": { "type": "boolean", "default": false },
+          "categoryId": { "type": "string", "format": "uuid", "nullable": true },
+          "appliesToAllJobs": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, applies the exception to every active job. Admin role required."
+          },
+          "jobIds": {
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" },
+            "default": []
+          },
+          "notes": { "type": "string", "nullable": true }
+        },
+        "required": ["title", "type", "startDate", "endDate"]
+      },
+      "WorkdayExceptionUpdatePayload": {
+        "type": "object",
+        "description": "Request body for `PUT /jobs/{jobId}/workday-exceptions/{exceptionId}`. All fields are optional; omitted fields keep their previous value. Toggling `appliesToAllJobs` is admin-only.",
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "type": {
+            "type": "string",
+            "enum": ["non_workday", "extra_workday"]
+          },
+          "startDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "endDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "sameEveryYear": { "type": "boolean" },
+          "categoryId": { "type": "string", "format": "uuid", "nullable": true },
+          "appliesToAllJobs": { "type": "boolean" },
+          "jobIds": {
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" }
+          },
+          "notes": { "type": "string", "nullable": true }
+        }
       }
     }
   },

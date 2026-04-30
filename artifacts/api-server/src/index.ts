@@ -3,6 +3,10 @@ import { pool } from "@workspace/db";
 import app, { prepareApp } from "./app";
 import { logger } from "./lib/logger";
 import { initRealtime } from "./lib/realtime";
+import {
+  startTempUploadSweeper,
+  type TempUploadSweeperHandle,
+} from "./lib/uploads";
 
 const rawPort = process.env["PORT"] ?? "8080";
 
@@ -22,6 +26,10 @@ async function bootstrap() {
 
   initRealtime(server);
 
+  // Periodically prune orphaned temp upload files left behind by crashed
+  // requests. Started after prepareApp() so the temp dir definitely exists.
+  const tempUploadSweeper = startTempUploadSweeper();
+
   server.on("error", (err) => {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
@@ -31,10 +39,13 @@ async function bootstrap() {
     logger.info({ host, port }, "Server listening");
   });
 
-  registerShutdownHandlers(server);
+  registerShutdownHandlers(server, tempUploadSweeper);
 }
 
-function registerShutdownHandlers(server: Server) {
+function registerShutdownHandlers(
+  server: Server,
+  tempUploadSweeper: TempUploadSweeperHandle,
+) {
   let shuttingDown = false;
 
   const handleShutdown = (signal: NodeJS.Signals) => {
@@ -45,6 +56,8 @@ function registerShutdownHandlers(server: Server) {
 
     shuttingDown = true;
     logger.info({ signal }, "Shutdown signal received — draining connections");
+
+    tempUploadSweeper.stop();
 
     const drainTimer = setTimeout(() => {
       logger.warn(

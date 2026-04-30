@@ -67,6 +67,14 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
   `CREATE INDEX CONCURRENTLY`) before deploying to a large production
   database, so the migration's inline `CREATE INDEX IF NOT EXISTS` becomes a
   no-op and uploads aren't slowed by a write lock.
+- The cross-cutting operations runbook is `docs/runbook.md`. It records
+  Supabase backup posture, object-storage backup posture, the most
+  recent restore-drill outcome, and the canonical step-by-step Recovery
+  Procedure (PITR, daily-snapshot restore, object-storage triage, post-
+  restore verification). Re-read it before any production restore and
+  update its drill log on a quarterly cadence (or after a schema change).
+  The committed object-storage round-trip script it depends on is at
+  `artifacts/api-server/scripts/storage-restore-drill.mjs`.
 - **Test database provisioning:** `pnpm run setup-test-db` (re)creates the
   `cadstone_test` database at `127.0.0.1:5432` and runs `drizzle-kit push --force`
   to materialize the full schema. The api-server `pretest` hook calls

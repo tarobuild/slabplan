@@ -1,7 +1,16 @@
+import {
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_COUNT,
+  formatUploadSize,
+} from "@workspace/api-zod"
+
 export type UploadMediaType = "document" | "photo" | "video"
 
-export const UPLOAD_MAX_FILE_SIZE_BYTES = 1024 * 1024 * 200
-export const UPLOAD_MAX_FILES = 20
+// The size and count limits live in @workspace/api-zod so the file picker
+// and the multer config on the server cannot drift apart. Keep the legacy
+// names as re-exports so existing call sites don't churn.
+export const UPLOAD_MAX_FILE_SIZE_BYTES = MAX_UPLOAD_FILE_BYTES
+export const UPLOAD_MAX_FILES = MAX_UPLOAD_FILE_COUNT
 
 const documentExtensions = [
   ".pdf",
@@ -59,9 +68,7 @@ function lowerExtension(fileName: string) {
   return index >= 0 ? fileName.slice(index).toLowerCase() : ""
 }
 
-function formatMaxFileSize(bytes: number) {
-  return `${Math.round(bytes / 1024 / 1024)} MB`
-}
+const formatMaxFileSize = formatUploadSize
 
 function isAllowedDocumentMimeType(value: string) {
   return documentMimeTypes.has(value) || value.startsWith("application/vnd.openxmlformats-officedocument.")

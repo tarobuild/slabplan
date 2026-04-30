@@ -2,13 +2,22 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import multer, { type Field } from "multer";
+import multer, { type Field, MulterError } from "multer";
+import {
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_COUNT,
+  formatUploadSize,
+} from "@workspace/api-zod";
+import { HttpError } from "./http";
 import { logger } from "./logger";
 
 const TMP_UPLOAD_DIR = path.resolve(process.cwd(), "tmp", "uploads");
 
-export const MAX_UPLOAD_FILE_BYTES = 1024 * 1024 * 100;
-export const MAX_UPLOAD_FILE_COUNT = 20;
+// Re-export the shared constants so existing call sites that import them
+// from this module continue to work. The single source of truth lives in
+// @workspace/api-zod so the frontend picker and the backend multer config
+// cannot drift apart.
+export { MAX_UPLOAD_FILE_BYTES, MAX_UPLOAD_FILE_COUNT };
 
 // Default: delete temp upload files older than 6 hours, sweep every hour.
 // Both knobs are overridable via env so operators can tune retention without
@@ -297,17 +306,89 @@ function attachResponseCleanup(req: Request, res: Response): void {
   res.once("close", cleanup);
 }
 
-function wrapMulter(handler: RequestHandler): RequestHandler {
+/**
+ * Map a multer error to an HttpError so the global error handler renders
+ * it as a clean problem+json response with the right status code. Without
+ * this, multer's `LIMIT_FILE_SIZE` would surface as a generic 500.
+ *
+ * The detail message names the actual limit so clients can tell the user
+ * exactly how big a file they're allowed to upload, even if the limit
+ * changes server-side without a client redeploy.
+ */
+function multerErrorToHttpError(
+  err: MulterError,
+  limits: { fileSize: number; files: number },
+): HttpError {
+  switch (err.code) {
+    case "LIMIT_FILE_SIZE":
+      return new HttpError(
+        413,
+        `File exceeds the ${formatUploadSize(limits.fileSize)} upload size limit.`,
+        { limit: limits.fileSize, code: err.code, field: err.field },
+        "payload-too-large",
+      );
+    case "LIMIT_FILE_COUNT":
+      return new HttpError(
+        413,
+        `Too many files in one request (limit is ${limits.files}).`,
+        { limit: limits.files, code: err.code },
+        "payload-too-large",
+      );
+    case "LIMIT_PART_COUNT":
+    case "LIMIT_FIELD_COUNT":
+    case "LIMIT_FIELD_VALUE":
+    case "LIMIT_FIELD_KEY":
+      return new HttpError(
+        413,
+        `Request payload too large: ${err.message}.`,
+        { code: err.code, field: err.field },
+        "payload-too-large",
+      );
+    case "LIMIT_UNEXPECTED_FILE":
+      return new HttpError(
+        400,
+        `Unexpected file field${err.field ? ` "${err.field}"` : ""}.`,
+        { code: err.code, field: err.field },
+        "validation",
+      );
+    default:
+      return new HttpError(
+        400,
+        `Upload failed: ${err.message}.`,
+        { code: err.code, field: err.field },
+        "validation",
+      );
+  }
+}
+
+function wrapMulter(
+  handler: RequestHandler,
+  limits: { fileSize: number; files: number },
+): RequestHandler {
   return function uploadAndCleanup(req, res, next) {
     handler(req, res, async (err: unknown) => {
       if (err) {
         await cleanupTempUploads(collectRequestUploads(req)).catch(() => {});
+        if (err instanceof MulterError) {
+          next(multerErrorToHttpError(err, limits));
+          return;
+        }
         next(err);
         return;
       }
       attachResponseCleanup(req, res);
       next();
     });
+  };
+}
+
+function resolveLimits(options?: UploadMiddlewareOptions): {
+  fileSize: number;
+  files: number;
+} {
+  return {
+    fileSize: options?.fileSize ?? MAX_UPLOAD_FILE_BYTES,
+    files: options?.files ?? MAX_UPLOAD_FILE_COUNT,
   };
 }
 
@@ -319,7 +400,16 @@ export function uploadArray(
   const middleware = options
     ? createUploadMiddleware(options).array(fieldName, maxCount)
     : sharedUpload.array(fieldName, maxCount);
-  return wrapMulter(middleware);
+  // Two limits race here: multer's global `limits.files` and the
+  // per-field `array(_, maxCount)` cap. Whichever fires first
+  // surfaces the error, so the *effective* file-count limit users
+  // run into is the smaller of the two. Pass that through to the
+  // error mapper so problem+json messages name the actual cap.
+  const baseLimits = resolveLimits(options);
+  return wrapMulter(middleware, {
+    ...baseLimits,
+    files: Math.min(baseLimits.files, maxCount),
+  });
 }
 
 export function uploadFields(
@@ -329,7 +419,7 @@ export function uploadFields(
   const middleware = options
     ? createUploadMiddleware(options).fields(fields)
     : sharedUpload.fields(fields);
-  return wrapMulter(middleware);
+  return wrapMulter(middleware, resolveLimits(options));
 }
 
 export function uploadSingle(
@@ -339,5 +429,5 @@ export function uploadSingle(
   const middleware = options
     ? createUploadMiddleware(options).single(fieldName)
     : sharedUpload.single(fieldName);
-  return wrapMulter(middleware);
+  return wrapMulter(middleware, resolveLimits(options));
 }

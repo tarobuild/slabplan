@@ -1,0 +1,96 @@
+Critical
+
+  - Lead and daily-log attachments can leak through Resources. Attachment folders are
+    created as jobId = null resource-like folders with internal viewing permissions in
+    artifacts/api-server/src/routes/leads.ts:279 and artifacts/api-server/src/routes/
+    daily-logs.ts:367. /resources/folders then lists all jobId null folders for any
+    authenticated user in artifacts/api-server/src/routes/resources.ts:73, and
+    assertFileAccess returns after the folder check before lead/daily-log checks run in
+    artifacts/api-server/src/lib/authorization.ts:473. This can expose lead files and
+    private daily-log files.
+  - Schedule item attachments have the same bypass. They are saved into ordinary job
+    document folders in artifacts/api-server/src/routes/schedule.ts:1330, while attachment
+    upload itself correctly uses schedule-item authorization at artifacts/api-server/src/
+    routes/schedule.ts:3162. Later file viewing falls back to folder/job access and
+    bypasses assertCanViewScheduleItem, so hidden schedule items and personal-todo
+    attachments can be exposed.
+
+  High
+
+  - Dashboard endpoints leak hidden schedule items and private daily logs. The main
+    schedule route has role/personal-todo visibility rules in artifacts/api-server/src/
+    routes/schedule.ts:290, and daily-log list filtering exists in artifacts/api-server/
+    src/routes/daily-logs.ts:192. Dashboard queries do not apply those same rules for
+    stats, agenda, or schedule data in artifacts/api-server/src/routes/dashboard.ts:60,
+    artifacts/api-server/src/routes/dashboard.ts:114, artifacts/api-server/src/routes/
+    dashboard.ts:146, and artifacts/api-server/src/routes/dashboard.ts:193.
+  - Client detail endpoints leak jobs outside the caller’s job scope. Once a PM can access
+    a client via one managed job, GET /clients/:id and /clients/:id/jobs return all jobs
+    for that client in artifacts/api-server/src/routes/clients.ts:253 and artifacts/api-
+    server/src/routes/clients.ts:366.
+  - Lead detail leaks all lead contacts. hydrateLead returns availableContacts from every
+    active lead without applying listAccessibleLeadIds in artifacts/api-server/src/routes/
+    leads.ts:474. Copying a contact by sourceContactId also does not verify access to that
+    source lead in artifacts/api-server/src/routes/leads.ts:830.
+  - Workday exceptions can be created or changed for jobs the caller does not manage. The
+    route guard only checks the route jobId in artifacts/api-server/src/routes/
+    schedule.ts:381, but POST/PUT accept appliesToAllJobs and arbitrary jobIds in
+    artifacts/api-server/src/routes/schedule.ts:2385 and artifacts/api-server/src/routes/
+    schedule.ts:2420. Synchronization also only runs for the route job.
+  - Admin registration and seed upserts likely fail against the partial unique email
+    index. The DB uses a partial unique index on active user email in lib/db/src/schema/
+    index.ts:84, but auth and seed use ON CONFLICT (email) without the matching partial-
+    index predicate in artifacts/api-server/src/routes/auth.ts:154 and lib/db/src/
+    seed.ts:208.
+
+  Medium
+
+  - Autoscale deployment conflicts with in-memory controls. .replit deploys autoscale
+    at .replit:9, while rate limits are per-process in artifacts/api-server/src/lib/rate-
+    limit.ts:17, and signed file-view JTI replay protection is also per-process in
+    artifacts/api-server/src/lib/auth.ts:188.
+  - Password reset does not actually deliver a reset link in production. It signs a token
+    and logs metadata in artifacts/api-server/src/routes/auth.ts:226, but only returns
+    previewToken outside production in artifacts/api-server/src/routes/auth.ts:250.
+  - Uploads use multer.memoryStorage() with 200 MB per file and 20 files on multiple
+    routes, for example artifacts/api-server/src/routes/files.ts:33, artifacts/api-server/
+    src/routes/leads.ts:48, and artifacts/api-server/src/routes/daily-logs.ts:50. That is
+    a practical memory DoS risk.
+  - Generated API clients are stale/incomplete. The OpenAPI spec has 81 paths starting at
+    lib/api-spec/openapi.yaml:76, but the generated React and Zod clients only contain
+    health check output in lib/api-client-react/src/generated/api.ts:31 and lib/api-zod/
+    src/generated/api.ts:14.
+  - Several list endpoints paginate after loading/filtering in memory, notably files in
+    artifacts/api-server/src/lib/file-manager.ts:621 and daily logs in artifacts/api-
+    server/src/routes/daily-logs.ts:913.
+  - Activity feed lead visibility is broken for non-admins. Allowed lead IDs are merged in
+    artifacts/api-server/src/routes/activity.ts:44, but filtering only checks metadata
+    jobId in artifacts/api-server/src/lib/file-manager.ts:1395.
+
+  Lower Priority
+
+  - Drizzle migration metadata is stale: _journal.json only records 0000 at lib/db/
+    migrations/meta/_journal.json:4, while SQL files 0001 through 0003 exist. The custom
+    migrator reads SQL files directly in lib/db/src/migrate.ts:41, so runtime migration
+    may still work, but future drizzle-kit generate can drift.
+  - Test and upload artifacts are tracked: artifacts/api-server/uploads/...e2e-upload...
+    and artifacts/cadstone/test-results/...trace.zip. .gitignore does not cover those
+    paths at .gitignore:3.
+  - Frontend role gating is mostly backend-driven. Protected routes expose /resources, /
+    sales, and /clients to any signed-in user in artifacts/cadstone/src/App.tsx:118, and
+    nav links are unconditional in artifacts/cadstone/src/components/layout/TopNav.tsx:44.
+  - Small accessibility gaps remain, such as the account menu button missing an aria-label
+    in artifacts/cadstone/src/components/layout/TopNav.tsx:203 and the sidebar sort icon
+    relying on title only in artifacts/cadstone/src/components/layout/Sidebar.tsx:329.
+  - pnpm audit --prod reports 11 vulnerabilities: 10 moderate and 1 low, including axios,
+    follow-redirects, DOMPurify via jspdf, fast-xml-parser via @google-cloud/storage, and
+    uuid via GCS dependencies.
+
+  Verification
+
+  - pnpm --filter @workspace/cadstone run test: passed, 44 tests.
+  - pnpm --filter @workspace/api-server run test: passed, 108 tests.
+  - pnpm exec tsc -p artifacts/cadstone/tsconfig.json --noEmit --incremental false:
+    passed.
+  - I avoided full builds, codegen, migrations, and Playwright because they would create
+    or rewrite artifacts.

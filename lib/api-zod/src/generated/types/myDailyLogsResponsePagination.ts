@@ -5,12 +5,15 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CursorPagination } from "./cursorPagination";
 
-export type MyDailyLogsResponsePagination = {
-  page: number;
-  pageSize: number;
-  limit: number;
-  total: number;
-  totalItems: number;
-  totalPages: number;
-};
+export type MyDailyLogsResponsePagination =
+  | {
+      page: number;
+      pageSize: number;
+      limit: number;
+      total: number;
+      totalItems: number;
+      totalPages: number;
+    }
+  | CursorPagination;

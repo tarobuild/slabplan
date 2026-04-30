@@ -6695,6 +6695,37 @@ paths:
               $ref: "#/components/headers/X-RateLimit-Reset"
       x-source-file: artifacts/api-server/src/routes/daily-log-admin.ts
       x-zod-query-schema: myDailyLogsQuerySchema
+      parameters:
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
+          schema:
+            type: integer
+            minimum: 1
+        - name: pageSize
+          in: query
+          required: false
+          description: Page size for offset pagination. Ignored when `cursor` is supplied.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: keywords
+          in: query
+          required: false
+          description: Free-text filter across log title, notes, weather notes, and job title.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size for cursor pagination. Default 25; max 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - $ref: "#/components/parameters/CursorParam"
       security:
         - bearerAuth: []
   /jobs/{jobId}/schedule/settings:
@@ -12696,7 +12727,7 @@ components:
         - attachments
     MyDailyLogsResponse:
       type: object
-      description: Response for `GET /daily-logs/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths.
+      description: Response for `GET /daily-logs/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) when the request used `?page=`/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.
       properties:
         data:
           type: array
@@ -12707,27 +12738,29 @@ components:
           items:
             $ref: "#/components/schemas/DailyLogListItem"
         pagination:
-          type: object
-          properties:
-            page:
-              type: integer
-            pageSize:
-              type: integer
-            limit:
-              type: integer
-            total:
-              type: integer
-            totalItems:
-              type: integer
-            totalPages:
-              type: integer
-          required:
-            - page
-            - pageSize
-            - limit
-            - total
-            - totalItems
-            - totalPages
+          oneOf:
+            - type: object
+              properties:
+                page:
+                  type: integer
+                pageSize:
+                  type: integer
+                limit:
+                  type: integer
+                total:
+                  type: integer
+                totalItems:
+                  type: integer
+                totalPages:
+                  type: integer
+              required:
+                - page
+                - pageSize
+                - limit
+                - total
+                - totalItems
+                - totalPages
+            - $ref: "#/components/schemas/CursorPagination"
       required:
         - data
         - logs

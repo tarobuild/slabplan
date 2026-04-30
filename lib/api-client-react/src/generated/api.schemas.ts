@@ -1245,17 +1245,19 @@ export interface DailyLogAttachmentsCreatedResponse {
   attachments: DailyLogAttachment[];
 }
 
-export type MyDailyLogsResponsePagination = {
-  page: number;
-  pageSize: number;
-  limit: number;
-  total: number;
-  totalItems: number;
-  totalPages: number;
-};
+export type MyDailyLogsResponsePagination =
+  | {
+      page: number;
+      pageSize: number;
+      limit: number;
+      total: number;
+      totalItems: number;
+      totalPages: number;
+    }
+  | CursorPagination;
 
 /**
- * Response for `GET /daily-logs/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths.
+ * Response for `GET /daily-logs/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) when the request used `?page=`/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.
  */
 export interface MyDailyLogsResponse {
   data: DailyLogListItem[];
@@ -1826,6 +1828,41 @@ export const DailyLogsGetJobsJobIdDailyLogsSharedWith = {
   estimators: "estimators",
   installers: "installers",
 } as const;
+
+export type DailyLogAdminGetDailyLogsMineParams = {
+  /**
+   * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * Page size for offset pagination. Ignored when `cursor` is supplied.
+   * @minimum 1
+   * @maximum 100
+   */
+  pageSize?: number;
+  /**
+   * Free-text filter across log title, notes, weather notes, and job title.
+   */
+  keywords?: string;
+  /**
+   * Page size for cursor pagination. Default 25; max 100.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
+
+ */
+  cursor?: CursorParamParameter;
+};
 
 export type ScheduleGetJobsJobIdScheduleParams = {
   /**

@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { ChevronRight, FileText, Loader2, Search, Users } from "lucide-react"
-import type { DailyLogListItem } from "@workspace/api-client-react"
-import { api } from "@/lib/api"
+import {
+  dailyLogAdminGetDailyLogsMine,
+  type DailyLogAdminGetDailyLogsMineParams,
+  type DailyLogListItem,
+} from "@workspace/api-client-react"
+import { DailyLogAdminGetDailyLogsMineQueryParams } from "@workspace/api-zod"
 import { apiErrorMessage } from "@/lib/api-errors"
+import { validatePayload } from "@/lib/validate-payload"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 
-// Re-use the generated DTO so the page picks up future schema changes
-// for free. The endpoint's URL builder doesn't accept search params yet
-// (open spec drift), so we still issue the request through the existing
-// axios instance and pass `page`/`pageSize`/`keywords` directly.
 type MyDailyLogItem = DailyLogListItem
 
 const PAGE_LIMIT = 25
@@ -70,26 +71,37 @@ export default function MyDailyLogsPage() {
     }
 
     try {
-      const params: Record<string, string | number> = {
+      const trimmed = debouncedSearch.trim()
+      const requestParams: DailyLogAdminGetDailyLogsMineParams = {
         cursor: cursor ?? "",
         limit: PAGE_LIMIT,
-      }
-      const trimmed = debouncedSearch.trim()
-      if (trimmed) {
-        params.keywords = trimmed
+        ...(trimmed ? { keywords: trimmed } : {}),
       }
 
-      const response = await api.get<{
-        logs: MyDailyLogItem[]
-        pagination?: { limit: number; hasMore: boolean; nextCursor: string | null }
-      }>("/daily-logs/mine", { params })
+      const validated = validatePayload(
+        DailyLogAdminGetDailyLogsMineQueryParams,
+        requestParams,
+      )
+      if (!validated) {
+        if (isInitial) {
+          setLogs([])
+          setHasMore(false)
+          setNextCursor(null)
+        }
+        return
+      }
+
+      const response = await dailyLogAdminGetDailyLogsMine(validated)
 
       if (requestId !== loadRequestIdRef.current) return
 
-      const fetched = response.data.logs ?? []
+      const fetched: MyDailyLogItem[] = response.logs ?? []
       setLogs((previous) => (isInitial ? fetched : [...previous, ...fetched]))
-      setHasMore(!!response.data.pagination?.hasMore)
-      setNextCursor(response.data.pagination?.nextCursor ?? null)
+      const pagination = response.pagination
+      const cursorPagination =
+        pagination && "hasMore" in pagination ? pagination : null
+      setHasMore(cursorPagination?.hasMore ?? false)
+      setNextCursor(cursorPagination?.nextCursor ?? null)
     } catch (error) {
       if (requestId !== loadRequestIdRef.current) return
       setErrorMessage(apiErrorMessage(error, "Failed to load your daily logs"))

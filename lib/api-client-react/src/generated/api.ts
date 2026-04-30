@@ -27,6 +27,7 @@ import type {
   ClientsGetClientsParams,
   ClientsPostClientsIdContacts201,
   ClientsPutClientsIdContactsContactId200,
+  DailyLogAdminGetDailyLogsMineParams,
   DailyLogAttachmentsCreatedResponse,
   DailyLogCommentsResponse,
   DailyLogDetailResponse,
@@ -7264,15 +7265,30 @@ export const useDailyLogAdminDeleteDailyLogsCustomFieldsFieldId = <
  * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts. Validated query with myDailyLogsQuerySchema.
  * @summary GET /daily-logs/mine
  */
-export const getDailyLogAdminGetDailyLogsMineUrl = () => {
-  return `/api/daily-logs/mine`;
+export const getDailyLogAdminGetDailyLogsMineUrl = (
+  params?: DailyLogAdminGetDailyLogsMineParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/daily-logs/mine?${stringifiedParams}`
+    : `/api/daily-logs/mine`;
 };
 
 export const dailyLogAdminGetDailyLogsMine = async (
+  params?: DailyLogAdminGetDailyLogsMineParams,
   options?: RequestInit,
 ): Promise<MyDailyLogsResponse> => {
   return customFetch<MyDailyLogsResponse>(
-    getDailyLogAdminGetDailyLogsMineUrl(),
+    getDailyLogAdminGetDailyLogsMineUrl(params),
     {
       ...options,
       method: "GET",
@@ -7280,30 +7296,35 @@ export const dailyLogAdminGetDailyLogsMine = async (
   );
 };
 
-export const getDailyLogAdminGetDailyLogsMineQueryKey = () => {
-  return [`/api/daily-logs/mine`] as const;
+export const getDailyLogAdminGetDailyLogsMineQueryKey = (
+  params?: DailyLogAdminGetDailyLogsMineParams,
+) => {
+  return [`/api/daily-logs/mine`, ...(params ? [params] : [])] as const;
 };
 
 export const getDailyLogAdminGetDailyLogsMineQueryOptions = <
   TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
   TError = ErrorType<Problem>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: DailyLogAdminGetDailyLogsMineParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getDailyLogAdminGetDailyLogsMineQueryKey();
+    queryOptions?.queryKey ?? getDailyLogAdminGetDailyLogsMineQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>
   > = ({ signal }) =>
-    dailyLogAdminGetDailyLogsMine({ signal, ...requestOptions });
+    dailyLogAdminGetDailyLogsMine(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
@@ -7324,15 +7345,21 @@ export type DailyLogAdminGetDailyLogsMineQueryError = ErrorType<Problem>;
 export function useDailyLogAdminGetDailyLogsMine<
   TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
   TError = ErrorType<Problem>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getDailyLogAdminGetDailyLogsMineQueryOptions(options);
+>(
+  params?: DailyLogAdminGetDailyLogsMineParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDailyLogAdminGetDailyLogsMineQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

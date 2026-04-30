@@ -4218,6 +4218,47 @@ export const DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdResponse =
  * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts. Validated query with myDailyLogsQuerySchema.
  * @summary GET /daily-logs/mine
  */
+
+export const dailyLogAdminGetDailyLogsMineQueryPageSizeMax = 100;
+
+export const dailyLogAdminGetDailyLogsMineQueryLimitMax = 100;
+
+export const DailyLogAdminGetDailyLogsMineQueryParams = zod.object({
+  page: zod.coerce
+    .number()
+    .min(1)
+    .optional()
+    .describe(
+      "Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  pageSize: zod.coerce
+    .number()
+    .min(1)
+    .max(dailyLogAdminGetDailyLogsMineQueryPageSizeMax)
+    .optional()
+    .describe(
+      "Page size for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  keywords: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Free-text filter across log title, notes, weather notes, and job title.",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(dailyLogAdminGetDailyLogsMineQueryLimitMax)
+    .optional()
+    .describe("Page size for cursor pagination. Default 25; max 100."),
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+    ),
+});
+
 export const DailyLogAdminGetDailyLogsMineResponse = zod
   .object({
     data: zod.array(
@@ -4344,17 +4385,33 @@ export const DailyLogAdminGetDailyLogsMineResponse = zod
           "Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).",
         ),
     ),
-    pagination: zod.object({
-      page: zod.number(),
-      pageSize: zod.number(),
-      limit: zod.number(),
-      total: zod.number(),
-      totalItems: zod.number(),
-      totalPages: zod.number(),
-    }),
+    pagination: zod.union([
+      zod.object({
+        page: zod.number(),
+        pageSize: zod.number(),
+        limit: zod.number(),
+        total: zod.number(),
+        totalItems: zod.number(),
+        totalPages: zod.number(),
+      }),
+      zod
+        .object({
+          limit: zod.number(),
+          hasMore: zod.boolean(),
+          nextCursor: zod
+            .string()
+            .nullish()
+            .describe(
+              "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
+            ),
+        })
+        .describe(
+          "Pagination shape returned when the request supplied a `cursor` query parameter.",
+        ),
+    ]),
   })
   .describe(
-    "Response for `GET \/daily-logs\/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths.",
+    "Response for `GET \/daily-logs\/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths. The `pagination` field uses the offset shape (`page`\/`pageSize`\/`total`\/…) when the request used `?page=`\/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.",
   );
 
 /**

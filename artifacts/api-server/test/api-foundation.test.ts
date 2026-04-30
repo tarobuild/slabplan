@@ -279,6 +279,7 @@ test("openapi.yaml documents the exact query parameter sets for cursor list endp
     "/leads": ["page", "pageSize", "search", "status", "cursor", "limit"],
     "/folders/{id}/files": ["id", "page", "limit", "sortBy", "includeDeleted", "cursor"],
     "/jobs/{jobId}/schedule": ["jobId", "page", "limit", "cursor"],
+    "/daily-logs/mine": ["page", "pageSize", "keywords", "limit", "cursor"],
     "/jobs/{jobId}/daily-logs": [
       "jobId",
       "page",

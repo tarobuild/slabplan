@@ -26,6 +26,7 @@ export * from "./cursorLimitParamParameter";
 export * from "./cursorPagination";
 export * from "./cursorParamParameter";
 export * from "./dailyLog";
+export * from "./dailyLogAdminGetDailyLogsMineParams";
 export * from "./dailyLogAttachment";
 export * from "./dailyLogAttachmentsCreatedResponse";
 export * from "./dailyLogComment";

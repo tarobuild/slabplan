@@ -1,7 +1,46 @@
+/**
+ * seed-users.mjs — upsert the CAD Stone admin users into a database.
+ *
+ * Usage:
+ *   SEED_ADMIN_CESAR_PASSWORD=... SEED_ADMIN_ANWAR_PASSWORD=... \
+ *     node artifacts/api-server/scripts/seed-users.mjs --db=local
+ *
+ *   SEED_ADMIN_CESAR_PASSWORD=... SEED_ADMIN_ANWAR_PASSWORD=... \
+ *     node artifacts/api-server/scripts/seed-users.mjs \
+ *     --db=production --i-know-what-im-doing
+ *
+ * Required arguments:
+ *   --db=local        seed the local database (uses DATABASE_URL)
+ *   --db=production   seed the live database (uses SUPABASE_DATABASE_URL)
+ *                     and ALSO requires --i-know-what-im-doing.
+ *
+ * Required env vars:
+ *   SEED_ADMIN_CESAR_PASSWORD   password for cesar@cadstone.works
+ *   SEED_ADMIN_ANWAR_PASSWORD   password for anwar@cadstone.works
+ *
+ * Both passwords must be at least 12 characters and must not match obvious
+ * weak patterns (e.g. "Test1!", "password", "admin", or all-numeric strings).
+ *
+ * Where the env vars come from:
+ *   - Local:      set them inline on the command line, or in your shell.
+ *   - Production: set them as Replit Secrets just-in-time, then UNSET them
+ *                 again after running. Never check them into the repo.
+ *
+ * IMPORTANT — rotating production passwords:
+ *   This script does NOT rotate live passwords. If you suspect a password has
+ *   leaked (e.g. it appeared in git history), rotate it OUTSIDE this script:
+ *   change it directly in the production database (via the Supabase / DB
+ *   console) or by issuing the equivalent UPDATE against `users.password_hash`.
+ *   Re-running this script with a new SEED_ADMIN_*_PASSWORD will only affect
+ *   users that do not already exist — it deliberately does not overwrite an
+ *   existing row's password.
+ */
+
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as sleep } from "node:timers/promises";
 import bcrypt from "bcrypt";
 
 // `pg` is only declared as a dependency of @workspace/db, so resolve it
@@ -13,23 +52,27 @@ const dbRequire = createRequire(
 const { Client } = dbRequire("pg");
 
 const SALT_ROUNDS = 10;
+const MIN_PASSWORD_LENGTH = 12;
+const PRODUCTION_PAUSE_MS = 3000;
 
-const SEED_USERS = [
+// User identities. Passwords are intentionally NOT in this file — they come
+// from environment variables at runtime. See file header for usage.
+export const SEED_USER_IDENTITIES = [
   {
     fullName: "Cesar",
     email: "cesar@cadstone.works",
-    password: "Test1!",
     role: "admin",
+    passwordEnvVar: "SEED_ADMIN_CESAR_PASSWORD",
   },
   {
     fullName: "Anwar",
     email: "anwar@cadstone.works",
-    password: "Test2!",
     role: "admin",
+    passwordEnvVar: "SEED_ADMIN_ANWAR_PASSWORD",
   },
 ];
 
-const TARGETS = {
+export const TARGETS = {
   local: {
     label: "LOCAL",
     envVar: "DATABASE_URL",
@@ -40,20 +83,102 @@ const TARGETS = {
   },
 };
 
-function parseDbFlag(argv) {
+// Obvious weak-password patterns we refuse to use. These are matched
+// case-insensitively against the password as a whole substring, plus a
+// dedicated all-numeric check.
+const WEAK_PASSWORD_PATTERNS = [
+  "test",
+  "password",
+  "passw0rd",
+  "admin",
+  "letmein",
+  "welcome",
+  "qwerty",
+  "cadstone",
+  "changeme",
+  "default",
+];
+
+export function parseArgs(argv) {
+  let db = null;
+  let confirmed = false;
   for (const arg of argv) {
-    if (arg === "--db=local") return "local";
-    if (arg === "--db=production") return "production";
-    if (arg.startsWith("--db=")) {
+    if (arg === "--db=local") {
+      db = "local";
+    } else if (arg === "--db=production") {
+      db = "production";
+    } else if (arg.startsWith("--db=")) {
       throw new Error(
         `Unknown --db value: ${arg}. Expected --db=local or --db=production.`,
       );
+    } else if (arg === "--i-know-what-im-doing") {
+      confirmed = true;
+    } else {
+      throw new Error(`Unrecognized argument: ${arg}`);
     }
   }
-  return null;
+
+  if (!db) {
+    throw new Error(
+      "Missing required --db flag. Pass --db=local or --db=production. " +
+        "Production also requires --i-know-what-im-doing.",
+    );
+  }
+
+  if (db === "production" && !confirmed) {
+    throw new Error(
+      "Refusing to seed PRODUCTION without --i-know-what-im-doing. " +
+        "Re-run with both --db=production and --i-know-what-im-doing if you " +
+        "really mean it.",
+    );
+  }
+
+  return { db, confirmed };
 }
 
-async function seedTarget(target) {
+export function validatePassword(password, envVar) {
+  if (typeof password !== "string" || password.length === 0) {
+    throw new Error(
+      `Missing required env var ${envVar}. Set it to a strong password before running this script.`,
+    );
+  }
+
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(
+      `${envVar} is too short (${password.length} chars). Require at least ${MIN_PASSWORD_LENGTH}.`,
+    );
+  }
+
+  if (/^\d+$/.test(password)) {
+    throw new Error(
+      `${envVar} is all numeric. Use a password with mixed character classes.`,
+    );
+  }
+
+  const lowered = password.toLowerCase();
+  for (const pattern of WEAK_PASSWORD_PATTERNS) {
+    if (lowered.includes(pattern)) {
+      throw new Error(
+        `${envVar} contains a weak/blocked pattern ("${pattern}"). Choose a stronger password.`,
+      );
+    }
+  }
+}
+
+export function resolveSeedUsers(env) {
+  return SEED_USER_IDENTITIES.map((identity) => {
+    const password = env[identity.passwordEnvVar];
+    validatePassword(password, identity.passwordEnvVar);
+    return {
+      fullName: identity.fullName,
+      email: identity.email,
+      role: identity.role,
+      password,
+    };
+  });
+}
+
+async function seedTarget(target, users, { pauseMs = PRODUCTION_PAUSE_MS } = {}) {
   const connectionString = process.env[target.envVar];
 
   if (!connectionString) {
@@ -62,12 +187,25 @@ async function seedTarget(target) {
     );
   }
 
-  console.log(`\n[${target.label}] Seeding users (${target.envVar})…`);
+  console.log(`\n[${target.label}] Target database env var: ${target.envVar}`);
+  console.log(`[${target.label}] About to upsert these users:`);
+  for (const user of users) {
+    console.log(`  - ${user.email} (${user.role}, "${user.fullName}")`);
+  }
+
+  if (target.label === "PRODUCTION" && pauseMs > 0) {
+    console.log(
+      `[${target.label}] Pausing ${pauseMs}ms before writing — Ctrl-C now to abort.`,
+    );
+    await sleep(pauseMs);
+  }
+
+  console.log(`[${target.label}] Connecting…`);
   const client = new Client({ connectionString });
   await client.connect();
 
   try {
-    for (const user of SEED_USERS) {
+    for (const user of users) {
       const existing = await client.query(
         "SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL LIMIT 1",
         [user.email],
@@ -105,15 +243,18 @@ async function seedTarget(target) {
 }
 
 async function main() {
-  const selected = parseDbFlag(process.argv.slice(2));
-  const targetKeys = selected ? [selected] : ["local", "production"];
-
-  for (const key of targetKeys) {
-    await seedTarget(TARGETS[key]);
-  }
+  const { db } = parseArgs(process.argv.slice(2));
+  const target = TARGETS[db];
+  const users = resolveSeedUsers(process.env);
+  await seedTarget(target, users);
 }
 
-main().catch((error) => {
-  console.error("Failed to seed users:", error);
-  process.exitCode = 1;
-});
+const invokedDirectly =
+  process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (invokedDirectly) {
+  main().catch((error) => {
+    console.error("Failed to seed users:", error.message ?? error);
+    process.exitCode = 1;
+  });
+}

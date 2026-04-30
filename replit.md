@@ -87,6 +87,61 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
     - Stdio: `bin/cadstone-mcp.mjs` for clients without HTTP transport support. Attributes actions to the user but not specifically `agent_via_mcp` due to process separation.
 - Auditing: All tool calls (reads and writes) are logged to `activity_log` with `mcp_tool_call` rows for complete attribution.
 
+## Seed admin users
+
+`artifacts/api-server/scripts/seed-users.mjs` upserts the two admin accounts
+(`cesar@cadstone.works`, `anwar@cadstone.works`). It is intentionally
+defensive:
+
+- Requires an explicit `--db=local` or `--db=production` flag — there is no
+  default target.
+- `--db=production` additionally requires `--i-know-what-im-doing`.
+- Reads passwords from `SEED_ADMIN_CESAR_PASSWORD` and
+  `SEED_ADMIN_ANWAR_PASSWORD`. Each must be ≥ 12 chars and must not match
+  the script's weak-pattern deny-list (e.g. `test`, `password`, `admin`,
+  `cadstone`, all-numeric).
+- Logs the target, lists the users it is about to write, and pauses 3 s
+  before writing to production.
+- Only inserts when a row for that email does not already exist — it never
+  overwrites an existing `password_hash`.
+
+Typical local invocation:
+
+```bash
+SEED_ADMIN_CESAR_PASSWORD='…' SEED_ADMIN_ANWAR_PASSWORD='…' \
+  node artifacts/api-server/scripts/seed-users.mjs --db=local
+```
+
+### Rotating production admin passwords (runbook)
+
+Use this when a password may have leaked (e.g. it appeared in git history
+or a script log). The seed script does NOT rotate live passwords on
+purpose, because it skips existing users.
+
+1. Pick two new strong passphrases (≥ 12 chars, not in the deny-list).
+   Keep them only in your password manager.
+2. Hash each one with bcrypt (cost 10) — e.g. via a one-off Node REPL:
+   `node -e "import('bcrypt').then(b => b.default.hash(process.argv[1], 10).then(console.log))" '<new password>'`
+3. In the production database (Supabase SQL editor or `psql` against
+   `SUPABASE_DATABASE_URL`), run:
+   ```sql
+   UPDATE users
+      SET password_hash = $1, updated_at = now()
+    WHERE email = 'cesar@cadstone.works' AND deleted_at IS NULL;
+   ```
+   …and the equivalent for `anwar@cadstone.works`.
+4. Communicate the new passwords to Cesar / Anwar through a secure
+   channel (password manager share, not chat / email).
+5. Invalidate any active sessions for those accounts if the leak is
+   considered hostile (delete refresh-token rows / restart the API).
+6. Update `SEED_ADMIN_CESAR_PASSWORD` / `SEED_ADMIN_ANWAR_PASSWORD` in
+   Replit Secrets only if you want future fresh-database seeds to land
+   the same value. Otherwise leave them unset between runs so the values
+   are not sitting in environment storage.
+
+Never paste the new passwords into chat with the agent or into this
+script's source — the agent must not learn them.
+
 ## Security Advisories
 
 ### Resolved: postcss <8.5.10 (GHSA-qx2v-qp2m-jg93, moderate severity)

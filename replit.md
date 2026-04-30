@@ -154,6 +154,23 @@ be moved to a shared store (Postgres or Redis).
 - ✅ Leads: Create, view, delete with status badges and revenue tracking
 - ✅ Schedule: Full dialog with 2-column layout (left: title/assignees/sub-tabs, right: dates/time range/color/progress/reminder), start+end time support, multi-day via work days
 - ✅ Daily Logs: Default tab when opening a job, BuilderTrend-style activity feed (date-grouped, avatars, inline photo thumbnails, blockquote notes), most recent first, create/edit with weather notes, privacy, keyword search
+- ✅ AI-agent API foundation (Task #107): Personal Access Tokens (`cs_pat_…`, SHA-256 hashed), RFC 7807 `application/problem+json` envelopes (including a catch-all 404 for unknown `/api/*` paths), `Idempotency-Key` replay (mounted after `requireAuth`; persists 2xx/4xx/5xx so retries replay byte-for-byte), cursor pagination on activity/jobs/leads/files/schedule (page-based still supported), `X-RateLimit-*` + `Retry-After` headers, public `/openapi.json` and `/.well-known/ai-plugin.json`, settings UI for token management. Cursor support for daily-logs and search is intentionally deferred to follow-up #113 — both still work via page-based pagination today.
+
+## API surface for agents (Task #107)
+
+External integrations (scripts, AI agents) authenticate with a Personal
+Access Token via `Authorization: Bearer cs_pat_…`. PATs are issued from
+the Settings page, stored as SHA-256 hashes, scoped `read` or
+`read_write`, and bypass the browser-only `X-Requested-With` CSRF gate.
+Errors are emitted as `application/problem+json` (RFC 7807) with
+`type/title/status/detail/instance`; `message` is mirrored for legacy
+clients. Write endpoints honor `Idempotency-Key` and replay the cached
+response for 24h (keyed by `user × key × method × path`, body-hash
+guarded). Heavy list endpoints (jobs, leads, activity) accept an opaque
+`?cursor=` alongside the existing `?page=`. All responses through a rate
+limiter carry `X-RateLimit-Limit/Remaining/Reset`; 429s also carry
+`Retry-After`. The OpenAPI spec at `/openapi.json` documents all of the
+above and powers the codegen in `lib/api-client-react` + `lib/api-zod`.
 
 ## Conventions
 

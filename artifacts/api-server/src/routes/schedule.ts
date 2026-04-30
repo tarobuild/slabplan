@@ -10,6 +10,7 @@ import {
   ne,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
@@ -41,6 +42,7 @@ import {
   isAdmin,
   type AuthContext,
 } from "../lib/authorization";
+import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
@@ -2578,6 +2580,7 @@ const scheduleListQuerySchema = z.object({
     .max(SCHEDULE_LIST_MAX_LIMIT)
     .optional()
     .default(SCHEDULE_LIST_DEFAULT_LIMIT),
+  cursor: z.string().optional(),
 });
 
 router.get(
@@ -2593,18 +2596,70 @@ router.get(
       throw new HttpError(400, "Invalid schedule list query.", parsedQuery.error.flatten());
     }
 
-    const { page, limit } = parsedQuery.data;
+    const { page, limit, cursor: rawCursor } = parsedQuery.data;
+    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    const cursorPayload = rawCursor ? decodeCursor(rawCursor) : null;
     const auth = req.auth!;
     const currentUserId = auth.userId;
 
     // Compose visibility rules in SQL so we don't have to hydrate every row in
     // the job just to compute the total count or to filter out items the
     // requesting user cannot see.
-    const baseWhere = and(
+    const filters: SQL[] = [
       eq(scheduleItems.jobId, jobId),
       isNull(scheduleItems.deletedAt),
-      buildScheduleListVisibilityFilter(auth),
-    );
+    ];
+    const visibility = buildScheduleListVisibilityFilter(auth);
+    if (visibility) filters.push(visibility);
+
+    if (cursorPayload) {
+      const cursorStartDateRaw = String(cursorPayload.k[0] ?? "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(cursorStartDateRaw)) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      filters.push(
+        sql`(${scheduleItems.startDate}, ${scheduleItems.id}) > (${cursorStartDateRaw}::date, ${cursorPayload.id})`,
+      );
+    }
+
+    const baseWhere = and(...filters);
+
+    if (isCursorMode) {
+      const fetchLimit = limit + 1;
+      const fetched = await db
+        .select({ id: scheduleItems.id, startDate: scheduleItems.startDate })
+        .from(scheduleItems)
+        .where(baseWhere)
+        .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id))
+        .limit(fetchLimit);
+
+      const hasMore = fetched.length > limit;
+      const pageRows = hasMore ? fetched.slice(0, limit) : fetched;
+      const last = pageRows[pageRows.length - 1];
+      const nextCursor = hasMore && last
+        ? encodeCursor({
+            v: 1,
+            k: [last.startDate],
+            id: last.id,
+          })
+        : null;
+
+      const hydrated = await hydrateScheduleItems(
+        pageRows.map((row) => row.id),
+        currentUserId,
+      );
+      const data = hydrated.map((entry) => entry.item);
+
+      res.json({
+        data,
+        pagination: {
+          limit,
+          hasMore,
+          nextCursor,
+        },
+      });
+      return;
+    }
 
     const [{ value: totalItems }] = await db
       .select({ value: count() })

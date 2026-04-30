@@ -14,6 +14,8 @@ import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
 import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
+import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
+import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 type DbExecutor = Pick<typeof db, "insert" | "delete">;
@@ -23,6 +25,8 @@ const jobQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
   search: z.string().trim().optional(),
   status: z.enum(["open", "closed", "archived"]).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
 });
 
 const optionalString = z
@@ -273,8 +277,18 @@ router.get(
 
     const accessibleJobIds = await listAccessibleJobIds(req.auth!);
     const { page, pageSize } = query.data;
+    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
+    const effectiveLimit = isCursorMode ? (query.data.limit ?? 25) : pageSize;
 
     if (accessibleJobIds && accessibleJobIds.length === 0) {
+      if (isCursorMode) {
+        res.json({
+          jobs: [],
+          pagination: { limit: effectiveLimit, hasMore: false, nextCursor: null },
+        });
+        return;
+      }
       res.json({
         jobs: [],
         pagination: {
@@ -308,15 +322,26 @@ router.get(
       );
     }
 
-    const whereClause = and(...conditions);
-    const offset = (page - 1) * pageSize;
+    if (cursorPayload) {
+      const cursorCreatedAtRaw = String(cursorPayload.k[0] ?? "");
+      const cursorCreatedAt = new Date(cursorCreatedAtRaw);
+      if (Number.isNaN(cursorCreatedAt.getTime())) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      conditions.push(
+        sql`(${jobs.createdAt}, ${jobs.id}) < (${cursorCreatedAt.toISOString()}::timestamptz, ${cursorPayload.id})`,
+      );
+    }
 
-    const [totalRow] = await db
-      .select({
-        total: count(),
-      })
-      .from(jobs)
-      .where(whereClause);
+    const whereClause = and(...conditions);
+    const fetchLimit = isCursorMode ? effectiveLimit + 1 : pageSize;
+    const offset = isCursorMode ? 0 : (page - 1) * pageSize;
+
+    const totalPromise = isCursorMode
+      ? Promise.resolve([{ total: 0 }])
+      : db.select({ total: count() }).from(jobs).where(whereClause);
+
+    const [totalRow] = await totalPromise;
 
     const rows = await db
       .select({
@@ -345,9 +370,23 @@ router.get(
       .from(jobs)
       .leftJoin(clients, eq(jobs.clientId, clients.id))
       .where(whereClause)
-      .orderBy(desc(jobs.createdAt), asc(jobs.title))
-      .limit(pageSize)
+      .orderBy(desc(jobs.createdAt), desc(jobs.id))
+      .limit(fetchLimit)
       .offset(offset);
+
+    if (isCursorMode) {
+      const hasMore = rows.length > effectiveLimit;
+      const trimmed = hasMore ? rows.slice(0, effectiveLimit) : rows;
+      const last = trimmed[trimmed.length - 1];
+      const nextCursor = hasMore && last
+        ? encodeCursor({ v: 1, k: [last.createdAt.toISOString()], id: last.id })
+        : null;
+      res.json({
+        jobs: trimmed,
+        pagination: { limit: effectiveLimit, hasMore, nextCursor },
+      });
+      return;
+    }
 
     const totalItems = Number(totalRow?.total ?? 0);
 

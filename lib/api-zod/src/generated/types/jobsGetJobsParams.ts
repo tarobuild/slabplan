@@ -8,7 +8,7 @@
 import type { CursorLimitParamParameter } from "./cursorLimitParamParameter";
 import type { CursorParamParameter } from "./cursorParamParameter";
 
-export type LeadsGetLeadsParams = {
+export type JobsGetJobsParams = {
   /**
    * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
    * @minimum 1
@@ -21,7 +21,7 @@ export type LeadsGetLeadsParams = {
    */
   pageSize?: number;
   /**
-   * Optional free-text filter.
+   * Optional free-text filter (job name, address, etc.).
    */
   search?: string;
   /**

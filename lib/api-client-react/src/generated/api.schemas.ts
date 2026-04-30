@@ -1503,6 +1503,104 @@ export interface ScheduleSettingsUpdateResponse {
   settings: ScheduleSettingsRow;
 }
 
+/**
+ * RFC 7807 problem+json error envelope. The legacy `message` field is also populated for backwards compatibility with older clients.
+ */
+export interface Problem {
+  type: string;
+  title: string;
+  status: number;
+  detail: string;
+  instance?: string;
+  /** Legacy alias of `detail`. Kept for backwards-compatibility with the existing frontend. */
+  message?: string;
+  /** Optional structured details (e.g. zod field errors). */
+  errors?: unknown;
+}
+
+/**
+ * Pagination shape returned when the request supplied a `cursor` query parameter.
+ */
+export interface CursorPagination {
+  limit: number;
+  hasMore: boolean;
+  /** Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page. */
+  nextCursor?: string | null;
+}
+
+export type PersonalAccessTokenScope =
+  (typeof PersonalAccessTokenScope)[keyof typeof PersonalAccessTokenScope];
+
+export const PersonalAccessTokenScope = {
+  read: "read",
+  read_write: "read_write",
+} as const;
+
+export interface PersonalAccessToken {
+  id: string;
+  name: string;
+  scope: PersonalAccessTokenScope;
+  /** First few characters of the token (always `cs_pat_`-prefixed). */
+  tokenPrefix: string;
+  /** Last 4 characters of the token, for UI display. */
+  lastFour: string;
+  expiresAt?: string | null;
+  lastUsedAt?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
+}
+
+export interface PersonalAccessTokenList {
+  tokens: PersonalAccessToken[];
+}
+
+export interface PersonalAccessTokenCreated {
+  token: PersonalAccessToken;
+  /** The full token secret. Returned exactly once; the server only stores a SHA-256 hash. */
+  secret: string;
+}
+
+export type PersonalAccessTokenCreatePayloadScope =
+  (typeof PersonalAccessTokenCreatePayloadScope)[keyof typeof PersonalAccessTokenCreatePayloadScope];
+
+export const PersonalAccessTokenCreatePayloadScope = {
+  read: "read",
+  read_write: "read_write",
+} as const;
+
+export interface PersonalAccessTokenCreatePayload {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
+  scope?: PersonalAccessTokenCreatePayloadScope;
+  /** Optional ISO 8601 expiry. Must be in the future. */
+  expiresAt?: string | null;
+}
+
+/**
+ * Optional client-supplied unique key. When present on a write request (POST/PUT/PATCH/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.
+ */
+export type IdempotencyKeyParameter = string;
+
+/**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
+
+ */
+export type CursorParamParameter = string;
+
+/**
+ * Page size when in cursor-based pagination mode. Defaults to 25, max 100.
+ */
+export type CursorLimitParamParameter = number;
+
 export type ClientsGetClientsParams = {
   /**
    * 1-indexed page number. Defaults to 1.
@@ -1529,6 +1627,45 @@ export type ClientsPutClientsIdContactsContactId200 = {
   contact: ClientContact;
 };
 
+export type JobsGetJobsParams = {
+  /**
+   * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * Page size for offset pagination. Ignored when `cursor` is supplied.
+   * @minimum 1
+   * @maximum 100
+   */
+  pageSize?: number;
+  /**
+   * Optional free-text filter (job name, address, etc.).
+   */
+  search?: string;
+  /**
+   * Optional status filter.
+   */
+  status?: string;
+  /**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
+
+ */
+  cursor?: CursorParamParameter;
+  /**
+   * Page size when in cursor-based pagination mode. Defaults to 25, max 100.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: CursorLimitParamParameter;
+};
+
 export type LeadsGetLeadsContactsParams = {
   /**
    * Case-insensitive substring filter applied across contact display name, email, phone, and lead title.
@@ -1538,35 +1675,153 @@ export type LeadsGetLeadsContactsParams = {
 
 export type LeadsGetLeadsParams = {
   /**
-   * 1-indexed page number. Defaults to 1.
+   * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
    * @minimum 1
    */
   page?: number;
   /**
-   * Items per page. Defaults to 10, max 100.
+   * Page size for offset pagination. Ignored when `cursor` is supplied.
    * @minimum 1
    * @maximum 100
    */
   pageSize?: number;
   /**
-   * Case-insensitive substring filter applied across lead title, city, state, and project type.
+   * Optional free-text filter.
    */
   search?: string;
   /**
-   * Restrict to leads with the given status.
+   * Optional status filter.
    */
-  status?: LeadsGetLeadsStatus;
+  status?: string;
+  /**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
+
+ */
+  cursor?: CursorParamParameter;
+  /**
+   * Page size when in cursor-based pagination mode. Defaults to 25, max 100.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: CursorLimitParamParameter;
 };
 
-export type LeadsGetLeadsStatus =
-  (typeof LeadsGetLeadsStatus)[keyof typeof LeadsGetLeadsStatus];
+export type FilesGetFoldersIdFilesParams = {
+  /**
+   * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * Page size. Default 100; max 100.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+   * Sort key (e.g. `modified_newest`, `modified_oldest`, `name_asc`, `name_desc`). Default `modified_newest`.
+   */
+  sortBy?: string;
+  /**
+   * Include soft-deleted files. Default false.
+   */
+  includeDeleted?: boolean;
+  /**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
 
-export const LeadsGetLeadsStatus = {
-  open: "open",
-  in_negotiation: "in_negotiation",
-  won: "won",
-  lost: "lost",
-  archived: "archived",
+ */
+  cursor?: CursorParamParameter;
+};
+
+export type ScheduleGetJobsJobIdScheduleParams = {
+  /**
+   * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+  /**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
+
+ */
+  cursor?: CursorParamParameter;
+};
+
+export type ActivityGetActivityParams = {
+  /**
+   * Filter to activity rows for a specific job.
+   */
+  jobId?: string;
+  /**
+   * Filter to a media type.
+   */
+  mediaType?: ActivityGetActivityMediaType;
+  /**
+   * Filter to a specific folder.
+   */
+  folderId?: string;
+  /**
+   * Filter to a specific entity type. Must be paired with entityId.
+   */
+  entityType?: string;
+  /**
+   * Filter to a specific entity. Must be paired with entityType.
+   */
+  entityId?: string;
+  /**
+   * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * Page size. Default 50; max 100.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
+
+ */
+  cursor?: CursorParamParameter;
+};
+
+export type ActivityGetActivityMediaType =
+  (typeof ActivityGetActivityMediaType)[keyof typeof ActivityGetActivityMediaType];
+
+export const ActivityGetActivityMediaType = {
+  document: "document",
+  photo: "photo",
+  video: "video",
 } as const;
 
 export type SearchGetSearchParams = {

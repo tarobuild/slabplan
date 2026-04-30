@@ -5,6 +5,8 @@ declare namespace Express {
       email: string;
       role: string;
       type: "access" | "upload";
+      patId?: string;
+      patScope?: "read" | "read_write";
     };
   }
 }

@@ -34,6 +34,7 @@ import { ensureSystemFolders, validateUploadForMediaType, writeActivity } from "
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
+import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { requireManagerOrAbove } from "../middleware/require-auth";
 import {
   buildStoredFileName,
@@ -105,6 +106,8 @@ const leadListQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
   search: z.string().trim().optional(),
   status: z.enum(["open", "in_negotiation", "won", "lost", "archived"]).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
 });
 
 const leadPayloadSchema = z.object({
@@ -566,8 +569,19 @@ router.get(
 
     const accessibleLeadIds = await listAccessibleLeadIds(req.auth!);
     const { page, pageSize } = query.data;
+    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
+    const effectiveLimit = isCursorMode ? (query.data.limit ?? 25) : pageSize;
 
     if (accessibleLeadIds && accessibleLeadIds.length === 0) {
+      if (isCursorMode) {
+        res.json({
+          leads: [],
+          pagination: { limit: effectiveLimit, hasMore: false, nextCursor: null },
+          summary: { estimatedRevenueMinTotal: "0", estimatedRevenueMaxTotal: "0" },
+        });
+        return;
+      }
       res.json({
         leads: [],
         pagination: {
@@ -605,24 +619,38 @@ router.get(
       );
     }
 
-    const whereClause = and(...conditions);
-    const offset = (page - 1) * pageSize;
+    if (cursorPayload) {
+      const cursorCreatedAtRaw = String(cursorPayload.k[0] ?? "");
+      const cursorCreatedAt = new Date(cursorCreatedAtRaw);
+      if (Number.isNaN(cursorCreatedAt.getTime())) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      conditions.push(
+        sql`(${leads.createdAt}, ${leads.id}) < (${cursorCreatedAt.toISOString()}::timestamptz, ${cursorPayload.id})`,
+      );
+    }
 
-    const [totalRow, totalsRow] = await Promise.all([
-      db
-        .select({ total: count() })
-        .from(leads)
-        .where(whereClause)
-        .then((rows) => rows[0]),
-      db
-        .select({
-          estimatedRevenueMinTotal: sql<string>`coalesce(sum(${leads.estimatedRevenueMin}), 0)`,
-          estimatedRevenueMaxTotal: sql<string>`coalesce(sum(${leads.estimatedRevenueMax}), 0)`,
-        })
-        .from(leads)
-        .where(whereClause)
-        .then((rows) => rows[0]),
-    ]);
+    const whereClause = and(...conditions);
+    const fetchLimit = isCursorMode ? effectiveLimit + 1 : pageSize;
+    const offset = isCursorMode ? 0 : (page - 1) * pageSize;
+
+    const [totalRow, totalsRow] = isCursorMode
+      ? [undefined, undefined]
+      : await Promise.all([
+          db
+            .select({ total: count() })
+            .from(leads)
+            .where(whereClause)
+            .then((rows) => rows[0]),
+          db
+            .select({
+              estimatedRevenueMinTotal: sql<string>`coalesce(sum(${leads.estimatedRevenueMin}), 0)`,
+              estimatedRevenueMaxTotal: sql<string>`coalesce(sum(${leads.estimatedRevenueMax}), 0)`,
+            })
+            .from(leads)
+            .where(whereClause)
+            .then((rows) => rows[0]),
+        ]);
 
     const rows = await db
       .select({
@@ -646,8 +674,8 @@ router.get(
       .from(leads)
       .leftJoin(users, eq(leads.createdBy, users.id))
       .where(whereClause)
-      .orderBy(desc(leads.createdAt), asc(leads.title))
-      .limit(pageSize)
+      .orderBy(desc(leads.createdAt), desc(leads.id))
+      .limit(fetchLimit)
       .offset(offset);
 
     const leadIds = rows.map((lead) => lead.id);
@@ -678,6 +706,24 @@ router.get(
       }
 
       primaryContactByLeadId.set(contact.leadId, contact);
+    }
+
+    if (isCursorMode) {
+      const hasMore = rows.length > effectiveLimit;
+      const trimmed = hasMore ? rows.slice(0, effectiveLimit) : rows;
+      const last = trimmed[trimmed.length - 1];
+      const nextCursor = hasMore && last
+        ? encodeCursor({ v: 1, k: [last.createdAt.toISOString()], id: last.id })
+        : null;
+      res.json({
+        leads: trimmed.map((lead) => ({
+          ...lead,
+          clientContact: primaryContactByLeadId.get(lead.id) ?? null,
+        })),
+        pagination: { limit: effectiveLimit, hasMore, nextCursor },
+        summary: { estimatedRevenueMinTotal: "0", estimatedRevenueMaxTotal: "0" },
+      });
+      return;
     }
 
     const totalItems = Number(totalRow?.total ?? 0);

@@ -16,7 +16,11 @@ import { corsOrigin } from "./lib/cors";
 import { sanitizeDownloadFilename } from "./lib/downloads";
 import { logger } from "./lib/logger";
 import { HttpError } from "./lib/http";
+import { sendProblem, sendUnknownErrorProblem } from "./lib/problem-json";
+import { isPatToken } from "./lib/personal-access-tokens";
+import { createGlobalApiRateLimit } from "./lib/rate-limit";
 import { readBearerToken } from "./middleware/require-auth";
+import publicSpecRouter from "./routes/public-spec";
 import { ensureUploadRoot, streamStoredFileToResponse } from "./lib/storage";
 import { ensureTempUploadDir } from "./lib/uploads";
 
@@ -78,6 +82,12 @@ app.use(
     credentials: true,
   }),
 );
+
+// Mount the global API rate limiter BEFORE the CSRF gate so X-RateLimit-*
+// headers appear on EVERY /api response — including 403s synthesised by the
+// CSRF gate or 401s from missing auth, not just on successful requests.
+app.use("/api", createGlobalApiRateLimit());
+
 app.use((req, _res, next) => {
   const method = req.method.toUpperCase();
 
@@ -86,8 +96,18 @@ app.use((req, _res, next) => {
     return;
   }
 
+  // Personal access tokens are an explicit programmatic-access channel that
+  // does not depend on the browser's cookie+CSRF model. Skip the
+  // X-Requested-With gate for PAT-bearing requests so script/MCP/CLI clients
+  // can call the API without faking a browser header.
+  const bearer = readBearerToken(req);
+  if (bearer && isPatToken(bearer)) {
+    next();
+    return;
+  }
+
   if (req.get("X-Requested-With") !== "XMLHttpRequest") {
-    next(new HttpError(403, "State-changing requests must include X-Requested-With: XMLHttpRequest."));
+    next(new HttpError(403, "State-changing requests must include X-Requested-With: XMLHttpRequest.", undefined, "csrf"));
     return;
   }
 
@@ -146,7 +166,26 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
   }
 });
 
+// Public, unauthenticated, CORS-friendly endpoints for AI-agent discovery.
+// Mounted before the `/api` router so they bypass auth and the CSRF gate above
+// (which already lets through GET).
+app.use(publicSpecRouter);
+
 app.use("/api", router);
+
+// Any /api/* path that did not match a router above produces a problem+json
+// 404 instead of falling through to the SPA static handler below. This keeps
+// the API surface RFC 7807 end-to-end for unknown routes too.
+app.use("/api", (req, _res, next) => {
+  next(
+    new HttpError(
+      404,
+      `Unknown API endpoint: ${req.method} ${req.originalUrl.split("?")[0]}`,
+      undefined,
+      "not-found",
+    ),
+  );
+});
 
 // Serve the compiled React frontend whenever the build output is present.
 // In production the build is always present. In the dev workflow the build
@@ -161,19 +200,13 @@ if (existsSync(path.join(clientDist, "index.html"))) {
   });
 }
 
-app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof HttpError) {
-    res.status(err.statusCode).json({
-      message: err.message,
-      details: err.details ?? null,
-    });
+    sendProblem(res, req, err);
     return;
   }
 
-  logger.error({ err }, "Unhandled request error");
-  res.status(500).json({
-    message: "Internal server error",
-  });
+  sendUnknownErrorProblem(res, req, err);
 });
 
 export default app;

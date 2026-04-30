@@ -12,6 +12,7 @@ import {
   type Folder,
   users,
 } from "@workspace/db/schema";
+import { encodeCursor, type CursorPayload } from "./cursor";
 import { HttpError } from "./http";
 import {
   buildStoredFileName,
@@ -687,6 +688,8 @@ export async function listFilesForFolder(params: {
   includeDeleted?: boolean;
   page?: number;
   limit?: number;
+  cursor?: CursorPayload | null;
+  isCursorMode?: boolean;
 }) {
   const folder = await getFolderOrThrow(params.folderId, params.includeDeleted ?? false);
 
@@ -747,36 +750,80 @@ export async function listFilesForFolder(params: {
 
   const page = params.page ?? 1;
   const limit = params.limit ?? 100;
-  const offset = (page - 1) * limit;
+  const isCursorMode = params.isCursorMode === true;
+
+  // Cursor pagination anchors on (updatedAt DESC, id DESC) so the documented
+  // cursor/limit pair works regardless of sortBy. When the caller hits us
+  // without a cursor (first page bootstrap) we still respond in cursor format
+  // — we just skip the inequality clause.
+  if (isCursorMode) {
+    if (params.cursor) {
+      const cursor = params.cursor;
+      const cursorUpdatedAt = new Date(String(cursor.k[0] ?? ""));
+      if (Number.isNaN(cursorUpdatedAt.getTime())) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      conditions.push(
+        sql`(${files.updatedAt}, ${files.id}) < (${cursorUpdatedAt.toISOString()}::timestamptz, ${cursor.id})`,
+      );
+    }
+    orderBy = [desc(files.updatedAt), desc(files.id)];
+  }
+
+  const offset = isCursorMode ? 0 : (page - 1) * limit;
+  const fetchLimit = isCursorMode ? limit + 1 : limit;
   const whereClause = and(...conditions);
 
+  const rowsPromise = db
+    .select({
+      id: files.id,
+      folderId: files.folderId,
+      filename: files.filename,
+      originalName: files.originalName,
+      fileUrl: files.fileUrl,
+      fileSize: files.fileSize,
+      mimeType: files.mimeType,
+      note: files.note,
+      uploadedBy: files.uploadedBy,
+      createdAt: files.createdAt,
+      updatedAt: files.updatedAt,
+      deletedAt: files.deletedAt,
+      uploadedByName: users.fullName,
+    })
+    .from(files)
+    .leftJoin(users, eq(files.uploadedBy, users.id))
+    .where(whereClause)
+    .orderBy(...orderBy)
+    .limit(fetchLimit)
+    .offset(offset);
+
+  if (isCursorMode) {
+    const fetched = await rowsPromise;
+    const hasMore = fetched.length > limit;
+    const rows = hasMore ? fetched.slice(0, limit) : fetched;
+    const last = rows[rows.length - 1];
+    const nextCursor = hasMore && last
+      ? encodeCursor({
+          v: 1,
+          k: [last.updatedAt.toISOString()],
+          id: last.id,
+        })
+      : null;
+
+    return {
+      folder,
+      files: rows,
+      pagination: {
+        limit,
+        hasMore,
+        nextCursor,
+      },
+    };
+  }
+
   const [rows, [totalRow]] = await Promise.all([
-    db
-      .select({
-        id: files.id,
-        folderId: files.folderId,
-        filename: files.filename,
-        originalName: files.originalName,
-        fileUrl: files.fileUrl,
-        fileSize: files.fileSize,
-        mimeType: files.mimeType,
-        note: files.note,
-        uploadedBy: files.uploadedBy,
-        createdAt: files.createdAt,
-        updatedAt: files.updatedAt,
-        deletedAt: files.deletedAt,
-        uploadedByName: users.fullName,
-      })
-      .from(files)
-      .leftJoin(users, eq(files.uploadedBy, users.id))
-      .where(whereClause)
-      .orderBy(...orderBy)
-      .limit(limit)
-      .offset(offset),
-    db
-      .select({ total: count() })
-      .from(files)
-      .where(whereClause),
+    rowsPromise,
+    db.select({ total: count() }).from(files).where(whereClause),
   ]);
 
   const totalItems = Number(totalRow?.total ?? 0);
@@ -1479,6 +1526,8 @@ export async function getActivityEntries(params: {
   allowedLeadIds?: string[] | null;
   page?: number;
   limit?: number;
+  cursor?: { createdAt: string; id: string } | null;
+  isCursorMode?: boolean;
 }) {
   const metadataJobId = sql<string | null>`${activityLog.metadata} ->> 'jobId'`;
   const metadataLeadId = sql<string | null>`${activityLog.metadata} ->> 'leadId'`;
@@ -1544,9 +1593,65 @@ export async function getActivityEntries(params: {
     }
   }
 
+  const limit = params.limit ?? 50;
+  const cursor = params.cursor ?? null;
+  const isCursorMode = params.isCursorMode === true || cursor !== null;
+
+  if (isCursorMode) {
+    // Cursor mode: skip the costly COUNT and fetch limit+1 to detect the next
+    // page. When `cursor` is provided we add the stable
+    // `(createdAt, id) < (cursorCreatedAt, cursorId)` comparison; without one
+    // we just return the first page so callers can bootstrap with
+    // `?cursor=&limit=N` (or `?limit=N`) and follow `nextCursor` from there.
+    if (cursor) {
+      const cursorCreatedAt = new Date(cursor.createdAt);
+      if (Number.isNaN(cursorCreatedAt.getTime())) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      conditions.push(
+        sql`(${activityLog.createdAt}, ${activityLog.id}) < (${cursorCreatedAt.toISOString()}::timestamptz, ${cursor.id})`,
+      );
+    }
+
+    const whereClauseCursor = and(...conditions);
+    const fetchLimit = limit + 1;
+
+    const rows = await db
+      .select({
+        id: activityLog.id,
+        entityType: activityLog.entityType,
+        entityId: activityLog.entityId,
+        action: activityLog.action,
+        metadata: activityLog.metadata,
+        description: metadataDescription,
+        createdAt: activityLog.createdAt,
+        userName: users.fullName,
+      })
+      .from(activityLog)
+      .leftJoin(users, eq(activityLog.userId, users.id))
+      .where(whereClauseCursor)
+      .orderBy(desc(activityLog.createdAt), desc(activityLog.id))
+      .limit(fetchLimit);
+
+    const hasMore = rows.length > limit;
+    const trimmed = hasMore ? rows.slice(0, limit) : rows;
+    const last = trimmed[trimmed.length - 1];
+    const nextCursorPayload = hasMore && last
+      ? { createdAt: last.createdAt.toISOString(), id: last.id }
+      : null;
+
+    return {
+      data: trimmed,
+      pagination: {
+        limit,
+        hasMore,
+        nextCursor: nextCursorPayload,
+      },
+    };
+  }
+
   const whereClause = and(...conditions);
   const page = params.page ?? 1;
-  const limit = params.limit ?? 50;
   const offset = (page - 1) * limit;
 
   const [totalRow] = await db
@@ -1570,7 +1675,7 @@ export async function getActivityEntries(params: {
     .from(activityLog)
     .leftJoin(users, eq(activityLog.userId, users.id))
     .where(whereClause)
-    .orderBy(desc(activityLog.createdAt))
+    .orderBy(desc(activityLog.createdAt), desc(activityLog.id))
     .limit(limit)
     .offset(offset);
 

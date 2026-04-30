@@ -224,6 +224,9 @@ importers:
       socket.io:
         specifier: ^4.8.3
         version: 4.8.3
+      yaml:
+        specifier: 2.8.3
+        version: 2.8.3
       zod:
         specifier: 3.25.76
         version: 3.25.76
@@ -719,6 +722,9 @@ importers:
       orval:
         specifier: ^8.5.2
         version: 8.5.3(prettier@3.8.1)(typescript@5.9.3)
+      yaml:
+        specifier: ^2.8.3
+        version: 2.8.3
 
   lib/api-zod:
     dependencies:

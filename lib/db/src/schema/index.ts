@@ -823,6 +823,62 @@ export const fileAnnotations = pgTable(
   ],
 );
 
+export const personalAccessTokenScopes = ["read", "read_write"] as const;
+
+export const personalAccessTokens = pgTable(
+  "personal_access_tokens",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    scope: varchar("scope", { length: 32 }).notNull().default("read_write"),
+    tokenHash: varchar("token_hash", { length: 128 }).notNull(),
+    tokenPrefix: varchar("token_prefix", { length: 16 }).notNull(),
+    lastFour: varchar("last_four", { length: 8 }).notNull(),
+    expiresAt: timestampTz("expires_at"),
+    lastUsedAt: timestampTz("last_used_at"),
+    revokedAt: timestampTz("revoked_at"),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("personal_access_tokens_token_hash_unique").on(table.tokenHash),
+    index("personal_access_tokens_user_id_idx").on(table.userId),
+    check(
+      "personal_access_tokens_scope_check",
+      sql`${table.scope} in ('read', 'read_write')`,
+    ),
+  ],
+);
+
+export const idempotencyKeys = pgTable(
+  "idempotency_keys",
+  {
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    key: varchar("key", { length: 255 }).notNull(),
+    method: varchar("method", { length: 10 }).notNull(),
+    path: varchar("path", { length: 500 }).notNull(),
+    requestHash: varchar("request_hash", { length: 128 }).notNull(),
+    statusCode: integer("status_code").notNull(),
+    responseBody: text("response_body").notNull(),
+    responseContentType: varchar("response_content_type", { length: 100 }).notNull().default("application/json"),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    expiresAt: timestampTz("expires_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("idempotency_keys_user_key_method_path_unique").on(
+      table.userId,
+      table.key,
+      table.method,
+      table.path,
+    ),
+    index("idempotency_keys_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
 export const activityLog = pgTable(
   "activity_log",
   {
@@ -883,4 +939,8 @@ export type DailyLogComment = typeof dailyLogComments.$inferSelect;
 export type DailyLogTodo = typeof dailyLogTodos.$inferSelect;
 export type FileAnnotation = typeof fileAnnotations.$inferSelect;
 export type NewFileAnnotation = typeof fileAnnotations.$inferInsert;
+export type PersonalAccessToken = typeof personalAccessTokens.$inferSelect;
+export type NewPersonalAccessToken = typeof personalAccessTokens.$inferInsert;
+export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
+export type NewIdempotencyKey = typeof idempotencyKeys.$inferInsert;
 export type ActivityLogEntry = typeof activityLog.$inferSelect;

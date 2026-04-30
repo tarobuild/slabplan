@@ -5,29 +5,20 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { CursorLimitParamParameter } from "./cursorLimitParamParameter";
 import type { CursorParamParameter } from "./cursorParamParameter";
 
-export type LeadsGetLeadsParams = {
+export type ScheduleGetJobsJobIdScheduleParams = {
   /**
    * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
    * @minimum 1
    */
   page?: number;
   /**
-   * Page size for offset pagination. Ignored when `cursor` is supplied.
+   * Page size.
    * @minimum 1
-   * @maximum 100
+   * @maximum 200
    */
-  pageSize?: number;
-  /**
-   * Optional free-text filter.
-   */
-  search?: string;
-  /**
-   * Optional status filter.
-   */
-  status?: string;
+  limit?: number;
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
@@ -39,10 +30,4 @@ ignored.
 
  */
   cursor?: CursorParamParameter;
-  /**
-   * Page size when in cursor-based pagination mode. Defaults to 25, max 100.
-   * @minimum 1
-   * @maximum 100
-   */
-  limit?: CursorLimitParamParameter;
 };

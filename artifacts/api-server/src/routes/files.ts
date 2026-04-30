@@ -14,6 +14,7 @@ import {
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
+import { decodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { sanitizeDownloadFilename } from "../lib/downloads";
 import { getFileOrThrow, listFilesForFolder, purgeFile, renameFile, restoreFile, saveUploadedFiles, softDeleteFile } from "../lib/file-manager";
 import {
@@ -52,6 +53,7 @@ const fileListQuerySchema = z.object({
   includeDeleted: z.coerce.boolean().optional().default(false),
   page: z.coerce.number().int().positive().optional().default(1),
   limit: z.coerce.number().int().positive().max(100).optional().default(100),
+  cursor: z.string().optional(),
 });
 
 const renameFileSchema = z.object({
@@ -93,6 +95,9 @@ router.get(
     const folderId = getParam(req.params.id, "folder id");
     await assertCanViewFolder(req.auth!, folderId);
 
+    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    const cursor = query.data.cursor ? decodeCursor(query.data.cursor) : null;
+
     const result = await listFilesForFolder({
       folderId,
       search: query.data.search?.trim() || null,
@@ -104,6 +109,8 @@ router.get(
       includeDeleted: query.data.includeDeleted,
       page: query.data.page,
       limit: query.data.limit,
+      cursor,
+      isCursorMode,
     });
 
     res.json(result);

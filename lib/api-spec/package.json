@@ -3,9 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "codegen": "orval --config ./orval.config.ts"
+    "codegen": "orval --config ./orval.config.ts && node ./scripts/post-codegen.mjs"
   },
   "devDependencies": {
-    "orval": "^8.5.2"
+    "orval": "^8.5.2",
+    "yaml": "^2.8.3"
   }
 }

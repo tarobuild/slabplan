@@ -3,6 +3,7 @@ import { Router, type IRouter } from "express";
 import { listAccessibleJobIds, listAccessibleLeadIds } from "../lib/authorization";
 import { getActivityEntries } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
+import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 
 const router: IRouter = Router();
 
@@ -14,6 +15,7 @@ const querySchema = z.object({
   entityId: z.string().uuid().optional(),
   page: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
+  cursor: z.string().optional(),
 }).superRefine((value, ctx) => {
   if ((value.entityType && !value.entityId) || (!value.entityType && value.entityId)) {
     ctx.addIssue({
@@ -48,7 +50,20 @@ router.get(
     const noJobAccess = accessibleJobIds !== null && accessibleJobIds.length === 0;
     const noLeadAccess = accessibleLeadIds !== null && accessibleLeadIds.length === 0;
 
+    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
+    const cursor = cursorPayload
+      ? { createdAt: String(cursorPayload.k[0] ?? ""), id: cursorPayload.id }
+      : null;
+
     if (noJobAccess && noLeadAccess) {
+      if (isCursorMode) {
+        res.json({
+          data: [],
+          pagination: { limit: query.data.limit ?? 50, hasMore: false, nextCursor: null },
+        });
+        return;
+      }
       res.json({
         data: [],
         pagination: {
@@ -76,7 +91,23 @@ router.get(
       allowedLeadIds: accessibleLeadIds,
       page: query.data.page,
       limit: query.data.limit,
+      cursor,
+      isCursorMode,
     });
+
+    if (isCursorMode && "nextCursor" in result.pagination) {
+      const next = result.pagination.nextCursor;
+      const encoded = next ? encodeCursor({ v: 1, k: [next.createdAt], id: next.id }) : null;
+      res.json({
+        data: result.data,
+        pagination: {
+          limit: result.pagination.limit,
+          hasMore: result.pagination.hasMore,
+          nextCursor: encoded,
+        },
+      });
+      return;
+    }
 
     res.json(result);
   }),

@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  ActivityGetActivityParams,
   AnyValue,
   ClientDetailResponse,
   ClientJobsResponse,
@@ -38,7 +39,7 @@ import type {
   DailyLogsDailyLogPayloadSchema,
   DailyLogsTodoPayloadSchema,
   DailyLogsTodoTogglePayloadSchema,
-  Error,
+  FilesGetFoldersIdFilesParams,
   FilesRenameFileSchema,
   FoldersFolderBodySchema,
   FoldersFolderUpdateSchema,
@@ -47,6 +48,7 @@ import type {
   HealthStatus,
   JobDetailResponse,
   JobListResponse,
+  JobsGetJobsParams,
   JobsJobPayloadSchema,
   LeadAttachmentsCreatedResponse,
   LeadContactResponse,
@@ -61,10 +63,15 @@ import type {
   LeadsGetLeadsParams,
   LeadsLeadPayloadSchema,
   MyDailyLogsResponse,
+  PersonalAccessTokenCreatePayload,
+  PersonalAccessTokenCreated,
+  PersonalAccessTokenList,
+  Problem,
   ScheduleAttachmentResponse,
   ScheduleAttachmentsCreatedResponse,
   ScheduleBaselineResponse,
   ScheduleConflictsResponse,
+  ScheduleGetJobsJobIdScheduleParams,
   ScheduleItemResponse,
   ScheduleListResponse,
   ScheduleNoteResponse,
@@ -121,7 +128,7 @@ export const authPostAuthRegister = async (
 };
 
 export const getAuthPostAuthRegisterMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -162,13 +169,13 @@ export type AuthPostAuthRegisterMutationResult = NonNullable<
   Awaited<ReturnType<typeof authPostAuthRegister>>
 >;
 export type AuthPostAuthRegisterMutationBody = BodyType<GenericObject>;
-export type AuthPostAuthRegisterMutationError = ErrorType<Error>;
+export type AuthPostAuthRegisterMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /auth/register
  */
 export const useAuthPostAuthRegister = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -208,7 +215,7 @@ export const authPostAuthLogin = async (
 };
 
 export const getAuthPostAuthLoginMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -249,13 +256,13 @@ export type AuthPostAuthLoginMutationResult = NonNullable<
   Awaited<ReturnType<typeof authPostAuthLogin>>
 >;
 export type AuthPostAuthLoginMutationBody = BodyType<GenericObject>;
-export type AuthPostAuthLoginMutationError = ErrorType<Error>;
+export type AuthPostAuthLoginMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /auth/login
  */
 export const useAuthPostAuthLogin = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -292,7 +299,7 @@ export const authPostAuthLogout = async (
 };
 
 export const getAuthPostAuthLogoutMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -331,13 +338,13 @@ export type AuthPostAuthLogoutMutationResult = NonNullable<
   Awaited<ReturnType<typeof authPostAuthLogout>>
 >;
 
-export type AuthPostAuthLogoutMutationError = ErrorType<Error>;
+export type AuthPostAuthLogoutMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /auth/logout
  */
 export const useAuthPostAuthLogout = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -374,7 +381,7 @@ export const authPostAuthRefresh = async (
 };
 
 export const getAuthPostAuthRefreshMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -413,13 +420,13 @@ export type AuthPostAuthRefreshMutationResult = NonNullable<
   Awaited<ReturnType<typeof authPostAuthRefresh>>
 >;
 
-export type AuthPostAuthRefreshMutationError = ErrorType<Error>;
+export type AuthPostAuthRefreshMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /auth/refresh
  */
 export const useAuthPostAuthRefresh = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -461,7 +468,7 @@ export const getUsersGetUsersQueryKey = () => {
 
 export const getUsersGetUsersQueryOptions = <
   TData = Awaited<ReturnType<typeof usersGetUsers>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof usersGetUsers>>,
@@ -488,7 +495,7 @@ export const getUsersGetUsersQueryOptions = <
 export type UsersGetUsersQueryResult = NonNullable<
   Awaited<ReturnType<typeof usersGetUsers>>
 >;
-export type UsersGetUsersQueryError = ErrorType<Error>;
+export type UsersGetUsersQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /users
@@ -496,7 +503,7 @@ export type UsersGetUsersQueryError = ErrorType<Error>;
 
 export function useUsersGetUsers<
   TData = Awaited<ReturnType<typeof usersGetUsers>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof usersGetUsers>>,
@@ -537,7 +544,7 @@ export const getUsersGetUsersMeQueryKey = () => {
 
 export const getUsersGetUsersMeQueryOptions = <
   TData = Awaited<ReturnType<typeof usersGetUsersMe>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof usersGetUsersMe>>,
@@ -564,7 +571,7 @@ export const getUsersGetUsersMeQueryOptions = <
 export type UsersGetUsersMeQueryResult = NonNullable<
   Awaited<ReturnType<typeof usersGetUsersMe>>
 >;
-export type UsersGetUsersMeQueryError = ErrorType<Error>;
+export type UsersGetUsersMeQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /users/me
@@ -572,7 +579,7 @@ export type UsersGetUsersMeQueryError = ErrorType<Error>;
 
 export function useUsersGetUsersMe<
   TData = Awaited<ReturnType<typeof usersGetUsersMe>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof usersGetUsersMe>>,
@@ -611,7 +618,7 @@ export const usersPutUsersMe = async (
 };
 
 export const getUsersPutUsersMeMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -652,13 +659,13 @@ export type UsersPutUsersMeMutationResult = NonNullable<
   Awaited<ReturnType<typeof usersPutUsersMe>>
 >;
 export type UsersPutUsersMeMutationBody = BodyType<UsersUpdateProfileSchema>;
-export type UsersPutUsersMeMutationError = ErrorType<Error>;
+export type UsersPutUsersMeMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /users/me
  */
 export const useUsersPutUsersMe = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -698,7 +705,7 @@ export const usersPostUsersMePassword = async (
 };
 
 export const getUsersPostUsersMePasswordMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -740,13 +747,13 @@ export type UsersPostUsersMePasswordMutationResult = NonNullable<
 >;
 export type UsersPostUsersMePasswordMutationBody =
   BodyType<UsersChangePasswordSchema>;
-export type UsersPostUsersMePasswordMutationError = ErrorType<Error>;
+export type UsersPostUsersMePasswordMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /users/me/password
  */
 export const useUsersPostUsersMePassword = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -803,7 +810,7 @@ export const getClientsGetClientsQueryKey = (
 
 export const getClientsGetClientsQueryOptions = <
   TData = Awaited<ReturnType<typeof clientsGetClients>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   params?: ClientsGetClientsParams,
   options?: {
@@ -834,7 +841,7 @@ export const getClientsGetClientsQueryOptions = <
 export type ClientsGetClientsQueryResult = NonNullable<
   Awaited<ReturnType<typeof clientsGetClients>>
 >;
-export type ClientsGetClientsQueryError = ErrorType<Error>;
+export type ClientsGetClientsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /clients
@@ -842,7 +849,7 @@ export type ClientsGetClientsQueryError = ErrorType<Error>;
 
 export function useClientsGetClients<
   TData = Awaited<ReturnType<typeof clientsGetClients>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   params?: ClientsGetClientsParams,
   options?: {
@@ -884,7 +891,7 @@ export const clientsPostClients = async (
 };
 
 export const getClientsPostClientsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -926,13 +933,13 @@ export type ClientsPostClientsMutationResult = NonNullable<
 >;
 export type ClientsPostClientsMutationBody =
   BodyType<ClientsClientPayloadSchema>;
-export type ClientsPostClientsMutationError = ErrorType<Error>;
+export type ClientsPostClientsMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /clients
  */
 export const useClientsPostClients = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -975,7 +982,7 @@ export const getClientsGetClientsIdQueryKey = (id: string) => {
 
 export const getClientsGetClientsIdQueryOptions = <
   TData = Awaited<ReturnType<typeof clientsGetClientsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -1010,7 +1017,7 @@ export const getClientsGetClientsIdQueryOptions = <
 export type ClientsGetClientsIdQueryResult = NonNullable<
   Awaited<ReturnType<typeof clientsGetClientsId>>
 >;
-export type ClientsGetClientsIdQueryError = ErrorType<Error>;
+export type ClientsGetClientsIdQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /clients/{id}
@@ -1018,7 +1025,7 @@ export type ClientsGetClientsIdQueryError = ErrorType<Error>;
 
 export function useClientsGetClientsId<
   TData = Awaited<ReturnType<typeof clientsGetClientsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -1061,7 +1068,7 @@ export const clientsPutClientsId = async (
 };
 
 export const getClientsPutClientsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1103,13 +1110,13 @@ export type ClientsPutClientsIdMutationResult = NonNullable<
 >;
 export type ClientsPutClientsIdMutationBody =
   BodyType<ClientsClientPayloadSchema>;
-export type ClientsPutClientsIdMutationError = ErrorType<Error>;
+export type ClientsPutClientsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /clients/{id}
  */
 export const useClientsPutClientsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1147,7 +1154,7 @@ export const clientsDeleteClientsId = async (
 };
 
 export const getClientsDeleteClientsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1188,13 +1195,13 @@ export type ClientsDeleteClientsIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof clientsDeleteClientsId>>
 >;
 
-export type ClientsDeleteClientsIdMutationError = ErrorType<Error>;
+export type ClientsDeleteClientsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /clients/{id}
  */
 export const useClientsDeleteClientsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1237,7 +1244,7 @@ export const getClientsGetClientsIdContactsQueryKey = (id: string) => {
 
 export const getClientsGetClientsIdContactsQueryOptions = <
   TData = Awaited<ReturnType<typeof clientsGetClientsIdContacts>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -1274,7 +1281,7 @@ export const getClientsGetClientsIdContactsQueryOptions = <
 export type ClientsGetClientsIdContactsQueryResult = NonNullable<
   Awaited<ReturnType<typeof clientsGetClientsIdContacts>>
 >;
-export type ClientsGetClientsIdContactsQueryError = ErrorType<Error>;
+export type ClientsGetClientsIdContactsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /clients/{id}/contacts
@@ -1282,7 +1289,7 @@ export type ClientsGetClientsIdContactsQueryError = ErrorType<Error>;
 
 export function useClientsGetClientsIdContacts<
   TData = Awaited<ReturnType<typeof clientsGetClientsIdContacts>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -1328,7 +1335,7 @@ export const clientsPostClientsIdContacts = async (
 };
 
 export const getClientsPostClientsIdContactsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1370,13 +1377,13 @@ export type ClientsPostClientsIdContactsMutationResult = NonNullable<
 >;
 export type ClientsPostClientsIdContactsMutationBody =
   BodyType<ClientsContactPayloadSchema>;
-export type ClientsPostClientsIdContactsMutationError = ErrorType<Error>;
+export type ClientsPostClientsIdContactsMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /clients/{id}/contacts
  */
 export const useClientsPostClientsIdContacts = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1419,7 +1426,7 @@ export const getClientsGetClientsIdJobsQueryKey = (id: string) => {
 
 export const getClientsGetClientsIdJobsQueryOptions = <
   TData = Awaited<ReturnType<typeof clientsGetClientsIdJobs>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -1456,7 +1463,7 @@ export const getClientsGetClientsIdJobsQueryOptions = <
 export type ClientsGetClientsIdJobsQueryResult = NonNullable<
   Awaited<ReturnType<typeof clientsGetClientsIdJobs>>
 >;
-export type ClientsGetClientsIdJobsQueryError = ErrorType<Error>;
+export type ClientsGetClientsIdJobsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /clients/{id}/jobs
@@ -1464,7 +1471,7 @@ export type ClientsGetClientsIdJobsQueryError = ErrorType<Error>;
 
 export function useClientsGetClientsIdJobs<
   TData = Awaited<ReturnType<typeof clientsGetClientsIdJobs>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -1514,7 +1521,7 @@ export const clientsPutClientsIdContactsContactId = async (
 };
 
 export const getClientsPutClientsIdContactsContactIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1574,13 +1581,13 @@ export type ClientsPutClientsIdContactsContactIdMutationResult = NonNullable<
 export type ClientsPutClientsIdContactsContactIdMutationBody =
   BodyType<ClientsContactPayloadSchema>;
 export type ClientsPutClientsIdContactsContactIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /clients/{id}/contacts/{contactId}
  */
 export const useClientsPutClientsIdContactsContactId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1635,7 +1642,7 @@ export const clientsDeleteClientsIdContactsContactId = async (
 };
 
 export const getClientsDeleteClientsIdContactsContactIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1681,13 +1688,13 @@ export type ClientsDeleteClientsIdContactsContactIdMutationResult = NonNullable<
 >;
 
 export type ClientsDeleteClientsIdContactsContactIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /clients/{id}/contacts/{contactId}
  */
 export const useClientsDeleteClientsIdContactsContactId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1709,44 +1716,60 @@ export const useClientsDeleteClientsIdContactsContactId = <
 };
 
 /**
- * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated query with jobQuerySchema.
+ * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated query with jobQuerySchema. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
  * @summary GET /jobs
  */
-export const getJobsGetJobsUrl = () => {
-  return `/api/jobs`;
+export const getJobsGetJobsUrl = (params?: JobsGetJobsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/jobs?${stringifiedParams}`
+    : `/api/jobs`;
 };
 
 export const jobsGetJobs = async (
+  params?: JobsGetJobsParams,
   options?: RequestInit,
 ): Promise<JobListResponse> => {
-  return customFetch<JobListResponse>(getJobsGetJobsUrl(), {
+  return customFetch<JobListResponse>(getJobsGetJobsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getJobsGetJobsQueryKey = () => {
-  return [`/api/jobs`] as const;
+export const getJobsGetJobsQueryKey = (params?: JobsGetJobsParams) => {
+  return [`/api/jobs`, ...(params ? [params] : [])] as const;
 };
 
 export const getJobsGetJobsQueryOptions = <
   TData = Awaited<ReturnType<typeof jobsGetJobs>>,
-  TError = ErrorType<Error>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof jobsGetJobs>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+  TError = ErrorType<Problem>,
+>(
+  params?: JobsGetJobsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof jobsGetJobs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getJobsGetJobsQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getJobsGetJobsQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof jobsGetJobs>>> = ({
     signal,
-  }) => jobsGetJobs({ signal, ...requestOptions });
+  }) => jobsGetJobs(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof jobsGetJobs>>,
@@ -1758,7 +1781,7 @@ export const getJobsGetJobsQueryOptions = <
 export type JobsGetJobsQueryResult = NonNullable<
   Awaited<ReturnType<typeof jobsGetJobs>>
 >;
-export type JobsGetJobsQueryError = ErrorType<Error>;
+export type JobsGetJobsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /jobs
@@ -1766,16 +1789,19 @@ export type JobsGetJobsQueryError = ErrorType<Error>;
 
 export function useJobsGetJobs<
   TData = Awaited<ReturnType<typeof jobsGetJobs>>,
-  TError = ErrorType<Error>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof jobsGetJobs>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getJobsGetJobsQueryOptions(options);
+  TError = ErrorType<Problem>,
+>(
+  params?: JobsGetJobsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof jobsGetJobs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getJobsGetJobsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -1805,7 +1831,7 @@ export const jobsPostJobs = async (
 };
 
 export const getJobsPostJobsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1846,13 +1872,13 @@ export type JobsPostJobsMutationResult = NonNullable<
   Awaited<ReturnType<typeof jobsPostJobs>>
 >;
 export type JobsPostJobsMutationBody = BodyType<JobsJobPayloadSchema>;
-export type JobsPostJobsMutationError = ErrorType<Error>;
+export type JobsPostJobsMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /jobs
  */
 export const useJobsPostJobs = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1895,7 +1921,7 @@ export const getJobsGetJobsIdQueryKey = (id: string) => {
 
 export const getJobsGetJobsIdQueryOptions = <
   TData = Awaited<ReturnType<typeof jobsGetJobsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -1930,7 +1956,7 @@ export const getJobsGetJobsIdQueryOptions = <
 export type JobsGetJobsIdQueryResult = NonNullable<
   Awaited<ReturnType<typeof jobsGetJobsId>>
 >;
-export type JobsGetJobsIdQueryError = ErrorType<Error>;
+export type JobsGetJobsIdQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /jobs/{id}
@@ -1938,7 +1964,7 @@ export type JobsGetJobsIdQueryError = ErrorType<Error>;
 
 export function useJobsGetJobsId<
   TData = Awaited<ReturnType<typeof jobsGetJobsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -1981,7 +2007,7 @@ export const jobsPutJobsId = async (
 };
 
 export const getJobsPutJobsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2022,13 +2048,13 @@ export type JobsPutJobsIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof jobsPutJobsId>>
 >;
 export type JobsPutJobsIdMutationBody = BodyType<JobsJobPayloadSchema>;
-export type JobsPutJobsIdMutationError = ErrorType<Error>;
+export type JobsPutJobsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /jobs/{id}
  */
 export const useJobsPutJobsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2066,7 +2092,7 @@ export const jobsDeleteJobsId = async (
 };
 
 export const getJobsDeleteJobsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2107,13 +2133,13 @@ export type JobsDeleteJobsIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof jobsDeleteJobsId>>
 >;
 
-export type JobsDeleteJobsIdMutationError = ErrorType<Error>;
+export type JobsDeleteJobsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /jobs/{id}
  */
 export const useJobsDeleteJobsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2175,7 +2201,7 @@ export const getLeadsGetLeadsContactsQueryKey = (
 
 export const getLeadsGetLeadsContactsQueryOptions = <
   TData = Awaited<ReturnType<typeof leadsGetLeadsContacts>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   params?: LeadsGetLeadsContactsParams,
   options?: {
@@ -2207,7 +2233,7 @@ export const getLeadsGetLeadsContactsQueryOptions = <
 export type LeadsGetLeadsContactsQueryResult = NonNullable<
   Awaited<ReturnType<typeof leadsGetLeadsContacts>>
 >;
-export type LeadsGetLeadsContactsQueryError = ErrorType<Error>;
+export type LeadsGetLeadsContactsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /leads/contacts
@@ -2215,7 +2241,7 @@ export type LeadsGetLeadsContactsQueryError = ErrorType<Error>;
 
 export function useLeadsGetLeadsContacts<
   TData = Awaited<ReturnType<typeof leadsGetLeadsContacts>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   params?: LeadsGetLeadsContactsParams,
   options?: {
@@ -2237,7 +2263,7 @@ export function useLeadsGetLeadsContacts<
 }
 
 /**
- * List leads the caller can access, paginated and optionally filtered by `status` and `search`. The `summary` totals reflect every lead matching the query (not just the current page). Admins see all leads; other roles see only the leads they own or are assigned to. Requires manager role or above.
+ * List leads the caller can access, paginated and optionally filtered by `status` and `search`. The `summary` totals reflect every lead matching the query (not just the current page). Admins see all leads; other roles see only the leads they own or are assigned to. Requires manager role or above. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
  * @summary GET /leads
  */
 export const getLeadsGetLeadsUrl = (params?: LeadsGetLeadsParams) => {
@@ -2272,7 +2298,7 @@ export const getLeadsGetLeadsQueryKey = (params?: LeadsGetLeadsParams) => {
 
 export const getLeadsGetLeadsQueryOptions = <
   TData = Awaited<ReturnType<typeof leadsGetLeads>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   params?: LeadsGetLeadsParams,
   options?: {
@@ -2302,7 +2328,7 @@ export const getLeadsGetLeadsQueryOptions = <
 export type LeadsGetLeadsQueryResult = NonNullable<
   Awaited<ReturnType<typeof leadsGetLeads>>
 >;
-export type LeadsGetLeadsQueryError = ErrorType<Error>;
+export type LeadsGetLeadsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /leads
@@ -2310,7 +2336,7 @@ export type LeadsGetLeadsQueryError = ErrorType<Error>;
 
 export function useLeadsGetLeads<
   TData = Awaited<ReturnType<typeof leadsGetLeads>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   params?: LeadsGetLeadsParams,
   options?: {
@@ -2352,7 +2378,7 @@ export const leadsPostLeads = async (
 };
 
 export const getLeadsPostLeadsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2393,13 +2419,13 @@ export type LeadsPostLeadsMutationResult = NonNullable<
   Awaited<ReturnType<typeof leadsPostLeads>>
 >;
 export type LeadsPostLeadsMutationBody = BodyType<LeadsLeadPayloadSchema>;
-export type LeadsPostLeadsMutationError = ErrorType<Error>;
+export type LeadsPostLeadsMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /leads
  */
 export const useLeadsPostLeads = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2442,7 +2468,7 @@ export const getLeadsGetLeadsIdQueryKey = (id: string) => {
 
 export const getLeadsGetLeadsIdQueryOptions = <
   TData = Awaited<ReturnType<typeof leadsGetLeadsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -2477,7 +2503,7 @@ export const getLeadsGetLeadsIdQueryOptions = <
 export type LeadsGetLeadsIdQueryResult = NonNullable<
   Awaited<ReturnType<typeof leadsGetLeadsId>>
 >;
-export type LeadsGetLeadsIdQueryError = ErrorType<Error>;
+export type LeadsGetLeadsIdQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /leads/{id}
@@ -2485,7 +2511,7 @@ export type LeadsGetLeadsIdQueryError = ErrorType<Error>;
 
 export function useLeadsGetLeadsId<
   TData = Awaited<ReturnType<typeof leadsGetLeadsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -2528,7 +2554,7 @@ export const leadsPutLeadsId = async (
 };
 
 export const getLeadsPutLeadsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2569,13 +2595,13 @@ export type LeadsPutLeadsIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof leadsPutLeadsId>>
 >;
 export type LeadsPutLeadsIdMutationBody = BodyType<LeadsLeadPayloadSchema>;
-export type LeadsPutLeadsIdMutationError = ErrorType<Error>;
+export type LeadsPutLeadsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /leads/{id}
  */
 export const useLeadsPutLeadsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2613,7 +2639,7 @@ export const leadsDeleteLeadsId = async (
 };
 
 export const getLeadsDeleteLeadsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2654,13 +2680,13 @@ export type LeadsDeleteLeadsIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof leadsDeleteLeadsId>>
 >;
 
-export type LeadsDeleteLeadsIdMutationError = ErrorType<Error>;
+export type LeadsDeleteLeadsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /leads/{id}
  */
 export const useLeadsDeleteLeadsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2701,7 +2727,7 @@ export const leadsPostLeadsIdContacts = async (
 };
 
 export const getLeadsPostLeadsIdContactsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2743,13 +2769,13 @@ export type LeadsPostLeadsIdContactsMutationResult = NonNullable<
 >;
 export type LeadsPostLeadsIdContactsMutationBody =
   BodyType<LeadsContactCreateSchema>;
-export type LeadsPostLeadsIdContactsMutationError = ErrorType<Error>;
+export type LeadsPostLeadsIdContactsMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /leads/{id}/contacts
  */
 export const useLeadsPostLeadsIdContacts = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2797,7 +2823,7 @@ export const leadsPutLeadsIdContactsContactId = async (
 };
 
 export const getLeadsPutLeadsIdContactsContactIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2844,13 +2870,13 @@ export type LeadsPutLeadsIdContactsContactIdMutationResult = NonNullable<
 >;
 export type LeadsPutLeadsIdContactsContactIdMutationBody =
   BodyType<LeadsContactUpdateSchema>;
-export type LeadsPutLeadsIdContactsContactIdMutationError = ErrorType<Error>;
+export type LeadsPutLeadsIdContactsContactIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /leads/{id}/contacts/{contactId}
  */
 export const useLeadsPutLeadsIdContactsContactId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2897,7 +2923,7 @@ export const leadsDeleteLeadsIdContactsContactId = async (
 };
 
 export const getLeadsDeleteLeadsIdContactsContactIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2938,13 +2964,14 @@ export type LeadsDeleteLeadsIdContactsContactIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof leadsDeleteLeadsIdContactsContactId>>
 >;
 
-export type LeadsDeleteLeadsIdContactsContactIdMutationError = ErrorType<Error>;
+export type LeadsDeleteLeadsIdContactsContactIdMutationError =
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /leads/{id}/contacts/{contactId}
  */
 export const useLeadsDeleteLeadsIdContactsContactId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2987,7 +3014,7 @@ export const leadsPostLeadsIdAttachments = async (
 };
 
 export const getLeadsPostLeadsIdAttachmentsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3028,13 +3055,13 @@ export type LeadsPostLeadsIdAttachmentsMutationResult = NonNullable<
   Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>
 >;
 
-export type LeadsPostLeadsIdAttachmentsMutationError = ErrorType<Error>;
+export type LeadsPostLeadsIdAttachmentsMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /leads/{id}/attachments
  */
 export const useLeadsPostLeadsIdAttachments = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3079,7 +3106,7 @@ export const leadsDeleteLeadsIdAttachmentsAttachmentId = async (
 };
 
 export const getLeadsDeleteLeadsIdAttachmentsAttachmentIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3126,13 +3153,13 @@ export type LeadsDeleteLeadsIdAttachmentsAttachmentIdMutationResult =
   >;
 
 export type LeadsDeleteLeadsIdAttachmentsAttachmentIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /leads/{id}/attachments/{attachmentId}
  */
 export const useLeadsDeleteLeadsIdAttachmentsAttachmentId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3175,7 +3202,7 @@ export const leadsPostLeadsIdConvertToJob = async (
 };
 
 export const getLeadsPostLeadsIdConvertToJobMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3216,13 +3243,13 @@ export type LeadsPostLeadsIdConvertToJobMutationResult = NonNullable<
   Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>
 >;
 
-export type LeadsPostLeadsIdConvertToJobMutationError = ErrorType<Error>;
+export type LeadsPostLeadsIdConvertToJobMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /leads/{id}/convert-to-job
  */
 export const useLeadsPostLeadsIdConvertToJob = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3263,7 +3290,7 @@ export const leadsPostLeadsIdActivities = async (
 };
 
 export const getLeadsPostLeadsIdActivitiesMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3305,13 +3332,13 @@ export type LeadsPostLeadsIdActivitiesMutationResult = NonNullable<
 >;
 export type LeadsPostLeadsIdActivitiesMutationBody =
   BodyType<LeadsActivityCreateSchema>;
-export type LeadsPostLeadsIdActivitiesMutationError = ErrorType<Error>;
+export type LeadsPostLeadsIdActivitiesMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /leads/{id}/activities
  */
 export const useLeadsPostLeadsIdActivities = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3354,7 +3381,7 @@ export const getFoldersGetJobsJobIdFoldersQueryKey = (jobId: string) => {
 
 export const getFoldersGetJobsJobIdFoldersQueryOptions = <
   TData = Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -3391,7 +3418,7 @@ export const getFoldersGetJobsJobIdFoldersQueryOptions = <
 export type FoldersGetJobsJobIdFoldersQueryResult = NonNullable<
   Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>
 >;
-export type FoldersGetJobsJobIdFoldersQueryError = ErrorType<Error>;
+export type FoldersGetJobsJobIdFoldersQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /jobs/{jobId}/folders
@@ -3399,7 +3426,7 @@ export type FoldersGetJobsJobIdFoldersQueryError = ErrorType<Error>;
 
 export function useFoldersGetJobsJobIdFolders<
   TData = Awaited<ReturnType<typeof foldersGetJobsJobIdFolders>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -3445,7 +3472,7 @@ export const foldersPostJobsJobIdFolders = async (
 };
 
 export const getFoldersPostJobsJobIdFoldersMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3487,13 +3514,13 @@ export type FoldersPostJobsJobIdFoldersMutationResult = NonNullable<
 >;
 export type FoldersPostJobsJobIdFoldersMutationBody =
   BodyType<FoldersFolderBodySchema>;
-export type FoldersPostJobsJobIdFoldersMutationError = ErrorType<Error>;
+export type FoldersPostJobsJobIdFoldersMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/folders
  */
 export const useFoldersPostJobsJobIdFolders = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3534,7 +3561,7 @@ export const foldersPutFoldersId = async (
 };
 
 export const getFoldersPutFoldersIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3576,13 +3603,13 @@ export type FoldersPutFoldersIdMutationResult = NonNullable<
 >;
 export type FoldersPutFoldersIdMutationBody =
   BodyType<FoldersFolderUpdateSchema>;
-export type FoldersPutFoldersIdMutationError = ErrorType<Error>;
+export type FoldersPutFoldersIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /folders/{id}
  */
 export const useFoldersPutFoldersId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3620,7 +3647,7 @@ export const foldersDeleteFoldersId = async (
 };
 
 export const getFoldersDeleteFoldersIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3661,13 +3688,13 @@ export type FoldersDeleteFoldersIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof foldersDeleteFoldersId>>
 >;
 
-export type FoldersDeleteFoldersIdMutationError = ErrorType<Error>;
+export type FoldersDeleteFoldersIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /folders/{id}
  */
 export const useFoldersDeleteFoldersId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3705,7 +3732,7 @@ export const foldersPostFoldersIdCopy = async (
 };
 
 export const getFoldersPostFoldersIdCopyMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3746,13 +3773,13 @@ export type FoldersPostFoldersIdCopyMutationResult = NonNullable<
   Awaited<ReturnType<typeof foldersPostFoldersIdCopy>>
 >;
 
-export type FoldersPostFoldersIdCopyMutationError = ErrorType<Error>;
+export type FoldersPostFoldersIdCopyMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /folders/{id}/copy
  */
 export const useFoldersPostFoldersIdCopy = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3793,7 +3820,7 @@ export const foldersPutFoldersIdMove = async (
 };
 
 export const getFoldersPutFoldersIdMoveMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3835,13 +3862,13 @@ export type FoldersPutFoldersIdMoveMutationResult = NonNullable<
 >;
 export type FoldersPutFoldersIdMoveMutationBody =
   BodyType<FoldersMoveFolderSchema>;
-export type FoldersPutFoldersIdMoveMutationError = ErrorType<Error>;
+export type FoldersPutFoldersIdMoveMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /folders/{id}/move
  */
 export const useFoldersPutFoldersIdMove = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3879,7 +3906,7 @@ export const foldersPostFoldersIdRestore = async (
 };
 
 export const getFoldersPostFoldersIdRestoreMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3920,13 +3947,13 @@ export type FoldersPostFoldersIdRestoreMutationResult = NonNullable<
   Awaited<ReturnType<typeof foldersPostFoldersIdRestore>>
 >;
 
-export type FoldersPostFoldersIdRestoreMutationError = ErrorType<Error>;
+export type FoldersPostFoldersIdRestoreMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /folders/{id}/restore
  */
 export const useFoldersPostFoldersIdRestore = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -3964,7 +3991,7 @@ export const foldersDeleteFoldersIdPurge = async (
 };
 
 export const getFoldersDeleteFoldersIdPurgeMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4005,13 +4032,13 @@ export type FoldersDeleteFoldersIdPurgeMutationResult = NonNullable<
   Awaited<ReturnType<typeof foldersDeleteFoldersIdPurge>>
 >;
 
-export type FoldersDeleteFoldersIdPurgeMutationError = ErrorType<Error>;
+export type FoldersDeleteFoldersIdPurgeMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /folders/{id}/purge
  */
 export const useFoldersDeleteFoldersIdPurge = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4054,7 +4081,7 @@ export const getFoldersGetFoldersIdDownloadQueryKey = (id: string) => {
 
 export const getFoldersGetFoldersIdDownloadQueryOptions = <
   TData = Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -4091,7 +4118,7 @@ export const getFoldersGetFoldersIdDownloadQueryOptions = <
 export type FoldersGetFoldersIdDownloadQueryResult = NonNullable<
   Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>
 >;
-export type FoldersGetFoldersIdDownloadQueryError = ErrorType<Error>;
+export type FoldersGetFoldersIdDownloadQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /folders/{id}/download
@@ -4099,7 +4126,7 @@ export type FoldersGetFoldersIdDownloadQueryError = ErrorType<Error>;
 
 export function useFoldersGetFoldersIdDownload<
   TData = Awaited<ReturnType<typeof foldersGetFoldersIdDownload>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -4144,7 +4171,7 @@ export const getFoldersGetJobsJobIdTrashQueryKey = (jobId: string) => {
 
 export const getFoldersGetJobsJobIdTrashQueryOptions = <
   TData = Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -4181,7 +4208,7 @@ export const getFoldersGetJobsJobIdTrashQueryOptions = <
 export type FoldersGetJobsJobIdTrashQueryResult = NonNullable<
   Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>
 >;
-export type FoldersGetJobsJobIdTrashQueryError = ErrorType<Error>;
+export type FoldersGetJobsJobIdTrashQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /jobs/{jobId}/trash
@@ -4189,7 +4216,7 @@ export type FoldersGetJobsJobIdTrashQueryError = ErrorType<Error>;
 
 export function useFoldersGetJobsJobIdTrash<
   TData = Awaited<ReturnType<typeof foldersGetJobsJobIdTrash>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -4229,7 +4256,7 @@ export const foldersDeleteJobsJobIdTrash = async (
 };
 
 export const getFoldersDeleteJobsJobIdTrashMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4270,13 +4297,13 @@ export type FoldersDeleteJobsJobIdTrashMutationResult = NonNullable<
   Awaited<ReturnType<typeof foldersDeleteJobsJobIdTrash>>
 >;
 
-export type FoldersDeleteJobsJobIdTrashMutationError = ErrorType<Error>;
+export type FoldersDeleteJobsJobIdTrashMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /jobs/{jobId}/trash
  */
 export const useFoldersDeleteJobsJobIdTrash = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4299,29 +4326,49 @@ export const useFoldersDeleteJobsJobIdTrash = <
  * Route defined in artifacts/api-server/src/routes/files.ts. Validated query with fileListQuerySchema.
  * @summary GET /folders/{id}/files
  */
-export const getFilesGetFoldersIdFilesUrl = (id: string) => {
-  return `/api/folders/${id}/files`;
+export const getFilesGetFoldersIdFilesUrl = (
+  id: string,
+  params?: FilesGetFoldersIdFilesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/folders/${id}/files?${stringifiedParams}`
+    : `/api/folders/${id}/files`;
 };
 
 export const filesGetFoldersIdFiles = async (
   id: string,
+  params?: FilesGetFoldersIdFilesParams,
   options?: RequestInit,
 ): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getFilesGetFoldersIdFilesUrl(id), {
+  return customFetch<AnyValue>(getFilesGetFoldersIdFilesUrl(id, params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getFilesGetFoldersIdFilesQueryKey = (id: string) => {
-  return [`/api/folders/${id}/files`] as const;
+export const getFilesGetFoldersIdFilesQueryKey = (
+  id: string,
+  params?: FilesGetFoldersIdFilesParams,
+) => {
+  return [`/api/folders/${id}/files`, ...(params ? [params] : [])] as const;
 };
 
 export const getFilesGetFoldersIdFilesQueryOptions = <
   TData = Awaited<ReturnType<typeof filesGetFoldersIdFiles>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
+  params?: FilesGetFoldersIdFilesParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof filesGetFoldersIdFiles>>,
@@ -4334,11 +4381,12 @@ export const getFilesGetFoldersIdFilesQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getFilesGetFoldersIdFilesQueryKey(id);
+    queryOptions?.queryKey ?? getFilesGetFoldersIdFilesQueryKey(id, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof filesGetFoldersIdFiles>>
-  > = ({ signal }) => filesGetFoldersIdFiles(id, { signal, ...requestOptions });
+  > = ({ signal }) =>
+    filesGetFoldersIdFiles(id, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -4355,7 +4403,7 @@ export const getFilesGetFoldersIdFilesQueryOptions = <
 export type FilesGetFoldersIdFilesQueryResult = NonNullable<
   Awaited<ReturnType<typeof filesGetFoldersIdFiles>>
 >;
-export type FilesGetFoldersIdFilesQueryError = ErrorType<Error>;
+export type FilesGetFoldersIdFilesQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /folders/{id}/files
@@ -4363,9 +4411,10 @@ export type FilesGetFoldersIdFilesQueryError = ErrorType<Error>;
 
 export function useFilesGetFoldersIdFiles<
   TData = Awaited<ReturnType<typeof filesGetFoldersIdFiles>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
+  params?: FilesGetFoldersIdFilesParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof filesGetFoldersIdFiles>>,
@@ -4375,7 +4424,11 @@ export function useFilesGetFoldersIdFiles<
     request?: SecondParameter<typeof customFetch>;
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getFilesGetFoldersIdFilesQueryOptions(id, options);
+  const queryOptions = getFilesGetFoldersIdFilesQueryOptions(
+    id,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -4403,7 +4456,7 @@ export const filesPostFoldersIdFiles = async (
 };
 
 export const getFilesPostFoldersIdFilesMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4444,13 +4497,13 @@ export type FilesPostFoldersIdFilesMutationResult = NonNullable<
   Awaited<ReturnType<typeof filesPostFoldersIdFiles>>
 >;
 
-export type FilesPostFoldersIdFilesMutationError = ErrorType<Error>;
+export type FilesPostFoldersIdFilesMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /folders/{id}/files
  */
 export const useFilesPostFoldersIdFiles = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4491,7 +4544,7 @@ export const filesPutFilesId = async (
 };
 
 export const getFilesPutFilesIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4532,13 +4585,13 @@ export type FilesPutFilesIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof filesPutFilesId>>
 >;
 export type FilesPutFilesIdMutationBody = BodyType<FilesRenameFileSchema>;
-export type FilesPutFilesIdMutationError = ErrorType<Error>;
+export type FilesPutFilesIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /files/{id}
  */
 export const useFilesPutFilesId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4576,7 +4629,7 @@ export const filesDeleteFilesId = async (
 };
 
 export const getFilesDeleteFilesIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4617,13 +4670,13 @@ export type FilesDeleteFilesIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof filesDeleteFilesId>>
 >;
 
-export type FilesDeleteFilesIdMutationError = ErrorType<Error>;
+export type FilesDeleteFilesIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /files/{id}
  */
 export const useFilesDeleteFilesId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4661,7 +4714,7 @@ export const filesPostFilesIdRestore = async (
 };
 
 export const getFilesPostFilesIdRestoreMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4702,13 +4755,13 @@ export type FilesPostFilesIdRestoreMutationResult = NonNullable<
   Awaited<ReturnType<typeof filesPostFilesIdRestore>>
 >;
 
-export type FilesPostFilesIdRestoreMutationError = ErrorType<Error>;
+export type FilesPostFilesIdRestoreMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /files/{id}/restore
  */
 export const useFilesPostFilesIdRestore = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4746,7 +4799,7 @@ export const filesDeleteFilesIdPurge = async (
 };
 
 export const getFilesDeleteFilesIdPurgeMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4787,13 +4840,13 @@ export type FilesDeleteFilesIdPurgeMutationResult = NonNullable<
   Awaited<ReturnType<typeof filesDeleteFilesIdPurge>>
 >;
 
-export type FilesDeleteFilesIdPurgeMutationError = ErrorType<Error>;
+export type FilesDeleteFilesIdPurgeMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /files/{id}/purge
  */
 export const useFilesDeleteFilesIdPurge = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -4836,7 +4889,7 @@ export const getFilesGetFilesIdDownloadQueryKey = (id: string) => {
 
 export const getFilesGetFilesIdDownloadQueryOptions = <
   TData = Awaited<ReturnType<typeof filesGetFilesIdDownload>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -4873,7 +4926,7 @@ export const getFilesGetFilesIdDownloadQueryOptions = <
 export type FilesGetFilesIdDownloadQueryResult = NonNullable<
   Awaited<ReturnType<typeof filesGetFilesIdDownload>>
 >;
-export type FilesGetFilesIdDownloadQueryError = ErrorType<Error>;
+export type FilesGetFilesIdDownloadQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /files/{id}/download
@@ -4881,7 +4934,7 @@ export type FilesGetFilesIdDownloadQueryError = ErrorType<Error>;
 
 export function useFilesGetFilesIdDownload<
   TData = Awaited<ReturnType<typeof filesGetFilesIdDownload>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -4929,7 +4982,7 @@ export const getDailyLogsGetJobsJobIdDailyLogsQueryKey = (jobId: string) => {
 
 export const getDailyLogsGetJobsJobIdDailyLogsQueryOptions = <
   TData = Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -4966,7 +5019,7 @@ export const getDailyLogsGetJobsJobIdDailyLogsQueryOptions = <
 export type DailyLogsGetJobsJobIdDailyLogsQueryResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>
 >;
-export type DailyLogsGetJobsJobIdDailyLogsQueryError = ErrorType<Error>;
+export type DailyLogsGetJobsJobIdDailyLogsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /jobs/{jobId}/daily-logs
@@ -4974,7 +5027,7 @@ export type DailyLogsGetJobsJobIdDailyLogsQueryError = ErrorType<Error>;
 
 export function useDailyLogsGetJobsJobIdDailyLogs<
   TData = Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -5023,7 +5076,7 @@ export const dailyLogsPostJobsJobIdDailyLogs = async (
 };
 
 export const getDailyLogsPostJobsJobIdDailyLogsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5065,13 +5118,13 @@ export type DailyLogsPostJobsJobIdDailyLogsMutationResult = NonNullable<
 >;
 export type DailyLogsPostJobsJobIdDailyLogsMutationBody =
   BodyType<DailyLogsDailyLogPayloadSchema>;
-export type DailyLogsPostJobsJobIdDailyLogsMutationError = ErrorType<Error>;
+export type DailyLogsPostJobsJobIdDailyLogsMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/daily-logs
  */
 export const useDailyLogsPostJobsJobIdDailyLogs = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5119,7 +5172,7 @@ export const getDailyLogsGetDailyLogsIdQueryKey = (id: string) => {
 
 export const getDailyLogsGetDailyLogsIdQueryOptions = <
   TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -5156,7 +5209,7 @@ export const getDailyLogsGetDailyLogsIdQueryOptions = <
 export type DailyLogsGetDailyLogsIdQueryResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>
 >;
-export type DailyLogsGetDailyLogsIdQueryError = ErrorType<Error>;
+export type DailyLogsGetDailyLogsIdQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /daily-logs/{id}
@@ -5164,7 +5217,7 @@ export type DailyLogsGetDailyLogsIdQueryError = ErrorType<Error>;
 
 export function useDailyLogsGetDailyLogsId<
   TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -5210,7 +5263,7 @@ export const dailyLogsPutDailyLogsId = async (
 };
 
 export const getDailyLogsPutDailyLogsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5252,13 +5305,13 @@ export type DailyLogsPutDailyLogsIdMutationResult = NonNullable<
 >;
 export type DailyLogsPutDailyLogsIdMutationBody =
   BodyType<DailyLogsDailyLogPayloadSchema>;
-export type DailyLogsPutDailyLogsIdMutationError = ErrorType<Error>;
+export type DailyLogsPutDailyLogsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /daily-logs/{id}
  */
 export const useDailyLogsPutDailyLogsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5296,7 +5349,7 @@ export const dailyLogsDeleteDailyLogsId = async (
 };
 
 export const getDailyLogsDeleteDailyLogsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5337,13 +5390,13 @@ export type DailyLogsDeleteDailyLogsIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogsDeleteDailyLogsId>>
 >;
 
-export type DailyLogsDeleteDailyLogsIdMutationError = ErrorType<Error>;
+export type DailyLogsDeleteDailyLogsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /daily-logs/{id}
  */
 export const useDailyLogsDeleteDailyLogsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5384,7 +5437,7 @@ export const dailyLogsPostDailyLogsIdPublish = async (
 };
 
 export const getDailyLogsPostDailyLogsIdPublishMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5425,13 +5478,13 @@ export type DailyLogsPostDailyLogsIdPublishMutationResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdPublish>>
 >;
 
-export type DailyLogsPostDailyLogsIdPublishMutationError = ErrorType<Error>;
+export type DailyLogsPostDailyLogsIdPublishMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /daily-logs/{id}/publish
  */
 export const useDailyLogsPostDailyLogsIdPublish = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5475,7 +5528,7 @@ export const getDailyLogsGetWeatherQueryKey = () => {
 
 export const getDailyLogsGetWeatherQueryOptions = <
   TData = Awaited<ReturnType<typeof dailyLogsGetWeather>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogsGetWeather>>,
@@ -5502,7 +5555,7 @@ export const getDailyLogsGetWeatherQueryOptions = <
 export type DailyLogsGetWeatherQueryResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogsGetWeather>>
 >;
-export type DailyLogsGetWeatherQueryError = ErrorType<Error>;
+export type DailyLogsGetWeatherQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /weather
@@ -5510,7 +5563,7 @@ export type DailyLogsGetWeatherQueryError = ErrorType<Error>;
 
 export function useDailyLogsGetWeather<
   TData = Awaited<ReturnType<typeof dailyLogsGetWeather>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogsGetWeather>>,
@@ -5550,7 +5603,7 @@ export const dailyLogsPostDailyLogsIdLike = async (
 };
 
 export const getDailyLogsPostDailyLogsIdLikeMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5591,13 +5644,13 @@ export type DailyLogsPostDailyLogsIdLikeMutationResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdLike>>
 >;
 
-export type DailyLogsPostDailyLogsIdLikeMutationError = ErrorType<Error>;
+export type DailyLogsPostDailyLogsIdLikeMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /daily-logs/{id}/like
  */
 export const useDailyLogsPostDailyLogsIdLike = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5643,7 +5696,7 @@ export const getDailyLogsGetDailyLogsIdCommentsQueryKey = (id: string) => {
 
 export const getDailyLogsGetDailyLogsIdCommentsQueryOptions = <
   TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -5680,7 +5733,7 @@ export const getDailyLogsGetDailyLogsIdCommentsQueryOptions = <
 export type DailyLogsGetDailyLogsIdCommentsQueryResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>
 >;
-export type DailyLogsGetDailyLogsIdCommentsQueryError = ErrorType<Error>;
+export type DailyLogsGetDailyLogsIdCommentsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /daily-logs/{id}/comments
@@ -5688,7 +5741,7 @@ export type DailyLogsGetDailyLogsIdCommentsQueryError = ErrorType<Error>;
 
 export function useDailyLogsGetDailyLogsIdComments<
   TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsIdComments>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -5737,7 +5790,7 @@ export const dailyLogsPostDailyLogsIdComments = async (
 };
 
 export const getDailyLogsPostDailyLogsIdCommentsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5779,13 +5832,13 @@ export type DailyLogsPostDailyLogsIdCommentsMutationResult = NonNullable<
 >;
 export type DailyLogsPostDailyLogsIdCommentsMutationBody =
   BodyType<DailyLogsCommentPayloadSchema>;
-export type DailyLogsPostDailyLogsIdCommentsMutationError = ErrorType<Error>;
+export type DailyLogsPostDailyLogsIdCommentsMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /daily-logs/{id}/comments
  */
 export const useDailyLogsPostDailyLogsIdComments = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5835,7 +5888,7 @@ export const dailyLogsPostDailyLogsIdCommentsCommentIdReactions = async (
 };
 
 export const getDailyLogsPostDailyLogsIdCommentsCommentIdReactionsMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<typeof dailyLogsPostDailyLogsIdCommentsCommentIdReactions>
@@ -5902,13 +5955,13 @@ export type DailyLogsPostDailyLogsIdCommentsCommentIdReactionsMutationResult =
 export type DailyLogsPostDailyLogsIdCommentsCommentIdReactionsMutationBody =
   BodyType<DailyLogsCommentReactionPayloadSchema>;
 export type DailyLogsPostDailyLogsIdCommentsCommentIdReactionsMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /daily-logs/{id}/comments/{commentId}/reactions
  */
 export const useDailyLogsPostDailyLogsIdCommentsCommentIdReactions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -5968,7 +6021,7 @@ export const dailyLogsPostDailyLogsIdTodos = async (
 };
 
 export const getDailyLogsPostDailyLogsIdTodosMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6010,13 +6063,13 @@ export type DailyLogsPostDailyLogsIdTodosMutationResult = NonNullable<
 >;
 export type DailyLogsPostDailyLogsIdTodosMutationBody =
   BodyType<DailyLogsTodoPayloadSchema>;
-export type DailyLogsPostDailyLogsIdTodosMutationError = ErrorType<Error>;
+export type DailyLogsPostDailyLogsIdTodosMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /daily-logs/{id}/todos
  */
 export const useDailyLogsPostDailyLogsIdTodos = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6064,7 +6117,7 @@ export const dailyLogsPostDailyLogsIdTodosTodoIdToggle = async (
 };
 
 export const getDailyLogsPostDailyLogsIdTodosTodoIdToggleMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6125,13 +6178,13 @@ export type DailyLogsPostDailyLogsIdTodosTodoIdToggleMutationResult =
 export type DailyLogsPostDailyLogsIdTodosTodoIdToggleMutationBody =
   BodyType<DailyLogsTodoTogglePayloadSchema>;
 export type DailyLogsPostDailyLogsIdTodosTodoIdToggleMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /daily-logs/{id}/todos/{todoId}/toggle
  */
 export const useDailyLogsPostDailyLogsIdTodosTodoIdToggle = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6182,7 +6235,7 @@ export const dailyLogsPostDailyLogsIdAttachments = async (
 };
 
 export const getDailyLogsPostDailyLogsIdAttachmentsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6223,13 +6276,14 @@ export type DailyLogsPostDailyLogsIdAttachmentsMutationResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdAttachments>>
 >;
 
-export type DailyLogsPostDailyLogsIdAttachmentsMutationError = ErrorType<Error>;
+export type DailyLogsPostDailyLogsIdAttachmentsMutationError =
+  ErrorType<Problem>;
 
 /**
  * @summary POST /daily-logs/{id}/attachments
  */
 export const useDailyLogsPostDailyLogsIdAttachments = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6276,7 +6330,7 @@ export const dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId = async (
 };
 
 export const getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<typeof dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId>
@@ -6329,13 +6383,13 @@ export type DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdMutationResult =
   >;
 
 export type DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /daily-logs/{id}/attachments/{attachmentId}
  */
 export const useDailyLogsDeleteDailyLogsIdAttachmentsAttachmentId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6383,7 +6437,7 @@ export const getDailyLogAdminGetDailyLogsSettingsQueryKey = () => {
 
 export const getDailyLogAdminGetDailyLogsSettingsQueryOptions = <
   TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>,
@@ -6412,7 +6466,7 @@ export const getDailyLogAdminGetDailyLogsSettingsQueryOptions = <
 export type DailyLogAdminGetDailyLogsSettingsQueryResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>
 >;
-export type DailyLogAdminGetDailyLogsSettingsQueryError = ErrorType<Error>;
+export type DailyLogAdminGetDailyLogsSettingsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /daily-logs/settings
@@ -6420,7 +6474,7 @@ export type DailyLogAdminGetDailyLogsSettingsQueryError = ErrorType<Error>;
 
 export function useDailyLogAdminGetDailyLogsSettings<
   TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsSettings>>,
@@ -6460,7 +6514,7 @@ export const dailyLogAdminPutDailyLogsSettings = async (
 };
 
 export const getDailyLogAdminPutDailyLogsSettingsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6502,13 +6556,13 @@ export type DailyLogAdminPutDailyLogsSettingsMutationResult = NonNullable<
 >;
 export type DailyLogAdminPutDailyLogsSettingsMutationBody =
   BodyType<GenericObject>;
-export type DailyLogAdminPutDailyLogsSettingsMutationError = ErrorType<Error>;
+export type DailyLogAdminPutDailyLogsSettingsMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /daily-logs/settings
  */
 export const useDailyLogAdminPutDailyLogsSettings = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6552,7 +6606,7 @@ export const getDailyLogAdminGetDailyLogsCustomFieldsQueryKey = () => {
 
 export const getDailyLogAdminGetDailyLogsCustomFieldsQueryOptions = <
   TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>,
@@ -6582,7 +6636,8 @@ export const getDailyLogAdminGetDailyLogsCustomFieldsQueryOptions = <
 export type DailyLogAdminGetDailyLogsCustomFieldsQueryResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>
 >;
-export type DailyLogAdminGetDailyLogsCustomFieldsQueryError = ErrorType<Error>;
+export type DailyLogAdminGetDailyLogsCustomFieldsQueryError =
+  ErrorType<Problem>;
 
 /**
  * @summary GET /daily-logs/custom-fields
@@ -6590,7 +6645,7 @@ export type DailyLogAdminGetDailyLogsCustomFieldsQueryError = ErrorType<Error>;
 
 export function useDailyLogAdminGetDailyLogsCustomFields<
   TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsCustomFields>>,
@@ -6630,7 +6685,7 @@ export const dailyLogAdminPostDailyLogsCustomFields = async (
 };
 
 export const getDailyLogAdminPostDailyLogsCustomFieldsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6673,13 +6728,13 @@ export type DailyLogAdminPostDailyLogsCustomFieldsMutationResult = NonNullable<
 export type DailyLogAdminPostDailyLogsCustomFieldsMutationBody =
   BodyType<GenericObject>;
 export type DailyLogAdminPostDailyLogsCustomFieldsMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /daily-logs/custom-fields
  */
 export const useDailyLogAdminPostDailyLogsCustomFields = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6727,7 +6782,7 @@ export const dailyLogAdminPutDailyLogsCustomFieldsFieldId = async (
 };
 
 export const getDailyLogAdminPutDailyLogsCustomFieldsFieldIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6775,13 +6830,13 @@ export type DailyLogAdminPutDailyLogsCustomFieldsFieldIdMutationResult =
 export type DailyLogAdminPutDailyLogsCustomFieldsFieldIdMutationBody =
   BodyType<GenericObject>;
 export type DailyLogAdminPutDailyLogsCustomFieldsFieldIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /daily-logs/custom-fields/{fieldId}
  */
 export const useDailyLogAdminPutDailyLogsCustomFieldsFieldId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6826,7 +6881,7 @@ export const dailyLogAdminDeleteDailyLogsCustomFieldsFieldId = async (
 };
 
 export const getDailyLogAdminDeleteDailyLogsCustomFieldsFieldIdMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<typeof dailyLogAdminDeleteDailyLogsCustomFieldsFieldId>
@@ -6874,13 +6929,13 @@ export type DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdMutationResult =
   >;
 
 export type DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /daily-logs/custom-fields/{fieldId}
  */
 export const useDailyLogAdminDeleteDailyLogsCustomFieldsFieldId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -6927,7 +6982,7 @@ export const getDailyLogAdminGetDailyLogsMineQueryKey = () => {
 
 export const getDailyLogAdminGetDailyLogsMineQueryOptions = <
   TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
@@ -6956,7 +7011,7 @@ export const getDailyLogAdminGetDailyLogsMineQueryOptions = <
 export type DailyLogAdminGetDailyLogsMineQueryResult = NonNullable<
   Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>
 >;
-export type DailyLogAdminGetDailyLogsMineQueryError = ErrorType<Error>;
+export type DailyLogAdminGetDailyLogsMineQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /daily-logs/mine
@@ -6964,7 +7019,7 @@ export type DailyLogAdminGetDailyLogsMineQueryError = ErrorType<Error>;
 
 export function useDailyLogAdminGetDailyLogsMine<
   TData = Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogAdminGetDailyLogsMine>>,
@@ -7011,7 +7066,7 @@ export const getScheduleGetJobsJobIdScheduleSettingsQueryKey = (
 
 export const getScheduleGetJobsJobIdScheduleSettingsQueryOptions = <
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -7049,7 +7104,7 @@ export const getScheduleGetJobsJobIdScheduleSettingsQueryOptions = <
 export type ScheduleGetJobsJobIdScheduleSettingsQueryResult = NonNullable<
   Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>
 >;
-export type ScheduleGetJobsJobIdScheduleSettingsQueryError = ErrorType<Error>;
+export type ScheduleGetJobsJobIdScheduleSettingsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /jobs/{jobId}/schedule/settings
@@ -7057,7 +7112,7 @@ export type ScheduleGetJobsJobIdScheduleSettingsQueryError = ErrorType<Error>;
 
 export function useScheduleGetJobsJobIdScheduleSettings<
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleSettings>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -7106,7 +7161,7 @@ export const schedulePutJobsJobIdScheduleSettings = async (
 };
 
 export const getSchedulePutJobsJobIdScheduleSettingsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7149,13 +7204,13 @@ export type SchedulePutJobsJobIdScheduleSettingsMutationResult = NonNullable<
 export type SchedulePutJobsJobIdScheduleSettingsMutationBody =
   BodyType<GenericObject>;
 export type SchedulePutJobsJobIdScheduleSettingsMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /jobs/{jobId}/schedule/settings
  */
 export const useSchedulePutJobsJobIdScheduleSettings = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7203,7 +7258,7 @@ export const schedulePostJobsJobIdScheduleSettingsPhases = async (
 };
 
 export const getSchedulePostJobsJobIdScheduleSettingsPhasesMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7251,13 +7306,13 @@ export type SchedulePostJobsJobIdScheduleSettingsPhasesMutationResult =
 export type SchedulePostJobsJobIdScheduleSettingsPhasesMutationBody =
   BodyType<ScheduleSchedulePhasePayloadSchema>;
 export type SchedulePostJobsJobIdScheduleSettingsPhasesMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/schedule/settings/phases
  */
 export const useSchedulePostJobsJobIdScheduleSettingsPhases = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7307,7 +7362,7 @@ export const schedulePutJobsJobIdScheduleSettingsPhasesPhaseId = async (
 };
 
 export const getSchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<typeof schedulePutJobsJobIdScheduleSettingsPhasesPhaseId>
@@ -7374,13 +7429,13 @@ export type SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdMutationResult =
 export type SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdMutationBody =
   BodyType<ScheduleSchedulePhasePayloadSchema>;
 export type SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /jobs/{jobId}/schedule/settings/phases/{phaseId}
  */
 export const useSchedulePutJobsJobIdScheduleSettingsPhasesPhaseId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7442,7 +7497,7 @@ export const getScheduleGetJobsJobIdSchedulePhasesQueryKey = (
 
 export const getScheduleGetJobsJobIdSchedulePhasesQueryOptions = <
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -7480,7 +7535,7 @@ export const getScheduleGetJobsJobIdSchedulePhasesQueryOptions = <
 export type ScheduleGetJobsJobIdSchedulePhasesQueryResult = NonNullable<
   Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>
 >;
-export type ScheduleGetJobsJobIdSchedulePhasesQueryError = ErrorType<Error>;
+export type ScheduleGetJobsJobIdSchedulePhasesQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /jobs/{jobId}/schedule/phases
@@ -7488,7 +7543,7 @@ export type ScheduleGetJobsJobIdSchedulePhasesQueryError = ErrorType<Error>;
 
 export function useScheduleGetJobsJobIdSchedulePhases<
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedulePhases>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -7537,7 +7592,7 @@ export const schedulePostJobsJobIdSchedulePhases = async (
 };
 
 export const getSchedulePostJobsJobIdSchedulePhasesMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7579,13 +7634,14 @@ export type SchedulePostJobsJobIdSchedulePhasesMutationResult = NonNullable<
 >;
 export type SchedulePostJobsJobIdSchedulePhasesMutationBody =
   BodyType<ScheduleSchedulePhasePayloadSchema>;
-export type SchedulePostJobsJobIdSchedulePhasesMutationError = ErrorType<Error>;
+export type SchedulePostJobsJobIdSchedulePhasesMutationError =
+  ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/schedule/phases
  */
 export const useSchedulePostJobsJobIdSchedulePhases = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7635,7 +7691,7 @@ export const schedulePutJobsJobIdSchedulePhasesPhaseId = async (
 };
 
 export const getSchedulePutJobsJobIdSchedulePhasesPhaseIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7696,13 +7752,13 @@ export type SchedulePutJobsJobIdSchedulePhasesPhaseIdMutationResult =
 export type SchedulePutJobsJobIdSchedulePhasesPhaseIdMutationBody =
   BodyType<ScheduleSchedulePhasePayloadSchema>;
 export type SchedulePutJobsJobIdSchedulePhasesPhaseIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /jobs/{jobId}/schedule/phases/{phaseId}
  */
 export const useSchedulePutJobsJobIdSchedulePhasesPhaseId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7757,7 +7813,7 @@ export const scheduleDeleteJobsJobIdSchedulePhasesPhaseId = async (
 };
 
 export const getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7804,13 +7860,13 @@ export type ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdMutationResult =
   >;
 
 export type ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /jobs/{jobId}/schedule/phases/{phaseId}
  */
 export const useScheduleDeleteJobsJobIdSchedulePhasesPhaseId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7858,7 +7914,7 @@ export const schedulePostJobsJobIdScheduleSettingsTags = async (
 };
 
 export const getSchedulePostJobsJobIdScheduleSettingsTagsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7906,13 +7962,13 @@ export type SchedulePostJobsJobIdScheduleSettingsTagsMutationResult =
 export type SchedulePostJobsJobIdScheduleSettingsTagsMutationBody =
   BodyType<ScheduleScheduleSettingPayloadSchema>;
 export type SchedulePostJobsJobIdScheduleSettingsTagsMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/schedule/settings/tags
  */
 export const useSchedulePostJobsJobIdScheduleSettingsTags = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -7962,7 +8018,7 @@ export const schedulePutJobsJobIdScheduleSettingsTagsTagId = async (
 };
 
 export const getSchedulePutJobsJobIdScheduleSettingsTagsTagIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8023,13 +8079,13 @@ export type SchedulePutJobsJobIdScheduleSettingsTagsTagIdMutationResult =
 export type SchedulePutJobsJobIdScheduleSettingsTagsTagIdMutationBody =
   BodyType<ScheduleScheduleSettingPayloadSchema>;
 export type SchedulePutJobsJobIdScheduleSettingsTagsTagIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /jobs/{jobId}/schedule/settings/tags/{tagId}
  */
 export const useSchedulePutJobsJobIdScheduleSettingsTagsTagId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8087,7 +8143,7 @@ export const getScheduleGetJobsJobIdScheduleBaselineQueryKey = (
 
 export const getScheduleGetJobsJobIdScheduleBaselineQueryOptions = <
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -8125,7 +8181,7 @@ export const getScheduleGetJobsJobIdScheduleBaselineQueryOptions = <
 export type ScheduleGetJobsJobIdScheduleBaselineQueryResult = NonNullable<
   Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>
 >;
-export type ScheduleGetJobsJobIdScheduleBaselineQueryError = ErrorType<Error>;
+export type ScheduleGetJobsJobIdScheduleBaselineQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /jobs/{jobId}/schedule/baseline
@@ -8133,7 +8189,7 @@ export type ScheduleGetJobsJobIdScheduleBaselineQueryError = ErrorType<Error>;
 
 export function useScheduleGetJobsJobIdScheduleBaseline<
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdScheduleBaseline>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -8179,7 +8235,7 @@ export const schedulePostJobsJobIdScheduleBaseline = async (
 };
 
 export const getSchedulePostJobsJobIdScheduleBaselineMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8221,13 +8277,13 @@ export type SchedulePostJobsJobIdScheduleBaselineMutationResult = NonNullable<
 >;
 
 export type SchedulePostJobsJobIdScheduleBaselineMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/schedule/baseline
  */
 export const useSchedulePostJobsJobIdScheduleBaseline = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8270,7 +8326,7 @@ export const schedulePutJobsJobIdScheduleBaseline = async (
 };
 
 export const getSchedulePutJobsJobIdScheduleBaselineMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8312,13 +8368,13 @@ export type SchedulePutJobsJobIdScheduleBaselineMutationResult = NonNullable<
 >;
 
 export type SchedulePutJobsJobIdScheduleBaselineMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /jobs/{jobId}/schedule/baseline
  */
 export const useSchedulePutJobsJobIdScheduleBaseline = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8363,7 +8419,7 @@ export const scheduleDeleteJobsJobIdScheduleBaseline = async (
 };
 
 export const getScheduleDeleteJobsJobIdScheduleBaselineMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8405,13 +8461,13 @@ export type ScheduleDeleteJobsJobIdScheduleBaselineMutationResult = NonNullable<
 >;
 
 export type ScheduleDeleteJobsJobIdScheduleBaselineMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /jobs/{jobId}/schedule/baseline
  */
 export const useScheduleDeleteJobsJobIdScheduleBaseline = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8459,7 +8515,7 @@ export const schedulePostJobsJobIdWorkdayExceptionsCategories = async (
 };
 
 export const getSchedulePostJobsJobIdWorkdayExceptionsCategoriesMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<typeof schedulePostJobsJobIdWorkdayExceptionsCategories>
@@ -8511,13 +8567,13 @@ export type SchedulePostJobsJobIdWorkdayExceptionsCategoriesMutationResult =
 export type SchedulePostJobsJobIdWorkdayExceptionsCategoriesMutationBody =
   BodyType<GenericObject>;
 export type SchedulePostJobsJobIdWorkdayExceptionsCategoriesMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/workday-exceptions/categories
  */
 export const useSchedulePostJobsJobIdWorkdayExceptionsCategories = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8572,7 +8628,7 @@ export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId = async (
 };
 
 export const getSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<
@@ -8637,13 +8693,13 @@ export type SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdMutationRes
 export type SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdMutationBody =
   BodyType<GenericObject>;
 export type SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /jobs/{jobId}/workday-exceptions/categories/{categoryId}
  */
 export const useSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8701,7 +8757,7 @@ export const getScheduleGetJobsJobIdWorkdayExceptionsQueryKey = (
 
 export const getScheduleGetJobsJobIdWorkdayExceptionsQueryOptions = <
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -8739,7 +8795,8 @@ export const getScheduleGetJobsJobIdWorkdayExceptionsQueryOptions = <
 export type ScheduleGetJobsJobIdWorkdayExceptionsQueryResult = NonNullable<
   Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>
 >;
-export type ScheduleGetJobsJobIdWorkdayExceptionsQueryError = ErrorType<Error>;
+export type ScheduleGetJobsJobIdWorkdayExceptionsQueryError =
+  ErrorType<Problem>;
 
 /**
  * @summary GET /jobs/{jobId}/workday-exceptions
@@ -8747,7 +8804,7 @@ export type ScheduleGetJobsJobIdWorkdayExceptionsQueryError = ErrorType<Error>;
 
 export function useScheduleGetJobsJobIdWorkdayExceptions<
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdWorkdayExceptions>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
   options?: {
@@ -8796,7 +8853,7 @@ export const schedulePostJobsJobIdWorkdayExceptions = async (
 };
 
 export const getSchedulePostJobsJobIdWorkdayExceptionsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8839,13 +8896,13 @@ export type SchedulePostJobsJobIdWorkdayExceptionsMutationResult = NonNullable<
 export type SchedulePostJobsJobIdWorkdayExceptionsMutationBody =
   BodyType<WorkdayExceptionPayload>;
 export type SchedulePostJobsJobIdWorkdayExceptionsMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/workday-exceptions
  */
 export const useSchedulePostJobsJobIdWorkdayExceptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -8895,7 +8952,7 @@ export const schedulePutJobsJobIdWorkdayExceptionsExceptionId = async (
 };
 
 export const getSchedulePutJobsJobIdWorkdayExceptionsExceptionIdMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<typeof schedulePutJobsJobIdWorkdayExceptionsExceptionId>
@@ -8960,13 +9017,13 @@ export type SchedulePutJobsJobIdWorkdayExceptionsExceptionIdMutationResult =
 export type SchedulePutJobsJobIdWorkdayExceptionsExceptionIdMutationBody =
   BodyType<WorkdayExceptionUpdatePayload>;
 export type SchedulePutJobsJobIdWorkdayExceptionsExceptionIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /jobs/{jobId}/workday-exceptions/{exceptionId}
  */
 export const useSchedulePutJobsJobIdWorkdayExceptionsExceptionId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9026,7 +9083,7 @@ export const scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId = async (
 };
 
 export const getScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<typeof scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId>
@@ -9079,13 +9136,13 @@ export type ScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdMutationResult =
   >;
 
 export type ScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /jobs/{jobId}/workday-exceptions/{exceptionId}
  */
 export const useScheduleDeleteJobsJobIdWorkdayExceptionsExceptionId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9136,7 +9193,7 @@ export const schedulePostJobsJobIdScheduleTrackConflicts = async (
 };
 
 export const getSchedulePostJobsJobIdScheduleTrackConflictsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9179,13 +9236,13 @@ export type SchedulePostJobsJobIdScheduleTrackConflictsMutationResult =
   >;
 
 export type SchedulePostJobsJobIdScheduleTrackConflictsMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/schedule/track-conflicts
  */
 export const useSchedulePostJobsJobIdScheduleTrackConflicts = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9230,7 +9287,7 @@ export const schedulePostJobsJobIdScheduleNotifyAssignedUsers = async (
 };
 
 export const getSchedulePostJobsJobIdScheduleNotifyAssignedUsersMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<typeof schedulePostJobsJobIdScheduleNotifyAssignedUsers>
@@ -9280,13 +9337,13 @@ export type SchedulePostJobsJobIdScheduleNotifyAssignedUsersMutationResult =
   >;
 
 export type SchedulePostJobsJobIdScheduleNotifyAssignedUsersMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/schedule/notify-assigned-users
  */
 export const useSchedulePostJobsJobIdScheduleNotifyAssignedUsers = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9313,16 +9370,32 @@ export const useSchedulePostJobsJobIdScheduleNotifyAssignedUsers = <
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
  * @summary GET /jobs/{jobId}/schedule
  */
-export const getScheduleGetJobsJobIdScheduleUrl = (jobId: string) => {
-  return `/api/jobs/${jobId}/schedule`;
+export const getScheduleGetJobsJobIdScheduleUrl = (
+  jobId: string,
+  params?: ScheduleGetJobsJobIdScheduleParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/jobs/${jobId}/schedule?${stringifiedParams}`
+    : `/api/jobs/${jobId}/schedule`;
 };
 
 export const scheduleGetJobsJobIdSchedule = async (
   jobId: string,
+  params?: ScheduleGetJobsJobIdScheduleParams,
   options?: RequestInit,
 ): Promise<ScheduleListResponse> => {
   return customFetch<ScheduleListResponse>(
-    getScheduleGetJobsJobIdScheduleUrl(jobId),
+    getScheduleGetJobsJobIdScheduleUrl(jobId, params),
     {
       ...options,
       method: "GET",
@@ -9330,15 +9403,19 @@ export const scheduleGetJobsJobIdSchedule = async (
   );
 };
 
-export const getScheduleGetJobsJobIdScheduleQueryKey = (jobId: string) => {
-  return [`/api/jobs/${jobId}/schedule`] as const;
+export const getScheduleGetJobsJobIdScheduleQueryKey = (
+  jobId: string,
+  params?: ScheduleGetJobsJobIdScheduleParams,
+) => {
+  return [`/api/jobs/${jobId}/schedule`, ...(params ? [params] : [])] as const;
 };
 
 export const getScheduleGetJobsJobIdScheduleQueryOptions = <
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
+  params?: ScheduleGetJobsJobIdScheduleParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>,
@@ -9351,12 +9428,13 @@ export const getScheduleGetJobsJobIdScheduleQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getScheduleGetJobsJobIdScheduleQueryKey(jobId);
+    queryOptions?.queryKey ??
+    getScheduleGetJobsJobIdScheduleQueryKey(jobId, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>
   > = ({ signal }) =>
-    scheduleGetJobsJobIdSchedule(jobId, { signal, ...requestOptions });
+    scheduleGetJobsJobIdSchedule(jobId, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -9373,7 +9451,7 @@ export const getScheduleGetJobsJobIdScheduleQueryOptions = <
 export type ScheduleGetJobsJobIdScheduleQueryResult = NonNullable<
   Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>
 >;
-export type ScheduleGetJobsJobIdScheduleQueryError = ErrorType<Error>;
+export type ScheduleGetJobsJobIdScheduleQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /jobs/{jobId}/schedule
@@ -9381,9 +9459,10 @@ export type ScheduleGetJobsJobIdScheduleQueryError = ErrorType<Error>;
 
 export function useScheduleGetJobsJobIdSchedule<
   TData = Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   jobId: string,
+  params?: ScheduleGetJobsJobIdScheduleParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof scheduleGetJobsJobIdSchedule>>,
@@ -9395,6 +9474,7 @@ export function useScheduleGetJobsJobIdSchedule<
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getScheduleGetJobsJobIdScheduleQueryOptions(
     jobId,
+    params,
     options,
   );
 
@@ -9430,7 +9510,7 @@ export const schedulePostJobsJobIdSchedule = async (
 };
 
 export const getSchedulePostJobsJobIdScheduleMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9472,13 +9552,13 @@ export type SchedulePostJobsJobIdScheduleMutationResult = NonNullable<
 >;
 export type SchedulePostJobsJobIdScheduleMutationBody =
   BodyType<ScheduleSchedulePayloadSchema>;
-export type SchedulePostJobsJobIdScheduleMutationError = ErrorType<Error>;
+export type SchedulePostJobsJobIdScheduleMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /jobs/{jobId}/schedule
  */
 export const useSchedulePostJobsJobIdSchedule = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9524,7 +9604,7 @@ export const getScheduleGetScheduleItemsIdQueryKey = (id: string) => {
 
 export const getScheduleGetScheduleItemsIdQueryOptions = <
   TData = Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -9561,7 +9641,7 @@ export const getScheduleGetScheduleItemsIdQueryOptions = <
 export type ScheduleGetScheduleItemsIdQueryResult = NonNullable<
   Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>
 >;
-export type ScheduleGetScheduleItemsIdQueryError = ErrorType<Error>;
+export type ScheduleGetScheduleItemsIdQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /schedule-items/{id}
@@ -9569,7 +9649,7 @@ export type ScheduleGetScheduleItemsIdQueryError = ErrorType<Error>;
 
 export function useScheduleGetScheduleItemsId<
   TData = Awaited<ReturnType<typeof scheduleGetScheduleItemsId>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   id: string,
   options?: {
@@ -9615,7 +9695,7 @@ export const schedulePutScheduleItemsId = async (
 };
 
 export const getSchedulePutScheduleItemsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9657,13 +9737,13 @@ export type SchedulePutScheduleItemsIdMutationResult = NonNullable<
 >;
 export type SchedulePutScheduleItemsIdMutationBody =
   BodyType<ScheduleSchedulePayloadSchema>;
-export type SchedulePutScheduleItemsIdMutationError = ErrorType<Error>;
+export type SchedulePutScheduleItemsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary PUT /schedule-items/{id}
  */
 export const useSchedulePutScheduleItemsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9701,7 +9781,7 @@ export const scheduleDeleteScheduleItemsId = async (
 };
 
 export const getScheduleDeleteScheduleItemsIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9742,13 +9822,13 @@ export type ScheduleDeleteScheduleItemsIdMutationResult = NonNullable<
   Awaited<ReturnType<typeof scheduleDeleteScheduleItemsId>>
 >;
 
-export type ScheduleDeleteScheduleItemsIdMutationError = ErrorType<Error>;
+export type ScheduleDeleteScheduleItemsIdMutationError = ErrorType<Problem>;
 
 /**
  * @summary DELETE /schedule-items/{id}
  */
 export const useScheduleDeleteScheduleItemsId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9792,7 +9872,7 @@ export const schedulePostScheduleItemsIdTodos = async (
 };
 
 export const getSchedulePostScheduleItemsIdTodosMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9834,13 +9914,13 @@ export type SchedulePostScheduleItemsIdTodosMutationResult = NonNullable<
 >;
 export type SchedulePostScheduleItemsIdTodosMutationBody =
   BodyType<GenericObject>;
-export type SchedulePostScheduleItemsIdTodosMutationError = ErrorType<Error>;
+export type SchedulePostScheduleItemsIdTodosMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /schedule-items/{id}/todos
  */
 export const useSchedulePostScheduleItemsIdTodos = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9890,7 +9970,7 @@ export const schedulePutScheduleItemsIdTodosTodoId = async (
 };
 
 export const getSchedulePutScheduleItemsIdTodosTodoIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9938,13 +10018,13 @@ export type SchedulePutScheduleItemsIdTodosTodoIdMutationResult = NonNullable<
 export type SchedulePutScheduleItemsIdTodosTodoIdMutationBody =
   BodyType<GenericObject>;
 export type SchedulePutScheduleItemsIdTodosTodoIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary PUT /schedule-items/{id}/todos/{todoId}
  */
 export const useSchedulePutScheduleItemsIdTodosTodoId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -9991,7 +10071,7 @@ export const scheduleDeleteScheduleItemsIdTodosTodoId = async (
 };
 
 export const getScheduleDeleteScheduleItemsIdTodosTodoIdMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -10034,13 +10114,13 @@ export type ScheduleDeleteScheduleItemsIdTodosTodoIdMutationResult =
   >;
 
 export type ScheduleDeleteScheduleItemsIdTodosTodoIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /schedule-items/{id}/todos/{todoId}
  */
 export const useScheduleDeleteScheduleItemsIdTodosTodoId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -10086,7 +10166,7 @@ export const schedulePostScheduleItemsIdNotes = async (
 };
 
 export const getSchedulePostScheduleItemsIdNotesMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -10128,13 +10208,13 @@ export type SchedulePostScheduleItemsIdNotesMutationResult = NonNullable<
 >;
 export type SchedulePostScheduleItemsIdNotesMutationBody =
   BodyType<ScheduleScheduleNotePayloadSchema>;
-export type SchedulePostScheduleItemsIdNotesMutationError = ErrorType<Error>;
+export type SchedulePostScheduleItemsIdNotesMutationError = ErrorType<Problem>;
 
 /**
  * @summary POST /schedule-items/{id}/notes
  */
 export const useSchedulePostScheduleItemsIdNotes = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -10177,7 +10257,7 @@ export const schedulePostScheduleItemsIdAttachments = async (
 };
 
 export const getSchedulePostScheduleItemsIdAttachmentsMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -10219,13 +10299,13 @@ export type SchedulePostScheduleItemsIdAttachmentsMutationResult = NonNullable<
 >;
 
 export type SchedulePostScheduleItemsIdAttachmentsMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /schedule-items/{id}/attachments
  */
 export const useSchedulePostScheduleItemsIdAttachments = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -10273,7 +10353,7 @@ export const schedulePostScheduleItemsIdAttachmentsNewDoc = async (
 };
 
 export const getSchedulePostScheduleItemsIdAttachmentsNewDocMutationOptions = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -10321,13 +10401,13 @@ export type SchedulePostScheduleItemsIdAttachmentsNewDocMutationResult =
 export type SchedulePostScheduleItemsIdAttachmentsNewDocMutationBody =
   BodyType<GenericObject>;
 export type SchedulePostScheduleItemsIdAttachmentsNewDocMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary POST /schedule-items/{id}/attachments/new-doc
  */
 export const useSchedulePostScheduleItemsIdAttachmentsNewDoc = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -10377,7 +10457,7 @@ export const scheduleDeleteScheduleItemsIdAttachmentsAttachmentId = async (
 };
 
 export const getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdMutationOptions =
-  <TError = ErrorType<Error>, TContext = unknown>(options?: {
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
     mutation?: UseMutationOptions<
       Awaited<
         ReturnType<typeof scheduleDeleteScheduleItemsIdAttachmentsAttachmentId>
@@ -10432,13 +10512,13 @@ export type ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdMutationResult =
   >;
 
 export type ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdMutationError =
-  ErrorType<Error>;
+  ErrorType<Problem>;
 
 /**
  * @summary DELETE /schedule-items/{id}/attachments/{attachmentId}
  */
 export const useScheduleDeleteScheduleItemsIdAttachmentsAttachmentId = <
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -10488,7 +10568,7 @@ export const getDashboardGetDashboardStatsQueryKey = () => {
 
 export const getDashboardGetDashboardStatsQueryOptions = <
   TData = Awaited<ReturnType<typeof dashboardGetDashboardStats>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dashboardGetDashboardStats>>,
@@ -10516,7 +10596,7 @@ export const getDashboardGetDashboardStatsQueryOptions = <
 export type DashboardGetDashboardStatsQueryResult = NonNullable<
   Awaited<ReturnType<typeof dashboardGetDashboardStats>>
 >;
-export type DashboardGetDashboardStatsQueryError = ErrorType<Error>;
+export type DashboardGetDashboardStatsQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /dashboard/stats
@@ -10524,7 +10604,7 @@ export type DashboardGetDashboardStatsQueryError = ErrorType<Error>;
 
 export function useDashboardGetDashboardStats<
   TData = Awaited<ReturnType<typeof dashboardGetDashboardStats>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dashboardGetDashboardStats>>,
@@ -10565,7 +10645,7 @@ export const getDashboardGetDashboardAgendaQueryKey = () => {
 
 export const getDashboardGetDashboardAgendaQueryOptions = <
   TData = Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>,
@@ -10594,7 +10674,7 @@ export const getDashboardGetDashboardAgendaQueryOptions = <
 export type DashboardGetDashboardAgendaQueryResult = NonNullable<
   Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>
 >;
-export type DashboardGetDashboardAgendaQueryError = ErrorType<Error>;
+export type DashboardGetDashboardAgendaQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /dashboard/agenda
@@ -10602,7 +10682,7 @@ export type DashboardGetDashboardAgendaQueryError = ErrorType<Error>;
 
 export function useDashboardGetDashboardAgenda<
   TData = Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dashboardGetDashboardAgenda>>,
@@ -10643,7 +10723,7 @@ export const getDashboardGetDashboardScheduleQueryKey = () => {
 
 export const getDashboardGetDashboardScheduleQueryOptions = <
   TData = Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
@@ -10672,7 +10752,7 @@ export const getDashboardGetDashboardScheduleQueryOptions = <
 export type DashboardGetDashboardScheduleQueryResult = NonNullable<
   Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>
 >;
-export type DashboardGetDashboardScheduleQueryError = ErrorType<Error>;
+export type DashboardGetDashboardScheduleQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /dashboard/schedule
@@ -10680,7 +10760,7 @@ export type DashboardGetDashboardScheduleQueryError = ErrorType<Error>;
 
 export function useDashboardGetDashboardSchedule<
   TData = Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
@@ -10699,44 +10779,66 @@ export function useDashboardGetDashboardSchedule<
 }
 
 /**
- * Route defined in artifacts/api-server/src/routes/activity.ts. Validated query with querySchema.
+ * Route defined in artifacts/api-server/src/routes/activity.ts. Validated query with querySchema. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
  * @summary GET /activity
  */
-export const getActivityGetActivityUrl = () => {
-  return `/api/activity`;
+export const getActivityGetActivityUrl = (
+  params?: ActivityGetActivityParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/activity?${stringifiedParams}`
+    : `/api/activity`;
 };
 
 export const activityGetActivity = async (
+  params?: ActivityGetActivityParams,
   options?: RequestInit,
 ): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getActivityGetActivityUrl(), {
+  return customFetch<AnyValue>(getActivityGetActivityUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getActivityGetActivityQueryKey = () => {
-  return [`/api/activity`] as const;
+export const getActivityGetActivityQueryKey = (
+  params?: ActivityGetActivityParams,
+) => {
+  return [`/api/activity`, ...(params ? [params] : [])] as const;
 };
 
 export const getActivityGetActivityQueryOptions = <
   TData = Awaited<ReturnType<typeof activityGetActivity>>,
-  TError = ErrorType<Error>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof activityGetActivity>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+  TError = ErrorType<Problem>,
+>(
+  params?: ActivityGetActivityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof activityGetActivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getActivityGetActivityQueryKey();
+  const queryKey =
+    queryOptions?.queryKey ?? getActivityGetActivityQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof activityGetActivity>>
-  > = ({ signal }) => activityGetActivity({ signal, ...requestOptions });
+  > = ({ signal }) =>
+    activityGetActivity(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof activityGetActivity>>,
@@ -10748,7 +10850,7 @@ export const getActivityGetActivityQueryOptions = <
 export type ActivityGetActivityQueryResult = NonNullable<
   Awaited<ReturnType<typeof activityGetActivity>>
 >;
-export type ActivityGetActivityQueryError = ErrorType<Error>;
+export type ActivityGetActivityQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /activity
@@ -10756,16 +10858,19 @@ export type ActivityGetActivityQueryError = ErrorType<Error>;
 
 export function useActivityGetActivity<
   TData = Awaited<ReturnType<typeof activityGetActivity>>,
-  TError = ErrorType<Error>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof activityGetActivity>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getActivityGetActivityQueryOptions(options);
+  TError = ErrorType<Problem>,
+>(
+  params?: ActivityGetActivityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof activityGetActivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getActivityGetActivityQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -10810,7 +10915,7 @@ export const getSearchGetSearchQueryKey = (params?: SearchGetSearchParams) => {
 
 export const getSearchGetSearchQueryOptions = <
   TData = Awaited<ReturnType<typeof searchGetSearch>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   params: SearchGetSearchParams,
   options?: {
@@ -10840,7 +10945,7 @@ export const getSearchGetSearchQueryOptions = <
 export type SearchGetSearchQueryResult = NonNullable<
   Awaited<ReturnType<typeof searchGetSearch>>
 >;
-export type SearchGetSearchQueryError = ErrorType<Error>;
+export type SearchGetSearchQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /search
@@ -10848,7 +10953,7 @@ export type SearchGetSearchQueryError = ErrorType<Error>;
 
 export function useSearchGetSearch<
   TData = Awaited<ReturnType<typeof searchGetSearch>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(
   params: SearchGetSearchParams,
   options?: {
@@ -10892,7 +10997,7 @@ export const getHealthGetHealthzQueryKey = () => {
 
 export const getHealthGetHealthzQueryOptions = <
   TData = Awaited<ReturnType<typeof healthGetHealthz>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthGetHealthz>>,
@@ -10919,7 +11024,7 @@ export const getHealthGetHealthzQueryOptions = <
 export type HealthGetHealthzQueryResult = NonNullable<
   Awaited<ReturnType<typeof healthGetHealthz>>
 >;
-export type HealthGetHealthzQueryError = ErrorType<Error>;
+export type HealthGetHealthzQueryError = ErrorType<Problem>;
 
 /**
  * @summary GET /healthz
@@ -10927,7 +11032,7 @@ export type HealthGetHealthzQueryError = ErrorType<Error>;
 
 export function useHealthGetHealthz<
   TData = Awaited<ReturnType<typeof healthGetHealthz>>,
-  TError = ErrorType<Error>,
+  TError = ErrorType<Problem>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthGetHealthz>>,
@@ -10944,3 +11049,249 @@ export function useHealthGetHealthz<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List personal access tokens for the current user.
+ */
+export const getAccountTokensListUrl = () => {
+  return `/api/account/tokens`;
+};
+
+export const accountTokensList = async (
+  options?: RequestInit,
+): Promise<PersonalAccessTokenList> => {
+  return customFetch<PersonalAccessTokenList>(getAccountTokensListUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAccountTokensListQueryKey = () => {
+  return [`/api/account/tokens`] as const;
+};
+
+export const getAccountTokensListQueryOptions = <
+  TData = Awaited<ReturnType<typeof accountTokensList>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof accountTokensList>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getAccountTokensListQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof accountTokensList>>
+  > = ({ signal }) => accountTokensList({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof accountTokensList>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AccountTokensListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof accountTokensList>>
+>;
+export type AccountTokensListQueryError = ErrorType<Problem>;
+
+/**
+ * @summary List personal access tokens for the current user.
+ */
+
+export function useAccountTokensList<
+  TData = Awaited<ReturnType<typeof accountTokensList>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof accountTokensList>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAccountTokensListQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Issue a new personal access token. The full secret is returned exactly once.
+ */
+export const getAccountTokensCreateUrl = () => {
+  return `/api/account/tokens`;
+};
+
+export const accountTokensCreate = async (
+  personalAccessTokenCreatePayload: PersonalAccessTokenCreatePayload,
+  options?: RequestInit,
+): Promise<PersonalAccessTokenCreated> => {
+  return customFetch<PersonalAccessTokenCreated>(getAccountTokensCreateUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(personalAccessTokenCreatePayload),
+  });
+};
+
+export const getAccountTokensCreateMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof accountTokensCreate>>,
+    TError,
+    { data: BodyType<PersonalAccessTokenCreatePayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof accountTokensCreate>>,
+  TError,
+  { data: BodyType<PersonalAccessTokenCreatePayload> },
+  TContext
+> => {
+  const mutationKey = ["accountTokensCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof accountTokensCreate>>,
+    { data: BodyType<PersonalAccessTokenCreatePayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return accountTokensCreate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AccountTokensCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof accountTokensCreate>>
+>;
+export type AccountTokensCreateMutationBody =
+  BodyType<PersonalAccessTokenCreatePayload>;
+export type AccountTokensCreateMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Issue a new personal access token. The full secret is returned exactly once.
+ */
+export const useAccountTokensCreate = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof accountTokensCreate>>,
+    TError,
+    { data: BodyType<PersonalAccessTokenCreatePayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof accountTokensCreate>>,
+  TError,
+  { data: BodyType<PersonalAccessTokenCreatePayload> },
+  TContext
+> => {
+  return useMutation(getAccountTokensCreateMutationOptions(options));
+};
+
+/**
+ * @summary Revoke a personal access token.
+ */
+export const getAccountTokensRevokeUrl = (id: string) => {
+  return `/api/account/tokens/${id}`;
+};
+
+export const accountTokensRevoke = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getAccountTokensRevokeUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getAccountTokensRevokeMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof accountTokensRevoke>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof accountTokensRevoke>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["accountTokensRevoke"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof accountTokensRevoke>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return accountTokensRevoke(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AccountTokensRevokeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof accountTokensRevoke>>
+>;
+
+export type AccountTokensRevokeMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Revoke a personal access token.
+ */
+export const useAccountTokensRevoke = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof accountTokensRevoke>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof accountTokensRevoke>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getAccountTokensRevokeMutationOptions(options));
+};

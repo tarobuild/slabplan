@@ -11,12 +11,40 @@ import * as zod from "zod";
  * Route defined in artifacts/api-server/src/routes/auth.ts.
  * @summary POST /auth/register
  */
+export const authPostAuthRegisterHeaderIdempotencyKeyMin = 8;
+export const authPostAuthRegisterHeaderIdempotencyKeyMax = 255;
+
+export const AuthPostAuthRegisterHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(authPostAuthRegisterHeaderIdempotencyKeyMin)
+    .max(authPostAuthRegisterHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const AuthPostAuthRegisterBody = zod.record(zod.string(), zod.unknown());
 
 /**
  * Route defined in artifacts/api-server/src/routes/auth.ts.
  * @summary POST /auth/login
  */
+export const authPostAuthLoginHeaderIdempotencyKeyMin = 8;
+export const authPostAuthLoginHeaderIdempotencyKeyMax = 255;
+
+export const AuthPostAuthLoginHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(authPostAuthLoginHeaderIdempotencyKeyMin)
+    .max(authPostAuthLoginHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const AuthPostAuthLoginBody = zod.record(zod.string(), zod.unknown());
 
 export const AuthPostAuthLoginResponse = zod.unknown();
@@ -25,12 +53,40 @@ export const AuthPostAuthLoginResponse = zod.unknown();
  * Route defined in artifacts/api-server/src/routes/auth.ts.
  * @summary POST /auth/logout
  */
+export const authPostAuthLogoutHeaderIdempotencyKeyMin = 8;
+export const authPostAuthLogoutHeaderIdempotencyKeyMax = 255;
+
+export const AuthPostAuthLogoutHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(authPostAuthLogoutHeaderIdempotencyKeyMin)
+    .max(authPostAuthLogoutHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const AuthPostAuthLogoutResponse = zod.unknown();
 
 /**
  * Route defined in artifacts/api-server/src/routes/auth.ts.
  * @summary POST /auth/refresh
  */
+export const authPostAuthRefreshHeaderIdempotencyKeyMin = 8;
+export const authPostAuthRefreshHeaderIdempotencyKeyMax = 255;
+
+export const AuthPostAuthRefreshHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(authPostAuthRefreshHeaderIdempotencyKeyMin)
+    .max(authPostAuthRefreshHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const AuthPostAuthRefreshResponse = zod.unknown();
 
 /**
@@ -49,6 +105,20 @@ export const UsersGetUsersMeResponse = zod.unknown();
  * Route defined in artifacts/api-server/src/routes/users.ts. Validated request body with updateProfileSchema.
  * @summary PUT /users/me
  */
+export const usersPutUsersMeHeaderIdempotencyKeyMin = 8;
+export const usersPutUsersMeHeaderIdempotencyKeyMax = 255;
+
+export const UsersPutUsersMeHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(usersPutUsersMeHeaderIdempotencyKeyMin)
+    .max(usersPutUsersMeHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const UsersPutUsersMeBody = zod
   .record(zod.string(), zod.unknown())
   .describe(
@@ -61,6 +131,20 @@ export const UsersPutUsersMeResponse = zod.unknown();
  * Route defined in artifacts/api-server/src/routes/users.ts. Validated request body with changePasswordSchema.
  * @summary POST /users/me/password
  */
+export const usersPostUsersMePasswordHeaderIdempotencyKeyMin = 8;
+export const usersPostUsersMePasswordHeaderIdempotencyKeyMax = 255;
+
+export const UsersPostUsersMePasswordHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(usersPostUsersMePasswordHeaderIdempotencyKeyMin)
+    .max(usersPostUsersMePasswordHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const UsersPostUsersMePasswordBody = zod
   .record(zod.string(), zod.unknown())
   .describe(
@@ -175,6 +259,20 @@ export const ClientsGetClientsResponse = zod
  * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with clientPayloadSchema.
  * @summary POST /clients
  */
+export const clientsPostClientsHeaderIdempotencyKeyMin = 8;
+export const clientsPostClientsHeaderIdempotencyKeyMax = 255;
+
+export const ClientsPostClientsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(clientsPostClientsHeaderIdempotencyKeyMin)
+    .max(clientsPostClientsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const clientsPostClientsBodyCompanyNameMax = 255;
 
 export const clientsPostClientsBodyStateMax = 2;
@@ -289,6 +387,20 @@ export const ClientsPutClientsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(clientsPutClientsIdPathIdRegExp),
 });
 
+export const clientsPutClientsIdHeaderIdempotencyKeyMin = 8;
+export const clientsPutClientsIdHeaderIdempotencyKeyMax = 255;
+
+export const ClientsPutClientsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(clientsPutClientsIdHeaderIdempotencyKeyMin)
+    .max(clientsPutClientsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const clientsPutClientsIdBodyCompanyNameMax = 255;
 
 export const clientsPutClientsIdBodyStateMax = 2;
@@ -391,6 +503,20 @@ export const ClientsDeleteClientsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(clientsDeleteClientsIdPathIdRegExp),
 });
 
+export const clientsDeleteClientsIdHeaderIdempotencyKeyMin = 8;
+export const clientsDeleteClientsIdHeaderIdempotencyKeyMax = 255;
+
+export const ClientsDeleteClientsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(clientsDeleteClientsIdHeaderIdempotencyKeyMin)
+    .max(clientsDeleteClientsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const ClientsDeleteClientsIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -426,6 +552,20 @@ export const ClientsPostClientsIdContactsParams = zod.object({
     .string()
     .uuid()
     .regex(clientsPostClientsIdContactsPathIdRegExp),
+});
+
+export const clientsPostClientsIdContactsHeaderIdempotencyKeyMin = 8;
+export const clientsPostClientsIdContactsHeaderIdempotencyKeyMax = 255;
+
+export const ClientsPostClientsIdContactsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(clientsPostClientsIdContactsHeaderIdempotencyKeyMin)
+    .max(clientsPostClientsIdContactsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const clientsPostClientsIdContactsBodyIsPrimaryDefault = false;
@@ -509,6 +649,20 @@ export const ClientsPutClientsIdContactsContactIdParams = zod.object({
     .regex(clientsPutClientsIdContactsContactIdPathContactIdRegExp),
 });
 
+export const clientsPutClientsIdContactsContactIdHeaderIdempotencyKeyMin = 8;
+export const clientsPutClientsIdContactsContactIdHeaderIdempotencyKeyMax = 255;
+
+export const ClientsPutClientsIdContactsContactIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(clientsPutClientsIdContactsContactIdHeaderIdempotencyKeyMin)
+    .max(clientsPutClientsIdContactsContactIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const clientsPutClientsIdContactsContactIdBodyIsPrimaryDefault = false;
 
 export const ClientsPutClientsIdContactsContactIdBody = zod
@@ -571,6 +725,20 @@ export const ClientsDeleteClientsIdContactsContactIdParams = zod.object({
     .regex(clientsDeleteClientsIdContactsContactIdPathContactIdRegExp),
 });
 
+export const clientsDeleteClientsIdContactsContactIdHeaderIdempotencyKeyMin = 8;
+export const clientsDeleteClientsIdContactsContactIdHeaderIdempotencyKeyMax = 255;
+
+export const ClientsDeleteClientsIdContactsContactIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(clientsDeleteClientsIdContactsContactIdHeaderIdempotencyKeyMin)
+    .max(clientsDeleteClientsIdContactsContactIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const ClientsDeleteClientsIdContactsContactIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -580,9 +748,51 @@ export const ClientsDeleteClientsIdContactsContactIdResponse = zod
   );
 
 /**
- * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated query with jobQuerySchema.
+ * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated query with jobQuerySchema. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
  * @summary GET /jobs
  */
+
+export const jobsGetJobsQueryPageSizeMax = 100;
+
+export const jobsGetJobsQueryLimitMax = 100;
+
+export const JobsGetJobsQueryParams = zod.object({
+  page: zod.coerce
+    .number()
+    .min(1)
+    .optional()
+    .describe(
+      "Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  pageSize: zod.coerce
+    .number()
+    .min(1)
+    .max(jobsGetJobsQueryPageSizeMax)
+    .optional()
+    .describe(
+      "Page size for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe("Optional free-text filter (job name, address, etc.)."),
+  status: zod.coerce.string().optional().describe("Optional status filter."),
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(jobsGetJobsQueryLimitMax)
+    .optional()
+    .describe(
+      "Page size when in cursor-based pagination mode. Defaults to 25, max 100.",
+    ),
+});
+
 export const jobsGetJobsResponseJobsItemProjectedStartRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
@@ -650,6 +860,20 @@ export const JobsGetJobsResponse = zod.object({
  * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with jobPayloadSchema.
  * @summary POST /jobs
  */
+export const jobsPostJobsHeaderIdempotencyKeyMin = 8;
+export const jobsPostJobsHeaderIdempotencyKeyMax = 255;
+
+export const JobsPostJobsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(jobsPostJobsHeaderIdempotencyKeyMin)
+    .max(jobsPostJobsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const jobsPostJobsBodyTitleMax = 255;
 
 export const jobsPostJobsBodyStatusDefault = `open`;
@@ -822,6 +1046,20 @@ export const JobsPutJobsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(jobsPutJobsIdPathIdRegExp),
 });
 
+export const jobsPutJobsIdHeaderIdempotencyKeyMin = 8;
+export const jobsPutJobsIdHeaderIdempotencyKeyMax = 255;
+
+export const JobsPutJobsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(jobsPutJobsIdHeaderIdempotencyKeyMin)
+    .max(jobsPutJobsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const jobsPutJobsIdBodyTitleMax = 255;
 
 export const jobsPutJobsIdBodyStatusDefault = `open`;
@@ -982,6 +1220,20 @@ export const JobsDeleteJobsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(jobsDeleteJobsIdPathIdRegExp),
 });
 
+export const jobsDeleteJobsIdHeaderIdempotencyKeyMin = 8;
+export const jobsDeleteJobsIdHeaderIdempotencyKeyMax = 255;
+
+export const JobsDeleteJobsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(jobsDeleteJobsIdHeaderIdempotencyKeyMin)
+    .max(jobsDeleteJobsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const JobsDeleteJobsIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -1019,36 +1271,46 @@ export const LeadsGetLeadsContactsResponse = zod.object({
 });
 
 /**
- * List leads the caller can access, paginated and optionally filtered by `status` and `search`. The `summary` totals reflect every lead matching the query (not just the current page). Admins see all leads; other roles see only the leads they own or are assigned to. Requires manager role or above.
+ * List leads the caller can access, paginated and optionally filtered by `status` and `search`. The `summary` totals reflect every lead matching the query (not just the current page). Admins see all leads; other roles see only the leads they own or are assigned to. Requires manager role or above. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
  * @summary GET /leads
  */
-export const leadsGetLeadsQueryPageDefault = 1;
 
-export const leadsGetLeadsQueryPageSizeDefault = 10;
 export const leadsGetLeadsQueryPageSizeMax = 100;
+
+export const leadsGetLeadsQueryLimitMax = 100;
 
 export const LeadsGetLeadsQueryParams = zod.object({
   page: zod.coerce
     .number()
     .min(1)
-    .default(leadsGetLeadsQueryPageDefault)
-    .describe("1-indexed page number. Defaults to 1."),
+    .optional()
+    .describe(
+      "Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.",
+    ),
   pageSize: zod.coerce
     .number()
     .min(1)
     .max(leadsGetLeadsQueryPageSizeMax)
-    .default(leadsGetLeadsQueryPageSizeDefault)
-    .describe("Items per page. Defaults to 10, max 100."),
-  search: zod.coerce
+    .optional()
+    .describe(
+      "Page size for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  search: zod.coerce.string().optional().describe("Optional free-text filter."),
+  status: zod.coerce.string().optional().describe("Optional status filter."),
+  cursor: zod.coerce
     .string()
     .optional()
     .describe(
-      "Case-insensitive substring filter applied across lead title, city, state, and project type.",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
     ),
-  status: zod
-    .enum(["open", "in_negotiation", "won", "lost", "archived"])
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(leadsGetLeadsQueryLimitMax)
     .optional()
-    .describe("Restrict to leads with the given status."),
+    .describe(
+      "Page size when in cursor-based pagination mode. Defaults to 25, max 100.",
+    ),
 });
 
 export const leadsGetLeadsResponseLeadsItemConfidenceMin = 0;
@@ -1146,6 +1408,20 @@ export const LeadsGetLeadsResponse = zod
  * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with leadPayloadSchema.
  * @summary POST /leads
  */
+export const leadsPostLeadsHeaderIdempotencyKeyMin = 8;
+export const leadsPostLeadsHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPostLeadsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPostLeadsHeaderIdempotencyKeyMin)
+    .max(leadsPostLeadsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const leadsPostLeadsBodyTitleMax = 255;
 
 export const leadsPostLeadsBodyStateMax = 2;
@@ -1386,6 +1662,20 @@ export const LeadsPutLeadsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(leadsPutLeadsIdPathIdRegExp),
 });
 
+export const leadsPutLeadsIdHeaderIdempotencyKeyMin = 8;
+export const leadsPutLeadsIdHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPutLeadsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPutLeadsIdHeaderIdempotencyKeyMin)
+    .max(leadsPutLeadsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const leadsPutLeadsIdBodyTitleMax = 255;
 
 export const leadsPutLeadsIdBodyStateMax = 2;
@@ -1614,6 +1904,20 @@ export const LeadsDeleteLeadsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(leadsDeleteLeadsIdPathIdRegExp),
 });
 
+export const leadsDeleteLeadsIdHeaderIdempotencyKeyMin = 8;
+export const leadsDeleteLeadsIdHeaderIdempotencyKeyMax = 255;
+
+export const LeadsDeleteLeadsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsDeleteLeadsIdHeaderIdempotencyKeyMin)
+    .max(leadsDeleteLeadsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const LeadsDeleteLeadsIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -1632,6 +1936,20 @@ export const leadsPostLeadsIdContactsPathIdRegExp = new RegExp(
 
 export const LeadsPostLeadsIdContactsParams = zod.object({
   id: zod.coerce.string().uuid().regex(leadsPostLeadsIdContactsPathIdRegExp),
+});
+
+export const leadsPostLeadsIdContactsHeaderIdempotencyKeyMin = 8;
+export const leadsPostLeadsIdContactsHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPostLeadsIdContactsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPostLeadsIdContactsHeaderIdempotencyKeyMin)
+    .max(leadsPostLeadsIdContactsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const leadsPostLeadsIdContactsBodyStateMax = 2;
@@ -1681,6 +1999,20 @@ export const LeadsPutLeadsIdContactsContactIdParams = zod.object({
     .string()
     .uuid()
     .regex(leadsPutLeadsIdContactsContactIdPathContactIdRegExp),
+});
+
+export const leadsPutLeadsIdContactsContactIdHeaderIdempotencyKeyMin = 8;
+export const leadsPutLeadsIdContactsContactIdHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPutLeadsIdContactsContactIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPutLeadsIdContactsContactIdHeaderIdempotencyKeyMin)
+    .max(leadsPutLeadsIdContactsContactIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const leadsPutLeadsIdContactsContactIdBodyStateMax = 2;
@@ -1751,6 +2083,20 @@ export const LeadsDeleteLeadsIdContactsContactIdParams = zod.object({
     .regex(leadsDeleteLeadsIdContactsContactIdPathContactIdRegExp),
 });
 
+export const leadsDeleteLeadsIdContactsContactIdHeaderIdempotencyKeyMin = 8;
+export const leadsDeleteLeadsIdContactsContactIdHeaderIdempotencyKeyMax = 255;
+
+export const LeadsDeleteLeadsIdContactsContactIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsDeleteLeadsIdContactsContactIdHeaderIdempotencyKeyMin)
+    .max(leadsDeleteLeadsIdContactsContactIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const LeadsDeleteLeadsIdContactsContactIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -1769,6 +2115,20 @@ export const leadsPostLeadsIdAttachmentsPathIdRegExp = new RegExp(
 
 export const LeadsPostLeadsIdAttachmentsParams = zod.object({
   id: zod.coerce.string().uuid().regex(leadsPostLeadsIdAttachmentsPathIdRegExp),
+});
+
+export const leadsPostLeadsIdAttachmentsHeaderIdempotencyKeyMin = 8;
+export const leadsPostLeadsIdAttachmentsHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPostLeadsIdAttachmentsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPostLeadsIdAttachmentsHeaderIdempotencyKeyMin)
+    .max(leadsPostLeadsIdAttachmentsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 /**
@@ -1794,6 +2154,20 @@ export const LeadsDeleteLeadsIdAttachmentsAttachmentIdParams = zod.object({
     .regex(leadsDeleteLeadsIdAttachmentsAttachmentIdPathAttachmentIdRegExp),
 });
 
+export const leadsDeleteLeadsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMin = 8;
+export const leadsDeleteLeadsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMax = 255;
+
+export const LeadsDeleteLeadsIdAttachmentsAttachmentIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsDeleteLeadsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMin)
+    .max(leadsDeleteLeadsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const LeadsDeleteLeadsIdAttachmentsAttachmentIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -1817,6 +2191,20 @@ export const LeadsPostLeadsIdConvertToJobParams = zod.object({
     .regex(leadsPostLeadsIdConvertToJobPathIdRegExp),
 });
 
+export const leadsPostLeadsIdConvertToJobHeaderIdempotencyKeyMin = 8;
+export const leadsPostLeadsIdConvertToJobHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPostLeadsIdConvertToJobHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPostLeadsIdConvertToJobHeaderIdempotencyKeyMin)
+    .max(leadsPostLeadsIdConvertToJobHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 /**
  * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with activityCreateSchema.
  * @summary POST /leads/{id}/activities
@@ -1827,6 +2215,20 @@ export const leadsPostLeadsIdActivitiesPathIdRegExp = new RegExp(
 
 export const LeadsPostLeadsIdActivitiesParams = zod.object({
   id: zod.coerce.string().uuid().regex(leadsPostLeadsIdActivitiesPathIdRegExp),
+});
+
+export const leadsPostLeadsIdActivitiesHeaderIdempotencyKeyMin = 8;
+export const leadsPostLeadsIdActivitiesHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPostLeadsIdActivitiesHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPostLeadsIdActivitiesHeaderIdempotencyKeyMin)
+    .max(leadsPostLeadsIdActivitiesHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const leadsPostLeadsIdActivitiesBodyTitleMax = 255;
@@ -1872,6 +2274,20 @@ export const FoldersPostJobsJobIdFoldersParams = zod.object({
     .regex(foldersPostJobsJobIdFoldersPathJobIdRegExp),
 });
 
+export const foldersPostJobsJobIdFoldersHeaderIdempotencyKeyMin = 8;
+export const foldersPostJobsJobIdFoldersHeaderIdempotencyKeyMax = 255;
+
+export const FoldersPostJobsJobIdFoldersHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(foldersPostJobsJobIdFoldersHeaderIdempotencyKeyMin)
+    .max(foldersPostJobsJobIdFoldersHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const FoldersPostJobsJobIdFoldersBody = zod
   .record(zod.string(), zod.unknown())
   .describe(
@@ -1888,6 +2304,20 @@ export const foldersPutFoldersIdPathIdRegExp = new RegExp(
 
 export const FoldersPutFoldersIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(foldersPutFoldersIdPathIdRegExp),
+});
+
+export const foldersPutFoldersIdHeaderIdempotencyKeyMin = 8;
+export const foldersPutFoldersIdHeaderIdempotencyKeyMax = 255;
+
+export const FoldersPutFoldersIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(foldersPutFoldersIdHeaderIdempotencyKeyMin)
+    .max(foldersPutFoldersIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const FoldersPutFoldersIdBody = zod
@@ -1910,6 +2340,20 @@ export const FoldersDeleteFoldersIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(foldersDeleteFoldersIdPathIdRegExp),
 });
 
+export const foldersDeleteFoldersIdHeaderIdempotencyKeyMin = 8;
+export const foldersDeleteFoldersIdHeaderIdempotencyKeyMax = 255;
+
+export const FoldersDeleteFoldersIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(foldersDeleteFoldersIdHeaderIdempotencyKeyMin)
+    .max(foldersDeleteFoldersIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const FoldersDeleteFoldersIdResponse = zod.unknown();
 
 /**
@@ -1924,6 +2368,20 @@ export const FoldersPostFoldersIdCopyParams = zod.object({
   id: zod.coerce.string().uuid().regex(foldersPostFoldersIdCopyPathIdRegExp),
 });
 
+export const foldersPostFoldersIdCopyHeaderIdempotencyKeyMin = 8;
+export const foldersPostFoldersIdCopyHeaderIdempotencyKeyMax = 255;
+
+export const FoldersPostFoldersIdCopyHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(foldersPostFoldersIdCopyHeaderIdempotencyKeyMin)
+    .max(foldersPostFoldersIdCopyHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 /**
  * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with moveFolderSchema.
  * @summary PUT /folders/{id}/move
@@ -1934,6 +2392,20 @@ export const foldersPutFoldersIdMovePathIdRegExp = new RegExp(
 
 export const FoldersPutFoldersIdMoveParams = zod.object({
   id: zod.coerce.string().uuid().regex(foldersPutFoldersIdMovePathIdRegExp),
+});
+
+export const foldersPutFoldersIdMoveHeaderIdempotencyKeyMin = 8;
+export const foldersPutFoldersIdMoveHeaderIdempotencyKeyMax = 255;
+
+export const FoldersPutFoldersIdMoveHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(foldersPutFoldersIdMoveHeaderIdempotencyKeyMin)
+    .max(foldersPutFoldersIdMoveHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const FoldersPutFoldersIdMoveBody = zod
@@ -1956,6 +2428,20 @@ export const FoldersPostFoldersIdRestoreParams = zod.object({
   id: zod.coerce.string().uuid().regex(foldersPostFoldersIdRestorePathIdRegExp),
 });
 
+export const foldersPostFoldersIdRestoreHeaderIdempotencyKeyMin = 8;
+export const foldersPostFoldersIdRestoreHeaderIdempotencyKeyMax = 255;
+
+export const FoldersPostFoldersIdRestoreHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(foldersPostFoldersIdRestoreHeaderIdempotencyKeyMin)
+    .max(foldersPostFoldersIdRestoreHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const FoldersPostFoldersIdRestoreResponse = zod.unknown();
 
 /**
@@ -1968,6 +2454,20 @@ export const foldersDeleteFoldersIdPurgePathIdRegExp = new RegExp(
 
 export const FoldersDeleteFoldersIdPurgeParams = zod.object({
   id: zod.coerce.string().uuid().regex(foldersDeleteFoldersIdPurgePathIdRegExp),
+});
+
+export const foldersDeleteFoldersIdPurgeHeaderIdempotencyKeyMin = 8;
+export const foldersDeleteFoldersIdPurgeHeaderIdempotencyKeyMax = 255;
+
+export const FoldersDeleteFoldersIdPurgeHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(foldersDeleteFoldersIdPurgeHeaderIdempotencyKeyMin)
+    .max(foldersDeleteFoldersIdPurgeHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const FoldersDeleteFoldersIdPurgeResponse = zod.unknown();
@@ -2018,18 +2518,62 @@ export const FoldersDeleteJobsJobIdTrashParams = zod.object({
     .regex(foldersDeleteJobsJobIdTrashPathJobIdRegExp),
 });
 
+export const foldersDeleteJobsJobIdTrashHeaderIdempotencyKeyMin = 8;
+export const foldersDeleteJobsJobIdTrashHeaderIdempotencyKeyMax = 255;
+
+export const FoldersDeleteJobsJobIdTrashHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(foldersDeleteJobsJobIdTrashHeaderIdempotencyKeyMin)
+    .max(foldersDeleteJobsJobIdTrashHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const FoldersDeleteJobsJobIdTrashResponse = zod.unknown();
 
 /**
  * Route defined in artifacts/api-server/src/routes/files.ts. Validated query with fileListQuerySchema.
  * @summary GET /folders/{id}/files
  */
-export const filesGetFoldersIdFilesPathIdRegExp = new RegExp(
-  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-);
+export const FilesGetFoldersIdFilesPathParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
 
-export const FilesGetFoldersIdFilesParams = zod.object({
-  id: zod.coerce.string().uuid().regex(filesGetFoldersIdFilesPathIdRegExp),
+export const filesGetFoldersIdFilesQueryLimitMax = 100;
+
+export const FilesGetFoldersIdFilesQueryParams = zod.object({
+  page: zod.coerce
+    .number()
+    .min(1)
+    .optional()
+    .describe(
+      "Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(filesGetFoldersIdFilesQueryLimitMax)
+    .optional()
+    .describe("Page size. Default 100; max 100."),
+  sortBy: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Sort key (e.g. `modified_newest`, `modified_oldest`, `name_asc`, `name_desc`). Default `modified_newest`.",
+    ),
+  includeDeleted: zod.coerce
+    .boolean()
+    .optional()
+    .describe("Include soft-deleted files. Default false."),
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+    ),
 });
 
 export const FilesGetFoldersIdFilesResponse = zod.unknown();
@@ -2046,6 +2590,20 @@ export const FilesPostFoldersIdFilesParams = zod.object({
   id: zod.coerce.string().uuid().regex(filesPostFoldersIdFilesPathIdRegExp),
 });
 
+export const filesPostFoldersIdFilesHeaderIdempotencyKeyMin = 8;
+export const filesPostFoldersIdFilesHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostFoldersIdFilesHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostFoldersIdFilesHeaderIdempotencyKeyMin)
+    .max(filesPostFoldersIdFilesHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 /**
  * Route defined in artifacts/api-server/src/routes/files.ts. Validated request body with renameFileSchema.
  * @summary PUT /files/{id}
@@ -2056,6 +2614,20 @@ export const filesPutFilesIdPathIdRegExp = new RegExp(
 
 export const FilesPutFilesIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(filesPutFilesIdPathIdRegExp),
+});
+
+export const filesPutFilesIdHeaderIdempotencyKeyMin = 8;
+export const filesPutFilesIdHeaderIdempotencyKeyMax = 255;
+
+export const FilesPutFilesIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPutFilesIdHeaderIdempotencyKeyMin)
+    .max(filesPutFilesIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const FilesPutFilesIdBody = zod
@@ -2078,6 +2650,20 @@ export const FilesDeleteFilesIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(filesDeleteFilesIdPathIdRegExp),
 });
 
+export const filesDeleteFilesIdHeaderIdempotencyKeyMin = 8;
+export const filesDeleteFilesIdHeaderIdempotencyKeyMax = 255;
+
+export const FilesDeleteFilesIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesDeleteFilesIdHeaderIdempotencyKeyMin)
+    .max(filesDeleteFilesIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const FilesDeleteFilesIdResponse = zod.unknown();
 
 /**
@@ -2092,6 +2678,20 @@ export const FilesPostFilesIdRestoreParams = zod.object({
   id: zod.coerce.string().uuid().regex(filesPostFilesIdRestorePathIdRegExp),
 });
 
+export const filesPostFilesIdRestoreHeaderIdempotencyKeyMin = 8;
+export const filesPostFilesIdRestoreHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostFilesIdRestoreHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostFilesIdRestoreHeaderIdempotencyKeyMin)
+    .max(filesPostFilesIdRestoreHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const FilesPostFilesIdRestoreResponse = zod.unknown();
 
 /**
@@ -2104,6 +2704,20 @@ export const filesDeleteFilesIdPurgePathIdRegExp = new RegExp(
 
 export const FilesDeleteFilesIdPurgeParams = zod.object({
   id: zod.coerce.string().uuid().regex(filesDeleteFilesIdPurgePathIdRegExp),
+});
+
+export const filesDeleteFilesIdPurgeHeaderIdempotencyKeyMin = 8;
+export const filesDeleteFilesIdPurgeHeaderIdempotencyKeyMax = 255;
+
+export const FilesDeleteFilesIdPurgeHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesDeleteFilesIdPurgeHeaderIdempotencyKeyMin)
+    .max(filesDeleteFilesIdPurgeHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const FilesDeleteFilesIdPurgeResponse = zod.unknown();
@@ -2222,6 +2836,20 @@ export const DailyLogsPostJobsJobIdDailyLogsParams = zod.object({
     .string()
     .uuid()
     .regex(dailyLogsPostJobsJobIdDailyLogsPathJobIdRegExp),
+});
+
+export const dailyLogsPostJobsJobIdDailyLogsHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPostJobsJobIdDailyLogsHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPostJobsJobIdDailyLogsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsPostJobsJobIdDailyLogsHeaderIdempotencyKeyMin)
+    .max(dailyLogsPostJobsJobIdDailyLogsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const dailyLogsPostJobsJobIdDailyLogsBodyLogDateRegExp = new RegExp(
@@ -2436,6 +3064,20 @@ export const DailyLogsPutDailyLogsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(dailyLogsPutDailyLogsIdPathIdRegExp),
 });
 
+export const dailyLogsPutDailyLogsIdHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPutDailyLogsIdHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPutDailyLogsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsPutDailyLogsIdHeaderIdempotencyKeyMin)
+    .max(dailyLogsPutDailyLogsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const dailyLogsPutDailyLogsIdBodyLogDateRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
@@ -2630,6 +3272,20 @@ export const DailyLogsDeleteDailyLogsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(dailyLogsDeleteDailyLogsIdPathIdRegExp),
 });
 
+export const dailyLogsDeleteDailyLogsIdHeaderIdempotencyKeyMin = 8;
+export const dailyLogsDeleteDailyLogsIdHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsDeleteDailyLogsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsDeleteDailyLogsIdHeaderIdempotencyKeyMin)
+    .max(dailyLogsDeleteDailyLogsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const DailyLogsDeleteDailyLogsIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -2651,6 +3307,20 @@ export const DailyLogsPostDailyLogsIdPublishParams = zod.object({
     .string()
     .uuid()
     .regex(dailyLogsPostDailyLogsIdPublishPathIdRegExp),
+});
+
+export const dailyLogsPostDailyLogsIdPublishHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPostDailyLogsIdPublishHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPostDailyLogsIdPublishHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsPostDailyLogsIdPublishHeaderIdempotencyKeyMin)
+    .max(dailyLogsPostDailyLogsIdPublishHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const DailyLogsPostDailyLogsIdPublishResponse = zod.object({
@@ -2784,6 +3454,20 @@ export const DailyLogsPostDailyLogsIdLikeParams = zod.object({
     .regex(dailyLogsPostDailyLogsIdLikePathIdRegExp),
 });
 
+export const dailyLogsPostDailyLogsIdLikeHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPostDailyLogsIdLikeHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPostDailyLogsIdLikeHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsPostDailyLogsIdLikeHeaderIdempotencyKeyMin)
+    .max(dailyLogsPostDailyLogsIdLikeHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const DailyLogsPostDailyLogsIdLikeResponse = zod.object({
   liked: zod.boolean(),
   likesCount: zod.number(),
@@ -2855,6 +3539,20 @@ export const DailyLogsPostDailyLogsIdCommentsParams = zod.object({
     .regex(dailyLogsPostDailyLogsIdCommentsPathIdRegExp),
 });
 
+export const dailyLogsPostDailyLogsIdCommentsHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPostDailyLogsIdCommentsHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPostDailyLogsIdCommentsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsPostDailyLogsIdCommentsHeaderIdempotencyKeyMin)
+    .max(dailyLogsPostDailyLogsIdCommentsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const dailyLogsPostDailyLogsIdCommentsBodyBodyMax = 10000;
 
 export const dailyLogsPostDailyLogsIdCommentsBodyMentionsDefault = [];
@@ -2914,6 +3612,25 @@ export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsParams =
       .uuid()
       .regex(
         dailyLogsPostDailyLogsIdCommentsCommentIdReactionsPathCommentIdRegExp,
+      ),
+  });
+
+export const dailyLogsPostDailyLogsIdCommentsCommentIdReactionsHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPostDailyLogsIdCommentsCommentIdReactionsHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        dailyLogsPostDailyLogsIdCommentsCommentIdReactionsHeaderIdempotencyKeyMin,
+      )
+      .max(
+        dailyLogsPostDailyLogsIdCommentsCommentIdReactionsHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
       ),
   });
 
@@ -2982,6 +3699,20 @@ export const DailyLogsPostDailyLogsIdTodosParams = zod.object({
     .regex(dailyLogsPostDailyLogsIdTodosPathIdRegExp),
 });
 
+export const dailyLogsPostDailyLogsIdTodosHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPostDailyLogsIdTodosHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPostDailyLogsIdTodosHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsPostDailyLogsIdTodosHeaderIdempotencyKeyMin)
+    .max(dailyLogsPostDailyLogsIdTodosHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const dailyLogsPostDailyLogsIdTodosBodyTitleMax = 255;
 
 export const DailyLogsPostDailyLogsIdTodosBody = zod
@@ -3013,6 +3744,20 @@ export const DailyLogsPostDailyLogsIdTodosTodoIdToggleParams = zod.object({
     .string()
     .uuid()
     .regex(dailyLogsPostDailyLogsIdTodosTodoIdTogglePathTodoIdRegExp),
+});
+
+export const dailyLogsPostDailyLogsIdTodosTodoIdToggleHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPostDailyLogsIdTodosTodoIdToggleHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPostDailyLogsIdTodosTodoIdToggleHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsPostDailyLogsIdTodosTodoIdToggleHeaderIdempotencyKeyMin)
+    .max(dailyLogsPostDailyLogsIdTodosTodoIdToggleHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const DailyLogsPostDailyLogsIdTodosTodoIdToggleBody = zod
@@ -3052,6 +3797,20 @@ export const DailyLogsPostDailyLogsIdAttachmentsParams = zod.object({
     .regex(dailyLogsPostDailyLogsIdAttachmentsPathIdRegExp),
 });
 
+export const dailyLogsPostDailyLogsIdAttachmentsHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPostDailyLogsIdAttachmentsHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPostDailyLogsIdAttachmentsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsPostDailyLogsIdAttachmentsHeaderIdempotencyKeyMin)
+    .max(dailyLogsPostDailyLogsIdAttachmentsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
  * @summary DELETE /daily-logs/{id}/attachments/{attachmentId}
@@ -3079,6 +3838,25 @@ export const DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdParams =
       ),
   });
 
+export const dailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMin = 8;
+export const dailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        dailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMin,
+      )
+      .max(
+        dailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+      ),
+  });
+
 export const DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -3097,6 +3875,20 @@ export const DailyLogAdminGetDailyLogsSettingsResponse = zod.unknown();
  * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
  * @summary PUT /daily-logs/settings
  */
+export const dailyLogAdminPutDailyLogsSettingsHeaderIdempotencyKeyMin = 8;
+export const dailyLogAdminPutDailyLogsSettingsHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogAdminPutDailyLogsSettingsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogAdminPutDailyLogsSettingsHeaderIdempotencyKeyMin)
+    .max(dailyLogAdminPutDailyLogsSettingsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const DailyLogAdminPutDailyLogsSettingsBody = zod.record(
   zod.string(),
   zod.unknown(),
@@ -3114,6 +3906,20 @@ export const DailyLogAdminGetDailyLogsCustomFieldsResponse = zod.unknown();
  * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
  * @summary POST /daily-logs/custom-fields
  */
+export const dailyLogAdminPostDailyLogsCustomFieldsHeaderIdempotencyKeyMin = 8;
+export const dailyLogAdminPostDailyLogsCustomFieldsHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogAdminPostDailyLogsCustomFieldsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogAdminPostDailyLogsCustomFieldsHeaderIdempotencyKeyMin)
+    .max(dailyLogAdminPostDailyLogsCustomFieldsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const DailyLogAdminPostDailyLogsCustomFieldsBody = zod.record(
   zod.string(),
   zod.unknown(),
@@ -3133,6 +3939,20 @@ export const DailyLogAdminPutDailyLogsCustomFieldsFieldIdParams = zod.object({
     .string()
     .uuid()
     .regex(dailyLogAdminPutDailyLogsCustomFieldsFieldIdPathFieldIdRegExp),
+});
+
+export const dailyLogAdminPutDailyLogsCustomFieldsFieldIdHeaderIdempotencyKeyMin = 8;
+export const dailyLogAdminPutDailyLogsCustomFieldsFieldIdHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogAdminPutDailyLogsCustomFieldsFieldIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogAdminPutDailyLogsCustomFieldsFieldIdHeaderIdempotencyKeyMin)
+    .max(dailyLogAdminPutDailyLogsCustomFieldsFieldIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const DailyLogAdminPutDailyLogsCustomFieldsFieldIdBody = zod.record(
@@ -3158,6 +3978,26 @@ export const DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdParams = zod.object(
       .string()
       .uuid()
       .regex(dailyLogAdminDeleteDailyLogsCustomFieldsFieldIdPathFieldIdRegExp),
+  },
+);
+
+export const dailyLogAdminDeleteDailyLogsCustomFieldsFieldIdHeaderIdempotencyKeyMin = 8;
+export const dailyLogAdminDeleteDailyLogsCustomFieldsFieldIdHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdHeader = zod.object(
+  {
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        dailyLogAdminDeleteDailyLogsCustomFieldsFieldIdHeaderIdempotencyKeyMin,
+      )
+      .max(
+        dailyLogAdminDeleteDailyLogsCustomFieldsFieldIdHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+      ),
   },
 );
 
@@ -3373,6 +4213,20 @@ export const SchedulePutJobsJobIdScheduleSettingsParams = zod.object({
     .regex(schedulePutJobsJobIdScheduleSettingsPathJobIdRegExp),
 });
 
+export const schedulePutJobsJobIdScheduleSettingsHeaderIdempotencyKeyMin = 8;
+export const schedulePutJobsJobIdScheduleSettingsHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePutJobsJobIdScheduleSettingsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePutJobsJobIdScheduleSettingsHeaderIdempotencyKeyMin)
+    .max(schedulePutJobsJobIdScheduleSettingsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const SchedulePutJobsJobIdScheduleSettingsBody = zod.record(
   zod.string(),
   zod.unknown(),
@@ -3416,6 +4270,20 @@ export const SchedulePostJobsJobIdScheduleSettingsPhasesParams = zod.object({
     .regex(schedulePostJobsJobIdScheduleSettingsPhasesPathJobIdRegExp),
 });
 
+export const schedulePostJobsJobIdScheduleSettingsPhasesHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdScheduleSettingsPhasesHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdScheduleSettingsPhasesHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostJobsJobIdScheduleSettingsPhasesHeaderIdempotencyKeyMin)
+    .max(schedulePostJobsJobIdScheduleSettingsPhasesHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const schedulePostJobsJobIdScheduleSettingsPhasesBodyNameMax = 100;
 
 export const SchedulePostJobsJobIdScheduleSettingsPhasesBody = zod
@@ -3452,6 +4320,25 @@ export const SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdParams =
       .uuid()
       .regex(
         schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdPathPhaseIdRegExp,
+      ),
+  });
+
+export const schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdHeaderIdempotencyKeyMin = 8;
+export const schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdHeaderIdempotencyKeyMin,
+      )
+      .max(
+        schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
       ),
   });
 
@@ -3510,6 +4397,20 @@ export const SchedulePostJobsJobIdSchedulePhasesParams = zod.object({
     .regex(schedulePostJobsJobIdSchedulePhasesPathJobIdRegExp),
 });
 
+export const schedulePostJobsJobIdSchedulePhasesHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdSchedulePhasesHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdSchedulePhasesHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostJobsJobIdSchedulePhasesHeaderIdempotencyKeyMin)
+    .max(schedulePostJobsJobIdSchedulePhasesHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const schedulePostJobsJobIdSchedulePhasesBodyNameMax = 100;
 
 export const SchedulePostJobsJobIdSchedulePhasesBody = zod
@@ -3544,6 +4445,20 @@ export const SchedulePutJobsJobIdSchedulePhasesPhaseIdParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePutJobsJobIdSchedulePhasesPhaseIdPathPhaseIdRegExp),
+});
+
+export const schedulePutJobsJobIdSchedulePhasesPhaseIdHeaderIdempotencyKeyMin = 8;
+export const schedulePutJobsJobIdSchedulePhasesPhaseIdHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePutJobsJobIdSchedulePhasesPhaseIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePutJobsJobIdSchedulePhasesPhaseIdHeaderIdempotencyKeyMin)
+    .max(schedulePutJobsJobIdSchedulePhasesPhaseIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const schedulePutJobsJobIdSchedulePhasesPhaseIdBodyNameMax = 100;
@@ -3590,6 +4505,20 @@ export const ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdParams = zod.object({
     .regex(scheduleDeleteJobsJobIdSchedulePhasesPhaseIdPathPhaseIdRegExp),
 });
 
+export const scheduleDeleteJobsJobIdSchedulePhasesPhaseIdHeaderIdempotencyKeyMin = 8;
+export const scheduleDeleteJobsJobIdSchedulePhasesPhaseIdHeaderIdempotencyKeyMax = 255;
+
+export const ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(scheduleDeleteJobsJobIdSchedulePhasesPhaseIdHeaderIdempotencyKeyMin)
+    .max(scheduleDeleteJobsJobIdSchedulePhasesPhaseIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -3612,6 +4541,20 @@ export const SchedulePostJobsJobIdScheduleSettingsTagsParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePostJobsJobIdScheduleSettingsTagsPathJobIdRegExp),
+});
+
+export const schedulePostJobsJobIdScheduleSettingsTagsHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdScheduleSettingsTagsHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdScheduleSettingsTagsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostJobsJobIdScheduleSettingsTagsHeaderIdempotencyKeyMin)
+    .max(schedulePostJobsJobIdScheduleSettingsTagsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const schedulePostJobsJobIdScheduleSettingsTagsBodyNameMax = 100;
@@ -3649,6 +4592,20 @@ export const SchedulePutJobsJobIdScheduleSettingsTagsTagIdParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePutJobsJobIdScheduleSettingsTagsTagIdPathTagIdRegExp),
+});
+
+export const schedulePutJobsJobIdScheduleSettingsTagsTagIdHeaderIdempotencyKeyMin = 8;
+export const schedulePutJobsJobIdScheduleSettingsTagsTagIdHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePutJobsJobIdScheduleSettingsTagsTagIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePutJobsJobIdScheduleSettingsTagsTagIdHeaderIdempotencyKeyMin)
+    .max(schedulePutJobsJobIdScheduleSettingsTagsTagIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const schedulePutJobsJobIdScheduleSettingsTagsTagIdBodyNameMax = 100;
@@ -3720,6 +4677,20 @@ export const SchedulePostJobsJobIdScheduleBaselineParams = zod.object({
     .regex(schedulePostJobsJobIdScheduleBaselinePathJobIdRegExp),
 });
 
+export const schedulePostJobsJobIdScheduleBaselineHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdScheduleBaselineHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdScheduleBaselineHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostJobsJobIdScheduleBaselineHeaderIdempotencyKeyMin)
+    .max(schedulePostJobsJobIdScheduleBaselineHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const SchedulePostJobsJobIdScheduleBaselineResponse = zod.object({
   baseline: zod
     .object({
@@ -3756,6 +4727,20 @@ export const SchedulePutJobsJobIdScheduleBaselineParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePutJobsJobIdScheduleBaselinePathJobIdRegExp),
+});
+
+export const schedulePutJobsJobIdScheduleBaselineHeaderIdempotencyKeyMin = 8;
+export const schedulePutJobsJobIdScheduleBaselineHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePutJobsJobIdScheduleBaselineHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePutJobsJobIdScheduleBaselineHeaderIdempotencyKeyMin)
+    .max(schedulePutJobsJobIdScheduleBaselineHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const SchedulePutJobsJobIdScheduleBaselineResponse = zod.object({
@@ -3797,6 +4782,20 @@ export const ScheduleDeleteJobsJobIdScheduleBaselineParams = zod.object({
     .regex(scheduleDeleteJobsJobIdScheduleBaselinePathJobIdRegExp),
 });
 
+export const scheduleDeleteJobsJobIdScheduleBaselineHeaderIdempotencyKeyMin = 8;
+export const scheduleDeleteJobsJobIdScheduleBaselineHeaderIdempotencyKeyMax = 255;
+
+export const ScheduleDeleteJobsJobIdScheduleBaselineHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(scheduleDeleteJobsJobIdScheduleBaselineHeaderIdempotencyKeyMin)
+    .max(scheduleDeleteJobsJobIdScheduleBaselineHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const ScheduleDeleteJobsJobIdScheduleBaselineResponse = zod
   .object({
     success: zod.boolean(),
@@ -3820,6 +4819,25 @@ export const SchedulePostJobsJobIdWorkdayExceptionsCategoriesParams =
       .string()
       .uuid()
       .regex(schedulePostJobsJobIdWorkdayExceptionsCategoriesPathJobIdRegExp),
+  });
+
+export const schedulePostJobsJobIdWorkdayExceptionsCategoriesHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdWorkdayExceptionsCategoriesHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdWorkdayExceptionsCategoriesHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        schedulePostJobsJobIdWorkdayExceptionsCategoriesHeaderIdempotencyKeyMin,
+      )
+      .max(
+        schedulePostJobsJobIdWorkdayExceptionsCategoriesHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+      ),
   });
 
 export const SchedulePostJobsJobIdWorkdayExceptionsCategoriesBody = zod.record(
@@ -3853,6 +4871,25 @@ export const SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdParams =
       .uuid()
       .regex(
         schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdPathCategoryIdRegExp,
+      ),
+  });
+
+export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdHeaderIdempotencyKeyMin = 8;
+export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdHeaderIdempotencyKeyMin,
+      )
+      .max(
+        schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
       ),
   });
 
@@ -3931,6 +4968,20 @@ export const SchedulePostJobsJobIdWorkdayExceptionsParams = zod.object({
     .regex(schedulePostJobsJobIdWorkdayExceptionsPathJobIdRegExp),
 });
 
+export const schedulePostJobsJobIdWorkdayExceptionsHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdWorkdayExceptionsHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdWorkdayExceptionsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostJobsJobIdWorkdayExceptionsHeaderIdempotencyKeyMin)
+    .max(schedulePostJobsJobIdWorkdayExceptionsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const schedulePostJobsJobIdWorkdayExceptionsBodyTitleMax = 255;
 
 export const schedulePostJobsJobIdWorkdayExceptionsBodyStartDateRegExp =
@@ -3999,6 +5050,25 @@ export const SchedulePutJobsJobIdWorkdayExceptionsExceptionIdParams =
       .uuid()
       .regex(
         schedulePutJobsJobIdWorkdayExceptionsExceptionIdPathExceptionIdRegExp,
+      ),
+  });
+
+export const schedulePutJobsJobIdWorkdayExceptionsExceptionIdHeaderIdempotencyKeyMin = 8;
+export const schedulePutJobsJobIdWorkdayExceptionsExceptionIdHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePutJobsJobIdWorkdayExceptionsExceptionIdHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        schedulePutJobsJobIdWorkdayExceptionsExceptionIdHeaderIdempotencyKeyMin,
+      )
+      .max(
+        schedulePutJobsJobIdWorkdayExceptionsExceptionIdHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
       ),
   });
 
@@ -4100,6 +5170,25 @@ export const ScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdParams =
       ),
   });
 
+export const scheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdHeaderIdempotencyKeyMin = 8;
+export const scheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdHeaderIdempotencyKeyMax = 255;
+
+export const ScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        scheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdHeaderIdempotencyKeyMin,
+      )
+      .max(
+        scheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+      ),
+  });
+
 export const ScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -4122,6 +5211,20 @@ export const SchedulePostJobsJobIdScheduleTrackConflictsParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePostJobsJobIdScheduleTrackConflictsPathJobIdRegExp),
+});
+
+export const schedulePostJobsJobIdScheduleTrackConflictsHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdScheduleTrackConflictsHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdScheduleTrackConflictsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostJobsJobIdScheduleTrackConflictsHeaderIdempotencyKeyMin)
+    .max(schedulePostJobsJobIdScheduleTrackConflictsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const SchedulePostJobsJobIdScheduleTrackConflictsResponse = zod.object({
@@ -4255,6 +5358,25 @@ export const SchedulePostJobsJobIdScheduleNotifyAssignedUsersParams =
       .regex(schedulePostJobsJobIdScheduleNotifyAssignedUsersPathJobIdRegExp),
   });
 
+export const schedulePostJobsJobIdScheduleNotifyAssignedUsersHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdScheduleNotifyAssignedUsersHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdScheduleNotifyAssignedUsersHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        schedulePostJobsJobIdScheduleNotifyAssignedUsersHeaderIdempotencyKeyMin,
+      )
+      .max(
+        schedulePostJobsJobIdScheduleNotifyAssignedUsersHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+      ),
+  });
+
 export const SchedulePostJobsJobIdScheduleNotifyAssignedUsersResponse =
   zod.object({
     success: zod.boolean(),
@@ -4273,15 +5395,32 @@ export const SchedulePostJobsJobIdScheduleNotifyAssignedUsersResponse =
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
  * @summary GET /jobs/{jobId}/schedule
  */
-export const scheduleGetJobsJobIdSchedulePathJobIdRegExp = new RegExp(
-  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-);
+export const ScheduleGetJobsJobIdSchedulePathParams = zod.object({
+  jobId: zod.coerce.string().uuid(),
+});
 
-export const ScheduleGetJobsJobIdScheduleParams = zod.object({
-  jobId: zod.coerce
+export const scheduleGetJobsJobIdScheduleQueryLimitMax = 200;
+
+export const ScheduleGetJobsJobIdScheduleQueryParams = zod.object({
+  page: zod.coerce
+    .number()
+    .min(1)
+    .optional()
+    .describe(
+      "Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(scheduleGetJobsJobIdScheduleQueryLimitMax)
+    .optional()
+    .describe("Page size."),
+  cursor: zod.coerce
     .string()
-    .uuid()
-    .regex(scheduleGetJobsJobIdSchedulePathJobIdRegExp),
+    .optional()
+    .describe(
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+    ),
 });
 
 export const ScheduleGetJobsJobIdScheduleResponse = zod.object({
@@ -4416,6 +5555,20 @@ export const SchedulePostJobsJobIdScheduleParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePostJobsJobIdSchedulePathJobIdRegExp),
+});
+
+export const schedulePostJobsJobIdScheduleHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdScheduleHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdScheduleHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostJobsJobIdScheduleHeaderIdempotencyKeyMin)
+    .max(schedulePostJobsJobIdScheduleHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const schedulePostJobsJobIdScheduleBodyTitleMax = 255;
@@ -4690,6 +5843,20 @@ export const SchedulePutScheduleItemsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(schedulePutScheduleItemsIdPathIdRegExp),
 });
 
+export const schedulePutScheduleItemsIdHeaderIdempotencyKeyMin = 8;
+export const schedulePutScheduleItemsIdHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePutScheduleItemsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePutScheduleItemsIdHeaderIdempotencyKeyMin)
+    .max(schedulePutScheduleItemsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const schedulePutScheduleItemsIdBodyTitleMax = 255;
 
 export const schedulePutScheduleItemsIdBodyAssigneeIdsDefault = [];
@@ -4951,6 +6118,20 @@ export const ScheduleDeleteScheduleItemsIdParams = zod.object({
     .regex(scheduleDeleteScheduleItemsIdPathIdRegExp),
 });
 
+export const scheduleDeleteScheduleItemsIdHeaderIdempotencyKeyMin = 8;
+export const scheduleDeleteScheduleItemsIdHeaderIdempotencyKeyMax = 255;
+
+export const ScheduleDeleteScheduleItemsIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(scheduleDeleteScheduleItemsIdHeaderIdempotencyKeyMin)
+    .max(scheduleDeleteScheduleItemsIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const ScheduleDeleteScheduleItemsIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -4972,6 +6153,20 @@ export const SchedulePostScheduleItemsIdTodosParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePostScheduleItemsIdTodosPathIdRegExp),
+});
+
+export const schedulePostScheduleItemsIdTodosHeaderIdempotencyKeyMin = 8;
+export const schedulePostScheduleItemsIdTodosHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostScheduleItemsIdTodosHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostScheduleItemsIdTodosHeaderIdempotencyKeyMin)
+    .max(schedulePostScheduleItemsIdTodosHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const SchedulePostScheduleItemsIdTodosBody = zod.record(
@@ -4999,6 +6194,20 @@ export const SchedulePutScheduleItemsIdTodosTodoIdParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePutScheduleItemsIdTodosTodoIdPathTodoIdRegExp),
+});
+
+export const schedulePutScheduleItemsIdTodosTodoIdHeaderIdempotencyKeyMin = 8;
+export const schedulePutScheduleItemsIdTodosTodoIdHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePutScheduleItemsIdTodosTodoIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePutScheduleItemsIdTodosTodoIdHeaderIdempotencyKeyMin)
+    .max(schedulePutScheduleItemsIdTodosTodoIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const SchedulePutScheduleItemsIdTodosTodoIdBody = zod.record(
@@ -5041,6 +6250,20 @@ export const ScheduleDeleteScheduleItemsIdTodosTodoIdParams = zod.object({
     .regex(scheduleDeleteScheduleItemsIdTodosTodoIdPathTodoIdRegExp),
 });
 
+export const scheduleDeleteScheduleItemsIdTodosTodoIdHeaderIdempotencyKeyMin = 8;
+export const scheduleDeleteScheduleItemsIdTodosTodoIdHeaderIdempotencyKeyMax = 255;
+
+export const ScheduleDeleteScheduleItemsIdTodosTodoIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(scheduleDeleteScheduleItemsIdTodosTodoIdHeaderIdempotencyKeyMin)
+    .max(scheduleDeleteScheduleItemsIdTodosTodoIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 export const ScheduleDeleteScheduleItemsIdTodosTodoIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -5062,6 +6285,20 @@ export const SchedulePostScheduleItemsIdNotesParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePostScheduleItemsIdNotesPathIdRegExp),
+});
+
+export const schedulePostScheduleItemsIdNotesHeaderIdempotencyKeyMin = 8;
+export const schedulePostScheduleItemsIdNotesHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostScheduleItemsIdNotesHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostScheduleItemsIdNotesHeaderIdempotencyKeyMin)
+    .max(schedulePostScheduleItemsIdNotesHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const schedulePostScheduleItemsIdNotesBodyNoteMax = 10000;
@@ -5087,6 +6324,20 @@ export const SchedulePostScheduleItemsIdAttachmentsParams = zod.object({
     .regex(schedulePostScheduleItemsIdAttachmentsPathIdRegExp),
 });
 
+export const schedulePostScheduleItemsIdAttachmentsHeaderIdempotencyKeyMin = 8;
+export const schedulePostScheduleItemsIdAttachmentsHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostScheduleItemsIdAttachmentsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostScheduleItemsIdAttachmentsHeaderIdempotencyKeyMin)
+    .max(schedulePostScheduleItemsIdAttachmentsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
  * @summary POST /schedule-items/{id}/attachments/new-doc
@@ -5101,6 +6352,20 @@ export const SchedulePostScheduleItemsIdAttachmentsNewDocParams = zod.object({
     .string()
     .uuid()
     .regex(schedulePostScheduleItemsIdAttachmentsNewDocPathIdRegExp),
+});
+
+export const schedulePostScheduleItemsIdAttachmentsNewDocHeaderIdempotencyKeyMin = 8;
+export const schedulePostScheduleItemsIdAttachmentsNewDocHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostScheduleItemsIdAttachmentsNewDocHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostScheduleItemsIdAttachmentsNewDocHeaderIdempotencyKeyMin)
+    .max(schedulePostScheduleItemsIdAttachmentsNewDocHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 export const SchedulePostScheduleItemsIdAttachmentsNewDocBody = zod.record(
@@ -5135,6 +6400,25 @@ export const ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdParams =
       ),
   });
 
+export const scheduleDeleteScheduleItemsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMin = 8;
+export const scheduleDeleteScheduleItemsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMax = 255;
+
+export const ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        scheduleDeleteScheduleItemsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMin,
+      )
+      .max(
+        scheduleDeleteScheduleItemsIdAttachmentsAttachmentIdHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+      ),
+  });
+
 export const ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdResponse = zod
   .object({
     success: zod.boolean(),
@@ -5162,9 +6446,59 @@ export const DashboardGetDashboardAgendaResponse = zod.unknown();
 export const DashboardGetDashboardScheduleResponse = zod.unknown();
 
 /**
- * Route defined in artifacts/api-server/src/routes/activity.ts. Validated query with querySchema.
+ * Route defined in artifacts/api-server/src/routes/activity.ts. Validated query with querySchema. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
  * @summary GET /activity
  */
+
+export const activityGetActivityQueryLimitMax = 100;
+
+export const ActivityGetActivityQueryParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .optional()
+    .describe("Filter to activity rows for a specific job."),
+  mediaType: zod
+    .enum(["document", "photo", "video"])
+    .optional()
+    .describe("Filter to a media type."),
+  folderId: zod.coerce
+    .string()
+    .uuid()
+    .optional()
+    .describe("Filter to a specific folder."),
+  entityType: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter to a specific entity type. Must be paired with entityId.",
+    ),
+  entityId: zod.coerce
+    .string()
+    .uuid()
+    .optional()
+    .describe("Filter to a specific entity. Must be paired with entityType."),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .optional()
+    .describe(
+      "Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(activityGetActivityQueryLimitMax)
+    .optional()
+    .describe("Page size. Default 50; max 100."),
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+    ),
+});
+
 export const ActivityGetActivityResponse = zod.unknown();
 
 /**
@@ -5222,4 +6556,82 @@ export const SearchGetSearchResponse = zod.object({
  */
 export const HealthGetHealthzResponse = zod.object({
   status: zod.string(),
+});
+
+/**
+ * @summary List personal access tokens for the current user.
+ */
+export const AccountTokensListResponse = zod.object({
+  tokens: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      name: zod.string(),
+      scope: zod.enum(["read", "read_write"]),
+      tokenPrefix: zod
+        .string()
+        .describe(
+          "First few characters of the token (always `cs_pat_`-prefixed).",
+        ),
+      lastFour: zod
+        .string()
+        .describe("Last 4 characters of the token, for UI display."),
+      expiresAt: zod.coerce.date().nullish(),
+      lastUsedAt: zod.coerce.date().nullish(),
+      revokedAt: zod.coerce.date().nullish(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+});
+
+/**
+ * @summary Issue a new personal access token. The full secret is returned exactly once.
+ */
+export const accountTokensCreateHeaderIdempotencyKeyMin = 8;
+export const accountTokensCreateHeaderIdempotencyKeyMax = 255;
+
+export const AccountTokensCreateHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(accountTokensCreateHeaderIdempotencyKeyMin)
+    .max(accountTokensCreateHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const accountTokensCreateBodyNameMax = 100;
+
+export const accountTokensCreateBodyScopeDefault = `read_write`;
+
+export const AccountTokensCreateBody = zod.object({
+  name: zod.string().min(1).max(accountTokensCreateBodyNameMax),
+  scope: zod
+    .enum(["read", "read_write"])
+    .default(accountTokensCreateBodyScopeDefault),
+  expiresAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Optional ISO 8601 expiry. Must be in the future."),
+});
+
+/**
+ * @summary Revoke a personal access token.
+ */
+export const AccountTokensRevokeParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const accountTokensRevokeHeaderIdempotencyKeyMin = 8;
+export const accountTokensRevokeHeaderIdempotencyKeyMax = 255;
+
+export const AccountTokensRevokeHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(accountTokensRevokeHeaderIdempotencyKeyMin)
+    .max(accountTokensRevokeHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });

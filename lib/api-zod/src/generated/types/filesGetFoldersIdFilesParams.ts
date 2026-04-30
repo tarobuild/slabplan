@@ -5,29 +5,28 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { CursorLimitParamParameter } from "./cursorLimitParamParameter";
 import type { CursorParamParameter } from "./cursorParamParameter";
 
-export type LeadsGetLeadsParams = {
+export type FilesGetFoldersIdFilesParams = {
   /**
    * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
    * @minimum 1
    */
   page?: number;
   /**
-   * Page size for offset pagination. Ignored when `cursor` is supplied.
+   * Page size. Default 100; max 100.
    * @minimum 1
    * @maximum 100
    */
-  pageSize?: number;
+  limit?: number;
   /**
-   * Optional free-text filter.
+   * Sort key (e.g. `modified_newest`, `modified_oldest`, `name_asc`, `name_desc`). Default `modified_newest`.
    */
-  search?: string;
+  sortBy?: string;
   /**
-   * Optional status filter.
+   * Include soft-deleted files. Default false.
    */
-  status?: string;
+  includeDeleted?: boolean;
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
@@ -39,10 +38,4 @@ ignored.
 
  */
   cursor?: CursorParamParameter;
-  /**
-   * Page size when in cursor-based pagination mode. Defaults to 25, max 100.
-   * @minimum 1
-   * @maximum 100
-   */
-  limit?: CursorLimitParamParameter;
 };

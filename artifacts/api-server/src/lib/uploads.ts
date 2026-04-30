@@ -1,8 +1,14 @@
 import crypto from "node:crypto";
+import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { Transform } from "node:stream";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import multer, { type Field, MulterError } from "multer";
+import multer, {
+  type Field,
+  MulterError,
+  type StorageEngine,
+} from "multer";
 import {
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_COUNT,
@@ -11,6 +17,7 @@ import {
 import { HttpError } from "./http";
 import { logger } from "./logger";
 import { deletePhysicalFile } from "./storage";
+import { multipartIdempotencyMiddleware } from "../middleware/idempotency";
 
 const TMP_UPLOAD_DIR = path.resolve(process.cwd(), "tmp", "uploads");
 
@@ -225,15 +232,72 @@ export function startTempUploadSweeper(
   };
 }
 
-const diskStorage = multer.diskStorage({
-  destination(_req, _file, cb) {
-    cb(null, TMP_UPLOAD_DIR);
-  },
-  filename(_req, file, cb) {
+// Multer storage engine that streams the uploaded part to disk while
+// computing a SHA-256 of the bytes in the same pass. The hash is exposed
+// as `contentHash` on the resulting Multer file so downstream code (the
+// idempotency middleware) can fingerprint the request body without a
+// second read of (potentially very large) files.
+const hashingDiskStorage: StorageEngine = {
+  _handleFile(_req, file, cb) {
     const ext = path.extname(file.originalname || "");
-    cb(null, `${Date.now()}-${crypto.randomUUID()}${ext}`);
+    const filename = `${Date.now()}-${crypto.randomUUID()}${ext}`;
+    const finalPath = path.join(TMP_UPLOAD_DIR, filename);
+
+    const hash = crypto.createHash("sha256");
+    let size = 0;
+    const hashing = new Transform({
+      transform(chunk, _encoding, done) {
+        hash.update(chunk as Buffer);
+        size += (chunk as Buffer).length;
+        done(null, chunk);
+      },
+    });
+
+    const out = createWriteStream(finalPath);
+
+    let settled = false;
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      // Best-effort cleanup of the partial file; multer will also call
+      // _removeFile on error, so swallow ENOENT here.
+      out.destroy();
+      hashing.destroy();
+      void fs.unlink(finalPath).catch(() => {});
+      cb(err as Error);
+    };
+
+    file.stream.on("error", fail);
+    hashing.on("error", fail);
+    out.on("error", fail);
+
+    out.on("finish", () => {
+      if (settled) return;
+      settled = true;
+      cb(null, {
+        destination: TMP_UPLOAD_DIR,
+        filename,
+        path: finalPath,
+        size,
+        contentHash: hash.digest("hex"),
+      } as Express.Multer.File);
+    });
+
+    file.stream.pipe(hashing).pipe(out);
   },
-});
+  _removeFile(_req, file, cb) {
+    fs.unlink(file.path).then(
+      () => cb(null),
+      (err: NodeJS.ErrnoException) => {
+        if (err?.code === "ENOENT") {
+          cb(null);
+          return;
+        }
+        cb(err);
+      },
+    );
+  },
+};
 
 export interface UploadMiddlewareOptions {
   fileSize?: number;
@@ -242,7 +306,7 @@ export interface UploadMiddlewareOptions {
 
 export function createUploadMiddleware(options?: UploadMiddlewareOptions) {
   return multer({
-    storage: diskStorage,
+    storage: hashingDiskStorage,
     limits: {
       fileSize: options?.fileSize ?? MAX_UPLOAD_FILE_BYTES,
       files: options?.files ?? MAX_UPLOAD_FILE_COUNT,
@@ -443,6 +507,17 @@ function multerErrorToHttpError(
   }
 }
 
+// Lazily-instantiated singleton — multipartIdempotencyMiddleware() returns
+// a closure that does real work; building it once and reusing avoids
+// creating a fresh closure (and re-resolving the import) on every upload.
+let cachedMultipartIdempotency: RequestHandler | null = null;
+function getMultipartIdempotency(): RequestHandler {
+  if (!cachedMultipartIdempotency) {
+    cachedMultipartIdempotency = multipartIdempotencyMiddleware();
+  }
+  return cachedMultipartIdempotency;
+}
+
 function wrapMulter(
   handler: RequestHandler,
   limits: { fileSize: number; files: number },
@@ -459,7 +534,12 @@ function wrapMulter(
         return;
       }
       attachResponseCleanup(req, res);
-      next();
+      // Run the multipart-aware idempotency check now that multer has
+      // parsed the form fields and populated `contentHash` on every
+      // saved file. The global idempotency middleware (which fingerprints
+      // by JSON body) skips multipart writes specifically so this hook
+      // can fingerprint by file content instead.
+      getMultipartIdempotency()(req, res, next);
     });
   };
 }

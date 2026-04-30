@@ -1397,11 +1397,13 @@ export async function getActivityEntries(params: {
   folderId?: string | null;
   entityType?: string | null;
   entityId?: string | null;
-  allowedScopeIds?: string[] | null;
+  allowedJobIds?: string[] | null;
+  allowedLeadIds?: string[] | null;
   page?: number;
   limit?: number;
 }) {
   const metadataJobId = sql<string | null>`${activityLog.metadata} ->> 'jobId'`;
+  const metadataLeadId = sql<string | null>`${activityLog.metadata} ->> 'leadId'`;
   const metadataMediaType = sql<string | null>`${activityLog.metadata} ->> 'mediaType'`;
   const metadataFolderId = sql<string | null>`${activityLog.metadata} ->> 'folderId'`;
   const metadataDescription = sql<string | null>`${activityLog.metadata} ->> 'description'`;
@@ -1427,8 +1429,41 @@ export async function getActivityEntries(params: {
     conditions.push(eq(metadataFolderId, params.folderId));
   }
 
-  if (params.allowedScopeIds) {
-    conditions.push(inArray(metadataJobId, params.allowedScopeIds));
+  // Visibility filter: admins receive `null` for both arrays and skip the
+  // filter entirely. Any non-null array means the caller is non-admin and
+  // a row is admitted only when it can be tied to at least one accessible
+  // job or lead.
+  const allowedJobIds = params.allowedJobIds ?? null;
+  const allowedLeadIds = params.allowedLeadIds ?? null;
+  if (allowedJobIds !== null || allowedLeadIds !== null) {
+    const visibilityClauses: SQL[] = [];
+
+    if (allowedJobIds !== null && allowedJobIds.length > 0) {
+      visibilityClauses.push(inArray(metadataJobId, allowedJobIds));
+      visibilityClauses.push(
+        and(
+          eq(activityLog.entityType, "job"),
+          inArray(activityLog.entityId, allowedJobIds),
+        )!,
+      );
+    }
+
+    if (allowedLeadIds !== null && allowedLeadIds.length > 0) {
+      visibilityClauses.push(inArray(metadataLeadId, allowedLeadIds));
+      visibilityClauses.push(
+        and(
+          eq(activityLog.entityType, "lead"),
+          inArray(activityLog.entityId, allowedLeadIds),
+        )!,
+      );
+    }
+
+    if (visibilityClauses.length === 0) {
+      // Caller has neither job nor lead access. Force an empty result set.
+      conditions.push(sql`false`);
+    } else {
+      conditions.push(sql`(${sql.join(visibilityClauses, sql` OR `)})`);
+    }
   }
 
   const whereClause = and(...conditions);

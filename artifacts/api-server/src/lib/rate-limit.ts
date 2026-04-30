@@ -31,31 +31,110 @@ function pruneExpiredBuckets(now: number) {
   }
 }
 
-function setRateLimitHeaders(res: Response, max: number, remaining: number, resetAt: number) {
-  res.setHeader("X-RateLimit-Limit", String(max));
-  res.setHeader("X-RateLimit-Remaining", String(Math.max(0, remaining)));
-  res.setHeader("X-RateLimit-Reset", String(Math.ceil(resetAt / 1000)));
+// Multiple limiters can run on the same request (e.g. global IP limiter before
+// auth, per-user limiter after auth). The visible `X-RateLimit-*` headers must
+// reflect the *binding* limit — the one a well-behaved client should pace
+// itself against — which is the limiter with the fewest remaining requests.
+// On ties, prefer the smaller absolute `max` because that constraint hits
+// first under continued load.
+function setBindingRateLimitHeaders(
+  res: Response,
+  max: number,
+  remaining: number,
+  resetAt: number,
+) {
+  const safeRemaining = Math.max(0, remaining);
+  const existingLimit = res.getHeader("X-RateLimit-Limit");
+
+  if (existingLimit === undefined) {
+    res.setHeader("X-RateLimit-Limit", String(max));
+    res.setHeader("X-RateLimit-Remaining", String(safeRemaining));
+    res.setHeader("X-RateLimit-Reset", String(Math.ceil(resetAt / 1000)));
+    return;
+  }
+
+  const prevRemaining = Number(res.getHeader("X-RateLimit-Remaining"));
+  const prevLimit = Number(existingLimit);
+
+  const ourIsStricter =
+    safeRemaining < prevRemaining ||
+    (safeRemaining === prevRemaining && max < prevLimit);
+
+  if (ourIsStricter) {
+    res.setHeader("X-RateLimit-Limit", String(max));
+    res.setHeader("X-RateLimit-Remaining", String(safeRemaining));
+    res.setHeader("X-RateLimit-Reset", String(Math.ceil(resetAt / 1000)));
+  }
 }
 
+// Quota policy:
+//
+// We run two limiters end-to-end on `/api` traffic:
+//   1. Global IP-based limiter (this file: `createGlobalApiRateLimit`),
+//      mounted before `requireAuth` so headers appear on every response.
+//   2. Per-identity limiter (`createPerUserApiRateLimit`), mounted after
+//      `requireAuth`, keyed on userId (and PAT id when present).
+//
+// The per-user quota (`PER_USER_MAX`) is the *binding* constraint for
+// authenticated traffic. The IP quota (`GLOBAL_IP_MAX`) is an anti-abuse
+// backstop and is set well above `PER_USER_MAX × small-N-shared-users` so
+// that, for a realistic NAT (office / coffee shop / mobile carrier), the
+// per-user limiter is what actually fires. If someone is alone on an IP
+// they hit the per-user limit first; if many users share an IP they each
+// still get a full per-user budget and the IP backstop only catches truly
+// pathological per-IP volume.
+const GLOBAL_IP_MAX = 10_000;
+const PER_USER_MAX = 2_000;
+
 /**
- * A "header-only" rate limiter for the entire `/api` surface. Every response
- * carries `X-RateLimit-Limit/Remaining/Reset` so well-behaved clients (and
- * AI agents) can pace themselves; well over the threshold turns into a hard
- * 429 with `Retry-After` so abusive callers stop banging the server. The
- * default budget is generous (1000 req/min per identity) because per-route
- * limiters still gate sensitive endpoints (login, uploads, etc.).
+ * IP-keyed limiter for the entire `/api` surface. Mounted BEFORE
+ * `requireAuth`, so `req.auth` is not populated yet — keyed strictly on
+ * remote IP. Every response carries `X-RateLimit-*` headers so
+ * well-behaved clients and AI agents can pace themselves; well over the
+ * threshold turns into a hard 429 with `Retry-After`.
+ *
+ * The quota is intentionally generous (an order of magnitude above the
+ * per-user limit) because this is a backstop for anonymous abuse and for
+ * capping pathological traffic from a single network — not the everyday
+ * binding constraint for authenticated users sharing a NAT.
  */
 export function createGlobalApiRateLimit(): RequestHandler {
   return createRateLimit({
     keyPrefix: "global:api",
-    max: 1000,
+    max: GLOBAL_IP_MAX,
     windowMs: 60_000,
-    message: "Too many API requests. Please slow down.",
+    message: "Too many API requests from this network. Please slow down.",
     resolveKey: (req) => {
-      const userId = req.auth?.userId ?? null;
-      if (userId) return `u:${userId}`;
       const ip = req.ip || req.socket?.remoteAddress || null;
       return ip ? `ip:${ip}` : null;
+    },
+  });
+}
+
+/**
+ * Per-identity limiter mounted AFTER `requireAuth`. Each authenticated
+ * identity gets its own bucket so a single user behind a busy NAT cannot
+ * be throttled by other users sharing their IP. Personal-access-token
+ * traffic is bucketed separately from the user's interactive session (and
+ * per-PAT), so a single misbehaving token can be throttled without
+ * affecting the user's browser session or other PATs.
+ *
+ * Quota: higher than the per-route limiters (login, uploads, etc.) but
+ * lower than the global IP backstop, so for authenticated traffic this is
+ * the effective binding constraint and `X-RateLimit-*` headers reflect
+ * the per-user budget.
+ */
+export function createPerUserApiRateLimit(): RequestHandler {
+  return createRateLimit({
+    keyPrefix: "perUser:api",
+    max: PER_USER_MAX,
+    windowMs: 60_000,
+    message: "Too many API requests for this account. Please slow down.",
+    resolveKey: (req) => {
+      const userId = req.auth?.userId;
+      if (!userId) return null;
+      const patId = req.auth?.patId;
+      return patId ? `u:${userId}:pat:${patId}` : `u:${userId}:session`;
     },
   });
 }
@@ -84,7 +163,7 @@ export function createRateLimit(options: RateLimitOptions): RequestHandler {
         count: 1,
         resetAt,
       });
-      setRateLimitHeaders(res, options.max, options.max - 1, resetAt);
+      setBindingRateLimitHeaders(res, options.max, options.max - 1, resetAt);
       next();
       return;
     }
@@ -92,13 +171,13 @@ export function createRateLimit(options: RateLimitOptions): RequestHandler {
     if (existing.count >= options.max) {
       const retryAfter = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
       res.setHeader("Retry-After", String(retryAfter));
-      setRateLimitHeaders(res, options.max, 0, existing.resetAt);
+      setBindingRateLimitHeaders(res, options.max, 0, existing.resetAt);
       next(new HttpError(429, options.message, { retryAfter }, "rate-limited"));
       return;
     }
 
     existing.count += 1;
-    setRateLimitHeaders(res, options.max, options.max - existing.count, existing.resetAt);
+    setBindingRateLimitHeaders(res, options.max, options.max - existing.count, existing.resetAt);
     next();
   };
 }

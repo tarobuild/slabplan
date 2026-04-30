@@ -83,9 +83,12 @@ app.use(
   }),
 );
 
-// Mount the global API rate limiter BEFORE the CSRF gate so X-RateLimit-*
-// headers appear on EVERY /api response — including 403s synthesised by the
-// CSRF gate or 401s from missing auth, not just on successful requests.
+// Mount the global IP-based API rate limiter BEFORE the CSRF gate so
+// X-RateLimit-* headers appear on EVERY /api response — including 403s
+// synthesised by the CSRF gate or 401s from missing auth, not just on
+// successful requests. A second per-user limiter is mounted after
+// `requireAuth` inside the API router (see routes/index.ts); when both
+// fire, the visible headers reflect the stricter (binding) constraint.
 app.use("/api", createGlobalApiRateLimit());
 
 app.use((req, _res, next) => {

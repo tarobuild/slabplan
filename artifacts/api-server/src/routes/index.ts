@@ -21,6 +21,7 @@ import usersRouter from "./users";
 import { requireAuth } from "../middleware/require-auth";
 import { idempotencyMiddleware } from "../middleware/idempotency";
 import { captureMcpContext } from "../middleware/mcp-context";
+import { createPerUserApiRateLimit } from "../lib/rate-limit";
 
 const router: IRouter = Router();
 
@@ -35,6 +36,14 @@ router.use(filesSignedRouter);
 // problem+json before the MCP transport could wrap them.
 router.use(mcpRouter);
 router.use(requireAuth);
+// Per-identity rate limit, layered on top of the global IP-based limiter
+// mounted earlier in app.ts. Authenticated users get their own dedicated
+// bucket (PATs are bucketed separately from the user's interactive session)
+// so a single user behind a shared NAT is no longer throttled by the
+// activity of other users on the same IP. The visible `X-RateLimit-*`
+// headers reflect whichever of the two limiters is currently the binding
+// (stricter) constraint.
+router.use(createPerUserApiRateLimit());
 // Tag downstream activity rows with the calling MCP tool when present.
 // Reads `X-MCP-Tool` from the request and stashes it in AsyncLocalStorage
 // for `writeActivity`. No-op for non-MCP traffic.

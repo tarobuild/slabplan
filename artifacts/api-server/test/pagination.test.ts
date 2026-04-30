@@ -752,12 +752,12 @@ test("GET /daily-logs/mine paginates in SQL when many rows exist", async () => {
 
   assert.equal(response.status, 200);
   const body = (await response.json()) as {
-    data: Array<{ id: string }>;
+    logs: Array<{ id: string }>;
     pagination: Record<string, number>;
   };
 
   assert.equal(
-    body.data.length,
+    body.logs.length,
     1,
     "pageSize=1 must return exactly one row even with many existing logs",
   );
@@ -775,11 +775,11 @@ test("GET /daily-logs/mine returns subsequent pages without duplicates", async (
     { headers: { authorization: `Bearer ${crewToken}` } },
   );
   const firstBody = (await firstResponse.json()) as {
-    data: Array<{ id: string }>;
+    logs: Array<{ id: string }>;
     pagination: Record<string, number>;
   };
 
-  assert.equal(firstBody.data.length, 2);
+  assert.equal(firstBody.logs.length, 2);
   assert.equal(firstBody.pagination.totalPages, 3);
 
   const lastResponse = await fetch(
@@ -787,14 +787,14 @@ test("GET /daily-logs/mine returns subsequent pages without duplicates", async (
     { headers: { authorization: `Bearer ${crewToken}` } },
   );
   const lastBody = (await lastResponse.json()) as {
-    data: Array<{ id: string }>;
+    logs: Array<{ id: string }>;
     pagination: Record<string, number>;
   };
 
-  assert.equal(lastBody.data.length, 1);
+  assert.equal(lastBody.logs.length, 1);
 
-  const firstIds = new Set(firstBody.data.map((row) => row.id));
-  for (const row of lastBody.data) {
+  const firstIds = new Set(firstBody.logs.map((row) => row.id));
+  for (const row of lastBody.logs) {
     assert.equal(
       firstIds.has(row.id),
       false,
@@ -867,11 +867,11 @@ test("GET /daily-logs/mine never returns logs created by other users", async () 
 
   assert.equal(response.status, 200);
   const body = (await response.json()) as {
-    data: Array<{ id: string }>;
+    logs: Array<{ id: string }>;
     pagination: Record<string, number>;
   };
 
-  const returnedIds = new Set(body.data.map((row) => row.id));
+  const returnedIds = new Set(body.logs.map((row) => row.id));
   for (const id of crewDailyLogIds) {
     assert.equal(
       returnedIds.has(id),

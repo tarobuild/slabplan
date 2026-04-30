@@ -9,10 +9,9 @@ import type { DailyLogListItem } from "./dailyLogListItem";
 import type { MyDailyLogsResponsePagination } from "./myDailyLogsResponsePagination";
 
 /**
- * Response for `GET /daily-logs/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) when the request used `?page=`/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.
+ * Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) when the request used `?page=`/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.
  */
 export interface MyDailyLogsResponse {
-  data: DailyLogListItem[];
   logs: DailyLogListItem[];
   pagination: MyDailyLogsResponsePagination;
 }

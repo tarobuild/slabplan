@@ -4261,68 +4261,6 @@ export const DailyLogAdminGetDailyLogsMineQueryParams = zod.object({
 
 export const DailyLogAdminGetDailyLogsMineResponse = zod
   .object({
-    data: zod.array(
-      zod
-        .object({
-          id: zod.string().uuid(),
-          jobId: zod.string().uuid().nullish(),
-          jobTitle: zod.string().nullish(),
-          logDate: zod.string(),
-          title: zod.string().nullish(),
-          notes: zod.string(),
-          weatherData: zod
-            .object({
-              condition: zod.string(),
-              icon: zod.string(),
-              temperatureHigh: zod.number().nullish(),
-              temperatureLow: zod.number().nullish(),
-              windMph: zod.number().nullish(),
-              humidity: zod.number().nullish(),
-              precipitation: zod.number(),
-              fetchedAt: zod.coerce.date(),
-            })
-            .nullish()
-            .describe(
-              'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
-            ),
-          includeWeather: zod.boolean().optional(),
-          includeWeatherNotes: zod.boolean().optional(),
-          weatherNotes: zod.string().nullish(),
-          customFieldValues: zod
-            .record(
-              zod.string(),
-              zod.union([
-                zod.string(),
-                zod.number(),
-                zod.boolean(),
-                zod.null(),
-              ]),
-            )
-            .optional(),
-          shareInternalUsers: zod.boolean().optional(),
-          shareSubsVendors: zod.boolean().optional(),
-          shareClient: zod.boolean().optional(),
-          isPrivate: zod.boolean().optional(),
-          createdBy: zod.string().uuid().nullish(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
-          publishedAt: zod.coerce.date().nullish(),
-          createdByName: zod.string().nullish(),
-          notifyUserIds: zod.array(zod.string().uuid()).optional(),
-          tags: zod.array(zod.string()),
-          attachmentCount: zod.number().optional(),
-          likesCount: zod.number().optional(),
-          commentsCount: zod.number().optional(),
-          likedByCurrentUser: zod.boolean().optional(),
-          visibilityLabel: zod.string().optional(),
-          todoCount: zod.number().optional(),
-          completedTodoCount: zod.number().optional(),
-          status: zod.enum(["draft", "published"]),
-        })
-        .describe(
-          "Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).",
-        ),
-    ),
     logs: zod.array(
       zod
         .object({
@@ -4411,7 +4349,7 @@ export const DailyLogAdminGetDailyLogsMineResponse = zod
     ]),
   })
   .describe(
-    "Response for `GET \/daily-logs\/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths. The `pagination` field uses the offset shape (`page`\/`pageSize`\/`total`\/…) when the request used `?page=`\/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.",
+    "Response for `GET \/daily-logs\/mine`. The `pagination` field uses the offset shape (`page`\/`pageSize`\/`total`\/…) when the request used `?page=`\/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.",
   );
 
 /**

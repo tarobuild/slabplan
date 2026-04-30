@@ -564,7 +564,6 @@ router.get(
           : null;
 
       res.json({
-        data: mapped,
         logs: mapped,
         pagination: {
           limit: cursorLimit,
@@ -639,7 +638,6 @@ router.get(
     }));
 
     res.json({
-      data: paged,
       logs: paged,
       pagination: {
         page: query.data.page,

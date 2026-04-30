@@ -12727,12 +12727,8 @@ components:
         - attachments
     MyDailyLogsResponse:
       type: object
-      description: Response for `GET /daily-logs/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) when the request used `?page=`/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.
+      description: Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) when the request used `?page=`/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.
       properties:
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/DailyLogListItem"
         logs:
           type: array
           items:
@@ -12762,7 +12758,6 @@ components:
                 - totalPages
             - $ref: "#/components/schemas/CursorPagination"
       required:
-        - data
         - logs
         - pagination
     SchedulePredecessor:

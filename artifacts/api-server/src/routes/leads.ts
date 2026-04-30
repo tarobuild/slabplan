@@ -43,7 +43,11 @@ import {
   writeUploadedBuffer,
   writeUploadedFromPath,
 } from "../lib/storage";
-import { cleanupTempUpload, uploadArray } from "../lib/uploads";
+import {
+  cleanupTempUpload,
+  persistWithStorageRollback,
+  uploadArray,
+} from "../lib/uploads";
 
 const router: IRouter = Router();
 router.use(requireManagerOrAbove);
@@ -1082,26 +1086,63 @@ router.post(
         await cleanupTempUpload(uploadedFile);
       }
 
-      const [file] = await db
-        .insert(files)
-        .values({
-          folderId: folder.id,
-          filename: storedName,
-          originalName: uploadedFile.originalname,
-          fileUrl,
-          fileSize: uploadedFile.size,
-          mimeType: uploadedFile.mimetype,
-          uploadedBy: req.auth!.userId,
-        })
-        .returning();
+      // Wrap the DB inserts and the activity log write in a single
+      // upload-rollback boundary. The persist step uses a transaction so
+      // a half-written pair (file row without attachment) cannot
+      // escape. If the activity log write fails after the transaction
+      // commits, the rollback callback removes the committed rows and
+      // the helper deletes the freshly uploaded object so storage and
+      // database stay in sync.
+      const { file, attachment } = await persistWithStorageRollback({
+        fileUrl,
+        context: "lead-attachment-upload:rollback",
+        persist: async () =>
+          await db.transaction(async (tx) => {
+            const [createdFile] = await tx
+              .insert(files)
+              .values({
+                folderId: folder.id,
+                filename: storedName,
+                originalName: uploadedFile.originalname,
+                fileUrl,
+                fileSize: uploadedFile.size,
+                mimeType: uploadedFile.mimetype,
+                uploadedBy: req.auth!.userId,
+              })
+              .returning();
 
-      const [attachment] = await db
-        .insert(leadAttachments)
-        .values({
-          leadId,
-          fileId: file.id,
-        })
-        .returning();
+            const [createdAttachment] = await tx
+              .insert(leadAttachments)
+              .values({
+                leadId,
+                fileId: createdFile.id,
+              })
+              .returning();
+
+            return { file: createdFile, attachment: createdAttachment };
+          }),
+        postCommit: async ({ file: createdFile, attachment: createdAttachment }) => {
+          await writeActivity({
+            entityType: "lead",
+            entityId: leadId,
+            action: "attachment_uploaded",
+            userId: req.auth!.userId,
+            jobId: null,
+            leadId,
+            description: `Uploaded attachment ${createdFile.originalName}`,
+            extra: {
+              fileId: createdFile.id,
+              attachmentId: createdAttachment.id,
+            },
+          });
+        },
+        rollback: async ({ file: createdFile, attachment: createdAttachment }) => {
+          await db
+            .delete(leadAttachments)
+            .where(eq(leadAttachments.id, createdAttachment.id));
+          await db.delete(files).where(eq(files.id, createdFile.id));
+        },
+      });
 
       attachments.push({
         id: attachment.id,
@@ -1111,20 +1152,6 @@ router.post(
         fileSize: file.fileSize,
         mimeType: file.mimeType,
         createdAt: file.createdAt,
-      });
-
-      await writeActivity({
-        entityType: "lead",
-        entityId: leadId,
-        action: "attachment_uploaded",
-        userId: req.auth!.userId,
-        jobId: null,
-        leadId,
-        description: `Uploaded attachment ${file.originalName}`,
-        extra: {
-          fileId: file.id,
-          attachmentId: attachment.id,
-        },
       });
     }
 

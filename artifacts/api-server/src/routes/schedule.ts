@@ -54,7 +54,11 @@ import {
   writeUploadedBuffer,
   writeUploadedFromPath,
 } from "../lib/storage";
-import { cleanupTempUpload, uploadArray } from "../lib/uploads";
+import {
+  cleanupTempUpload,
+  deletePhysicalFileBestEffort,
+  uploadArray,
+} from "../lib/uploads";
 
 const router: IRouter = Router();
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
@@ -1307,14 +1311,6 @@ async function maybeDeletePhysicalFile(fileUrl: string | null | undefined, fileI
 
   if (!duplicate) {
     await deletePhysicalFile(fileUrl);
-  }
-}
-
-async function deletePhysicalFileBestEffort(fileUrl: string, context: string) {
-  try {
-    await deletePhysicalFile(fileUrl);
-  } catch (error) {
-    logger.error({ err: error, fileUrl, context }, "Failed to delete physical file");
   }
 }
 

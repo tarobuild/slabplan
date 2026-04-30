@@ -10,6 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { HttpError } from "./http";
 import { logger } from "./logger";
+import { deletePhysicalFile } from "./storage";
 
 const TMP_UPLOAD_DIR = path.resolve(process.cwd(), "tmp", "uploads");
 
@@ -250,6 +251,87 @@ export function createUploadMiddleware(options?: UploadMiddlewareOptions) {
 }
 
 const sharedUpload = createUploadMiddleware();
+
+/**
+ * Best-effort delete of a stored object after a route's downstream step
+ * (DB insert, activity log write, etc.) fails. Never throws — the caller
+ * is already on the failure path and just wants to make sure they aren't
+ * leaving an orphaned object behind. Failures are logged with `context`
+ * so operators can correlate them with the originating route.
+ */
+export async function deletePhysicalFileBestEffort(
+  fileUrl: string | null | undefined,
+  context: string,
+): Promise<void> {
+  if (!fileUrl) return;
+  try {
+    await deletePhysicalFile(fileUrl);
+  } catch (error) {
+    logger.error(
+      { err: error, fileUrl, context },
+      "Failed to delete physical file during rollback",
+    );
+  }
+}
+
+export interface PersistWithStorageRollbackParams<TResult> {
+  /** Object-storage URL that was just written and must be cleaned up if anything below fails. */
+  fileUrl: string;
+  /** Tag used in rollback log lines so operators can trace the originating route. */
+  context: string;
+  /** Required DB writes. May be a single statement or a transaction; whatever it
+   *  returns is passed to `postCommit` and `rollback`. */
+  persist: () => Promise<TResult>;
+  /** Optional follow-up step that runs only after `persist` resolves
+   *  successfully (e.g. activity log write). If it throws, `rollback` is
+   *  invoked with the `persist` result and the storage object is deleted. */
+  postCommit?: (result: TResult) => Promise<void>;
+  /** Optional cleanup for rows committed by `persist` when `postCommit`
+   *  fails. Not invoked when `persist` itself throws (the caller is
+   *  expected to wrap `persist` in a transaction so it self-rolls back). */
+  rollback?: (result: TResult) => Promise<void>;
+}
+
+/**
+ * Run a DB persist step plus an optional follow-up step within a single
+ * upload-rollback boundary. If anything fails, the freshly uploaded
+ * object at `fileUrl` is deleted best-effort, and any rows committed by
+ * `persist` are removed via `rollback`. Use this for the
+ * upload-then-write-rows-then-write-activity pattern: it makes failure
+ * cleanup symmetrical instead of leaving orphans in either storage or
+ * the database.
+ */
+export async function persistWithStorageRollback<TResult>(
+  params: PersistWithStorageRollbackParams<TResult>,
+): Promise<TResult> {
+  let result: TResult | undefined;
+  let persistCommitted = false;
+
+  try {
+    result = await params.persist();
+    persistCommitted = true;
+
+    if (params.postCommit) {
+      await params.postCommit(result);
+    }
+
+    return result;
+  } catch (error) {
+    if (persistCommitted && result !== undefined && params.rollback) {
+      try {
+        await params.rollback(result);
+      } catch (rollbackError) {
+        logger.error(
+          { err: rollbackError, context: params.context },
+          "Failed to roll back DB rows after upload failure",
+        );
+      }
+    }
+
+    await deletePhysicalFileBestEffort(params.fileUrl, params.context);
+    throw error;
+  }
+}
 
 export async function cleanupTempUpload(
   file: Express.Multer.File | undefined | null,

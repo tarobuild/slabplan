@@ -45,7 +45,11 @@ import {
   writeUploadedBuffer,
   writeUploadedFromPath,
 } from "../lib/storage";
-import { cleanupTempUpload, uploadArray } from "../lib/uploads";
+import {
+  cleanupTempUpload,
+  persistWithStorageRollback,
+  uploadArray,
+} from "../lib/uploads";
 
 const router: IRouter = Router();
 
@@ -1805,39 +1809,62 @@ router.post(
         await cleanupTempUpload(uploadedFile);
       }
 
-      const [file] = await db
-        .insert(files)
-        .values({
-          folderId: attachmentFolder.id,
-          filename: storedFileName,
-          originalName: uploadedFile.originalname,
-          fileUrl: uploadPath.fileUrl,
-          fileSize: uploadedFile.size,
-          mimeType: uploadedFile.mimetype,
-          uploadedBy: req.auth!.userId,
-        })
-        .returning();
+      // Wrap the DB inserts and the activity log write in a single
+      // upload-rollback boundary. The persist step uses a transaction so
+      // a half-written pair (file row without attachment) cannot
+      // escape. If the activity log write fails after the transaction
+      // commits, the rollback callback removes the committed rows and
+      // the helper deletes the freshly uploaded object so storage and
+      // database stay in sync.
+      const { file, attachment } = await persistWithStorageRollback({
+        fileUrl: uploadPath.fileUrl,
+        context: "daily-log-attachment-upload:rollback",
+        persist: async () =>
+          await db.transaction(async (tx) => {
+            const [createdFile] = await tx
+              .insert(files)
+              .values({
+                folderId: attachmentFolder.id,
+                filename: storedFileName,
+                originalName: uploadedFile.originalname,
+                fileUrl: uploadPath.fileUrl,
+                fileSize: uploadedFile.size,
+                mimeType: uploadedFile.mimetype,
+                uploadedBy: req.auth!.userId,
+              })
+              .returning();
 
-      const [attachment] = await db
-        .insert(dailyLogAttachments)
-        .values({
-          dailyLogId: logId,
-          fileId: file.id,
-        })
-        .returning({
-          id: dailyLogAttachments.id,
-        });
+            const [createdAttachment] = await tx
+              .insert(dailyLogAttachments)
+              .values({
+                dailyLogId: logId,
+                fileId: createdFile.id,
+              })
+              .returning({
+                id: dailyLogAttachments.id,
+              });
 
-      await writeActivity({
-        entityType: "daily_log_attachment",
-        entityId: attachment.id,
-        action: "uploaded",
-        userId: req.auth!.userId,
-        jobId: dailyLogJobId,
-        description: `Uploaded ${file.originalName} to daily log ${dailyLog.title || dailyLog.logDate}`,
-        extra: {
-          dailyLogId: logId,
-          fileId: file.id,
+            return { file: createdFile, attachment: createdAttachment };
+          }),
+        postCommit: async ({ file: createdFile, attachment: createdAttachment }) => {
+          await writeActivity({
+            entityType: "daily_log_attachment",
+            entityId: createdAttachment.id,
+            action: "uploaded",
+            userId: req.auth!.userId,
+            jobId: dailyLogJobId,
+            description: `Uploaded ${createdFile.originalName} to daily log ${dailyLog.title || dailyLog.logDate}`,
+            extra: {
+              dailyLogId: logId,
+              fileId: createdFile.id,
+            },
+          });
+        },
+        rollback: async ({ file: createdFile, attachment: createdAttachment }) => {
+          await db
+            .delete(dailyLogAttachments)
+            .where(eq(dailyLogAttachments.id, createdAttachment.id));
+          await db.delete(files).where(eq(files.id, createdFile.id));
         },
       });
 

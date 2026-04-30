@@ -16,7 +16,8 @@
     "migrate": "tsx ./src/migrate-cli.ts",
     "push": "drizzle-kit push --config ./drizzle.config.js",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.js",
-    "seed": "tsx ./src/seed-cli.ts"
+    "seed": "tsx ./src/seed-cli.ts",
+    "build-files-folder-index": "tsx ./src/scripts/build-files-folder-index-concurrently.ts"
   },
   "dependencies": {
     "bcrypt": "6.0.0",

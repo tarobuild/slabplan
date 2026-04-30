@@ -44,6 +44,13 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 - PostgreSQL with Drizzle ORM.
 - Comprises 16 tables including users, jobs, folders, files, leads, schedule items, and activity logs.
 - Migration management via Drizzle.
+- Operator runbooks live under `lib/db/runbooks/`. For example,
+  `files-folder-created-id-index.md` documents how to pre-create the
+  `files_folder_created_id_idx` composite index using
+  `pnpm --filter @workspace/db build-files-folder-index` (which runs
+  `CREATE INDEX CONCURRENTLY`) before deploying to a large production
+  database, so the migration's inline `CREATE INDEX IF NOT EXISTS` becomes a
+  no-op and uploads aren't slowed by a write lock.
 
 **Model Context Protocol (MCP) Server (`lib/mcp-server`):**
 - Wraps the REST API for external agents (Claude Desktop, Cursor, etc.).

@@ -770,8 +770,8 @@ test("folder ZIP entries respect viewing permissions and skip soft-deleted files
         auth: crewAuth,
       }),
     (err: unknown) => {
-      const status = (err as { status?: number }).status;
-      return status === 404;
+      const statusCode = (err as { statusCode?: number }).statusCode;
+      return statusCode === 404;
     },
   );
 });

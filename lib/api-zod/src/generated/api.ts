@@ -6645,9 +6645,24 @@ export const DashboardGetDashboardStatsResponse = zod.unknown();
 export const DashboardGetDashboardAgendaResponse = zod.unknown();
 
 /**
- * Route defined in artifacts/api-server/src/routes/dashboard.ts.
+ * Route defined in artifacts/api-server/src/routes/dashboard.ts. Validated query with dashboardScheduleQuerySchema.
  * @summary GET /dashboard/schedule
  */
+export const DashboardGetDashboardScheduleQueryParams = zod.object({
+  start: zod
+    .date()
+    .optional()
+    .describe(
+      "Inclusive lower bound on the schedule range (YYYY-MM-DD). Defaults to today.",
+    ),
+  end: zod
+    .date()
+    .optional()
+    .describe(
+      "Inclusive upper bound on the schedule range (YYYY-MM-DD). Defaults to today + 60 days. Must be on or after `start`.",
+    ),
+});
+
 export const DashboardGetDashboardScheduleResponse = zod.unknown();
 
 /**

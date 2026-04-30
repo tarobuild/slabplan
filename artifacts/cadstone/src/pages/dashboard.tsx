@@ -9,9 +9,8 @@ import {
 } from "lucide-react"
 import {
   activityGetActivity,
-  customFetch,
   dashboardGetDashboardAgenda,
-  getDashboardGetDashboardScheduleUrl,
+  dashboardGetDashboardSchedule,
 } from "@workspace/api-client-react"
 import { toastApiError } from "@/lib/api-errors"
 import { Button } from "@/components/ui/button"
@@ -476,12 +475,12 @@ export default function DashboardPage() {
 
   const fetchCal = useCallback(() => {
     setCalLoading(true)
-    // The /dashboard/schedule route accepts start/end query params that
-    // aren't yet captured in the OpenAPI spec, so we go through the typed
-    // `customFetch` (same auth/error handling as the generated functions)
-    // and append the query string ourselves.
-    const url = `${getDashboardGetDashboardScheduleUrl()}?start=${fetchRange.start}&end=${fetchRange.end}`
-    customFetch<{ items?: CalItem[] }>(url, { method: "GET" })
+    ;(
+      dashboardGetDashboardSchedule({
+        start: fetchRange.start,
+        end: fetchRange.end,
+      }) as Promise<{ items?: CalItem[] }>
+    )
       .then((data) => setCalItems((data.items ?? []).filter((i) => i.startDate)))
       .catch((err: unknown) => toastApiError(err, "Failed to load schedule"))
       .finally(() => setCalLoading(false))

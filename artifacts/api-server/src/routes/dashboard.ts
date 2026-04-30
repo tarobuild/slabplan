@@ -1,5 +1,6 @@
 import { and, count, desc, eq, gte, inArray, isNull, lte, lt, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 import { db } from "@workspace/db";
 import {
   dailyLogs,
@@ -10,10 +11,40 @@ import {
 } from "@workspace/db/schema";
 import { listAccessibleJobIds, listAccessibleLeadIds } from "../lib/authorization";
 import { buildDailyLogVisibilityFilter } from "../lib/daily-log-visibility";
-import { asyncHandler } from "../lib/http";
+import { HttpError, asyncHandler } from "../lib/http";
 import { buildScheduleListVisibilityFilter } from "../lib/schedule-visibility";
 
 const router: IRouter = Router();
+
+// YYYY-MM-DD date strings only. We accept the same shape Postgres accepts for
+// `date` columns and reject anything else with a 400 — otherwise malformed
+// values reach Drizzle/Postgres and either crash with a cast error or
+// silently widen the requested range.
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format.")
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return false;
+    // Round-trip catches things like 2025-02-30 that the Date constructor
+    // happily coerces to a different day.
+    return parsed.toISOString().slice(0, 10) === value;
+  }, "Date must be a real calendar date in YYYY-MM-DD format.");
+
+export const dashboardScheduleQuerySchema = z
+  .object({
+    start: isoDate.optional(),
+    end: isoDate.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.start && value.end && value.start > value.end) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "`start` must be on or before `end`.",
+        path: ["start"],
+      });
+    }
+  });
 
 router.get(
   "/dashboard/stats",
@@ -191,9 +222,23 @@ router.get(
 router.get(
   "/dashboard/schedule",
   asyncHandler(async (req, res) => {
+    const parsed = dashboardScheduleQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new HttpError(
+        400,
+        "Invalid dashboard schedule query.",
+        parsed.error.flatten(),
+      );
+    }
+
     const accessibleJobIds = await listAccessibleJobIds(req.auth!);
-    const startParam = (req.query.start as string) ?? new Date().toISOString().split("T")[0];
-    const endParam = (req.query.end as string) ?? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const startParam =
+      parsed.data.start ?? new Date().toISOString().split("T")[0];
+    const endParam =
+      parsed.data.end ??
+      new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0];
 
     if (accessibleJobIds && accessibleJobIds.length === 0) {
       res.json({ items: [] });

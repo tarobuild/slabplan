@@ -55,6 +55,7 @@ export * from "./dailyLogTodo";
 export * from "./dailyLogTodosResponse";
 export * from "./dailyLogWeather";
 export * from "./dailyLogWeatherResponse";
+export * from "./dashboardGetDashboardScheduleParams";
 export * from "./error";
 export * from "./filesGetFoldersIdFilesParams";
 export * from "./filesRenameFileSchema";

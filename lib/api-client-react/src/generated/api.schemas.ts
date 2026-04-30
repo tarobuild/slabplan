@@ -1888,6 +1888,17 @@ ignored.
   cursor?: CursorParamParameter;
 };
 
+export type DashboardGetDashboardScheduleParams = {
+  /**
+   * Inclusive lower bound on the schedule range (YYYY-MM-DD). Defaults to today.
+   */
+  start?: string;
+  /**
+   * Inclusive upper bound on the schedule range (YYYY-MM-DD). Defaults to today + 60 days. Must be on or after `start`.
+   */
+  end?: string;
+};
+
 export type ActivityGetActivityParams = {
   /**
    * Filter to activity rows for a specific job.

@@ -41,6 +41,7 @@ import type {
   DailyLogsGetJobsJobIdDailyLogsParams,
   DailyLogsTodoPayloadSchema,
   DailyLogsTodoTogglePayloadSchema,
+  DashboardGetDashboardScheduleParams,
   FilesGetFoldersIdFilesParams,
   FilesRenameFileSchema,
   FoldersFolderBodySchema,
@@ -11032,46 +11033,66 @@ export function useDashboardGetDashboardAgenda<
 }
 
 /**
- * Route defined in artifacts/api-server/src/routes/dashboard.ts.
+ * Route defined in artifacts/api-server/src/routes/dashboard.ts. Validated query with dashboardScheduleQuerySchema.
  * @summary GET /dashboard/schedule
  */
-export const getDashboardGetDashboardScheduleUrl = () => {
-  return `/api/dashboard/schedule`;
+export const getDashboardGetDashboardScheduleUrl = (
+  params?: DashboardGetDashboardScheduleParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/dashboard/schedule?${stringifiedParams}`
+    : `/api/dashboard/schedule`;
 };
 
 export const dashboardGetDashboardSchedule = async (
+  params?: DashboardGetDashboardScheduleParams,
   options?: RequestInit,
 ): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDashboardGetDashboardScheduleUrl(), {
+  return customFetch<AnyValue>(getDashboardGetDashboardScheduleUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getDashboardGetDashboardScheduleQueryKey = () => {
-  return [`/api/dashboard/schedule`] as const;
+export const getDashboardGetDashboardScheduleQueryKey = (
+  params?: DashboardGetDashboardScheduleParams,
+) => {
+  return [`/api/dashboard/schedule`, ...(params ? [params] : [])] as const;
 };
 
 export const getDashboardGetDashboardScheduleQueryOptions = <
   TData = Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
   TError = ErrorType<Problem>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: DashboardGetDashboardScheduleParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getDashboardGetDashboardScheduleQueryKey();
+    queryOptions?.queryKey ?? getDashboardGetDashboardScheduleQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>
   > = ({ signal }) =>
-    dashboardGetDashboardSchedule({ signal, ...requestOptions });
+    dashboardGetDashboardSchedule(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
@@ -11092,15 +11113,21 @@ export type DashboardGetDashboardScheduleQueryError = ErrorType<Problem>;
 export function useDashboardGetDashboardSchedule<
   TData = Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
   TError = ErrorType<Problem>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getDashboardGetDashboardScheduleQueryOptions(options);
+>(
+  params?: DashboardGetDashboardScheduleParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dashboardGetDashboardSchedule>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDashboardGetDashboardScheduleQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

@@ -5037,14 +5037,20 @@ export default function JobSchedulePage() {
                           })}
                         </div>
 
+                        {(() => {
+                          const dk = dateKey(calendarAnchorDate)
+                          const isBlockDropTarget =
+                            !!blockDrag && blockDrag.dayKey === dk && blockDrag.moved
+                          return (
                         <div
-                          data-timed-day={dateKey(calendarAnchorDate)}
+                          data-timed-day={dk}
+                          data-drop-target={isBlockDropTarget ? "true" : undefined}
                           className={cn(
                             "relative select-none touch-pan-y",
                             !classifyWorkday(calendarAnchorDate, workdayExceptions).isWorkday && "bg-amber-50/50",
                           )}
                           style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
-                          onPointerDown={(event) => handleTimedColumnPointerDown(event, dateKey(calendarAnchorDate))}
+                          onPointerDown={(event) => handleTimedColumnPointerDown(event, dk)}
                         >
                           {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }).map((_, hourIndex) => (
                             <div
@@ -5193,7 +5199,34 @@ export default function JobSchedulePage() {
                               </div>
                             )
                           })()}
+
+                          {isBlockDropTarget ? (() => {
+                            const startMin = Math.min(blockDrag!.startMinutes, blockDrag!.endMinutes)
+                            const endMin = Math.max(blockDrag!.endMinutes, blockDrag!.startMinutes + DRAG_SNAP_MINUTES)
+                            const baseTop = (startMin / 60) * HOUR_HEIGHT
+                            const baseHeight = ((endMin - startMin) / 60) * HOUR_HEIGHT
+                            const top = Math.max(baseTop - 2, 0)
+                            const height = baseHeight + 4
+                            return (
+                              <>
+                                <div
+                                  aria-hidden
+                                  className="pointer-events-none absolute inset-x-0 z-10 rounded-2xl bg-orange-100/70 ring-2 ring-inset ring-orange-300 transition-[top,height] duration-75"
+                                  style={{ top, height }}
+                                />
+                                <div
+                                  aria-hidden
+                                  className="pointer-events-none absolute right-2 z-30 rounded-md bg-orange-500/95 px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm"
+                                  style={{ top: Math.max(baseTop - 18, 2) }}
+                                >
+                                  {fmtClockRange(minutesToTimeString(startMin), minutesToTimeString(endMin))}
+                                </div>
+                              </>
+                            )
+                          })() : null}
                         </div>
+                          )
+                        })()}
                       </div>
                     </div>
                   ) : (

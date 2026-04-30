@@ -60,3 +60,6 @@ artifacts/*/playwright/.cache/
 **/test-results/
 **/playwright-report/
 *.trace.zip
+
+# Playwright auth state (contains live JWT cookies — never commit)
+artifacts/cadstone/tests/e2e/.auth/

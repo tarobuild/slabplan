@@ -164,6 +164,87 @@ export async function storedFileExists(fileUrl: string | null | undefined): Prom
 export type StorageStatus = "ok" | "missing";
 
 /**
+ * Result of a single uncached round-trip to GCS. Distinct from
+ * {@link StorageStatus} so we can tell a definitive "object missing" response
+ * apart from a transient failure that we want to fail-open on but explicitly
+ * not cache (otherwise a 30-second outage would freeze every probed URL into
+ * a stale "ok" until the TTL expires).
+ */
+type RawProbeResult = "ok" | "missing" | "error";
+
+async function rawProbeStorageStatus(fileUrl: string): Promise<RawProbeResult> {
+  try {
+    const { bucketName, objectName } = fileUrlToObject(fileUrl);
+    const [exists] = await storageClient.bucket(bucketName).file(objectName).exists();
+    return exists ? "ok" : "missing";
+  } catch (error) {
+    logger.warn({ err: error, fileUrl }, "Failed to probe stored file status");
+    return "error";
+  }
+}
+
+// Indirection so tests can swap in a stub probe without having to mock the
+// GCS SDK. Production code always calls this through
+// {@link probeStorageStatus}, which adds the cache and inflight coalescing.
+let probeImpl: (fileUrl: string) => Promise<RawProbeResult> =
+  rawProbeStorageStatus;
+
+interface ProbeCacheEntry {
+  status: StorageStatus;
+  expiresAt: number;
+}
+
+// Keyed by fileUrl. Shared across requests/users since object existence is a
+// global property of the bucket, not a per-user fact.
+const probeCache = new Map<string, ProbeCacheEntry>();
+
+// Concurrent probes for the same URL share a single inflight promise so a
+// burst of listings (or a single listing with many duplicates) only hits GCS
+// once even before the cache has been populated.
+const probeInflight = new Map<string, Promise<StorageStatus>>();
+
+// Hard upper bound to keep the cache from growing unboundedly in long-lived
+// processes that touch many distinct files. When we cross this, we drop any
+// entries whose TTL has already lapsed; if that doesn't free enough room we
+// drop the oldest-by-expiry remainder to bring us back under the cap.
+const PROBE_CACHE_MAX_ENTRIES = 10_000;
+
+function readPositiveIntEnv(key: string, defaultValue: number): number {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return defaultValue;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return defaultValue;
+  return parsed;
+}
+
+function getOkTtlMs(): number {
+  return readPositiveIntEnv("STORAGE_PROBE_OK_CACHE_TTL_MS", 30_000);
+}
+
+function getMissingTtlMs(): number {
+  return readPositiveIntEnv("STORAGE_PROBE_MISSING_CACHE_TTL_MS", 30_000);
+}
+
+function pruneProbeCache() {
+  if (probeCache.size <= PROBE_CACHE_MAX_ENTRIES) return;
+  const now = Date.now();
+  for (const [key, entry] of probeCache) {
+    if (entry.expiresAt <= now) {
+      probeCache.delete(key);
+    }
+  }
+  if (probeCache.size <= PROBE_CACHE_MAX_ENTRIES) return;
+  // Still over the cap — drop entries with the soonest expiry first.
+  const sorted = Array.from(probeCache.entries()).sort(
+    (a, b) => a[1].expiresAt - b[1].expiresAt,
+  );
+  const overflow = probeCache.size - PROBE_CACHE_MAX_ENTRIES;
+  for (let i = 0; i < overflow; i += 1) {
+    probeCache.delete(sorted[i][0]);
+  }
+}
+
+/**
  * Probe whether a stored file is still backed by an object in GCS.
  *
  * Distinct from {@link storedFileExists} in how errors are handled: this is the
@@ -173,6 +254,12 @@ export type StorageStatus = "ok" | "missing";
  * from GCS produces "missing"; everything else (including thrown errors and
  * an empty/invalid fileUrl that we still need to render somehow) collapses to
  * "ok" so the row continues to behave normally.
+ *
+ * Results are cached in-process for a short TTL (default 30s, configurable
+ * via `STORAGE_PROBE_OK_CACHE_TTL_MS` and
+ * `STORAGE_PROBE_MISSING_CACHE_TTL_MS`) so repeated listings of large folders
+ * do not pay a per-row round-trip on every request. Transient failures are
+ * intentionally not cached so the next request gets a real probe.
  */
 export async function probeStorageStatus(
   fileUrl: string | null | undefined,
@@ -180,21 +267,62 @@ export async function probeStorageStatus(
   if (!fileUrl) {
     return "missing";
   }
-  try {
-    const { bucketName, objectName } = fileUrlToObject(fileUrl);
-    const [exists] = await storageClient.bucket(bucketName).file(objectName).exists();
-    return exists ? "ok" : "missing";
-  } catch (error) {
-    logger.warn({ err: error, fileUrl }, "Failed to probe stored file status");
-    // Fail-open: keep the file looking healthy so we don't flag every row as
-    // missing during a transient outage.
-    return "ok";
+
+  const now = Date.now();
+  const cached = probeCache.get(fileUrl);
+  if (cached) {
+    if (cached.expiresAt > now) {
+      return cached.status;
+    }
+    probeCache.delete(fileUrl);
   }
+
+  const existing = probeInflight.get(fileUrl);
+  if (existing) {
+    return existing;
+  }
+
+  const pending = (async (): Promise<StorageStatus> => {
+    const result = await probeImpl(fileUrl);
+    if (result === "ok") {
+      const ttl = getOkTtlMs();
+      if (ttl > 0) {
+        probeCache.set(fileUrl, { status: "ok", expiresAt: Date.now() + ttl });
+        pruneProbeCache();
+      }
+      return "ok";
+    }
+    if (result === "missing") {
+      const ttl = getMissingTtlMs();
+      if (ttl > 0) {
+        probeCache.set(fileUrl, {
+          status: "missing",
+          expiresAt: Date.now() + ttl,
+        });
+        pruneProbeCache();
+      }
+      return "missing";
+    }
+    // Transient error: fail-open to "ok" but skip the cache so the next
+    // probe re-checks against GCS.
+    return "ok";
+  })();
+
+  probeInflight.set(fileUrl, pending);
+  pending.finally(() => {
+    if (probeInflight.get(fileUrl) === pending) {
+      probeInflight.delete(fileUrl);
+    }
+  });
+
+  return pending;
 }
 
 /**
  * Probe storage status for many fileUrls in parallel, deduplicating identical
- * URLs so each is only checked once per request.
+ * URLs so each is only checked once per request. Backed by the same shared
+ * cache as {@link probeStorageStatus}, so URLs probed by an earlier request
+ * within the cache TTL skip the network round-trip.
  */
 export async function probeStorageStatuses(
   fileUrls: ReadonlyArray<string | null | undefined>,
@@ -212,6 +340,26 @@ export async function probeStorageStatuses(
   );
   return new Map(entries);
 }
+
+/**
+ * Internal hooks used by the test suite to swap the underlying GCS probe with
+ * a stub and to reset cache state between tests. Not part of the public API.
+ */
+export const __probeCacheTesting = {
+  setProbeImpl(fn: (fileUrl: string) => Promise<RawProbeResult>) {
+    probeImpl = fn;
+  },
+  resetProbeImpl() {
+    probeImpl = rawProbeStorageStatus;
+  },
+  clearCache() {
+    probeCache.clear();
+    probeInflight.clear();
+  },
+  cacheSize() {
+    return probeCache.size;
+  },
+};
 
 export function openStoredFileReadStream(fileUrl: string): Readable {
   const { bucketName, objectName } = fileUrlToObject(fileUrl);

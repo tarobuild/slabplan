@@ -16,12 +16,25 @@ const chromiumExecutable = process.env.CHROMIUM_PATH
  * Assumes:
  * - API server (artifacts/api-server) is already running on :8080
  * - Vite dev server (artifacts/cadstone) is already running on :21903
- * - Seed users exist: cesar@cadstone.works / Test1!  (admin)
- *                     anwar@cadstone.works / Test2!  (worker)
+ * - Seed users exist (created by `node scripts/seed-users.mjs --db=local`
+ *   with the SEED_ADMIN_*_PASSWORD and SEED_WORKER_FIXTURE_PASSWORD env
+ *   vars set — see the script header for hardening rules):
+ *     cesar@cadstone.works   (admin)
+ *     anwar@cadstone.works   (admin) — Anwar is an admin in reality; he
+ *                                      and Cesar invite workers.
+ *     worker@cadstone.works  (crew_member) — synthetic fixture used to
+ *                                            prove worker-level role
+ *                                            gates actually fire. Local
+ *                                            only — production never
+ *                                            seeds it. The Playwright
+ *                                            helpers also read
+ *                                            SEED_WORKER_FIXTURE_PASSWORD
+ *                                            so the seed-time and
+ *                                            login-time passwords match.
  *
- * The `setup` project logs both users in once and persists their
- * sessions to tests/e2e/.auth/{cesar,anwar}.json. Specs that need an
- * authenticated starting point read that storageState instead of
+ * The `setup` project logs all three users in once and persists their
+ * sessions to tests/e2e/.auth/{cesar,anwar,worker}.json. Specs that need
+ * an authenticated starting point read that storageState instead of
  * clicking through the login form — otherwise the auth rate limiter
  * (5/email/10min) would trip before the suite finishes.
  */

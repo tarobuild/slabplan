@@ -1,6 +1,6 @@
 import type { Page, APIRequestContext } from "@playwright/test"
 import fs from "node:fs"
-import { ANWAR_STATE, CESAR_STATE } from "./storage"
+import { ANWAR_STATE, CESAR_STATE, WORKER_STATE } from "./storage"
 
 export type Credentials = { email: string; password: string }
 
@@ -14,6 +14,26 @@ export const CESAR: Credentials = {
 export const ANWAR: Credentials = {
   email: "anwar@cadstone.works",
   password: "Test2!",
+}
+
+// Synthetic crew_member fixture used to assert worker-level role gates
+// actually fire. The seed script (artifacts/api-server/scripts/seed-users.mjs)
+// requires SEED_WORKER_FIXTURE_PASSWORD when seeding --db=local; this
+// helper reads the same env var so the password used at seed time matches
+// the password used at login time. There is intentionally no fallback —
+// missing env var fails loudly here too.
+export const WORKER_EMAIL = "worker@cadstone.works"
+
+export function getWorkerCredentials(): Credentials {
+  const password = process.env.SEED_WORKER_FIXTURE_PASSWORD
+  if (!password) {
+    throw new Error(
+      "SEED_WORKER_FIXTURE_PASSWORD is not set. The Playwright worker " +
+        "fixture (worker@cadstone.works) requires this env var. Set it to " +
+        "the same value passed to seed-users.mjs --db=local.",
+    )
+  }
+  return { email: WORKER_EMAIL, password }
 }
 
 // Module-level memoization: the API server rate-limits /auth/login to
@@ -43,6 +63,7 @@ export async function loginViaUi(page: Page, creds: Credentials) {
 function stateFileFor(creds: Credentials) {
   if (creds.email === CESAR.email) return CESAR_STATE
   if (creds.email === ANWAR.email) return ANWAR_STATE
+  if (creds.email === WORKER_EMAIL) return WORKER_STATE
   return null
 }
 

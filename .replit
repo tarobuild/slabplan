@@ -70,3 +70,11 @@ channel = "stable-25_05"
 [userenv.production]
 CORS_ALLOWED_ORIGINS = "https://cadstonesystems.com"
 NODE_ENV = "production"
+
+[[ports]]
+localPort = 8080
+externalPort = 80
+
+[[ports]]
+localPort = 21903
+externalPort = 3000

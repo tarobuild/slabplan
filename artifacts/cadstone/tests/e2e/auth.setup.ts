@@ -1,10 +1,15 @@
 import { test as setup } from "@playwright/test"
 import fs from "node:fs"
 import path from "node:path"
-import { ANWAR, CESAR, type Credentials } from "./helpers/auth"
-import { ANWAR_STATE, CESAR_STATE } from "./helpers/storage"
+import {
+  ANWAR,
+  CESAR,
+  getWorkerCredentials,
+  type Credentials,
+} from "./helpers/auth"
+import { ANWAR_STATE, CESAR_STATE, WORKER_STATE } from "./helpers/storage"
 
-for (const stateFile of [CESAR_STATE, ANWAR_STATE]) {
+for (const stateFile of [CESAR_STATE, ANWAR_STATE, WORKER_STATE]) {
   fs.mkdirSync(path.dirname(stateFile), { recursive: true })
 }
 
@@ -91,6 +96,10 @@ setup("authenticate Cesar (admin)", async ({ context }) => {
   await provisionSession(context, CESAR, CESAR_STATE)
 })
 
-setup("authenticate Anwar (worker)", async ({ context }) => {
+setup("authenticate Anwar (admin)", async ({ context }) => {
   await provisionSession(context, ANWAR, ANWAR_STATE)
+})
+
+setup("authenticate Worker fixture (crew_member)", async ({ context }) => {
+  await provisionSession(context, getWorkerCredentials(), WORKER_STATE)
 })

@@ -1,8 +1,11 @@
 /**
- * seed-users.mjs — upsert the CAD Stone admin users into a database.
+ * seed-users.mjs — upsert the CAD Stone admin users into a database, plus
+ * a synthetic crew_member fixture for the Playwright e2e suite when
+ * seeding the local database.
  *
  * Usage:
  *   SEED_ADMIN_CESAR_PASSWORD=... SEED_ADMIN_ANWAR_PASSWORD=... \
+ *     SEED_WORKER_FIXTURE_PASSWORD=... \
  *     node artifacts/api-server/scripts/seed-users.mjs --db=local
  *
  *   SEED_ADMIN_CESAR_PASSWORD=... SEED_ADMIN_ANWAR_PASSWORD=... \
@@ -14,17 +17,27 @@
  *   --db=production   seed the live database (uses SUPABASE_DATABASE_URL)
  *                     and ALSO requires --i-know-what-im-doing.
  *
- * Required env vars:
+ * Required env vars (admins, both targets):
  *   SEED_ADMIN_CESAR_PASSWORD   password for cesar@cadstone.works
  *   SEED_ADMIN_ANWAR_PASSWORD   password for anwar@cadstone.works
  *
- * Both passwords must be at least 12 characters and must not match obvious
- * weak patterns (e.g. "Test1!", "password", "admin", or all-numeric strings).
+ * Required env vars (local only — worker fixture):
+ *   SEED_WORKER_FIXTURE_PASSWORD  password for worker@cadstone.works
+ *                                 (the synthetic crew_member account used
+ *                                 by the Playwright suite). The Playwright
+ *                                 helpers in artifacts/cadstone/tests/e2e/
+ *                                 also read this env var; keep them in sync.
+ *
+ * All passwords must be at least 12 characters and must not match obvious
+ * weak patterns (e.g. "Test1!", "password", "admin", or all-numeric
+ * strings). Worker fixture follows the same rules as the admins — there is
+ * intentionally no fallback, even though the worker user is local-only.
  *
  * Where the env vars come from:
  *   - Local:      set them inline on the command line, or in your shell.
- *   - Production: set them as Replit Secrets just-in-time, then UNSET them
- *                 again after running. Never check them into the repo.
+ *   - Production: set the admin secrets as Replit Secrets just-in-time,
+ *                 then UNSET them again after running. Never check them
+ *                 into the repo. Production NEVER seeds the worker fixture.
  *
  * IMPORTANT — rotating production passwords:
  *   This script does NOT rotate live passwords. If you suspect a password has
@@ -55,8 +68,10 @@ const SALT_ROUNDS = 10;
 const MIN_PASSWORD_LENGTH = 12;
 const PRODUCTION_PAUSE_MS = 3000;
 
-// User identities. Passwords are intentionally NOT in this file — they come
-// from environment variables at runtime. See file header for usage.
+// Admin identities. Cesar and Anwar are real admins on the team; they
+// invite workers through the in-app flow. Passwords are intentionally
+// NOT in this file — they come from environment variables at runtime.
+// See file header for usage.
 export const SEED_USER_IDENTITIES = [
   {
     fullName: "Cesar",
@@ -72,14 +87,31 @@ export const SEED_USER_IDENTITIES = [
   },
 ];
 
+// Synthetic crew_member fixture used by the Playwright e2e suite to assert
+// worker-level role gates actually fire. Real workers are added through
+// the in-app invite flow, never seeded. This fixture is only attached to
+// the LOCAL target (see TARGETS.local.extraIdentities); production never
+// gets it. Same hardening rules as the admin seed: env-driven password
+// validated through validatePassword, no fallback.
+export const WORKER_FIXTURE_IDENTITY = {
+  fullName: "Worker Fixture",
+  email: "worker@cadstone.works",
+  role: "crew_member",
+  passwordEnvVar: "SEED_WORKER_FIXTURE_PASSWORD",
+};
+
 export const TARGETS = {
   local: {
     label: "LOCAL",
     envVar: "DATABASE_URL",
+    // Local also seeds the worker fixture so the Playwright suite can
+    // exercise role-gated paths against a true crew_member user.
+    extraIdentities: [WORKER_FIXTURE_IDENTITY],
   },
   production: {
     label: "PRODUCTION",
     envVar: "SUPABASE_DATABASE_URL",
+    extraIdentities: [],
   },
 };
 
@@ -165,8 +197,8 @@ export function validatePassword(password, envVar) {
   }
 }
 
-export function resolveSeedUsers(env) {
-  return SEED_USER_IDENTITIES.map((identity) => {
+export function resolveSeedUsers(env, identities = SEED_USER_IDENTITIES) {
+  return identities.map((identity) => {
     const password = env[identity.passwordEnvVar];
     validatePassword(password, identity.passwordEnvVar);
     return {
@@ -245,7 +277,11 @@ async function seedTarget(target, users, { pauseMs = PRODUCTION_PAUSE_MS } = {})
 async function main() {
   const { db } = parseArgs(process.argv.slice(2));
   const target = TARGETS[db];
-  const users = resolveSeedUsers(process.env);
+  const identities = [
+    ...SEED_USER_IDENTITIES,
+    ...(target.extraIdentities ?? []),
+  ];
+  const users = resolveSeedUsers(process.env, identities);
   await seedTarget(target, users);
 }
 

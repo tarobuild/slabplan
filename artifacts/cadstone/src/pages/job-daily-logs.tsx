@@ -289,7 +289,7 @@ const dailyLogShareLabels: Array<
   ["isPrivate", "Private"],
 ]
 
-const PAGE_SIZE = 10
+const PAGE_LIMIT = 25
 const DEFAULT_SETTINGS: DailyLogSettings = {
   stampLocation: false,
   defaultNotes: "",
@@ -2771,12 +2771,10 @@ export default function JobDailyLogsPage() {
           !(typeof entry.value === "string" && entry.value.trim() === ""),
       )
   }, [customFields, selectedLog])
-  const [page, setPage] = useState(1)
-  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE))
-  const pagedLogs = useMemo(
-    () => filteredLogs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [filteredLogs, page],
-  )
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadRequestIdRef = useRef(0)
 
   async function loadReferenceData() {
     try {
@@ -2866,13 +2864,18 @@ export default function JobDailyLogsPage() {
     }
   }
 
-  async function loadLogs() {
-    setLoading(true)
+  async function loadLogs(cursor: string | null = null) {
+    const isInitial = cursor === null
+    const requestId = ++loadRequestIdRef.current
+    if (isInitial) {
+      setLoading(true)
+    } else {
+      setLoadingMore(true)
+    }
     try {
-      const params = new URLSearchParams({
-        page: "1",
-        pageSize: "200",
-      })
+      const params = new URLSearchParams()
+      params.set("cursor", cursor ?? "")
+      params.set("limit", String(PAGE_LIMIT))
       if (appliedFilters.keywords.trim()) params.set("keywords", appliedFilters.keywords.trim())
       if (appliedFilters.createdBy !== "all") params.set("createdBy", appliedFilters.createdBy)
       if (appliedFilters.sharedWith !== "all") params.set("sharedWith", appliedFilters.sharedWith)
@@ -2880,19 +2883,39 @@ export default function JobDailyLogsPage() {
       if (appliedFilters.to) params.set("to", appliedFilters.to)
       if (appliedFilters.tags.length > 0) params.set("tags", appliedFilters.tags.join(","))
 
-      const response = await api.get<{ logs: DailyLogListItem[] }>(`/jobs/${jobId}/daily-logs?${params.toString()}`)
-      setLogs(
-        (response.data.logs || []).map((log) => ({
-          ...log,
-          weatherData: normalizeWeatherData(log.weatherData),
-          customFieldValues: normalizeCustomFieldValues(log.customFieldValues),
-        })),
-      )
+      const response = await api.get<{
+        logs: DailyLogListItem[]
+        pagination?: { limit: number; hasMore: boolean; nextCursor: string | null }
+      }>(`/jobs/${jobId}/daily-logs?${params.toString()}`)
+
+      if (requestId !== loadRequestIdRef.current) return
+
+      const fetched = (response.data.logs || []).map((log) => ({
+        ...log,
+        weatherData: normalizeWeatherData(log.weatherData),
+        customFieldValues: normalizeCustomFieldValues(log.customFieldValues),
+      }))
+
+      setLogs((previous) => (isInitial ? fetched : [...previous, ...fetched]))
+      setHasMore(!!response.data.pagination?.hasMore)
+      setNextCursor(response.data.pagination?.nextCursor ?? null)
     } catch (error) {
+      if (requestId !== loadRequestIdRef.current) return
       toastApiError(error, "Failed to load daily logs")
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestIdRef.current) {
+        if (isInitial) {
+          setLoading(false)
+        } else {
+          setLoadingMore(false)
+        }
+      }
     }
+  }
+
+  async function loadMoreLogs() {
+    if (!nextCursor || loadingMore) return
+    await loadLogs(nextCursor)
   }
 
   async function loadDetail(logId: string) {
@@ -2923,15 +2946,10 @@ export default function JobDailyLogsPage() {
   }, [])
 
   useEffect(() => {
-    setPage(1)
-    void loadLogs()
+    setNextCursor(null)
+    setHasMore(false)
+    void loadLogs(null)
   }, [jobId, appliedFilters])
-
-  useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages)
-    }
-  }, [page, totalPages])
 
   function openCreateDialog() {
     setEditingLogId(null)
@@ -2952,9 +2970,6 @@ export default function JobDailyLogsPage() {
       toastApiError(error, "Failed to update like")
     }
   }
-
-  const startItem = filteredLogs.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
-  const endItem = Math.min(page * PAGE_SIZE, filteredLogs.length)
 
   function runPrint(scope: "list" | "detail") {
     const cleanup = () => {
@@ -3042,49 +3057,75 @@ export default function JobDailyLogsPage() {
                   <Skeleton key={index} className="h-48 rounded-2xl" />
                 ))}
               </div>
-            ) : pagedLogs.length === 0 ? (
-              <EmptyState
-                title="No daily logs yet"
-                description="Create a daily log to capture site progress and observations."
-                actionLabel="Daily Log"
-                onAction={openCreateDialog}
-              />
+            ) : logs.length === 0 && !hasMore ? (
+              activeFilterCount(appliedFilters) > 0 ? (
+                <EmptyState
+                  title="No daily logs match your filters"
+                  description="Try clearing or relaxing your filters to see more results."
+                />
+              ) : (
+                <EmptyState
+                  title="No daily logs yet"
+                  description="Create a daily log to capture site progress and observations."
+                  actionLabel="Daily Log"
+                  onAction={openCreateDialog}
+                />
+              )
             ) : (
               <>
-                <div className="rounded-3xl border border-slate-200 bg-white px-5 shadow-sm">
-                  {groupLogsByDate(pagedLogs).map((group, groupIndex) => (
-                    <div key={group.date}>
-                      {/* Date section header */}
-                      <div className={cn("border-b border-slate-200 pb-2 pt-5", groupIndex > 0 && "mt-2")}>
-                        <h3 className="text-lg font-bold text-slate-900">{group.label}</h3>
-                      </div>
-                      {/* Log entries */}
-                      {group.logs.map((log, logIndex) => (
-                        <div key={log.id} className={cn(logIndex < group.logs.length - 1 && "border-b border-slate-100")}>
-                          <ActivityFeedItem
-                            log={log}
-                            onSelect={(logId) => void loadDetail(logId)}
-                            onEdit={openEditDialog}
-                            onPrint={(logId) => void handlePrintDetail(logId)}
-                          />
+                {filteredLogs.length > 0 ? (
+                  <div className="rounded-3xl border border-slate-200 bg-white px-5 shadow-sm">
+                    {groupLogsByDate(filteredLogs).map((group, groupIndex) => (
+                      <div key={group.date}>
+                        {/* Date section header */}
+                        <div className={cn("border-b border-slate-200 pb-2 pt-5", groupIndex > 0 && "mt-2")}>
+                          <h3 className="text-lg font-bold text-slate-900">{group.label}</h3>
                         </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
+                        {/* Log entries */}
+                        {group.logs.map((log, logIndex) => (
+                          <div key={log.id} className={cn(logIndex < group.logs.length - 1 && "border-b border-slate-100")}>
+                            <ActivityFeedItem
+                              log={log}
+                              onSelect={(logId) => void loadDetail(logId)}
+                              onEdit={openEditDialog}
+                              onPrint={(logId) => void handlePrintDetail(logId)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500 shadow-sm">
+                    {hasMore
+                      ? "No daily logs in the loaded batch match your filters. Load more to keep searching."
+                      : "No daily logs match your filters."}
+                  </div>
+                )}
 
-                <div data-print-hide="true" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                <div data-print-hide="true" className="flex flex-col items-center gap-2 pt-1 sm:flex-row sm:justify-between">
                   <div className="text-sm text-slate-500">
-                    {startItem}–{endItem} of {filteredLogs.length} items
+                    {filteredLogs.length === logs.length
+                      ? `${filteredLogs.length} ${filteredLogs.length === 1 ? "item" : "items"} loaded`
+                      : `${filteredLogs.length} of ${logs.length} loaded ${logs.length === 1 ? "item" : "items"} match`}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
-                      Previous
+                  {hasMore ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void loadMoreLogs()}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          Loading…
+                        </>
+                      ) : (
+                        "Load more"
+                      )}
                     </Button>
-                    <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>
-                      Next
-                    </Button>
-                  </div>
+                  ) : null}
                 </div>
               </>
             )}
@@ -3232,12 +3273,10 @@ export default function JobDailyLogsPage() {
         onApply={(filters) => {
           setAppliedFilters(filters)
           setSearchValue(filters.keywords)
-          setPage(1)
         }}
         onClear={() => {
           setAppliedFilters(DEFAULT_FILTERS)
           setSearchValue("")
-          setPage(1)
         }}
         users={users}
         availableTags={availableTags}

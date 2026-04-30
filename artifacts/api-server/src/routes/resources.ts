@@ -75,6 +75,7 @@ router.get(
     const result = await listResourceFolders({
       parentId: query.data.parentId ?? null,
       all: query.data.all,
+      auth: req.auth!,
     });
 
     res.json(result);

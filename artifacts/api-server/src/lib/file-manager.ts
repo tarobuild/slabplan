@@ -12,6 +12,7 @@ import {
   type Folder,
   users,
 } from "@workspace/db/schema";
+import { buildFolderVisibilityCondition, type AuthContext } from "./authorization";
 import { encodeCursor, type CursorPayload } from "./cursor";
 import { HttpError } from "./http";
 import {
@@ -344,7 +345,12 @@ function assertNestedFolderAllowed(mediaType: string, parentFolderId: string | n
   }
 }
 
-export async function getAllFoldersForJob(jobId: string | null, mediaType: string, includeDeleted = false) {
+export async function getAllFoldersForJob(
+  jobId: string | null,
+  mediaType: string,
+  includeDeleted = false,
+  extraConditions: SQL[] = [],
+) {
   return db
     .select()
     .from(folders)
@@ -354,6 +360,7 @@ export async function getAllFoldersForJob(jobId: string | null, mediaType: strin
         eq(folders.scope, jobId ? "job" : "resource"),
         eq(folders.mediaType, mediaType),
         ...(includeDeleted ? [] : [isNull(folders.deletedAt)]),
+        ...extraConditions,
       ),
     )
     .orderBy(asc(folders.title));
@@ -549,6 +556,7 @@ export async function listFoldersForJob(params: {
   mediaType: string;
   parentId: string | null;
   all: boolean;
+  auth: AuthContext;
 }) {
   await ensureJobExists(params.jobId);
   await ensureSystemFolders(params.jobId);
@@ -557,18 +565,21 @@ export async function listFoldersForJob(params: {
     mediaType: params.mediaType,
     parentId: params.parentId,
     all: params.all,
+    auth: params.auth,
   });
 }
 
 export async function listResourceFolders(params: {
   parentId: string | null;
   all: boolean;
+  auth: AuthContext;
 }) {
   return listFoldersForScope({
     jobId: null,
     mediaType: "document",
     parentId: params.parentId,
     all: params.all,
+    auth: params.auth,
   });
 }
 
@@ -577,10 +588,24 @@ async function listFoldersForScope(params: {
   mediaType: string;
   parentId: string | null;
   all: boolean;
+  auth: AuthContext;
 }) {
-  const allFolders = await getAllFoldersForJob(params.jobId, params.mediaType);
+  // Push the per-folder visibility check down into SQL so deeply nested job
+  // trees stay performant — for non-admins this filters out folders with
+  // restrictive `viewingPermissions` before they ever reach JS.
+  const visibilityCondition = buildFolderVisibilityCondition(params.auth);
+  const extraConditions: SQL[] = visibilityCondition ? [visibilityCondition] : [];
+  const allFolders = await getAllFoldersForJob(
+    params.jobId,
+    params.mediaType,
+    false,
+    extraConditions,
+  );
   const folderMap = new Map(allFolders.map((folder) => [folder.id, folder]));
 
+  // If the caller asked for a specific parent folder but cannot view it (or
+  // it doesn't exist), we surface a 404 — same shape we use when the folder
+  // is genuinely missing, so we don't leak the existence of restricted nodes.
   const currentFolder = params.parentId ? folderMap.get(params.parentId) ?? null : null;
 
   if (params.parentId && !currentFolder) {
@@ -593,6 +618,8 @@ async function listFoldersForScope(params: {
         params.parentId ? folder.parentFolderId === params.parentId : folder.parentFolderId === null,
       );
 
+  // Counts are computed off the visibility-filtered set so non-admins don't
+  // see badge counts that include folders/files they can't actually open.
   const filesForCounts = await getAllFilesForFolderIds(allFolders.map((folder) => folder.id));
   const fileCountByFolderId = new Map<string, number>();
   const childCountByFolderId = new Map<string, number>();
@@ -1764,17 +1791,88 @@ export async function getActivityEntries(params: {
   };
 }
 
+/**
+ * Resolve the set of files a caller is authorized to download as part of a
+ * folder ZIP. Walks the descendant tree of `folderId` after dropping any
+ * folders the caller cannot view AND any soft-deleted folders, then loads
+ * non-deleted files from the surviving folder IDs.
+ *
+ * The returned entries already carry the in-archive zip name so callers (and
+ * tests) don't have to redo the breadcrumb math. Exported so the visibility
+ * + soft-delete enforcement is independently testable without standing up
+ * object storage.
+ */
+export async function collectFolderZipEntries(params: {
+  folderId: string;
+  auth: AuthContext;
+}): Promise<{
+  rootTitle: string;
+  entries: Array<{ fileId: string; fileUrl: string; zipName: string }>;
+}> {
+  const folder = await getFolderOrThrow(params.folderId);
+  // Restrict the descendant set to folders the caller is authorized to view
+  // (the route already verified the root) and drop soft-deleted folders so
+  // trashed subtrees never get re-zipped behind the user's back.
+  const visibilityCondition = buildFolderVisibilityCondition(params.auth);
+  const extraConditions: SQL[] = visibilityCondition ? [visibilityCondition] : [];
+  const allFolders = await getAllFoldersForJob(
+    folder.jobId ?? null,
+    folder.mediaType,
+    false,
+    extraConditions,
+  );
+  const folderMap = new Map(allFolders.map((item) => [item.id, item]));
+
+  // Defense in depth: if the root folder is not in the visibility-filtered
+  // set the caller must not have been authorized to view it (or it was
+  // soft-deleted). Routes already call `assertCanViewFolder` before us, but
+  // this helper is exported and could be called from elsewhere; refusing
+  // here keeps the ZIP from leaking the root file directly.
+  if (!folderMap.has(folder.id)) {
+    throw new HttpError(404, "Folder not found.");
+  }
+  // `collectDescendantFolderIds` only follows parent links inside the input
+  // set, so any restricted (or soft-deleted) subfolder we filtered above is
+  // skipped along with everything beneath it.
+  const folderIds = collectDescendantFolderIds(folder.id, allFolders);
+  // `false` for includeDeleted — the previous `true` here meant a parent-folder
+  // download would resurrect soft-deleted files for any user.
+  const subtreeFiles = await getAllFilesForFolderIds(folderIds, false);
+
+  const entries: Array<{ fileId: string; fileUrl: string; zipName: string }> = [];
+
+  for (const file of subtreeFiles) {
+    if (!file.fileUrl || !file.folderId) {
+      continue;
+    }
+
+    const trail = buildFolderPath(file.folderId, folderMap);
+    const relativeTrail = trail
+      .slice(1)
+      .map((item) => item.title)
+      .filter(Boolean)
+      .join("/");
+    const zipName = relativeTrail
+      ? path.posix.join(folder.title, relativeTrail, file.originalName)
+      : path.posix.join(folder.title, file.originalName);
+
+    entries.push({ fileId: file.id, fileUrl: file.fileUrl, zipName });
+  }
+
+  return { rootTitle: folder.title, entries };
+}
+
 export async function streamFolderZip(params: {
   folderId: string;
   res: Response;
+  auth: AuthContext;
 }) {
-  const folder = await getFolderOrThrow(params.folderId);
-  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
-  const folderMap = new Map(allFolders.map((item) => [item.id, item]));
-  const folderIds = collectDescendantFolderIds(folder.id, allFolders);
-  const subtreeFiles = await getAllFilesForFolderIds(folderIds, true);
+  const { rootTitle, entries } = await collectFolderZipEntries({
+    folderId: params.folderId,
+    auth: params.auth,
+  });
 
-  params.res.attachment(`${folder.title}.zip`);
+  params.res.attachment(`${rootTitle}.zip`);
 
   const archive = archiver("zip", {
     zlib: { level: 9 },
@@ -1793,30 +1891,16 @@ export async function streamFolderZip(params: {
 
   archive.pipe(params.res);
 
-  if (subtreeFiles.length === 0) {
-    archive.append("", { name: `${folder.title}/` });
+  if (entries.length === 0) {
+    archive.append("", { name: `${rootTitle}/` });
   }
 
-  for (const file of subtreeFiles) {
-    if (!file.fileUrl) {
+  for (const entry of entries) {
+    if (!(await storedFileExists(entry.fileUrl))) {
       continue;
     }
 
-    if (!(await storedFileExists(file.fileUrl))) {
-      continue;
-    }
-
-    const trail = buildFolderPath(file.folderId!, folderMap);
-    const relativeTrail = trail
-      .slice(1)
-      .map((item) => item.title)
-      .filter(Boolean)
-      .join("/");
-    const zipName = relativeTrail
-      ? path.posix.join(folder.title, relativeTrail, file.originalName)
-      : path.posix.join(folder.title, file.originalName);
-
-    archive.append(openStoredFileReadStream(file.fileUrl), { name: zipName });
+    archive.append(openStoredFileReadStream(entry.fileUrl), { name: entry.zipName });
   }
 
   await archive.finalize();

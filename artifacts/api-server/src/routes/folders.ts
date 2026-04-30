@@ -83,6 +83,7 @@ router.get(
       mediaType: query.data.mediaType,
       parentId: query.data.parentId ?? null,
       all: query.data.all,
+      auth: req.auth!,
     });
 
     res.json(result);
@@ -246,6 +247,7 @@ router.get(
     await streamFolderZip({
       folderId,
       res,
+      auth: req.auth!,
     });
   }),
 );

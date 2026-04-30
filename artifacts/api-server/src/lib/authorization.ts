@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   clients,
@@ -485,6 +485,28 @@ async function getFolderAccessOrThrow(folderId: string, includeDeleted = false) 
   }
 
   return folder satisfies FolderAccessRecord;
+}
+
+/**
+ * Build a SQL predicate that matches folders the caller is authorized to view
+ * based on the per-folder `viewingPermissions` JSONB column. Returns `null` for
+ * admins so callers can skip filtering entirely.
+ *
+ * Mirrors `canViewFolderForRole` (admin sees everything; non-admin sees a
+ * folder when permissions are NULL, when `internal` is true, or when the
+ * caller's specific role flag is true).
+ */
+export function buildFolderVisibilityCondition(auth: AuthContext): SQL | null {
+  if (isAdmin(auth)) {
+    return null;
+  }
+
+  const role = roleFromAuth(auth);
+  return sql`(
+    ${folders.viewingPermissions} IS NULL
+    OR ${folders.viewingPermissions} ->> 'internal' = 'true'
+    OR ${folders.viewingPermissions} ->> ${role} = 'true'
+  )`;
 }
 
 export async function assertCanViewFolder(

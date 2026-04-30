@@ -40,6 +40,40 @@ const leadAttachmentId = crypto.randomUUID();
 const dailyLogAttachmentId = crypto.randomUUID();
 const scheduleAttachmentId = crypto.randomUUID();
 
+// Job-folder tree used to assert per-descendant visibility for both
+// `GET /jobs/:jobId/folders` and the `streamFolderZip` ZIP path.
+//
+//  jobFolderRootId           viewing: { internal: true }
+//   ├─ jobFolderPublicId     viewing: { internal: true }
+//   │   └─ rootPublicFile, publicChildFile
+//   ├─ jobFolderRestrictedId viewing: { admin: true, project_manager: true }
+//   │   └─ restrictedFile
+//   ├─ jobFolderDeletedId    soft-deleted (deletedAt set)
+//   │   └─ deletedFolderFile
+//   └─ rootDeletedFile (file lives in the visible root but is itself trashed)
+const jobFolderRootId = crypto.randomUUID();
+const jobFolderPublicId = crypto.randomUUID();
+const jobFolderRestrictedId = crypto.randomUUID();
+const jobFolderDeletedId = crypto.randomUUID();
+const rootPublicFileId = crypto.randomUUID();
+const rootDeletedFileId = crypto.randomUUID();
+const publicChildFileId = crypto.randomUUID();
+const restrictedFileId = crypto.randomUUID();
+const deletedFolderFileId = crypto.randomUUID();
+const jobFolderTreeIds = [
+  jobFolderRootId,
+  jobFolderPublicId,
+  jobFolderRestrictedId,
+  jobFolderDeletedId,
+];
+const jobFolderFileIds = [
+  rootPublicFileId,
+  rootDeletedFileId,
+  publicChildFileId,
+  restrictedFileId,
+  deletedFolderFileId,
+];
+
 const testUserIds = [
   adminUserId,
   otherAdminUserId,
@@ -49,8 +83,18 @@ const testUserIds = [
 ];
 const testJobIds = [managedJobId, hiddenJobId];
 const testLeadIds = [pmLeadId, hiddenLeadId];
-const testFolderIds = [leadFolderId, dailyLogFolderId, scheduleFolderId];
-const testFileIds = [leadFileId, dailyLogFileId, scheduleFileId];
+const testFolderIds = [
+  leadFolderId,
+  dailyLogFolderId,
+  scheduleFolderId,
+  ...jobFolderTreeIds,
+];
+const testFileIds = [
+  leadFileId,
+  dailyLogFileId,
+  scheduleFileId,
+  ...jobFolderFileIds,
+];
 
 function makePublicUser(id: string, role: string, email: string, fullName: string) {
   return {
@@ -272,6 +316,48 @@ before(async () => {
       viewingPermissions: { internal: true },
       uploadingPermissions: { admin: true, project_manager: true },
     },
+    {
+      id: jobFolderRootId,
+      title: "ZZZ Visibility Folder Root",
+      scope: "job",
+      jobId: managedJobId,
+      mediaType: "document",
+      viewingPermissions: { internal: true },
+      uploadingPermissions: { admin: true, project_manager: true },
+    },
+    {
+      id: jobFolderPublicId,
+      title: "ZZZ Visibility Public Sub",
+      scope: "job",
+      jobId: managedJobId,
+      parentFolderId: jobFolderRootId,
+      mediaType: "document",
+      viewingPermissions: { internal: true },
+      uploadingPermissions: { admin: true, project_manager: true },
+    },
+    {
+      id: jobFolderRestrictedId,
+      title: "ZZZ Visibility Restricted Sub",
+      scope: "job",
+      jobId: managedJobId,
+      parentFolderId: jobFolderRootId,
+      mediaType: "document",
+      // Only admins / project managers can view; crew is locked out.
+      viewingPermissions: { admin: true, project_manager: true },
+      uploadingPermissions: { admin: true, project_manager: true },
+    },
+    {
+      id: jobFolderDeletedId,
+      title: "ZZZ Visibility Deleted Sub",
+      scope: "job",
+      jobId: managedJobId,
+      parentFolderId: jobFolderRootId,
+      mediaType: "document",
+      viewingPermissions: { internal: true },
+      uploadingPermissions: { admin: true, project_manager: true },
+      deletedAt: new Date("2999-02-01T00:00:00Z"),
+      updatedAt: new Date("2999-02-01T00:00:00Z"),
+    },
   ]);
 
   await db.insert(files).values([
@@ -298,6 +384,53 @@ before(async () => {
       originalName: "hidden-schedule.pdf",
       mimeType: "application/pdf",
       uploadedBy: otherAdminUserId,
+    },
+    {
+      id: rootPublicFileId,
+      folderId: jobFolderRootId,
+      filename: "root-public.pdf",
+      originalName: "root-public.pdf",
+      fileUrl: `/uploads/test/${rootPublicFileId}.pdf`,
+      mimeType: "application/pdf",
+      uploadedBy: adminUserId,
+    },
+    {
+      id: rootDeletedFileId,
+      folderId: jobFolderRootId,
+      filename: "root-deleted.pdf",
+      originalName: "root-deleted.pdf",
+      fileUrl: `/uploads/test/${rootDeletedFileId}.pdf`,
+      mimeType: "application/pdf",
+      uploadedBy: adminUserId,
+      deletedAt: new Date("2999-02-02T00:00:00Z"),
+      updatedAt: new Date("2999-02-02T00:00:00Z"),
+    },
+    {
+      id: publicChildFileId,
+      folderId: jobFolderPublicId,
+      filename: "public-child.pdf",
+      originalName: "public-child.pdf",
+      fileUrl: `/uploads/test/${publicChildFileId}.pdf`,
+      mimeType: "application/pdf",
+      uploadedBy: adminUserId,
+    },
+    {
+      id: restrictedFileId,
+      folderId: jobFolderRestrictedId,
+      filename: "restricted.pdf",
+      originalName: "restricted.pdf",
+      fileUrl: `/uploads/test/${restrictedFileId}.pdf`,
+      mimeType: "application/pdf",
+      uploadedBy: adminUserId,
+    },
+    {
+      id: deletedFolderFileId,
+      folderId: jobFolderDeletedId,
+      filename: "in-deleted-folder.pdf",
+      originalName: "in-deleted-folder.pdf",
+      fileUrl: `/uploads/test/${deletedFolderFileId}.pdf`,
+      mimeType: "application/pdf",
+      uploadedBy: adminUserId,
     },
   ]);
 
@@ -479,6 +612,168 @@ test("client job lists are intersected with job visibility", async () => {
     headers: authHeaders(isolatedPmToken),
   });
   assert.equal(isolatedResponse.status, 403);
+});
+
+test("job folder list excludes non-viewable and soft-deleted descendants", async () => {
+  type FolderListItem = {
+    id: string;
+    title: string;
+    childFolderCount: number;
+    fileCount: number;
+  };
+  type FolderListResponse = { folders: FolderListItem[] };
+
+  // Admin: sees both visible immediate subfolders, soft-deleted folder is gone.
+  const adminResponse = await fetch(
+    `${baseUrl}/api/jobs/${managedJobId}/folders?mediaType=document&parentId=${jobFolderRootId}`,
+    { headers: authHeaders(adminToken) },
+  );
+  assert.equal(adminResponse.status, 200);
+  const adminBody = (await adminResponse.json()) as FolderListResponse;
+  const adminIds = new Set(adminBody.folders.map((folder) => folder.id));
+  assert.equal(adminIds.has(jobFolderPublicId), true);
+  assert.equal(adminIds.has(jobFolderRestrictedId), true);
+  assert.equal(
+    adminIds.has(jobFolderDeletedId),
+    false,
+    "soft-deleted subfolder must not appear",
+  );
+
+  // PM: same visibility as admin for these folders (admin+pm only restricted folder is visible to PM too).
+  const pmResponse = await fetch(
+    `${baseUrl}/api/jobs/${managedJobId}/folders?mediaType=document&parentId=${jobFolderRootId}`,
+    { headers: authHeaders(pmToken) },
+  );
+  assert.equal(pmResponse.status, 200);
+  const pmBody = (await pmResponse.json()) as FolderListResponse;
+  const pmIds = new Set(pmBody.folders.map((folder) => folder.id));
+  assert.equal(pmIds.has(jobFolderPublicId), true);
+  assert.equal(pmIds.has(jobFolderRestrictedId), true);
+
+  // Crew: restricted subfolder must be hidden, public still visible.
+  const crewResponse = await fetch(
+    `${baseUrl}/api/jobs/${managedJobId}/folders?mediaType=document&parentId=${jobFolderRootId}`,
+    { headers: authHeaders(crewToken) },
+  );
+  assert.equal(crewResponse.status, 200);
+  const crewBody = (await crewResponse.json()) as FolderListResponse;
+  const crewIds = new Set(crewBody.folders.map((folder) => folder.id));
+  assert.equal(crewIds.has(jobFolderPublicId), true);
+  assert.equal(
+    crewIds.has(jobFolderRestrictedId),
+    false,
+    "crew must not see admin/pm-only folder in list",
+  );
+  assert.equal(crewIds.has(jobFolderDeletedId), false);
+
+  // Counts on the public sibling reflect only visible+non-deleted descendants.
+  const publicForCrew = crewBody.folders.find((folder) => folder.id === jobFolderPublicId);
+  assert.ok(publicForCrew);
+  assert.equal(publicForCrew!.childFolderCount, 0);
+  assert.equal(publicForCrew!.fileCount, 1);
+
+  // Listing the parent of jobFolderRootId returns counts for the root that
+  // exclude the restricted subtree for crew but include it for admins.
+  const adminParentResponse = await fetch(
+    `${baseUrl}/api/jobs/${managedJobId}/folders?mediaType=document`,
+    { headers: authHeaders(adminToken) },
+  );
+  assert.equal(adminParentResponse.status, 200);
+  const adminParentBody = (await adminParentResponse.json()) as FolderListResponse;
+  const adminRoot = adminParentBody.folders.find((folder) => folder.id === jobFolderRootId);
+  assert.ok(adminRoot, "admin should see root folder at job scope");
+  // Two visible immediate children (public + restricted); deleted is excluded.
+  assert.equal(adminRoot!.childFolderCount, 2);
+  // Direct (not subtree) files in the root: 1 non-deleted, soft-deleted excluded.
+  assert.equal(adminRoot!.fileCount, 1);
+
+  const crewParentResponse = await fetch(
+    `${baseUrl}/api/jobs/${managedJobId}/folders?mediaType=document`,
+    { headers: authHeaders(crewToken) },
+  );
+  assert.equal(crewParentResponse.status, 200);
+  const crewParentBody = (await crewParentResponse.json()) as FolderListResponse;
+  const crewRoot = crewParentBody.folders.find((folder) => folder.id === jobFolderRootId);
+  assert.ok(crewRoot, "crew should see root folder via internal:true permission");
+  // Only public child is visible (restricted folder hidden, deleted folder gone).
+  assert.equal(crewRoot!.childFolderCount, 1);
+  // Direct files only — root non-deleted file (1). Restricted/deleted files
+  // are not direct children of the root.
+  assert.equal(crewRoot!.fileCount, 1);
+});
+
+test("folder ZIP entries respect viewing permissions and skip soft-deleted files", async () => {
+  const { collectFolderZipEntries } = await import("../src/lib/file-manager.ts");
+  type Auth = Parameters<typeof collectFolderZipEntries>[0]["auth"];
+
+  const adminAuth = { userId: adminUserId, role: "admin" } as Auth;
+  const pmAuth = { userId: pmUserId, role: "project_manager" } as Auth;
+  const crewAuth = { userId: crewUserId, role: "crew_member" } as Auth;
+
+  const adminResult = await collectFolderZipEntries({
+    folderId: jobFolderRootId,
+    auth: adminAuth,
+  });
+  const adminFileIds = new Set(adminResult.entries.map((entry) => entry.fileId));
+  assert.equal(adminFileIds.has(rootPublicFileId), true);
+  assert.equal(adminFileIds.has(publicChildFileId), true);
+  assert.equal(adminFileIds.has(restrictedFileId), true);
+  assert.equal(adminFileIds.has(rootDeletedFileId), false, "soft-deleted file must be excluded");
+  assert.equal(
+    adminFileIds.has(deletedFolderFileId),
+    false,
+    "files inside soft-deleted folders must be excluded",
+  );
+
+  const pmResult = await collectFolderZipEntries({
+    folderId: jobFolderRootId,
+    auth: pmAuth,
+  });
+  const pmFileIds = new Set(pmResult.entries.map((entry) => entry.fileId));
+  assert.equal(pmFileIds.has(rootPublicFileId), true);
+  assert.equal(pmFileIds.has(publicChildFileId), true);
+  assert.equal(pmFileIds.has(restrictedFileId), true);
+  assert.equal(pmFileIds.has(rootDeletedFileId), false);
+  assert.equal(pmFileIds.has(deletedFolderFileId), false);
+
+  const crewResult = await collectFolderZipEntries({
+    folderId: jobFolderRootId,
+    auth: crewAuth,
+  });
+  const crewFileIds = new Set(crewResult.entries.map((entry) => entry.fileId));
+  assert.equal(crewFileIds.has(rootPublicFileId), true);
+  assert.equal(crewFileIds.has(publicChildFileId), true);
+  assert.equal(
+    crewFileIds.has(restrictedFileId),
+    false,
+    "crew must not be able to download files from admin/pm-only folder",
+  );
+  assert.equal(crewFileIds.has(rootDeletedFileId), false);
+  assert.equal(crewFileIds.has(deletedFolderFileId), false);
+
+  // ZIP entry names are anchored under the root folder title and preserve the
+  // visible breadcrumb path so the archive layout matches the visible tree.
+  const publicChildEntry = adminResult.entries.find((entry) => entry.fileId === publicChildFileId);
+  assert.ok(publicChildEntry);
+  assert.equal(
+    publicChildEntry!.zipName,
+    "ZZZ Visibility Folder Root/ZZZ Visibility Public Sub/public-child.pdf",
+  );
+
+  // Defense-in-depth: calling collectFolderZipEntries for a root the caller
+  // cannot view (here: the admin/PM-only restricted subfolder, asked for as
+  // crew) must refuse rather than silently leak its files.
+  await assert.rejects(
+    () =>
+      collectFolderZipEntries({
+        folderId: jobFolderRestrictedId,
+        auth: crewAuth,
+      }),
+    (err: unknown) => {
+      const status = (err as { status?: number }).status;
+      return status === 404;
+    },
+  );
 });
 
 test("lead detail and contact-copy source are scoped to accessible leads", async () => {

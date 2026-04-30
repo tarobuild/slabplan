@@ -64,6 +64,10 @@ async function authedFetch(
 before(async () => {
   process.env.NODE_ENV = "test";
   process.env.LOG_LEVEL = "silent";
+  // The shared db client (lib/db) prefers SUPABASE_DATABASE_URL when set, but
+  // that points at the production pooler with a 15-client cap that the test
+  // suites blow through immediately. Force tests to use the local DATABASE_URL.
+  delete process.env.SUPABASE_DATABASE_URL;
   process.env.DATABASE_URL ??= testDatabaseUrl;
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
   process.env.REPLIT_DEV_DOMAIN = "workspace.kirk.replit.dev";

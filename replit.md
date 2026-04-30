@@ -75,7 +75,20 @@ Drizzle ORM + PostgreSQL. 16 tables.
 Key tables: users, jobs, folders, files, leads, lead_contacts, lead_attachments, schedule_items, schedule_assignees, daily_logs, daily_log_attachments, daily_log_tags, tags, activity_log
 
 Seed: `pnpm --filter @workspace/db run seed` → 3 users, 5 jobs, 3 leads
-Seed credentials: `cruz.martinez@cadstone.internal` / `Cadstone123!` (also maria.garcia, jake.thompson)
+Seed credentials (local helium DB only): `cruz.martinez@cadstone.internal` / `Cadstone123!` (also `maria.garcia`, `jake.thompson`).
+
+**Important — DB selection.** `lib/db/src/index.ts` prefers
+`SUPABASE_DATABASE_URL` over `DATABASE_URL` when both are set. In this Replit
+workspace `SUPABASE_DATABASE_URL` is exported at the workspace level, so the
+running dev API server (and any script that imports `@workspace/db` without
+unsetting it) talks to the Supabase prod-pooler DB, **not** the local helium
+DB. The seeded `*.cadstone.internal` accounts therefore do not work against
+the dev API; the live admin accounts in the Supabase DB
+(`cesar@cadstone.works`, `anwar@cadstone.works`) do. The unit-test suites in
+`artifacts/api-server/test/*.test.ts` `delete process.env.SUPABASE_DATABASE_URL`
+in their `before()` hook before importing `@workspace/db` so they reach
+helium and never burn through Supabase's 15-connection pooler cap. Apply the
+same pattern in any new test file or script that needs the local DB.
 
 ## Key Commands
 
@@ -141,3 +154,80 @@ be moved to a shared store (Postgres or Redis).
 - ✅ Leads: Create, view, delete with status badges and revenue tracking
 - ✅ Schedule: Full dialog with 2-column layout (left: title/assignees/sub-tabs, right: dates/time range/color/progress/reminder), start+end time support, multi-day via work days
 - ✅ Daily Logs: Default tab when opening a job, BuilderTrend-style activity feed (date-grouped, avatars, inline photo thumbnails, blockquote notes), most recent first, create/edit with weather notes, privacy, keyword search
+
+## Conventions
+
+### Role-gating (API)
+Every `/api` route handler that touches a tenant resource resolves the
+caller's role from `req.auth!.role` and routes through the central
+visibility helpers (`assertCanViewJob`, `assertCanViewFile`,
+`assertCanViewFolder`, `assertCanViewLead`, `assertCanViewScheduleItem`,
+`assertCanViewDailyLog`). These helpers throw `HttpError(403, ...)` when a
+non-admin is not assigned to the underlying resource. List endpoints apply
+the same intersection in their query (e.g. `jobsVisibleToUser`,
+`leadsVisibleToUser`) so paginated lists never leak rows. Admins
+short-circuit the check (`role === 'admin' → allowed`). The matching unit
+suites are `visibility-regression.test.ts`, `pagination.test.ts`,
+`file-annotations.test.ts`, and `http-smoke.test.ts` — any new route or
+list query must extend them.
+
+### File uploads (disk → object storage)
+File uploads land in the API as multipart, are validated against an
+allowlist, and are then handed to `writeUploadedBuffer` which writes to
+Replit App Storage (GCS via the sidecar). The on-disk path under
+`PRIVATE_OBJECT_DIR/cadstone/uploads/<jobId>/<mediaType>/<filename>` is
+preserved as the `files.fileUrl` value for backwards-compat lookups; the
+GCS object name is derived from that path. Never write to local disk
+directly — the deployed Reserved-VM filesystem is ephemeral. Always pass
+`contentType: uploadedFile.mimetype` so the stored object's MIME type is
+correct.
+
+## Launch verification — Task #101 (sign-off)
+
+Snapshot of pre-launch state:
+
+- `pnpm exec tsc --noEmit` — clean across all packages.
+- `pnpm --filter @workspace/api-server test` — 116 / 116 pass
+  (suites: 0, fail: 0, skipped: 0). Includes visibility-regression,
+  pagination, file-annotations, and http-smoke.
+- `pnpm --filter @workspace/cadstone test` — 58 / 58 pass
+  (suites: 9, fail: 0, skipped: 0). Covers `RoleGate`,
+  `pdf-annotation-editor`, `pdf-annotation-geometry`, `api-errors`
+  classifier, and `role-access`.
+- End-to-end browser pass via the testing skill (Chromium / Playwright
+  driver, single-project run against the live dev workflows). Two
+  sequential runs were used because the second one had to be re-scoped
+  after finding both live `*@cadstone.works` accounts are admins: a
+  22-step admin run (steps 1–22 passed) plus a 12-step temp-worker
+  friendly-403 run (steps 1–12 passed). Areas exercised:
+    1. Admin login (`cesar@cadstone.works`)
+    2. Dashboard (4 stat cards + activity feed)
+    3. Jobs list, search & pagination
+    4. Create job (unique title, `nanoid` suffix)
+    5. Documents tab — folder + file upload
+    6. Schedule view + personal todo / schedule item
+    7. Activity feed entry for the run's actions
+    8. Wrong-role friendly 403 — exercised with a temporary
+       `crew_member` user (`e2e-worker-temp@cadstone.test`) directly
+       inserted in Supabase and deleted right after; the SPA renders an
+       inline "Access denied" state, the worker's `/jobs` list does not
+       leak the admin-created probe job, and the worker dashboard
+       renders without crashing.
+- `pnpm audit --prod` — 1 LOW: `@tootallnate/once <3.0.1` reached
+  transitively via `@google-cloud/storage > teeny-request > http-proxy-agent`.
+  Not directly reachable from app code; deferred (see below).
+- All 3 workflows boot: `artifacts/api-server: API Server`,
+  `artifacts/cadstone: web`, `artifacts/mockup-sandbox: Component Preview Server`.
+
+### Deferred items
+- `@tootallnate/once` LOW transitive vuln — pinned upstream in
+  `@google-cloud/storage`. Re-evaluate when GCS publishes a patched release.
+- No self-serve password reset / forgot-password flow — admin manages
+  passwords directly. See "Auth & password management" above.
+- The dev API server reads from Supabase prod-pooler (see "Important —
+  DB selection" above). Prefer running ad-hoc scripts or new test files
+  with `delete process.env.SUPABASE_DATABASE_URL` to avoid burning the
+  15-connection pooler cap.
+- File-download token replay store and rate-limit counters live in
+  process memory — the deploy must stay on a Reserved VM (single
+  instance). See "Deployment target — Reserved VM, not autoscale".

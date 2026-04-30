@@ -247,6 +247,11 @@ export default function ClientsPage() {
       setSelected(r.data.client)
     } catch (err: unknown) {
       toastApiError(err, "Failed to load client")
+      if (searchParams.get("client")) {
+        const next = new URLSearchParams(searchParams)
+        next.delete("client")
+        setSearchParams(next, { replace: true })
+      }
     } finally {
       setLoadingDetail(false)
     }

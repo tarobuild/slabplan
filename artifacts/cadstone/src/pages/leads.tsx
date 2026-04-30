@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import {
   Building2,
   Calendar,
@@ -349,6 +350,11 @@ export default function LeadsPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const deepLinkLeadId = searchParams.get("lead")
+  const lastDeepLinkRef = useRef<string | null>(null)
+
   const hasUnsavedLeadChanges =
     isEditing &&
     !!editForm &&
@@ -405,9 +411,32 @@ export default function LeadsPage() {
         setEditForm(nextEditForm)
         setSavedEditForm(nextEditForm)
       })
-      .catch((err: unknown) => toastApiError(err, "Failed to load lead details"))
+      .catch((err: unknown) => {
+        toastApiError(err, "Failed to load lead details")
+        setSheetLeadId(null)
+        setIsEditing(false)
+        setAttachmentError(null)
+        if (searchParams.get("lead")) {
+          const next = new URLSearchParams(searchParams)
+          next.delete("lead")
+          setSearchParams(next, { replace: true })
+        }
+      })
       .finally(() => setLoadingDetail(false))
   }
+
+  // Open the matched lead when the URL carries ?lead=<id> (e.g. from
+  // global search). lastDeepLinkRef prevents a manual close from
+  // immediately re-opening the same id.
+  useEffect(() => {
+    if (!deepLinkLeadId) {
+      lastDeepLinkRef.current = null
+      return
+    }
+    if (lastDeepLinkRef.current === deepLinkLeadId) return
+    lastDeepLinkRef.current = deepLinkLeadId
+    openSheet(deepLinkLeadId)
+  }, [deepLinkLeadId])
 
   const handleSaveEdit = async () => {
     if (!sheetLeadId || !editForm || !leadDetail) return
@@ -721,6 +750,11 @@ export default function LeadsPage() {
       setSheetLeadId(null)
       setIsEditing(false)
       setAttachmentError(null)
+      if (deepLinkLeadId) {
+        const next = new URLSearchParams(searchParams)
+        next.delete("lead")
+        setSearchParams(next, { replace: true })
+      }
     })
   }
 
@@ -1302,7 +1336,7 @@ export default function LeadsPage() {
 
       {/* Lead Detail Sheet */}
       <Sheet
-        open={!!sheetLeadId}
+        open={!!sheetLeadId && (loadingDetail || !!leadDetail)}
         onOpenChange={handleSheetOpenChange}
       >
         <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col p-0 gap-0">

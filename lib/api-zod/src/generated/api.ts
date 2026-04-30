@@ -1243,6 +1243,117 @@ export const JobsDeleteJobsIdResponse = zod
   );
 
 /**
+ * List the users currently assigned to the job. Visible to any caller who can access the job (admins see every job; other roles only see jobs they own or are assigned to). Route defined in artifacts/api-server/src/routes/jobs.ts.
+ * @summary GET /jobs/{id}/assignees
+ */
+export const jobsGetJobsIdAssigneesPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const JobsGetJobsIdAssigneesParams = zod.object({
+  id: zod.coerce.string().uuid().regex(jobsGetJobsIdAssigneesPathIdRegExp),
+});
+
+export const JobsGetJobsIdAssigneesResponse = zod.object({
+  assignees: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      fullName: zod.string().nullish(),
+      email: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * Attach a user to the job. Requires admin role. The target user must be assignable (admin/manager/staff). Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with assigneePayloadSchema.
+ * @summary POST /jobs/{id}/assignees
+ */
+export const jobsPostJobsIdAssigneesPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const JobsPostJobsIdAssigneesParams = zod.object({
+  id: zod.coerce.string().uuid().regex(jobsPostJobsIdAssigneesPathIdRegExp),
+});
+
+export const jobsPostJobsIdAssigneesHeaderIdempotencyKeyMin = 8;
+export const jobsPostJobsIdAssigneesHeaderIdempotencyKeyMax = 255;
+
+export const JobsPostJobsIdAssigneesHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(jobsPostJobsIdAssigneesHeaderIdempotencyKeyMin)
+    .max(jobsPostJobsIdAssigneesHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const JobsPostJobsIdAssigneesBody = zod
+  .object({
+    userId: zod
+      .string()
+      .uuid()
+      .describe(
+        "Identifier of the user to attach as a job assignee. Must reference an assignable user (admin, manager, or staff).",
+      ),
+  })
+  .describe(
+    "Request body for `POST \/jobs\/{id}\/assignees`. Attaches a single user to the job.",
+  );
+
+/**
+ * Detach a user from the job. Requires admin role. Route defined in artifacts/api-server/src/routes/jobs.ts.
+ * @summary DELETE /jobs/{id}/assignees/{userId}
+ */
+export const jobsDeleteJobsIdAssigneesUseridPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+export const jobsDeleteJobsIdAssigneesUseridPathUserIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const JobsDeleteJobsIdAssigneesUseridParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(jobsDeleteJobsIdAssigneesUseridPathIdRegExp),
+  userId: zod.coerce
+    .string()
+    .uuid()
+    .regex(jobsDeleteJobsIdAssigneesUseridPathUserIdRegExp),
+});
+
+export const jobsDeleteJobsIdAssigneesUseridHeaderIdempotencyKeyMin = 8;
+export const jobsDeleteJobsIdAssigneesUseridHeaderIdempotencyKeyMax = 255;
+
+export const JobsDeleteJobsIdAssigneesUseridHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(jobsDeleteJobsIdAssigneesUseridHeaderIdempotencyKeyMin)
+    .max(jobsDeleteJobsIdAssigneesUseridHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const JobsDeleteJobsIdAssigneesUseridResponse = zod.object({
+  assignees: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      fullName: zod.string().nullish(),
+      email: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
  * List lead contacts across the workspace, optionally filtered by `search` (case-insensitive contains over name/email/phone/lead title). Only contacts whose lead the caller can access are returned; admins see every lead's contacts. Requires manager role or above.
  * @summary GET /leads/contacts
  */

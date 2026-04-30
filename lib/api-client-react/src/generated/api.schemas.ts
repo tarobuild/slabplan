@@ -66,6 +66,14 @@ export interface ClientsContactPayloadSchema {
   isPrimary?: boolean;
 }
 
+/**
+ * Request body for `POST /jobs/{id}/assignees`. Attaches a single user to the job.
+ */
+export interface JobsAssigneePayloadSchema {
+  /** Identifier of the user to attach as a job assignee. Must reference an assignable user (admin, manager, or staff). */
+  userId: string;
+}
+
 export type JobsJobPayloadSchemaStatus =
   (typeof JobsJobPayloadSchemaStatus)[keyof typeof JobsJobPayloadSchemaStatus];
 

@@ -47,8 +47,10 @@ import type {
   FoldersMoveFolderSchema,
   GenericObject,
   HealthStatus,
+  JobAssigneesResponse,
   JobDetailResponse,
   JobListResponse,
+  JobsAssigneePayloadSchema,
   JobsGetJobsParams,
   JobsJobPayloadSchema,
   LeadAttachmentsCreatedResponse,
@@ -2157,6 +2159,278 @@ export const useJobsDeleteJobsId = <
   TContext
 > => {
   return useMutation(getJobsDeleteJobsIdMutationOptions(options));
+};
+
+/**
+ * List the users currently assigned to the job. Visible to any caller who can access the job (admins see every job; other roles only see jobs they own or are assigned to). Route defined in artifacts/api-server/src/routes/jobs.ts.
+ * @summary GET /jobs/{id}/assignees
+ */
+export const getJobsGetJobsIdAssigneesUrl = (id: string) => {
+  return `/api/jobs/${id}/assignees`;
+};
+
+export const jobsGetJobsIdAssignees = async (
+  id: string,
+  options?: RequestInit,
+): Promise<JobAssigneesResponse> => {
+  return customFetch<JobAssigneesResponse>(getJobsGetJobsIdAssigneesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getJobsGetJobsIdAssigneesQueryKey = (id: string) => {
+  return [`/api/jobs/${id}/assignees`] as const;
+};
+
+export const getJobsGetJobsIdAssigneesQueryOptions = <
+  TData = Awaited<ReturnType<typeof jobsGetJobsIdAssignees>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof jobsGetJobsIdAssignees>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getJobsGetJobsIdAssigneesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof jobsGetJobsIdAssignees>>
+  > = ({ signal }) => jobsGetJobsIdAssignees(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof jobsGetJobsIdAssignees>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type JobsGetJobsIdAssigneesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof jobsGetJobsIdAssignees>>
+>;
+export type JobsGetJobsIdAssigneesQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /jobs/{id}/assignees
+ */
+
+export function useJobsGetJobsIdAssignees<
+  TData = Awaited<ReturnType<typeof jobsGetJobsIdAssignees>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof jobsGetJobsIdAssignees>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getJobsGetJobsIdAssigneesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Attach a user to the job. Requires admin role. The target user must be assignable (admin/manager/staff). Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with assigneePayloadSchema.
+ * @summary POST /jobs/{id}/assignees
+ */
+export const getJobsPostJobsIdAssigneesUrl = (id: string) => {
+  return `/api/jobs/${id}/assignees`;
+};
+
+export const jobsPostJobsIdAssignees = async (
+  id: string,
+  jobsAssigneePayloadSchema: JobsAssigneePayloadSchema,
+  options?: RequestInit,
+): Promise<JobAssigneesResponse> => {
+  return customFetch<JobAssigneesResponse>(getJobsPostJobsIdAssigneesUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(jobsAssigneePayloadSchema),
+  });
+};
+
+export const getJobsPostJobsIdAssigneesMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsPostJobsIdAssignees>>,
+    TError,
+    { id: string; data: BodyType<JobsAssigneePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsPostJobsIdAssignees>>,
+  TError,
+  { id: string; data: BodyType<JobsAssigneePayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["jobsPostJobsIdAssignees"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsPostJobsIdAssignees>>,
+    { id: string; data: BodyType<JobsAssigneePayloadSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return jobsPostJobsIdAssignees(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsPostJobsIdAssigneesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsPostJobsIdAssignees>>
+>;
+export type JobsPostJobsIdAssigneesMutationBody =
+  BodyType<JobsAssigneePayloadSchema>;
+export type JobsPostJobsIdAssigneesMutationError = ErrorType<Problem>;
+
+/**
+ * @summary POST /jobs/{id}/assignees
+ */
+export const useJobsPostJobsIdAssignees = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsPostJobsIdAssignees>>,
+    TError,
+    { id: string; data: BodyType<JobsAssigneePayloadSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof jobsPostJobsIdAssignees>>,
+  TError,
+  { id: string; data: BodyType<JobsAssigneePayloadSchema> },
+  TContext
+> => {
+  return useMutation(getJobsPostJobsIdAssigneesMutationOptions(options));
+};
+
+/**
+ * Detach a user from the job. Requires admin role. Route defined in artifacts/api-server/src/routes/jobs.ts.
+ * @summary DELETE /jobs/{id}/assignees/{userId}
+ */
+export const getJobsDeleteJobsIdAssigneesUseridUrl = (
+  id: string,
+  userId: string,
+) => {
+  return `/api/jobs/${id}/assignees/${userId}`;
+};
+
+export const jobsDeleteJobsIdAssigneesUserid = async (
+  id: string,
+  userId: string,
+  options?: RequestInit,
+): Promise<JobAssigneesResponse> => {
+  return customFetch<JobAssigneesResponse>(
+    getJobsDeleteJobsIdAssigneesUseridUrl(id, userId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getJobsDeleteJobsIdAssigneesUseridMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsDeleteJobsIdAssigneesUserid>>,
+    TError,
+    { id: string; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsDeleteJobsIdAssigneesUserid>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  const mutationKey = ["jobsDeleteJobsIdAssigneesUserid"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsDeleteJobsIdAssigneesUserid>>,
+    { id: string; userId: string }
+  > = (props) => {
+    const { id, userId } = props ?? {};
+
+    return jobsDeleteJobsIdAssigneesUserid(id, userId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsDeleteJobsIdAssigneesUseridMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsDeleteJobsIdAssigneesUserid>>
+>;
+
+export type JobsDeleteJobsIdAssigneesUseridMutationError = ErrorType<Problem>;
+
+/**
+ * @summary DELETE /jobs/{id}/assignees/{userId}
+ */
+export const useJobsDeleteJobsIdAssigneesUserid = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsDeleteJobsIdAssigneesUserid>>,
+    TError,
+    { id: string; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof jobsDeleteJobsIdAssigneesUserid>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  return useMutation(
+    getJobsDeleteJobsIdAssigneesUseridMutationOptions(options),
+  );
 };
 
 /**

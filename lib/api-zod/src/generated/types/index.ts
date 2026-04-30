@@ -69,6 +69,7 @@ export * from "./jobDetail";
 export * from "./jobDetailResponse";
 export * from "./jobListItem";
 export * from "./jobListResponse";
+export * from "./jobsAssigneePayloadSchema";
 export * from "./jobsGetJobsParams";
 export * from "./jobsJobPayloadSchema";
 export * from "./jobsJobPayloadSchemaContractType";

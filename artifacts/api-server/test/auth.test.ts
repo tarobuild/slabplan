@@ -16,12 +16,10 @@ const fixtureUser = {
 test("upload tokens use the dedicated upload secret when configured", async () => {
   const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
   const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
-  const originalResetSecret = process.env.JWT_RESET_SECRET;
   const originalUploadSecret = process.env.JWT_UPLOAD_SECRET;
 
   process.env.JWT_ACCESS_SECRET = "access-secret-for-tests";
   process.env.JWT_REFRESH_SECRET = "refresh-secret-for-tests";
-  process.env.JWT_RESET_SECRET = "reset-secret-for-tests";
   process.env.JWT_UPLOAD_SECRET = "upload-secret-for-tests";
 
   try {
@@ -34,7 +32,6 @@ test("upload tokens use the dedicated upload secret when configured", async () =
   } finally {
     restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);
     restoreEnv("JWT_REFRESH_SECRET", originalRefreshSecret);
-    restoreEnv("JWT_RESET_SECRET", originalResetSecret);
     restoreEnv("JWT_UPLOAD_SECRET", originalUploadSecret);
   }
 });
@@ -43,13 +40,11 @@ test("production throws on missing JWT_UPLOAD_SECRET", async () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
   const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
-  const originalResetSecret = process.env.JWT_RESET_SECRET;
   const originalUploadSecret = process.env.JWT_UPLOAD_SECRET;
 
   process.env.NODE_ENV = "production";
   process.env.JWT_ACCESS_SECRET = "access-secret-for-tests";
   process.env.JWT_REFRESH_SECRET = "refresh-secret-for-tests";
-  process.env.JWT_RESET_SECRET = "reset-secret-for-tests";
   delete process.env.JWT_UPLOAD_SECRET;
 
   try {
@@ -61,7 +56,37 @@ test("production throws on missing JWT_UPLOAD_SECRET", async () => {
     restoreEnv("NODE_ENV", originalNodeEnv);
     restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);
     restoreEnv("JWT_REFRESH_SECRET", originalRefreshSecret);
-    restoreEnv("JWT_RESET_SECRET", originalResetSecret);
+    restoreEnv("JWT_UPLOAD_SECRET", originalUploadSecret);
+  }
+});
+
+test("auth router does not expose forgot-password or reset-password endpoints", async () => {
+  const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
+  const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
+  const originalUploadSecret = process.env.JWT_UPLOAD_SECRET;
+
+  process.env.JWT_ACCESS_SECRET = "access-secret-for-tests";
+  process.env.JWT_REFRESH_SECRET = "refresh-secret-for-tests";
+  process.env.JWT_UPLOAD_SECRET = "upload-secret-for-tests";
+
+  try {
+    const routerModule = await import(`../src/routes/auth.ts?test=${Date.now()}`);
+    const stack = routerModule.default?.stack ?? [];
+    const paths = stack
+      .filter((layer: { route?: { path?: string } }) => Boolean(layer.route?.path))
+      .map((layer: { route: { path: string } }) => layer.route.path);
+
+    assert.ok(
+      !paths.includes("/forgot-password"),
+      "auth router must not expose /forgot-password (admin manages passwords directly)",
+    );
+    assert.ok(
+      !paths.includes("/reset-password"),
+      "auth router must not expose /reset-password (admin manages passwords directly)",
+    );
+  } finally {
+    restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);
+    restoreEnv("JWT_REFRESH_SECRET", originalRefreshSecret);
     restoreEnv("JWT_UPLOAD_SECRET", originalUploadSecret);
   }
 });

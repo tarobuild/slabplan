@@ -7,16 +7,18 @@ import {
   clearRefreshTokenCookie,
   clearUploadTokenCookie,
   refreshCookieName,
-  signResetToken,
   toPublicUser,
   sendAuthResponse,
   verifyRefreshToken,
-  verifyResetToken,
 } from "../lib/auth";
 import { HttpError, asyncHandler } from "../lib/http";
-import { logger } from "../lib/logger";
 import { createRateLimit } from "../lib/rate-limit";
 import { requireAdmin, requireAuth } from "../middleware/require-auth";
+
+// NOTE: There is intentionally no `/forgot-password` or `/reset-password` route.
+// The team is small (single-digit users) and the admin manages passwords directly
+// out of band — no transactional email provider is wired up. See `replit.md`
+// ("Auth & password management") for the rationale.
 
 const router: IRouter = Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,22 +45,6 @@ const loginRateLimitByEmail = createRateLimit({
   max: 5,
   windowMs: 10 * 60 * 1000,
   message: "Too many login attempts. Try again later.",
-  resolveKey: (req) => normalizeEmailForRateLimit(req.body?.email),
-});
-
-const forgotPasswordRateLimitByIp = createRateLimit({
-  keyPrefix: "auth:forgot-password:ip",
-  max: 5,
-  windowMs: 15 * 60 * 1000,
-  message: "Too many password reset requests. Try again later.",
-  resolveKey: (req) => req.ip || null,
-});
-
-const forgotPasswordRateLimitByEmail = createRateLimit({
-  keyPrefix: "auth:forgot-password:email",
-  max: 3,
-  windowMs: 15 * 60 * 1000,
-  message: "Too many password reset requests. Try again later.",
   resolveKey: (req) => normalizeEmailForRateLimit(req.body?.email),
 });
 
@@ -114,16 +100,6 @@ function normalizeFullName(value: unknown): string {
 async function findActiveUserByEmailWithPasswordHash(email: string) {
   const [user] = await db
     .select()
-    .from(users)
-    .where(and(eq(users.email, email), isNull(users.deletedAt)))
-    .limit(1);
-
-  return user ?? null;
-}
-
-async function findActiveUserByEmail(email: string) {
-  const [user] = await db
-    .select(safeUserColumns)
     .from(users)
     .where(and(eq(users.email, email), isNull(users.deletedAt)))
     .limit(1);
@@ -221,79 +197,6 @@ router.post(
     }
 
     sendAuthResponse(res, user);
-  }),
-);
-
-router.post(
-  "/forgot-password",
-  forgotPasswordRateLimitByIp,
-  forgotPasswordRateLimitByEmail,
-  asyncHandler(async (req, res) => {
-    const email = normalizeEmail(req.body.email);
-    const user = await findActiveUserByEmail(email);
-
-    if (!user) {
-      res.json({
-        success: true,
-        message: "If an account exists for that email, a reset link has been sent.",
-      });
-      return;
-    }
-
-    const resetToken = signResetToken(toPublicUser(user));
-    logger.info(
-      {
-        email,
-      },
-      "Generated password reset token",
-    );
-
-    res.json({
-      success: true,
-      message: "Password reset instructions generated.",
-      ...(process.env.NODE_ENV === "production"
-        ? {}
-        : {
-            previewToken: resetToken,
-          }),
-    });
-  }),
-);
-
-router.post(
-  "/reset-password",
-  asyncHandler(async (req, res) => {
-    const token = typeof req.body.token === "string" ? req.body.token.trim() : "";
-    const newPassword = normalizePassword(req.body.newPassword, "New password");
-
-    if (!token) {
-      throw new HttpError(400, "Reset token is required.");
-    }
-
-    const claims = verifyResetToken(token);
-    const user = await findActiveUserById(claims.userId);
-
-    if (!user) {
-      throw new HttpError(404, "User account not found.");
-    }
-
-    if (claims.version !== String(user.updatedAt?.getTime() ?? 0)) {
-      throw new HttpError(401, "Reset token invalid.");
-    }
-
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-
-    await db
-      .update(users)
-      .set({
-        passwordHash,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, user.id));
-
-    clearRefreshTokenCookie(res);
-    clearUploadTokenCookie(res);
-    res.json({ success: true });
   }),
 );
 

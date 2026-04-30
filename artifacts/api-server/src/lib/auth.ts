@@ -4,13 +4,12 @@ import jwt, { type JwtPayload } from "jsonwebtoken";
 import type { User } from "@workspace/db/schema";
 import { HttpError } from "./http";
 
-type TokenType = "access" | "refresh" | "reset" | "upload" | "file_view";
+type TokenType = "access" | "refresh" | "upload" | "file_view";
 
 type TokenClaims = {
   type: TokenType;
   email: string;
   role: string;
-  version?: string;
   fileId?: string;
 };
 
@@ -28,20 +27,17 @@ type PublicUser = Pick<
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const UPLOAD_TOKEN_TTL_SECONDS = 24 * 60 * 60;
-const RESET_TOKEN_TTL_SECONDS = 60 * 60;
 export const FILE_VIEW_TOKEN_TTL_SECONDS = 5 * 60;
 const JWT_ALGORITHMS = ["HS256"] as const;
 
 type JwtSecretEnvName =
   | "JWT_ACCESS_SECRET"
   | "JWT_REFRESH_SECRET"
-  | "JWT_RESET_SECRET"
   | "JWT_UPLOAD_SECRET";
 
 const runtimeSecrets: Record<JwtSecretEnvName, string> = {
   JWT_ACCESS_SECRET: crypto.randomBytes(64).toString("hex"),
   JWT_REFRESH_SECRET: crypto.randomBytes(64).toString("hex"),
-  JWT_RESET_SECRET: crypto.randomBytes(64).toString("hex"),
   JWT_UPLOAD_SECRET: crypto.randomBytes(64).toString("hex"),
 };
 
@@ -84,7 +80,6 @@ function readUploadSecret(_fallbackSecret: string) {
 
 const accessSecret = readJwtSecret("JWT_ACCESS_SECRET");
 const refreshSecret = readJwtSecret("JWT_REFRESH_SECRET");
-const resetSecret = readJwtSecret("JWT_RESET_SECRET");
 const uploadSecret = readUploadSecret(accessSecret);
 
 export const refreshCookieName = "cadstone_refresh_token";
@@ -118,10 +113,6 @@ function buildTokenPayload(
     email: user.email,
     role: user.role,
   };
-
-  if (type === "reset") {
-    basePayload.version = String(user.updatedAt?.getTime() ?? 0);
-  }
 
   if (extra.fileId) {
     basePayload.fileId = extra.fileId;
@@ -179,7 +170,6 @@ function decodeVerifiedToken<TType extends TokenType>(
     email: payload.email,
     role: payload.role,
     type: payload.type,
-    version: typeof payload.version === "string" ? payload.version : undefined,
     fileId: typeof payload.fileId === "string" ? payload.fileId : undefined,
     jti: typeof payload.jti === "string" ? payload.jti : undefined,
   };
@@ -232,10 +222,6 @@ export function signUploadToken(user: PublicUser): string {
   return signToken(user, "upload", uploadSecret, UPLOAD_TOKEN_TTL_SECONDS);
 }
 
-export function signResetToken(user: PublicUser): string {
-  return signToken(user, "reset", resetSecret, RESET_TOKEN_TTL_SECONDS);
-}
-
 export function signFileViewToken(user: PublicUser, fileId: string): string {
   const jti = crypto.randomBytes(16).toString("hex");
   return signToken(user, "file_view", accessSecret, FILE_VIEW_TOKEN_TTL_SECONDS, { fileId, jti });
@@ -255,10 +241,6 @@ export function verifyRefreshToken(token: string): VerifiedToken<"refresh"> {
 
 export function verifyUploadToken(token: string): VerifiedToken<"upload"> {
   return decodeVerifiedToken(token, uploadSecret, "upload");
-}
-
-export function verifyResetToken(token: string): VerifiedToken<"reset"> {
-  return decodeVerifiedToken(token, resetSecret, "reset");
 }
 
 export function setRefreshTokenCookie(res: Response, token: string): void {

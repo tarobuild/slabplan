@@ -87,6 +87,49 @@ Seed credentials: `cruz.martinez@cadstone.internal` / `Cadstone123!` (also maria
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm --filter @workspace/db run seed` — seed database with test data
 
+## Auth & password management
+
+This app does **not** have a self-serve "forgot password" / "reset password"
+flow. Account creation is admin-only (`POST /api/auth/register` with the
+`requireAdmin` middleware) and there is intentionally no transactional email
+provider wired up.
+
+For a team of ~5 employees, the cost of standing up an email service (domain
+verification, DNS, deliverability, spam filtering, ongoing maintenance) is not
+justified. Instead, the admin manages passwords directly:
+
+- **New user:** admin calls `POST /api/auth/register` and shares the chosen
+  password with the user out of band (e.g. in person or via a secure channel).
+- **Forgotten / rotated password:** the user contacts the admin. The admin
+  hands the new password value to the agent as a secret, and the agent
+  rewrites `users.password_hash` for that account directly with bcrypt.
+
+If the user count grows or the admin no longer wants to be in the loop, the
+right next step is wiring a real transactional email integration (Resend or
+SendGrid) and re-introducing `/forgot-password` + `/reset-password`. There is
+a regression test in `artifacts/api-server/test/auth.test.ts` that asserts
+those routes stay un-exposed until that decision is made deliberately.
+
+## Deployment target — Reserved VM, not autoscale
+
+The production deploy **must** run as a single Reserved VM (deployment type
+`vm` in the Publishing pane). Do not use autoscale.
+
+Two pieces of state live in the API server's process memory and silently break
+when there is more than one instance:
+
+1. **Rate limiter** (`artifacts/api-server/src/lib/rate-limit.ts`) — counters
+   live in an in-process `Map`, so each autoscale instance enforces its own
+   limit. Effective limits become `instances × configured_max`.
+2. **File-view JTI replay store** (`usedFileViewJtis` in
+   `artifacts/api-server/src/lib/auth.ts`) — single-use download tokens are
+   tracked in-process. Across multiple instances, a token used on instance A
+   is still "fresh" on instance B, defeating the replay protection.
+
+The deployment type cannot be set programmatically — it is configured in the
+Publishing pane. If you ever switch to autoscale, both of the above must first
+be moved to a shared store (Postgres or Redis).
+
 ## Feature Status
 
 - ✅ Backend: 16 DB tables, JWT auth, all routes (jobs, files, leads, schedule, daily-logs, dashboard, activity)

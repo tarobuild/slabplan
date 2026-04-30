@@ -146,19 +146,10 @@ Use it like this:
     - `expiresIn: number`
     - `user: { id, email, fullName, role, avatarUrl, phone, createdAt, updatedAt }`
 
-- `POST /api/auth/forgot-password`
-  - Body:
-    - `email: string`
-  - Response:
-    - `{ success: true, message: string }`
-    - In non-production the server may also return `previewToken`
-
-- `POST /api/auth/reset-password`
-  - Body:
-    - `token: string`
-    - `newPassword: string`
-  - Response:
-    - `{ success: true }`
+> Self-serve password reset is intentionally not exposed. Account passwords are
+> managed directly by the admin (see `replit.md` → "Auth & password management").
+> If the user UI offers a "Forgot password?" link, point it at a static contact
+> message rather than an API call.
 
 #### Jobs
 

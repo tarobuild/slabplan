@@ -142,6 +142,18 @@ purpose, because it skips existing users.
 Never paste the new passwords into chat with the agent or into this
 script's source — the agent must not learn them.
 
+## Production Operations
+
+- **Runbook:** [`docs/runbook.md`](docs/runbook.md) — single-page playbook for
+  incidents, secret rotation, alerting setup, and "who do I call". Read before
+  paging anyone; update after any production incident.
+- **Smoke check:** `https://cadstonesystems.com/api/healthz` (unauthenticated,
+  returns `{"status":"ok"}`). Wired into the external uptime monitor and the
+  api-server's startup health probe.
+- **Alerting:** Replit Deployments log-based alerts (crash loop, 5xx spike,
+  unhandled error) plus an UptimeRobot HTTPS monitor against the smoke check.
+  Setup steps in §2 of the runbook.
+
 ## Security Advisories
 
 ### Resolved: postcss <8.5.10 (GHSA-qx2v-qp2m-jg93, moderate severity)

@@ -321,13 +321,7 @@ export interface DailyLogsDailyLogPayloadSchema {
 }
 
 export type DailyLogsCommentPayloadSchemaAttachmentsItem = {
-  /**
-   * @minLength 1
-   * @maxLength 255
-   */
-  name: string;
-  url: string;
-  mimeType?: string | null;
+  fileId: string;
 };
 
 /**
@@ -341,6 +335,7 @@ export interface DailyLogsCommentPayloadSchema {
   body: string;
   parentCommentId?: string | null;
   mentions?: string[];
+  /** @maxItems 10 */
   attachments?: DailyLogsCommentPayloadSchemaAttachmentsItem[];
   links?: string[];
 }
@@ -1243,6 +1238,22 @@ export interface DailyLogLikeResponse {
 
 export interface DailyLogAttachmentsCreatedResponse {
   attachments: DailyLogAttachment[];
+}
+
+export type DailyLogCommentAttachmentsCreatedResponseFilesItem = {
+  id: string;
+  originalName: string;
+  mimeType: string | null;
+  fileSize: number | null;
+  fileUrl: string | null;
+  createdAt: string | null;
+};
+
+/**
+ * Response for `POST /daily-logs/{id}/comment-attachments`. Each entry is a freshly persisted `files` row that can be referenced by `attachments[].fileId` in the subsequent `POST /daily-logs/{id}/comments` call.
+ */
+export interface DailyLogCommentAttachmentsCreatedResponse {
+  files: DailyLogCommentAttachmentsCreatedResponseFilesItem[];
 }
 
 export type MyDailyLogsResponsePagination =

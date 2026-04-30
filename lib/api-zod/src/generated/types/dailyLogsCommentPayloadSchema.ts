@@ -18,6 +18,7 @@ export interface DailyLogsCommentPayloadSchema {
   body: string;
   parentCommentId?: string | null;
   mentions?: string[];
+  /** @maxItems 10 */
   attachments?: DailyLogsCommentPayloadSchemaAttachmentsItem[];
   links?: string[];
 }

@@ -3766,9 +3766,9 @@ export const DailyLogsPostDailyLogsIdCommentsHeader = zod.object({
 export const dailyLogsPostDailyLogsIdCommentsBodyBodyMax = 10000;
 
 export const dailyLogsPostDailyLogsIdCommentsBodyMentionsDefault = [];
-export const dailyLogsPostDailyLogsIdCommentsBodyAttachmentsItemNameMax = 255;
-
 export const dailyLogsPostDailyLogsIdCommentsBodyAttachmentsDefault = [];
+export const dailyLogsPostDailyLogsIdCommentsBodyAttachmentsMax = 10;
+
 export const dailyLogsPostDailyLogsIdCommentsBodyLinksDefault = [];
 
 export const DailyLogsPostDailyLogsIdCommentsBody = zod
@@ -3781,14 +3781,10 @@ export const DailyLogsPostDailyLogsIdCommentsBody = zod
     attachments: zod
       .array(
         zod.object({
-          name: zod
-            .string()
-            .min(1)
-            .max(dailyLogsPostDailyLogsIdCommentsBodyAttachmentsItemNameMax),
-          url: zod.string().url(),
-          mimeType: zod.string().nullish(),
+          fileId: zod.string().uuid(),
         }),
       )
+      .max(dailyLogsPostDailyLogsIdCommentsBodyAttachmentsMax)
       .default(dailyLogsPostDailyLogsIdCommentsBodyAttachmentsDefault),
     links: zod
       .array(zod.string().url())
@@ -3990,6 +3986,39 @@ export const DailyLogsPostDailyLogsIdTodosTodoIdToggleResponse = zod.object({
       updatedAt: zod.coerce.date(),
     }),
   ),
+});
+
+/**
+ * Upload one or more files (multipart `files` field) to be referenced from a
+subsequent `POST /daily-logs/{id}/comments` call via `attachments[].fileId`.
+Caps: at most 10 files per request, each <=10 MB.
+
+ * @summary POST /daily-logs/{id}/comment-attachments
+ */
+export const dailyLogsPostDailyLogsIdCommentAttachmentsPathIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const DailyLogsPostDailyLogsIdCommentAttachmentsParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(dailyLogsPostDailyLogsIdCommentAttachmentsPathIdRegExp),
+});
+
+export const dailyLogsPostDailyLogsIdCommentAttachmentsHeaderIdempotencyKeyMin = 8;
+export const dailyLogsPostDailyLogsIdCommentAttachmentsHeaderIdempotencyKeyMax = 255;
+
+export const DailyLogsPostDailyLogsIdCommentAttachmentsHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(dailyLogsPostDailyLogsIdCommentAttachmentsHeaderIdempotencyKeyMin)
+    .max(dailyLogsPostDailyLogsIdCommentAttachmentsHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
 });
 
 /**

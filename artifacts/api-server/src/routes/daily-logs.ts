@@ -84,17 +84,25 @@ const weatherDataSchema = z
   .optional()
   .default(null);
 
+// Per-comment caps for the multipart upload + DB row attachment flow. Anything
+// looser than these would leak the legacy base64-in-JSON limits back into the
+// new endpoint, so they stay co-located with the schema.
+const MAX_COMMENT_ATTACHMENTS = 10;
+const MAX_COMMENT_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
 const commentAttachmentSchema = z.object({
-  name: z.string().trim().min(1).max(255),
-  url: z.string().trim().url(),
-  mimeType: optionalString,
+  fileId: z.string().uuid(),
 });
 
 const commentPayloadSchema = z.object({
   body: z.string().trim().min(1).max(10000),
   parentCommentId: z.string().uuid().nullable().optional().default(null),
   mentions: z.array(z.string().uuid()).optional().default([]),
-  attachments: z.array(commentAttachmentSchema).optional().default([]),
+  attachments: z
+    .array(commentAttachmentSchema)
+    .max(MAX_COMMENT_ATTACHMENTS)
+    .optional()
+    .default([]),
   links: z.array(z.string().trim().url()).optional().default([]),
 });
 
@@ -349,6 +357,49 @@ async function getDailyLogOrThrow(id: string) {
   return log;
 }
 
+// Comment-attachment uploads live in their own folder (separate from the
+// regular daily-log attachments folder) so the comment-attachments stream
+// stays scoped: when /comments validates an incoming `fileId`, it only
+// considers files that were uploaded into THIS folder, which means a user
+// cannot attach an arbitrary file they happen to have access to elsewhere.
+async function ensureDailyLogCommentAttachmentFolder(dailyLogId: string) {
+  const title = `Daily Log ${dailyLogId} Comment Attachments`;
+
+  const [existing] = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        isNull(folders.jobId),
+        eq(folders.scope, "daily_log"),
+        eq(folders.dailyLogId, dailyLogId),
+        eq(folders.title, title),
+        eq(folders.mediaType, "photo"),
+        isNull(folders.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    return existing;
+  }
+
+  const [created] = await db
+    .insert(folders)
+    .values({
+      jobId: sql<string>`null`,
+      scope: "daily_log",
+      dailyLogId,
+      title,
+      mediaType: "photo",
+      viewingPermissions: { internal: true },
+      uploadingPermissions: { admin: true, project_manager: true },
+    })
+    .returning();
+
+  return created;
+}
+
 async function ensureDailyLogAttachmentFolder(dailyLogId: string) {
   const title = `Daily Log ${dailyLogId} Attachments`;
 
@@ -522,10 +573,15 @@ type HydratedComment = {
   parentCommentId: string | null;
   body: string;
   mentions: string[];
+  // Both shapes coexist: legacy comments persisted base64 data URLs in `url`
+  // (no `fileId`), while new comments persist a `fileId`/`fileUrl` pair that
+  // points at a `files` row served via the authenticated /uploads/... stream.
   attachments: Array<{
     name: string;
-    url: string;
+    url: string | null;
     mimeType: string | null;
+    fileId: string | null;
+    fileUrl: string | null;
   }>;
   links: string[];
   reactions: Record<string, string[]>;
@@ -554,14 +610,41 @@ function isStringArrayValue(value: unknown): value is string {
 
 function isCommentAttachmentValue(
   value: unknown,
-): value is { name: string; url: string; mimeType: string | null } {
-  return (
-    !!value &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    typeof (value as { name?: unknown }).name === "string" &&
-    typeof (value as { url?: unknown }).url === "string"
-  );
+): value is {
+  name: string;
+  url: string | null;
+  mimeType: string | null;
+  fileId: string | null;
+  fileUrl: string | null;
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.name !== "string") {
+    return false;
+  }
+
+  const hasLegacyUrl = typeof record.url === "string" && record.url.length > 0;
+  const hasFileRef =
+    typeof record.fileId === "string" && record.fileId.length > 0;
+
+  // Either shape is acceptable: legacy data-URL `url` (pre-task-174) or the
+  // new `fileId`/`fileUrl` pair pointing at a real files row. Records that
+  // carry neither identifier are unreadable and would render a broken
+  // thumbnail, so they are dropped at the boundary.
+  if (!hasLegacyUrl && !hasFileRef) {
+    return false;
+  }
+
+  // Coerce in place so the hydrated shape always carries every field; the
+  // FE's discriminator just checks for `fileUrl` presence.
+  if (typeof record.url !== "string") record.url = null;
+  if (typeof record.mimeType !== "string") record.mimeType = null;
+  if (typeof record.fileId !== "string") record.fileId = null;
+  if (typeof record.fileUrl !== "string") record.fileUrl = null;
+  return true;
 }
 
 function normalizeCommentReactions(value: unknown) {
@@ -1585,6 +1668,72 @@ router.post(
       }
     }
 
+    // Resolve fileId references to the underlying files row, but only allow
+    // attachments that this user uploaded into THIS daily log's
+    // comment-attachments folder. That stops a caller from grafting an
+    // arbitrary file they happen to know the id of (e.g. another job's
+    // private photo) onto a comment.
+    let resolvedAttachments: Array<{
+      fileId: string;
+      fileUrl: string;
+      name: string;
+      mimeType: string | null;
+    }> = [];
+
+    if (body.data.attachments.length > 0) {
+      const fileIds = body.data.attachments.map((a) => a.fileId);
+      const commentFolder = await ensureDailyLogCommentAttachmentFolder(logId);
+      const fileRows = await db
+        .select({
+          id: files.id,
+          fileUrl: files.fileUrl,
+          originalName: files.originalName,
+          mimeType: files.mimeType,
+        })
+        .from(files)
+        .where(
+          and(
+            inArray(files.id, fileIds),
+            eq(files.folderId, commentFolder.id),
+            eq(files.uploadedBy, req.auth!.userId),
+          ),
+        );
+
+      const byId = new Map(fileRows.map((f) => [f.id, f]));
+      // Reject the whole comment if any fileId is unknown / not owned by the
+      // caller / not in this daily log's comment folder. Silently dropping
+      // would let attachments vanish without explanation; a 400 surfaces the
+      // mistake to the FE.
+      for (const fileId of fileIds) {
+        if (!byId.has(fileId)) {
+          throw new HttpError(
+            400,
+            "One or more comment attachments could not be resolved.",
+          );
+        }
+      }
+
+      resolvedAttachments = fileIds.map((fileId) => {
+        const row = byId.get(fileId)!;
+        // files.fileUrl is column-nullable but the comment-attachments
+        // upload route always writes it, so a null here would mean a row
+        // we did not author — surface as 400 rather than persist a broken
+        // attachment record.
+        if (!row.fileUrl) {
+          throw new HttpError(
+            400,
+            "One or more comment attachments are missing a stored file.",
+          );
+        }
+        return {
+          fileId: row.id,
+          fileUrl: row.fileUrl,
+          name: row.originalName,
+          mimeType: row.mimeType ?? null,
+        };
+      });
+    }
+
     const [comment] = await db
       .insert(dailyLogComments)
       .values({
@@ -1594,7 +1743,7 @@ router.post(
         createdBy: req.auth!.userId,
         body: body.data.body,
         mentions: body.data.mentions,
-        attachments: body.data.attachments,
+        attachments: resolvedAttachments,
         links: body.data.links,
         reactions: {},
       })
@@ -1765,6 +1914,107 @@ router.post(
 
     const todos = await loadDailyLogTodos(logId);
     res.json({ todos });
+  }),
+);
+
+router.post(
+  "/daily-logs/:id/comment-attachments",
+  requireDailyLogViewAccess,
+  // Comment-attachment uploads are gated by view access (the same level the
+  // /comments POST runs under) so anyone allowed to comment can attach. The
+  // per-file size cap is tighter than the daily-log attachment cap because
+  // these are inline comment images, not first-class log artifacts; the
+  // count cap mirrors MAX_COMMENT_ATTACHMENTS so the multer-level rejection
+  // and the JSON-level rejection on /comments stay aligned.
+  uploadArray("files", MAX_COMMENT_ATTACHMENTS, {
+    fileSize: MAX_COMMENT_ATTACHMENT_BYTES,
+    files: MAX_COMMENT_ATTACHMENTS,
+  }),
+  asyncHandler(async (req, res) => {
+    const logId = getParam(req.params.id, "daily log id");
+    await getDailyLogOrThrow(logId);
+    const commentFolder = await ensureDailyLogCommentAttachmentFolder(logId);
+    const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+
+    if (uploadedFiles.length === 0) {
+      throw new HttpError(400, "At least one attachment is required.");
+    }
+
+    const created: Array<{
+      id: string;
+      originalName: string;
+      mimeType: string | null;
+      fileSize: number | null;
+      fileUrl: string | null;
+      createdAt: Date | null;
+    }> = [];
+
+    for (const uploadedFile of uploadedFiles) {
+      // The composer in the FE only ever opens an image-typed file picker, so
+      // accepting non-image uploads here would silently widen the surface.
+      // Stay strict — `validateUploadForMediaType("photo")` matches the
+      // existing image-only allowlist used elsewhere.
+      validateUploadForMediaType("photo", uploadedFile);
+
+      const storedFileName = buildStoredFileName(uploadedFile.originalname);
+      const uploadPath = buildUploadPath({
+        jobId: `daily-log-${logId}-comments`,
+        mediaType: "photo",
+        storedFileName,
+      });
+
+      try {
+        if (uploadedFile.path) {
+          await writeUploadedFromPath(uploadPath.fileUrl, uploadedFile.path, {
+            contentType: uploadedFile.mimetype,
+          });
+        } else {
+          await writeUploadedBuffer(uploadPath.fileUrl, uploadedFile.buffer, {
+            contentType: uploadedFile.mimetype,
+          });
+        }
+      } finally {
+        await cleanupTempUpload(uploadedFile);
+      }
+
+      // Same upload-rollback contract as the daily-log attachments route:
+      // any failure after the storage write is followed by deleting both
+      // the freshly inserted files row and the just-written object so the
+      // two stores can never disagree.
+      const file = await persistWithStorageRollback({
+        fileUrl: uploadPath.fileUrl,
+        context: "daily-log-comment-attachment-upload:rollback",
+        persist: async () => {
+          const [createdFile] = await db
+            .insert(files)
+            .values({
+              folderId: commentFolder.id,
+              filename: storedFileName,
+              originalName: uploadedFile.originalname,
+              fileUrl: uploadPath.fileUrl,
+              fileSize: uploadedFile.size,
+              mimeType: uploadedFile.mimetype,
+              uploadedBy: req.auth!.userId,
+            })
+            .returning();
+          return createdFile;
+        },
+        rollback: async (createdFile) => {
+          await db.delete(files).where(eq(files.id, createdFile.id));
+        },
+      });
+
+      created.push({
+        id: file.id,
+        originalName: file.originalName,
+        mimeType: file.mimeType,
+        fileSize: file.fileSize,
+        fileUrl: file.fileUrl,
+        createdAt: file.createdAt,
+      });
+    }
+
+    res.status(201).json({ files: created });
   }),
 );
 

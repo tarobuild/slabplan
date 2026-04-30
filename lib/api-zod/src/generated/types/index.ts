@@ -31,6 +31,8 @@ export * from "./dailyLogAttachment";
 export * from "./dailyLogAttachmentsCreatedResponse";
 export * from "./dailyLogComment";
 export * from "./dailyLogCommentAttachment";
+export * from "./dailyLogCommentAttachmentsCreatedResponse";
+export * from "./dailyLogCommentAttachmentsCreatedResponseFilesItem";
 export * from "./dailyLogCommentAuthor";
 export * from "./dailyLogCommentReactions";
 export * from "./dailyLogCommentsResponse";

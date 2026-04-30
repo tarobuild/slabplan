@@ -29,6 +29,7 @@ import type {
   ClientsPutClientsIdContactsContactId200,
   DailyLogAdminGetDailyLogsMineParams,
   DailyLogAttachmentsCreatedResponse,
+  DailyLogCommentAttachmentsCreatedResponse,
   DailyLogCommentsResponse,
   DailyLogDetailResponse,
   DailyLogLikeResponse,
@@ -6516,6 +6517,103 @@ export const useDailyLogsPostDailyLogsIdTodosTodoIdToggle = <
 > => {
   return useMutation(
     getDailyLogsPostDailyLogsIdTodosTodoIdToggleMutationOptions(options),
+  );
+};
+
+/**
+ * Upload one or more files (multipart `files` field) to be referenced from a
+subsequent `POST /daily-logs/{id}/comments` call via `attachments[].fileId`.
+Caps: at most 10 files per request, each <=10 MB.
+
+ * @summary POST /daily-logs/{id}/comment-attachments
+ */
+export const getDailyLogsPostDailyLogsIdCommentAttachmentsUrl = (
+  id: string,
+) => {
+  return `/api/daily-logs/${id}/comment-attachments`;
+};
+
+export const dailyLogsPostDailyLogsIdCommentAttachments = async (
+  id: string,
+  options?: RequestInit,
+): Promise<DailyLogCommentAttachmentsCreatedResponse> => {
+  return customFetch<DailyLogCommentAttachmentsCreatedResponse>(
+    getDailyLogsPostDailyLogsIdCommentAttachmentsUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getDailyLogsPostDailyLogsIdCommentAttachmentsMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdCommentAttachments>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdCommentAttachments>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["dailyLogsPostDailyLogsIdCommentAttachments"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdCommentAttachments>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dailyLogsPostDailyLogsIdCommentAttachments(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DailyLogsPostDailyLogsIdCommentAttachmentsMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdCommentAttachments>>
+  >;
+
+export type DailyLogsPostDailyLogsIdCommentAttachmentsMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary POST /daily-logs/{id}/comment-attachments
+ */
+export const useDailyLogsPostDailyLogsIdCommentAttachments = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdCommentAttachments>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dailyLogsPostDailyLogsIdCommentAttachments>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getDailyLogsPostDailyLogsIdCommentAttachmentsMutationOptions(options),
   );
 };
 

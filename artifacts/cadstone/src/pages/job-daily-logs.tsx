@@ -193,10 +193,14 @@ type CommentRecord = {
   parentCommentId: string | null
   body: string
   mentions: string[]
+  // Both shapes coexist on read so legacy comments (data-URL `url`, no
+  // `fileId`/`fileUrl`) keep rendering after the multipart switchover.
   attachments: Array<{
     name: string
-    url: string
+    url: string | null
     mimeType: string | null
+    fileId: string | null
+    fileUrl: string | null
   }>
   links: string[]
   reactions: Record<string, string[]>
@@ -243,10 +247,15 @@ type FormValues = {
   customFieldValues: Record<string, CustomFieldScalar>
 }
 
+// Drafts now reference an uploaded files row via `fileId`. We keep `name`,
+// `mimeType`, and `previewUrl` (an object URL we created from the local
+// File) so the composer can show a thumbnail before submit; `previewUrl`
+// is revoked on remove/submit.
 type CommentDraftAttachment = {
+  fileId: string
   name: string
-  url: string
   mimeType: string | null
+  previewUrl: string
 }
 
 type FilterPreset =
@@ -854,6 +863,79 @@ function groupLogsByDate(logs: DailyLogListItem[]) {
   }
 
   return groups
+}
+
+function CommentAttachmentThumbnail({
+  attachment,
+  onOpen,
+}: {
+  attachment: {
+    name: string
+    url: string | null
+    mimeType: string | null
+    fileId: string | null
+    fileUrl: string | null
+  }
+  onOpen: () => void
+}) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const isImage = (attachment.mimeType || "").startsWith("image/")
+  // New attachments stream from /uploads via the authenticated client and
+  // need a blob fetch (same dance as AttachmentThumbnail above). Legacy
+  // attachments still hold a data URL in `url` and can render directly.
+  const needsBlobFetch = isImage && !!attachment.fileUrl
+  const directSrc = isImage && !attachment.fileUrl ? attachment.url : null
+
+  useEffect(() => {
+    if (!needsBlobFetch || !attachment.fileUrl) return
+    let cancelled = false
+    setLoading(true)
+    api
+      .get<Blob>(attachment.fileUrl, { responseType: "blob" })
+      .then((res) => {
+        if (!cancelled) setBlobUrl(URL.createObjectURL(res.data))
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      setBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
+    }
+  }, [attachment.fileUrl, needsBlobFetch])
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 text-left"
+    >
+      {isImage ? (
+        needsBlobFetch ? (
+          loading || !blobUrl ? (
+            <div className="flex h-36 w-full items-center justify-center">
+              <Loader2 className="size-5 animate-spin text-slate-400" />
+            </div>
+          ) : (
+            <img src={blobUrl} alt={attachment.name} className="h-36 w-full object-cover" />
+          )
+        ) : (
+          <img src={directSrc ?? ""} alt={attachment.name} className="h-36 w-full object-cover" />
+        )
+      ) : (
+        <div className="flex h-36 items-center justify-center text-slate-400">
+          <FileText className="size-8" />
+        </div>
+      )}
+      <div className="truncate border-t border-slate-200 px-3 py-2 text-xs text-slate-600">{attachment.name}</div>
+    </button>
+  )
 }
 
 function AttachmentThumbnail({
@@ -1853,30 +1935,61 @@ function CommentsSheet({
     return users.filter((user) => user.fullName.toLowerCase().includes(mentionQuery)).slice(0, 6)
   }, [mentionQuery, users])
 
-  async function fileToDataUrl(file: File) {
-    return new Promise<CommentDraftAttachment>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onerror = () => reject(new Error("Unable to read image."))
-      reader.onload = () =>
-        resolve({
-          name: file.name,
-          url: typeof reader.result === "string" ? reader.result : "",
-          mimeType: file.type || null,
-        })
-      reader.readAsDataURL(file)
-    })
-  }
-
-  async function handleCommentFiles(files: FileList | null) {
-    const list = Array.from(files || [])
+  async function handleCommentFiles(fileList: FileList | null) {
+    if (!log) return
+    const list = Array.from(fileList || [])
     if (list.length === 0) return
+    // The server caps the comment-attachment count at 10. Reject early on the
+    // FE so the user does not lose the rest of their pick to a 4xx; keep the
+    // error message generic since the cap is enforced authoritatively
+    // server-side and could change.
+    if (attachments.length + list.length > 10) {
+      toast.error("You can attach up to 10 files per comment.")
+      return
+    }
+    const formData = new FormData()
+    for (const file of list) {
+      formData.append("files", file)
+    }
     try {
-      const next = await Promise.all(list.map(fileToDataUrl))
-      setAttachments((current) => [...current, ...next.filter((item) => item.url)])
-    } catch {
-      toast.error("Failed to attach one or more images.")
+      const response = await api.post<{
+        files: Array<{
+          id: string
+          originalName: string
+          mimeType: string | null
+          fileSize: number | null
+          fileUrl: string
+        }>
+      }>(`/daily-logs/${log.id}/comment-attachments`, formData)
+
+      // Pair the server-issued fileIds with locally generated object URLs so
+      // the composer can show a thumbnail without round-tripping through the
+      // authenticated /uploads stream just to preview a file the user just
+      // picked. previewUrl is revoked on remove/submit/unmount.
+      const next: CommentDraftAttachment[] = response.data.files.map((file, idx) => ({
+        fileId: file.id,
+        name: file.originalName,
+        mimeType: file.mimeType,
+        previewUrl: URL.createObjectURL(list[idx]!),
+      }))
+      setAttachments((current) => [...current, ...next])
+    } catch (error) {
+      toastApiError(error, "Failed to attach one or more images.")
     }
   }
+
+  // Revoke any preview object URLs still in state on unmount. Submit/remove
+  // already revoke their own URLs; this guards the dialog-close path.
+  useEffect(() => {
+    return () => {
+      for (const item of attachments) {
+        URL.revokeObjectURL(item.previewUrl)
+      }
+    }
+    // We intentionally only run this on unmount; per-item revoke happens
+    // inline in the handlers that mutate `attachments`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function insertMention(user: UserOption) {
     setBody((current) => current.replace(/(^|\s)@([\w-]*)$/, `$1@${user.fullName} `))
@@ -1891,11 +2004,19 @@ function CommentsSheet({
         body: body.trim() || "Shared an attachment",
         parentCommentId: replyTo?.id ?? null,
         mentions: selectedMentionIds,
-        attachments,
+        // The wire format is now `{fileId}[]`; the server resolves each id
+        // back to a files row (and rejects ids not owned by the caller in
+        // this daily log's comment-attachments folder).
+        attachments: attachments.map((a) => ({ fileId: a.fileId })),
         links: linkValue.trim() ? [linkValue.trim()] : [],
       })
       setComments(response.data.comments)
       setBody("")
+      // Revoke composer previews now that the draft is committed; the
+      // posted comment renders via authenticated blob fetch from fileUrl.
+      for (const item of attachments) {
+        URL.revokeObjectURL(item.previewUrl)
+      }
       setAttachments([])
       setLinkValue("")
       setShowLinkInput(false)
@@ -1955,29 +2076,18 @@ function CommentsSheet({
               const previewFiles: PreviewFile[] = comment.attachments.map((a) => ({
                 name: a.name,
                 mimeType: a.mimeType,
-                // Comment attachments historically store either an inline data
-                // URL or an absolute server URL. We pass it as `directUrl` so
-                // the preview renders without an authenticated fetch (data
-                // URLs need no auth; absolute URLs that point at our /uploads
-                // would 401 anyway and we have no fileId here).
-                directUrl: a.url,
+                // New attachments carry `fileId` and the preview component
+                // streams them via the authenticated /uploads route; legacy
+                // attachments fall back to `directUrl` (data URL).
+                fileId: a.fileId ?? undefined,
+                directUrl: a.fileId ? undefined : a.url ?? undefined,
               }))
               return (
-                <button
-                  key={`${comment.id}-${attachment.url}`}
-                  type="button"
-                  onClick={() => filePreview.open(previewFiles, attIndex)}
-                  className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 text-left"
-                >
-                  {attachment.mimeType?.startsWith("image/") ? (
-                    <img src={attachment.url} alt={attachment.name} className="h-36 w-full object-cover" />
-                  ) : (
-                    <div className="flex h-36 items-center justify-center text-slate-400">
-                      <FileText className="size-8" />
-                    </div>
-                  )}
-                  <div className="truncate border-t border-slate-200 px-3 py-2 text-xs text-slate-600">{attachment.name}</div>
-                </button>
+                <CommentAttachmentThumbnail
+                  key={`${comment.id}-${attachment.fileId ?? attachment.url ?? attIndex}`}
+                  attachment={attachment}
+                  onOpen={() => filePreview.open(previewFiles, attIndex)}
+                />
               )
             })}
           </div>
@@ -2081,10 +2191,19 @@ function CommentsSheet({
           {attachments.length > 0 ? (
             <div className="mb-3 flex flex-wrap gap-2">
               {attachments.map((attachment) => (
-                <div key={attachment.url} className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                <div key={attachment.fileId} className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
                   <Paperclip className="size-3.5" />
                   <span className="max-w-[180px] truncate">{attachment.name}</span>
-                  <button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.url !== attachment.url))}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAttachments((current) => {
+                        const next = current.filter((item) => item.fileId !== attachment.fileId)
+                        URL.revokeObjectURL(attachment.previewUrl)
+                        return next
+                      })
+                    }
+                  >
                     <X className="size-3.5" />
                   </button>
                 </div>

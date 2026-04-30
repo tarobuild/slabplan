@@ -7,11 +7,5 @@
  */
 
 export type DailyLogsCommentPayloadSchemaAttachmentsItem = {
-  /**
-   * @minLength 1
-   * @maxLength 255
-   */
-  name: string;
-  url: string;
-  mimeType?: string | null;
+  fileId: string;
 };

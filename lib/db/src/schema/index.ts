@@ -731,8 +731,13 @@ export const dailyLogComments = pgTable(
     attachments: json("attachments").$type<
       Array<{
         name: string;
-        url: string;
+        // Legacy base64 / inline data URL form. Newer comments persist a
+        // `fileId` and `fileUrl` instead and rely on the authenticated
+        // /uploads/... stream. Both shapes coexist on read.
+        url?: string | null;
         mimeType: string | null;
+        fileId?: string | null;
+        fileUrl?: string | null;
       }> | null
     >(),
     links: json("links").$type<string[] | null>(),

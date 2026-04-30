@@ -154,6 +154,36 @@ script's source — the agent must not learn them.
   unhandled error) plus an UptimeRobot HTTPS monitor against the smoke check.
   Setup steps in §2 of the runbook.
 
+## Security Operations
+
+### Playwright auth-state files must never be committed
+
+`artifacts/cadstone/tests/e2e/.auth/{cesar,anwar}.json` are written by
+`auth.setup.ts` after a successful login and contain live `cadstone_refresh_token`
+and `cadstone_upload_token` cookies — i.e. real, signed JWTs that grant the
+seeded admin/worker accounts. The whole `artifacts/cadstone/tests/e2e/.auth/`
+directory is gitignored and must stay that way; do not run `git add -f` on
+anything inside it. `auth.setup.ts` calls `fs.mkdirSync(..., { recursive: true })`
+so the directory is created on demand for fresh checkouts.
+
+### JWT secret rotation
+
+The api-server signs three independent JWTs from environment-managed secrets:
+`JWT_ACCESS_SECRET` (short-lived bearer access token), `JWT_REFRESH_SECRET`
+(refresh cookie), and `JWT_UPLOAD_SECRET` (upload + file-view tokens). All three
+live in Replit Secrets — there is no checked-in fallback in production
+(`auth.ts` throws if any of them are missing when `NODE_ENV=production`).
+
+Rotate any/all of these secrets via the Replit Secrets UI (or
+`requestEnvVar({ requestType: "secret", keys: [...] })` from the agent —
+never `setEnvVars` for secrets) whenever they may have been exposed,
+including: a leaked auth-state file landing in git history, a leaked log
+line, a developer device compromise, or routine rotation. After updating
+any secret, restart the `artifacts/api-server: API Server` workflow and
+re-run `pnpm --filter @workspace/cadstone exec playwright test --project=setup`
+to regenerate the local `.auth/*.json` files. Rotating a secret immediately
+invalidates every token previously signed with the old key.
+
 ## Security Advisories
 
 ### Resolved: postcss <8.5.10 (GHSA-qx2v-qp2m-jg93, moderate severity)

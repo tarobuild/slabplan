@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import accountTokensRouter from "./account-tokens";
 import activityRouter from "./activity";
+import agentRouter from "./agent";
 import authRouter from "./auth";
 import clientsRouter from "./clients";
 import dashboardRouter from "./dashboard";
@@ -47,6 +48,7 @@ router.use(captureMcpContext);
 router.use(idempotencyMiddleware());
 router.use("/account/tokens", accountTokensRouter);
 router.use(activityRouter);
+router.use("/agent", agentRouter);
 router.use(dashboardRouter);
 router.use(dailyLogAdminRouter);
 router.use(dailyLogsRouter);

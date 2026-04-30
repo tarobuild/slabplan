@@ -83,7 +83,12 @@ function isDirectRun(): boolean {
   if (!entry) return false;
   try {
     const entryUrl = pathToFileURL(path.resolve(entry)).href;
-    return entryUrl === import.meta.url;
+    if (entryUrl !== import.meta.url) return false;
+    // Guard against false positives when this module is bundled into a
+    // larger application (e.g. api-server's dist/index.mjs) where
+    // import.meta.url may equal argv[1] even though we never want the
+    // CLI to auto-run. The bin script sets MCP_STDIO_DIRECT=1 to opt in.
+    return process.env["MCP_STDIO_DIRECT"] === "1";
   } catch {
     return false;
   }

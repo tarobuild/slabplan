@@ -1,4 +1,5 @@
 import { Outlet } from "react-router-dom"
+import ChatPanel from "@/components/agent/ChatPanel"
 import Sidebar from "./Sidebar"
 import TopNav from "./TopNav"
 
@@ -23,6 +24,8 @@ export default function AppLayout() {
           </div>
         </main>
       </div>
+
+      <ChatPanel />
     </div>
   )
 }

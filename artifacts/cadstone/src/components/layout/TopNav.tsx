@@ -9,6 +9,7 @@ import {
   Menu,
   Search,
   Settings,
+  Sparkles,
 } from "lucide-react"
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -24,6 +25,7 @@ import GlobalSearch from "./GlobalSearch"
 import Sidebar from "./Sidebar"
 import { logoutSession } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
+import { useAgentPanelStore } from "@/store/agent"
 import { hasRoleAccess, ROLE_GATES, type AppRole } from "@/lib/role-access"
 import { cn } from "@/lib/utils"
 
@@ -62,6 +64,7 @@ export default function TopNav() {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
+  const toggleAgent = useAgentPanelStore((s) => s.toggle)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
 
@@ -214,6 +217,18 @@ export default function TopNav() {
           aria-label="Open search"
         >
           <Search className="size-5" />
+        </button>
+
+        {/* Assistant button */}
+        <button
+          type="button"
+          onClick={toggleAgent}
+          className="ml-1 flex items-center justify-center gap-1.5 rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          aria-label="Open assistant"
+          title="Assistant"
+        >
+          <Sparkles className="size-5" style={{ color: "#E85D04" }} />
+          <span className="hidden text-sm font-medium md:block">Assistant</span>
         </button>
 
         {/* User menu */}

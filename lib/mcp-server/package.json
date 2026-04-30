@@ -13,7 +13,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "stdio": "tsx ./src/stdio.ts"
+    "stdio": "MCP_STDIO_DIRECT=1 tsx ./src/stdio.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

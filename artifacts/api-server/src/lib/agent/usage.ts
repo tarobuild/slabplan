@@ -1,0 +1,86 @@
+import { and, eq, sql } from "drizzle-orm";
+import { db } from "@workspace/db";
+import { agentUsageMonthly } from "@workspace/db/schema";
+
+/**
+ * Per-user monthly token cap (input + output tokens combined).
+ * Configurable via env; sensible default keeps individual users from
+ * burning the workspace's Anthropic credits in a single afternoon.
+ */
+export const DEFAULT_AGENT_MONTHLY_TOKEN_CAP = 500_000;
+
+export function monthlyTokenCap(): number {
+  const raw = process.env.AGENT_MONTHLY_TOKEN_CAP;
+  if (!raw) return DEFAULT_AGENT_MONTHLY_TOKEN_CAP;
+  const n = Number.parseInt(raw, 10);
+  if (Number.isNaN(n) || n <= 0) return DEFAULT_AGENT_MONTHLY_TOKEN_CAP;
+  return n;
+}
+
+export function currentYearMonth(now: Date = new Date()): string {
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+export type UsageSnapshot = {
+  yearMonth: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  requests: number;
+  cap: number;
+  remaining: number;
+  exceeded: boolean;
+};
+
+export async function loadUsageSnapshot(userId: string): Promise<UsageSnapshot> {
+  const ym = currentYearMonth();
+  const cap = monthlyTokenCap();
+  const [row] = await db
+    .select()
+    .from(agentUsageMonthly)
+    .where(
+      and(eq(agentUsageMonthly.userId, userId), eq(agentUsageMonthly.yearMonth, ym)),
+    )
+    .limit(1);
+  const input = row?.inputTokens ?? 0;
+  const output = row?.outputTokens ?? 0;
+  const total = input + output;
+  return {
+    yearMonth: ym,
+    inputTokens: input,
+    outputTokens: output,
+    totalTokens: total,
+    requests: row?.requests ?? 0,
+    cap,
+    remaining: Math.max(0, cap - total),
+    exceeded: total >= cap,
+  };
+}
+
+export async function recordUsage(
+  userId: string,
+  inputTokens: number,
+  outputTokens: number,
+): Promise<void> {
+  const ym = currentYearMonth();
+  await db
+    .insert(agentUsageMonthly)
+    .values({
+      userId,
+      yearMonth: ym,
+      inputTokens,
+      outputTokens,
+      requests: 1,
+    })
+    .onConflictDoUpdate({
+      target: [agentUsageMonthly.userId, agentUsageMonthly.yearMonth],
+      set: {
+        inputTokens: sql`${agentUsageMonthly.inputTokens} + ${inputTokens}`,
+        outputTokens: sql`${agentUsageMonthly.outputTokens} + ${outputTokens}`,
+        requests: sql`${agentUsageMonthly.requests} + 1`,
+        updatedAt: new Date(),
+      },
+    });
+}

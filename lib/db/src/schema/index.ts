@@ -944,3 +944,6 @@ export type NewPersonalAccessToken = typeof personalAccessTokens.$inferInsert;
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 export type NewIdempotencyKey = typeof idempotencyKeys.$inferInsert;
 export type ActivityLogEntry = typeof activityLog.$inferSelect;
+
+// Re-export agent-related schema (in-app AI agent — Task #109)
+export * from "./agent";

@@ -690,3 +690,82 @@ In order. Don't skip ahead — if the technical owner can solve it in 15 minutes
   new secret is added in code, add it here in the same PR.
 - The §6.4 drill log is a rolling record — add a new entry each time the
   drill is re-run (per §6.5) instead of overwriting.
+
+---
+
+## 9. Production maintenance log
+
+Append-only record of meaningful production-data changes performed
+outside the normal app flow (wipes, account purges, manual SQL, etc.).
+Add a new dated entry; do not edit historical ones.
+
+### 2026-04-30 — Account purge to leave only Cesar + Anwar
+
+**What we set out to do:** wipe production data and re-seed with only
+the two admin accounts (task `wipe-prod-and-fresh-seed`). Mid-task the
+scope was narrowed by the operator to "remove the extra accounts but
+keep the existing data so Cesar and Anwar walk into a populated app and
+add their own team."
+
+**What actually happened, in order:**
+
+1. **Pre-wipe Supabase backup.** Took a `pg_dump --format=custom` of the
+   live `public` schema using the Postgres 17.6 client (the Nix-default
+   `pg_dump` 16.10 refuses a 17.6 server). Saved to
+   `backups/prod-pre-wipe-20260430T205531Z.dump` (≈209 KB). The
+   `backups/` directory is `.gitignore`d — the file lives in the
+   workspace's filesystem only, not in git history.
+2. **GCS uploads bucket emptied.** All 42 objects (~919 KB) under
+   `<bucket>/.private/cadstone/uploads/` were deleted via
+   `wipe-prod-data.mjs`. The bucket itself, IAM, the
+   `<bucket>/public/` placeholder, and the sibling
+   `.private/cadstone/restore-drill/` prefix were not touched. *Caveat:*
+   the deletion fired during a local-target dry run because the App
+   Storage bucket is workspace-shared; the script has since been hardened
+   to require `--db=production` before touching the bucket.
+3. **Database NOT truncated.** Per the operator's mid-task instruction
+   the wipe was *not* run against the production database. All jobs,
+   folders, leads, daily logs, schedule items, and activity log rows
+   from before 2026-04-30 are still present.
+4. **Five non-admin / demo accounts soft-deleted.** Inside a single
+   transaction, set `deleted_at = NOW()` and `is_active = false` on:
+   `cruz.martinez@cadstone.internal` (admin),
+   `maria.garcia@cadstone.internal` (project_manager),
+   `jake.thompson@cadstone.internal` (crew_member),
+   `worker@cadstone.works` (crew_member),
+   `invitee-rbf6_n@cadstone-test.example` (crew_member).
+   Verified post-state: only `cesar@cadstone.works` and
+   `anwar@cadstone.works` remain active, both `admin`. Soft delete was
+   chosen over `DELETE` so foreign-key references in `jobs.created_by`,
+   `jobs.project_manager_id`, `leads.created_by`, and similar columns
+   don't get nulled-out (the audit trail stays intact, the user just
+   can't log in). The `users_email_unique` index already filters
+   `WHERE deleted_at IS NULL`, so the seats are free for re-use.
+
+**Known follow-up risks the operator should be aware of:**
+
+- *File rows now point at deleted GCS objects.* The 26 rows in
+  `files` (and the 4 in `file_annotations`) reference uploads that were
+  in the bucket at step 2. Any UI that tries to download those files
+  will 404. The cleanest fix is for an admin to delete the orphaned
+  file/folder rows from inside the app once Cesar and Anwar are on it.
+  We deliberately did *not* mass-delete file rows because the operator
+  asked for data preservation.
+- *Cesar and Anwar's passwords were not rotated as part of this task.*
+  Their `password_set_at` still equals their original `created_at`
+  (2026-04-09). If those original passwords were ever the
+  `Test1!` / `Test2!` strings called out in
+  `.local/tasks/seed-script-hardening.md`, they need to be rotated
+  manually via the Supabase dashboard before launch — see §5 for the
+  rotation procedure pattern.
+- *Some jobs / leads / schedule items show the soft-deleted users as
+  creator or project manager.* That's expected; the rows render with
+  the historical name but the user can no longer log in or be reassigned.
+
+**Re-running the procedure:** the wipe path is committed at
+`artifacts/api-server/scripts/wipe-prod-data.mjs` (DB truncate inside a
+transaction + GCS prefix delete; production target requires both
+`--db=production` and `--i-know-what-im-doing`). The reseed path is
+`artifacts/api-server/scripts/seed-users.mjs` (same flag pattern).
+Neither was used end-to-end on 2026-04-30; only the GCS half of the
+wipe script ran.

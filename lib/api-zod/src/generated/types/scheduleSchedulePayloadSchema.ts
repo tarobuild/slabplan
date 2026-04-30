@@ -5,10 +5,52 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ScheduleSchedulePayloadSchemaPredecessorsItem } from "./scheduleSchedulePayloadSchemaPredecessorsItem";
 
 /**
- * Request schema derived from schedulePayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ * Request body for creating or updating a schedule item (`POST /jobs/{jobId}/schedule`, `PUT /schedule-items/{id}`). Hourly items require a `startTime`. Predecessors must be unique and may not point at the item being edited.
  */
 export interface ScheduleSchedulePayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  displayColor?: string | null;
+  assigneeIds?: string[];
+  notifyUserIds?: string[];
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  startDate: string;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  workDays?: number;
+  /**
+   * When omitted or null the server computes the end date from `startDate`, `workDays`, and the active workday-exception calendar.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  endDate?: string | null;
+  isHourly?: boolean;
+  /** @pattern ^\d{2}:\d{2}(:\d{2})?$ */
+  startTime?: string | null;
+  /** @pattern ^\d{2}:\d{2}(:\d{2})?$ */
+  endTime?: string | null;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  progress?: number;
+  /** One of the configured reminder options (e.g. `none`, `1d`, `1h`). */
+  reminder?: string;
+  notes?: string | null;
+  tags?: string[];
+  predecessors?: ScheduleSchedulePayloadSchemaPredecessorsItem[];
+  phaseId?: string | null;
+  showOnGantt?: boolean;
+  visibleToEstimators?: boolean;
+  visibleToInstallers?: boolean;
+  visibleToOfficeStaff?: boolean;
+  isComplete?: boolean;
+  isPersonalTodo?: boolean;
 }

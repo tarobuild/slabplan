@@ -7,8 +7,8 @@
  */
 
 /**
- * Request schema derived from todoTogglePayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Request body for toggling a daily-log to-do (`PUT /daily-logs/{id}/todos/{todoId}`). Omitting `isComplete` flips the current value.
  */
 export interface DailyLogsTodoTogglePayloadSchema {
-  [key: string]: unknown;
+  isComplete?: boolean;
 }

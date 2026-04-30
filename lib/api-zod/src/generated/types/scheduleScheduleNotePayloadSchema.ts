@@ -7,8 +7,12 @@
  */
 
 /**
- * Request schema derived from scheduleNotePayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ * Request body for adding a note to a schedule item.
  */
 export interface ScheduleScheduleNotePayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 10000
+   */
+  note: string;
 }

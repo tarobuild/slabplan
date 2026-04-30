@@ -7,8 +7,12 @@
  */
 
 /**
- * Request schema derived from scheduleSettingPayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ * Request body for creating or renaming a schedule setting (e.g. tag).
  */
 export interface ScheduleScheduleSettingPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
 }

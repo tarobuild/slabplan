@@ -7,8 +7,20 @@
  */
 
 /**
- * Request schema derived from clientPayloadSchema in artifacts/api-server/src/routes/clients.ts.
+ * Request body for creating or updating a client (`POST /clients`, `PUT /clients/{id}`). Optional string fields accept null and empty strings (which are normalized to null). `state` must be a 2-character abbreviation when provided.
  */
 export interface ClientsClientPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  companyName: string;
+  phone?: string | null;
+  email?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  notes?: string | null;
 }

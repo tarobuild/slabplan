@@ -24,6 +24,15 @@ import type {
   ClientsClientPayloadSchema,
   ClientsContactPayloadSchema,
   ClientsGetClientsParams,
+  ClientsPostClientsIdContacts201,
+  ClientsPutClientsIdContactsContactId200,
+  DailyLogAttachmentsCreatedResponse,
+  DailyLogCommentsResponse,
+  DailyLogDetailResponse,
+  DailyLogLikeResponse,
+  DailyLogListResponse,
+  DailyLogTodosResponse,
+  DailyLogWeatherResponse,
   DailyLogsCommentPayloadSchema,
   DailyLogsCommentReactionPayloadSchema,
   DailyLogsDailyLogPayloadSchema,
@@ -36,9 +45,14 @@ import type {
   FoldersMoveFolderSchema,
   GenericObject,
   HealthStatus,
+  JobDetailResponse,
+  JobListResponse,
   JobsJobPayloadSchema,
-  LeadContactsListResponse,
+  LeadAttachmentsCreatedResponse,
+  LeadContactResponse,
+  LeadConvertToJobResponse,
   LeadDetailResponse,
+  LeadGlobalContactsListResponse,
   LeadListResponse,
   LeadsActivityCreateSchema,
   LeadsContactCreateSchema,
@@ -46,18 +60,35 @@ import type {
   LeadsGetLeadsContactsParams,
   LeadsGetLeadsParams,
   LeadsLeadPayloadSchema,
+  MyDailyLogsResponse,
+  ScheduleAttachmentResponse,
+  ScheduleAttachmentsCreatedResponse,
+  ScheduleBaselineResponse,
+  ScheduleConflictsResponse,
+  ScheduleItemResponse,
+  ScheduleListResponse,
+  ScheduleNoteResponse,
+  ScheduleNotifyResponse,
+  SchedulePhaseListResponse,
+  SchedulePhaseResponse,
   ScheduleScheduleNotePayloadSchema,
   ScheduleSchedulePayloadSchema,
   ScheduleSchedulePhasePayloadSchema,
   ScheduleScheduleSettingPayloadSchema,
+  ScheduleSettingTagResponse,
+  ScheduleSettings,
+  ScheduleSettingsUpdateResponse,
+  ScheduleTodoResponse,
   SearchGetSearch200,
   SearchGetSearchParams,
   SuccessResponse,
   UsersChangePasswordSchema,
   UsersUpdateProfileSchema,
+  WorkdayExceptionCategoryResponse,
   WorkdayExceptionPayload,
   WorkdayExceptionResponse,
   WorkdayExceptionUpdatePayload,
+  WorkdayExceptionsListResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -843,8 +874,8 @@ export const getClientsPostClientsUrl = () => {
 export const clientsPostClients = async (
   clientsClientPayloadSchema: ClientsClientPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getClientsPostClientsUrl(), {
+): Promise<ClientDetailResponse> => {
+  return customFetch<ClientDetailResponse>(getClientsPostClientsUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -1020,8 +1051,8 @@ export const clientsPutClientsId = async (
   id: string,
   clientsClientPayloadSchema: ClientsClientPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getClientsPutClientsIdUrl(id), {
+): Promise<ClientDetailResponse> => {
+  return customFetch<ClientDetailResponse>(getClientsPutClientsIdUrl(id), {
     ...options,
     method: "PUT",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -1108,8 +1139,8 @@ export const getClientsDeleteClientsIdUrl = (id: string) => {
 export const clientsDeleteClientsId = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getClientsDeleteClientsIdUrl(id), {
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getClientsDeleteClientsIdUrl(id), {
     ...options,
     method: "DELETE",
   });
@@ -1284,13 +1315,16 @@ export const clientsPostClientsIdContacts = async (
   id: string,
   clientsContactPayloadSchema: ClientsContactPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getClientsPostClientsIdContactsUrl(id), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(clientsContactPayloadSchema),
-  });
+): Promise<ClientsPostClientsIdContacts201> => {
+  return customFetch<ClientsPostClientsIdContacts201>(
+    getClientsPostClientsIdContactsUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(clientsContactPayloadSchema),
+    },
+  );
 };
 
 export const getClientsPostClientsIdContactsMutationOptions = <
@@ -1467,8 +1501,8 @@ export const clientsPutClientsIdContactsContactId = async (
   contactId: string,
   clientsContactPayloadSchema: ClientsContactPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ClientsPutClientsIdContactsContactId200> => {
+  return customFetch<ClientsPutClientsIdContactsContactId200>(
     getClientsPutClientsIdContactsContactIdUrl(id, contactId),
     {
       ...options,
@@ -1590,8 +1624,8 @@ export const clientsDeleteClientsIdContactsContactId = async (
   id: string,
   contactId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
     getClientsDeleteClientsIdContactsContactIdUrl(id, contactId),
     {
       ...options,
@@ -1682,8 +1716,10 @@ export const getJobsGetJobsUrl = () => {
   return `/api/jobs`;
 };
 
-export const jobsGetJobs = async (options?: RequestInit): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getJobsGetJobsUrl(), {
+export const jobsGetJobs = async (
+  options?: RequestInit,
+): Promise<JobListResponse> => {
+  return customFetch<JobListResponse>(getJobsGetJobsUrl(), {
     ...options,
     method: "GET",
   });
@@ -1759,8 +1795,8 @@ export const getJobsPostJobsUrl = () => {
 export const jobsPostJobs = async (
   jobsJobPayloadSchema: JobsJobPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getJobsPostJobsUrl(), {
+): Promise<JobDetailResponse> => {
+  return customFetch<JobDetailResponse>(getJobsPostJobsUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -1846,8 +1882,8 @@ export const getJobsGetJobsIdUrl = (id: string) => {
 export const jobsGetJobsId = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getJobsGetJobsIdUrl(id), {
+): Promise<JobDetailResponse> => {
+  return customFetch<JobDetailResponse>(getJobsGetJobsIdUrl(id), {
     ...options,
     method: "GET",
   });
@@ -1935,8 +1971,8 @@ export const jobsPutJobsId = async (
   id: string,
   jobsJobPayloadSchema: JobsJobPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getJobsPutJobsIdUrl(id), {
+): Promise<JobDetailResponse> => {
+  return customFetch<JobDetailResponse>(getJobsPutJobsIdUrl(id), {
     ...options,
     method: "PUT",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -2022,8 +2058,8 @@ export const getJobsDeleteJobsIdUrl = (id: string) => {
 export const jobsDeleteJobsId = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getJobsDeleteJobsIdUrl(id), {
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getJobsDeleteJobsIdUrl(id), {
     ...options,
     method: "DELETE",
   });
@@ -2121,8 +2157,8 @@ export const getLeadsGetLeadsContactsUrl = (
 export const leadsGetLeadsContacts = async (
   params?: LeadsGetLeadsContactsParams,
   options?: RequestInit,
-): Promise<LeadContactsListResponse> => {
-  return customFetch<LeadContactsListResponse>(
+): Promise<LeadGlobalContactsListResponse> => {
+  return customFetch<LeadGlobalContactsListResponse>(
     getLeadsGetLeadsContactsUrl(params),
     {
       ...options,
@@ -2306,8 +2342,8 @@ export const getLeadsPostLeadsUrl = () => {
 export const leadsPostLeads = async (
   leadsLeadPayloadSchema: LeadsLeadPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getLeadsPostLeadsUrl(), {
+): Promise<LeadDetailResponse> => {
+  return customFetch<LeadDetailResponse>(getLeadsPostLeadsUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -2482,8 +2518,8 @@ export const leadsPutLeadsId = async (
   id: string,
   leadsLeadPayloadSchema: LeadsLeadPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getLeadsPutLeadsIdUrl(id), {
+): Promise<LeadDetailResponse> => {
+  return customFetch<LeadDetailResponse>(getLeadsPutLeadsIdUrl(id), {
     ...options,
     method: "PUT",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -2569,8 +2605,8 @@ export const getLeadsDeleteLeadsIdUrl = (id: string) => {
 export const leadsDeleteLeadsId = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getLeadsDeleteLeadsIdUrl(id), {
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getLeadsDeleteLeadsIdUrl(id), {
     ...options,
     method: "DELETE",
   });
@@ -2655,8 +2691,8 @@ export const leadsPostLeadsIdContacts = async (
   id: string,
   leadsContactCreateSchema: LeadsContactCreateSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getLeadsPostLeadsIdContactsUrl(id), {
+): Promise<LeadContactResponse> => {
+  return customFetch<LeadContactResponse>(getLeadsPostLeadsIdContactsUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -2748,8 +2784,8 @@ export const leadsPutLeadsIdContactsContactId = async (
   contactId: string,
   leadsContactUpdateSchema: LeadsContactUpdateSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<LeadContactResponse> => {
+  return customFetch<LeadContactResponse>(
     getLeadsPutLeadsIdContactsContactIdUrl(id, contactId),
     {
       ...options,
@@ -2850,8 +2886,8 @@ export const leadsDeleteLeadsIdContactsContactId = async (
   id: string,
   contactId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
     getLeadsDeleteLeadsIdContactsContactIdUrl(id, contactId),
     {
       ...options,
@@ -2940,11 +2976,14 @@ export const getLeadsPostLeadsIdAttachmentsUrl = (id: string) => {
 export const leadsPostLeadsIdAttachments = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getLeadsPostLeadsIdAttachmentsUrl(id), {
-    ...options,
-    method: "POST",
-  });
+): Promise<LeadAttachmentsCreatedResponse> => {
+  return customFetch<LeadAttachmentsCreatedResponse>(
+    getLeadsPostLeadsIdAttachmentsUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
 };
 
 export const getLeadsPostLeadsIdAttachmentsMutationOptions = <
@@ -3029,8 +3068,8 @@ export const leadsDeleteLeadsIdAttachmentsAttachmentId = async (
   id: string,
   attachmentId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
     getLeadsDeleteLeadsIdAttachmentsAttachmentIdUrl(id, attachmentId),
     {
       ...options,
@@ -3125,11 +3164,14 @@ export const getLeadsPostLeadsIdConvertToJobUrl = (id: string) => {
 export const leadsPostLeadsIdConvertToJob = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getLeadsPostLeadsIdConvertToJobUrl(id), {
-    ...options,
-    method: "POST",
-  });
+): Promise<LeadConvertToJobResponse> => {
+  return customFetch<LeadConvertToJobResponse>(
+    getLeadsPostLeadsIdConvertToJobUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
 };
 
 export const getLeadsPostLeadsIdConvertToJobMutationOptions = <
@@ -3211,8 +3253,8 @@ export const leadsPostLeadsIdActivities = async (
   id: string,
   leadsActivityCreateSchema: LeadsActivityCreateSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getLeadsPostLeadsIdActivitiesUrl(id), {
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getLeadsPostLeadsIdActivitiesUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -4871,11 +4913,14 @@ export const getDailyLogsGetJobsJobIdDailyLogsUrl = (jobId: string) => {
 export const dailyLogsGetJobsJobIdDailyLogs = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsGetJobsJobIdDailyLogsUrl(jobId), {
-    ...options,
-    method: "GET",
-  });
+): Promise<DailyLogListResponse> => {
+  return customFetch<DailyLogListResponse>(
+    getDailyLogsGetJobsJobIdDailyLogsUrl(jobId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getDailyLogsGetJobsJobIdDailyLogsQueryKey = (jobId: string) => {
@@ -4965,13 +5010,16 @@ export const dailyLogsPostJobsJobIdDailyLogs = async (
   jobId: string,
   dailyLogsDailyLogPayloadSchema: DailyLogsDailyLogPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsPostJobsJobIdDailyLogsUrl(jobId), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
-  });
+): Promise<DailyLogDetailResponse> => {
+  return customFetch<DailyLogDetailResponse>(
+    getDailyLogsPostJobsJobIdDailyLogsUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
+    },
+  );
 };
 
 export const getDailyLogsPostJobsJobIdDailyLogsMutationOptions = <
@@ -5055,11 +5103,14 @@ export const getDailyLogsGetDailyLogsIdUrl = (id: string) => {
 export const dailyLogsGetDailyLogsId = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsGetDailyLogsIdUrl(id), {
-    ...options,
-    method: "GET",
-  });
+): Promise<DailyLogDetailResponse> => {
+  return customFetch<DailyLogDetailResponse>(
+    getDailyLogsGetDailyLogsIdUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getDailyLogsGetDailyLogsIdQueryKey = (id: string) => {
@@ -5146,13 +5197,16 @@ export const dailyLogsPutDailyLogsId = async (
   id: string,
   dailyLogsDailyLogPayloadSchema: DailyLogsDailyLogPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsPutDailyLogsIdUrl(id), {
-    ...options,
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
-  });
+): Promise<DailyLogDetailResponse> => {
+  return customFetch<DailyLogDetailResponse>(
+    getDailyLogsPutDailyLogsIdUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
+    },
+  );
 };
 
 export const getDailyLogsPutDailyLogsIdMutationOptions = <
@@ -5234,8 +5288,8 @@ export const getDailyLogsDeleteDailyLogsIdUrl = (id: string) => {
 export const dailyLogsDeleteDailyLogsId = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsDeleteDailyLogsIdUrl(id), {
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getDailyLogsDeleteDailyLogsIdUrl(id), {
     ...options,
     method: "DELETE",
   });
@@ -5319,11 +5373,14 @@ export const getDailyLogsPostDailyLogsIdPublishUrl = (id: string) => {
 export const dailyLogsPostDailyLogsIdPublish = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdPublishUrl(id), {
-    ...options,
-    method: "POST",
-  });
+): Promise<DailyLogDetailResponse> => {
+  return customFetch<DailyLogDetailResponse>(
+    getDailyLogsPostDailyLogsIdPublishUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
 };
 
 export const getDailyLogsPostDailyLogsIdPublishMutationOptions = <
@@ -5405,8 +5462,8 @@ export const getDailyLogsGetWeatherUrl = () => {
 
 export const dailyLogsGetWeather = async (
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsGetWeatherUrl(), {
+): Promise<DailyLogWeatherResponse> => {
+  return customFetch<DailyLogWeatherResponse>(getDailyLogsGetWeatherUrl(), {
     ...options,
     method: "GET",
   });
@@ -5482,11 +5539,14 @@ export const getDailyLogsPostDailyLogsIdLikeUrl = (id: string) => {
 export const dailyLogsPostDailyLogsIdLike = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdLikeUrl(id), {
-    ...options,
-    method: "POST",
-  });
+): Promise<DailyLogLikeResponse> => {
+  return customFetch<DailyLogLikeResponse>(
+    getDailyLogsPostDailyLogsIdLikeUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
 };
 
 export const getDailyLogsPostDailyLogsIdLikeMutationOptions = <
@@ -5567,11 +5627,14 @@ export const getDailyLogsGetDailyLogsIdCommentsUrl = (id: string) => {
 export const dailyLogsGetDailyLogsIdComments = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsGetDailyLogsIdCommentsUrl(id), {
-    ...options,
-    method: "GET",
-  });
+): Promise<DailyLogCommentsResponse> => {
+  return customFetch<DailyLogCommentsResponse>(
+    getDailyLogsGetDailyLogsIdCommentsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getDailyLogsGetDailyLogsIdCommentsQueryKey = (id: string) => {
@@ -5661,13 +5724,16 @@ export const dailyLogsPostDailyLogsIdComments = async (
   id: string,
   dailyLogsCommentPayloadSchema: DailyLogsCommentPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdCommentsUrl(id), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(dailyLogsCommentPayloadSchema),
-  });
+): Promise<DailyLogCommentsResponse> => {
+  return customFetch<DailyLogCommentsResponse>(
+    getDailyLogsPostDailyLogsIdCommentsUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(dailyLogsCommentPayloadSchema),
+    },
+  );
 };
 
 export const getDailyLogsPostDailyLogsIdCommentsMutationOptions = <
@@ -5756,8 +5822,8 @@ export const dailyLogsPostDailyLogsIdCommentsCommentIdReactions = async (
   commentId: string,
   dailyLogsCommentReactionPayloadSchema: DailyLogsCommentReactionPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<DailyLogCommentsResponse> => {
+  return customFetch<DailyLogCommentsResponse>(
     getDailyLogsPostDailyLogsIdCommentsCommentIdReactionsUrl(id, commentId),
     {
       ...options,
@@ -5889,13 +5955,16 @@ export const dailyLogsPostDailyLogsIdTodos = async (
   id: string,
   dailyLogsTodoPayloadSchema: DailyLogsTodoPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdTodosUrl(id), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(dailyLogsTodoPayloadSchema),
-  });
+): Promise<DailyLogTodosResponse> => {
+  return customFetch<DailyLogTodosResponse>(
+    getDailyLogsPostDailyLogsIdTodosUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(dailyLogsTodoPayloadSchema),
+    },
+  );
 };
 
 export const getDailyLogsPostDailyLogsIdTodosMutationOptions = <
@@ -5982,8 +6051,8 @@ export const dailyLogsPostDailyLogsIdTodosTodoIdToggle = async (
   todoId: string,
   dailyLogsTodoTogglePayloadSchema: DailyLogsTodoTogglePayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<DailyLogTodosResponse> => {
+  return customFetch<DailyLogTodosResponse>(
     getDailyLogsPostDailyLogsIdTodosTodoIdToggleUrl(id, todoId),
     {
       ...options,
@@ -6102,11 +6171,14 @@ export const getDailyLogsPostDailyLogsIdAttachmentsUrl = (id: string) => {
 export const dailyLogsPostDailyLogsIdAttachments = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogsPostDailyLogsIdAttachmentsUrl(id), {
-    ...options,
-    method: "POST",
-  });
+): Promise<DailyLogAttachmentsCreatedResponse> => {
+  return customFetch<DailyLogAttachmentsCreatedResponse>(
+    getDailyLogsPostDailyLogsIdAttachmentsUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
 };
 
 export const getDailyLogsPostDailyLogsIdAttachmentsMutationOptions = <
@@ -6193,8 +6265,8 @@ export const dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId = async (
   id: string,
   attachmentId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
     getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdUrl(id, attachmentId),
     {
       ...options,
@@ -6839,11 +6911,14 @@ export const getDailyLogAdminGetDailyLogsMineUrl = () => {
 
 export const dailyLogAdminGetDailyLogsMine = async (
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDailyLogAdminGetDailyLogsMineUrl(), {
-    ...options,
-    method: "GET",
-  });
+): Promise<MyDailyLogsResponse> => {
+  return customFetch<MyDailyLogsResponse>(
+    getDailyLogAdminGetDailyLogsMineUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getDailyLogAdminGetDailyLogsMineQueryKey = () => {
@@ -6918,8 +6993,8 @@ export const getScheduleGetJobsJobIdScheduleSettingsUrl = (jobId: string) => {
 export const scheduleGetJobsJobIdScheduleSettings = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleSettings> => {
+  return customFetch<ScheduleSettings>(
     getScheduleGetJobsJobIdScheduleSettingsUrl(jobId),
     {
       ...options,
@@ -7018,8 +7093,8 @@ export const schedulePutJobsJobIdScheduleSettings = async (
   jobId: string,
   genericObject: GenericObject,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleSettingsUpdateResponse> => {
+  return customFetch<ScheduleSettingsUpdateResponse>(
     getSchedulePutJobsJobIdScheduleSettingsUrl(jobId),
     {
       ...options,
@@ -7349,8 +7424,8 @@ export const getScheduleGetJobsJobIdSchedulePhasesUrl = (jobId: string) => {
 export const scheduleGetJobsJobIdSchedulePhases = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SchedulePhaseListResponse> => {
+  return customFetch<SchedulePhaseListResponse>(
     getScheduleGetJobsJobIdSchedulePhasesUrl(jobId),
     {
       ...options,
@@ -7449,8 +7524,8 @@ export const schedulePostJobsJobIdSchedulePhases = async (
   jobId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SchedulePhaseResponse> => {
+  return customFetch<SchedulePhaseResponse>(
     getSchedulePostJobsJobIdSchedulePhasesUrl(jobId),
     {
       ...options,
@@ -7547,8 +7622,8 @@ export const schedulePutJobsJobIdSchedulePhasesPhaseId = async (
   phaseId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SchedulePhaseResponse> => {
+  return customFetch<SchedulePhaseResponse>(
     getSchedulePutJobsJobIdSchedulePhasesPhaseIdUrl(jobId, phaseId),
     {
       ...options,
@@ -7671,8 +7746,8 @@ export const scheduleDeleteJobsJobIdSchedulePhasesPhaseId = async (
   jobId: string,
   phaseId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
     getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdUrl(jobId, phaseId),
     {
       ...options,
@@ -7770,8 +7845,8 @@ export const schedulePostJobsJobIdScheduleSettingsTags = async (
   jobId: string,
   scheduleScheduleSettingPayloadSchema: ScheduleScheduleSettingPayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleSettingTagResponse> => {
+  return customFetch<ScheduleSettingTagResponse>(
     getSchedulePostJobsJobIdScheduleSettingsTagsUrl(jobId),
     {
       ...options,
@@ -7994,8 +8069,8 @@ export const getScheduleGetJobsJobIdScheduleBaselineUrl = (jobId: string) => {
 export const scheduleGetJobsJobIdScheduleBaseline = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleBaselineResponse> => {
+  return customFetch<ScheduleBaselineResponse>(
     getScheduleGetJobsJobIdScheduleBaselineUrl(jobId),
     {
       ...options,
@@ -8093,8 +8168,8 @@ export const getSchedulePostJobsJobIdScheduleBaselineUrl = (jobId: string) => {
 export const schedulePostJobsJobIdScheduleBaseline = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleBaselineResponse> => {
+  return customFetch<ScheduleBaselineResponse>(
     getSchedulePostJobsJobIdScheduleBaselineUrl(jobId),
     {
       ...options,
@@ -8184,8 +8259,8 @@ export const getSchedulePutJobsJobIdScheduleBaselineUrl = (jobId: string) => {
 export const schedulePutJobsJobIdScheduleBaseline = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleBaselineResponse> => {
+  return customFetch<ScheduleBaselineResponse>(
     getSchedulePutJobsJobIdScheduleBaselineUrl(jobId),
     {
       ...options,
@@ -8277,8 +8352,8 @@ export const getScheduleDeleteJobsJobIdScheduleBaselineUrl = (
 export const scheduleDeleteJobsJobIdScheduleBaseline = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
     getScheduleDeleteJobsJobIdScheduleBaselineUrl(jobId),
     {
       ...options,
@@ -8371,8 +8446,8 @@ export const schedulePostJobsJobIdWorkdayExceptionsCategories = async (
   jobId: string,
   genericObject: GenericObject,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<WorkdayExceptionCategoryResponse> => {
+  return customFetch<WorkdayExceptionCategoryResponse>(
     getSchedulePostJobsJobIdWorkdayExceptionsCategoriesUrl(jobId),
     {
       ...options,
@@ -8481,8 +8556,8 @@ export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId = async (
   categoryId: string,
   genericObject: GenericObject,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<WorkdayExceptionCategoryResponse> => {
+  return customFetch<WorkdayExceptionCategoryResponse>(
     getSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdUrl(
       jobId,
       categoryId,
@@ -8608,8 +8683,8 @@ export const getScheduleGetJobsJobIdWorkdayExceptionsUrl = (jobId: string) => {
 export const scheduleGetJobsJobIdWorkdayExceptions = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<WorkdayExceptionsListResponse> => {
+  return customFetch<WorkdayExceptionsListResponse>(
     getScheduleGetJobsJobIdWorkdayExceptionsUrl(jobId),
     {
       ...options,
@@ -9050,8 +9125,8 @@ export const getSchedulePostJobsJobIdScheduleTrackConflictsUrl = (
 export const schedulePostJobsJobIdScheduleTrackConflicts = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleConflictsResponse> => {
+  return customFetch<ScheduleConflictsResponse>(
     getSchedulePostJobsJobIdScheduleTrackConflictsUrl(jobId),
     {
       ...options,
@@ -9144,8 +9219,8 @@ export const getSchedulePostJobsJobIdScheduleNotifyAssignedUsersUrl = (
 export const schedulePostJobsJobIdScheduleNotifyAssignedUsers = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleNotifyResponse> => {
+  return customFetch<ScheduleNotifyResponse>(
     getSchedulePostJobsJobIdScheduleNotifyAssignedUsersUrl(jobId),
     {
       ...options,
@@ -9245,11 +9320,14 @@ export const getScheduleGetJobsJobIdScheduleUrl = (jobId: string) => {
 export const scheduleGetJobsJobIdSchedule = async (
   jobId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getScheduleGetJobsJobIdScheduleUrl(jobId), {
-    ...options,
-    method: "GET",
-  });
+): Promise<ScheduleListResponse> => {
+  return customFetch<ScheduleListResponse>(
+    getScheduleGetJobsJobIdScheduleUrl(jobId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getScheduleGetJobsJobIdScheduleQueryKey = (jobId: string) => {
@@ -9339,13 +9417,16 @@ export const schedulePostJobsJobIdSchedule = async (
   jobId: string,
   scheduleSchedulePayloadSchema: ScheduleSchedulePayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getSchedulePostJobsJobIdScheduleUrl(jobId), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(scheduleSchedulePayloadSchema),
-  });
+): Promise<ScheduleItemResponse> => {
+  return customFetch<ScheduleItemResponse>(
+    getSchedulePostJobsJobIdScheduleUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(scheduleSchedulePayloadSchema),
+    },
+  );
 };
 
 export const getSchedulePostJobsJobIdScheduleMutationOptions = <
@@ -9427,11 +9508,14 @@ export const getScheduleGetScheduleItemsIdUrl = (id: string) => {
 export const scheduleGetScheduleItemsId = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getScheduleGetScheduleItemsIdUrl(id), {
-    ...options,
-    method: "GET",
-  });
+): Promise<ScheduleItemResponse> => {
+  return customFetch<ScheduleItemResponse>(
+    getScheduleGetScheduleItemsIdUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getScheduleGetScheduleItemsIdQueryKey = (id: string) => {
@@ -9518,13 +9602,16 @@ export const schedulePutScheduleItemsId = async (
   id: string,
   scheduleSchedulePayloadSchema: ScheduleSchedulePayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getSchedulePutScheduleItemsIdUrl(id), {
-    ...options,
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(scheduleSchedulePayloadSchema),
-  });
+): Promise<ScheduleItemResponse> => {
+  return customFetch<ScheduleItemResponse>(
+    getSchedulePutScheduleItemsIdUrl(id),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(scheduleSchedulePayloadSchema),
+    },
+  );
 };
 
 export const getSchedulePutScheduleItemsIdMutationOptions = <
@@ -9606,8 +9693,8 @@ export const getScheduleDeleteScheduleItemsIdUrl = (id: string) => {
 export const scheduleDeleteScheduleItemsId = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getScheduleDeleteScheduleItemsIdUrl(id), {
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getScheduleDeleteScheduleItemsIdUrl(id), {
     ...options,
     method: "DELETE",
   });
@@ -9692,13 +9779,16 @@ export const schedulePostScheduleItemsIdTodos = async (
   id: string,
   genericObject: GenericObject,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getSchedulePostScheduleItemsIdTodosUrl(id), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(genericObject),
-  });
+): Promise<ScheduleTodoResponse> => {
+  return customFetch<ScheduleTodoResponse>(
+    getSchedulePostScheduleItemsIdTodosUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(genericObject),
+    },
+  );
 };
 
 export const getSchedulePostScheduleItemsIdTodosMutationOptions = <
@@ -9787,8 +9877,8 @@ export const schedulePutScheduleItemsIdTodosTodoId = async (
   todoId: string,
   genericObject: GenericObject,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleTodoResponse> => {
+  return customFetch<ScheduleTodoResponse>(
     getSchedulePutScheduleItemsIdTodosTodoIdUrl(id, todoId),
     {
       ...options,
@@ -9890,8 +9980,8 @@ export const scheduleDeleteScheduleItemsIdTodosTodoId = async (
   id: string,
   todoId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
     getScheduleDeleteScheduleItemsIdTodosTodoIdUrl(id, todoId),
     {
       ...options,
@@ -9983,13 +10073,16 @@ export const schedulePostScheduleItemsIdNotes = async (
   id: string,
   scheduleScheduleNotePayloadSchema: ScheduleScheduleNotePayloadSchema,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getSchedulePostScheduleItemsIdNotesUrl(id), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(scheduleScheduleNotePayloadSchema),
-  });
+): Promise<ScheduleNoteResponse> => {
+  return customFetch<ScheduleNoteResponse>(
+    getSchedulePostScheduleItemsIdNotesUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(scheduleScheduleNotePayloadSchema),
+    },
+  );
 };
 
 export const getSchedulePostScheduleItemsIdNotesMutationOptions = <
@@ -10073,8 +10166,8 @@ export const getSchedulePostScheduleItemsIdAttachmentsUrl = (id: string) => {
 export const schedulePostScheduleItemsIdAttachments = async (
   id: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleAttachmentsCreatedResponse> => {
+  return customFetch<ScheduleAttachmentsCreatedResponse>(
     getSchedulePostScheduleItemsIdAttachmentsUrl(id),
     {
       ...options,
@@ -10167,8 +10260,8 @@ export const schedulePostScheduleItemsIdAttachmentsNewDoc = async (
   id: string,
   genericObject: GenericObject,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<ScheduleAttachmentResponse> => {
+  return customFetch<ScheduleAttachmentResponse>(
     getSchedulePostScheduleItemsIdAttachmentsNewDocUrl(id),
     {
       ...options,
@@ -10270,8 +10363,8 @@ export const scheduleDeleteScheduleItemsIdAttachmentsAttachmentId = async (
   id: string,
   attachmentId: string,
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
     getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdUrl(
       id,
       attachmentId,

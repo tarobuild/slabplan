@@ -7,8 +7,14 @@
  */
 
 /**
- * Request schema derived from contactPayloadSchema in artifacts/api-server/src/routes/clients.ts.
+ * Request body for creating or updating a client contact (`POST /clients/{id}/contacts`, `PUT /clients/{id}/contacts/{contactId}`). At least one of firstName/lastName/email is recommended in practice; only `isPrimary` has a server default of `false`.
  */
 export interface ClientsContactPayloadSchema {
-  [key: string]: unknown;
+  firstName?: string | null;
+  lastName?: string | null;
+  title?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  isPrimary?: boolean;
 }

@@ -615,21 +615,32 @@
             "in": "query",
             "required": false,
             "description": "1-indexed page number. Defaults to 1.",
-            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
           },
           {
             "name": "pageSize",
             "in": "query",
             "required": false,
             "description": "Items per page. Defaults to 20, max 100.",
-            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
           },
           {
             "name": "search",
             "in": "query",
             "required": false,
             "description": "Case-insensitive substring filter applied across company name, email, and city.",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "security": [
@@ -651,7 +662,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ClientDetailResponse"
                 }
               }
             }
@@ -798,7 +809,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ClientDetailResponse"
                 }
               }
             }
@@ -887,7 +898,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -1045,7 +1056,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "type": "object",
+                  "properties": {
+                    "contact": {
+                      "$ref": "#/components/schemas/ClientContact"
+                    }
+                  },
+                  "required": [
+                    "contact"
+                  ]
                 }
               }
             }
@@ -1216,7 +1235,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "type": "object",
+                  "properties": {
+                    "contact": {
+                      "$ref": "#/components/schemas/ClientContact"
+                    }
+                  },
+                  "required": [
+                    "contact"
+                  ]
                 }
               }
             }
@@ -1315,7 +1342,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -1405,7 +1432,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/JobListResponse"
                 }
               }
             }
@@ -1462,7 +1489,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/JobDetailResponse"
                 }
               }
             }
@@ -1531,7 +1558,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/JobDetailResponse"
                 }
               }
             }
@@ -1609,7 +1636,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/JobDetailResponse"
                 }
               }
             }
@@ -1698,7 +1725,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -1778,7 +1805,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LeadContactsListResponse"
+                  "$ref": "#/components/schemas/LeadGlobalContactsListResponse"
                 }
               }
             }
@@ -1811,7 +1838,9 @@
             "in": "query",
             "required": false,
             "description": "Case-insensitive substring filter applied across contact display name, email, phone, and lead title.",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "security": [
@@ -1879,21 +1908,32 @@
             "in": "query",
             "required": false,
             "description": "1-indexed page number. Defaults to 1.",
-            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
           },
           {
             "name": "pageSize",
             "in": "query",
             "required": false,
             "description": "Items per page. Defaults to 10, max 100.",
-            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 }
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10
+            }
           },
           {
             "name": "search",
             "in": "query",
             "required": false,
             "description": "Case-insensitive substring filter applied across lead title, city, state, and project type.",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "name": "status",
@@ -1902,7 +1942,13 @@
             "description": "Restrict to leads with the given status.",
             "schema": {
               "type": "string",
-              "enum": ["open", "in_negotiation", "won", "lost", "archived"]
+              "enum": [
+                "open",
+                "in_negotiation",
+                "won",
+                "lost",
+                "archived"
+              ]
             }
           }
         ],
@@ -1925,7 +1971,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/LeadDetailResponse"
                 }
               }
             }
@@ -2072,7 +2118,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/LeadDetailResponse"
                 }
               }
             }
@@ -2161,7 +2207,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -2241,7 +2287,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/LeadContactResponse"
                 }
               }
             }
@@ -2332,7 +2378,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/LeadContactResponse"
                 }
               }
             }
@@ -2431,7 +2477,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -2521,7 +2567,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/LeadAttachmentsCreatedResponse"
                 }
               }
             }
@@ -2601,7 +2647,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -2691,7 +2737,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/LeadConvertToJobResponse"
                 }
               }
             }
@@ -2771,7 +2817,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -4340,7 +4386,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogListResponse"
                 }
               }
             }
@@ -4419,7 +4465,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogDetailResponse"
                 }
               }
             }
@@ -4510,7 +4556,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogDetailResponse"
                 }
               }
             }
@@ -4588,7 +4634,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogDetailResponse"
                 }
               }
             }
@@ -4677,7 +4723,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -4757,7 +4803,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogDetailResponse"
                 }
               }
             }
@@ -4837,7 +4883,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogWeatherResponse"
                 }
               }
             }
@@ -4896,7 +4942,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogLikeResponse"
                 }
               }
             }
@@ -4976,7 +5022,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogCommentsResponse"
                 }
               }
             }
@@ -5054,7 +5100,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogCommentsResponse"
                 }
               }
             }
@@ -5145,7 +5191,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogCommentsResponse"
                 }
               }
             }
@@ -5246,7 +5292,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogTodosResponse"
                 }
               }
             }
@@ -5337,7 +5383,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogTodosResponse"
                 }
               }
             }
@@ -5438,7 +5484,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/DailyLogAttachmentsCreatedResponse"
                 }
               }
             }
@@ -5518,7 +5564,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -6004,7 +6050,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/MyDailyLogsResponse"
                 }
               }
             }
@@ -6063,7 +6109,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleSettingsResponse"
                 }
               }
             }
@@ -6141,7 +6187,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleSettingsUpdateResponse"
                 }
               }
             }
@@ -6423,7 +6469,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SchedulePhaseListResponse"
                 }
               }
             }
@@ -6501,7 +6547,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SchedulePhaseResponse"
                 }
               }
             }
@@ -6592,7 +6638,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SchedulePhaseResponse"
                 }
               }
             }
@@ -6691,7 +6737,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -6781,7 +6827,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleSettingTagResponse"
                 }
               }
             }
@@ -6973,7 +7019,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleBaselineResponse"
                 }
               }
             }
@@ -7051,7 +7097,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleBaselineResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleBaselineResponse"
                 }
               }
             }
@@ -7129,7 +7185,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleBaselineResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleBaselineResponse"
                 }
               }
             }
@@ -7207,7 +7273,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -7287,7 +7353,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/WorkdayExceptionCategoryResponse"
                 }
               }
             }
@@ -7377,7 +7443,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/WorkdayExceptionCategoryResponse"
                 }
               }
             }
@@ -7477,7 +7543,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/WorkdayExceptionsListResponse"
                 }
               }
             }
@@ -7833,7 +7899,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleConflictsResponse"
                 }
               }
             }
@@ -7913,7 +7979,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleNotifyResponse"
                 }
               }
             }
@@ -7993,7 +8059,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleListResponse"
                 }
               }
             }
@@ -8071,7 +8137,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleItemResponse"
                 }
               }
             }
@@ -8162,7 +8228,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleItemResponse"
                 }
               }
             }
@@ -8240,7 +8306,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleItemResponse"
                 }
               }
             }
@@ -8329,7 +8395,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -8409,7 +8475,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleTodoResponse"
                 }
               }
             }
@@ -8499,7 +8565,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleTodoResponse"
                 }
               }
             }
@@ -8597,7 +8663,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -8687,7 +8753,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleNoteResponse"
                 }
               }
             }
@@ -8778,7 +8844,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleAttachmentsCreatedResponse"
                 }
               }
             }
@@ -8858,7 +8924,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/ScheduleAttachmentResponse"
                 }
               }
             }
@@ -8948,7 +9014,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnyValue"
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -9279,32 +9345,66 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["results", "pagination"],
+                  "required": [
+                    "results",
+                    "pagination"
+                  ],
                   "properties": {
                     "results": {
                       "type": "array",
                       "items": {
                         "type": "object",
-                        "required": ["id", "type", "title", "href"],
+                        "required": [
+                          "id",
+                          "type",
+                          "title",
+                          "href"
+                        ],
                         "properties": {
-                          "id": { "type": "string" },
+                          "id": {
+                            "type": "string"
+                          },
                           "type": {
                             "type": "string",
-                            "enum": ["job", "lead", "file", "schedule", "client"]
+                            "enum": [
+                              "job",
+                              "lead",
+                              "file",
+                              "schedule",
+                              "client"
+                            ]
                           },
-                          "title": { "type": "string" },
-                          "subtitle": { "type": "string" },
-                          "href": { "type": "string" }
+                          "title": {
+                            "type": "string"
+                          },
+                          "subtitle": {
+                            "type": "string"
+                          },
+                          "href": {
+                            "type": "string"
+                          }
                         }
                       }
                     },
                     "pagination": {
                       "type": "object",
-                      "required": ["page", "pageSize", "hasMore"],
+                      "required": [
+                        "page",
+                        "pageSize",
+                        "hasMore"
+                      ],
                       "properties": {
-                        "page": { "type": "integer", "minimum": 1 },
-                        "pageSize": { "type": "integer", "minimum": 1 },
-                        "hasMore": { "type": "boolean" }
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "pageSize": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        }
                       }
                     }
                   }
@@ -9436,38 +9536,451 @@
       },
       "clients_clientPayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from clientPayloadSchema in artifacts/api-server/src/routes/clients.ts."
+        "description": "Request body for creating or updating a client (`POST /clients`, `PUT /clients/{id}`). Optional string fields accept null and empty strings (which are normalized to null). `state` must be a 2-character abbreviation when provided.",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "companyName"
+        ]
       },
       "clients_contactPayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from contactPayloadSchema in artifacts/api-server/src/routes/clients.ts."
+        "description": "Request body for creating or updating a client contact (`POST /clients/{id}/contacts`, `PUT /clients/{id}/contacts/{contactId}`). At least one of firstName/lastName/email is recommended in practice; only `isPrimary` has a server default of `false`.",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "cellPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "isPrimary": {
+            "type": "boolean",
+            "default": false
+          }
+        }
       },
       "jobs_jobPayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from jobPayloadSchema in artifacts/api-server/src/routes/jobs.ts."
+        "description": "Request body for creating or updating a job. `POST /jobs` additionally accepts `assigneeIds`. Money fields (`contractPrice`, `squareFeet`) are accepted as either string or number and serialized as decimal strings.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "archived"
+            ],
+            "default": "open"
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractPrice": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ],
+            "description": "Decimal serialized as a string in responses; accepted as either string or number on input. Server coerces to a decimal string."
+          },
+          "jobType": {
+            "type": "string",
+            "nullable": true
+          },
+          "workDays": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "mon",
+                "tue",
+                "wed",
+                "thu",
+                "fri",
+                "sat",
+                "sun"
+              ]
+            },
+            "default": null
+          },
+          "projectedStart": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "projectedCompletion": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "actualStart": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "actualCompletion": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "contractType": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "fixed_price",
+              "open_book",
+              null
+            ]
+          },
+          "internalNotes": {
+            "type": "string",
+            "nullable": true
+          },
+          "subVendorNotes": {
+            "type": "string",
+            "nullable": true
+          },
+          "squareFeet": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ],
+            "description": "Decimal serialized as a string in responses; accepted as either string or number on input."
+          },
+          "permitNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "projectManagerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "clientId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "assigneeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "default": [],
+            "description": "Initial assignees. Only honored on `POST /jobs` and only by admin callers; non-admins must omit this field."
+          }
+        },
+        "required": [
+          "title"
+        ]
       },
       "leads_leadPayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from leadPayloadSchema in artifacts/api-server/src/routes/leads.ts."
+        "description": "Request body for creating or updating a lead (`POST /leads`, `PUT /leads/{id}`).",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 0
+          },
+          "projectedSalesDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "estimatedRevenueMin": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ],
+            "description": "Decimal serialized as a string in responses; accepted as either string or number on input."
+          },
+          "estimatedRevenueMax": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ],
+            "description": "Decimal serialized as a string in responses; accepted as either string or number on input."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_negotiation",
+              "won",
+              "lost",
+              "archived"
+            ],
+            "default": "open"
+          },
+          "projectType": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "salespeople": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "default": []
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "default": []
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "title"
+        ]
       },
       "leads_contactCreateSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from contactCreateSchema in artifacts/api-server/src/routes/leads.ts."
+        "description": "Request body for creating a lead contact (`POST /leads/{id}/contacts`). When `sourceContactId` is set the new contact is cloned from an existing contact and the other fields are optional. Otherwise `displayName` and `email` are required.",
+        "properties": {
+          "sourceContactId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional: clone an existing lead contact by id rather than creating a new one from scratch."
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "cellPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "format": "email"
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "leads_contactUpdateSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from contactUpdateSchema in artifacts/api-server/src/routes/leads.ts."
+        "description": "Request body for updating a lead contact (`PUT /leads/{id}/contacts/{contactId}`).",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "cellPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "format": "email"
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "leads_activityCreateSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from activityCreateSchema in artifacts/api-server/src/routes/leads.ts."
+        "description": "Request body for logging a lead activity (`POST /leads/{id}/activities`).",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "title"
+        ]
       },
       "folders_folderBodySchema": {
         "type": "object",
@@ -9491,141 +10004,658 @@
       },
       "daily_logs_dailyLogPayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from dailyLogPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts."
+        "description": "Request body for creating or updating a daily log (`POST /jobs/{jobId}/daily-logs`, `PUT /daily-logs/{id}`). On create, `jobId` is taken from the URL; on update the URL identifies the log directly. `customFieldValues` is a free-form object whose values are scalar (string, number, boolean, or null).",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional override; the URL `jobId` always wins on create."
+          },
+          "logDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "default": ""
+          },
+          "weatherData": {
+            "description": "Snapshot of weather captured at the time the log was authored. Stored verbatim for client-side rendering.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DailyLogWeather"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "includeWeather": {
+            "type": "boolean",
+            "default": true
+          },
+          "includeWeatherNotes": {
+            "type": "boolean",
+            "default": false
+          },
+          "weatherNotes": {
+            "type": "string",
+            "nullable": true
+          },
+          "shareInternalUsers": {
+            "type": "boolean",
+            "default": true
+          },
+          "shareSubsVendors": {
+            "type": "boolean",
+            "default": false
+          },
+          "shareClient": {
+            "type": "boolean",
+            "default": false
+          },
+          "isPrivate": {
+            "type": "boolean",
+            "default": false
+          },
+          "notifyUserIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "default": []
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "default": []
+          },
+          "customFieldValues": {
+            "type": "object",
+            "description": "Map of custom field id → scalar value (string, number, boolean, or null).",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "default": {}
+          }
+        },
+        "required": [
+          "logDate"
+        ]
       },
       "daily_logs_commentPayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from commentPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts."
+        "description": "Request body for creating a daily-log comment (`POST /daily-logs/{id}/comments`).",
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "parentCommentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "default": []
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "mimeType": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "name",
+                "url"
+              ]
+            },
+            "default": []
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "body"
+        ]
       },
       "daily_logs_commentReactionPayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from commentReactionPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts."
+        "description": "Request body for toggling a reaction on a daily-log comment (`PUT /daily-logs/{id}/comments/{commentId}/reactions`). Sending the same emoji twice removes the reaction.",
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "emoji"
+        ]
       },
       "daily_logs_todoPayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from todoPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts."
+        "description": "Request body for creating a daily-log to-do (`POST /daily-logs/{id}/todos`).",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "title"
+        ]
       },
       "daily_logs_todoTogglePayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from todoTogglePayloadSchema in artifacts/api-server/src/routes/daily-logs.ts."
+        "description": "Request body for toggling a daily-log to-do (`PUT /daily-logs/{id}/todos/{todoId}`). Omitting `isComplete` flips the current value.",
+        "properties": {
+          "isComplete": {
+            "type": "boolean"
+          }
+        }
       },
       "schedule_schedulePhasePayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from schedulePhasePayloadSchema in artifacts/api-server/src/routes/schedule.ts."
+        "description": "Request body for creating or updating a schedule phase.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name"
+        ]
       },
       "schedule_scheduleSettingPayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from scheduleSettingPayloadSchema in artifacts/api-server/src/routes/schedule.ts."
+        "description": "Request body for creating or renaming a schedule setting (e.g. tag).",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "name"
+        ]
       },
       "schedule_schedulePayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from schedulePayloadSchema in artifacts/api-server/src/routes/schedule.ts."
+        "description": "Request body for creating or updating a schedule item (`POST /jobs/{jobId}/schedule`, `PUT /schedule-items/{id}`). Hourly items require a `startTime`. Predecessors must be unique and may not point at the item being edited.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "displayColor": {
+            "type": "string",
+            "nullable": true
+          },
+          "assigneeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "default": []
+          },
+          "notifyUserIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "default": []
+          },
+          "startDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "workDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "default": 1
+          },
+          "endDate": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "When omitted or null the server computes the end date from `startDate`, `workDays`, and the active workday-exception calendar."
+          },
+          "isHourly": {
+            "type": "boolean",
+            "default": false
+          },
+          "startTime": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{2}:\\d{2}(:\\d{2})?$"
+          },
+          "endTime": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{2}:\\d{2}(:\\d{2})?$"
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 0
+          },
+          "reminder": {
+            "type": "string",
+            "default": "none",
+            "description": "One of the configured reminder options (e.g. `none`, `1d`, `1h`)."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "default": []
+          },
+          "predecessors": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "object",
+              "properties": {
+                "scheduleItemId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "dependencyType": {
+                  "type": "string",
+                  "enum": [
+                    "finish_to_start",
+                    "start_to_start",
+                    "finish_to_finish",
+                    "start_to_finish"
+                  ]
+                },
+                "lagDays": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 365,
+                  "default": 0
+                }
+              },
+              "required": [
+                "scheduleItemId",
+                "dependencyType"
+              ]
+            }
+          },
+          "phaseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "showOnGantt": {
+            "type": "boolean",
+            "default": true
+          },
+          "visibleToEstimators": {
+            "type": "boolean",
+            "default": true
+          },
+          "visibleToInstallers": {
+            "type": "boolean",
+            "default": true
+          },
+          "visibleToOfficeStaff": {
+            "type": "boolean",
+            "default": true
+          },
+          "isComplete": {
+            "type": "boolean",
+            "default": false
+          },
+          "isPersonalTodo": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "title",
+          "startDate"
+        ]
       },
       "schedule_scheduleNotePayloadSchema": {
         "type": "object",
-        "additionalProperties": true,
-        "description": "Request schema derived from scheduleNotePayloadSchema in artifacts/api-server/src/routes/schedule.ts."
+        "description": "Request body for adding a note to a schedule item.",
+        "properties": {
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          }
+        },
+        "required": [
+          "note"
+        ]
       },
       "Pagination": {
         "type": "object",
         "description": "Standard pagination metadata returned with list responses.",
         "properties": {
-          "page": { "type": "integer", "minimum": 1 },
-          "pageSize": { "type": "integer", "minimum": 1 },
-          "totalItems": { "type": "integer", "minimum": 0 },
-          "totalPages": { "type": "integer", "minimum": 1 }
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "totalItems": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalPages": {
+            "type": "integer",
+            "minimum": 1
+          }
         },
-        "required": ["page", "pageSize", "totalItems", "totalPages"]
+        "required": [
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages"
+        ]
       },
       "SuccessResponse": {
         "type": "object",
         "description": "Generic success acknowledgement returned by destructive operations.",
         "properties": {
-          "success": { "type": "boolean" }
+          "success": {
+            "type": "boolean"
+          }
         },
-        "required": ["success"]
+        "required": [
+          "success"
+        ]
       },
       "JobSummary": {
         "type": "object",
         "description": "Summary view of a job used in client detail and client-job listings.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "title": { "type": "string" },
-          "status": { "type": "string", "nullable": true },
-          "city": { "type": "string", "nullable": true },
-          "state": { "type": "string", "nullable": true },
-          "jobType": { "type": "string", "nullable": true },
-          "contractPrice": { "type": "string", "nullable": true, "description": "Decimal price serialized as string." },
-          "projectedStart": { "type": "string", "format": "date", "nullable": true },
-          "projectedCompletion": { "type": "string", "format": "date", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "jobType": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractPrice": {
+            "type": "string",
+            "nullable": true,
+            "description": "Decimal price serialized as string."
+          },
+          "projectedStart": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "projectedCompletion": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         },
-        "required": ["id", "title", "createdAt"]
+        "required": [
+          "id",
+          "title",
+          "createdAt"
+        ]
       },
       "ClientPrimaryContact": {
         "type": "object",
         "description": "Primary contact summary surfaced on client list rows. Null when the client has no primary contact.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "clientId": { "type": "string", "format": "uuid", "nullable": true },
-          "firstName": { "type": "string", "nullable": true },
-          "lastName": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true },
-          "phone": { "type": "string", "nullable": true },
-          "isPrimary": { "type": "boolean", "nullable": true }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "isPrimary": {
+            "type": "boolean",
+            "nullable": true
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "ClientContact": {
         "type": "object",
         "description": "Full client contact record returned on client detail and contact-management endpoints.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "clientId": { "type": "string", "format": "uuid", "nullable": true },
-          "firstName": { "type": "string", "nullable": true },
-          "lastName": { "type": "string", "nullable": true },
-          "title": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true },
-          "phone": { "type": "string", "nullable": true },
-          "cellPhone": { "type": "string", "nullable": true },
-          "isPrimary": { "type": "boolean", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "deletedAt": { "type": "string", "format": "date-time", "nullable": true }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "cellPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "isPrimary": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "ClientListItem": {
         "type": "object",
         "description": "A client row returned by the paginated `GET /clients` list. `jobCount` and `openJobCount` are computed only over jobs the caller can access.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "companyName": { "type": "string" },
-          "phone": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true },
-          "city": { "type": "string", "nullable": true },
-          "state": { "type": "string", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyName": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "primaryContact": {
             "description": "Primary contact summary, or null when the client has no primary contact.",
             "oneOf": [
-              { "$ref": "#/components/schemas/ClientPrimaryContact" },
-              { "type": "null" }
+              {
+                "$ref": "#/components/schemas/ClientPrimaryContact"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
-          "contactCount": { "type": "integer", "minimum": 0 },
-          "jobCount": { "type": "integer", "minimum": 0, "description": "Number of jobs for this client visible to the caller." },
-          "openJobCount": { "type": "integer", "minimum": 0, "description": "Number of open jobs for this client visible to the caller." }
+          "contactCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "jobCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of jobs for this client visible to the caller."
+          },
+          "openJobCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of open jobs for this client visible to the caller."
+          }
         },
-        "required": ["id", "companyName", "createdAt", "primaryContact", "contactCount", "jobCount", "openJobCount"]
+        "required": [
+          "id",
+          "companyName",
+          "createdAt",
+          "primaryContact",
+          "contactCount",
+          "jobCount",
+          "openJobCount"
+        ]
       },
       "ClientListResponse": {
         "type": "object",
@@ -9633,48 +10663,110 @@
         "properties": {
           "clients": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/ClientListItem" }
+            "items": {
+              "$ref": "#/components/schemas/ClientListItem"
+            }
           },
-          "pagination": { "$ref": "#/components/schemas/Pagination" }
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
         },
-        "required": ["clients", "pagination"]
+        "required": [
+          "clients",
+          "pagination"
+        ]
       },
       "ClientDetail": {
         "type": "object",
         "description": "Full client record with embedded contacts and the caller-visible jobs list.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "companyName": { "type": "string" },
-          "phone": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true },
-          "streetAddress": { "type": "string", "nullable": true },
-          "city": { "type": "string", "nullable": true },
-          "state": { "type": "string", "nullable": true },
-          "zipCode": { "type": "string", "nullable": true },
-          "notes": { "type": "string", "nullable": true },
-          "createdBy": { "type": "string", "format": "uuid", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "deletedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyName": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "contacts": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/ClientContact" }
+            "items": {
+              "$ref": "#/components/schemas/ClientContact"
+            }
           },
           "jobs": {
             "type": "array",
             "description": "Jobs for this client filtered to those the caller can access (admins see all).",
-            "items": { "$ref": "#/components/schemas/JobSummary" }
+            "items": {
+              "$ref": "#/components/schemas/JobSummary"
+            }
           }
         },
-        "required": ["id", "companyName", "createdAt", "contacts", "jobs"]
+        "required": [
+          "id",
+          "companyName",
+          "createdAt",
+          "contacts",
+          "jobs"
+        ]
       },
       "ClientDetailResponse": {
         "type": "object",
         "description": "Response for `GET /clients/{id}`. The embedded `client.jobs` list is filtered to jobs the caller can access.",
         "properties": {
-          "client": { "$ref": "#/components/schemas/ClientDetail" }
+          "client": {
+            "$ref": "#/components/schemas/ClientDetail"
+          }
         },
-        "required": ["client"]
+        "required": [
+          "client"
+        ]
       },
       "ClientJobsResponse": {
         "type": "object",
@@ -9682,72 +10774,191 @@
         "properties": {
           "jobs": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/JobSummary" }
+            "items": {
+              "$ref": "#/components/schemas/JobSummary"
+            }
           }
         },
-        "required": ["jobs"]
+        "required": [
+          "jobs"
+        ]
       },
       "LeadPrimaryContact": {
         "type": "object",
         "description": "Primary contact summary surfaced on lead list rows. Null when the lead has no client contact assigned.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "leadId": { "type": "string", "format": "uuid", "nullable": true },
-          "displayName": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true },
-          "phone": { "type": "string", "nullable": true },
-          "label": { "type": "string", "nullable": true }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "leadId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "LeadContact": {
         "type": "object",
         "description": "Full lead contact record returned in lead detail responses.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "leadId": { "type": "string", "format": "uuid", "nullable": true },
-          "firstName": { "type": "string", "nullable": true },
-          "lastName": { "type": "string", "nullable": true },
-          "displayName": { "type": "string", "nullable": true },
-          "streetAddress": { "type": "string", "nullable": true },
-          "city": { "type": "string", "nullable": true },
-          "state": { "type": "string", "nullable": true },
-          "zipCode": { "type": "string", "nullable": true },
-          "phone": { "type": "string", "nullable": true },
-          "cellPhone": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true },
-          "label": { "type": "string", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time", "nullable": true }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "leadId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "cellPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
         },
-        "required": ["id", "createdAt"]
+        "required": [
+          "id",
+          "createdAt"
+        ]
       },
       "LeadAvailableContact": {
         "type": "object",
         "description": "Cross-lead contact entry. Only contacts whose lead the caller can access are surfaced.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "leadId": { "type": "string", "format": "uuid", "nullable": true },
-          "leadTitle": { "type": "string", "nullable": true },
-          "displayName": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true },
-          "phone": { "type": "string", "nullable": true },
-          "cellPhone": { "type": "string", "nullable": true },
-          "label": { "type": "string", "nullable": true }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "leadId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "leadTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "cellPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "LeadSalesperson": {
         "type": "object",
         "description": "User assigned to a lead as a salesperson.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "fullName": { "type": "string", "nullable": true },
-          "email": { "type": "string", "nullable": true },
-          "role": { "type": "string", "nullable": true },
-          "avatarUrl": { "type": "string", "nullable": true }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fullName": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "nullable": true
+          },
+          "avatarUrl": {
+            "type": "string",
+            "nullable": true
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "LeadTag": {
         "type": "string",
@@ -9761,58 +10972,161 @@
         "type": "object",
         "description": "File attached to a lead via the lead-attachments table.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "fileId": { "type": "string", "format": "uuid", "nullable": true },
-          "originalName": { "type": "string", "nullable": true },
-          "fileUrl": { "type": "string", "nullable": true },
-          "fileSize": { "type": "integer", "nullable": true },
-          "mimeType": { "type": "string", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time", "nullable": true },
-          "uploadedByName": { "type": "string", "nullable": true }
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "originalName": {
+            "type": "string",
+            "nullable": true
+          },
+          "fileUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "fileSize": {
+            "type": "integer",
+            "nullable": true
+          },
+          "mimeType": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "uploadedByName": {
+            "type": "string",
+            "nullable": true
+          }
         },
-        "required": ["id"]
+        "required": [
+          "id"
+        ]
       },
       "LeadListItem": {
         "type": "object",
         "description": "A lead row returned by the paginated `GET /leads` list.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "title": { "type": "string" },
-          "streetAddress": { "type": "string", "nullable": true },
-          "city": { "type": "string", "nullable": true },
-          "state": { "type": "string", "nullable": true },
-          "zipCode": { "type": "string", "nullable": true },
-          "confidence": { "type": "integer", "minimum": 0, "maximum": 100, "nullable": true },
-          "projectedSalesDate": { "type": "string", "format": "date", "nullable": true },
-          "estimatedRevenueMin": { "type": "string", "nullable": true, "description": "Decimal serialized as string." },
-          "estimatedRevenueMax": { "type": "string", "nullable": true, "description": "Decimal serialized as string." },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": true
+          },
+          "projectedSalesDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "estimatedRevenueMin": {
+            "type": "string",
+            "nullable": true,
+            "description": "Decimal serialized as string."
+          },
+          "estimatedRevenueMax": {
+            "type": "string",
+            "nullable": true,
+            "description": "Decimal serialized as string."
+          },
           "status": {
             "type": "string",
-            "enum": ["open", "in_negotiation", "won", "lost", "archived"]
+            "enum": [
+              "open",
+              "in_negotiation",
+              "won",
+              "lost",
+              "archived"
+            ]
           },
-          "projectType": { "type": "string", "nullable": true },
-          "leadSource": { "type": "string", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "createdByName": { "type": "string", "nullable": true },
+          "projectType": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
           "clientContact": {
             "description": "Primary client contact summary, or null when the lead has no client contact assigned.",
             "oneOf": [
-              { "$ref": "#/components/schemas/LeadPrimaryContact" },
-              { "type": "null" }
+              {
+                "$ref": "#/components/schemas/LeadPrimaryContact"
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },
-        "required": ["id", "title", "status", "createdAt", "clientContact"]
+        "required": [
+          "id",
+          "title",
+          "status",
+          "createdAt",
+          "clientContact"
+        ]
       },
       "LeadListSummary": {
         "type": "object",
         "description": "Aggregate revenue totals across all leads matching the query (not just the current page).",
         "properties": {
-          "estimatedRevenueMinTotal": { "type": "string", "description": "Decimal serialized as string." },
-          "estimatedRevenueMaxTotal": { "type": "string", "description": "Decimal serialized as string." }
+          "estimatedRevenueMinTotal": {
+            "type": "string",
+            "description": "Decimal serialized as string."
+          },
+          "estimatedRevenueMaxTotal": {
+            "type": "string",
+            "description": "Decimal serialized as string."
+          }
         },
-        "required": ["estimatedRevenueMinTotal", "estimatedRevenueMaxTotal"]
+        "required": [
+          "estimatedRevenueMinTotal",
+          "estimatedRevenueMaxTotal"
+        ]
       },
       "LeadListResponse": {
         "type": "object",
@@ -9820,69 +11134,156 @@
         "properties": {
           "leads": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/LeadListItem" }
+            "items": {
+              "$ref": "#/components/schemas/LeadListItem"
+            }
           },
-          "pagination": { "$ref": "#/components/schemas/Pagination" },
-          "summary": { "$ref": "#/components/schemas/LeadListSummary" }
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/LeadListSummary"
+          }
         },
-        "required": ["leads", "pagination", "summary"]
+        "required": [
+          "leads",
+          "pagination",
+          "summary"
+        ]
       },
       "LeadDetail": {
         "type": "object",
         "description": "Full lead record returned by `GET /leads/{id}`, with embedded contacts, assignments, attachments, and the caller-filtered `availableContacts` collection.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "title": { "type": "string" },
-          "streetAddress": { "type": "string", "nullable": true },
-          "city": { "type": "string", "nullable": true },
-          "state": { "type": "string", "nullable": true },
-          "zipCode": { "type": "string", "nullable": true },
-          "confidence": { "type": "integer", "minimum": 0, "maximum": 100, "nullable": true },
-          "projectedSalesDate": { "type": "string", "format": "date", "nullable": true },
-          "estimatedRevenueMin": { "type": "string", "nullable": true },
-          "estimatedRevenueMax": { "type": "string", "nullable": true },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": true
+          },
+          "projectedSalesDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "estimatedRevenueMin": {
+            "type": "string",
+            "nullable": true
+          },
+          "estimatedRevenueMax": {
+            "type": "string",
+            "nullable": true
+          },
           "status": {
             "type": "string",
-            "enum": ["open", "in_negotiation", "won", "lost", "archived"]
+            "enum": [
+              "open",
+              "in_negotiation",
+              "won",
+              "lost",
+              "archived"
+            ]
           },
-          "projectType": { "type": "string", "nullable": true },
-          "notes": { "type": "string", "nullable": true },
-          "leadSource": { "type": "string", "nullable": true },
-          "createdBy": { "type": "string", "format": "uuid", "nullable": true },
-          "createdByName": { "type": "string", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "projectType": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "clientContact": {
             "description": "Primary client contact for the lead, or null when none is assigned.",
             "oneOf": [
-              { "$ref": "#/components/schemas/LeadContact" },
-              { "type": "null" }
+              {
+                "$ref": "#/components/schemas/LeadContact"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "contacts": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/LeadContact" }
+            "items": {
+              "$ref": "#/components/schemas/LeadContact"
+            }
           },
           "salespeople": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/LeadSalesperson" }
+            "items": {
+              "$ref": "#/components/schemas/LeadSalesperson"
+            }
           },
           "tags": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/LeadTag" }
+            "items": {
+              "$ref": "#/components/schemas/LeadTag"
+            }
           },
           "sources": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/LeadSource" }
+            "items": {
+              "$ref": "#/components/schemas/LeadSource"
+            }
           },
           "attachments": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/LeadAttachment" }
+            "items": {
+              "$ref": "#/components/schemas/LeadAttachment"
+            }
           },
           "availableContacts": {
             "type": "array",
             "description": "Lead contacts from across the workspace, filtered to leads the caller can access (admins see all).",
-            "items": { "$ref": "#/components/schemas/LeadAvailableContact" }
+            "items": {
+              "$ref": "#/components/schemas/LeadAvailableContact"
+            }
           }
         },
         "required": [
@@ -9903,9 +11304,13 @@
         "type": "object",
         "description": "Response for `GET /leads/{id}`. The embedded `lead.availableContacts` collection is filtered to leads the caller can access.",
         "properties": {
-          "lead": { "$ref": "#/components/schemas/LeadDetail" }
+          "lead": {
+            "$ref": "#/components/schemas/LeadDetail"
+          }
         },
-        "required": ["lead"]
+        "required": [
+          "lead"
+        ]
       },
       "LeadContactsListResponse": {
         "type": "object",
@@ -9913,25 +11318,50 @@
         "properties": {
           "contacts": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/LeadAvailableContact" }
+            "items": {
+              "$ref": "#/components/schemas/LeadAvailableContact"
+            }
           }
         },
-        "required": ["contacts"]
+        "required": [
+          "contacts"
+        ]
       },
       "WorkdayException": {
         "type": "object",
         "description": "A workday exception (non-workday or extra-workday) attached to one or more jobs, or applied company-wide when `appliesToAllJobs` is true.",
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "title": { "type": "string" },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
           "type": {
             "type": "string",
-            "enum": ["non_workday", "extra_workday"]
+            "enum": [
+              "non_workday",
+              "extra_workday"
+            ]
           },
-          "startDate": { "type": "string", "format": "date" },
-          "endDate": { "type": "string", "format": "date" },
-          "sameEveryYear": { "type": "boolean", "nullable": true },
-          "categoryId": { "type": "string", "format": "uuid", "nullable": true },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "sameEveryYear": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "categoryId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
           "appliesToAllJobs": {
             "type": "boolean",
             "nullable": true,
@@ -9941,31 +11371,66 @@
             "type": "array",
             "nullable": true,
             "description": "When `appliesToAllJobs` is false, the explicit list of job IDs the exception applies to.",
-            "items": { "type": "string", "format": "uuid" }
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
-          "notes": { "type": "string", "nullable": true },
-          "createdBy": { "type": "string", "format": "uuid", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time", "nullable": true },
-          "updatedAt": { "type": "string", "format": "date-time", "nullable": true }
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
         },
-        "required": ["id", "title", "type", "startDate", "endDate"]
+        "required": [
+          "id",
+          "title",
+          "type",
+          "startDate",
+          "endDate"
+        ]
       },
       "WorkdayExceptionResponse": {
         "type": "object",
         "description": "Response wrapper for create/update workday-exception endpoints.",
         "properties": {
-          "exception": { "$ref": "#/components/schemas/WorkdayException" }
+          "exception": {
+            "$ref": "#/components/schemas/WorkdayException"
+          }
         },
-        "required": ["exception"]
+        "required": [
+          "exception"
+        ]
       },
       "WorkdayExceptionPayload": {
         "type": "object",
         "description": "Request body for `POST /jobs/{jobId}/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.",
         "properties": {
-          "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
           "type": {
             "type": "string",
-            "enum": ["non_workday", "extra_workday"]
+            "enum": [
+              "non_workday",
+              "extra_workday"
+            ]
           },
           "startDate": {
             "type": "string",
@@ -9975,8 +11440,15 @@
             "type": "string",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
           },
-          "sameEveryYear": { "type": "boolean", "default": false },
-          "categoryId": { "type": "string", "format": "uuid", "nullable": true },
+          "sameEveryYear": {
+            "type": "boolean",
+            "default": false
+          },
+          "categoryId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
           "appliesToAllJobs": {
             "type": "boolean",
             "default": false,
@@ -9984,21 +11456,39 @@
           },
           "jobIds": {
             "type": "array",
-            "items": { "type": "string", "format": "uuid" },
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
             "default": []
           },
-          "notes": { "type": "string", "nullable": true }
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
         },
-        "required": ["title", "type", "startDate", "endDate"]
+        "required": [
+          "title",
+          "type",
+          "startDate",
+          "endDate"
+        ]
       },
       "WorkdayExceptionUpdatePayload": {
         "type": "object",
         "description": "Request body for `PUT /jobs/{jobId}/workday-exceptions/{exceptionId}`. All fields are optional; omitted fields keep their previous value. Toggling `appliesToAllJobs` is admin-only.",
         "properties": {
-          "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
           "type": {
             "type": "string",
-            "enum": ["non_workday", "extra_workday"]
+            "enum": [
+              "non_workday",
+              "extra_workday"
+            ]
           },
           "startDate": {
             "type": "string",
@@ -10008,15 +11498,2045 @@
             "type": "string",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
           },
-          "sameEveryYear": { "type": "boolean" },
-          "categoryId": { "type": "string", "format": "uuid", "nullable": true },
-          "appliesToAllJobs": { "type": "boolean" },
+          "sameEveryYear": {
+            "type": "boolean"
+          },
+          "categoryId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "appliesToAllJobs": {
+            "type": "boolean"
+          },
           "jobIds": {
             "type": "array",
-            "items": { "type": "string", "format": "uuid" }
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
-          "notes": { "type": "string", "nullable": true }
+          "notes": {
+            "type": "string",
+            "nullable": true
+          }
         }
+      },
+      "DailyLogWeather": {
+        "type": "object",
+        "description": "Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.",
+        "properties": {
+          "condition": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "temperatureHigh": {
+            "type": "integer",
+            "nullable": true
+          },
+          "temperatureLow": {
+            "type": "integer",
+            "nullable": true
+          },
+          "windMph": {
+            "type": "integer",
+            "nullable": true
+          },
+          "humidity": {
+            "type": "integer",
+            "nullable": true
+          },
+          "precipitation": {
+            "type": "number"
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "condition",
+          "icon",
+          "precipitation",
+          "fetchedAt"
+        ]
+      },
+      "AssigneeUser": {
+        "type": "object",
+        "description": "A user assigned to or notified about a job, schedule item, or daily log.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fullName": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role"
+        ]
+      },
+      "JobAssignee": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fullName": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role"
+        ]
+      },
+      "JobListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "jobType": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractPrice": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractType": {
+            "type": "string",
+            "nullable": true
+          },
+          "projectedStart": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "projectedCompletion": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "actualStart": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "actualCompletion": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "workDays": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "squareFeet": {
+            "type": "string",
+            "nullable": true
+          },
+          "permitNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "clientName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "JobDetail": {
+        "type": "object",
+        "description": "Hydrated job returned by `GET /jobs/{id}`, `POST /jobs`, and `PUT /jobs/{id}`.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "streetAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "zipCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "jobType": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractPrice": {
+            "type": "string",
+            "nullable": true
+          },
+          "projectedStart": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "projectedCompletion": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "actualStart": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "actualCompletion": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "workDays": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "contractType": {
+            "type": "string",
+            "nullable": true
+          },
+          "internalNotes": {
+            "type": "string",
+            "nullable": true
+          },
+          "subVendorNotes": {
+            "type": "string",
+            "nullable": true
+          },
+          "squareFeet": {
+            "type": "string",
+            "nullable": true
+          },
+          "permitNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "projectManagerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "projectManagerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "clientName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdById": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobAssignee"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "assignees"
+        ]
+      },
+      "JobListResponse": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobListItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "jobs",
+          "pagination"
+        ]
+      },
+      "JobDetailResponse": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobDetail"
+          }
+        },
+        "required": [
+          "job"
+        ]
+      },
+      "JobAssigneesResponse": {
+        "type": "object",
+        "properties": {
+          "assignees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobAssignee"
+            }
+          }
+        },
+        "required": [
+          "assignees"
+        ]
+      },
+      "LeadGlobalContact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "leadId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "leadTitle": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "cellPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "leadId",
+          "leadTitle"
+        ]
+      },
+      "LeadGlobalContactsListResponse": {
+        "type": "object",
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeadGlobalContact"
+            }
+          }
+        },
+        "required": [
+          "contacts"
+        ]
+      },
+      "LeadContactResponse": {
+        "type": "object",
+        "properties": {
+          "contact": {
+            "$ref": "#/components/schemas/LeadContact"
+          }
+        },
+        "required": [
+          "contact"
+        ]
+      },
+      "LeadAttachmentsCreatedResponse": {
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeadAttachment"
+            }
+          }
+        },
+        "required": [
+          "attachments"
+        ]
+      },
+      "LeadConvertToJobResponse": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "job"
+        ]
+      },
+      "DailyLogTodo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "isComplete": {
+            "type": "boolean"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "isComplete",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "DailyLogCommentAttachment": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ]
+      },
+      "DailyLogComment": {
+        "type": "object",
+        "description": "Comment on a daily log. Replies are nested via `replies` (recursive).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dailyLogId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parentCommentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "body": {
+            "type": "string"
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogCommentAttachment"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reactions": {
+            "type": "object",
+            "description": "Map of emoji → list of user ids that reacted with it.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "nullable": true
+              },
+              "fullName": {
+                "type": "string",
+                "nullable": true
+              },
+              "avatarUrl": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "replies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogComment"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "dailyLogId",
+          "body",
+          "mentions",
+          "attachments",
+          "links",
+          "reactions",
+          "createdAt",
+          "updatedAt",
+          "author",
+          "replies"
+        ]
+      },
+      "DailyLogAttachment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "originalName": {
+            "type": "string"
+          },
+          "fileUrl": {
+            "type": "string"
+          },
+          "fileSize": {
+            "type": "integer"
+          },
+          "mimeType": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uploadedByName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "fileId",
+          "originalName",
+          "fileUrl",
+          "fileSize",
+          "createdAt"
+        ]
+      },
+      "DailyLogListItem": {
+        "type": "object",
+        "description": "Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "jobTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "logDate": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string"
+          },
+          "weatherData": {
+            "$ref": "#/components/schemas/DailyLogWeather",
+            "nullable": true
+          },
+          "includeWeather": {
+            "type": "boolean"
+          },
+          "includeWeatherNotes": {
+            "type": "boolean"
+          },
+          "weatherNotes": {
+            "type": "string",
+            "nullable": true
+          },
+          "customFieldValues": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "shareInternalUsers": {
+            "type": "boolean"
+          },
+          "shareSubsVendors": {
+            "type": "boolean"
+          },
+          "shareClient": {
+            "type": "boolean"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "notifyUserIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attachmentCount": {
+            "type": "integer"
+          },
+          "likesCount": {
+            "type": "integer"
+          },
+          "commentsCount": {
+            "type": "integer"
+          },
+          "likedByCurrentUser": {
+            "type": "boolean"
+          },
+          "visibilityLabel": {
+            "type": "string"
+          },
+          "todoCount": {
+            "type": "integer"
+          },
+          "completedTodoCount": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "logDate",
+          "notes",
+          "tags",
+          "createdAt",
+          "updatedAt",
+          "status"
+        ]
+      },
+      "DailyLog": {
+        "type": "object",
+        "description": "Hydrated daily log returned from detail endpoints. Wraps the database row with derived counters, weather, attachments, todos, notify users, and visibility metadata.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "logDate": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "notes": {
+            "type": "string"
+          },
+          "weatherData": {
+            "$ref": "#/components/schemas/DailyLogWeather",
+            "nullable": true
+          },
+          "includeWeather": {
+            "type": "boolean"
+          },
+          "includeWeatherNotes": {
+            "type": "boolean"
+          },
+          "weatherNotes": {
+            "type": "string",
+            "nullable": true
+          },
+          "customFieldValues": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "shareInternalUsers": {
+            "type": "boolean"
+          },
+          "shareSubsVendors": {
+            "type": "boolean"
+          },
+          "shareClient": {
+            "type": "boolean"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "notifyUserIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "notifyUsers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssigneeUser"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogAttachment"
+            }
+          },
+          "likesCount": {
+            "type": "integer"
+          },
+          "commentsCount": {
+            "type": "integer"
+          },
+          "likedByCurrentUser": {
+            "type": "boolean"
+          },
+          "visibilityLabel": {
+            "type": "string"
+          },
+          "todos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogTodo"
+            }
+          },
+          "todoCount": {
+            "type": "integer"
+          },
+          "completedTodoCount": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "logDate",
+          "notes",
+          "tags",
+          "attachments",
+          "todos",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "DailyLogListResponse": {
+        "type": "object",
+        "properties": {
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogListItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "logs",
+          "pagination"
+        ]
+      },
+      "DailyLogDetailResponse": {
+        "type": "object",
+        "properties": {
+          "log": {
+            "$ref": "#/components/schemas/DailyLog"
+          }
+        },
+        "required": [
+          "log"
+        ]
+      },
+      "DailyLogCommentsResponse": {
+        "type": "object",
+        "properties": {
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogComment"
+            }
+          }
+        },
+        "required": [
+          "comments"
+        ]
+      },
+      "DailyLogTodosResponse": {
+        "type": "object",
+        "properties": {
+          "todos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogTodo"
+            }
+          }
+        },
+        "required": [
+          "todos"
+        ]
+      },
+      "DailyLogWeatherResponse": {
+        "type": "object",
+        "properties": {
+          "weather": {
+            "$ref": "#/components/schemas/DailyLogWeather"
+          }
+        },
+        "required": [
+          "weather"
+        ]
+      },
+      "DailyLogLikeResponse": {
+        "type": "object",
+        "properties": {
+          "liked": {
+            "type": "boolean"
+          },
+          "likesCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "liked",
+          "likesCount"
+        ]
+      },
+      "DailyLogAttachmentsCreatedResponse": {
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogAttachment"
+            }
+          }
+        },
+        "required": [
+          "attachments"
+        ]
+      },
+      "MyDailyLogsResponse": {
+        "type": "object",
+        "description": "Response for `GET /daily-logs/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths.",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogListItem"
+            }
+          },
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DailyLogListItem"
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer"
+              },
+              "pageSize": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "total": {
+                "type": "integer"
+              },
+              "totalItems": {
+                "type": "integer"
+              },
+              "totalPages": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "page",
+              "pageSize",
+              "limit",
+              "total",
+              "totalItems",
+              "totalPages"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "logs",
+          "pagination"
+        ]
+      },
+      "SchedulePredecessor": {
+        "type": "object",
+        "properties": {
+          "scheduleItemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dependencyType": {
+            "type": "string",
+            "enum": [
+              "finish_to_start",
+              "start_to_start",
+              "finish_to_finish",
+              "start_to_finish"
+            ]
+          },
+          "lagDays": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheduleItemId",
+          "dependencyType",
+          "lagDays",
+          "title"
+        ]
+      },
+      "ScheduleNoteEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "authorId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "authorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "authorAvatarUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "isLegacy": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "note",
+          "createdAt",
+          "isLegacy"
+        ]
+      },
+      "ScheduleAttachment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "originalName": {
+            "type": "string"
+          },
+          "fileUrl": {
+            "type": "string"
+          },
+          "fileSize": {
+            "type": "integer"
+          },
+          "mimeType": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "icon": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "fileId",
+          "filename",
+          "originalName",
+          "fileUrl",
+          "fileSize",
+          "createdAt",
+          "icon"
+        ]
+      },
+      "ScheduleRelatedTodo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "isComplete": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "isComplete",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ScheduleItem": {
+        "type": "object",
+        "description": "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status/conflict info.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "schedulePhaseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "phaseId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "phaseName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phaseColor": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "displayColor": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "endDate": {
+            "type": "string"
+          },
+          "workDays": {
+            "type": "integer"
+          },
+          "isHourly": {
+            "type": "boolean"
+          },
+          "startTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "endTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "progress": {
+            "type": "integer"
+          },
+          "reminder": {
+            "type": "string"
+          },
+          "showOnGantt": {
+            "type": "boolean"
+          },
+          "visibleToEstimators": {
+            "type": "boolean"
+          },
+          "visibleToInstallers": {
+            "type": "boolean"
+          },
+          "visibleToOfficeStaff": {
+            "type": "boolean"
+          },
+          "isComplete": {
+            "type": "boolean"
+          },
+          "isPersonalTodo": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notifyUserIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "assigneeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssigneeUser"
+            }
+          },
+          "predecessors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchedulePredecessor"
+            }
+          },
+          "notesStream": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleNoteEntry"
+            }
+          },
+          "noteCount": {
+            "type": "integer"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleAttachment"
+            }
+          },
+          "relatedTodos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleRelatedTodo"
+            }
+          },
+          "relatedTodoCount": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "description": "Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\")."
+          },
+          "hasConflict": {
+            "type": "boolean"
+          },
+          "conflictReasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdByAvatarUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "startDate",
+          "endDate",
+          "tags",
+          "assignees",
+          "assigneeIds",
+          "predecessors",
+          "notesStream",
+          "attachments",
+          "relatedTodos",
+          "status",
+          "hasConflict",
+          "conflictReasons",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ScheduleItemResponse": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/ScheduleItem"
+          }
+        },
+        "required": [
+          "item"
+        ]
+      },
+      "ScheduleListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleItem"
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "totalItems": {
+                "type": "integer"
+              },
+              "totalPages": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "page",
+              "limit",
+              "totalItems",
+              "totalPages"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "pagination"
+        ]
+      },
+      "SchedulePhase": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "SchedulePhaseResponse": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "$ref": "#/components/schemas/SchedulePhase"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "SchedulePhaseListResponse": {
+        "type": "object",
+        "properties": {
+          "phases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchedulePhase"
+            }
+          }
+        },
+        "required": [
+          "phases"
+        ]
+      },
+      "ScheduleSettingTag": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "ScheduleSettingTagResponse": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "$ref": "#/components/schemas/ScheduleSettingTag"
+          }
+        },
+        "required": [
+          "tag"
+        ]
+      },
+      "ScheduleSettings": {
+        "description": "Schedule settings hydrated for a job. Returned by `GET /jobs/{jobId}/schedule/settings`. Includes the flat settings values along with the lists of phases, tags, and workday exception categories.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ScheduleSettingsBaseFields"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "phases": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SchedulePhase"
+                }
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ScheduleSettingTag"
+                }
+              },
+              "workdayExceptionCategories": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WorkdayExceptionCategory"
+                }
+              }
+            },
+            "required": [
+              "phases",
+              "tags",
+              "workdayExceptionCategories"
+            ]
+          }
+        ]
+      },
+      "ScheduleSettingsResponse": {
+        "$ref": "#/components/schemas/ScheduleSettings"
+      },
+      "ScheduleBaselineItem": {
+        "type": "object",
+        "properties": {
+          "scheduleItemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "baselineStartDate": {
+            "type": "string"
+          },
+          "baselineEndDate": {
+            "type": "string"
+          },
+          "currentStartDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentEndDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "shiftDays": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scheduleItemId",
+          "title",
+          "baselineStartDate",
+          "baselineEndDate",
+          "shiftDays"
+        ]
+      },
+      "ScheduleBaseline": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "capturedBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "capturedByName": {
+            "type": "string",
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleBaselineItem"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "capturedAt",
+          "items"
+        ]
+      },
+      "ScheduleBaselineResponse": {
+        "type": "object",
+        "properties": {
+          "baseline": {
+            "$ref": "#/components/schemas/ScheduleBaseline",
+            "nullable": true
+          }
+        },
+        "required": [
+          "baseline"
+        ]
+      },
+      "ScheduleConflictsResponse": {
+        "type": "object",
+        "properties": {
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleItem"
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conflicts",
+          "count"
+        ]
+      },
+      "ScheduleNotifyResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "countUsers": {
+            "type": "integer"
+          },
+          "countItems": {
+            "type": "integer"
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "fullName": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "email": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "email"
+              ]
+            }
+          }
+        },
+        "required": [
+          "success",
+          "countUsers",
+          "countItems",
+          "recipients"
+        ]
+      },
+      "WorkdayExceptionsListResponse": {
+        "type": "object",
+        "properties": {
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkdayException"
+            }
+          }
+        },
+        "required": [
+          "exceptions"
+        ]
+      },
+      "WorkdayExceptionCategory": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "WorkdayExceptionCategoryResponse": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/WorkdayExceptionCategory"
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "ScheduleNoteResponse": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "$ref": "#/components/schemas/ScheduleNoteEntry"
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "ScheduleAttachmentResponse": {
+        "type": "object",
+        "properties": {
+          "attachment": {
+            "$ref": "#/components/schemas/ScheduleAttachment"
+          }
+        },
+        "required": [
+          "attachment"
+        ]
+      },
+      "ScheduleAttachmentsCreatedResponse": {
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleAttachment"
+            }
+          }
+        },
+        "required": [
+          "attachments"
+        ]
+      },
+      "ScheduleTodo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "isComplete": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "createdByName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "isComplete",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ScheduleTodoResponse": {
+        "type": "object",
+        "properties": {
+          "todo": {
+            "$ref": "#/components/schemas/ScheduleTodo"
+          }
+        },
+        "required": [
+          "todo"
+        ]
+      },
+      "ScheduleSettingsRow": {
+        "type": "object",
+        "description": "Schedule settings row as stored in the database. Returned by `PUT /jobs/{jobId}/schedule/settings`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "defaultView": {
+            "type": "string"
+          },
+          "showTimesOnMonthView": {
+            "type": "boolean"
+          },
+          "showJobNameOnAllListedJobs": {
+            "type": "boolean"
+          },
+          "automaticallyMarkItemsComplete": {
+            "type": "boolean"
+          },
+          "includeHeaderOnPdfExports": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "jobId",
+          "defaultView",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ScheduleSettingsBaseFields": {
+        "type": "object",
+        "description": "Base configurable schedule settings values.",
+        "properties": {
+          "defaultView": {
+            "type": "string"
+          },
+          "showTimesOnMonthView": {
+            "type": "boolean"
+          },
+          "showJobNameOnAllListedJobs": {
+            "type": "boolean"
+          },
+          "automaticallyMarkItemsComplete": {
+            "type": "boolean"
+          },
+          "includeHeaderOnPdfExports": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "defaultView",
+          "showTimesOnMonthView",
+          "showJobNameOnAllListedJobs",
+          "automaticallyMarkItemsComplete",
+          "includeHeaderOnPdfExports"
+        ]
+      },
+      "ScheduleSettingsUpdateResponse": {
+        "type": "object",
+        "description": "Response from `PUT /jobs/{jobId}/schedule/settings`. Echoes the updated DB row only; phases/tags/categories are unchanged so the client should refetch them via `GET /jobs/{jobId}/schedule/settings` if needed.",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/ScheduleSettingsRow"
+          }
+        },
+        "required": [
+          "settings"
+        ]
       }
     }
   },

@@ -5,10 +5,43 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { LeadsLeadPayloadSchemaStatus } from "./leadsLeadPayloadSchemaStatus";
 
 /**
- * Request schema derived from leadPayloadSchema in artifacts/api-server/src/routes/leads.ts.
+ * Request body for creating or updating a lead (`POST /leads`, `PUT /leads/{id}`).
  */
 export interface LeadsLeadPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  confidence?: number;
+  projectedSalesDate?: Date | null;
+  /**
+   * Decimal serialized as a string in responses; accepted as either string or number on input.
+   * @nullable
+   */
+  estimatedRevenueMin?: string | number | null;
+  /**
+   * Decimal serialized as a string in responses; accepted as either string or number on input.
+   * @nullable
+   */
+  estimatedRevenueMax?: string | number | null;
+  status?: LeadsLeadPayloadSchemaStatus;
+  projectType?: string | null;
+  notes?: string | null;
+  leadSource?: string | null;
+  salespeople?: string[];
+  tags?: string[];
+  sources?: string[];
 }

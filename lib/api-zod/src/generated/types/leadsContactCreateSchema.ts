@@ -7,8 +7,21 @@
  */
 
 /**
- * Request schema derived from contactCreateSchema in artifacts/api-server/src/routes/leads.ts.
+ * Request body for creating a lead contact (`POST /leads/{id}/contacts`). When `sourceContactId` is set the new contact is cloned from an existing contact and the other fields are optional. Otherwise `displayName` and `email` are required.
  */
 export interface LeadsContactCreateSchema {
-  [key: string]: unknown;
+  /** Optional: clone an existing lead contact by id rather than creating a new one from scratch. */
+  sourceContactId?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  email?: string | null;
+  label?: string | null;
 }

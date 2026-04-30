@@ -5,10 +5,19 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { DailyLogsCommentPayloadSchemaAttachmentsItem } from "./dailyLogsCommentPayloadSchemaAttachmentsItem";
 
 /**
- * Request schema derived from commentPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Request body for creating a daily-log comment (`POST /daily-logs/{id}/comments`).
  */
 export interface DailyLogsCommentPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 10000
+   */
+  body: string;
+  parentCommentId?: string | null;
+  mentions?: string[];
+  attachments?: DailyLogsCommentPayloadSchemaAttachmentsItem[];
+  links?: string[];
 }

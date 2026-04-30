@@ -7,8 +7,13 @@
  */
 
 /**
- * Request schema derived from schedulePhasePayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ * Request body for creating or updating a schedule phase.
  */
 export interface ScheduleSchedulePhasePayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
+  color?: string | null;
 }

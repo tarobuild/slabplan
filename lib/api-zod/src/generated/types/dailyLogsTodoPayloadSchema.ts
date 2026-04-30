@@ -7,8 +7,12 @@
  */
 
 /**
- * Request schema derived from todoPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Request body for creating a daily-log to-do (`POST /daily-logs/{id}/todos`).
  */
 export interface DailyLogsTodoPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
 }

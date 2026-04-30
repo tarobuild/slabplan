@@ -7,8 +7,19 @@
  */
 
 /**
- * Request schema derived from contactUpdateSchema in artifacts/api-server/src/routes/leads.ts.
+ * Request body for updating a lead contact (`PUT /leads/{id}/contacts/{contactId}`).
  */
 export interface LeadsContactUpdateSchema {
-  [key: string]: unknown;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  email?: string | null;
+  label?: string | null;
 }

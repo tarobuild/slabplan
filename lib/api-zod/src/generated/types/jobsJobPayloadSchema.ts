@@ -5,10 +5,47 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { JobsJobPayloadSchemaContractType } from "./jobsJobPayloadSchemaContractType";
+import type { JobsJobPayloadSchemaStatus } from "./jobsJobPayloadSchemaStatus";
+import type { JobsJobPayloadSchemaWorkDaysItem } from "./jobsJobPayloadSchemaWorkDaysItem";
 
 /**
- * Request schema derived from jobPayloadSchema in artifacts/api-server/src/routes/jobs.ts.
+ * Request body for creating or updating a job. `POST /jobs` additionally accepts `assigneeIds`. Money fields (`contractPrice`, `squareFeet`) are accepted as either string or number and serialized as decimal strings.
  */
 export interface JobsJobPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  status?: JobsJobPayloadSchemaStatus;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  /**
+   * Decimal serialized as a string in responses; accepted as either string or number on input. Server coerces to a decimal string.
+   * @nullable
+   */
+  contractPrice?: string | number | null;
+  jobType?: string | null;
+  workDays?: JobsJobPayloadSchemaWorkDaysItem[] | null;
+  projectedStart?: Date | null;
+  projectedCompletion?: Date | null;
+  actualStart?: Date | null;
+  actualCompletion?: Date | null;
+  contractType?: JobsJobPayloadSchemaContractType;
+  internalNotes?: string | null;
+  subVendorNotes?: string | null;
+  /**
+   * Decimal serialized as a string in responses; accepted as either string or number on input.
+   * @nullable
+   */
+  squareFeet?: string | number | null;
+  permitNumber?: string | null;
+  projectManagerId?: string | null;
+  clientId?: string | null;
+  /** Initial assignees. Only honored on `POST /jobs` and only by admin callers; non-admins must omit this field. */
+  assigneeIds?: string[];
 }

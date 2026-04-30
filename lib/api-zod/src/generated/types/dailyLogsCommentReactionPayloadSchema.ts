@@ -7,8 +7,12 @@
  */
 
 /**
- * Request schema derived from commentReactionPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Request body for toggling a reaction on a daily-log comment (`PUT /daily-logs/{id}/comments/{commentId}/reactions`). Sending the same emoji twice removes the reaction.
  */
 export interface DailyLogsCommentReactionPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 32
+   */
+  emoji: string;
 }

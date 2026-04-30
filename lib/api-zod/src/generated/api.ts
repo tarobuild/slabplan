@@ -175,10 +175,23 @@ export const ClientsGetClientsResponse = zod
  * Route defined in artifacts/api-server/src/routes/clients.ts. Validated request body with clientPayloadSchema.
  * @summary POST /clients
  */
+export const clientsPostClientsBodyCompanyNameMax = 255;
+
+export const clientsPostClientsBodyStateMax = 2;
+
 export const ClientsPostClientsBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    companyName: zod.string().min(1).max(clientsPostClientsBodyCompanyNameMax),
+    phone: zod.string().nullish(),
+    email: zod.string().nullish(),
+    streetAddress: zod.string().nullish(),
+    city: zod.string().nullish(),
+    state: zod.string().max(clientsPostClientsBodyStateMax).nullish(),
+    zipCode: zod.string().nullish(),
+    notes: zod.string().nullish(),
+  })
   .describe(
-    "Request schema derived from clientPayloadSchema in artifacts\/api-server\/src\/routes\/clients.ts.",
+    "Request body for creating or updating a client (`POST \/clients`, `PUT \/clients\/{id}`). Optional string fields accept null and empty strings (which are normalized to null). `state` must be a 2-character abbreviation when provided.",
   );
 
 /**
@@ -276,13 +289,95 @@ export const ClientsPutClientsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(clientsPutClientsIdPathIdRegExp),
 });
 
+export const clientsPutClientsIdBodyCompanyNameMax = 255;
+
+export const clientsPutClientsIdBodyStateMax = 2;
+
 export const ClientsPutClientsIdBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    companyName: zod.string().min(1).max(clientsPutClientsIdBodyCompanyNameMax),
+    phone: zod.string().nullish(),
+    email: zod.string().nullish(),
+    streetAddress: zod.string().nullish(),
+    city: zod.string().nullish(),
+    state: zod.string().max(clientsPutClientsIdBodyStateMax).nullish(),
+    zipCode: zod.string().nullish(),
+    notes: zod.string().nullish(),
+  })
   .describe(
-    "Request schema derived from clientPayloadSchema in artifacts\/api-server\/src\/routes\/clients.ts.",
+    "Request body for creating or updating a client (`POST \/clients`, `PUT \/clients\/{id}`). Optional string fields accept null and empty strings (which are normalized to null). `state` must be a 2-character abbreviation when provided.",
   );
 
-export const ClientsPutClientsIdResponse = zod.unknown();
+export const ClientsPutClientsIdResponse = zod
+  .object({
+    client: zod
+      .object({
+        id: zod.string().uuid(),
+        companyName: zod.string(),
+        phone: zod.string().nullish(),
+        email: zod.string().nullish(),
+        streetAddress: zod.string().nullish(),
+        city: zod.string().nullish(),
+        state: zod.string().nullish(),
+        zipCode: zod.string().nullish(),
+        notes: zod.string().nullish(),
+        createdBy: zod.string().uuid().nullish(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date().nullish(),
+        deletedAt: zod.coerce.date().nullish(),
+        contacts: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              clientId: zod.string().uuid().nullish(),
+              firstName: zod.string().nullish(),
+              lastName: zod.string().nullish(),
+              title: zod.string().nullish(),
+              email: zod.string().nullish(),
+              phone: zod.string().nullish(),
+              cellPhone: zod.string().nullish(),
+              isPrimary: zod.boolean().nullish(),
+              createdAt: zod.coerce.date().optional(),
+              updatedAt: zod.coerce.date().nullish(),
+              deletedAt: zod.coerce.date().nullish(),
+            })
+            .describe(
+              "Full client contact record returned on client detail and contact-management endpoints.",
+            ),
+        ),
+        jobs: zod
+          .array(
+            zod
+              .object({
+                id: zod.string().uuid(),
+                title: zod.string(),
+                status: zod.string().nullish(),
+                city: zod.string().nullish(),
+                state: zod.string().nullish(),
+                jobType: zod.string().nullish(),
+                contractPrice: zod
+                  .string()
+                  .nullish()
+                  .describe("Decimal price serialized as string."),
+                projectedStart: zod.coerce.date().nullish(),
+                projectedCompletion: zod.coerce.date().nullish(),
+                createdAt: zod.coerce.date(),
+              })
+              .describe(
+                "Summary view of a job used in client detail and client-job listings.",
+              ),
+          )
+          .describe(
+            "Jobs for this client filtered to those the caller can access (admins see all).",
+          ),
+      })
+      .describe(
+        "Full client record with embedded contacts and the caller-visible jobs list.",
+      ),
+  })
+  .describe(
+    "Response for `GET \/clients\/{id}`. The embedded `client.jobs` list is filtered to jobs the caller can access.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/clients.ts.
@@ -296,7 +391,13 @@ export const ClientsDeleteClientsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(clientsDeleteClientsIdPathIdRegExp),
 });
 
-export const ClientsDeleteClientsIdResponse = zod.unknown();
+export const ClientsDeleteClientsIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/clients.ts.
@@ -327,10 +428,22 @@ export const ClientsPostClientsIdContactsParams = zod.object({
     .regex(clientsPostClientsIdContactsPathIdRegExp),
 });
 
+export const clientsPostClientsIdContactsBodyIsPrimaryDefault = false;
+
 export const ClientsPostClientsIdContactsBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    firstName: zod.string().nullish(),
+    lastName: zod.string().nullish(),
+    title: zod.string().nullish(),
+    email: zod.string().nullish(),
+    phone: zod.string().nullish(),
+    cellPhone: zod.string().nullish(),
+    isPrimary: zod
+      .boolean()
+      .default(clientsPostClientsIdContactsBodyIsPrimaryDefault),
+  })
   .describe(
-    "Request schema derived from contactPayloadSchema in artifacts\/api-server\/src\/routes\/clients.ts.",
+    "Request body for creating or updating a client contact (`POST \/clients\/{id}\/contacts`, `PUT \/clients\/{id}\/contacts\/{contactId}`). At least one of firstName\/lastName\/email is recommended in practice; only `isPrimary` has a server default of `false`.",
   );
 
 /**
@@ -396,13 +509,44 @@ export const ClientsPutClientsIdContactsContactIdParams = zod.object({
     .regex(clientsPutClientsIdContactsContactIdPathContactIdRegExp),
 });
 
+export const clientsPutClientsIdContactsContactIdBodyIsPrimaryDefault = false;
+
 export const ClientsPutClientsIdContactsContactIdBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    firstName: zod.string().nullish(),
+    lastName: zod.string().nullish(),
+    title: zod.string().nullish(),
+    email: zod.string().nullish(),
+    phone: zod.string().nullish(),
+    cellPhone: zod.string().nullish(),
+    isPrimary: zod
+      .boolean()
+      .default(clientsPutClientsIdContactsContactIdBodyIsPrimaryDefault),
+  })
   .describe(
-    "Request schema derived from contactPayloadSchema in artifacts\/api-server\/src\/routes\/clients.ts.",
+    "Request body for creating or updating a client contact (`POST \/clients\/{id}\/contacts`, `PUT \/clients\/{id}\/contacts\/{contactId}`). At least one of firstName\/lastName\/email is recommended in practice; only `isPrimary` has a server default of `false`.",
   );
 
-export const ClientsPutClientsIdContactsContactIdResponse = zod.unknown();
+export const ClientsPutClientsIdContactsContactIdResponse = zod.object({
+  contact: zod
+    .object({
+      id: zod.string().uuid(),
+      clientId: zod.string().uuid().nullish(),
+      firstName: zod.string().nullish(),
+      lastName: zod.string().nullish(),
+      title: zod.string().nullish(),
+      email: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      cellPhone: zod.string().nullish(),
+      isPrimary: zod.boolean().nullish(),
+      createdAt: zod.coerce.date().optional(),
+      updatedAt: zod.coerce.date().nullish(),
+      deletedAt: zod.coerce.date().nullish(),
+    })
+    .describe(
+      "Full client contact record returned on client detail and contact-management endpoints.",
+    ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/clients.ts.
@@ -427,22 +571,161 @@ export const ClientsDeleteClientsIdContactsContactIdParams = zod.object({
     .regex(clientsDeleteClientsIdContactsContactIdPathContactIdRegExp),
 });
 
-export const ClientsDeleteClientsIdContactsContactIdResponse = zod.unknown();
+export const ClientsDeleteClientsIdContactsContactIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated query with jobQuerySchema.
  * @summary GET /jobs
  */
-export const JobsGetJobsResponse = zod.unknown();
+export const jobsGetJobsResponseJobsItemProjectedStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsGetJobsResponseJobsItemProjectedCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsGetJobsResponseJobsItemActualStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsGetJobsResponseJobsItemActualCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
+export const jobsGetJobsResponsePaginationTotalItemsMin = 0;
+
+export const JobsGetJobsResponse = zod.object({
+  jobs: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      title: zod.string(),
+      status: zod.string(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      streetAddress: zod.string().nullish(),
+      zipCode: zod.string().nullish(),
+      jobType: zod.string().nullish(),
+      contractPrice: zod.string().nullish(),
+      contractType: zod.string().nullish(),
+      projectedStart: zod
+        .string()
+        .regex(jobsGetJobsResponseJobsItemProjectedStartRegExp)
+        .nullish(),
+      projectedCompletion: zod
+        .string()
+        .regex(jobsGetJobsResponseJobsItemProjectedCompletionRegExp)
+        .nullish(),
+      actualStart: zod
+        .string()
+        .regex(jobsGetJobsResponseJobsItemActualStartRegExp)
+        .nullish(),
+      actualCompletion: zod
+        .string()
+        .regex(jobsGetJobsResponseJobsItemActualCompletionRegExp)
+        .nullish(),
+      workDays: zod.array(zod.string()).nullish(),
+      squareFeet: zod.string().nullish(),
+      permitNumber: zod.string().nullish(),
+      clientId: zod.string().uuid().nullish(),
+      clientName: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+    }),
+  ),
+  pagination: zod
+    .object({
+      page: zod.number().min(1),
+      pageSize: zod.number().min(1),
+      totalItems: zod.number().min(jobsGetJobsResponsePaginationTotalItemsMin),
+      totalPages: zod.number().min(1),
+    })
+    .describe("Standard pagination metadata returned with list responses."),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with jobPayloadSchema.
  * @summary POST /jobs
  */
+export const jobsPostJobsBodyTitleMax = 255;
+
+export const jobsPostJobsBodyStatusDefault = `open`;
+export const jobsPostJobsBodyStateMax = 2;
+
+export const jobsPostJobsBodyWorkDaysDefault = null;
+export const jobsPostJobsBodyAssigneeIdsDefault = [];
+
 export const JobsPostJobsBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    title: zod.string().min(1).max(jobsPostJobsBodyTitleMax),
+    status: zod
+      .enum(["open", "closed", "archived"])
+      .default(jobsPostJobsBodyStatusDefault),
+    streetAddress: zod.string().nullish(),
+    city: zod.string().nullish(),
+    state: zod.string().max(jobsPostJobsBodyStateMax).nullish(),
+    zipCode: zod.string().nullish(),
+    contractPrice: zod
+      .union([
+        zod
+          .string()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input. Server coerces to a decimal string.",
+          ),
+        zod
+          .number()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input. Server coerces to a decimal string.",
+          ),
+      ])
+      .nullish(),
+    jobType: zod.string().nullish(),
+    workDays: zod
+      .array(zod.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
+      .nullish()
+      .default(jobsPostJobsBodyWorkDaysDefault),
+    projectedStart: zod.coerce.date().nullish(),
+    projectedCompletion: zod.coerce.date().nullish(),
+    actualStart: zod.coerce.date().nullish(),
+    actualCompletion: zod.coerce.date().nullish(),
+    contractType: zod
+      .union([
+        zod.literal("fixed_price"),
+        zod.literal("open_book"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    internalNotes: zod.string().nullish(),
+    subVendorNotes: zod.string().nullish(),
+    squareFeet: zod
+      .union([
+        zod
+          .string()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+        zod
+          .number()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+      ])
+      .nullish(),
+    permitNumber: zod.string().nullish(),
+    projectManagerId: zod.string().uuid().nullish(),
+    clientId: zod.string().uuid().nullish(),
+    assigneeIds: zod
+      .array(zod.string().uuid())
+      .default(jobsPostJobsBodyAssigneeIdsDefault)
+      .describe(
+        "Initial assignees. Only honored on `POST \/jobs` and only by admin callers; non-admins must omit this field.",
+      ),
+  })
   .describe(
-    "Request schema derived from jobPayloadSchema in artifacts\/api-server\/src\/routes\/jobs.ts.",
+    "Request body for creating or updating a job. `POST \/jobs` additionally accepts `assigneeIds`. Money fields (`contractPrice`, `squareFeet`) are accepted as either string or number and serialized as decimal strings.",
   );
 
 /**
@@ -457,7 +740,75 @@ export const JobsGetJobsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(jobsGetJobsIdPathIdRegExp),
 });
 
-export const JobsGetJobsIdResponse = zod.unknown();
+export const jobsGetJobsIdResponseJobProjectedStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsGetJobsIdResponseJobProjectedCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsGetJobsIdResponseJobActualStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsGetJobsIdResponseJobActualCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
+export const JobsGetJobsIdResponse = zod.object({
+  job: zod
+    .object({
+      id: zod.string().uuid(),
+      title: zod.string(),
+      status: zod.string(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      streetAddress: zod.string().nullish(),
+      zipCode: zod.string().nullish(),
+      jobType: zod.string().nullish(),
+      contractPrice: zod.string().nullish(),
+      projectedStart: zod
+        .string()
+        .regex(jobsGetJobsIdResponseJobProjectedStartRegExp)
+        .nullish(),
+      projectedCompletion: zod
+        .string()
+        .regex(jobsGetJobsIdResponseJobProjectedCompletionRegExp)
+        .nullish(),
+      actualStart: zod
+        .string()
+        .regex(jobsGetJobsIdResponseJobActualStartRegExp)
+        .nullish(),
+      actualCompletion: zod
+        .string()
+        .regex(jobsGetJobsIdResponseJobActualCompletionRegExp)
+        .nullish(),
+      workDays: zod.array(zod.string()).nullish(),
+      contractType: zod.string().nullish(),
+      internalNotes: zod.string().nullish(),
+      subVendorNotes: zod.string().nullish(),
+      squareFeet: zod.string().nullish(),
+      permitNumber: zod.string().nullish(),
+      projectManagerId: zod.string().uuid().nullish(),
+      projectManagerName: zod.string().nullish(),
+      clientId: zod.string().uuid().nullish(),
+      clientName: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+      createdById: zod.string().uuid().nullish(),
+      createdByName: zod.string().nullish(),
+      assignees: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          fullName: zod.string().nullish(),
+          email: zod.string(),
+          role: zod.string(),
+          avatarUrl: zod.string().nullish(),
+        }),
+      ),
+    })
+    .describe(
+      "Hydrated job returned by `GET \/jobs\/{id}`, `POST \/jobs`, and `PUT \/jobs\/{id}`.",
+    ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with jobPayloadSchema.
@@ -471,13 +822,153 @@ export const JobsPutJobsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(jobsPutJobsIdPathIdRegExp),
 });
 
+export const jobsPutJobsIdBodyTitleMax = 255;
+
+export const jobsPutJobsIdBodyStatusDefault = `open`;
+export const jobsPutJobsIdBodyStateMax = 2;
+
+export const jobsPutJobsIdBodyWorkDaysDefault = null;
+export const jobsPutJobsIdBodyAssigneeIdsDefault = [];
+
 export const JobsPutJobsIdBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    title: zod.string().min(1).max(jobsPutJobsIdBodyTitleMax),
+    status: zod
+      .enum(["open", "closed", "archived"])
+      .default(jobsPutJobsIdBodyStatusDefault),
+    streetAddress: zod.string().nullish(),
+    city: zod.string().nullish(),
+    state: zod.string().max(jobsPutJobsIdBodyStateMax).nullish(),
+    zipCode: zod.string().nullish(),
+    contractPrice: zod
+      .union([
+        zod
+          .string()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input. Server coerces to a decimal string.",
+          ),
+        zod
+          .number()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input. Server coerces to a decimal string.",
+          ),
+      ])
+      .nullish(),
+    jobType: zod.string().nullish(),
+    workDays: zod
+      .array(zod.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
+      .nullish()
+      .default(jobsPutJobsIdBodyWorkDaysDefault),
+    projectedStart: zod.coerce.date().nullish(),
+    projectedCompletion: zod.coerce.date().nullish(),
+    actualStart: zod.coerce.date().nullish(),
+    actualCompletion: zod.coerce.date().nullish(),
+    contractType: zod
+      .union([
+        zod.literal("fixed_price"),
+        zod.literal("open_book"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    internalNotes: zod.string().nullish(),
+    subVendorNotes: zod.string().nullish(),
+    squareFeet: zod
+      .union([
+        zod
+          .string()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+        zod
+          .number()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+      ])
+      .nullish(),
+    permitNumber: zod.string().nullish(),
+    projectManagerId: zod.string().uuid().nullish(),
+    clientId: zod.string().uuid().nullish(),
+    assigneeIds: zod
+      .array(zod.string().uuid())
+      .default(jobsPutJobsIdBodyAssigneeIdsDefault)
+      .describe(
+        "Initial assignees. Only honored on `POST \/jobs` and only by admin callers; non-admins must omit this field.",
+      ),
+  })
   .describe(
-    "Request schema derived from jobPayloadSchema in artifacts\/api-server\/src\/routes\/jobs.ts.",
+    "Request body for creating or updating a job. `POST \/jobs` additionally accepts `assigneeIds`. Money fields (`contractPrice`, `squareFeet`) are accepted as either string or number and serialized as decimal strings.",
   );
 
-export const JobsPutJobsIdResponse = zod.unknown();
+export const jobsPutJobsIdResponseJobProjectedStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPutJobsIdResponseJobProjectedCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPutJobsIdResponseJobActualStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPutJobsIdResponseJobActualCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
+export const JobsPutJobsIdResponse = zod.object({
+  job: zod
+    .object({
+      id: zod.string().uuid(),
+      title: zod.string(),
+      status: zod.string(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      streetAddress: zod.string().nullish(),
+      zipCode: zod.string().nullish(),
+      jobType: zod.string().nullish(),
+      contractPrice: zod.string().nullish(),
+      projectedStart: zod
+        .string()
+        .regex(jobsPutJobsIdResponseJobProjectedStartRegExp)
+        .nullish(),
+      projectedCompletion: zod
+        .string()
+        .regex(jobsPutJobsIdResponseJobProjectedCompletionRegExp)
+        .nullish(),
+      actualStart: zod
+        .string()
+        .regex(jobsPutJobsIdResponseJobActualStartRegExp)
+        .nullish(),
+      actualCompletion: zod
+        .string()
+        .regex(jobsPutJobsIdResponseJobActualCompletionRegExp)
+        .nullish(),
+      workDays: zod.array(zod.string()).nullish(),
+      contractType: zod.string().nullish(),
+      internalNotes: zod.string().nullish(),
+      subVendorNotes: zod.string().nullish(),
+      squareFeet: zod.string().nullish(),
+      permitNumber: zod.string().nullish(),
+      projectManagerId: zod.string().uuid().nullish(),
+      projectManagerName: zod.string().nullish(),
+      clientId: zod.string().uuid().nullish(),
+      clientName: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+      createdById: zod.string().uuid().nullish(),
+      createdByName: zod.string().nullish(),
+      assignees: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          fullName: zod.string().nullish(),
+          email: zod.string(),
+          role: zod.string(),
+          avatarUrl: zod.string().nullish(),
+        }),
+      ),
+    })
+    .describe(
+      "Hydrated job returned by `GET \/jobs\/{id}`, `POST \/jobs`, and `PUT \/jobs\/{id}`.",
+    ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/jobs.ts.
@@ -491,7 +982,13 @@ export const JobsDeleteJobsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(jobsDeleteJobsIdPathIdRegExp),
 });
 
-export const JobsDeleteJobsIdResponse = zod.unknown();
+export const JobsDeleteJobsIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * List lead contacts across the workspace, optionally filtered by `search` (case-insensitive contains over name/email/phone/lead title). Only contacts whose lead the caller can access are returned; admins see every lead's contacts. Requires manager role or above.
@@ -506,28 +1003,20 @@ export const LeadsGetLeadsContactsQueryParams = zod.object({
     ),
 });
 
-export const LeadsGetLeadsContactsResponse = zod
-  .object({
-    contacts: zod.array(
-      zod
-        .object({
-          id: zod.string().uuid(),
-          leadId: zod.string().uuid().nullish(),
-          leadTitle: zod.string().nullish(),
-          displayName: zod.string().nullish(),
-          email: zod.string().nullish(),
-          phone: zod.string().nullish(),
-          cellPhone: zod.string().nullish(),
-          label: zod.string().nullish(),
-        })
-        .describe(
-          "Cross-lead contact entry. Only contacts whose lead the caller can access are surfaced.",
-        ),
-    ),
-  })
-  .describe(
-    "Response for `GET \/leads\/contacts`. The `contacts` array is restricted to contacts that belong to leads the caller can access (admins see all).",
-  );
+export const LeadsGetLeadsContactsResponse = zod.object({
+  contacts: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      leadId: zod.string().uuid(),
+      leadTitle: zod.string(),
+      displayName: zod.string().nullish(),
+      email: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      cellPhone: zod.string().nullish(),
+      label: zod.string().nullish(),
+    }),
+  ),
+});
 
 /**
  * List leads the caller can access, paginated and optionally filtered by `status` and `search`. The `summary` totals reflect every lead matching the query (not just the current page). Admins see all leads; other roles see only the leads they own or are assigned to. Requires manager role or above.
@@ -657,10 +1146,82 @@ export const LeadsGetLeadsResponse = zod
  * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with leadPayloadSchema.
  * @summary POST /leads
  */
+export const leadsPostLeadsBodyTitleMax = 255;
+
+export const leadsPostLeadsBodyStateMax = 2;
+
+export const leadsPostLeadsBodyConfidenceDefault = 0;
+export const leadsPostLeadsBodyConfidenceMin = 0;
+export const leadsPostLeadsBodyConfidenceMax = 100;
+
+export const leadsPostLeadsBodyStatusDefault = `open`;
+export const leadsPostLeadsBodySalespeopleDefault = [];
+export const leadsPostLeadsBodyTagsItemMax = 100;
+
+export const leadsPostLeadsBodyTagsDefault = [];
+export const leadsPostLeadsBodySourcesItemMax = 100;
+
+export const leadsPostLeadsBodySourcesDefault = [];
+
 export const LeadsPostLeadsBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    title: zod.string().min(1).max(leadsPostLeadsBodyTitleMax),
+    streetAddress: zod.string().nullish(),
+    city: zod.string().nullish(),
+    state: zod.string().max(leadsPostLeadsBodyStateMax).nullish(),
+    zipCode: zod.string().nullish(),
+    confidence: zod
+      .number()
+      .min(leadsPostLeadsBodyConfidenceMin)
+      .max(leadsPostLeadsBodyConfidenceMax)
+      .default(leadsPostLeadsBodyConfidenceDefault),
+    projectedSalesDate: zod.coerce.date().nullish(),
+    estimatedRevenueMin: zod
+      .union([
+        zod
+          .string()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+        zod
+          .number()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+      ])
+      .nullish(),
+    estimatedRevenueMax: zod
+      .union([
+        zod
+          .string()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+        zod
+          .number()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+      ])
+      .nullish(),
+    status: zod
+      .enum(["open", "in_negotiation", "won", "lost", "archived"])
+      .default(leadsPostLeadsBodyStatusDefault),
+    projectType: zod.string().nullish(),
+    notes: zod.string().nullish(),
+    leadSource: zod.string().nullish(),
+    salespeople: zod
+      .array(zod.string().uuid())
+      .default(leadsPostLeadsBodySalespeopleDefault),
+    tags: zod
+      .array(zod.string().min(1).max(leadsPostLeadsBodyTagsItemMax))
+      .default(leadsPostLeadsBodyTagsDefault),
+    sources: zod
+      .array(zod.string().min(1).max(leadsPostLeadsBodySourcesItemMax))
+      .default(leadsPostLeadsBodySourcesDefault),
+  })
   .describe(
-    "Request schema derived from leadPayloadSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+    "Request body for creating or updating a lead (`POST \/leads`, `PUT \/leads\/{id}`).",
   );
 
 /**
@@ -825,13 +1386,221 @@ export const LeadsPutLeadsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(leadsPutLeadsIdPathIdRegExp),
 });
 
+export const leadsPutLeadsIdBodyTitleMax = 255;
+
+export const leadsPutLeadsIdBodyStateMax = 2;
+
+export const leadsPutLeadsIdBodyConfidenceDefault = 0;
+export const leadsPutLeadsIdBodyConfidenceMin = 0;
+export const leadsPutLeadsIdBodyConfidenceMax = 100;
+
+export const leadsPutLeadsIdBodyStatusDefault = `open`;
+export const leadsPutLeadsIdBodySalespeopleDefault = [];
+export const leadsPutLeadsIdBodyTagsItemMax = 100;
+
+export const leadsPutLeadsIdBodyTagsDefault = [];
+export const leadsPutLeadsIdBodySourcesItemMax = 100;
+
+export const leadsPutLeadsIdBodySourcesDefault = [];
+
 export const LeadsPutLeadsIdBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    title: zod.string().min(1).max(leadsPutLeadsIdBodyTitleMax),
+    streetAddress: zod.string().nullish(),
+    city: zod.string().nullish(),
+    state: zod.string().max(leadsPutLeadsIdBodyStateMax).nullish(),
+    zipCode: zod.string().nullish(),
+    confidence: zod
+      .number()
+      .min(leadsPutLeadsIdBodyConfidenceMin)
+      .max(leadsPutLeadsIdBodyConfidenceMax)
+      .default(leadsPutLeadsIdBodyConfidenceDefault),
+    projectedSalesDate: zod.coerce.date().nullish(),
+    estimatedRevenueMin: zod
+      .union([
+        zod
+          .string()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+        zod
+          .number()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+      ])
+      .nullish(),
+    estimatedRevenueMax: zod
+      .union([
+        zod
+          .string()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+        zod
+          .number()
+          .describe(
+            "Decimal serialized as a string in responses; accepted as either string or number on input.",
+          ),
+      ])
+      .nullish(),
+    status: zod
+      .enum(["open", "in_negotiation", "won", "lost", "archived"])
+      .default(leadsPutLeadsIdBodyStatusDefault),
+    projectType: zod.string().nullish(),
+    notes: zod.string().nullish(),
+    leadSource: zod.string().nullish(),
+    salespeople: zod
+      .array(zod.string().uuid())
+      .default(leadsPutLeadsIdBodySalespeopleDefault),
+    tags: zod
+      .array(zod.string().min(1).max(leadsPutLeadsIdBodyTagsItemMax))
+      .default(leadsPutLeadsIdBodyTagsDefault),
+    sources: zod
+      .array(zod.string().min(1).max(leadsPutLeadsIdBodySourcesItemMax))
+      .default(leadsPutLeadsIdBodySourcesDefault),
+  })
   .describe(
-    "Request schema derived from leadPayloadSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+    "Request body for creating or updating a lead (`POST \/leads`, `PUT \/leads\/{id}`).",
   );
 
-export const LeadsPutLeadsIdResponse = zod.unknown();
+export const leadsPutLeadsIdResponseLeadConfidenceMin = 0;
+export const leadsPutLeadsIdResponseLeadConfidenceMax = 100;
+
+export const LeadsPutLeadsIdResponse = zod
+  .object({
+    lead: zod
+      .object({
+        id: zod.string().uuid(),
+        title: zod.string(),
+        streetAddress: zod.string().nullish(),
+        city: zod.string().nullish(),
+        state: zod.string().nullish(),
+        zipCode: zod.string().nullish(),
+        confidence: zod
+          .number()
+          .min(leadsPutLeadsIdResponseLeadConfidenceMin)
+          .max(leadsPutLeadsIdResponseLeadConfidenceMax)
+          .nullish(),
+        projectedSalesDate: zod.coerce.date().nullish(),
+        estimatedRevenueMin: zod.string().nullish(),
+        estimatedRevenueMax: zod.string().nullish(),
+        status: zod.enum(["open", "in_negotiation", "won", "lost", "archived"]),
+        projectType: zod.string().nullish(),
+        notes: zod.string().nullish(),
+        leadSource: zod.string().nullish(),
+        createdBy: zod.string().uuid().nullish(),
+        createdByName: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date().nullish(),
+        clientContact: zod
+          .union([
+            zod
+              .object({
+                id: zod.string().uuid(),
+                leadId: zod.string().uuid().nullish(),
+                firstName: zod.string().nullish(),
+                lastName: zod.string().nullish(),
+                displayName: zod.string().nullish(),
+                streetAddress: zod.string().nullish(),
+                city: zod.string().nullish(),
+                state: zod.string().nullish(),
+                zipCode: zod.string().nullish(),
+                phone: zod.string().nullish(),
+                cellPhone: zod.string().nullish(),
+                email: zod.string().nullish(),
+                label: zod.string().nullish(),
+                createdAt: zod.coerce.date(),
+                updatedAt: zod.coerce.date().nullish(),
+              })
+              .describe(
+                "Full lead contact record returned in lead detail responses.",
+              ),
+            zod.null(),
+          ])
+          .describe(
+            "Primary client contact for the lead, or null when none is assigned.",
+          ),
+        contacts: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              leadId: zod.string().uuid().nullish(),
+              firstName: zod.string().nullish(),
+              lastName: zod.string().nullish(),
+              displayName: zod.string().nullish(),
+              streetAddress: zod.string().nullish(),
+              city: zod.string().nullish(),
+              state: zod.string().nullish(),
+              zipCode: zod.string().nullish(),
+              phone: zod.string().nullish(),
+              cellPhone: zod.string().nullish(),
+              email: zod.string().nullish(),
+              label: zod.string().nullish(),
+              createdAt: zod.coerce.date(),
+              updatedAt: zod.coerce.date().nullish(),
+            })
+            .describe(
+              "Full lead contact record returned in lead detail responses.",
+            ),
+        ),
+        salespeople: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fullName: zod.string().nullish(),
+              email: zod.string().nullish(),
+              role: zod.string().nullish(),
+              avatarUrl: zod.string().nullish(),
+            })
+            .describe("User assigned to a lead as a salesperson."),
+        ),
+        tags: zod.array(zod.string().describe("Tag name applied to a lead.")),
+        sources: zod.array(zod.string().describe("Lead source name.")),
+        attachments: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fileId: zod.string().uuid().nullish(),
+              originalName: zod.string().nullish(),
+              fileUrl: zod.string().nullish(),
+              fileSize: zod.number().nullish(),
+              mimeType: zod.string().nullish(),
+              createdAt: zod.coerce.date().nullish(),
+              uploadedByName: zod.string().nullish(),
+            })
+            .describe(
+              "File attached to a lead via the lead-attachments table.",
+            ),
+        ),
+        availableContacts: zod
+          .array(
+            zod
+              .object({
+                id: zod.string().uuid(),
+                leadId: zod.string().uuid().nullish(),
+                leadTitle: zod.string().nullish(),
+                displayName: zod.string().nullish(),
+                email: zod.string().nullish(),
+                phone: zod.string().nullish(),
+                cellPhone: zod.string().nullish(),
+                label: zod.string().nullish(),
+              })
+              .describe(
+                "Cross-lead contact entry. Only contacts whose lead the caller can access are surfaced.",
+              ),
+          )
+          .describe(
+            "Lead contacts from across the workspace, filtered to leads the caller can access (admins see all).",
+          ),
+      })
+      .describe(
+        "Full lead record returned by `GET \/leads\/{id}`, with embedded contacts, assignments, attachments, and the caller-filtered `availableContacts` collection.",
+      ),
+  })
+  .describe(
+    "Response for `GET \/leads\/{id}`. The embedded `lead.availableContacts` collection is filtered to leads the caller can access.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/leads.ts.
@@ -845,7 +1614,13 @@ export const LeadsDeleteLeadsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(leadsDeleteLeadsIdPathIdRegExp),
 });
 
-export const LeadsDeleteLeadsIdResponse = zod.unknown();
+export const LeadsDeleteLeadsIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with contactCreateSchema.
@@ -859,10 +1634,31 @@ export const LeadsPostLeadsIdContactsParams = zod.object({
   id: zod.coerce.string().uuid().regex(leadsPostLeadsIdContactsPathIdRegExp),
 });
 
+export const leadsPostLeadsIdContactsBodyStateMax = 2;
+
 export const LeadsPostLeadsIdContactsBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    sourceContactId: zod
+      .string()
+      .uuid()
+      .optional()
+      .describe(
+        "Optional: clone an existing lead contact by id rather than creating a new one from scratch.",
+      ),
+    firstName: zod.string().nullish(),
+    lastName: zod.string().nullish(),
+    displayName: zod.string().nullish(),
+    streetAddress: zod.string().nullish(),
+    city: zod.string().nullish(),
+    state: zod.string().max(leadsPostLeadsIdContactsBodyStateMax).nullish(),
+    zipCode: zod.string().nullish(),
+    phone: zod.string().nullish(),
+    cellPhone: zod.string().nullish(),
+    email: zod.string().email().nullish(),
+    label: zod.string().nullish(),
+  })
   .describe(
-    "Request schema derived from contactCreateSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+    "Request body for creating a lead contact (`POST \/leads\/{id}\/contacts`). When `sourceContactId` is set the new contact is cloned from an existing contact and the other fields are optional. Otherwise `displayName` and `email` are required.",
   );
 
 /**
@@ -887,13 +1683,50 @@ export const LeadsPutLeadsIdContactsContactIdParams = zod.object({
     .regex(leadsPutLeadsIdContactsContactIdPathContactIdRegExp),
 });
 
+export const leadsPutLeadsIdContactsContactIdBodyStateMax = 2;
+
 export const LeadsPutLeadsIdContactsContactIdBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    firstName: zod.string().nullish(),
+    lastName: zod.string().nullish(),
+    displayName: zod.string().nullish(),
+    streetAddress: zod.string().nullish(),
+    city: zod.string().nullish(),
+    state: zod
+      .string()
+      .max(leadsPutLeadsIdContactsContactIdBodyStateMax)
+      .nullish(),
+    zipCode: zod.string().nullish(),
+    phone: zod.string().nullish(),
+    cellPhone: zod.string().nullish(),
+    email: zod.string().email().nullish(),
+    label: zod.string().nullish(),
+  })
   .describe(
-    "Request schema derived from contactUpdateSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+    "Request body for updating a lead contact (`PUT \/leads\/{id}\/contacts\/{contactId}`).",
   );
 
-export const LeadsPutLeadsIdContactsContactIdResponse = zod.unknown();
+export const LeadsPutLeadsIdContactsContactIdResponse = zod.object({
+  contact: zod
+    .object({
+      id: zod.string().uuid(),
+      leadId: zod.string().uuid().nullish(),
+      firstName: zod.string().nullish(),
+      lastName: zod.string().nullish(),
+      displayName: zod.string().nullish(),
+      streetAddress: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod.string().nullish(),
+      zipCode: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      cellPhone: zod.string().nullish(),
+      email: zod.string().nullish(),
+      label: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date().nullish(),
+    })
+    .describe("Full lead contact record returned in lead detail responses."),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/leads.ts.
@@ -918,7 +1751,13 @@ export const LeadsDeleteLeadsIdContactsContactIdParams = zod.object({
     .regex(leadsDeleteLeadsIdContactsContactIdPathContactIdRegExp),
 });
 
-export const LeadsDeleteLeadsIdContactsContactIdResponse = zod.unknown();
+export const LeadsDeleteLeadsIdContactsContactIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/leads.ts.
@@ -955,7 +1794,13 @@ export const LeadsDeleteLeadsIdAttachmentsAttachmentIdParams = zod.object({
     .regex(leadsDeleteLeadsIdAttachmentsAttachmentIdPathAttachmentIdRegExp),
 });
 
-export const LeadsDeleteLeadsIdAttachmentsAttachmentIdResponse = zod.unknown();
+export const LeadsDeleteLeadsIdAttachmentsAttachmentIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/leads.ts.
@@ -984,10 +1829,15 @@ export const LeadsPostLeadsIdActivitiesParams = zod.object({
   id: zod.coerce.string().uuid().regex(leadsPostLeadsIdActivitiesPathIdRegExp),
 });
 
+export const leadsPostLeadsIdActivitiesBodyTitleMax = 255;
+
 export const LeadsPostLeadsIdActivitiesBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    title: zod.string().min(1).max(leadsPostLeadsIdActivitiesBodyTitleMax),
+    notes: zod.string().nullish(),
+  })
   .describe(
-    "Request schema derived from activityCreateSchema in artifacts\/api-server\/src\/routes\/leads.ts.",
+    "Request body for logging a lead activity (`POST \/leads\/{id}\/activities`).",
   );
 
 /**
@@ -1287,7 +2137,77 @@ export const DailyLogsGetJobsJobIdDailyLogsParams = zod.object({
     .regex(dailyLogsGetJobsJobIdDailyLogsPathJobIdRegExp),
 });
 
-export const DailyLogsGetJobsJobIdDailyLogsResponse = zod.unknown();
+export const dailyLogsGetJobsJobIdDailyLogsResponsePaginationTotalItemsMin = 0;
+
+export const DailyLogsGetJobsJobIdDailyLogsResponse = zod.object({
+  logs: zod.array(
+    zod
+      .object({
+        id: zod.string().uuid(),
+        jobId: zod.string().uuid().nullish(),
+        jobTitle: zod.string().nullish(),
+        logDate: zod.string(),
+        title: zod.string().nullish(),
+        notes: zod.string(),
+        weatherData: zod
+          .object({
+            condition: zod.string(),
+            icon: zod.string(),
+            temperatureHigh: zod.number().nullish(),
+            temperatureLow: zod.number().nullish(),
+            windMph: zod.number().nullish(),
+            humidity: zod.number().nullish(),
+            precipitation: zod.number(),
+            fetchedAt: zod.coerce.date(),
+          })
+          .nullish()
+          .describe(
+            'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+          ),
+        includeWeather: zod.boolean().optional(),
+        includeWeatherNotes: zod.boolean().optional(),
+        weatherNotes: zod.string().nullish(),
+        customFieldValues: zod
+          .record(
+            zod.string(),
+            zod.union([zod.string(), zod.number(), zod.boolean(), zod.null()]),
+          )
+          .optional(),
+        shareInternalUsers: zod.boolean().optional(),
+        shareSubsVendors: zod.boolean().optional(),
+        shareClient: zod.boolean().optional(),
+        isPrivate: zod.boolean().optional(),
+        createdBy: zod.string().uuid().nullish(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date(),
+        publishedAt: zod.coerce.date().nullish(),
+        createdByName: zod.string().nullish(),
+        notifyUserIds: zod.array(zod.string().uuid()).optional(),
+        tags: zod.array(zod.string()),
+        attachmentCount: zod.number().optional(),
+        likesCount: zod.number().optional(),
+        commentsCount: zod.number().optional(),
+        likedByCurrentUser: zod.boolean().optional(),
+        visibilityLabel: zod.string().optional(),
+        todoCount: zod.number().optional(),
+        completedTodoCount: zod.number().optional(),
+        status: zod.enum(["draft", "published"]),
+      })
+      .describe(
+        "Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).",
+      ),
+  ),
+  pagination: zod
+    .object({
+      page: zod.number().min(1),
+      pageSize: zod.number().min(1),
+      totalItems: zod
+        .number()
+        .min(dailyLogsGetJobsJobIdDailyLogsResponsePaginationTotalItemsMin),
+      totalPages: zod.number().min(1),
+    })
+    .describe("Standard pagination metadata returned with list responses."),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with dailyLogPayloadSchema.
@@ -1304,10 +2224,97 @@ export const DailyLogsPostJobsJobIdDailyLogsParams = zod.object({
     .regex(dailyLogsPostJobsJobIdDailyLogsPathJobIdRegExp),
 });
 
+export const dailyLogsPostJobsJobIdDailyLogsBodyLogDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const dailyLogsPostJobsJobIdDailyLogsBodyNotesDefault = ``;
+export const dailyLogsPostJobsJobIdDailyLogsBodyIncludeWeatherDefault = true;
+export const dailyLogsPostJobsJobIdDailyLogsBodyIncludeWeatherNotesDefault = false;
+export const dailyLogsPostJobsJobIdDailyLogsBodyShareInternalUsersDefault = true;
+export const dailyLogsPostJobsJobIdDailyLogsBodyShareSubsVendorsDefault = false;
+export const dailyLogsPostJobsJobIdDailyLogsBodyShareClientDefault = false;
+export const dailyLogsPostJobsJobIdDailyLogsBodyIsPrivateDefault = false;
+export const dailyLogsPostJobsJobIdDailyLogsBodyNotifyUserIdsDefault = [];
+export const dailyLogsPostJobsJobIdDailyLogsBodyTagsItemMax = 100;
+
+export const dailyLogsPostJobsJobIdDailyLogsBodyTagsDefault = [];
+export const dailyLogsPostJobsJobIdDailyLogsBodyCustomFieldValuesDefault = {};
+
 export const DailyLogsPostJobsJobIdDailyLogsBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    jobId: zod
+      .string()
+      .uuid()
+      .optional()
+      .describe("Optional override; the URL `jobId` always wins on create."),
+    logDate: zod
+      .string()
+      .regex(dailyLogsPostJobsJobIdDailyLogsBodyLogDateRegExp),
+    title: zod.string().nullish(),
+    notes: zod
+      .string()
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyNotesDefault),
+    weatherData: zod
+      .union([
+        zod
+          .object({
+            condition: zod.string(),
+            icon: zod.string(),
+            temperatureHigh: zod.number().nullish(),
+            temperatureLow: zod.number().nullish(),
+            windMph: zod.number().nullish(),
+            humidity: zod.number().nullish(),
+            precipitation: zod.number(),
+            fetchedAt: zod.coerce.date(),
+          })
+          .describe(
+            'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+          ),
+        zod.null(),
+      ])
+      .optional()
+      .describe(
+        "Snapshot of weather captured at the time the log was authored. Stored verbatim for client-side rendering.",
+      ),
+    includeWeather: zod
+      .boolean()
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyIncludeWeatherDefault),
+    includeWeatherNotes: zod
+      .boolean()
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyIncludeWeatherNotesDefault),
+    weatherNotes: zod.string().nullish(),
+    shareInternalUsers: zod
+      .boolean()
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyShareInternalUsersDefault),
+    shareSubsVendors: zod
+      .boolean()
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyShareSubsVendorsDefault),
+    shareClient: zod
+      .boolean()
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyShareClientDefault),
+    isPrivate: zod
+      .boolean()
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyIsPrivateDefault),
+    notifyUserIds: zod
+      .array(zod.string().uuid())
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyNotifyUserIdsDefault),
+    tags: zod
+      .array(
+        zod.string().min(1).max(dailyLogsPostJobsJobIdDailyLogsBodyTagsItemMax),
+      )
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyTagsDefault),
+    customFieldValues: zod
+      .record(
+        zod.string(),
+        zod.union([zod.string(), zod.number(), zod.boolean(), zod.null()]),
+      )
+      .default(dailyLogsPostJobsJobIdDailyLogsBodyCustomFieldValuesDefault)
+      .describe(
+        "Map of custom field id → scalar value (string, number, boolean, or null).",
+      ),
+  })
   .describe(
-    "Request schema derived from dailyLogPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+    "Request body for creating or updating a daily log (`POST \/jobs\/{jobId}\/daily-logs`, `PUT \/daily-logs\/{id}`). On create, `jobId` is taken from the URL; on update the URL identifies the log directly. `customFieldValues` is a free-form object whose values are scalar (string, number, boolean, or null).",
   );
 
 /**
@@ -1322,7 +2329,100 @@ export const DailyLogsGetDailyLogsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(dailyLogsGetDailyLogsIdPathIdRegExp),
 });
 
-export const DailyLogsGetDailyLogsIdResponse = zod.unknown();
+export const DailyLogsGetDailyLogsIdResponse = zod.object({
+  log: zod
+    .object({
+      id: zod.string().uuid(),
+      jobId: zod.string().uuid().nullish(),
+      logDate: zod.string(),
+      title: zod.string().nullish(),
+      notes: zod.string(),
+      weatherData: zod
+        .object({
+          condition: zod.string(),
+          icon: zod.string(),
+          temperatureHigh: zod.number().nullish(),
+          temperatureLow: zod.number().nullish(),
+          windMph: zod.number().nullish(),
+          humidity: zod.number().nullish(),
+          precipitation: zod.number(),
+          fetchedAt: zod.coerce.date(),
+        })
+        .nullish()
+        .describe(
+          'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+        ),
+      includeWeather: zod.boolean().optional(),
+      includeWeatherNotes: zod.boolean().optional(),
+      weatherNotes: zod.string().nullish(),
+      customFieldValues: zod
+        .record(
+          zod.string(),
+          zod.union([zod.string(), zod.number(), zod.boolean(), zod.null()]),
+        )
+        .optional(),
+      shareInternalUsers: zod.boolean().optional(),
+      shareSubsVendors: zod.boolean().optional(),
+      shareClient: zod.boolean().optional(),
+      isPrivate: zod.boolean().optional(),
+      createdBy: zod.string().uuid().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+      publishedAt: zod.coerce.date().nullish(),
+      deletedAt: zod.coerce.date().nullish(),
+      createdByName: zod.string().nullish(),
+      notifyUserIds: zod.array(zod.string().uuid()).optional(),
+      notifyUsers: zod
+        .array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fullName: zod.string().nullish(),
+              email: zod.string(),
+              role: zod.string(),
+              avatarUrl: zod.string().nullish(),
+            })
+            .describe(
+              "A user assigned to or notified about a job, schedule item, or daily log.",
+            ),
+        )
+        .optional(),
+      tags: zod.array(zod.string()),
+      attachments: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          fileId: zod.string().uuid(),
+          originalName: zod.string(),
+          fileUrl: zod.string(),
+          fileSize: zod.number(),
+          mimeType: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          uploadedByName: zod.string().nullish(),
+        }),
+      ),
+      likesCount: zod.number().optional(),
+      commentsCount: zod.number().optional(),
+      likedByCurrentUser: zod.boolean().optional(),
+      visibilityLabel: zod.string().optional(),
+      todos: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          title: zod.string(),
+          isComplete: zod.boolean(),
+          createdBy: zod.string().uuid().nullish(),
+          createdByName: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+        }),
+      ),
+      todoCount: zod.number().optional(),
+      completedTodoCount: zod.number().optional(),
+      status: zod.enum(["draft", "published"]),
+    })
+    .describe(
+      "Hydrated daily log returned from detail endpoints. Wraps the database row with derived counters, weather, attachments, todos, notify users, and visibility metadata.",
+    ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with dailyLogPayloadSchema.
@@ -1336,13 +2436,187 @@ export const DailyLogsPutDailyLogsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(dailyLogsPutDailyLogsIdPathIdRegExp),
 });
 
+export const dailyLogsPutDailyLogsIdBodyLogDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const dailyLogsPutDailyLogsIdBodyNotesDefault = ``;
+export const dailyLogsPutDailyLogsIdBodyIncludeWeatherDefault = true;
+export const dailyLogsPutDailyLogsIdBodyIncludeWeatherNotesDefault = false;
+export const dailyLogsPutDailyLogsIdBodyShareInternalUsersDefault = true;
+export const dailyLogsPutDailyLogsIdBodyShareSubsVendorsDefault = false;
+export const dailyLogsPutDailyLogsIdBodyShareClientDefault = false;
+export const dailyLogsPutDailyLogsIdBodyIsPrivateDefault = false;
+export const dailyLogsPutDailyLogsIdBodyNotifyUserIdsDefault = [];
+export const dailyLogsPutDailyLogsIdBodyTagsItemMax = 100;
+
+export const dailyLogsPutDailyLogsIdBodyTagsDefault = [];
+export const dailyLogsPutDailyLogsIdBodyCustomFieldValuesDefault = {};
+
 export const DailyLogsPutDailyLogsIdBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    jobId: zod
+      .string()
+      .uuid()
+      .optional()
+      .describe("Optional override; the URL `jobId` always wins on create."),
+    logDate: zod.string().regex(dailyLogsPutDailyLogsIdBodyLogDateRegExp),
+    title: zod.string().nullish(),
+    notes: zod.string().default(dailyLogsPutDailyLogsIdBodyNotesDefault),
+    weatherData: zod
+      .union([
+        zod
+          .object({
+            condition: zod.string(),
+            icon: zod.string(),
+            temperatureHigh: zod.number().nullish(),
+            temperatureLow: zod.number().nullish(),
+            windMph: zod.number().nullish(),
+            humidity: zod.number().nullish(),
+            precipitation: zod.number(),
+            fetchedAt: zod.coerce.date(),
+          })
+          .describe(
+            'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+          ),
+        zod.null(),
+      ])
+      .optional()
+      .describe(
+        "Snapshot of weather captured at the time the log was authored. Stored verbatim for client-side rendering.",
+      ),
+    includeWeather: zod
+      .boolean()
+      .default(dailyLogsPutDailyLogsIdBodyIncludeWeatherDefault),
+    includeWeatherNotes: zod
+      .boolean()
+      .default(dailyLogsPutDailyLogsIdBodyIncludeWeatherNotesDefault),
+    weatherNotes: zod.string().nullish(),
+    shareInternalUsers: zod
+      .boolean()
+      .default(dailyLogsPutDailyLogsIdBodyShareInternalUsersDefault),
+    shareSubsVendors: zod
+      .boolean()
+      .default(dailyLogsPutDailyLogsIdBodyShareSubsVendorsDefault),
+    shareClient: zod
+      .boolean()
+      .default(dailyLogsPutDailyLogsIdBodyShareClientDefault),
+    isPrivate: zod
+      .boolean()
+      .default(dailyLogsPutDailyLogsIdBodyIsPrivateDefault),
+    notifyUserIds: zod
+      .array(zod.string().uuid())
+      .default(dailyLogsPutDailyLogsIdBodyNotifyUserIdsDefault),
+    tags: zod
+      .array(zod.string().min(1).max(dailyLogsPutDailyLogsIdBodyTagsItemMax))
+      .default(dailyLogsPutDailyLogsIdBodyTagsDefault),
+    customFieldValues: zod
+      .record(
+        zod.string(),
+        zod.union([zod.string(), zod.number(), zod.boolean(), zod.null()]),
+      )
+      .default(dailyLogsPutDailyLogsIdBodyCustomFieldValuesDefault)
+      .describe(
+        "Map of custom field id → scalar value (string, number, boolean, or null).",
+      ),
+  })
   .describe(
-    "Request schema derived from dailyLogPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+    "Request body for creating or updating a daily log (`POST \/jobs\/{jobId}\/daily-logs`, `PUT \/daily-logs\/{id}`). On create, `jobId` is taken from the URL; on update the URL identifies the log directly. `customFieldValues` is a free-form object whose values are scalar (string, number, boolean, or null).",
   );
 
-export const DailyLogsPutDailyLogsIdResponse = zod.unknown();
+export const DailyLogsPutDailyLogsIdResponse = zod.object({
+  log: zod
+    .object({
+      id: zod.string().uuid(),
+      jobId: zod.string().uuid().nullish(),
+      logDate: zod.string(),
+      title: zod.string().nullish(),
+      notes: zod.string(),
+      weatherData: zod
+        .object({
+          condition: zod.string(),
+          icon: zod.string(),
+          temperatureHigh: zod.number().nullish(),
+          temperatureLow: zod.number().nullish(),
+          windMph: zod.number().nullish(),
+          humidity: zod.number().nullish(),
+          precipitation: zod.number(),
+          fetchedAt: zod.coerce.date(),
+        })
+        .nullish()
+        .describe(
+          'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+        ),
+      includeWeather: zod.boolean().optional(),
+      includeWeatherNotes: zod.boolean().optional(),
+      weatherNotes: zod.string().nullish(),
+      customFieldValues: zod
+        .record(
+          zod.string(),
+          zod.union([zod.string(), zod.number(), zod.boolean(), zod.null()]),
+        )
+        .optional(),
+      shareInternalUsers: zod.boolean().optional(),
+      shareSubsVendors: zod.boolean().optional(),
+      shareClient: zod.boolean().optional(),
+      isPrivate: zod.boolean().optional(),
+      createdBy: zod.string().uuid().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+      publishedAt: zod.coerce.date().nullish(),
+      deletedAt: zod.coerce.date().nullish(),
+      createdByName: zod.string().nullish(),
+      notifyUserIds: zod.array(zod.string().uuid()).optional(),
+      notifyUsers: zod
+        .array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fullName: zod.string().nullish(),
+              email: zod.string(),
+              role: zod.string(),
+              avatarUrl: zod.string().nullish(),
+            })
+            .describe(
+              "A user assigned to or notified about a job, schedule item, or daily log.",
+            ),
+        )
+        .optional(),
+      tags: zod.array(zod.string()),
+      attachments: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          fileId: zod.string().uuid(),
+          originalName: zod.string(),
+          fileUrl: zod.string(),
+          fileSize: zod.number(),
+          mimeType: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          uploadedByName: zod.string().nullish(),
+        }),
+      ),
+      likesCount: zod.number().optional(),
+      commentsCount: zod.number().optional(),
+      likedByCurrentUser: zod.boolean().optional(),
+      visibilityLabel: zod.string().optional(),
+      todos: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          title: zod.string(),
+          isComplete: zod.boolean(),
+          createdBy: zod.string().uuid().nullish(),
+          createdByName: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+        }),
+      ),
+      todoCount: zod.number().optional(),
+      completedTodoCount: zod.number().optional(),
+      status: zod.enum(["draft", "published"]),
+    })
+    .describe(
+      "Hydrated daily log returned from detail endpoints. Wraps the database row with derived counters, weather, attachments, todos, notify users, and visibility metadata.",
+    ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
@@ -1356,7 +2630,13 @@ export const DailyLogsDeleteDailyLogsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(dailyLogsDeleteDailyLogsIdPathIdRegExp),
 });
 
-export const DailyLogsDeleteDailyLogsIdResponse = zod.unknown();
+export const DailyLogsDeleteDailyLogsIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
@@ -1373,13 +2653,121 @@ export const DailyLogsPostDailyLogsIdPublishParams = zod.object({
     .regex(dailyLogsPostDailyLogsIdPublishPathIdRegExp),
 });
 
-export const DailyLogsPostDailyLogsIdPublishResponse = zod.unknown();
+export const DailyLogsPostDailyLogsIdPublishResponse = zod.object({
+  log: zod
+    .object({
+      id: zod.string().uuid(),
+      jobId: zod.string().uuid().nullish(),
+      logDate: zod.string(),
+      title: zod.string().nullish(),
+      notes: zod.string(),
+      weatherData: zod
+        .object({
+          condition: zod.string(),
+          icon: zod.string(),
+          temperatureHigh: zod.number().nullish(),
+          temperatureLow: zod.number().nullish(),
+          windMph: zod.number().nullish(),
+          humidity: zod.number().nullish(),
+          precipitation: zod.number(),
+          fetchedAt: zod.coerce.date(),
+        })
+        .nullish()
+        .describe(
+          'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+        ),
+      includeWeather: zod.boolean().optional(),
+      includeWeatherNotes: zod.boolean().optional(),
+      weatherNotes: zod.string().nullish(),
+      customFieldValues: zod
+        .record(
+          zod.string(),
+          zod.union([zod.string(), zod.number(), zod.boolean(), zod.null()]),
+        )
+        .optional(),
+      shareInternalUsers: zod.boolean().optional(),
+      shareSubsVendors: zod.boolean().optional(),
+      shareClient: zod.boolean().optional(),
+      isPrivate: zod.boolean().optional(),
+      createdBy: zod.string().uuid().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+      publishedAt: zod.coerce.date().nullish(),
+      deletedAt: zod.coerce.date().nullish(),
+      createdByName: zod.string().nullish(),
+      notifyUserIds: zod.array(zod.string().uuid()).optional(),
+      notifyUsers: zod
+        .array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fullName: zod.string().nullish(),
+              email: zod.string(),
+              role: zod.string(),
+              avatarUrl: zod.string().nullish(),
+            })
+            .describe(
+              "A user assigned to or notified about a job, schedule item, or daily log.",
+            ),
+        )
+        .optional(),
+      tags: zod.array(zod.string()),
+      attachments: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          fileId: zod.string().uuid(),
+          originalName: zod.string(),
+          fileUrl: zod.string(),
+          fileSize: zod.number(),
+          mimeType: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          uploadedByName: zod.string().nullish(),
+        }),
+      ),
+      likesCount: zod.number().optional(),
+      commentsCount: zod.number().optional(),
+      likedByCurrentUser: zod.boolean().optional(),
+      visibilityLabel: zod.string().optional(),
+      todos: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          title: zod.string(),
+          isComplete: zod.boolean(),
+          createdBy: zod.string().uuid().nullish(),
+          createdByName: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+        }),
+      ),
+      todoCount: zod.number().optional(),
+      completedTodoCount: zod.number().optional(),
+      status: zod.enum(["draft", "published"]),
+    })
+    .describe(
+      "Hydrated daily log returned from detail endpoints. Wraps the database row with derived counters, weather, attachments, todos, notify users, and visibility metadata.",
+    ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with weatherQuerySchema.
  * @summary GET /weather
  */
-export const DailyLogsGetWeatherResponse = zod.unknown();
+export const DailyLogsGetWeatherResponse = zod.object({
+  weather: zod
+    .object({
+      condition: zod.string(),
+      icon: zod.string(),
+      temperatureHigh: zod.number().nullish(),
+      temperatureLow: zod.number().nullish(),
+      windMph: zod.number().nullish(),
+      humidity: zod.number().nullish(),
+      precipitation: zod.number(),
+      fetchedAt: zod.coerce.date(),
+    })
+    .describe(
+      'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+    ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
@@ -1396,7 +2784,10 @@ export const DailyLogsPostDailyLogsIdLikeParams = zod.object({
     .regex(dailyLogsPostDailyLogsIdLikePathIdRegExp),
 });
 
-export const DailyLogsPostDailyLogsIdLikeResponse = zod.unknown();
+export const DailyLogsPostDailyLogsIdLikeResponse = zod.object({
+  liked: zod.boolean(),
+  likesCount: zod.number(),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
@@ -1413,7 +2804,41 @@ export const DailyLogsGetDailyLogsIdCommentsParams = zod.object({
     .regex(dailyLogsGetDailyLogsIdCommentsPathIdRegExp),
 });
 
-export const DailyLogsGetDailyLogsIdCommentsResponse = zod.unknown();
+export const DailyLogsGetDailyLogsIdCommentsResponse = zod.object({
+  comments: zod.array(
+    zod
+      .object({
+        id: zod.string().uuid(),
+        dailyLogId: zod.string().uuid(),
+        parentCommentId: zod.string().uuid().nullish(),
+        body: zod.string(),
+        mentions: zod.array(zod.string()),
+        attachments: zod.array(
+          zod.object({
+            name: zod.string(),
+            url: zod.string(),
+            mimeType: zod.string().nullish(),
+          }),
+        ),
+        links: zod.array(zod.string()),
+        reactions: zod
+          .record(zod.string(), zod.array(zod.string()))
+          .describe("Map of emoji → list of user ids that reacted with it."),
+        createdBy: zod.string().uuid().nullish(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date(),
+        author: zod.object({
+          id: zod.string().uuid().nullish(),
+          fullName: zod.string().nullish(),
+          avatarUrl: zod.string().nullish(),
+        }),
+        replies: zod.array(zod.unknown()),
+      })
+      .describe(
+        "Comment on a daily log. Replies are nested via `replies` (recursive).",
+      ),
+  ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with commentPayloadSchema.
@@ -1430,10 +2855,39 @@ export const DailyLogsPostDailyLogsIdCommentsParams = zod.object({
     .regex(dailyLogsPostDailyLogsIdCommentsPathIdRegExp),
 });
 
+export const dailyLogsPostDailyLogsIdCommentsBodyBodyMax = 10000;
+
+export const dailyLogsPostDailyLogsIdCommentsBodyMentionsDefault = [];
+export const dailyLogsPostDailyLogsIdCommentsBodyAttachmentsItemNameMax = 255;
+
+export const dailyLogsPostDailyLogsIdCommentsBodyAttachmentsDefault = [];
+export const dailyLogsPostDailyLogsIdCommentsBodyLinksDefault = [];
+
 export const DailyLogsPostDailyLogsIdCommentsBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    body: zod.string().min(1).max(dailyLogsPostDailyLogsIdCommentsBodyBodyMax),
+    parentCommentId: zod.string().uuid().nullish(),
+    mentions: zod
+      .array(zod.string().uuid())
+      .default(dailyLogsPostDailyLogsIdCommentsBodyMentionsDefault),
+    attachments: zod
+      .array(
+        zod.object({
+          name: zod
+            .string()
+            .min(1)
+            .max(dailyLogsPostDailyLogsIdCommentsBodyAttachmentsItemNameMax),
+          url: zod.string().url(),
+          mimeType: zod.string().nullish(),
+        }),
+      )
+      .default(dailyLogsPostDailyLogsIdCommentsBodyAttachmentsDefault),
+    links: zod
+      .array(zod.string().url())
+      .default(dailyLogsPostDailyLogsIdCommentsBodyLinksDefault),
+  })
   .describe(
-    "Request schema derived from commentPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+    "Request body for creating a daily-log comment (`POST \/daily-logs\/{id}\/comments`).",
   );
 
 /**
@@ -1463,14 +2917,55 @@ export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsParams =
       ),
   });
 
+export const dailyLogsPostDailyLogsIdCommentsCommentIdReactionsBodyEmojiMax = 32;
+
 export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    emoji: zod
+      .string()
+      .min(1)
+      .max(dailyLogsPostDailyLogsIdCommentsCommentIdReactionsBodyEmojiMax),
+  })
   .describe(
-    "Request schema derived from commentReactionPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+    "Request body for toggling a reaction on a daily-log comment (`PUT \/daily-logs\/{id}\/comments\/{commentId}\/reactions`). Sending the same emoji twice removes the reaction.",
   );
 
 export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsResponse =
-  zod.unknown();
+  zod.object({
+    comments: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          dailyLogId: zod.string().uuid(),
+          parentCommentId: zod.string().uuid().nullish(),
+          body: zod.string(),
+          mentions: zod.array(zod.string()),
+          attachments: zod.array(
+            zod.object({
+              name: zod.string(),
+              url: zod.string(),
+              mimeType: zod.string().nullish(),
+            }),
+          ),
+          links: zod.array(zod.string()),
+          reactions: zod
+            .record(zod.string(), zod.array(zod.string()))
+            .describe("Map of emoji → list of user ids that reacted with it."),
+          createdBy: zod.string().uuid().nullish(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+          author: zod.object({
+            id: zod.string().uuid().nullish(),
+            fullName: zod.string().nullish(),
+            avatarUrl: zod.string().nullish(),
+          }),
+          replies: zod.array(zod.unknown()),
+        })
+        .describe(
+          "Comment on a daily log. Replies are nested via `replies` (recursive).",
+        ),
+    ),
+  });
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with todoPayloadSchema.
@@ -1487,10 +2982,14 @@ export const DailyLogsPostDailyLogsIdTodosParams = zod.object({
     .regex(dailyLogsPostDailyLogsIdTodosPathIdRegExp),
 });
 
+export const dailyLogsPostDailyLogsIdTodosBodyTitleMax = 255;
+
 export const DailyLogsPostDailyLogsIdTodosBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    title: zod.string().min(1).max(dailyLogsPostDailyLogsIdTodosBodyTitleMax),
+  })
   .describe(
-    "Request schema derived from todoPayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+    "Request body for creating a daily-log to-do (`POST \/daily-logs\/{id}\/todos`).",
   );
 
 /**
@@ -1517,12 +3016,26 @@ export const DailyLogsPostDailyLogsIdTodosTodoIdToggleParams = zod.object({
 });
 
 export const DailyLogsPostDailyLogsIdTodosTodoIdToggleBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    isComplete: zod.boolean().optional(),
+  })
   .describe(
-    "Request schema derived from todoTogglePayloadSchema in artifacts\/api-server\/src\/routes\/daily-logs.ts.",
+    "Request body for toggling a daily-log to-do (`PUT \/daily-logs\/{id}\/todos\/{todoId}`). Omitting `isComplete` flips the current value.",
   );
 
-export const DailyLogsPostDailyLogsIdTodosTodoIdToggleResponse = zod.unknown();
+export const DailyLogsPostDailyLogsIdTodosTodoIdToggleResponse = zod.object({
+  todos: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      title: zod.string(),
+      isComplete: zod.boolean(),
+      createdBy: zod.string().uuid().nullish(),
+      createdByName: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+    }),
+  ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts.
@@ -1566,8 +3079,13 @@ export const DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdParams =
       ),
   });
 
-export const DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdResponse =
-  zod.unknown();
+export const DailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts.
@@ -1650,7 +3168,144 @@ export const DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdResponse =
  * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts. Validated query with myDailyLogsQuerySchema.
  * @summary GET /daily-logs/mine
  */
-export const DailyLogAdminGetDailyLogsMineResponse = zod.unknown();
+export const DailyLogAdminGetDailyLogsMineResponse = zod
+  .object({
+    data: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          jobId: zod.string().uuid().nullish(),
+          jobTitle: zod.string().nullish(),
+          logDate: zod.string(),
+          title: zod.string().nullish(),
+          notes: zod.string(),
+          weatherData: zod
+            .object({
+              condition: zod.string(),
+              icon: zod.string(),
+              temperatureHigh: zod.number().nullish(),
+              temperatureLow: zod.number().nullish(),
+              windMph: zod.number().nullish(),
+              humidity: zod.number().nullish(),
+              precipitation: zod.number(),
+              fetchedAt: zod.coerce.date(),
+            })
+            .nullish()
+            .describe(
+              'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+            ),
+          includeWeather: zod.boolean().optional(),
+          includeWeatherNotes: zod.boolean().optional(),
+          weatherNotes: zod.string().nullish(),
+          customFieldValues: zod
+            .record(
+              zod.string(),
+              zod.union([
+                zod.string(),
+                zod.number(),
+                zod.boolean(),
+                zod.null(),
+              ]),
+            )
+            .optional(),
+          shareInternalUsers: zod.boolean().optional(),
+          shareSubsVendors: zod.boolean().optional(),
+          shareClient: zod.boolean().optional(),
+          isPrivate: zod.boolean().optional(),
+          createdBy: zod.string().uuid().nullish(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+          publishedAt: zod.coerce.date().nullish(),
+          createdByName: zod.string().nullish(),
+          notifyUserIds: zod.array(zod.string().uuid()).optional(),
+          tags: zod.array(zod.string()),
+          attachmentCount: zod.number().optional(),
+          likesCount: zod.number().optional(),
+          commentsCount: zod.number().optional(),
+          likedByCurrentUser: zod.boolean().optional(),
+          visibilityLabel: zod.string().optional(),
+          todoCount: zod.number().optional(),
+          completedTodoCount: zod.number().optional(),
+          status: zod.enum(["draft", "published"]),
+        })
+        .describe(
+          "Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).",
+        ),
+    ),
+    logs: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          jobId: zod.string().uuid().nullish(),
+          jobTitle: zod.string().nullish(),
+          logDate: zod.string(),
+          title: zod.string().nullish(),
+          notes: zod.string(),
+          weatherData: zod
+            .object({
+              condition: zod.string(),
+              icon: zod.string(),
+              temperatureHigh: zod.number().nullish(),
+              temperatureLow: zod.number().nullish(),
+              windMph: zod.number().nullish(),
+              humidity: zod.number().nullish(),
+              precipitation: zod.number(),
+              fetchedAt: zod.coerce.date(),
+            })
+            .nullish()
+            .describe(
+              'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+            ),
+          includeWeather: zod.boolean().optional(),
+          includeWeatherNotes: zod.boolean().optional(),
+          weatherNotes: zod.string().nullish(),
+          customFieldValues: zod
+            .record(
+              zod.string(),
+              zod.union([
+                zod.string(),
+                zod.number(),
+                zod.boolean(),
+                zod.null(),
+              ]),
+            )
+            .optional(),
+          shareInternalUsers: zod.boolean().optional(),
+          shareSubsVendors: zod.boolean().optional(),
+          shareClient: zod.boolean().optional(),
+          isPrivate: zod.boolean().optional(),
+          createdBy: zod.string().uuid().nullish(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+          publishedAt: zod.coerce.date().nullish(),
+          createdByName: zod.string().nullish(),
+          notifyUserIds: zod.array(zod.string().uuid()).optional(),
+          tags: zod.array(zod.string()),
+          attachmentCount: zod.number().optional(),
+          likesCount: zod.number().optional(),
+          commentsCount: zod.number().optional(),
+          likedByCurrentUser: zod.boolean().optional(),
+          visibilityLabel: zod.string().optional(),
+          todoCount: zod.number().optional(),
+          completedTodoCount: zod.number().optional(),
+          status: zod.enum(["draft", "published"]),
+        })
+        .describe(
+          "Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).",
+        ),
+    ),
+    pagination: zod.object({
+      page: zod.number(),
+      pageSize: zod.number(),
+      limit: zod.number(),
+      total: zod.number(),
+      totalItems: zod.number(),
+      totalPages: zod.number(),
+    }),
+  })
+  .describe(
+    "Response for `GET \/daily-logs\/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -1667,7 +3322,41 @@ export const ScheduleGetJobsJobIdScheduleSettingsParams = zod.object({
     .regex(scheduleGetJobsJobIdScheduleSettingsPathJobIdRegExp),
 });
 
-export const ScheduleGetJobsJobIdScheduleSettingsResponse = zod.unknown();
+export const ScheduleGetJobsJobIdScheduleSettingsResponse = zod
+  .object({
+    defaultView: zod.string(),
+    showTimesOnMonthView: zod.boolean(),
+    showJobNameOnAllListedJobs: zod.boolean(),
+    automaticallyMarkItemsComplete: zod.boolean(),
+    includeHeaderOnPdfExports: zod.boolean(),
+  })
+  .describe("Base configurable schedule settings values.")
+  .and(
+    zod.object({
+      phases: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          name: zod.string(),
+          color: zod.string().nullish(),
+        }),
+      ),
+      tags: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          name: zod.string(),
+        }),
+      ),
+      workdayExceptionCategories: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          name: zod.string(),
+        }),
+      ),
+    }),
+  )
+  .describe(
+    "Schedule settings hydrated for a job. Returned by `GET \/jobs\/{jobId}\/schedule\/settings`. Includes the flat settings values along with the lists of phases, tags, and workday exception categories.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -1689,7 +3378,27 @@ export const SchedulePutJobsJobIdScheduleSettingsBody = zod.record(
   zod.unknown(),
 );
 
-export const SchedulePutJobsJobIdScheduleSettingsResponse = zod.unknown();
+export const SchedulePutJobsJobIdScheduleSettingsResponse = zod
+  .object({
+    settings: zod
+      .object({
+        id: zod.string(),
+        jobId: zod.string(),
+        defaultView: zod.string(),
+        showTimesOnMonthView: zod.boolean().optional(),
+        showJobNameOnAllListedJobs: zod.boolean().optional(),
+        automaticallyMarkItemsComplete: zod.boolean().optional(),
+        includeHeaderOnPdfExports: zod.boolean().optional(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date(),
+      })
+      .describe(
+        "Schedule settings row as stored in the database. Returned by `PUT \/jobs\/{jobId}\/schedule\/settings`.",
+      ),
+  })
+  .describe(
+    "Response from `PUT \/jobs\/{jobId}\/schedule\/settings`. Echoes the updated DB row only; phases\/tags\/categories are unchanged so the client should refetch them via `GET \/jobs\/{jobId}\/schedule\/settings` if needed.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
@@ -1707,11 +3416,17 @@ export const SchedulePostJobsJobIdScheduleSettingsPhasesParams = zod.object({
     .regex(schedulePostJobsJobIdScheduleSettingsPhasesPathJobIdRegExp),
 });
 
+export const schedulePostJobsJobIdScheduleSettingsPhasesBodyNameMax = 100;
+
 export const SchedulePostJobsJobIdScheduleSettingsPhasesBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from schedulePhasePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
-  );
+  .object({
+    name: zod
+      .string()
+      .min(1)
+      .max(schedulePostJobsJobIdScheduleSettingsPhasesBodyNameMax),
+    color: zod.string().nullish(),
+  })
+  .describe("Request body for creating or updating a schedule phase.");
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
@@ -1740,11 +3455,17 @@ export const SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdParams =
       ),
   });
 
+export const schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdBodyNameMax = 100;
+
 export const SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from schedulePhasePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
-  );
+  .object({
+    name: zod
+      .string()
+      .min(1)
+      .max(schedulePutJobsJobIdScheduleSettingsPhasesPhaseIdBodyNameMax),
+    color: zod.string().nullish(),
+  })
+  .describe("Request body for creating or updating a schedule phase.");
 
 export const SchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdResponse =
   zod.unknown();
@@ -1764,7 +3485,15 @@ export const ScheduleGetJobsJobIdSchedulePhasesParams = zod.object({
     .regex(scheduleGetJobsJobIdSchedulePhasesPathJobIdRegExp),
 });
 
-export const ScheduleGetJobsJobIdSchedulePhasesResponse = zod.unknown();
+export const ScheduleGetJobsJobIdSchedulePhasesResponse = zod.object({
+  phases: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      name: zod.string(),
+      color: zod.string().nullish(),
+    }),
+  ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
@@ -1781,11 +3510,17 @@ export const SchedulePostJobsJobIdSchedulePhasesParams = zod.object({
     .regex(schedulePostJobsJobIdSchedulePhasesPathJobIdRegExp),
 });
 
+export const schedulePostJobsJobIdSchedulePhasesBodyNameMax = 100;
+
 export const SchedulePostJobsJobIdSchedulePhasesBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from schedulePhasePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
-  );
+  .object({
+    name: zod
+      .string()
+      .min(1)
+      .max(schedulePostJobsJobIdSchedulePhasesBodyNameMax),
+    color: zod.string().nullish(),
+  })
+  .describe("Request body for creating or updating a schedule phase.");
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePhasePayloadSchema.
@@ -1811,13 +3546,25 @@ export const SchedulePutJobsJobIdSchedulePhasesPhaseIdParams = zod.object({
     .regex(schedulePutJobsJobIdSchedulePhasesPhaseIdPathPhaseIdRegExp),
 });
 
-export const SchedulePutJobsJobIdSchedulePhasesPhaseIdBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from schedulePhasePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
-  );
+export const schedulePutJobsJobIdSchedulePhasesPhaseIdBodyNameMax = 100;
 
-export const SchedulePutJobsJobIdSchedulePhasesPhaseIdResponse = zod.unknown();
+export const SchedulePutJobsJobIdSchedulePhasesPhaseIdBody = zod
+  .object({
+    name: zod
+      .string()
+      .min(1)
+      .max(schedulePutJobsJobIdSchedulePhasesPhaseIdBodyNameMax),
+    color: zod.string().nullish(),
+  })
+  .describe("Request body for creating or updating a schedule phase.");
+
+export const SchedulePutJobsJobIdSchedulePhasesPhaseIdResponse = zod.object({
+  phase: zod.object({
+    id: zod.string().uuid(),
+    name: zod.string(),
+    color: zod.string().nullish(),
+  }),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -1843,8 +3590,13 @@ export const ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdParams = zod.object({
     .regex(scheduleDeleteJobsJobIdSchedulePhasesPhaseIdPathPhaseIdRegExp),
 });
 
-export const ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdResponse =
-  zod.unknown();
+export const ScheduleDeleteJobsJobIdSchedulePhasesPhaseIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleSettingPayloadSchema.
@@ -1862,10 +3614,17 @@ export const SchedulePostJobsJobIdScheduleSettingsTagsParams = zod.object({
     .regex(schedulePostJobsJobIdScheduleSettingsTagsPathJobIdRegExp),
 });
 
+export const schedulePostJobsJobIdScheduleSettingsTagsBodyNameMax = 100;
+
 export const SchedulePostJobsJobIdScheduleSettingsTagsBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    name: zod
+      .string()
+      .min(1)
+      .max(schedulePostJobsJobIdScheduleSettingsTagsBodyNameMax),
+  })
   .describe(
-    "Request schema derived from scheduleSettingPayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+    "Request body for creating or renaming a schedule setting (e.g. tag).",
   );
 
 /**
@@ -1892,10 +3651,17 @@ export const SchedulePutJobsJobIdScheduleSettingsTagsTagIdParams = zod.object({
     .regex(schedulePutJobsJobIdScheduleSettingsTagsTagIdPathTagIdRegExp),
 });
 
+export const schedulePutJobsJobIdScheduleSettingsTagsTagIdBodyNameMax = 100;
+
 export const SchedulePutJobsJobIdScheduleSettingsTagsTagIdBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    name: zod
+      .string()
+      .min(1)
+      .max(schedulePutJobsJobIdScheduleSettingsTagsTagIdBodyNameMax),
+  })
   .describe(
-    "Request schema derived from scheduleSettingPayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+    "Request body for creating or renaming a schedule setting (e.g. tag).",
   );
 
 export const SchedulePutJobsJobIdScheduleSettingsTagsTagIdResponse =
@@ -1916,7 +3682,28 @@ export const ScheduleGetJobsJobIdScheduleBaselineParams = zod.object({
     .regex(scheduleGetJobsJobIdScheduleBaselinePathJobIdRegExp),
 });
 
-export const ScheduleGetJobsJobIdScheduleBaselineResponse = zod.unknown();
+export const ScheduleGetJobsJobIdScheduleBaselineResponse = zod.object({
+  baseline: zod
+    .object({
+      id: zod.string().uuid(),
+      jobId: zod.string().uuid(),
+      capturedAt: zod.coerce.date(),
+      capturedBy: zod.string().uuid().nullish(),
+      capturedByName: zod.string().nullish(),
+      items: zod.array(
+        zod.object({
+          scheduleItemId: zod.string().uuid(),
+          title: zod.string(),
+          baselineStartDate: zod.string(),
+          baselineEndDate: zod.string(),
+          currentStartDate: zod.string().nullish(),
+          currentEndDate: zod.string().nullish(),
+          shiftDays: zod.number(),
+        }),
+      ),
+    })
+    .nullable(),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -1933,7 +3720,28 @@ export const SchedulePostJobsJobIdScheduleBaselineParams = zod.object({
     .regex(schedulePostJobsJobIdScheduleBaselinePathJobIdRegExp),
 });
 
-export const SchedulePostJobsJobIdScheduleBaselineResponse = zod.unknown();
+export const SchedulePostJobsJobIdScheduleBaselineResponse = zod.object({
+  baseline: zod
+    .object({
+      id: zod.string().uuid(),
+      jobId: zod.string().uuid(),
+      capturedAt: zod.coerce.date(),
+      capturedBy: zod.string().uuid().nullish(),
+      capturedByName: zod.string().nullish(),
+      items: zod.array(
+        zod.object({
+          scheduleItemId: zod.string().uuid(),
+          title: zod.string(),
+          baselineStartDate: zod.string(),
+          baselineEndDate: zod.string(),
+          currentStartDate: zod.string().nullish(),
+          currentEndDate: zod.string().nullish(),
+          shiftDays: zod.number(),
+        }),
+      ),
+    })
+    .nullable(),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -1950,7 +3758,28 @@ export const SchedulePutJobsJobIdScheduleBaselineParams = zod.object({
     .regex(schedulePutJobsJobIdScheduleBaselinePathJobIdRegExp),
 });
 
-export const SchedulePutJobsJobIdScheduleBaselineResponse = zod.unknown();
+export const SchedulePutJobsJobIdScheduleBaselineResponse = zod.object({
+  baseline: zod
+    .object({
+      id: zod.string().uuid(),
+      jobId: zod.string().uuid(),
+      capturedAt: zod.coerce.date(),
+      capturedBy: zod.string().uuid().nullish(),
+      capturedByName: zod.string().nullish(),
+      items: zod.array(
+        zod.object({
+          scheduleItemId: zod.string().uuid(),
+          title: zod.string(),
+          baselineStartDate: zod.string(),
+          baselineEndDate: zod.string(),
+          currentStartDate: zod.string().nullish(),
+          currentEndDate: zod.string().nullish(),
+          shiftDays: zod.number(),
+        }),
+      ),
+    })
+    .nullable(),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -1968,7 +3797,13 @@ export const ScheduleDeleteJobsJobIdScheduleBaselineParams = zod.object({
     .regex(scheduleDeleteJobsJobIdScheduleBaselinePathJobIdRegExp),
 });
 
-export const ScheduleDeleteJobsJobIdScheduleBaselineResponse = zod.unknown();
+export const ScheduleDeleteJobsJobIdScheduleBaselineResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -2025,7 +3860,12 @@ export const SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdBody =
   zod.record(zod.string(), zod.unknown());
 
 export const SchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdResponse =
-  zod.unknown();
+  zod.object({
+    category: zod.object({
+      id: zod.string().uuid(),
+      name: zod.string(),
+    }),
+  });
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -2042,7 +3882,39 @@ export const ScheduleGetJobsJobIdWorkdayExceptionsParams = zod.object({
     .regex(scheduleGetJobsJobIdWorkdayExceptionsPathJobIdRegExp),
 });
 
-export const ScheduleGetJobsJobIdWorkdayExceptionsResponse = zod.unknown();
+export const ScheduleGetJobsJobIdWorkdayExceptionsResponse = zod.object({
+  exceptions: zod.array(
+    zod
+      .object({
+        id: zod.string().uuid(),
+        title: zod.string(),
+        type: zod.enum(["non_workday", "extra_workday"]),
+        startDate: zod.coerce.date(),
+        endDate: zod.coerce.date(),
+        sameEveryYear: zod.boolean().nullish(),
+        categoryId: zod.string().uuid().nullish(),
+        appliesToAllJobs: zod
+          .boolean()
+          .nullish()
+          .describe(
+            "When true, the exception applies to every active job. Only admins can create, update, or delete company-wide exceptions.",
+          ),
+        jobIds: zod
+          .array(zod.string().uuid())
+          .nullish()
+          .describe(
+            "When `appliesToAllJobs` is false, the explicit list of job IDs the exception applies to.",
+          ),
+        notes: zod.string().nullish(),
+        createdBy: zod.string().uuid().nullish(),
+        createdAt: zod.coerce.date().nullish(),
+        updatedAt: zod.coerce.date().nullish(),
+      })
+      .describe(
+        "A workday exception (non-workday or extra-workday) attached to one or more jobs, or applied company-wide when `appliesToAllJobs` is true.",
+      ),
+  ),
+});
 
 /**
  * Create a workday exception (a non-workday or extra-workday) attached to one or more jobs, or to every active job when `appliesToAllJobs` is true. The path `jobId` only scopes the call — the actual job set comes from the request body's `jobIds` (or all jobs when `appliesToAllJobs` is true). Only admins can create company-wide exceptions; other roles can only target jobs they manage.
@@ -2252,8 +4124,119 @@ export const SchedulePostJobsJobIdScheduleTrackConflictsParams = zod.object({
     .regex(schedulePostJobsJobIdScheduleTrackConflictsPathJobIdRegExp),
 });
 
-export const SchedulePostJobsJobIdScheduleTrackConflictsResponse =
-  zod.unknown();
+export const SchedulePostJobsJobIdScheduleTrackConflictsResponse = zod.object({
+  conflicts: zod.array(
+    zod
+      .object({
+        id: zod.string().uuid(),
+        jobId: zod.string().uuid().nullish(),
+        schedulePhaseId: zod.string().uuid().nullish(),
+        phaseId: zod.string().uuid().nullish(),
+        phaseName: zod.string().nullish(),
+        phaseColor: zod.string().nullish(),
+        title: zod.string(),
+        displayColor: zod.string().optional(),
+        startDate: zod.string(),
+        endDate: zod.string(),
+        workDays: zod.number().optional(),
+        isHourly: zod.boolean().optional(),
+        startTime: zod.string().nullish(),
+        endTime: zod.string().nullish(),
+        progress: zod.number().optional(),
+        reminder: zod.string().optional(),
+        showOnGantt: zod.boolean().optional(),
+        visibleToEstimators: zod.boolean().optional(),
+        visibleToInstallers: zod.boolean().optional(),
+        visibleToOfficeStaff: zod.boolean().optional(),
+        isComplete: zod.boolean().optional(),
+        isPersonalTodo: zod.boolean().optional(),
+        notes: zod.string().nullish(),
+        tags: zod.array(zod.string()),
+        notifyUserIds: zod.array(zod.string().uuid()).optional(),
+        assigneeIds: zod.array(zod.string().uuid()),
+        assignees: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fullName: zod.string().nullish(),
+              email: zod.string(),
+              role: zod.string(),
+              avatarUrl: zod.string().nullish(),
+            })
+            .describe(
+              "A user assigned to or notified about a job, schedule item, or daily log.",
+            ),
+        ),
+        predecessors: zod.array(
+          zod.object({
+            scheduleItemId: zod.string().uuid(),
+            dependencyType: zod.enum([
+              "finish_to_start",
+              "start_to_start",
+              "finish_to_finish",
+              "start_to_finish",
+            ]),
+            lagDays: zod.number(),
+            title: zod.string(),
+          }),
+        ),
+        notesStream: zod.array(
+          zod.object({
+            id: zod.string(),
+            note: zod.string(),
+            createdAt: zod.coerce.date(),
+            authorId: zod.string().uuid().nullish(),
+            authorName: zod.string().nullish(),
+            authorAvatarUrl: zod.string().nullish(),
+            isLegacy: zod.boolean(),
+          }),
+        ),
+        noteCount: zod.number().optional(),
+        attachments: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            fileId: zod.string().uuid(),
+            filename: zod.string(),
+            originalName: zod.string(),
+            fileUrl: zod.string(),
+            fileSize: zod.number(),
+            mimeType: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
+            icon: zod.string(),
+          }),
+        ),
+        relatedTodos: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            title: zod.string(),
+            isComplete: zod.boolean(),
+            createdAt: zod.coerce.date(),
+            updatedAt: zod.coerce.date(),
+            createdBy: zod.string().uuid().nullish(),
+            createdByName: zod.string().nullish(),
+          }),
+        ),
+        relatedTodoCount: zod.number().optional(),
+        status: zod
+          .string()
+          .describe(
+            'Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\").',
+          ),
+        hasConflict: zod.boolean(),
+        conflictReasons: zod.array(zod.string()),
+        createdBy: zod.string().uuid().nullish(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date(),
+        deletedAt: zod.coerce.date().nullish(),
+        createdByName: zod.string().nullish(),
+        createdByAvatarUrl: zod.string().nullish(),
+      })
+      .describe(
+        "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
+      ),
+  ),
+  count: zod.number(),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -2273,7 +4256,18 @@ export const SchedulePostJobsJobIdScheduleNotifyAssignedUsersParams =
   });
 
 export const SchedulePostJobsJobIdScheduleNotifyAssignedUsersResponse =
-  zod.unknown();
+  zod.object({
+    success: zod.boolean(),
+    countUsers: zod.number(),
+    countItems: zod.number(),
+    recipients: zod.array(
+      zod.object({
+        id: zod.string().uuid(),
+        fullName: zod.string().nullish(),
+        email: zod.string(),
+      }),
+    ),
+  });
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -2290,7 +4284,124 @@ export const ScheduleGetJobsJobIdScheduleParams = zod.object({
     .regex(scheduleGetJobsJobIdSchedulePathJobIdRegExp),
 });
 
-export const ScheduleGetJobsJobIdScheduleResponse = zod.unknown();
+export const ScheduleGetJobsJobIdScheduleResponse = zod.object({
+  data: zod.array(
+    zod
+      .object({
+        id: zod.string().uuid(),
+        jobId: zod.string().uuid().nullish(),
+        schedulePhaseId: zod.string().uuid().nullish(),
+        phaseId: zod.string().uuid().nullish(),
+        phaseName: zod.string().nullish(),
+        phaseColor: zod.string().nullish(),
+        title: zod.string(),
+        displayColor: zod.string().optional(),
+        startDate: zod.string(),
+        endDate: zod.string(),
+        workDays: zod.number().optional(),
+        isHourly: zod.boolean().optional(),
+        startTime: zod.string().nullish(),
+        endTime: zod.string().nullish(),
+        progress: zod.number().optional(),
+        reminder: zod.string().optional(),
+        showOnGantt: zod.boolean().optional(),
+        visibleToEstimators: zod.boolean().optional(),
+        visibleToInstallers: zod.boolean().optional(),
+        visibleToOfficeStaff: zod.boolean().optional(),
+        isComplete: zod.boolean().optional(),
+        isPersonalTodo: zod.boolean().optional(),
+        notes: zod.string().nullish(),
+        tags: zod.array(zod.string()),
+        notifyUserIds: zod.array(zod.string().uuid()).optional(),
+        assigneeIds: zod.array(zod.string().uuid()),
+        assignees: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fullName: zod.string().nullish(),
+              email: zod.string(),
+              role: zod.string(),
+              avatarUrl: zod.string().nullish(),
+            })
+            .describe(
+              "A user assigned to or notified about a job, schedule item, or daily log.",
+            ),
+        ),
+        predecessors: zod.array(
+          zod.object({
+            scheduleItemId: zod.string().uuid(),
+            dependencyType: zod.enum([
+              "finish_to_start",
+              "start_to_start",
+              "finish_to_finish",
+              "start_to_finish",
+            ]),
+            lagDays: zod.number(),
+            title: zod.string(),
+          }),
+        ),
+        notesStream: zod.array(
+          zod.object({
+            id: zod.string(),
+            note: zod.string(),
+            createdAt: zod.coerce.date(),
+            authorId: zod.string().uuid().nullish(),
+            authorName: zod.string().nullish(),
+            authorAvatarUrl: zod.string().nullish(),
+            isLegacy: zod.boolean(),
+          }),
+        ),
+        noteCount: zod.number().optional(),
+        attachments: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            fileId: zod.string().uuid(),
+            filename: zod.string(),
+            originalName: zod.string(),
+            fileUrl: zod.string(),
+            fileSize: zod.number(),
+            mimeType: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
+            icon: zod.string(),
+          }),
+        ),
+        relatedTodos: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            title: zod.string(),
+            isComplete: zod.boolean(),
+            createdAt: zod.coerce.date(),
+            updatedAt: zod.coerce.date(),
+            createdBy: zod.string().uuid().nullish(),
+            createdByName: zod.string().nullish(),
+          }),
+        ),
+        relatedTodoCount: zod.number().optional(),
+        status: zod
+          .string()
+          .describe(
+            'Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\").',
+          ),
+        hasConflict: zod.boolean(),
+        conflictReasons: zod.array(zod.string()),
+        createdBy: zod.string().uuid().nullish(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date(),
+        deletedAt: zod.coerce.date().nullish(),
+        createdByName: zod.string().nullish(),
+        createdByAvatarUrl: zod.string().nullish(),
+      })
+      .describe(
+        "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
+      ),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    totalItems: zod.number(),
+    totalPages: zod.number(),
+  }),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePayloadSchema.
@@ -2307,10 +4418,141 @@ export const SchedulePostJobsJobIdScheduleParams = zod.object({
     .regex(schedulePostJobsJobIdSchedulePathJobIdRegExp),
 });
 
+export const schedulePostJobsJobIdScheduleBodyTitleMax = 255;
+
+export const schedulePostJobsJobIdScheduleBodyAssigneeIdsDefault = [];
+export const schedulePostJobsJobIdScheduleBodyNotifyUserIdsDefault = [];
+export const schedulePostJobsJobIdScheduleBodyStartDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const schedulePostJobsJobIdScheduleBodyWorkDaysDefault = 1;
+export const schedulePostJobsJobIdScheduleBodyWorkDaysMax = 365;
+
+export const schedulePostJobsJobIdScheduleBodyEndDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const schedulePostJobsJobIdScheduleBodyIsHourlyDefault = false;
+export const schedulePostJobsJobIdScheduleBodyStartTimeRegExp = new RegExp(
+  "^\\d{2}:\\d{2}(:\\d{2})?$",
+);
+export const schedulePostJobsJobIdScheduleBodyEndTimeRegExp = new RegExp(
+  "^\\d{2}:\\d{2}(:\\d{2})?$",
+);
+export const schedulePostJobsJobIdScheduleBodyProgressDefault = 0;
+export const schedulePostJobsJobIdScheduleBodyProgressMin = 0;
+export const schedulePostJobsJobIdScheduleBodyProgressMax = 100;
+
+export const schedulePostJobsJobIdScheduleBodyReminderDefault = `none`;
+export const schedulePostJobsJobIdScheduleBodyTagsItemMax = 100;
+
+export const schedulePostJobsJobIdScheduleBodyTagsDefault = [];
+export const schedulePostJobsJobIdScheduleBodyPredecessorsItemLagDaysDefault = 0;
+export const schedulePostJobsJobIdScheduleBodyPredecessorsItemLagDaysMin = 0;
+export const schedulePostJobsJobIdScheduleBodyPredecessorsItemLagDaysMax = 365;
+
+export const schedulePostJobsJobIdScheduleBodyPredecessorsDefault = [];
+export const schedulePostJobsJobIdScheduleBodyShowOnGanttDefault = true;
+export const schedulePostJobsJobIdScheduleBodyVisibleToEstimatorsDefault = true;
+export const schedulePostJobsJobIdScheduleBodyVisibleToInstallersDefault = true;
+export const schedulePostJobsJobIdScheduleBodyVisibleToOfficeStaffDefault = true;
+export const schedulePostJobsJobIdScheduleBodyIsCompleteDefault = false;
+export const schedulePostJobsJobIdScheduleBodyIsPersonalTodoDefault = false;
+
 export const SchedulePostJobsJobIdScheduleBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    title: zod.string().min(1).max(schedulePostJobsJobIdScheduleBodyTitleMax),
+    displayColor: zod.string().nullish(),
+    assigneeIds: zod
+      .array(zod.string().uuid())
+      .default(schedulePostJobsJobIdScheduleBodyAssigneeIdsDefault),
+    notifyUserIds: zod
+      .array(zod.string().uuid())
+      .default(schedulePostJobsJobIdScheduleBodyNotifyUserIdsDefault),
+    startDate: zod
+      .string()
+      .regex(schedulePostJobsJobIdScheduleBodyStartDateRegExp),
+    workDays: zod
+      .number()
+      .min(1)
+      .max(schedulePostJobsJobIdScheduleBodyWorkDaysMax)
+      .default(schedulePostJobsJobIdScheduleBodyWorkDaysDefault),
+    endDate: zod
+      .string()
+      .regex(schedulePostJobsJobIdScheduleBodyEndDateRegExp)
+      .nullish()
+      .describe(
+        "When omitted or null the server computes the end date from `startDate`, `workDays`, and the active workday-exception calendar.",
+      ),
+    isHourly: zod
+      .boolean()
+      .default(schedulePostJobsJobIdScheduleBodyIsHourlyDefault),
+    startTime: zod
+      .string()
+      .regex(schedulePostJobsJobIdScheduleBodyStartTimeRegExp)
+      .nullish(),
+    endTime: zod
+      .string()
+      .regex(schedulePostJobsJobIdScheduleBodyEndTimeRegExp)
+      .nullish(),
+    progress: zod
+      .number()
+      .min(schedulePostJobsJobIdScheduleBodyProgressMin)
+      .max(schedulePostJobsJobIdScheduleBodyProgressMax)
+      .default(schedulePostJobsJobIdScheduleBodyProgressDefault),
+    reminder: zod
+      .string()
+      .default(schedulePostJobsJobIdScheduleBodyReminderDefault)
+      .describe(
+        "One of the configured reminder options (e.g. `none`, `1d`, `1h`).",
+      ),
+    notes: zod.string().nullish(),
+    tags: zod
+      .array(
+        zod.string().min(1).max(schedulePostJobsJobIdScheduleBodyTagsItemMax),
+      )
+      .default(schedulePostJobsJobIdScheduleBodyTagsDefault),
+    predecessors: zod
+      .array(
+        zod.object({
+          scheduleItemId: zod.string().uuid(),
+          dependencyType: zod.enum([
+            "finish_to_start",
+            "start_to_start",
+            "finish_to_finish",
+            "start_to_finish",
+          ]),
+          lagDays: zod
+            .number()
+            .min(schedulePostJobsJobIdScheduleBodyPredecessorsItemLagDaysMin)
+            .max(schedulePostJobsJobIdScheduleBodyPredecessorsItemLagDaysMax)
+            .default(
+              schedulePostJobsJobIdScheduleBodyPredecessorsItemLagDaysDefault,
+            ),
+        }),
+      )
+      .default(schedulePostJobsJobIdScheduleBodyPredecessorsDefault),
+    phaseId: zod.string().uuid().nullish(),
+    showOnGantt: zod
+      .boolean()
+      .default(schedulePostJobsJobIdScheduleBodyShowOnGanttDefault),
+    visibleToEstimators: zod
+      .boolean()
+      .default(schedulePostJobsJobIdScheduleBodyVisibleToEstimatorsDefault),
+    visibleToInstallers: zod
+      .boolean()
+      .default(schedulePostJobsJobIdScheduleBodyVisibleToInstallersDefault),
+    visibleToOfficeStaff: zod
+      .boolean()
+      .default(schedulePostJobsJobIdScheduleBodyVisibleToOfficeStaffDefault),
+    isComplete: zod
+      .boolean()
+      .default(schedulePostJobsJobIdScheduleBodyIsCompleteDefault),
+    isPersonalTodo: zod
+      .boolean()
+      .default(schedulePostJobsJobIdScheduleBodyIsPersonalTodoDefault),
+  })
   .describe(
-    "Request schema derived from schedulePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+    "Request body for creating or updating a schedule item (`POST \/jobs\/{jobId}\/schedule`, `PUT \/schedule-items\/{id}`). Hourly items require a `startTime`. Predecessors must be unique and may not point at the item being edited.",
   );
 
 /**
@@ -2325,7 +4567,116 @@ export const ScheduleGetScheduleItemsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(scheduleGetScheduleItemsIdPathIdRegExp),
 });
 
-export const ScheduleGetScheduleItemsIdResponse = zod.unknown();
+export const ScheduleGetScheduleItemsIdResponse = zod.object({
+  item: zod
+    .object({
+      id: zod.string().uuid(),
+      jobId: zod.string().uuid().nullish(),
+      schedulePhaseId: zod.string().uuid().nullish(),
+      phaseId: zod.string().uuid().nullish(),
+      phaseName: zod.string().nullish(),
+      phaseColor: zod.string().nullish(),
+      title: zod.string(),
+      displayColor: zod.string().optional(),
+      startDate: zod.string(),
+      endDate: zod.string(),
+      workDays: zod.number().optional(),
+      isHourly: zod.boolean().optional(),
+      startTime: zod.string().nullish(),
+      endTime: zod.string().nullish(),
+      progress: zod.number().optional(),
+      reminder: zod.string().optional(),
+      showOnGantt: zod.boolean().optional(),
+      visibleToEstimators: zod.boolean().optional(),
+      visibleToInstallers: zod.boolean().optional(),
+      visibleToOfficeStaff: zod.boolean().optional(),
+      isComplete: zod.boolean().optional(),
+      isPersonalTodo: zod.boolean().optional(),
+      notes: zod.string().nullish(),
+      tags: zod.array(zod.string()),
+      notifyUserIds: zod.array(zod.string().uuid()).optional(),
+      assigneeIds: zod.array(zod.string().uuid()),
+      assignees: zod.array(
+        zod
+          .object({
+            id: zod.string().uuid(),
+            fullName: zod.string().nullish(),
+            email: zod.string(),
+            role: zod.string(),
+            avatarUrl: zod.string().nullish(),
+          })
+          .describe(
+            "A user assigned to or notified about a job, schedule item, or daily log.",
+          ),
+      ),
+      predecessors: zod.array(
+        zod.object({
+          scheduleItemId: zod.string().uuid(),
+          dependencyType: zod.enum([
+            "finish_to_start",
+            "start_to_start",
+            "finish_to_finish",
+            "start_to_finish",
+          ]),
+          lagDays: zod.number(),
+          title: zod.string(),
+        }),
+      ),
+      notesStream: zod.array(
+        zod.object({
+          id: zod.string(),
+          note: zod.string(),
+          createdAt: zod.coerce.date(),
+          authorId: zod.string().uuid().nullish(),
+          authorName: zod.string().nullish(),
+          authorAvatarUrl: zod.string().nullish(),
+          isLegacy: zod.boolean(),
+        }),
+      ),
+      noteCount: zod.number().optional(),
+      attachments: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          fileId: zod.string().uuid(),
+          filename: zod.string(),
+          originalName: zod.string(),
+          fileUrl: zod.string(),
+          fileSize: zod.number(),
+          mimeType: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          icon: zod.string(),
+        }),
+      ),
+      relatedTodos: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          title: zod.string(),
+          isComplete: zod.boolean(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+          createdBy: zod.string().uuid().nullish(),
+          createdByName: zod.string().nullish(),
+        }),
+      ),
+      relatedTodoCount: zod.number().optional(),
+      status: zod
+        .string()
+        .describe(
+          'Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\").',
+        ),
+      hasConflict: zod.boolean(),
+      conflictReasons: zod.array(zod.string()),
+      createdBy: zod.string().uuid().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+      deletedAt: zod.coerce.date().nullish(),
+      createdByName: zod.string().nullish(),
+      createdByAvatarUrl: zod.string().nullish(),
+    })
+    .describe(
+      "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
+    ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePayloadSchema.
@@ -2339,13 +4690,251 @@ export const SchedulePutScheduleItemsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(schedulePutScheduleItemsIdPathIdRegExp),
 });
 
+export const schedulePutScheduleItemsIdBodyTitleMax = 255;
+
+export const schedulePutScheduleItemsIdBodyAssigneeIdsDefault = [];
+export const schedulePutScheduleItemsIdBodyNotifyUserIdsDefault = [];
+export const schedulePutScheduleItemsIdBodyStartDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const schedulePutScheduleItemsIdBodyWorkDaysDefault = 1;
+export const schedulePutScheduleItemsIdBodyWorkDaysMax = 365;
+
+export const schedulePutScheduleItemsIdBodyEndDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const schedulePutScheduleItemsIdBodyIsHourlyDefault = false;
+export const schedulePutScheduleItemsIdBodyStartTimeRegExp = new RegExp(
+  "^\\d{2}:\\d{2}(:\\d{2})?$",
+);
+export const schedulePutScheduleItemsIdBodyEndTimeRegExp = new RegExp(
+  "^\\d{2}:\\d{2}(:\\d{2})?$",
+);
+export const schedulePutScheduleItemsIdBodyProgressDefault = 0;
+export const schedulePutScheduleItemsIdBodyProgressMin = 0;
+export const schedulePutScheduleItemsIdBodyProgressMax = 100;
+
+export const schedulePutScheduleItemsIdBodyReminderDefault = `none`;
+export const schedulePutScheduleItemsIdBodyTagsItemMax = 100;
+
+export const schedulePutScheduleItemsIdBodyTagsDefault = [];
+export const schedulePutScheduleItemsIdBodyPredecessorsItemLagDaysDefault = 0;
+export const schedulePutScheduleItemsIdBodyPredecessorsItemLagDaysMin = 0;
+export const schedulePutScheduleItemsIdBodyPredecessorsItemLagDaysMax = 365;
+
+export const schedulePutScheduleItemsIdBodyPredecessorsDefault = [];
+export const schedulePutScheduleItemsIdBodyShowOnGanttDefault = true;
+export const schedulePutScheduleItemsIdBodyVisibleToEstimatorsDefault = true;
+export const schedulePutScheduleItemsIdBodyVisibleToInstallersDefault = true;
+export const schedulePutScheduleItemsIdBodyVisibleToOfficeStaffDefault = true;
+export const schedulePutScheduleItemsIdBodyIsCompleteDefault = false;
+export const schedulePutScheduleItemsIdBodyIsPersonalTodoDefault = false;
+
 export const SchedulePutScheduleItemsIdBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    title: zod.string().min(1).max(schedulePutScheduleItemsIdBodyTitleMax),
+    displayColor: zod.string().nullish(),
+    assigneeIds: zod
+      .array(zod.string().uuid())
+      .default(schedulePutScheduleItemsIdBodyAssigneeIdsDefault),
+    notifyUserIds: zod
+      .array(zod.string().uuid())
+      .default(schedulePutScheduleItemsIdBodyNotifyUserIdsDefault),
+    startDate: zod
+      .string()
+      .regex(schedulePutScheduleItemsIdBodyStartDateRegExp),
+    workDays: zod
+      .number()
+      .min(1)
+      .max(schedulePutScheduleItemsIdBodyWorkDaysMax)
+      .default(schedulePutScheduleItemsIdBodyWorkDaysDefault),
+    endDate: zod
+      .string()
+      .regex(schedulePutScheduleItemsIdBodyEndDateRegExp)
+      .nullish()
+      .describe(
+        "When omitted or null the server computes the end date from `startDate`, `workDays`, and the active workday-exception calendar.",
+      ),
+    isHourly: zod
+      .boolean()
+      .default(schedulePutScheduleItemsIdBodyIsHourlyDefault),
+    startTime: zod
+      .string()
+      .regex(schedulePutScheduleItemsIdBodyStartTimeRegExp)
+      .nullish(),
+    endTime: zod
+      .string()
+      .regex(schedulePutScheduleItemsIdBodyEndTimeRegExp)
+      .nullish(),
+    progress: zod
+      .number()
+      .min(schedulePutScheduleItemsIdBodyProgressMin)
+      .max(schedulePutScheduleItemsIdBodyProgressMax)
+      .default(schedulePutScheduleItemsIdBodyProgressDefault),
+    reminder: zod
+      .string()
+      .default(schedulePutScheduleItemsIdBodyReminderDefault)
+      .describe(
+        "One of the configured reminder options (e.g. `none`, `1d`, `1h`).",
+      ),
+    notes: zod.string().nullish(),
+    tags: zod
+      .array(zod.string().min(1).max(schedulePutScheduleItemsIdBodyTagsItemMax))
+      .default(schedulePutScheduleItemsIdBodyTagsDefault),
+    predecessors: zod
+      .array(
+        zod.object({
+          scheduleItemId: zod.string().uuid(),
+          dependencyType: zod.enum([
+            "finish_to_start",
+            "start_to_start",
+            "finish_to_finish",
+            "start_to_finish",
+          ]),
+          lagDays: zod
+            .number()
+            .min(schedulePutScheduleItemsIdBodyPredecessorsItemLagDaysMin)
+            .max(schedulePutScheduleItemsIdBodyPredecessorsItemLagDaysMax)
+            .default(
+              schedulePutScheduleItemsIdBodyPredecessorsItemLagDaysDefault,
+            ),
+        }),
+      )
+      .default(schedulePutScheduleItemsIdBodyPredecessorsDefault),
+    phaseId: zod.string().uuid().nullish(),
+    showOnGantt: zod
+      .boolean()
+      .default(schedulePutScheduleItemsIdBodyShowOnGanttDefault),
+    visibleToEstimators: zod
+      .boolean()
+      .default(schedulePutScheduleItemsIdBodyVisibleToEstimatorsDefault),
+    visibleToInstallers: zod
+      .boolean()
+      .default(schedulePutScheduleItemsIdBodyVisibleToInstallersDefault),
+    visibleToOfficeStaff: zod
+      .boolean()
+      .default(schedulePutScheduleItemsIdBodyVisibleToOfficeStaffDefault),
+    isComplete: zod
+      .boolean()
+      .default(schedulePutScheduleItemsIdBodyIsCompleteDefault),
+    isPersonalTodo: zod
+      .boolean()
+      .default(schedulePutScheduleItemsIdBodyIsPersonalTodoDefault),
+  })
   .describe(
-    "Request schema derived from schedulePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
+    "Request body for creating or updating a schedule item (`POST \/jobs\/{jobId}\/schedule`, `PUT \/schedule-items\/{id}`). Hourly items require a `startTime`. Predecessors must be unique and may not point at the item being edited.",
   );
 
-export const SchedulePutScheduleItemsIdResponse = zod.unknown();
+export const SchedulePutScheduleItemsIdResponse = zod.object({
+  item: zod
+    .object({
+      id: zod.string().uuid(),
+      jobId: zod.string().uuid().nullish(),
+      schedulePhaseId: zod.string().uuid().nullish(),
+      phaseId: zod.string().uuid().nullish(),
+      phaseName: zod.string().nullish(),
+      phaseColor: zod.string().nullish(),
+      title: zod.string(),
+      displayColor: zod.string().optional(),
+      startDate: zod.string(),
+      endDate: zod.string(),
+      workDays: zod.number().optional(),
+      isHourly: zod.boolean().optional(),
+      startTime: zod.string().nullish(),
+      endTime: zod.string().nullish(),
+      progress: zod.number().optional(),
+      reminder: zod.string().optional(),
+      showOnGantt: zod.boolean().optional(),
+      visibleToEstimators: zod.boolean().optional(),
+      visibleToInstallers: zod.boolean().optional(),
+      visibleToOfficeStaff: zod.boolean().optional(),
+      isComplete: zod.boolean().optional(),
+      isPersonalTodo: zod.boolean().optional(),
+      notes: zod.string().nullish(),
+      tags: zod.array(zod.string()),
+      notifyUserIds: zod.array(zod.string().uuid()).optional(),
+      assigneeIds: zod.array(zod.string().uuid()),
+      assignees: zod.array(
+        zod
+          .object({
+            id: zod.string().uuid(),
+            fullName: zod.string().nullish(),
+            email: zod.string(),
+            role: zod.string(),
+            avatarUrl: zod.string().nullish(),
+          })
+          .describe(
+            "A user assigned to or notified about a job, schedule item, or daily log.",
+          ),
+      ),
+      predecessors: zod.array(
+        zod.object({
+          scheduleItemId: zod.string().uuid(),
+          dependencyType: zod.enum([
+            "finish_to_start",
+            "start_to_start",
+            "finish_to_finish",
+            "start_to_finish",
+          ]),
+          lagDays: zod.number(),
+          title: zod.string(),
+        }),
+      ),
+      notesStream: zod.array(
+        zod.object({
+          id: zod.string(),
+          note: zod.string(),
+          createdAt: zod.coerce.date(),
+          authorId: zod.string().uuid().nullish(),
+          authorName: zod.string().nullish(),
+          authorAvatarUrl: zod.string().nullish(),
+          isLegacy: zod.boolean(),
+        }),
+      ),
+      noteCount: zod.number().optional(),
+      attachments: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          fileId: zod.string().uuid(),
+          filename: zod.string(),
+          originalName: zod.string(),
+          fileUrl: zod.string(),
+          fileSize: zod.number(),
+          mimeType: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+          icon: zod.string(),
+        }),
+      ),
+      relatedTodos: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          title: zod.string(),
+          isComplete: zod.boolean(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+          createdBy: zod.string().uuid().nullish(),
+          createdByName: zod.string().nullish(),
+        }),
+      ),
+      relatedTodoCount: zod.number().optional(),
+      status: zod
+        .string()
+        .describe(
+          'Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\").',
+        ),
+      hasConflict: zod.boolean(),
+      conflictReasons: zod.array(zod.string()),
+      createdBy: zod.string().uuid().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+      deletedAt: zod.coerce.date().nullish(),
+      createdByName: zod.string().nullish(),
+      createdByAvatarUrl: zod.string().nullish(),
+    })
+    .describe(
+      "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
+    ),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -2362,7 +4951,13 @@ export const ScheduleDeleteScheduleItemsIdParams = zod.object({
     .regex(scheduleDeleteScheduleItemsIdPathIdRegExp),
 });
 
-export const ScheduleDeleteScheduleItemsIdResponse = zod.unknown();
+export const ScheduleDeleteScheduleItemsIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -2411,7 +5006,17 @@ export const SchedulePutScheduleItemsIdTodosTodoIdBody = zod.record(
   zod.unknown(),
 );
 
-export const SchedulePutScheduleItemsIdTodosTodoIdResponse = zod.unknown();
+export const SchedulePutScheduleItemsIdTodosTodoIdResponse = zod.object({
+  todo: zod.object({
+    id: zod.string().uuid(),
+    title: zod.string(),
+    isComplete: zod.boolean(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    createdBy: zod.string().uuid().nullish(),
+    createdByName: zod.string().nullish(),
+  }),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -2436,7 +5041,13 @@ export const ScheduleDeleteScheduleItemsIdTodosTodoIdParams = zod.object({
     .regex(scheduleDeleteScheduleItemsIdTodosTodoIdPathTodoIdRegExp),
 });
 
-export const ScheduleDeleteScheduleItemsIdTodosTodoIdResponse = zod.unknown();
+export const ScheduleDeleteScheduleItemsIdTodosTodoIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleNotePayloadSchema.
@@ -2453,11 +5064,13 @@ export const SchedulePostScheduleItemsIdNotesParams = zod.object({
     .regex(schedulePostScheduleItemsIdNotesPathIdRegExp),
 });
 
+export const schedulePostScheduleItemsIdNotesBodyNoteMax = 10000;
+
 export const SchedulePostScheduleItemsIdNotesBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from scheduleNotePayloadSchema in artifacts\/api-server\/src\/routes\/schedule.ts.",
-  );
+  .object({
+    note: zod.string().min(1).max(schedulePostScheduleItemsIdNotesBodyNoteMax),
+  })
+  .describe("Request body for adding a note to a schedule item.");
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -2522,8 +5135,13 @@ export const ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdParams =
       ),
   });
 
-export const ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdResponse =
-  zod.unknown();
+export const ScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdResponse = zod
+  .object({
+    success: zod.boolean(),
+  })
+  .describe(
+    "Generic success acknowledgement returned by destructive operations.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/dashboard.ts.

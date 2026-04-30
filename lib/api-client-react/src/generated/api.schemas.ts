@@ -35,52 +35,207 @@ export interface UsersChangePasswordSchema {
 }
 
 /**
- * Request schema derived from clientPayloadSchema in artifacts/api-server/src/routes/clients.ts.
+ * Request body for creating or updating a client (`POST /clients`, `PUT /clients/{id}`). Optional string fields accept null and empty strings (which are normalized to null). `state` must be a 2-character abbreviation when provided.
  */
 export interface ClientsClientPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  companyName: string;
+  phone?: string | null;
+  email?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  notes?: string | null;
 }
 
 /**
- * Request schema derived from contactPayloadSchema in artifacts/api-server/src/routes/clients.ts.
+ * Request body for creating or updating a client contact (`POST /clients/{id}/contacts`, `PUT /clients/{id}/contacts/{contactId}`). At least one of firstName/lastName/email is recommended in practice; only `isPrimary` has a server default of `false`.
  */
 export interface ClientsContactPayloadSchema {
-  [key: string]: unknown;
+  firstName?: string | null;
+  lastName?: string | null;
+  title?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  isPrimary?: boolean;
 }
 
+export type JobsJobPayloadSchemaStatus =
+  (typeof JobsJobPayloadSchemaStatus)[keyof typeof JobsJobPayloadSchemaStatus];
+
+export const JobsJobPayloadSchemaStatus = {
+  open: "open",
+  closed: "closed",
+  archived: "archived",
+} as const;
+
+export type JobsJobPayloadSchemaWorkDaysItem =
+  (typeof JobsJobPayloadSchemaWorkDaysItem)[keyof typeof JobsJobPayloadSchemaWorkDaysItem];
+
+export const JobsJobPayloadSchemaWorkDaysItem = {
+  mon: "mon",
+  tue: "tue",
+  wed: "wed",
+  thu: "thu",
+  fri: "fri",
+  sat: "sat",
+  sun: "sun",
+} as const;
+
+export type JobsJobPayloadSchemaContractType =
+  | (typeof JobsJobPayloadSchemaContractType)[keyof typeof JobsJobPayloadSchemaContractType]
+  | null;
+
+export const JobsJobPayloadSchemaContractType = {
+  fixed_price: "fixed_price",
+  open_book: "open_book",
+} as const;
+
 /**
- * Request schema derived from jobPayloadSchema in artifacts/api-server/src/routes/jobs.ts.
+ * Request body for creating or updating a job. `POST /jobs` additionally accepts `assigneeIds`. Money fields (`contractPrice`, `squareFeet`) are accepted as either string or number and serialized as decimal strings.
  */
 export interface JobsJobPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  status?: JobsJobPayloadSchemaStatus;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  /**
+   * Decimal serialized as a string in responses; accepted as either string or number on input. Server coerces to a decimal string.
+   * @nullable
+   */
+  contractPrice?: string | number | null;
+  jobType?: string | null;
+  workDays?: JobsJobPayloadSchemaWorkDaysItem[] | null;
+  projectedStart?: string | null;
+  projectedCompletion?: string | null;
+  actualStart?: string | null;
+  actualCompletion?: string | null;
+  contractType?: JobsJobPayloadSchemaContractType;
+  internalNotes?: string | null;
+  subVendorNotes?: string | null;
+  /**
+   * Decimal serialized as a string in responses; accepted as either string or number on input.
+   * @nullable
+   */
+  squareFeet?: string | number | null;
+  permitNumber?: string | null;
+  projectManagerId?: string | null;
+  clientId?: string | null;
+  /** Initial assignees. Only honored on `POST /jobs` and only by admin callers; non-admins must omit this field. */
+  assigneeIds?: string[];
 }
 
+export type LeadsLeadPayloadSchemaStatus =
+  (typeof LeadsLeadPayloadSchemaStatus)[keyof typeof LeadsLeadPayloadSchemaStatus];
+
+export const LeadsLeadPayloadSchemaStatus = {
+  open: "open",
+  in_negotiation: "in_negotiation",
+  won: "won",
+  lost: "lost",
+  archived: "archived",
+} as const;
+
 /**
- * Request schema derived from leadPayloadSchema in artifacts/api-server/src/routes/leads.ts.
+ * Request body for creating or updating a lead (`POST /leads`, `PUT /leads/{id}`).
  */
 export interface LeadsLeadPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  confidence?: number;
+  projectedSalesDate?: string | null;
+  /**
+   * Decimal serialized as a string in responses; accepted as either string or number on input.
+   * @nullable
+   */
+  estimatedRevenueMin?: string | number | null;
+  /**
+   * Decimal serialized as a string in responses; accepted as either string or number on input.
+   * @nullable
+   */
+  estimatedRevenueMax?: string | number | null;
+  status?: LeadsLeadPayloadSchemaStatus;
+  projectType?: string | null;
+  notes?: string | null;
+  leadSource?: string | null;
+  salespeople?: string[];
+  tags?: string[];
+  sources?: string[];
 }
 
 /**
- * Request schema derived from contactCreateSchema in artifacts/api-server/src/routes/leads.ts.
+ * Request body for creating a lead contact (`POST /leads/{id}/contacts`). When `sourceContactId` is set the new contact is cloned from an existing contact and the other fields are optional. Otherwise `displayName` and `email` are required.
  */
 export interface LeadsContactCreateSchema {
-  [key: string]: unknown;
+  /** Optional: clone an existing lead contact by id rather than creating a new one from scratch. */
+  sourceContactId?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  email?: string | null;
+  label?: string | null;
 }
 
 /**
- * Request schema derived from contactUpdateSchema in artifacts/api-server/src/routes/leads.ts.
+ * Request body for updating a lead contact (`PUT /leads/{id}/contacts/{contactId}`).
  */
 export interface LeadsContactUpdateSchema {
-  [key: string]: unknown;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  email?: string | null;
+  label?: string | null;
 }
 
 /**
- * Request schema derived from activityCreateSchema in artifacts/api-server/src/routes/leads.ts.
+ * Request body for logging a lead activity (`POST /leads/{id}/activities`).
  */
 export interface LeadsActivityCreateSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  notes?: string | null;
 }
 
 /**
@@ -112,66 +267,205 @@ export interface FilesRenameFileSchema {
 }
 
 /**
- * Request schema derived from dailyLogPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Map of custom field id → scalar value (string, number, boolean, or null).
+ */
+export type DailyLogsDailyLogPayloadSchemaCustomFieldValues = {
+  [key: string]: string | number | boolean | null;
+};
+
+/**
+ * Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. "sunny", "rain"); `icon` is a sanitized icon key for the client.
+ */
+export interface DailyLogWeather {
+  condition: string;
+  icon: string;
+  temperatureHigh?: number | null;
+  temperatureLow?: number | null;
+  windMph?: number | null;
+  humidity?: number | null;
+  precipitation: number;
+  fetchedAt: string;
+}
+
+/**
+ * Request body for creating or updating a daily log (`POST /jobs/{jobId}/daily-logs`, `PUT /daily-logs/{id}`). On create, `jobId` is taken from the URL; on update the URL identifies the log directly. `customFieldValues` is a free-form object whose values are scalar (string, number, boolean, or null).
  */
 export interface DailyLogsDailyLogPayloadSchema {
-  [key: string]: unknown;
+  /** Optional override; the URL `jobId` always wins on create. */
+  jobId?: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  logDate: string;
+  title?: string | null;
+  notes?: string;
+  /** Snapshot of weather captured at the time the log was authored. Stored verbatim for client-side rendering. */
+  weatherData?: DailyLogWeather | null;
+  includeWeather?: boolean;
+  includeWeatherNotes?: boolean;
+  weatherNotes?: string | null;
+  shareInternalUsers?: boolean;
+  shareSubsVendors?: boolean;
+  shareClient?: boolean;
+  isPrivate?: boolean;
+  notifyUserIds?: string[];
+  tags?: string[];
+  /** Map of custom field id → scalar value (string, number, boolean, or null). */
+  customFieldValues?: DailyLogsDailyLogPayloadSchemaCustomFieldValues;
 }
 
+export type DailyLogsCommentPayloadSchemaAttachmentsItem = {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  name: string;
+  url: string;
+  mimeType?: string | null;
+};
+
 /**
- * Request schema derived from commentPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Request body for creating a daily-log comment (`POST /daily-logs/{id}/comments`).
  */
 export interface DailyLogsCommentPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 10000
+   */
+  body: string;
+  parentCommentId?: string | null;
+  mentions?: string[];
+  attachments?: DailyLogsCommentPayloadSchemaAttachmentsItem[];
+  links?: string[];
 }
 
 /**
- * Request schema derived from commentReactionPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Request body for toggling a reaction on a daily-log comment (`PUT /daily-logs/{id}/comments/{commentId}/reactions`). Sending the same emoji twice removes the reaction.
  */
 export interface DailyLogsCommentReactionPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 32
+   */
+  emoji: string;
 }
 
 /**
- * Request schema derived from todoPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Request body for creating a daily-log to-do (`POST /daily-logs/{id}/todos`).
  */
 export interface DailyLogsTodoPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
 }
 
 /**
- * Request schema derived from todoTogglePayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Request body for toggling a daily-log to-do (`PUT /daily-logs/{id}/todos/{todoId}`). Omitting `isComplete` flips the current value.
  */
 export interface DailyLogsTodoTogglePayloadSchema {
-  [key: string]: unknown;
+  isComplete?: boolean;
 }
 
 /**
- * Request schema derived from schedulePhasePayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ * Request body for creating or updating a schedule phase.
  */
 export interface ScheduleSchedulePhasePayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
+  color?: string | null;
 }
 
 /**
- * Request schema derived from scheduleSettingPayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ * Request body for creating or renaming a schedule setting (e.g. tag).
  */
 export interface ScheduleScheduleSettingPayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
 }
 
+export type ScheduleSchedulePayloadSchemaPredecessorsItemDependencyType =
+  (typeof ScheduleSchedulePayloadSchemaPredecessorsItemDependencyType)[keyof typeof ScheduleSchedulePayloadSchemaPredecessorsItemDependencyType];
+
+export const ScheduleSchedulePayloadSchemaPredecessorsItemDependencyType = {
+  finish_to_start: "finish_to_start",
+  start_to_start: "start_to_start",
+  finish_to_finish: "finish_to_finish",
+  start_to_finish: "start_to_finish",
+} as const;
+
+export type ScheduleSchedulePayloadSchemaPredecessorsItem = {
+  scheduleItemId: string;
+  dependencyType: ScheduleSchedulePayloadSchemaPredecessorsItemDependencyType;
+  /**
+   * @minimum 0
+   * @maximum 365
+   */
+  lagDays?: number;
+};
+
 /**
- * Request schema derived from schedulePayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ * Request body for creating or updating a schedule item (`POST /jobs/{jobId}/schedule`, `PUT /schedule-items/{id}`). Hourly items require a `startTime`. Predecessors must be unique and may not point at the item being edited.
  */
 export interface ScheduleSchedulePayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  displayColor?: string | null;
+  assigneeIds?: string[];
+  notifyUserIds?: string[];
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  startDate: string;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  workDays?: number;
+  /**
+   * When omitted or null the server computes the end date from `startDate`, `workDays`, and the active workday-exception calendar.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  endDate?: string | null;
+  isHourly?: boolean;
+  /** @pattern ^\d{2}:\d{2}(:\d{2})?$ */
+  startTime?: string | null;
+  /** @pattern ^\d{2}:\d{2}(:\d{2})?$ */
+  endTime?: string | null;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  progress?: number;
+  /** One of the configured reminder options (e.g. `none`, `1d`, `1h`). */
+  reminder?: string;
+  notes?: string | null;
+  tags?: string[];
+  predecessors?: ScheduleSchedulePayloadSchemaPredecessorsItem[];
+  phaseId?: string | null;
+  showOnGantt?: boolean;
+  visibleToEstimators?: boolean;
+  visibleToInstallers?: boolean;
+  visibleToOfficeStaff?: boolean;
+  isComplete?: boolean;
+  isPersonalTodo?: boolean;
 }
 
 /**
- * Request schema derived from scheduleNotePayloadSchema in artifacts/api-server/src/routes/schedule.ts.
+ * Request body for adding a note to a schedule item.
  */
 export interface ScheduleScheduleNotePayloadSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 10000
+   */
+  note: string;
 }
 
 /**
@@ -613,6 +907,602 @@ export interface WorkdayExceptionUpdatePayload {
   notes?: string | null;
 }
 
+/**
+ * A user assigned to or notified about a job, schedule item, or daily log.
+ */
+export interface AssigneeUser {
+  id: string;
+  fullName?: string | null;
+  email: string;
+  role: string;
+  avatarUrl?: string | null;
+}
+
+export interface JobAssignee {
+  id: string;
+  fullName?: string | null;
+  email: string;
+  role: string;
+  avatarUrl?: string | null;
+}
+
+export interface JobListItem {
+  id: string;
+  title: string;
+  status: string;
+  city?: string | null;
+  state?: string | null;
+  streetAddress?: string | null;
+  zipCode?: string | null;
+  jobType?: string | null;
+  contractPrice?: string | null;
+  contractType?: string | null;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  projectedStart?: string | null;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  projectedCompletion?: string | null;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  actualStart?: string | null;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  actualCompletion?: string | null;
+  workDays?: string[] | null;
+  squareFeet?: string | null;
+  permitNumber?: string | null;
+  clientId?: string | null;
+  clientName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Hydrated job returned by `GET /jobs/{id}`, `POST /jobs`, and `PUT /jobs/{id}`.
+ */
+export interface JobDetail {
+  id: string;
+  title: string;
+  status: string;
+  city?: string | null;
+  state?: string | null;
+  streetAddress?: string | null;
+  zipCode?: string | null;
+  jobType?: string | null;
+  contractPrice?: string | null;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  projectedStart?: string | null;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  projectedCompletion?: string | null;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  actualStart?: string | null;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  actualCompletion?: string | null;
+  workDays?: string[] | null;
+  contractType?: string | null;
+  internalNotes?: string | null;
+  subVendorNotes?: string | null;
+  squareFeet?: string | null;
+  permitNumber?: string | null;
+  projectManagerId?: string | null;
+  projectManagerName?: string | null;
+  clientId?: string | null;
+  clientName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdById?: string | null;
+  createdByName?: string | null;
+  assignees: JobAssignee[];
+}
+
+export interface JobListResponse {
+  jobs: JobListItem[];
+  pagination: Pagination;
+}
+
+export interface JobDetailResponse {
+  job: JobDetail;
+}
+
+export interface JobAssigneesResponse {
+  assignees: JobAssignee[];
+}
+
+export interface LeadGlobalContact {
+  id: string;
+  leadId: string;
+  leadTitle: string;
+  displayName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  cellPhone?: string | null;
+  label?: string | null;
+}
+
+export interface LeadGlobalContactsListResponse {
+  contacts: LeadGlobalContact[];
+}
+
+export interface LeadContactResponse {
+  contact: LeadContact;
+}
+
+export interface LeadAttachmentsCreatedResponse {
+  attachments: LeadAttachment[];
+}
+
+export type LeadConvertToJobResponseJob = {
+  id: string;
+  title: string;
+  status: string;
+};
+
+export interface LeadConvertToJobResponse {
+  job: LeadConvertToJobResponseJob;
+}
+
+export interface DailyLogTodo {
+  id: string;
+  title: string;
+  isComplete: boolean;
+  createdBy?: string | null;
+  createdByName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DailyLogCommentAttachment {
+  name: string;
+  url: string;
+  mimeType?: string | null;
+}
+
+/**
+ * Map of emoji → list of user ids that reacted with it.
+ */
+export type DailyLogCommentReactions = { [key: string]: string[] };
+
+export type DailyLogCommentAuthor = {
+  id?: string | null;
+  fullName?: string | null;
+  avatarUrl?: string | null;
+};
+
+/**
+ * Comment on a daily log. Replies are nested via `replies` (recursive).
+ */
+export interface DailyLogComment {
+  id: string;
+  dailyLogId: string;
+  parentCommentId?: string | null;
+  body: string;
+  mentions: string[];
+  attachments: DailyLogCommentAttachment[];
+  links: string[];
+  /** Map of emoji → list of user ids that reacted with it. */
+  reactions: DailyLogCommentReactions;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author: DailyLogCommentAuthor;
+  replies: DailyLogComment[];
+}
+
+export interface DailyLogAttachment {
+  id: string;
+  fileId: string;
+  originalName: string;
+  fileUrl: string;
+  fileSize: number;
+  mimeType?: string | null;
+  createdAt: string;
+  uploadedByName?: string | null;
+}
+
+export type DailyLogListItemCustomFieldValues = {
+  [key: string]: string | number | boolean | null;
+};
+
+export type DailyLogListItemStatus =
+  (typeof DailyLogListItemStatus)[keyof typeof DailyLogListItemStatus];
+
+export const DailyLogListItemStatus = {
+  draft: "draft",
+  published: "published",
+} as const;
+
+/**
+ * Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).
+ */
+export interface DailyLogListItem {
+  id: string;
+  jobId?: string | null;
+  jobTitle?: string | null;
+  logDate: string;
+  title?: string | null;
+  notes: string;
+  weatherData?: DailyLogWeather | null;
+  includeWeather?: boolean;
+  includeWeatherNotes?: boolean;
+  weatherNotes?: string | null;
+  customFieldValues?: DailyLogListItemCustomFieldValues;
+  shareInternalUsers?: boolean;
+  shareSubsVendors?: boolean;
+  shareClient?: boolean;
+  isPrivate?: boolean;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt?: string | null;
+  createdByName?: string | null;
+  notifyUserIds?: string[];
+  tags: string[];
+  attachmentCount?: number;
+  likesCount?: number;
+  commentsCount?: number;
+  likedByCurrentUser?: boolean;
+  visibilityLabel?: string;
+  todoCount?: number;
+  completedTodoCount?: number;
+  status: DailyLogListItemStatus;
+}
+
+export type DailyLogCustomFieldValues = {
+  [key: string]: string | number | boolean | null;
+};
+
+export type DailyLogStatus =
+  (typeof DailyLogStatus)[keyof typeof DailyLogStatus];
+
+export const DailyLogStatus = {
+  draft: "draft",
+  published: "published",
+} as const;
+
+/**
+ * Hydrated daily log returned from detail endpoints. Wraps the database row with derived counters, weather, attachments, todos, notify users, and visibility metadata.
+ */
+export interface DailyLog {
+  id: string;
+  jobId?: string | null;
+  logDate: string;
+  title?: string | null;
+  notes: string;
+  weatherData?: DailyLogWeather | null;
+  includeWeather?: boolean;
+  includeWeatherNotes?: boolean;
+  weatherNotes?: string | null;
+  customFieldValues?: DailyLogCustomFieldValues;
+  shareInternalUsers?: boolean;
+  shareSubsVendors?: boolean;
+  shareClient?: boolean;
+  isPrivate?: boolean;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt?: string | null;
+  deletedAt?: string | null;
+  createdByName?: string | null;
+  notifyUserIds?: string[];
+  notifyUsers?: AssigneeUser[];
+  tags: string[];
+  attachments: DailyLogAttachment[];
+  likesCount?: number;
+  commentsCount?: number;
+  likedByCurrentUser?: boolean;
+  visibilityLabel?: string;
+  todos: DailyLogTodo[];
+  todoCount?: number;
+  completedTodoCount?: number;
+  status: DailyLogStatus;
+}
+
+export interface DailyLogListResponse {
+  logs: DailyLogListItem[];
+  pagination: Pagination;
+}
+
+export interface DailyLogDetailResponse {
+  log: DailyLog;
+}
+
+export interface DailyLogCommentsResponse {
+  comments: DailyLogComment[];
+}
+
+export interface DailyLogTodosResponse {
+  todos: DailyLogTodo[];
+}
+
+export interface DailyLogWeatherResponse {
+  weather: DailyLogWeather;
+}
+
+export interface DailyLogLikeResponse {
+  liked: boolean;
+  likesCount: number;
+}
+
+export interface DailyLogAttachmentsCreatedResponse {
+  attachments: DailyLogAttachment[];
+}
+
+export type MyDailyLogsResponsePagination = {
+  page: number;
+  pageSize: number;
+  limit: number;
+  total: number;
+  totalItems: number;
+  totalPages: number;
+};
+
+/**
+ * Response for `GET /daily-logs/mine`. `data` and `logs` are duplicates kept for compatibility with two existing client code paths.
+ */
+export interface MyDailyLogsResponse {
+  data: DailyLogListItem[];
+  logs: DailyLogListItem[];
+  pagination: MyDailyLogsResponsePagination;
+}
+
+export type SchedulePredecessorDependencyType =
+  (typeof SchedulePredecessorDependencyType)[keyof typeof SchedulePredecessorDependencyType];
+
+export const SchedulePredecessorDependencyType = {
+  finish_to_start: "finish_to_start",
+  start_to_start: "start_to_start",
+  finish_to_finish: "finish_to_finish",
+  start_to_finish: "start_to_finish",
+} as const;
+
+export interface SchedulePredecessor {
+  scheduleItemId: string;
+  dependencyType: SchedulePredecessorDependencyType;
+  lagDays: number;
+  title: string;
+}
+
+export interface ScheduleNoteEntry {
+  id: string;
+  note: string;
+  createdAt: string;
+  authorId?: string | null;
+  authorName?: string | null;
+  authorAvatarUrl?: string | null;
+  isLegacy: boolean;
+}
+
+export interface ScheduleAttachment {
+  id: string;
+  fileId: string;
+  filename: string;
+  originalName: string;
+  fileUrl: string;
+  fileSize: number;
+  mimeType?: string | null;
+  createdAt: string;
+  icon: string;
+}
+
+export interface ScheduleRelatedTodo {
+  id: string;
+  title: string;
+  isComplete: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string | null;
+  createdByName?: string | null;
+}
+
+/**
+ * Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status/conflict info.
+ */
+export interface ScheduleItem {
+  id: string;
+  jobId?: string | null;
+  schedulePhaseId?: string | null;
+  phaseId?: string | null;
+  phaseName?: string | null;
+  phaseColor?: string | null;
+  title: string;
+  displayColor?: string;
+  startDate: string;
+  endDate: string;
+  workDays?: number;
+  isHourly?: boolean;
+  startTime?: string | null;
+  endTime?: string | null;
+  progress?: number;
+  reminder?: string;
+  showOnGantt?: boolean;
+  visibleToEstimators?: boolean;
+  visibleToInstallers?: boolean;
+  visibleToOfficeStaff?: boolean;
+  isComplete?: boolean;
+  isPersonalTodo?: boolean;
+  notes?: string | null;
+  tags: string[];
+  notifyUserIds?: string[];
+  assigneeIds: string[];
+  assignees: AssigneeUser[];
+  predecessors: SchedulePredecessor[];
+  notesStream: ScheduleNoteEntry[];
+  noteCount?: number;
+  attachments: ScheduleAttachment[];
+  relatedTodos: ScheduleRelatedTodo[];
+  relatedTodoCount?: number;
+  /** Derived schedule state (e.g. "upcoming", "in_progress", "complete", "overdue"). */
+  status: string;
+  hasConflict: boolean;
+  conflictReasons: string[];
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+  createdByName?: string | null;
+  createdByAvatarUrl?: string | null;
+}
+
+export interface ScheduleItemResponse {
+  item: ScheduleItem;
+}
+
+export type ScheduleListResponsePagination = {
+  page: number;
+  limit: number;
+  totalItems: number;
+  totalPages: number;
+};
+
+export interface ScheduleListResponse {
+  data: ScheduleItem[];
+  pagination: ScheduleListResponsePagination;
+}
+
+export interface SchedulePhase {
+  id: string;
+  name: string;
+  color?: string | null;
+}
+
+export interface SchedulePhaseResponse {
+  phase: SchedulePhase;
+}
+
+export interface SchedulePhaseListResponse {
+  phases: SchedulePhase[];
+}
+
+export interface ScheduleSettingTag {
+  id: string;
+  name: string;
+}
+
+export interface ScheduleSettingTagResponse {
+  tag: ScheduleSettingTag;
+}
+
+/**
+ * Base configurable schedule settings values.
+ */
+export interface ScheduleSettingsBaseFields {
+  defaultView: string;
+  showTimesOnMonthView: boolean;
+  showJobNameOnAllListedJobs: boolean;
+  automaticallyMarkItemsComplete: boolean;
+  includeHeaderOnPdfExports: boolean;
+}
+
+export interface WorkdayExceptionCategory {
+  id: string;
+  name: string;
+}
+
+/**
+ * Schedule settings hydrated for a job. Returned by `GET /jobs/{jobId}/schedule/settings`. Includes the flat settings values along with the lists of phases, tags, and workday exception categories.
+ */
+export type ScheduleSettings = ScheduleSettingsBaseFields & {
+  phases: SchedulePhase[];
+  tags: ScheduleSettingTag[];
+  workdayExceptionCategories: WorkdayExceptionCategory[];
+};
+
+export type ScheduleSettingsResponse = ScheduleSettings;
+
+export interface ScheduleBaselineItem {
+  scheduleItemId: string;
+  title: string;
+  baselineStartDate: string;
+  baselineEndDate: string;
+  currentStartDate?: string | null;
+  currentEndDate?: string | null;
+  shiftDays: number;
+}
+
+export interface ScheduleBaseline {
+  id: string;
+  jobId: string;
+  capturedAt: string;
+  capturedBy?: string | null;
+  capturedByName?: string | null;
+  items: ScheduleBaselineItem[];
+}
+
+export interface ScheduleBaselineResponse {
+  baseline: ScheduleBaseline | null;
+}
+
+export interface ScheduleConflictsResponse {
+  conflicts: ScheduleItem[];
+  count: number;
+}
+
+export type ScheduleNotifyResponseRecipientsItem = {
+  id: string;
+  fullName?: string | null;
+  email: string;
+};
+
+export interface ScheduleNotifyResponse {
+  success: boolean;
+  countUsers: number;
+  countItems: number;
+  recipients: ScheduleNotifyResponseRecipientsItem[];
+}
+
+export interface WorkdayExceptionsListResponse {
+  exceptions: WorkdayException[];
+}
+
+export interface WorkdayExceptionCategoryResponse {
+  category: WorkdayExceptionCategory;
+}
+
+export interface ScheduleNoteResponse {
+  note: ScheduleNoteEntry;
+}
+
+export interface ScheduleAttachmentResponse {
+  attachment: ScheduleAttachment;
+}
+
+export interface ScheduleAttachmentsCreatedResponse {
+  attachments: ScheduleAttachment[];
+}
+
+export interface ScheduleTodo {
+  id: string;
+  title: string;
+  isComplete: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string | null;
+  createdByName?: string | null;
+}
+
+export interface ScheduleTodoResponse {
+  todo: ScheduleTodo;
+}
+
+/**
+ * Schedule settings row as stored in the database. Returned by `PUT /jobs/{jobId}/schedule/settings`.
+ */
+export interface ScheduleSettingsRow {
+  id: string;
+  jobId: string;
+  defaultView: string;
+  showTimesOnMonthView?: boolean;
+  showJobNameOnAllListedJobs?: boolean;
+  automaticallyMarkItemsComplete?: boolean;
+  includeHeaderOnPdfExports?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Response from `PUT /jobs/{jobId}/schedule/settings`. Echoes the updated DB row only; phases/tags/categories are unchanged so the client should refetch them via `GET /jobs/{jobId}/schedule/settings` if needed.
+ */
+export interface ScheduleSettingsUpdateResponse {
+  settings: ScheduleSettingsRow;
+}
+
 export type ClientsGetClientsParams = {
   /**
    * 1-indexed page number. Defaults to 1.
@@ -629,6 +1519,14 @@ export type ClientsGetClientsParams = {
    * Case-insensitive substring filter applied across company name, email, and city.
    */
   search?: string;
+};
+
+export type ClientsPostClientsIdContacts201 = {
+  contact: ClientContact;
+};
+
+export type ClientsPutClientsIdContactsContactId200 = {
+  contact: ClientContact;
 };
 
 export type LeadsGetLeadsContactsParams = {

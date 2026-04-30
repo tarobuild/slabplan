@@ -7,8 +7,13 @@
  */
 
 /**
- * Request schema derived from activityCreateSchema in artifacts/api-server/src/routes/leads.ts.
+ * Request body for logging a lead activity (`POST /leads/{id}/activities`).
  */
 export interface LeadsActivityCreateSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  notes?: string | null;
 }

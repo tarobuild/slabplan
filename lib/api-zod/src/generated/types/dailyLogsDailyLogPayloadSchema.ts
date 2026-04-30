@@ -5,10 +5,30 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { DailyLogsDailyLogPayloadSchemaCustomFieldValues } from "./dailyLogsDailyLogPayloadSchemaCustomFieldValues";
+import type { DailyLogWeather } from "./dailyLogWeather";
 
 /**
- * Request schema derived from dailyLogPayloadSchema in artifacts/api-server/src/routes/daily-logs.ts.
+ * Request body for creating or updating a daily log (`POST /jobs/{jobId}/daily-logs`, `PUT /daily-logs/{id}`). On create, `jobId` is taken from the URL; on update the URL identifies the log directly. `customFieldValues` is a free-form object whose values are scalar (string, number, boolean, or null).
  */
 export interface DailyLogsDailyLogPayloadSchema {
-  [key: string]: unknown;
+  /** Optional override; the URL `jobId` always wins on create. */
+  jobId?: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  logDate: string;
+  title?: string | null;
+  notes?: string;
+  /** Snapshot of weather captured at the time the log was authored. Stored verbatim for client-side rendering. */
+  weatherData?: DailyLogWeather | null;
+  includeWeather?: boolean;
+  includeWeatherNotes?: boolean;
+  weatherNotes?: string | null;
+  shareInternalUsers?: boolean;
+  shareSubsVendors?: boolean;
+  shareClient?: boolean;
+  isPrivate?: boolean;
+  notifyUserIds?: string[];
+  tags?: string[];
+  /** Map of custom field id → scalar value (string, number, boolean, or null). */
+  customFieldValues?: DailyLogsDailyLogPayloadSchemaCustomFieldValues;
 }

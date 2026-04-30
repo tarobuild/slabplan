@@ -1,0 +1,33 @@
+Findings
+
+  1. P0: Account deactivation does not actually cut off access. Login blocks inactive users, but refresh, PAT, signed-file, and upload-token paths do not check users.isActive. A deactivated user can keep
+     refreshing sessions for the 30-day refresh TTL, keep using PAT/MCP access, and keep using upload/file-view tokens. See artifacts/api-server/src/routes/auth.ts:111, artifacts/api-server/src/routes/
+     auth.ts:271, artifacts/api-server/src/lib/personal-access-tokens.ts:45, artifacts/api-server/src/routes/files-signed.ts:44, artifacts/api-server/src/routes/files.ts:496, and artifacts/api-server/src/
+     app.ts:129. Fix: require isActive=true on all identity rehydration paths, revoke PATs/refresh capability on deactivation/password change, and add regression tests.
+  2. P1: Activity feed and realtime broadcasts leak restricted object metadata. /activity scopes only to accessible job/lead IDs, then returns full metadata/description. That metadata includes file/folder names,
+     schedule item titles, private/draft daily-log titles, and notification recipients from write sites. Realtime emits the same activity payload to every socket in the job room. See artifacts/api-server/src/
+     routes/activity.ts:46, artifacts/api-server/src/lib/file-manager.ts:522, artifacts/api-server/src/lib/file-manager.ts:1682, artifacts/api-server/src/lib/file-manager.ts:1742, artifacts/api-server/src/lib/
+     file-manager.ts:549, and artifacts/api-server/src/lib/realtime.ts:140. Fix: filter activity per entity visibility before read and before broadcast, or redact restricted metadata for broad job-room events.
+  3. P1: Schedule baselines leak hidden/personal schedule items. buildBaselinePayload snapshots every schedule item for a job, and GET /jobs/:jobId/schedule/baseline returns every snapshot title/date to any user
+     with job access. This bypasses the normal schedule visibility filter. See artifacts/api-server/src/routes/schedule.ts:1662 and artifacts/api-server/src/routes/schedule.ts:2503. Fix: capture and read
+     baselines through the same schedule visibility rules, especially personal todos.
+  4. P1: “Notify assigned users” is another schedule side channel. The route queries all job schedule items and assignees, no visibility/personal-todo filter, then returns recipient counts/recipients and stores
+     item titles in activity metadata. See artifacts/api-server/src/routes/schedule.ts:2798. Fix: apply buildScheduleListVisibilityFilter(req.auth!), exclude other users’ personal todos, and avoid storing hidden
+     item titles in broad activity rows.
+  5. P2: Folder permission checks miss destination/parent permissions. Creating a nested folder checks job manage rights but not upload permission on the parent. Moving a folder checks upload permission on the
+     source folder but not the destination. See artifacts/api-server/src/routes/folders.ts:93, artifacts/api-server/src/lib/file-manager.ts:911, artifacts/api-server/src/routes/folders.ts:186, and artifacts/api-
+     server/src/lib/file-manager.ts:1042. Fix: call assertCanUploadToFolder for parentFolderId and destination folder before create/move.
+  6. P2: Trash listing leaks restricted file/folder names. /jobs/:jobId/trash requires only job access, while listTrash returns all deleted folders/files for that job/media type without folder visibility
+     filtering. See artifacts/api-server/src/routes/folders.ts:255 and artifacts/api-server/src/lib/file-manager.ts:1558. Fix: either restrict trash to managers/admins or apply buildFolderVisibilityCondition to
+     trashed folders and file parent folders.
+  7. P2: Draft daily logs are not an access boundary. The API defaults new logs to shareInternalUsers=true, stores them unpublished, and the daily-log visibility filter ignores publishedAt. If “draft” means
+     creator-only until publish, other job users can list/read drafts. See artifacts/api-server/src/routes/daily-logs.ts:156, artifacts/api-server/src/lib/daily-log-visibility.ts:5, and artifacts/api-server/src/
+     routes/daily-logs.ts:1362. Fix: require publishedAt IS NOT NULL for non-creator/non-admin visibility.
+  8. P2: Admin safety is incomplete. Self-deactivation is blocked, but an admin can still demote themself, and the system does not enforce “at least one active admin remains.” See artifacts/api-server/src/routes/
+     users.ts:498. Fix transactionally block self-demotion unless another active admin exists, and block deactivating/demoting the last active admin.
+  9. P3 hardening: Password changes do not invalidate refresh tokens or PATs (artifacts/api-server/src/routes/users.ts:311); HSTS is disabled in Helmet (artifacts/api-server/src/app.ts:57); the rate limiter is
+     in-memory and relies on single-instance deployment (artifacts/api-server/src/lib/rate-limit.ts:17).
+
+  Verification
+  pnpm run validate passed. Frontend tests passed: 63/63. API non-DB unit subset passed: 66/66. Full recursive pnpm test could not run because the API pretest could not connect to local Postgres at
+  127.0.0.1:5432. Git worktree is clean; I made no code changes.

@@ -16,7 +16,7 @@ import { users } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { decodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { sanitizeDownloadFilename } from "../lib/downloads";
-import { getFileOrThrow, listFilesForFolder, purgeFile, renameFile, restoreFile, saveUploadedFiles, softDeleteFile } from "../lib/file-manager";
+import { getFileOrThrow, listFilesForFolder, moveFile, purgeFile, renameFile, restoreFile, saveUploadedFiles, softDeleteFile } from "../lib/file-manager";
 import {
   TOOL_TYPES,
   createAnnotation,
@@ -58,6 +58,10 @@ const fileListQuerySchema = z.object({
 
 const renameFileSchema = z.object({
   originalName: z.string().trim().min(1).max(255),
+});
+
+const moveFileSchema = z.object({
+  destinationFolderId: z.string().uuid(),
 });
 
 const uploadFilesSchema = z.object({
@@ -146,6 +150,17 @@ router.post(
   }),
 );
 
+router.get(
+  "/files/:id",
+  asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanViewFile(req.auth!, fileId);
+
+    const file = await getFileOrThrow(fileId);
+    res.json({ file });
+  }),
+);
+
 router.put(
   "/files/:id",
   asyncHandler(async (req, res) => {
@@ -161,6 +176,31 @@ router.put(
     const file = await renameFile({
       fileId,
       originalName: body.data.originalName,
+      userId: req.auth!.userId,
+    });
+
+    res.json({ file });
+  }),
+);
+
+router.put(
+  "/files/:id/move",
+  asyncHandler(async (req, res) => {
+    const body = moveFileSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid move file payload.", body.error.flatten());
+    }
+
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanManageFile(req.auth!, fileId);
+    // The destination must also be writable by the caller — otherwise an MCP
+    // user could move a file into a folder they cannot upload to.
+    await assertCanUploadToFolder(req.auth!, body.data.destinationFolderId);
+
+    const file = await moveFile({
+      fileId,
+      destinationFolderId: body.data.destinationFolderId,
       userId: req.auth!.userId,
     });
 

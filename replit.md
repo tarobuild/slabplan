@@ -172,6 +172,143 @@ limiter carry `X-RateLimit-Limit/Remaining/Reset`; 429s also carry
 `Retry-After`. The OpenAPI spec at `/openapi.json` documents all of the
 above and powers the codegen in `lib/api-client-react` + `lib/api-zod`.
 
+## MCP server (Task #108)
+
+External agents (Claude Desktop, Cursor, MCP Inspector, custom LLM
+clients) talk to the platform through a Model Context Protocol server
+that wraps the REST API. The server lives in `lib/mcp-server`; the
+api-server mounts the streamable-HTTP transport at `POST /api/mcp`.
+Auth is the same Personal Access Token system from Task #107 —
+`Authorization: Bearer cs_pat_…`. Every tool call is forwarded over
+loopback to the existing REST endpoints, so role gating, validation,
+idempotency, and rate limiting all keep working unchanged.
+
+Tools cover the full surface: list/get/create/update/delete for jobs,
+leads, clients (`list_clients`/`get_client`/…) and their contacts
+(`list_contacts`, `get_contact`, `create_client_contact`,
+`update_contact`, `delete_contact`), daily-logs, schedule items, folders
+(`list_folders`/`get_folder`/`create_folder`/`rename_folder`/`move_folder`/
+`delete_folder`) and files (`list_files`/`get_file`/`attach_file`/
+`rename_file`/`move_file`/`delete_file`), plus `search`, `add_todo`,
+`complete_todo`, `add_schedule_assignee`, `mark_schedule_done`,
+`read_activity`, `list_users`, `whoami`, and a generic `request`
+escape-hatch keyed off `/openapi.json`. Resources use singular URI
+kinds — `cadstone://job/{id}`, `cadstone://lead/{id}`,
+`cadstone://client/{id}`, `cadstone://file/{id}`,
+`cadstone://folder/{id}` — and resolve back to the same REST GETs
+(`GET /api/files/:id`, `GET /api/folders/:id`,
+`GET /api/clients/:id/contacts/:contactId`, etc., were added in this
+task to make those URIs resolvable). `resources/list` returns recent
+jobs, leads, and clients; files and folders are intentionally not
+listed there because the REST API only exposes them scoped under a
+job — drill in via the job/folder resource or use `list_folders` /
+`list_files` instead.
+
+Activity attribution has two layers:
+
+1. **Per-tool audit row.** The MCP server installs an audit hook that
+   writes one `mcp_tool_call` row per tool invocation (including reads
+   and failures) with `metadata.actor =
+   "agent_via_mcp(<userId>, <patId>, <toolName>)"`,
+   `metadata.actorKind = "agent_via_mcp"`, plus tool name, PAT id,
+   start time, duration, and ok/error status. The HTTP transport writes
+   the row directly via Drizzle. The stdio binary cannot share the
+   per-process internal secret, so it POSTs each event to
+   `POST /api/mcp/audit` (PAT-authenticated), which writes the same row
+   shape. Read-only tools that never touch a write endpoint still
+   produce an audit row this way.
+2. **Loopback write tagging (HTTP transport only).** Each loopback REST
+   call ships `X-MCP-Tool: <toolName>` plus `X-MCP-Internal: <secret>`
+   (a per-process, per-boot secret kept in `mcp-context.ts`). The
+   `captureMcpContext` middleware only honors the tool header when the
+   internal secret matches, then stashes `{ patId, userId, toolName }`
+   in AsyncLocalStorage so `writeActivity` can merge the same
+   `agent_via_mcp(...)` actor metadata onto downstream entity rows
+   (e.g. `lead created`). External PAT callers cannot forge this header
+   because they cannot guess the secret. Stdio writes land at the
+   api-server as standard PAT traffic and are not tagged on the entity
+   row, but the per-tool audit row above still attributes them
+   correctly.
+
+### Connecting from MCP Inspector / curl
+- HTTP transport URL: `https://<your-deploy>/api/mcp`
+  (locally: `http://127.0.0.1:8080/api/mcp`).
+- Header: `Authorization: Bearer cs_pat_…`.
+- Sanity check (lists tools):
+  ```bash
+  npx @modelcontextprotocol/inspector \
+    --transport http \
+    --url http://127.0.0.1:8080/api/mcp \
+    --header "Authorization: Bearer $CADSTONE_PAT"
+  ```
+
+### Claude Desktop / Cursor (HTTP)
+Add to `claude_desktop_config.json` or the equivalent Cursor MCP
+settings file:
+```json
+{
+  "mcpServers": {
+    "cadstone": {
+      "transport": "http",
+      "url": "https://<your-deploy>/api/mcp",
+      "headers": { "Authorization": "Bearer cs_pat_…" }
+    }
+  }
+}
+```
+
+### Stdio binary (for clients without HTTP transport support)
+```bash
+CADSTONE_API_URL=https://<your-deploy> \
+CADSTONE_PAT=cs_pat_… \
+pnpm --filter @workspace/mcp-server exec cadstone-mcp
+```
+or directly:
+```bash
+node lib/mcp-server/bin/cadstone-mcp.mjs
+```
+Claude Desktop entry for stdio:
+```json
+{
+  "mcpServers": {
+    "cadstone": {
+      "command": "node",
+      "args": ["/abs/path/to/lib/mcp-server/bin/cadstone-mcp.mjs"],
+      "env": {
+        "CADSTONE_API_URL": "https://<your-deploy>",
+        "CADSTONE_PAT": "cs_pat_…"
+      }
+    }
+  }
+}
+```
+
+The `/.well-known/ai-plugin.json` manifest's `mcp_server_url` is
+auto-rewritten to point at `${PUBLIC_BASE_URL}/api/mcp`. The
+round-trip integration test (`artifacts/api-server/test/mcp.test.ts`)
+boots the app, opens an MCP client over the streamable-HTTP transport,
+and asserts: (1) the full required tool surface is exposed,
+(2) `list_jobs` writes an `mcp_tool_call` audit row, (3) `create_lead`
+tags the resulting `lead created` activity row with the
+`agent_via_mcp(...)` actor on `metadata`, (4) reading
+`cadstone://lead/<id>` as an MCP resource returns the same lead JSON,
+and (5) the stdio audit hook (which talks to `POST /api/mcp/audit`)
+produces another `mcp_tool_call` row with the same shape.
+
+To run the integration test locally (postgres must stay alive in the
+same shell, since it dies between bash invocations):
+```bash
+unset SUPABASE_DATABASE_URL
+export PGDATA=/tmp/pg
+pg_ctl -D "$PGDATA" -l /tmp/pg.log -o "-p 5432 -k /tmp -h 127.0.0.1" start
+psql -h 127.0.0.1 -U cadstone -d postgres -c "DROP DATABASE IF EXISTS cadstone_test"
+psql -h 127.0.0.1 -U cadstone -d postgres -c "CREATE DATABASE cadstone_test OWNER cadstone"
+DATABASE_URL=postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test \
+  pnpm --filter @workspace/db push
+DATABASE_URL=postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test \
+  pnpm --filter @workspace/api-server exec node --import tsx --test test/mcp.test.ts
+```
+
 ## Conventions
 
 ### Role-gating (API)
@@ -235,6 +372,70 @@ Snapshot of pre-launch state:
   Not directly reachable from app code; deferred (see below).
 - All 3 workflows boot: `artifacts/api-server: API Server`,
   `artifacts/cadstone: web`, `artifacts/mockup-sandbox: Component Preview Server`.
+
+### MCP server (`lib/mcp-server`)
+
+The CAD Stone REST API is wrapped by an MCP (Model Context Protocol)
+server so external agents (Claude Desktop, Cursor, MCP Inspector) and
+in-process AI features can call it through a single, audited surface.
+Authentication is **PAT only** — agents must present a
+`cs_pat_…` Personal Access Token. The server itself has no business
+logic: every tool round-trips through the existing REST routes so all
+authorization checks, idempotency guards, and `activity_log` writes
+remain in one place.
+
+Two transports are exposed:
+
+1. **HTTP / streamable** — mounted at `/api/mcp` by
+   `artifacts/api-server/src/routes/mcp.ts`. A fresh MCP server is
+   built per request (stateless), so two PATs can never share state.
+   Loopback REST calls carry `X-MCP-Tool: <toolName>` plus a per-process
+   `X-MCP-Internal: <secret>` header (regenerated on every boot via
+   `crypto.randomBytes`). The `captureMcpContext` middleware only
+   honors the tool header when the secret matches — preventing
+   external PAT callers from forging `agent_via_mcp` tags. In addition,
+   every tool call (including reads) writes a `mcp_tool_call` row to
+   `activity_log` via an audit hook on the MCP server, so attribution
+   is complete even for read-only tools.
+
+2. **stdio** — `bin/cadstone-mcp.mjs` shim spawns `node --import tsx/esm
+   src/stdio.ts`. Reads `CADSTONE_API_URL` and `CADSTONE_PAT` from the
+   environment. The bin uses `createRequire(import.meta.url).resolve(
+   "tsx/esm")` so the loader path works on Windows and inside pnpm's
+   symlinked `node_modules` trees. Because the stdio binary runs in a
+   separate process from the api-server (typically on a user's local
+   machine), it cannot share the per-process internal secret — its
+   REST writes land at the api-server as standard PAT-authenticated
+   traffic and are attributed to the calling user but **not**
+   specifically tagged `agent_via_mcp`. The HTTP transport at
+   `/api/mcp` retains full per-tool MCP attribution for in-process
+   tool calls. This is the intentional security tradeoff — never
+   relax the `X-MCP-Internal` check to make stdio look in-process.
+
+Round-trip test: `artifacts/api-server/test/mcp.test.ts` boots the app
+in-process, mints a PAT, opens an MCP client, calls `list_jobs` +
+`create_lead`, and asserts the resulting `activity_log` row carries
+`metadata.actorKind = "agent_via_mcp"` plus `metadata.actor =
+"agent_via_mcp(<userId>, <patId>, create_lead)"`.
+
+To run the MCP test locally:
+```sh
+unset SUPABASE_DATABASE_URL
+PGDATA=/tmp/pgdata-mcp pg_ctl -D "$PGDATA" -l /tmp/pglog.log \
+  -o "-c listen_addresses=127.0.0.1 -c port=5432 -c unix_socket_directories=/tmp" start
+PGPASSWORD=cadstone psql -h 127.0.0.1 -U cadstone -d postgres \
+  -c "DROP DATABASE IF EXISTS cadstone_test;" \
+  -c "CREATE DATABASE cadstone_test;"
+DATABASE_URL="postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test" \
+  pnpm --filter @workspace/db push
+DATABASE_URL="postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test" \
+  pnpm --filter @workspace/api-server exec node --import tsx \
+  --test test/mcp.test.ts
+```
+Postgres must be started in the same shell invocation as the test
+because the launcher's process group is reaped between bash calls.
+DROP+CREATE must be issued as separate `psql -c` arguments (Postgres
+forbids `DROP DATABASE` inside a transaction block).
 
 ### Deferred items
 - `@tootallnate/once` LOW transitive vuln — pinned upstream in

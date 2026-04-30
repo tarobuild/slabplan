@@ -96,10 +96,12 @@ router.get("/.well-known/ai-plugin.json", (req, res) => {
       type: "openapi",
       url: `${base}/openapi.json`,
     },
-    // Placeholder MCP server URL. MCP is out of scope for this task — the
-    // field is included so AI clients that look for it can discover the
-    // future endpoint. Replace once the MCP transport is implemented.
-    mcp_server_url: `${base}/mcp`,
+    // MCP (Model Context Protocol) streamable-HTTP transport endpoint.
+    // Use a `cs_pat_…` Personal Access Token in the `Authorization: Bearer`
+    // header. POST JSON-RPC 2.0 messages; the server responds with either a
+    // direct JSON body or an SSE stream depending on the request kind. See
+    // replit.md → "MCP server (Task #108)" for client examples.
+    mcp_server_url: `${base}/api/mcp`,
     logo_url: `${base}/favicon.ico`,
     contact_email: "support@cadstonesystems.com",
     legal_info_url: `${base}/`,

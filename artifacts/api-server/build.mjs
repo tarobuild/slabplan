@@ -100,6 +100,16 @@ async function buildAll() {
       "puppeteer",
       "puppeteer-core",
       "electron",
+      // `yaml` is loaded by routes/public-spec.ts to parse openapi.yaml at
+      // request time. Bundling it pulls a large CJS graph into the ESM
+      // bundle and currently breaks resolution; keeping it external mirrors
+      // how it's used (a runtime require of the installed dep).
+      "yaml",
+      // The MCP SDK ships an ESM-only entry that uses dynamic require()
+      // for transport adapters; bundling it produces broken require shims
+      // under our esbuild config. Externalize so node loads it normally.
+      "@modelcontextprotocol/sdk",
+      "@modelcontextprotocol/sdk/*",
     ],
     sourcemap: "linked",
     plugins: [

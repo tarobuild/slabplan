@@ -12,12 +12,14 @@ import foldersRouter from "./folders";
 import healthRouter from "./health";
 import jobsRouter from "./jobs";
 import leadsRouter from "./leads";
+import mcpRouter from "./mcp";
 import resourcesRouter from "./resources";
 import scheduleRouter from "./schedule";
 import searchRouter from "./search";
 import usersRouter from "./users";
 import { requireAuth } from "../middleware/require-auth";
 import { idempotencyMiddleware } from "../middleware/idempotency";
+import { captureMcpContext } from "../middleware/mcp-context";
 
 const router: IRouter = Router();
 
@@ -26,7 +28,16 @@ router.use("/auth", authRouter);
 // Signed-file viewing carries its own short-lived token in the query string,
 // so it must be mounted BEFORE the global Bearer-token requirement.
 router.use(filesSignedRouter);
+// MCP streamable-HTTP transport. Mounted BEFORE requireAuth because the
+// route handles its own PAT-only auth and emits JSON-RPC-friendly errors;
+// going through the regular middleware would convert auth failures into
+// problem+json before the MCP transport could wrap them.
+router.use(mcpRouter);
 router.use(requireAuth);
+// Tag downstream activity rows with the calling MCP tool when present.
+// Reads `X-MCP-Tool` from the request and stashes it in AsyncLocalStorage
+// for `writeActivity`. No-op for non-MCP traffic.
+router.use(captureMcpContext);
 // Idempotency keys are scoped to the authenticated user, so the middleware
 // must run AFTER requireAuth has populated req.auth.userId. This covers the
 // entire authenticated /api surface (every write router below). Auth-only

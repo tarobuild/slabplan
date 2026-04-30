@@ -26,6 +26,7 @@ import {
 import { cleanupTempUpload } from "./uploads";
 import { emitRealtimeEvent } from "./realtime";
 import { logger } from "./logger";
+import { getMcpContext } from "../middleware/mcp-context";
 
 export const documentExtensions = [
   ".pdf",
@@ -495,6 +496,19 @@ export async function writeActivity(params: {
       .then((rows) => rows[0] ?? null),
   ]);
 
+  // If this write is happening as part of an MCP tool call, tag the
+  // activity row so audit logs show the agent provenance. Falls back to
+  // whatever the caller passed in `extra` when no MCP context is active.
+  const mcpCtx = getMcpContext();
+  const mcpTag = mcpCtx
+    ? {
+        actor: `agent_via_mcp(${mcpCtx.userId}, ${mcpCtx.patId}, ${mcpCtx.toolName})` as const,
+        actorKind: "agent_via_mcp" as const,
+        toolName: mcpCtx.toolName,
+        patId: mcpCtx.patId,
+      }
+    : undefined;
+
   const metadata = {
     description: params.description,
     jobId: params.jobId,
@@ -504,6 +518,7 @@ export async function writeActivity(params: {
     folderId: params.folderId ?? null,
     fileId: params.fileId ?? null,
     ...params.extra,
+    ...(mcpTag ?? {}),
   };
 
   const [created] = await db.insert(activityLog).values({
@@ -1336,6 +1351,49 @@ export async function renameFile(params: {
     folderId: folder.id,
     fileId: updated.id,
     description: `Renamed file to ${updated.originalName}`,
+  });
+
+  return updated;
+}
+
+export async function moveFile(params: {
+  fileId: string;
+  destinationFolderId: string;
+  userId: string;
+}) {
+  const file = await getFileOrThrow(params.fileId);
+  const sourceFolder = await getFolderOrThrow(file.folderId!);
+  const destination = await getFolderOrThrow(params.destinationFolderId);
+
+  if (
+    destination.jobId !== sourceFolder.jobId ||
+    destination.mediaType !== sourceFolder.mediaType
+  ) {
+    throw new HttpError(
+      400,
+      "Destination folder must belong to the same job and media type as the source folder.",
+    );
+  }
+
+  const [updated] = await db
+    .update(files)
+    .set({
+      folderId: destination.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(files.id, file.id))
+    .returning();
+
+  await writeActivity({
+    entityType: "file",
+    entityId: updated.id,
+    action: "moved",
+    userId: params.userId,
+    jobId: destination.jobId ?? null,
+    mediaType: destination.mediaType,
+    folderId: destination.id,
+    fileId: updated.id,
+    description: `Moved ${updated.originalName} to ${destination.title}`,
   });
 
   return updated;

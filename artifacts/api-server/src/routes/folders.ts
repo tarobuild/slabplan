@@ -10,6 +10,7 @@ import {
   copyFolder,
   createFolder,
   emptyTrash,
+  getFolderOrThrow,
   listFoldersForJob,
   listTrash,
   moveFolder,
@@ -110,6 +111,17 @@ router.post(
     });
 
     res.status(201).json({ folder });
+  }),
+);
+
+router.get(
+  "/folders/:id",
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanViewFolder(req.auth!, folderId);
+
+    const folder = await getFolderOrThrow(folderId);
+    res.json({ folder });
   }),
 );
 

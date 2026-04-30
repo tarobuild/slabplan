@@ -425,6 +425,31 @@ router.get(
   }),
 );
 
+router.get(
+  "/:id/contacts/:contactId",
+  asyncHandler(async (req, res) => {
+    const clientId = getParam(req.params.id, "client id");
+    const contactId = getParam(req.params.contactId, "contact id");
+    await assertCanAccessClient(req.auth!, clientId);
+    await getClientOrThrow(clientId);
+
+    const [contact] = await db
+      .select()
+      .from(clientContacts)
+      .where(
+        and(
+          eq(clientContacts.id, contactId),
+          eq(clientContacts.clientId, clientId),
+          isNull(clientContacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!contact) throw new HttpError(404, "Contact not found.");
+
+    res.json({ contact });
+  }),
+);
+
 router.post(
   "/:id/contacts",
   asyncHandler(async (req, res) => {

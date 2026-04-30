@@ -31,6 +31,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title"
 import {
   addBusinessDays,
   calculateBusinessEndDate,
+  calculateWorkDaysBetween,
   classifyWorkday,
   dateKey,
   DEFAULT_SCHEDULE_COLOR,
@@ -355,6 +356,22 @@ type BlockDrag = {
   rectHeight: number
   moved: boolean
   columns: BlockDragColumn[]
+}
+
+type GanttDragMode = "move" | "resize-end"
+
+type GanttDrag = {
+  itemId: string
+  pointerId: number
+  mode: GanttDragMode
+  origStartDate: string
+  origWorkDays: number
+  origEndDate: string
+  startDate: string
+  workDays: number
+  anchorClientX: number
+  dayWidth: number
+  moved: boolean
 }
 
 function snapMinutes(min: number, step = DRAG_SNAP_MINUTES) {
@@ -1718,6 +1735,10 @@ export default function JobSchedulePage() {
   const blockDragRef = useRef<BlockDrag | null>(null)
   const blockClickSuppressRef = useRef<string | null>(null)
   const undoBlockDragToastIdRef = useRef<string | number | null>(null)
+  const [ganttDrag, setGanttDrag] = useState<GanttDrag | null>(null)
+  const ganttDragRef = useRef<GanttDrag | null>(null)
+  const ganttClickSuppressRef = useRef<string | null>(null)
+  const undoGanttDragToastIdRef = useRef<string | number | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -2068,6 +2089,90 @@ export default function JobSchedulePage() {
   }, [])
 
   useEffect(() => {
+    if (!ganttDrag) {
+      return
+    }
+
+    function handleMove(event: PointerEvent) {
+      const current = ganttDragRef.current
+      if (!current || current.pointerId !== event.pointerId) {
+        return
+      }
+
+      const deltaPx = event.clientX - current.anchorClientX
+      const deltaDays = current.dayWidth > 0 ? Math.round(deltaPx / current.dayWidth) : 0
+
+      let nextStartDate = current.origStartDate
+      let nextWorkDays = current.origWorkDays
+
+      if (current.mode === "move") {
+        const start = addDays(parseDate(current.origStartDate), deltaDays)
+        nextStartDate = dateKey(start)
+      } else {
+        const targetEnd = addDays(parseDate(current.origEndDate), deltaDays)
+        const targetEndKey = dateKey(targetEnd)
+        nextWorkDays =
+          targetEndKey < current.origStartDate
+            ? 1
+            : calculateWorkDaysBetween(
+                current.origStartDate,
+                targetEndKey,
+                workdayExceptions,
+              )
+      }
+
+      if (nextStartDate === current.startDate && nextWorkDays === current.workDays) {
+        return
+      }
+
+      const moved =
+        current.moved ||
+        nextStartDate !== current.origStartDate ||
+        nextWorkDays !== current.origWorkDays
+
+      const next: GanttDrag = {
+        ...current,
+        startDate: nextStartDate,
+        workDays: nextWorkDays,
+        moved,
+      }
+      ganttDragRef.current = next
+      setGanttDrag(next)
+    }
+
+    function handleUp(event: PointerEvent) {
+      const current = ganttDragRef.current
+      if (!current || current.pointerId !== event.pointerId) {
+        return
+      }
+      ganttDragRef.current = null
+      setGanttDrag(null)
+      if (current.moved) {
+        ganttClickSuppressRef.current = current.itemId
+        void commitGanttDrag(current)
+      }
+    }
+
+    function handleCancel(event: PointerEvent) {
+      const current = ganttDragRef.current
+      if (!current || current.pointerId !== event.pointerId) {
+        return
+      }
+      ganttDragRef.current = null
+      setGanttDrag(null)
+    }
+
+    window.addEventListener("pointermove", handleMove)
+    window.addEventListener("pointerup", handleUp)
+    window.addEventListener("pointercancel", handleCancel)
+    return () => {
+      window.removeEventListener("pointermove", handleMove)
+      window.removeEventListener("pointerup", handleUp)
+      window.removeEventListener("pointercancel", handleCancel)
+    }
+  }, [ganttDrag?.pointerId])
+
+  useEffect(() => {
     if (historyOpen) {
       void fetchHistory()
     }
@@ -2084,6 +2189,10 @@ export default function JobSchedulePage() {
       if (undoBlockDragToastIdRef.current !== null) {
         toast.dismiss(undoBlockDragToastIdRef.current)
         undoBlockDragToastIdRef.current = null
+      }
+      if (undoGanttDragToastIdRef.current !== null) {
+        toast.dismiss(undoGanttDragToastIdRef.current)
+        undoGanttDragToastIdRef.current = null
       }
     }
   }, [jobId])
@@ -3610,6 +3719,181 @@ export default function JobSchedulePage() {
         },
       })
       undoBlockDragToastIdRef.current = toastId
+    } catch (error) {
+      setItems(previousItems)
+      toastApiError(error, "Failed to update schedule item")
+    }
+  }
+
+  function dismissUndoGanttDragToast() {
+    if (undoGanttDragToastIdRef.current !== null) {
+      toast.dismiss(undoGanttDragToastIdRef.current)
+      undoGanttDragToastIdRef.current = null
+    }
+  }
+
+  function isGanttBarDraggable(item: ScheduleItemRecord) {
+    if (scheduleOffline) {
+      return false
+    }
+    if (isDraftScheduleItemId(item.id)) {
+      return false
+    }
+    return true
+  }
+
+  function handleGanttBarPointerDown(
+    event: React.PointerEvent<HTMLElement>,
+    item: ScheduleItemRecord,
+    mode: GanttDragMode,
+  ) {
+    if (event.button !== 0) {
+      return
+    }
+    if (event.pointerType !== "mouse") {
+      return
+    }
+    if (!isGanttBarDraggable(item)) {
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+
+    dismissUndoGanttDragToast()
+
+    const safeWorkDays = Math.max(item.workDays, 1)
+    const next: GanttDrag = {
+      itemId: item.id,
+      pointerId: event.pointerId,
+      mode,
+      origStartDate: item.startDate,
+      origWorkDays: safeWorkDays,
+      origEndDate: calculateBusinessEndDate(
+        item.startDate,
+        safeWorkDays,
+        workdayExceptions,
+      ),
+      startDate: item.startDate,
+      workDays: safeWorkDays,
+      anchorClientX: event.clientX,
+      dayWidth,
+      moved: false,
+    }
+    ganttDragRef.current = next
+    setGanttDrag(next)
+  }
+
+  async function undoGanttDrag(snapshot: {
+    itemId: string
+    startDate: string
+    workDays: number
+  }) {
+    let snapshotTarget: ScheduleItemRecord | null = null
+    let previousItems: ScheduleItemRecord[] | null = null
+    setItems((current) => {
+      const target = current.find((entry) => entry.id === snapshot.itemId)
+      if (!target) {
+        return current
+      }
+      snapshotTarget = target
+      previousItems = current
+      const restoredEndDate = calculateBusinessEndDate(
+        snapshot.startDate,
+        snapshot.workDays,
+        workdayExceptions,
+      )
+      return current.map((entry) =>
+        entry.id === snapshot.itemId
+          ? {
+              ...entry,
+              startDate: snapshot.startDate,
+              workDays: snapshot.workDays,
+              endDate: restoredEndDate,
+            }
+          : entry,
+      )
+    })
+    if (!snapshotTarget || !previousItems) {
+      return
+    }
+
+    try {
+      const payload: ScheduleItemPayload = {
+        ...schedulePayloadFromItem(snapshotTarget),
+        startDate: snapshot.startDate,
+        workDays: snapshot.workDays,
+      }
+      await api.put(`/schedule-items/${snapshot.itemId}`, payload)
+      await refreshScheduleData()
+      toast.success("Schedule change undone")
+    } catch (error) {
+      setItems(previousItems)
+      toastApiError(error, "Failed to undo schedule change")
+    }
+  }
+
+  async function commitGanttDrag(drag: GanttDrag) {
+    const target = items.find((entry) => entry.id === drag.itemId)
+    if (!target) {
+      return
+    }
+    const newStartDate = drag.mode === "move" ? drag.startDate : target.startDate
+    const newWorkDays = drag.mode === "resize-end" ? drag.workDays : Math.max(target.workDays, 1)
+    if (newStartDate === target.startDate && newWorkDays === Math.max(target.workDays, 1)) {
+      return
+    }
+
+    const previousSnapshot = {
+      itemId: target.id,
+      startDate: target.startDate,
+      workDays: Math.max(target.workDays, 1),
+    }
+    const itemTitle = target.title
+    const previousItems = items
+    const optimisticEndDate = calculateBusinessEndDate(newStartDate, newWorkDays, workdayExceptions)
+    const optimistic = items.map((entry) =>
+      entry.id === target.id
+        ? {
+            ...entry,
+            startDate: newStartDate,
+            workDays: newWorkDays,
+            endDate: optimisticEndDate,
+          }
+        : entry,
+    )
+    setItems(optimistic)
+
+    try {
+      const payload: ScheduleItemPayload = {
+        ...schedulePayloadFromItem(target),
+        startDate: newStartDate,
+        workDays: newWorkDays,
+      }
+      await api.put(`/schedule-items/${target.id}`, payload)
+      await refreshScheduleData()
+      dismissUndoGanttDragToast()
+      const label = itemTitle.trim() ? `Updated "${itemTitle}"` : "Schedule item updated"
+      const toastId = toast.success(label, {
+        duration: 6000,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            undoGanttDragToastIdRef.current = null
+            void undoGanttDrag(previousSnapshot)
+          },
+        },
+        onDismiss: (current) => {
+          if (undoGanttDragToastIdRef.current === current.id) {
+            undoGanttDragToastIdRef.current = null
+          }
+        },
+        onAutoClose: (current) => {
+          if (undoGanttDragToastIdRef.current === current.id) {
+            undoGanttDragToastIdRef.current = null
+          }
+        },
+      })
+      undoGanttDragToastIdRef.current = toastId
     } catch (error) {
       setItems(previousItems)
       toastApiError(error, "Failed to update schedule item")
@@ -5412,15 +5696,29 @@ export default function JobSchedulePage() {
                                   ))}
                                 </svg>
 
-                                {ganttRows.map((row) =>
-                                  row.type === "phase" ? (
-                                    <div key={row.key} className="h-[38px] border-b border-[#E5E7EB] bg-slate-50" />
-                                  ) : (
+                                {ganttRows.map((row) => {
+                                  if (row.type === "phase") {
+                                    return <div key={row.key} className="h-[38px] border-b border-[#E5E7EB] bg-slate-50" />
+                                  }
+                                  const isDragged = !!ganttDrag && ganttDrag.itemId === row.item.id
+                                  const draggable = isGanttBarDraggable(row.item)
+                                  const barStartDate = isDragged ? ganttDrag!.startDate : row.item.startDate
+                                  const barWorkDays = isDragged ? ganttDrag!.workDays : Math.max(row.item.workDays, 1)
+                                  const barEndDate = isDragged
+                                    ? calculateBusinessEndDate(barStartDate, barWorkDays, workdayExceptions)
+                                    : itemEndDate(row.item)
+                                  return (
                                     <button
                                       key={row.key}
                                       type="button"
                                       className="relative block h-[54px] w-full border-b border-[#E5E7EB] text-left transition hover:bg-slate-50"
-                                      onClick={() => openExistingItem(row.item.id)}
+                                      onClick={() => {
+                                        if (ganttClickSuppressRef.current === row.item.id) {
+                                          ganttClickSuppressRef.current = null
+                                          return
+                                        }
+                                        openExistingItem(row.item.id)
+                                      }}
                                     >
                                       {scaleUnits.map((unit) => (
                                         <div
@@ -5440,13 +5738,16 @@ export default function JobSchedulePage() {
                                             ? "border-amber-500 ring-2 ring-amber-200"
                                             : "border-transparent",
                                           activeConflictIds.has(row.item.id) && "border-rose-500 ring-2 ring-rose-200",
+                                          draggable && "cursor-grab active:cursor-grabbing",
+                                          isDragged && "z-20 cursor-grabbing ring-2 ring-orange-300",
                                         )}
                                         style={{
-                                          left: `${diffInDays(ganttRange.start, parseDate(row.item.startDate)) * dayWidth}px`,
-                                          width: `${(diffInDays(parseDate(row.item.startDate), parseDate(itemEndDate(row.item))) + 1) * dayWidth}px`,
+                                          left: `${diffInDays(ganttRange.start, parseDate(barStartDate)) * dayWidth}px`,
+                                          width: `${(diffInDays(parseDate(barStartDate), parseDate(barEndDate)) + 1) * dayWidth}px`,
                                           height: "28px",
                                           backgroundColor: colorWithAlpha((ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor, 0.18),
                                         }}
+                                        onPointerDown={(event) => handleGanttBarPointerDown(event, row.item, "move")}
                                       >
                                         <div
                                           className="h-full"
@@ -5458,10 +5759,17 @@ export default function JobSchedulePage() {
                                         <div className="pointer-events-none absolute inset-0 flex items-center px-3 text-xs font-medium text-slate-900">
                                           <span className="truncate">{row.item.title}</span>
                                         </div>
+                                        {draggable ? (
+                                          <div
+                                            role="presentation"
+                                            className="pointer-events-auto absolute inset-y-0 right-0 w-2 cursor-ew-resize"
+                                            onPointerDown={(event) => handleGanttBarPointerDown(event, row.item, "resize-end")}
+                                          />
+                                        ) : null}
                                       </div>
                                     </button>
-                                  ),
-                                )}
+                                  )
+                                })}
                               </div>
                             </div>
                           </div>

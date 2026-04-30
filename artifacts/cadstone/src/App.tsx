@@ -10,6 +10,7 @@ import {
 } from "react-router-dom"
 import { Toaster } from "sonner"
 import { QueryClientProvider } from "@tanstack/react-query"
+import AdminRoute from "@/components/AdminRoute"
 import AppLayout from "@/components/layout/AppLayout"
 import RoleGate from "@/components/auth/RoleGate"
 import { ROLE_GATES } from "@/lib/role-access"
@@ -46,6 +47,8 @@ const MyDailyLogsPage = lazy(() => import("@/pages/my-daily-logs"))
 const NotFoundPage = lazy(() => import("@/pages/not-found"))
 const ResourcesPage = lazy(() => import("@/pages/resources"))
 const SettingsPage = lazy(() => import("@/pages/settings"))
+const UsersPage = lazy(() => import("@/pages/users"))
+const AcceptInvitePage = lazy(() => import("@/pages/accept-invite"))
 
 function RouteLoadingScreen() {
   return (
@@ -123,6 +126,7 @@ function buildRouter(ready: boolean, basename: string | undefined) {
         <Route element={<PublicOnlyRoute ready={ready} />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<Navigate to="/login" replace />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
         </Route>
 
         <Route element={<ProtectedRoute ready={ready} />}>
@@ -152,6 +156,9 @@ function buildRouter(ready: boolean, basename: string | undefined) {
               <Route path="/clients" element={<ClientsPage />} />
             </Route>
             <Route path="/settings" element={<SettingsPage />} />
+            <Route element={<AdminRoute />}>
+              <Route path="/settings/users" element={<UsersPage />} />
+            </Route>
             <Route path="/403" element={<ForbiddenPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>

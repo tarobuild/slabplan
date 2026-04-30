@@ -349,6 +349,14 @@ export async function customFetch<T = unknown>(
     headers.set("accept", DEFAULT_JSON_ACCEPT);
   }
 
+  // CSRF protection: state-changing requests must declare themselves as
+  // XHR so the API server's CSRF middleware lets them through. Browsers
+  // forbid scripts from setting this header on cross-site simple requests,
+  // so its presence proves the call originated from same-origin JS.
+  if (method !== "GET" && method !== "HEAD" && !headers.has("x-requested-with")) {
+    headers.set("x-requested-with", "XMLHttpRequest");
+  }
+
   // Attach bearer token when an auth getter is configured and no
   // Authorization header has been explicitly provided.
   if (_authTokenGetter && !headers.has("authorization")) {

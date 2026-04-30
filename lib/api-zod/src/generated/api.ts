@@ -90,10 +90,179 @@ export const AuthPostAuthRefreshHeader = zod.object({
 export const AuthPostAuthRefreshResponse = zod.unknown();
 
 /**
+ * Public endpoint. Exchanges a one-time setup token (issued by an admin via POST /users) for a real password and immediately logs the user in. The token is single-use and short-lived.
+ * @summary POST /auth/accept-invite
+ */
+export const authPostAuthAcceptInviteHeaderIdempotencyKeyMin = 8;
+export const authPostAuthAcceptInviteHeaderIdempotencyKeyMax = 255;
+
+export const AuthPostAuthAcceptInviteHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(authPostAuthAcceptInviteHeaderIdempotencyKeyMin)
+    .max(authPostAuthAcceptInviteHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const authPostAuthAcceptInviteBodyPasswordMin = 8;
+
+export const AuthPostAuthAcceptInviteBody = zod
+  .object({
+    token: zod.string().min(1),
+    password: zod.string().min(authPostAuthAcceptInviteBodyPasswordMin),
+  })
+  .describe(
+    "Request body for `POST \/auth\/accept-invite`. The invitee posts the raw token from their setup link plus the password they want to use. On success the user is logged in (refresh cookie + access token in response).",
+  );
+
+export const AuthPostAuthAcceptInviteResponse = zod.unknown();
+
+/**
  * Route defined in artifacts/api-server/src/routes/users.ts. Validated query with userListQuerySchema.
  * @summary GET /users
  */
+export const usersGetUsersQueryIncludeInactiveDefault = false;
+export const usersGetUsersQueryLimitDefault = 100;
+export const usersGetUsersQueryLimitMax = 200;
+
+export const usersGetUsersQueryOffsetMin = 0;
+
+export const UsersGetUsersQueryParams = zod.object({
+  includeInactive: zod.coerce
+    .boolean()
+    .default(usersGetUsersQueryIncludeInactiveDefault)
+    .describe(
+      "Admin-only. When `true` the response also includes deactivated users.",
+    ),
+  roles: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated list of role names to filter by (`admin`, `project_manager`, `crew_member`).",
+    ),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .optional()
+    .describe("1-indexed page number. Defaults to 1."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(usersGetUsersQueryLimitMax)
+    .default(usersGetUsersQueryLimitDefault)
+    .describe("Page size. Defaults to 100, max 200."),
+  offset: zod.coerce
+    .number()
+    .min(usersGetUsersQueryOffsetMin)
+    .optional()
+    .describe("Row offset. Mutually exclusive with `page`."),
+});
+
 export const UsersGetUsersResponse = zod.unknown();
+
+/**
+ * Admin-only. Invite a new worker. Creates the user with a random unguessable placeholder password and a single-use setup token. The raw token is returned exactly once (never persisted in plain text). Hand the resulting `invitePath` to the new user out of band.
+ * @summary POST /users
+ */
+export const usersPostUsersHeaderIdempotencyKeyMin = 8;
+export const usersPostUsersHeaderIdempotencyKeyMax = 255;
+
+export const UsersPostUsersHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(usersPostUsersHeaderIdempotencyKeyMin)
+    .max(usersPostUsersHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const usersPostUsersBodyEmailMax = 255;
+
+export const usersPostUsersBodyFullNameMin = 2;
+export const usersPostUsersBodyFullNameMax = 255;
+
+export const UsersPostUsersBody = zod
+  .object({
+    email: zod.string().email().max(usersPostUsersBodyEmailMax),
+    fullName: zod
+      .string()
+      .min(usersPostUsersBodyFullNameMin)
+      .max(usersPostUsersBodyFullNameMax),
+    role: zod.enum(["admin", "project_manager", "crew_member"]),
+  })
+  .describe(
+    "Request body for `POST \/users` — admin invites a new worker. The user is created with a random placeholder password and the response contains a one-time setup token & path that must be handed to the invitee out of band.",
+  );
+
+/**
+ * Admin-only. Update a worker's full name, role, or active flag. Admins cannot deactivate their own account through this endpoint.
+ * @summary PATCH /users/{id}
+ */
+export const UsersPatchUsersIdParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const usersPatchUsersIdHeaderIdempotencyKeyMin = 8;
+export const usersPatchUsersIdHeaderIdempotencyKeyMax = 255;
+
+export const UsersPatchUsersIdHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(usersPatchUsersIdHeaderIdempotencyKeyMin)
+    .max(usersPatchUsersIdHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const usersPatchUsersIdBodyFullNameMin = 2;
+export const usersPatchUsersIdBodyFullNameMax = 255;
+
+export const UsersPatchUsersIdBody = zod
+  .object({
+    fullName: zod
+      .string()
+      .min(usersPatchUsersIdBodyFullNameMin)
+      .max(usersPatchUsersIdBodyFullNameMax)
+      .optional(),
+    role: zod.enum(["admin", "project_manager", "crew_member"]).optional(),
+    isActive: zod.boolean().optional(),
+  })
+  .describe(
+    "Request body for `PATCH \/users\/{id}` — admin updates a worker's full name, role, or active flag. At least one field must be provided. An admin cannot deactivate their own account through this endpoint.",
+  );
+
+export const UsersPatchUsersIdResponse = zod.unknown();
+
+/**
+ * Admin-only. Reissue a one-time setup token for an existing user (e.g. their original setup link expired or they need a forced password reset).
+ * @summary POST /users/{id}/invite
+ */
+export const UsersPostUsersIdInviteParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const usersPostUsersIdInviteHeaderIdempotencyKeyMin = 8;
+export const usersPostUsersIdInviteHeaderIdempotencyKeyMax = 255;
+
+export const UsersPostUsersIdInviteHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(usersPostUsersIdInviteHeaderIdempotencyKeyMin)
+    .max(usersPostUsersIdInviteHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const UsersPostUsersIdInviteResponse = zod.unknown();
 
 /**
  * Route defined in artifacts/api-server/src/routes/users.ts.

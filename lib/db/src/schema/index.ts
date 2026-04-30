@@ -80,12 +80,17 @@ export const users = pgTable(
     role: varchar("role", { length: 50 }).notNull().default("crew_member"),
     avatarUrl: varchar("avatar_url", { length: 500 }),
     phone: varchar("phone", { length: 20 }),
+    isActive: boolean("is_active").notNull().default(true),
+    inviteTokenHash: varchar("invite_token_hash", { length: 64 }),
+    inviteTokenExpiresAt: timestampTz("invite_token_expires_at"),
+    passwordSetAt: timestampTz("password_set_at"),
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },
   (table) => [
     uniqueIndex("users_email_unique").on(table.email).where(sql`${table.deletedAt} is null`),
     check("users_role_check", sql`${table.role} in ('admin', 'project_manager', 'crew_member')`),
+    index("users_invite_token_hash_idx").on(table.inviteTokenHash),
   ],
 );
 
@@ -96,6 +101,8 @@ export const safeUserColumns = {
   role: users.role,
   avatarUrl: users.avatarUrl,
   phone: users.phone,
+  isActive: users.isActive,
+  passwordSetAt: users.passwordSetAt,
   createdAt: users.createdAt,
   updatedAt: users.updatedAt,
   deletedAt: users.deletedAt,

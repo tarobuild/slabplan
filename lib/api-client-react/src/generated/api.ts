@@ -19,6 +19,7 @@ import type {
 import type {
   ActivityGetActivityParams,
   AnyValue,
+  AuthAcceptInviteSchema,
   ClientDetailResponse,
   ClientJobsResponse,
   ClientListResponse,
@@ -96,7 +97,10 @@ import type {
   SearchGetSearchParams,
   SuccessResponse,
   UsersChangePasswordSchema,
+  UsersGetUsersParams,
+  UsersInviteUserSchema,
   UsersUpdateProfileSchema,
+  UsersUpdateUserSchema,
   WorkdayExceptionCategoryResponse,
   WorkdayExceptionPayload,
   WorkdayExceptionResponse,
@@ -452,44 +456,148 @@ export const useAuthPostAuthRefresh = <
 };
 
 /**
+ * Public endpoint. Exchanges a one-time setup token (issued by an admin via POST /users) for a real password and immediately logs the user in. The token is single-use and short-lived.
+ * @summary POST /auth/accept-invite
+ */
+export const getAuthPostAuthAcceptInviteUrl = () => {
+  return `/api/auth/accept-invite`;
+};
+
+export const authPostAuthAcceptInvite = async (
+  authAcceptInviteSchema: AuthAcceptInviteSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getAuthPostAuthAcceptInviteUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(authAcceptInviteSchema),
+  });
+};
+
+export const getAuthPostAuthAcceptInviteMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthAcceptInvite>>,
+    TError,
+    { data: BodyType<AuthAcceptInviteSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof authPostAuthAcceptInvite>>,
+  TError,
+  { data: BodyType<AuthAcceptInviteSchema> },
+  TContext
+> => {
+  const mutationKey = ["authPostAuthAcceptInvite"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof authPostAuthAcceptInvite>>,
+    { data: BodyType<AuthAcceptInviteSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return authPostAuthAcceptInvite(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AuthPostAuthAcceptInviteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof authPostAuthAcceptInvite>>
+>;
+export type AuthPostAuthAcceptInviteMutationBody =
+  BodyType<AuthAcceptInviteSchema>;
+export type AuthPostAuthAcceptInviteMutationError = ErrorType<Problem>;
+
+/**
+ * @summary POST /auth/accept-invite
+ */
+export const useAuthPostAuthAcceptInvite = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthAcceptInvite>>,
+    TError,
+    { data: BodyType<AuthAcceptInviteSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof authPostAuthAcceptInvite>>,
+  TError,
+  { data: BodyType<AuthAcceptInviteSchema> },
+  TContext
+> => {
+  return useMutation(getAuthPostAuthAcceptInviteMutationOptions(options));
+};
+
+/**
  * Route defined in artifacts/api-server/src/routes/users.ts. Validated query with userListQuerySchema.
  * @summary GET /users
  */
-export const getUsersGetUsersUrl = () => {
-  return `/api/users`;
+export const getUsersGetUsersUrl = (params?: UsersGetUsersParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/users?${stringifiedParams}`
+    : `/api/users`;
 };
 
 export const usersGetUsers = async (
+  params?: UsersGetUsersParams,
   options?: RequestInit,
 ): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getUsersGetUsersUrl(), {
+  return customFetch<AnyValue>(getUsersGetUsersUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getUsersGetUsersQueryKey = () => {
-  return [`/api/users`] as const;
+export const getUsersGetUsersQueryKey = (params?: UsersGetUsersParams) => {
+  return [`/api/users`, ...(params ? [params] : [])] as const;
 };
 
 export const getUsersGetUsersQueryOptions = <
   TData = Awaited<ReturnType<typeof usersGetUsers>>,
   TError = ErrorType<Problem>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof usersGetUsers>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: UsersGetUsersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof usersGetUsers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getUsersGetUsersQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getUsersGetUsersQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof usersGetUsers>>> = ({
     signal,
-  }) => usersGetUsers({ signal, ...requestOptions });
+  }) => usersGetUsers(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof usersGetUsers>>,
@@ -510,15 +618,18 @@ export type UsersGetUsersQueryError = ErrorType<Problem>;
 export function useUsersGetUsers<
   TData = Awaited<ReturnType<typeof usersGetUsers>>,
   TError = ErrorType<Problem>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof usersGetUsers>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getUsersGetUsersQueryOptions(options);
+>(
+  params?: UsersGetUsersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof usersGetUsers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getUsersGetUsersQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -526,6 +637,266 @@ export function useUsersGetUsers<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Admin-only. Invite a new worker. Creates the user with a random unguessable placeholder password and a single-use setup token. The raw token is returned exactly once (never persisted in plain text). Hand the resulting `invitePath` to the new user out of band.
+ * @summary POST /users
+ */
+export const getUsersPostUsersUrl = () => {
+  return `/api/users`;
+};
+
+export const usersPostUsers = async (
+  usersInviteUserSchema: UsersInviteUserSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getUsersPostUsersUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(usersInviteUserSchema),
+  });
+};
+
+export const getUsersPostUsersMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPostUsers>>,
+    TError,
+    { data: BodyType<UsersInviteUserSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersPostUsers>>,
+  TError,
+  { data: BodyType<UsersInviteUserSchema> },
+  TContext
+> => {
+  const mutationKey = ["usersPostUsers"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersPostUsers>>,
+    { data: BodyType<UsersInviteUserSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return usersPostUsers(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersPostUsersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersPostUsers>>
+>;
+export type UsersPostUsersMutationBody = BodyType<UsersInviteUserSchema>;
+export type UsersPostUsersMutationError = ErrorType<Problem>;
+
+/**
+ * @summary POST /users
+ */
+export const useUsersPostUsers = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPostUsers>>,
+    TError,
+    { data: BodyType<UsersInviteUserSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof usersPostUsers>>,
+  TError,
+  { data: BodyType<UsersInviteUserSchema> },
+  TContext
+> => {
+  return useMutation(getUsersPostUsersMutationOptions(options));
+};
+
+/**
+ * Admin-only. Update a worker's full name, role, or active flag. Admins cannot deactivate their own account through this endpoint.
+ * @summary PATCH /users/{id}
+ */
+export const getUsersPatchUsersIdUrl = (id: string) => {
+  return `/api/users/${id}`;
+};
+
+export const usersPatchUsersId = async (
+  id: string,
+  usersUpdateUserSchema: UsersUpdateUserSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getUsersPatchUsersIdUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(usersUpdateUserSchema),
+  });
+};
+
+export const getUsersPatchUsersIdMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPatchUsersId>>,
+    TError,
+    { id: string; data: BodyType<UsersUpdateUserSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersPatchUsersId>>,
+  TError,
+  { id: string; data: BodyType<UsersUpdateUserSchema> },
+  TContext
+> => {
+  const mutationKey = ["usersPatchUsersId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersPatchUsersId>>,
+    { id: string; data: BodyType<UsersUpdateUserSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return usersPatchUsersId(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersPatchUsersIdMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersPatchUsersId>>
+>;
+export type UsersPatchUsersIdMutationBody = BodyType<UsersUpdateUserSchema>;
+export type UsersPatchUsersIdMutationError = ErrorType<Problem>;
+
+/**
+ * @summary PATCH /users/{id}
+ */
+export const useUsersPatchUsersId = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPatchUsersId>>,
+    TError,
+    { id: string; data: BodyType<UsersUpdateUserSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof usersPatchUsersId>>,
+  TError,
+  { id: string; data: BodyType<UsersUpdateUserSchema> },
+  TContext
+> => {
+  return useMutation(getUsersPatchUsersIdMutationOptions(options));
+};
+
+/**
+ * Admin-only. Reissue a one-time setup token for an existing user (e.g. their original setup link expired or they need a forced password reset).
+ * @summary POST /users/{id}/invite
+ */
+export const getUsersPostUsersIdInviteUrl = (id: string) => {
+  return `/api/users/${id}/invite`;
+};
+
+export const usersPostUsersIdInvite = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getUsersPostUsersIdInviteUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUsersPostUsersIdInviteMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPostUsersIdInvite>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersPostUsersIdInvite>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["usersPostUsersIdInvite"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersPostUsersIdInvite>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return usersPostUsersIdInvite(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersPostUsersIdInviteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersPostUsersIdInvite>>
+>;
+
+export type UsersPostUsersIdInviteMutationError = ErrorType<Problem>;
+
+/**
+ * @summary POST /users/{id}/invite
+ */
+export const useUsersPostUsersIdInvite = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPostUsersIdInvite>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof usersPostUsersIdInvite>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUsersPostUsersIdInviteMutationOptions(options));
+};
 
 /**
  * Route defined in artifacts/api-server/src/routes/users.ts.

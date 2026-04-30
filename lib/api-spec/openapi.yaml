@@ -258,6 +258,63 @@ paths:
       security: []
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+  /auth/accept-invite:
+    post:
+      operationId: auth_post_auth_accept_invite
+      tags:
+        - auth
+      summary: POST /auth/accept-invite
+      description: Public endpoint. Exchanges a one-time setup token (issued by an admin via POST /users) for a real password and immediately logs the user in. The token is single-use and short-lived.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          description: Unauthorized — token missing, expired, already used, or account deactivated.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+      x-source-file: artifacts/api-server/src/routes/auth.ts
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/auth_acceptInviteSchema"
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
   /users:
     get:
       operationId: users_get_users
@@ -322,6 +379,302 @@ paths:
       x-zod-query-schema: userListQuerySchema
       security:
         - bearerAuth: []
+      parameters:
+        - name: includeInactive
+          in: query
+          required: false
+          description: Admin-only. When `true` the response also includes deactivated users.
+          schema:
+            type: boolean
+            default: false
+        - name: roles
+          in: query
+          required: false
+          description: Comma-separated list of role names to filter by (`admin`, `project_manager`, `crew_member`).
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          description: 1-indexed page number. Defaults to 1.
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 100, max 200.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          description: Row offset. Mutually exclusive with `page`.
+          schema:
+            type: integer
+            minimum: 0
+    post:
+      operationId: users_post_users
+      tags:
+        - users
+      summary: POST /users
+      description: Admin-only. Invite a new worker. Creates the user with a random unguessable placeholder password and a single-use setup token. The raw token is returned exactly once (never persisted in plain text). Hand the resulting `invitePath` to the new user out of band.
+      responses:
+        "201":
+          description: Created. Returns the new user plus the one-time setup token and path.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "403":
+          description: Forbidden — non-admin caller.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "409":
+          description: An active account with that email already exists.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+      x-source-file: artifacts/api-server/src/routes/users.ts
+      x-zod-body-schema: inviteUserSchema
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/users_inviteUserSchema"
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+  /users/{id}:
+    patch:
+      operationId: users_patch_users_id
+      tags:
+        - users
+      summary: PATCH /users/{id}
+      description: Admin-only. Update a worker's full name, role, or active flag. Admins cannot deactivate their own account through this endpoint.
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "404":
+          description: User not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+      x-source-file: artifacts/api-server/src/routes/users.ts
+      x-zod-body-schema: updateUserSchema
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/users_updateUserSchema"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+  /users/{id}/invite:
+    post:
+      operationId: users_post_users_id_invite
+      tags:
+        - users
+      summary: POST /users/{id}/invite
+      description: Admin-only. Reissue a one-time setup token for an existing user (e.g. their original setup link expired or they need a forced password reset).
+      responses:
+        "200":
+          description: Returns the user plus a fresh setup token and path.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "404":
+          description: User not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+      x-source-file: artifacts/api-server/src/routes/users.ts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
   /users/me:
     get:
       operationId: users_get_users_me
@@ -10598,6 +10951,57 @@ components:
       type: object
       additionalProperties: true
       description: Request schema derived from changePasswordSchema in artifacts/api-server/src/routes/users.ts.
+    users_inviteUserSchema:
+      type: object
+      description: Request body for `POST /users` — admin invites a new worker. The user is created with a random placeholder password and the response contains a one-time setup token & path that must be handed to the invitee out of band.
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 255
+        role:
+          type: string
+          enum:
+            - admin
+            - project_manager
+            - crew_member
+      required:
+        - email
+        - fullName
+        - role
+    users_updateUserSchema:
+      type: object
+      description: Request body for `PATCH /users/{id}` — admin updates a worker's full name, role, or active flag. At least one field must be provided. An admin cannot deactivate their own account through this endpoint.
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 255
+        role:
+          type: string
+          enum:
+            - admin
+            - project_manager
+            - crew_member
+        isActive:
+          type: boolean
+    auth_acceptInviteSchema:
+      type: object
+      description: Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link plus the password they want to use. On success the user is logged in (refresh cookie + access token in response).
+      properties:
+        token:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 8
+      required:
+        - token
+        - password
     clients_clientPayloadSchema:
       type: object
       description: Request body for creating or updating a client (`POST /clients`, `PUT /clients/{id}`). Optional string fields accept null and empty strings (which are normalized to null). `state` must be a 2-character abbreviation when provided.

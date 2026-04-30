@@ -34,6 +34,61 @@ export interface UsersChangePasswordSchema {
   [key: string]: unknown;
 }
 
+export type UsersInviteUserSchemaRole =
+  (typeof UsersInviteUserSchemaRole)[keyof typeof UsersInviteUserSchemaRole];
+
+export const UsersInviteUserSchemaRole = {
+  admin: "admin",
+  project_manager: "project_manager",
+  crew_member: "crew_member",
+} as const;
+
+/**
+ * Request body for `POST /users` — admin invites a new worker. The user is created with a random placeholder password and the response contains a one-time setup token & path that must be handed to the invitee out of band.
+ */
+export interface UsersInviteUserSchema {
+  /** @maxLength 255 */
+  email: string;
+  /**
+   * @minLength 2
+   * @maxLength 255
+   */
+  fullName: string;
+  role: UsersInviteUserSchemaRole;
+}
+
+export type UsersUpdateUserSchemaRole =
+  (typeof UsersUpdateUserSchemaRole)[keyof typeof UsersUpdateUserSchemaRole];
+
+export const UsersUpdateUserSchemaRole = {
+  admin: "admin",
+  project_manager: "project_manager",
+  crew_member: "crew_member",
+} as const;
+
+/**
+ * Request body for `PATCH /users/{id}` — admin updates a worker's full name, role, or active flag. At least one field must be provided. An admin cannot deactivate their own account through this endpoint.
+ */
+export interface UsersUpdateUserSchema {
+  /**
+   * @minLength 2
+   * @maxLength 255
+   */
+  fullName?: string;
+  role?: UsersUpdateUserSchemaRole;
+  isActive?: boolean;
+}
+
+/**
+ * Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link plus the password they want to use. On success the user is logged in (refresh cookie + access token in response).
+ */
+export interface AuthAcceptInviteSchema {
+  /** @minLength 1 */
+  token: string;
+  /** @minLength 8 */
+  password: string;
+}
+
 /**
  * Request body for creating or updating a client (`POST /clients`, `PUT /clients/{id}`). Optional string fields accept null and empty strings (which are normalized to null). `state` must be a 2-character abbreviation when provided.
  */
@@ -1623,6 +1678,33 @@ export type CursorParamParameter = string;
  * Page size when in cursor-based pagination mode. Defaults to 25, max 100.
  */
 export type CursorLimitParamParameter = number;
+
+export type UsersGetUsersParams = {
+  /**
+   * Admin-only. When `true` the response also includes deactivated users.
+   */
+  includeInactive?: boolean;
+  /**
+   * Comma-separated list of role names to filter by (`admin`, `project_manager`, `crew_member`).
+   */
+  roles?: string;
+  /**
+   * 1-indexed page number. Defaults to 1.
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * Page size. Defaults to 100, max 200.
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+  /**
+   * Row offset. Mutually exclusive with `page`.
+   * @minimum 0
+   */
+  offset?: number;
+};
 
 export type ClientsGetClientsParams = {
   /**

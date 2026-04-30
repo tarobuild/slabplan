@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { Copy, KeyRound, Loader2, Lock, Plus, Save, Trash2, User } from "lucide-react"
+import { Copy, KeyRound, Loader2, Lock, Plus, Save, Trash2, User, Users as UsersIcon } from "lucide-react"
+import { Link } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   accountTokensCreate,
@@ -249,6 +250,23 @@ export default function SettingsPage() {
         <h1 className="text-xl font-semibold text-slate-900">Account Settings</h1>
         <p className="text-sm text-slate-500 mt-1">Manage your profile and security settings</p>
       </div>
+
+      {authUser?.role === "admin" ? (
+        <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+          <div className="px-6 py-5 border-b border-[#E5E7EB] flex items-center gap-2.5">
+            <UsersIcon className="size-4 text-slate-500" />
+            <h2 className="text-sm font-semibold text-slate-800">Team management</h2>
+          </div>
+          <div className="px-6 py-5 flex items-center justify-between gap-4">
+            <p className="text-sm text-slate-600">
+              Invite new workers, change roles, or deactivate accounts.
+            </p>
+            <Button asChild variant="outline">
+              <Link to="/settings/users">Manage team</Link>
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Profile Card */}
       <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">

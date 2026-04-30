@@ -1,14 +1,46 @@
+import crypto from "node:crypto";
 import bcrypt from "bcrypt";
 import { and, asc, count, eq, inArray, isNull, ne } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
-import { safeUserColumns, users } from "@workspace/db/schema";
+import {
+  safeUserColumns,
+  userRoles,
+  users,
+  type User,
+} from "@workspace/db/schema";
 import { toPublicUser } from "../lib/auth";
+import { writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
-import { requireManagerOrAbove } from "../middleware/require-auth";
+import {
+  requireAdmin,
+  requireManagerOrAbove,
+} from "../middleware/require-auth";
 
 const router: IRouter = Router();
+
+const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function hashInviteToken(rawToken: string) {
+  return crypto.createHash("sha256").update(rawToken).digest("hex");
+}
+
+function buildInvitePath(token: string) {
+  return `/accept-invite?token=${encodeURIComponent(token)}`;
+}
+
+function generateInvite() {
+  const token = crypto.randomBytes(32).toString("base64url");
+  const tokenHash = hashInviteToken(token);
+  const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_MS);
+  return { token, tokenHash, expiresAt };
+}
+
+async function generatePlaceholderPasswordHash() {
+  const random = crypto.randomBytes(32).toString("base64url");
+  return bcrypt.hash(random, 10);
+}
 
 const updateProfileSchema = z.object({
   fullName: z.string().trim().min(2).max(255).optional(),
@@ -50,11 +82,39 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(8, "New password must be at least 8 characters."),
 });
 
+const inviteUserSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(255),
+  fullName: z.string().trim().min(2).max(255),
+  role: z.enum(userRoles),
+});
+
+const updateUserSchema = z
+  .object({
+    fullName: z.string().trim().min(2).max(255).optional(),
+    role: z.enum(userRoles).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine(
+    (value) =>
+      value.fullName !== undefined ||
+      value.role !== undefined ||
+      value.isActive !== undefined,
+    { message: "At least one field is required." },
+  );
+
 const userListQuerySchema = z
   .object({
     limit: z.coerce.number().int().positive().max(200).optional().default(100),
     offset: z.coerce.number().int().min(0).optional(),
     page: z.coerce.number().int().positive().optional(),
+    includeInactive: z
+      .union([z.string(), z.boolean()])
+      .optional()
+      .transform((value) => {
+        if (typeof value === "boolean") return value;
+        if (typeof value !== "string") return false;
+        return value.toLowerCase() === "true" || value === "1";
+      }),
     roles: z
       .union([z.string(), z.array(z.string())])
       .optional()
@@ -104,6 +164,22 @@ async function findActiveUserWithPasswordHash(id: string) {
   return user ?? null;
 }
 
+function publicUserWithStatus(user: Pick<User,
+  "id" | "email" | "fullName" | "role" | "avatarUrl" | "phone" | "createdAt" | "updatedAt"
+> & {
+  isActive?: boolean | null;
+  passwordSetAt?: Date | null;
+  inviteTokenExpiresAt?: Date | null;
+}) {
+  const base = toPublicUser(user);
+  return {
+    ...base,
+    isActive: user.isActive ?? true,
+    passwordSetAt: user.passwordSetAt ?? null,
+    inviteTokenExpiresAt: user.inviteTokenExpiresAt ?? null,
+  };
+}
+
 router.get(
   "/",
   requireManagerOrAbove,
@@ -117,33 +193,37 @@ router.get(
     const limit = query.data.limit;
     const page = query.data.page ?? (query.data.offset !== undefined ? Math.floor(query.data.offset / limit) + 1 : 1);
     const offset = query.data.offset ?? (page - 1) * limit;
+    const includeInactive = query.data.includeInactive;
+
+    const isAdmin = req.auth?.role === "admin";
+    // Only admins are allowed to see inactive users (the column is meaningful
+    // for managing the team; managers and crew members never need that view).
+    const effectiveIncludeInactive = includeInactive && isAdmin;
+
+    const baseConditions = [
+      isNull(users.deletedAt),
+      query.data.roles.length > 0 ? inArray(users.role, query.data.roles) : undefined,
+      effectiveIncludeInactive ? undefined : eq(users.isActive, true),
+    ];
 
     const [[totalRow], rows] = await Promise.all([
       db
         .select({ total: count() })
         .from(users)
-        .where(
-          and(
-            isNull(users.deletedAt),
-            query.data.roles.length > 0 ? inArray(users.role, query.data.roles) : undefined,
-          ),
-        ),
+        .where(and(...baseConditions)),
       db
         .select(safeUserColumns)
         .from(users)
-        .where(
-          and(
-            isNull(users.deletedAt),
-            query.data.roles.length > 0 ? inArray(users.role, query.data.roles) : undefined,
-          ),
-        )
+        .where(and(...baseConditions))
         .orderBy(asc(users.fullName))
         .limit(limit)
         .offset(offset),
     ]);
 
     const total = Number(totalRow?.total ?? 0);
-    const publicUsers = rows.map(toPublicUser);
+    const publicUsers = rows.map((row) =>
+      isAdmin ? publicUserWithStatus(row) : toPublicUser(row),
+    );
 
     res.json({
       data: publicUsers,
@@ -253,10 +333,216 @@ router.post(
 
     await db
       .update(users)
-      .set({ passwordHash, updatedAt: new Date() })
+      .set({ passwordHash, updatedAt: new Date(), passwordSetAt: new Date() })
       .where(eq(users.id, user.id));
 
     res.json({ success: true });
+  }),
+);
+
+// Admin: invite a new worker. We create the user with a random unguessable
+// placeholder password and a single-use setup token. The raw token is
+// returned exactly once in the response (and never persisted server-side —
+// only its sha256 hash lives in the database). The admin hands the
+// `invitePath` to the new worker out of band; the worker exchanges it for
+// a real password via POST /auth/accept-invite.
+router.post(
+  "/",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const parsed = inviteUserSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      throw new HttpError(400, "Invalid invite payload.", parsed.error.flatten());
+    }
+
+    const { email, fullName, role } = parsed.data;
+
+    const [existing] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.email, email), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (existing) {
+      throw new HttpError(409, "An account with that email already exists.");
+    }
+
+    const placeholderHash = await generatePlaceholderPasswordHash();
+    const invite = generateInvite();
+
+    const [created] = await db
+      .insert(users)
+      .values({
+        email,
+        fullName,
+        role,
+        passwordHash: placeholderHash,
+        isActive: true,
+        inviteTokenHash: invite.tokenHash,
+        inviteTokenExpiresAt: invite.expiresAt,
+        passwordSetAt: null,
+      })
+      .returning();
+
+    if (!created) {
+      throw new HttpError(500, "Failed to create user.");
+    }
+
+    await writeActivity({
+      entityType: "user",
+      entityId: created.id,
+      action: "user.invited",
+      userId: req.auth!.userId,
+      jobId: null,
+      description: `Invited ${created.fullName} (${created.email}) as ${created.role}`,
+      extra: { invitedRole: created.role, invitedEmail: created.email },
+    }).catch((error) => {
+      // Activity logging must never block the invite from being returned.
+      console.warn("[users] failed to record invite activity:", error);
+    });
+
+    res.status(201).json({
+      user: publicUserWithStatus(created),
+      inviteToken: invite.token,
+      invitePath: buildInvitePath(invite.token),
+      inviteTokenExpiresAt: invite.expiresAt.toISOString(),
+    });
+  }),
+);
+
+// Admin: reissue an invite token. Useful when the original setup link was
+// lost or expired, OR when the admin needs to force a password reset for
+// a worker (since the team has no email-based forgot-password flow).
+router.post(
+  "/:id/invite",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+
+    if (!id.success) {
+      throw new HttpError(400, "Invalid user id.");
+    }
+
+    const [target] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, id.data), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!target) {
+      throw new HttpError(404, "User not found.");
+    }
+
+    const invite = generateInvite();
+
+    const [updated] = await db
+      .update(users)
+      .set({
+        inviteTokenHash: invite.tokenHash,
+        inviteTokenExpiresAt: invite.expiresAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, target.id))
+      .returning();
+
+    await writeActivity({
+      entityType: "user",
+      entityId: target.id,
+      action: "user.invite_reissued",
+      userId: req.auth!.userId,
+      jobId: null,
+      description: `Reissued setup link for ${target.fullName} (${target.email})`,
+    }).catch((error) => {
+      console.warn("[users] failed to record reissue activity:", error);
+    });
+
+    res.json({
+      user: publicUserWithStatus(updated!),
+      inviteToken: invite.token,
+      invitePath: buildInvitePath(invite.token),
+      inviteTokenExpiresAt: invite.expiresAt.toISOString(),
+    });
+  }),
+);
+
+// Admin: change a worker's name, role, or active flag. Admins can never
+// flip their OWN isActive to false through this endpoint — that has to be
+// done by another admin so the team can never lock itself out by accident.
+router.patch(
+  "/:id",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+
+    if (!id.success) {
+      throw new HttpError(400, "Invalid user id.");
+    }
+
+    const parsed = updateUserSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      throw new HttpError(400, "Invalid user payload.", parsed.error.flatten());
+    }
+
+    const [target] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, id.data), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!target) {
+      throw new HttpError(404, "User not found.");
+    }
+
+    if (
+      parsed.data.isActive === false &&
+      target.id === req.auth!.userId
+    ) {
+      throw new HttpError(400, "You cannot deactivate your own account.");
+    }
+
+    const [updated] = await db
+      .update(users)
+      .set({
+        fullName: parsed.data.fullName ?? target.fullName,
+        role: parsed.data.role ?? target.role,
+        isActive: parsed.data.isActive ?? target.isActive,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, target.id))
+      .returning();
+
+    if (!updated) {
+      throw new HttpError(500, "Failed to update user.");
+    }
+
+    const description: string[] = [];
+    if (parsed.data.fullName && parsed.data.fullName !== target.fullName) {
+      description.push(`renamed to ${parsed.data.fullName}`);
+    }
+    if (parsed.data.role && parsed.data.role !== target.role) {
+      description.push(`role changed from ${target.role} to ${parsed.data.role}`);
+    }
+    if (parsed.data.isActive !== undefined && parsed.data.isActive !== target.isActive) {
+      description.push(parsed.data.isActive ? "reactivated" : "deactivated");
+    }
+
+    if (description.length > 0) {
+      await writeActivity({
+        entityType: "user",
+        entityId: target.id,
+        action: "user.updated",
+        userId: req.auth!.userId,
+        jobId: null,
+        description: `${target.fullName}: ${description.join(", ")}`,
+        extra: parsed.data,
+      }).catch((error) => {
+        console.warn("[users] failed to record update activity:", error);
+      });
+    }
+
+    res.json({ user: publicUserWithStatus(updated) });
   }),
 );
 

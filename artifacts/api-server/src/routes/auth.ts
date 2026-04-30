@@ -1,5 +1,6 @@
+import crypto from "node:crypto";
 import bcrypt from "bcrypt";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { safeUserColumns, users } from "@workspace/db/schema";
@@ -162,6 +163,18 @@ router.post(
       throw new HttpError(401, "Invalid email or password.");
     }
 
+    if (!user.isActive) {
+      // Constant-time-ish: still hash so we don't leak active vs inactive
+      // through wall-clock timing. Same approach as the `user not found`
+      // branch (which simply errors without a bcrypt call — the timing
+      // gap there is intentional and existed before this check).
+      await bcrypt.compare(password, user.passwordHash);
+      throw new HttpError(
+        401,
+        "This account has been deactivated. Contact an administrator.",
+      );
+    }
+
     const isValidPassword = await bcrypt.compare(password, user.passwordHash);
 
     if (!isValidPassword) {
@@ -169,6 +182,83 @@ router.post(
     }
 
     sendAuthResponse(res, user);
+  }),
+);
+
+function hashInviteToken(rawToken: string) {
+  return crypto.createHash("sha256").update(rawToken).digest("hex");
+}
+
+router.post(
+  "/accept-invite",
+  asyncHandler(async (req, res) => {
+    const rawToken =
+      typeof req.body?.token === "string" ? req.body.token.trim() : "";
+    const newPassword = req.body?.password;
+
+    if (!rawToken) {
+      throw new HttpError(400, "Setup token is required.");
+    }
+
+    if (typeof newPassword !== "string") {
+      throw new HttpError(400, "Password is required.");
+    }
+
+    const password = normalizePassword(newPassword, "Password");
+
+    const tokenHash = hashInviteToken(rawToken);
+    const now = new Date();
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.inviteTokenHash, tokenHash),
+          gt(users.inviteTokenExpiresAt, now),
+          isNull(users.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!user) {
+      throw new HttpError(401, "Setup link is invalid or has expired.");
+    }
+
+    if (!user.isActive) {
+      throw new HttpError(
+        401,
+        "This account has been deactivated. Contact an administrator.",
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Atomic single-use: the WHERE clause repeats the token-hash so a
+    // concurrent second request hitting the same token sees zero rows
+    // updated and we know the token was already consumed.
+    const updated = await db
+      .update(users)
+      .set({
+        passwordHash,
+        passwordSetAt: now,
+        inviteTokenHash: null,
+        inviteTokenExpiresAt: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(users.id, user.id),
+          eq(users.inviteTokenHash, tokenHash),
+        ),
+      )
+      .returning();
+
+    if (updated.length === 0) {
+      throw new HttpError(401, "Setup link is invalid or has expired.");
+    }
+
+    sendAuthResponse(res, updated[0]!);
   }),
 );
 

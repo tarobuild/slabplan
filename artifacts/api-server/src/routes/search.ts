@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
+  clientContacts,
   clients,
   files,
   folders,
@@ -157,8 +158,15 @@ router.get(
       return;
     }
 
-    const [jobRows, leadRows, contactLeadRows, fileRows, scheduleRows, clientRows] =
-      await Promise.all([
+    const [
+      jobRows,
+      leadRows,
+      contactLeadRows,
+      fileRows,
+      scheduleRows,
+      clientRows,
+      contactClientRows,
+    ] = await Promise.all([
       noJobAccess
         ? Promise.resolve([])
         : db
@@ -322,6 +330,40 @@ router.get(
             )
             .orderBy(desc(clients.updatedAt), asc(clients.companyName))
             .limit(queryLimit),
+      noClientAccess
+        ? Promise.resolve([])
+        : db
+            .select({
+              clientId: clients.id,
+              companyName: clients.companyName,
+              email: clients.email,
+              phone: clients.phone,
+              city: clients.city,
+              state: clients.state,
+              contactFirstName: clientContacts.firstName,
+              contactLastName: clientContacts.lastName,
+            })
+            .from(clientContacts)
+            .innerJoin(clients, eq(clientContacts.clientId, clients.id))
+            .where(
+              and(
+                isNull(clientContacts.deletedAt),
+                isNull(clients.deletedAt),
+                accessibleClientIds
+                  ? inArray(clients.id, accessibleClientIds)
+                  : undefined,
+                or(
+                  ilike(clientContacts.firstName, search),
+                  ilike(clientContacts.lastName, search),
+                  sql`concat_ws(' ', ${clientContacts.firstName}, ${clientContacts.lastName}) ilike ${search}`,
+                  ilike(clientContacts.email, search),
+                  ilike(clientContacts.phone, search),
+                  ilike(clientContacts.cellPhone, search),
+                ),
+              ),
+            )
+            .orderBy(asc(clientContacts.firstName), asc(clientContacts.lastName))
+            .limit(queryLimit),
     ]);
 
     const [visibleFileRows, visibleScheduleRows] = await Promise.all([
@@ -394,6 +436,53 @@ router.get(
       }
     }
 
+    const clientMap = new Map<
+      string,
+      {
+        id: string;
+        companyName: string;
+        email: string | null;
+        phone: string | null;
+        city: string | null;
+        state: string | null;
+        contactName: string | null;
+      }
+    >();
+
+    for (const client of clientRows) {
+      clientMap.set(client.id, {
+        ...client,
+        contactName: null,
+      });
+    }
+
+    for (const contactClient of contactClientRows) {
+      const contactName =
+        [contactClient.contactFirstName, contactClient.contactLastName]
+          .filter((part): part is string => Boolean(part && part.trim()))
+          .join(" ")
+          .trim() || null;
+
+      if (!clientMap.has(contactClient.clientId)) {
+        clientMap.set(contactClient.clientId, {
+          id: contactClient.clientId,
+          companyName: contactClient.companyName,
+          email: contactClient.email,
+          phone: contactClient.phone,
+          city: contactClient.city,
+          state: contactClient.state,
+          contactName,
+        });
+        continue;
+      }
+
+      const existing = clientMap.get(contactClient.clientId);
+
+      if (existing && !existing.contactName) {
+        existing.contactName = contactName;
+      }
+    }
+
     const merged = [
       ...jobRows.map((job) => ({
         id: job.id,
@@ -428,11 +517,12 @@ router.get(
         subtitle: `${item.jobTitle} • ${item.startDate} to ${item.endDate}`,
         href: `/jobs/${item.jobId}/schedule?item=${item.id}`,
       })),
-      ...clientRows.map((client) => ({
+      ...Array.from(clientMap.values()).map((client) => ({
         id: client.id,
         type: "client" as const,
         title: client.companyName,
         subtitle:
+          client.contactName ||
           [client.city, client.state].filter(Boolean).join(", ") ||
           client.email ||
           client.phone ||

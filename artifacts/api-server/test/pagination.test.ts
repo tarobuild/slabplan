@@ -91,6 +91,17 @@ const adminOnlyClientIds = [
 const pmAccessibleClientIds = [pmCreatedClientId, pmRelatedClientId];
 const allClientIds = [...pmAccessibleClientIds, ...adminOnlyClientIds];
 
+// Contacts for the contact-driven client search branch.
+const pmRelatedClientContactId = crypto.randomUUID();
+const pmRelatedClientDuplicateContactId = crypto.randomUUID();
+const pmRelatedClientFullNameContactId = crypto.randomUUID();
+const pmCreatedClientContactId = crypto.randomUUID();
+const adminOnlyClientContactId = crypto.randomUUID();
+const clientContactSearchMarker = "ZzContactSearch";
+// Phone columns are varchar(20), so markers must leave room for a prefix.
+const clientContactPhoneMarker = "ZzPhSrch";
+const clientContactCellMarker = "ZzCellSrch";
+
 const testUserIds = [
   adminUserId,
   pmUserId,
@@ -252,6 +263,57 @@ before(async () => {
       companyName: `ZZZ Pagination Admin Only Client ${i}`,
       createdBy: otherAdminId,
     })),
+  ]);
+
+  const { clientContacts } = await import("@workspace/db/schema");
+
+  await db.insert(clientContacts).values([
+    {
+      id: pmRelatedClientContactId,
+      clientId: pmRelatedClientId,
+      firstName: `${clientContactSearchMarker}First`,
+      lastName: "Smith",
+      email: "primary@contact-search.local",
+      phone: "555-0001",
+      cellPhone: "555-0002",
+      isPrimary: true,
+    },
+    {
+      id: pmRelatedClientDuplicateContactId,
+      clientId: pmRelatedClientId,
+      firstName: "Other",
+      lastName: `${clientContactSearchMarker}Last`,
+      email: "secondary@contact-search.local",
+      phone: "555-0003",
+      cellPhone: "555-0004",
+    },
+    {
+      id: pmRelatedClientFullNameContactId,
+      clientId: pmRelatedClientId,
+      firstName: "ZZZ",
+      lastName: "Pagination",
+      email: "fullname@contact-search.local",
+      phone: "555-0007",
+      cellPhone: "555-0008",
+    },
+    {
+      id: pmCreatedClientContactId,
+      clientId: pmCreatedClientId,
+      firstName: "Eve",
+      lastName: "Email",
+      email: `${clientContactSearchMarker.toLowerCase()}@contact-search.local`,
+      phone: "555-0005",
+      cellPhone: "555-0006",
+    },
+    {
+      id: adminOnlyClientContactId,
+      clientId: adminOnlyClientIds[0],
+      firstName: "Admin",
+      lastName: "Only",
+      email: "admin-only-contact@contact-search.local",
+      phone: `555-${clientContactPhoneMarker}`,
+      cellPhone: `555-${clientContactCellMarker}`,
+    },
   ]);
 
   await db
@@ -1448,6 +1510,188 @@ test("GET /search returns no client results for crew members", async () => {
     clientResults.length,
     0,
     "crew members must not see client results in global search",
+  );
+});
+
+test("GET /search matches a client by its contact's first name", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=${encodeURIComponent(`${clientContactSearchMarker}First`)}&pageSize=25`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientIds = body.results
+    .filter((result) => result.type === "client")
+    .map((result) => result.id);
+
+  assert.equal(
+    clientIds.filter((id) => id === pmRelatedClientId).length,
+    1,
+    "first-name match must surface the parent client exactly once",
+  );
+});
+
+test("GET /search matches a client by its contact's last name", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=${encodeURIComponent(`${clientContactSearchMarker}Last`)}&pageSize=25`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientIds = body.results
+    .filter((result) => result.type === "client")
+    .map((result) => result.id);
+
+  assert.equal(
+    clientIds.filter((id) => id === pmRelatedClientId).length,
+    1,
+    "last-name match must surface the parent client exactly once",
+  );
+});
+
+test("GET /search matches a client by its contact's email", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=${encodeURIComponent(`${clientContactSearchMarker.toLowerCase()}@contact-search.local`)}&pageSize=25`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientIds = body.results
+    .filter((result) => result.type === "client")
+    .map((result) => result.id);
+
+  assert.equal(
+    clientIds.filter((id) => id === pmCreatedClientId).length,
+    1,
+    "email match on a contact must surface the parent client exactly once",
+  );
+});
+
+test("GET /search matches a client by its contact's phone or cell phone", async () => {
+  const phoneResponse = await fetch(
+    `${baseUrl}/api/search?q=${encodeURIComponent(clientContactPhoneMarker)}&pageSize=25`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(phoneResponse.status, 200);
+  const phoneBody = (await phoneResponse.json()) as SearchResponse;
+  const phoneClientIds = phoneBody.results
+    .filter((result) => result.type === "client")
+    .map((result) => result.id);
+  assert.equal(
+    phoneClientIds.filter((id) => id === adminOnlyClientIds[0]).length,
+    1,
+    "phone match must return the parent client exactly once",
+  );
+
+  const cellResponse = await fetch(
+    `${baseUrl}/api/search?q=${encodeURIComponent(clientContactCellMarker)}&pageSize=25`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(cellResponse.status, 200);
+  const cellBody = (await cellResponse.json()) as SearchResponse;
+  const cellClientIds = cellBody.results
+    .filter((result) => result.type === "client")
+    .map((result) => result.id);
+  assert.equal(
+    cellClientIds.filter((id) => id === adminOnlyClientIds[0]).length,
+    1,
+    "cell phone match must return the parent client exactly once",
+  );
+});
+
+test("GET /search matches a client by its contact's full name", async () => {
+  // pmRelatedClient has a contact with firstName="ZZZ" + lastName="Pagination";
+  // the concatenated full-name branch must surface it for "ZZZ Pagination".
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=25`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientIds = body.results
+    .filter((result) => result.type === "client")
+    .map((result) => result.id);
+
+  assert.equal(
+    clientIds.includes(pmRelatedClientId),
+    true,
+    "full-name contact match must surface the parent client",
+  );
+});
+
+test("GET /search dedupes a client when the company name and a contact both match", async () => {
+  // pmRelatedClient matches on both company name and on its full-name
+  // contact for "ZZZ Pagination" — it must still appear once.
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&pageSize=25`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientResults = body.results.filter((result) => result.type === "client");
+  const counts = new Map<string, number>();
+  for (const result of clientResults) {
+    counts.set(result.id, (counts.get(result.id) ?? 0) + 1);
+  }
+
+  assert.equal(
+    counts.get(pmRelatedClientId),
+    1,
+    "pmRelatedClient must appear exactly once even though it matches via both company name and a contact",
+  );
+  assert.equal(
+    counts.get(pmCreatedClientId),
+    1,
+    "pmCreatedClient must appear exactly once via the company-name path",
+  );
+});
+
+test("GET /search hides contact-matched clients the project manager cannot access", async () => {
+  // The phone marker is only on the admin-only client; PMs must not see it.
+  const response = await fetch(
+    `${baseUrl}/api/search?q=${encodeURIComponent(clientContactPhoneMarker)}&pageSize=25`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientIds = body.results
+    .filter((result) => result.type === "client")
+    .map((result) => result.id);
+  assert.equal(
+    clientIds.includes(adminOnlyClientIds[0]),
+    false,
+    "PMs must not see admin-only clients via contact-driven matches",
+  );
+});
+
+test("GET /search returns no contact-matched clients for crew members", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=${encodeURIComponent(`${clientContactSearchMarker}First`)}&pageSize=25`,
+    { headers: { authorization: `Bearer ${crewToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as SearchResponse;
+
+  const clientResults = body.results.filter((result) => result.type === "client");
+  assert.equal(
+    clientResults.length,
+    0,
+    "crew members must not see contact-matched client results",
   );
 });
 

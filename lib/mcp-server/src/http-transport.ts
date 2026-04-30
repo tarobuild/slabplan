@@ -129,6 +129,9 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 function defaultBaseUrl(): string {
-  const port = process.env["PORT"] ?? "5000";
+  // Matches the api-server's default in artifacts/api-server/src/index.ts so
+  // that when both processes run with PORT unset, the MCP transport can still
+  // reach the loopback REST API.
+  const port = process.env["PORT"] ?? "8080";
   return `http://127.0.0.1:${port}`;
 }

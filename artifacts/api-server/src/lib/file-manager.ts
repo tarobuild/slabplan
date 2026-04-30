@@ -952,12 +952,23 @@ export async function renameOrUpdateFolder(params: {
 
   const nextTitle = params.title ? params.title : folder.title;
 
+  // Distinguish "field omitted from payload" (undefined) from "field
+  // explicitly set to null". `??` collapses both, which silently swallowed
+  // requests that were trying to clear a folder's restriction. An explicit
+  // `null` is now persisted so users can remove a previously-set restriction.
+  const nextViewingPermissions =
+    params.viewingPermissions !== undefined ? params.viewingPermissions : folder.viewingPermissions;
+  const nextUploadingPermissions =
+    params.uploadingPermissions !== undefined
+      ? params.uploadingPermissions
+      : folder.uploadingPermissions;
+
   const [updated] = await db
     .update(folders)
     .set({
       title: nextTitle,
-      viewingPermissions: params.viewingPermissions ?? folder.viewingPermissions,
-      uploadingPermissions: params.uploadingPermissions ?? folder.uploadingPermissions,
+      viewingPermissions: nextViewingPermissions,
+      uploadingPermissions: nextUploadingPermissions,
       updatedAt: new Date(),
     })
     .where(eq(folders.id, folder.id))
@@ -1028,10 +1039,12 @@ export async function copyFolder(params: {
   userId: string;
 }) {
   const folder = await getFolderOrThrow(params.folderId);
-  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
+  // Walk only live (non-deleted) descendants so a copy never resurrects rows
+  // that were soft-deleted from the source tree.
+  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, false);
   const subtreeIds = collectDescendantFolderIds(folder.id, allFolders);
   const subtreeFolders = allFolders.filter((candidate) => subtreeIds.includes(candidate.id));
-  const subtreeFiles = await getAllFilesForFolderIds(subtreeIds, true);
+  const subtreeFiles = await getAllFilesForFolderIds(subtreeIds, false);
 
   const createdMap = new Map<string, string>();
 

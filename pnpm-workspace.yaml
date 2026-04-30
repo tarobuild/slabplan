@@ -102,6 +102,12 @@ overrides:
   # for random IDs, which is API-stable across majors). Smoke-tested
   # file upload + delete after the bump.
   uuid: 14.0.0
+  # postcss <8.5.10 — XSS via unescaped </style> in CSS stringify output
+  # (GHSA-qx2v-qp2m-jg93, moderate). Dev-only transitive of vite/tailwind;
+  # PostCSS does not run at runtime. Pinning to the patched 8.x line
+  # (latest 8.5.12 as of 2026-04-30); same major as the version Vite/Tailwind
+  # already resolve, so no API break. Tracked in Task #212.
+  postcss: ^8.5.12
   # NOT pinned (and remaining as a low-severity audit finding):
   #   @tootallnate/once <3.0.1 (deep transitive of @google-cloud/storage
   #   via teeny-request > http-proxy-agent). The patched 3.0.1 is

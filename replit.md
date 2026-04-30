@@ -89,6 +89,18 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 
 ## Security Advisories
 
+### Resolved: postcss <8.5.10 (GHSA-qx2v-qp2m-jg93, moderate severity)
+
+- Status: Resolved (Task #212). `pnpm.overrides` in `pnpm-workspace.yaml` pins
+  `postcss` to `^8.5.12` so all consumers (Vite, Tailwind v4) resolve a single
+  patched version. Confirmed in `pnpm-lock.yaml` and via `pnpm audit`.
+- Why it was low risk regardless: PostCSS is a dev-time only transitive — it
+  does not run in the deployed runtime. The override is kept anyway so client
+  handoff `pnpm audit` reports stay clean of medium/high advisories.
+- Re-check: bump to the next patched 8.x as upstream advisories require, or
+  remove the override once Vite/Tailwind transitives resolve a new-enough
+  postcss on their own.
+
 ### Deferred: @tootallnate/once <3.0.1 (GHSA-vpq2-c234-7xj6, low severity)
 
 - Status: Knowingly deferred. This is the only outstanding production advisory reported by `pnpm audit --prod` and is expected to remain there until upstream Google releases a major version of `@google-cloud/storage` that drops `teeny-request`.

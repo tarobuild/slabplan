@@ -705,6 +705,7 @@ function PdfViewer({ src, fileId }: { src: string; fileId: string | null }) {
                   isAdmin={isAdminUser}
                   onCreate={annotations.createAnnotation}
                   onDelete={(id) => void annotations.deleteAnnotation(id)}
+                  onUpdate={(id, patch) => annotations.updateAnnotation(id, patch)}
                 />
               ) : null}
             </div>

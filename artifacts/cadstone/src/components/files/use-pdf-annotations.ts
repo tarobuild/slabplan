@@ -50,6 +50,22 @@ type HistoryEntry =
       draft: Omit<DraftAnnotation, "tempId">
     }
   | { kind: "delete"; annotation: Annotation }
+  | { kind: "update"; before: Annotation; after: Annotation }
+
+export type AnnotationPatch = Partial<
+  Pick<
+    Annotation,
+    | "color"
+    | "thickness"
+    | "opacity"
+    | "normalizedX"
+    | "normalizedY"
+    | "normalizedW"
+    | "normalizedH"
+    | "content"
+    | "pathData"
+  >
+>
 
 export type UsePdfAnnotationsOptions = {
   fileId: string | null
@@ -76,6 +92,10 @@ export type UsePdfAnnotationsResult = {
   // Mutations
   createAnnotation: (draft: Omit<DraftAnnotation, "tempId">) => void
   deleteAnnotation: (annotationId: string) => Promise<void>
+  updateAnnotation: (
+    annotationId: string,
+    patch: AnnotationPatch,
+  ) => Promise<void>
   // Undo / redo
   canUndo: boolean
   canRedo: boolean
@@ -141,7 +161,7 @@ export function usePdfAnnotations(
   }, [fileId, enabled, refresh, tickHistory])
 
   const presetForActive = useMemo(() => {
-    if (active === "eraser") {
+    if (active === "eraser" || active === "select") {
       return presets.pen
     }
     return presets[active]
@@ -258,6 +278,44 @@ export function usePdfAnnotations(
     [annotations, fileId, tickHistory],
   )
 
+  const updateAnnotation = useCallback(
+    async (annotationId: string, patch: AnnotationPatch) => {
+      if (!fileId) return
+      const before = annotations.find((a) => a.id === annotationId)
+      if (!before) return
+      const after: Annotation = { ...before, ...patch }
+      // Optimistic apply.
+      setAnnotations((prev) => prev.map((a) => (a.id === annotationId ? after : a)))
+      try {
+        const res = await api.patch<{ annotation: ServerAnnotation }>(
+          `/files/${fileId}/annotations/${annotationId}`,
+          patch,
+        )
+        const fresh = normalizeAnnotation(res.data.annotation)
+        setAnnotations((prev) =>
+          prev.map((a) => (a.id === annotationId ? fresh : a)),
+        )
+        undoStackRef.current = [
+          ...undoStackRef.current,
+          { kind: "update", before, after: fresh },
+        ]
+        redoStackRef.current = []
+        tickHistory()
+      } catch (err) {
+        // Roll back.
+        setAnnotations((prev) =>
+          prev.map((a) => (a.id === annotationId ? before : a)),
+        )
+        if (isAxiosError(err) && err.response?.status === 403) {
+          toast.error("You don't have permission to edit that markup.")
+        } else {
+          toast.error("Failed to save changes.")
+        }
+      }
+    },
+    [annotations, fileId, tickHistory],
+  )
+
   const undo = useCallback(() => {
     const entry = undoStackRef.current.pop()
     if (!entry || !fileId) {
@@ -288,7 +346,7 @@ export function usePdfAnnotations(
         ...redoStackRef.current,
         { kind: "create", tempId: entry.tempId, serverId: null, draft: entry.draft },
       ]
-    } else {
+    } else if (entry.kind === "delete") {
       // Undo a delete — recreate the annotation server-side as a new row.
       const a = entry.annotation
       const tempId = nextTempId()
@@ -315,6 +373,42 @@ export function usePdfAnnotations(
         ...redoStackRef.current,
         { kind: "delete", annotation: a },
       ]
+    } else {
+      // Undo an update — restore the previous values both locally and on
+      // the server. Look up the row by its server id (the update history
+      // entry was only pushed after a successful server response).
+      const targetId = entry.after.id
+      const before = entry.before
+      const after = entry.after
+      const exists = annotations.some((a) => a.id === targetId)
+      if (exists) {
+        setAnnotations((prev) =>
+          prev.map((a) => (a.id === targetId ? before : a)),
+        )
+        api
+          .patch(`/files/${fileId}/annotations/${targetId}`, {
+            color: before.color,
+            thickness: before.thickness,
+            opacity: before.opacity,
+            normalizedX: before.normalizedX,
+            normalizedY: before.normalizedY,
+            normalizedW: before.normalizedW,
+            normalizedH: before.normalizedH,
+            content: before.content,
+            pathData: before.pathData,
+          })
+          .catch(() => {
+            // Roll back the local revert to keep UI in sync with server.
+            setAnnotations((prev) =>
+              prev.map((a) => (a.id === targetId ? after : a)),
+            )
+            toast.error("Failed to undo. Reverted.")
+          })
+        redoStackRef.current = [
+          ...redoStackRef.current,
+          { kind: "update", before, after },
+        ]
+      }
     }
     tickHistory()
   }, [annotations, fileId, persistDraft, tickHistory])
@@ -335,6 +429,41 @@ export function usePdfAnnotations(
         { kind: "create", tempId, serverId: null, draft: entry.draft },
       ]
       void persistDraft(fullDraft)
+    } else if (entry.kind === "update") {
+      // Re-apply an update — push the "after" values back.
+      const targetId = entry.after.id
+      const before = entry.before
+      const after = entry.after
+      const exists = annotations.some((a) => a.id === targetId)
+      if (!exists) {
+        tickHistory()
+        return
+      }
+      setAnnotations((prev) =>
+        prev.map((a) => (a.id === targetId ? after : a)),
+      )
+      api
+        .patch(`/files/${fileId}/annotations/${targetId}`, {
+          color: after.color,
+          thickness: after.thickness,
+          opacity: after.opacity,
+          normalizedX: after.normalizedX,
+          normalizedY: after.normalizedY,
+          normalizedW: after.normalizedW,
+          normalizedH: after.normalizedH,
+          content: after.content,
+          pathData: after.pathData,
+        })
+        .catch(() => {
+          setAnnotations((prev) =>
+            prev.map((a) => (a.id === targetId ? before : a)),
+          )
+          toast.error("Failed to redo. Reverted.")
+        })
+      undoStackRef.current = [
+        ...undoStackRef.current,
+        { kind: "update", before, after },
+      ]
     } else {
       // Re-apply a delete — find the most recently re-created matching row
       // (created via the undo of the original delete) and delete it.
@@ -392,6 +521,7 @@ export function usePdfAnnotations(
     setFilterMine,
     createAnnotation,
     deleteAnnotation,
+    updateAnnotation,
     canUndo,
     canRedo,
     undo,

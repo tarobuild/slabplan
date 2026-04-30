@@ -183,6 +183,144 @@ export async function createAnnotation(params: {
   return serializeAnnotation(inserted, creator?.fullName ?? null);
 }
 
+export type UpdateAnnotationInput = {
+  color?: string;
+  thickness?: number | null;
+  opacity?: number | null;
+  normalizedX?: number;
+  normalizedY?: number;
+  normalizedW?: number;
+  normalizedH?: number;
+  content?: string | null;
+  pathData?: Array<[number, number]> | null;
+};
+
+export async function updateAnnotation(params: {
+  annotationId: string;
+  input: UpdateAnnotationInput;
+  userId: string;
+}): Promise<SerializedAnnotation> {
+  const { annotationId, input, userId } = params;
+
+  const [existing] = await db
+    .select()
+    .from(fileAnnotations)
+    .where(
+      and(
+        eq(fileAnnotations.id, annotationId),
+        isNull(fileAnnotations.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) {
+    throw new HttpError(404, "Annotation not found.");
+  }
+
+  const patch: Partial<typeof fileAnnotations.$inferInsert> = {};
+  const changed: string[] = [];
+
+  if (input.color !== undefined && input.color !== existing.color) {
+    patch.color = input.color;
+    changed.push("color");
+  }
+  if (input.thickness !== undefined && input.thickness !== null) {
+    const next = String(input.thickness);
+    if (next !== existing.thickness) {
+      patch.thickness = next;
+      changed.push("thickness");
+    }
+  }
+  if (input.opacity !== undefined && input.opacity !== null) {
+    const next = String(input.opacity);
+    if (next !== existing.opacity) {
+      patch.opacity = next;
+      changed.push("opacity");
+    }
+  }
+  if (input.normalizedX !== undefined) {
+    const next = String(input.normalizedX);
+    if (next !== existing.normalizedX) {
+      patch.normalizedX = next;
+      changed.push("position");
+    }
+  }
+  if (input.normalizedY !== undefined) {
+    const next = String(input.normalizedY);
+    if (next !== existing.normalizedY) {
+      patch.normalizedY = next;
+      if (!changed.includes("position")) changed.push("position");
+    }
+  }
+  if (input.normalizedW !== undefined) {
+    const next = String(input.normalizedW);
+    if (next !== existing.normalizedW) {
+      patch.normalizedW = next;
+      changed.push("size");
+    }
+  }
+  if (input.normalizedH !== undefined) {
+    const next = String(input.normalizedH);
+    if (next !== existing.normalizedH) {
+      patch.normalizedH = next;
+      if (!changed.includes("size")) changed.push("size");
+    }
+  }
+  if (input.content !== undefined && input.content !== existing.content) {
+    patch.content = input.content;
+    changed.push("content");
+  }
+  if (input.pathData !== undefined) {
+    // Compare via JSON.stringify; pathData is a json column.
+    const a = JSON.stringify(existing.pathData ?? null);
+    const b = JSON.stringify(input.pathData ?? null);
+    if (a !== b) {
+      patch.pathData = input.pathData ?? null;
+      changed.push("path");
+    }
+  }
+
+  if (Object.keys(patch).length === 0) {
+    // Nothing to update — return current row as-is.
+    const [creator] = await db
+      .select({ fullName: users.fullName })
+      .from(users)
+      .where(eq(users.id, existing.createdBy ?? userId))
+      .limit(1);
+    return serializeAnnotation(existing, creator?.fullName ?? null);
+  }
+
+  const [updated] = await db
+    .update(fileAnnotations)
+    .set(patch)
+    .where(eq(fileAnnotations.id, annotationId))
+    .returning();
+
+  const [creator] = await db
+    .select({ fullName: users.fullName })
+    .from(users)
+    .where(eq(users.id, updated.createdBy ?? userId))
+    .limit(1);
+
+  const jobId = await jobIdForFile(updated.fileId);
+  await writeActivity({
+    entityType: "file_annotation",
+    entityId: updated.id,
+    action: "edited",
+    userId,
+    jobId,
+    fileId: updated.fileId,
+    description: `Edited ${describeTool(updated.toolType as ToolType)} markup on page ${updated.page}`,
+    extra: {
+      toolType: updated.toolType,
+      page: updated.page,
+      changed,
+    },
+  });
+
+  return serializeAnnotation(updated, creator?.fullName ?? null);
+}
+
 export async function softDeleteAnnotation(params: {
   annotationId: string;
   userId: string;

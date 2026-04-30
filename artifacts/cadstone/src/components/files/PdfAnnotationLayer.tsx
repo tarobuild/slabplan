@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
-import { StickyNote, X } from "lucide-react"
+import { Pencil, StickyNote, X } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import type { Annotation, AnnotationToolType, DraftAnnotation, ToolPreset } from "./annotation-types"
+import {
+  HIGHLIGHTER_COLORS,
+  PEN_COLORS,
+  SHAPE_COLORS,
+  STICKY_COLORS,
+  type Annotation,
+  type AnnotationToolType,
+  type DraftAnnotation,
+  type ToolPreset,
+} from "./annotation-types"
 import type { MarkupTool } from "./PdfMarkupToolbar"
+import type { AnnotationPatch } from "./use-pdf-annotations"
 
 const MOBILE_BREAKPOINT_PX = 640
 
@@ -46,6 +56,9 @@ type PendingTextEditor = {
   x: number
   y: number
   preset: ToolPreset
+  // When set, the editor is editing the existing annotation rather than
+  // creating a new one.
+  editingId?: string
 }
 
 type PdfAnnotationLayerProps = {
@@ -62,6 +75,23 @@ type PdfAnnotationLayerProps = {
   isAdmin: boolean
   onCreate: (draft: Omit<DraftAnnotation, "tempId">) => void
   onDelete: (annotationId: string) => void
+  onUpdate: (annotationId: string, patch: AnnotationPatch) => void | Promise<void>
+}
+
+type DragMode =
+  | "move"
+  | "resize-tl"
+  | "resize-tr"
+  | "resize-bl"
+  | "resize-br"
+  | "endpoint-start"
+  | "endpoint-end"
+
+type ActiveDrag = {
+  id: string
+  mode: DragMode
+  start: Point
+  original: Annotation
 }
 
 function clamp01(value: number): number {
@@ -71,10 +101,19 @@ function clamp01(value: number): number {
 }
 
 function getRelativeCoords(
-  event: ReactPointerEvent<SVGSVGElement>,
+  event: ReactPointerEvent<SVGElement>,
 ): Point | null {
+  // Always measure against the root SVG canvas, not the individual shape or
+  // handle that received the event — otherwise a pointerdown on a small handle
+  // would compute coordinates relative to the handle's bounding box and the
+  // subsequent pointermove (handled on the SVG root) would jump.
   const target = event.currentTarget
-  const rect = target.getBoundingClientRect()
+  const svg =
+    target instanceof SVGSVGElement
+      ? target
+      : (target.ownerSVGElement ?? null)
+  if (!svg) return null
+  const rect = svg.getBoundingClientRect()
   if (rect.width === 0 || rect.height === 0) return null
   const x = (event.clientX - rect.left) / rect.width
   const y = (event.clientY - rect.top) / rect.height
@@ -134,15 +173,169 @@ function annotationCanBeDeletedBy(
   return annotation.createdBy === currentUserId
 }
 
+// Edit shares the same authorization rules as delete (creator-or-admin).
+const annotationCanBeEditedBy = annotationCanBeDeletedBy
+
+const SUPPORTS_RESIZE: Record<AnnotationToolType, boolean> = {
+  highlighter: false,
+  pen: false,
+  line: true,
+  arrow: true,
+  rectangle: true,
+  ellipse: true,
+  sticky_note: false,
+  text_label: false,
+}
+
+function applyDragToAnnotation(
+  source: Annotation,
+  drag: ActiveDrag,
+  current: Point,
+): Annotation {
+  const dx = current[0] - drag.start[0]
+  const dy = current[1] - drag.start[1]
+  const original = drag.original
+
+  if (drag.mode === "move") {
+    // Clamp the translation so the bbox stays within the page (origin in [0,1],
+    // size unchanged) — keeps the optimistic position aligned with what the
+    // server will accept.
+    const w = original.normalizedW
+    const h = original.normalizedH
+    const newX = Math.max(0, Math.min(1 - Math.max(0, w), original.normalizedX + dx))
+    const newY = Math.max(0, Math.min(1 - Math.max(0, h), original.normalizedY + dy))
+    const cdx = newX - original.normalizedX
+    const cdy = newY - original.normalizedY
+    if (original.toolType === "pen" || original.toolType === "highlighter") {
+      const path =
+        original.pathData?.map(([px, py]) => [px + cdx, py + cdy] as Point) ?? null
+      return {
+        ...source,
+        normalizedX: newX,
+        normalizedY: newY,
+        pathData: path,
+      }
+    }
+    return {
+      ...source,
+      normalizedX: newX,
+      normalizedY: newY,
+    }
+  }
+
+  if (drag.mode === "endpoint-start" || drag.mode === "endpoint-end") {
+    // Compute the start and end points in absolute normalized coords, move the
+    // dragged endpoint within the page, then re-derive (origin, size) so
+    // width/height stay non-negative — the API schema rejects negatives.
+    const startX = original.normalizedX
+    const startY = original.normalizedY
+    const endX = original.normalizedX + original.normalizedW
+    const endY = original.normalizedY + original.normalizedH
+    const movedStartX = clamp01(drag.mode === "endpoint-start" ? startX + dx : startX)
+    const movedStartY = clamp01(drag.mode === "endpoint-start" ? startY + dy : startY)
+    const movedEndX = clamp01(drag.mode === "endpoint-end" ? endX + dx : endX)
+    const movedEndY = clamp01(drag.mode === "endpoint-end" ? endY + dy : endY)
+    const minX = Math.min(movedStartX, movedEndX)
+    const minY = Math.min(movedStartY, movedEndY)
+    const maxX = Math.max(movedStartX, movedEndX)
+    const maxY = Math.max(movedStartY, movedEndY)
+    return {
+      ...source,
+      normalizedX: minX,
+      normalizedY: minY,
+      normalizedW: maxX - minX,
+      normalizedH: maxY - minY,
+    }
+  }
+
+  // Rectangle/ellipse corner resize.
+  let x = original.normalizedX
+  let y = original.normalizedY
+  let w = original.normalizedW
+  let h = original.normalizedH
+  switch (drag.mode) {
+    case "resize-tl":
+      x += dx
+      y += dy
+      w -= dx
+      h -= dy
+      break
+    case "resize-tr":
+      y += dy
+      w += dx
+      h -= dy
+      break
+    case "resize-bl":
+      x += dx
+      w -= dx
+      h += dy
+      break
+    case "resize-br":
+      w += dx
+      h += dy
+      break
+  }
+  // Keep width/height non-negative; flip if dragged across the origin so the
+  // shape stays sensible.
+  if (w < 0) {
+    x = x + w
+    w = -w
+  }
+  if (h < 0) {
+    y = y + h
+    h = -h
+  }
+  // Clamp to page bounds so optimistic resize stays in [0,1] for both origin
+  // and size, matching what the API will accept.
+  if (x < 0) {
+    w = Math.max(0, w + x)
+    x = 0
+  }
+  if (y < 0) {
+    h = Math.max(0, h + y)
+    y = 0
+  }
+  if (x + w > 1) w = Math.max(0, 1 - x)
+  if (y + h > 1) h = Math.max(0, 1 - y)
+  return {
+    ...source,
+    normalizedX: x,
+    normalizedY: y,
+    normalizedW: w,
+    normalizedH: h,
+  }
+}
+
+function buildPatchFromDrag(
+  before: Annotation,
+  after: Annotation,
+): AnnotationPatch {
+  const patch: AnnotationPatch = {}
+  if (after.normalizedX !== before.normalizedX) patch.normalizedX = after.normalizedX
+  if (after.normalizedY !== before.normalizedY) patch.normalizedY = after.normalizedY
+  if (after.normalizedW !== before.normalizedW) patch.normalizedW = after.normalizedW
+  if (after.normalizedH !== before.normalizedH) patch.normalizedH = after.normalizedH
+  if (after.pathData !== before.pathData) patch.pathData = after.pathData ?? null
+  return patch
+}
+
 function renderAnnotationShape(
   a: Annotation | DraftAnnotation,
   width: number,
   height: number,
   isPending: boolean,
   onClick?: () => void,
+  onPointerDown?: (event: ReactPointerEvent<SVGElement>) => void,
+  cursorOverride?: CSSProperties["cursor"],
 ) {
   const opacity = isPending ? a.opacity * 0.6 : a.opacity
-  const cursor = onClick ? "pointer" : "default"
+  const interactive = !!(onClick || onPointerDown)
+  const cursor = cursorOverride ?? (onClick || onPointerDown ? "pointer" : "default")
+  const pointerEventsForStroke: CSSProperties["pointerEvents"] = interactive ? "stroke" : "none"
+  const pointerEventsForFill: CSSProperties["pointerEvents"] = interactive ? "all" : "none"
+  const wrapHandlers = onPointerDown
+    ? { onPointerDown }
+    : {}
 
   switch (a.toolType) {
     case "highlighter":
@@ -159,7 +352,8 @@ function renderAnnotationShape(
           fill="none"
           opacity={opacity}
           onClick={onClick}
-          style={{ cursor, pointerEvents: onClick ? "stroke" : "none" }}
+          {...wrapHandlers}
+          style={{ cursor, pointerEvents: pointerEventsForStroke }}
         />
       )
     }
@@ -179,7 +373,8 @@ function renderAnnotationShape(
           strokeLinecap="round"
           opacity={opacity}
           onClick={onClick}
-          style={{ cursor, pointerEvents: onClick ? "stroke" : "none" }}
+          {...wrapHandlers}
+          style={{ cursor, pointerEvents: pointerEventsForStroke }}
         />
       )
     }
@@ -199,7 +394,8 @@ function renderAnnotationShape(
         <g
           opacity={opacity}
           onClick={onClick}
-          style={{ cursor, pointerEvents: onClick ? "stroke" : "none" }}
+          {...wrapHandlers}
+          style={{ cursor, pointerEvents: pointerEventsForStroke }}
         >
           <line
             x1={x1}
@@ -237,7 +433,8 @@ function renderAnnotationShape(
           fill="none"
           opacity={opacity}
           onClick={onClick}
-          style={{ cursor, pointerEvents: onClick ? "stroke" : "none" }}
+          {...wrapHandlers}
+          style={{ cursor, pointerEvents: pointerEventsForStroke }}
         />
       )
     }
@@ -257,7 +454,8 @@ function renderAnnotationShape(
           fill="none"
           opacity={opacity}
           onClick={onClick}
-          style={{ cursor, pointerEvents: onClick ? "stroke" : "none" }}
+          {...wrapHandlers}
+          style={{ cursor, pointerEvents: pointerEventsForStroke }}
         />
       )
     }
@@ -274,7 +472,8 @@ function renderAnnotationShape(
           fontFamily="Inter, system-ui, sans-serif"
           opacity={opacity}
           onClick={onClick}
-          style={{ cursor, pointerEvents: onClick ? "all" : "none", userSelect: "none" }}
+          {...wrapHandlers}
+          style={{ cursor, pointerEvents: pointerEventsForFill, userSelect: "none" }}
         >
           {a.content || ""}
         </text>
@@ -294,14 +493,18 @@ function StickyNotePin({
   width,
   height,
   canDelete,
+  canEdit,
   onRequestDelete,
+  onRequestEdit,
   isMobile,
 }: {
   annotation: Annotation | DraftAnnotation
   width: number
   height: number
   canDelete: boolean
+  canEdit: boolean
   onRequestDelete?: () => void
+  onRequestEdit?: () => void
   isMobile: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -334,18 +537,32 @@ function StickyNotePin({
       <p className="whitespace-pre-wrap break-words leading-snug">
         {annotation.content || <span className="italic text-slate-500">(empty)</span>}
       </p>
-      {canDelete && onRequestDelete ? (
-        <div className="mt-3 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false)
-              onRequestDelete()
-            }}
-            className="text-[11px] font-semibold uppercase tracking-wide text-red-700 hover:underline"
-          >
-            Delete
-          </button>
+      {(canEdit && onRequestEdit) || (canDelete && onRequestDelete) ? (
+        <div className="mt-3 flex justify-end gap-3">
+          {canEdit && onRequestEdit ? (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                onRequestEdit()
+              }}
+              className="text-[11px] font-semibold uppercase tracking-wide text-slate-800 hover:underline"
+            >
+              Edit
+            </button>
+          ) : null}
+          {canDelete && onRequestDelete ? (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                onRequestDelete()
+              }}
+              className="text-[11px] font-semibold uppercase tracking-wide text-red-700 hover:underline"
+            >
+              Delete
+            </button>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -412,6 +629,194 @@ function StickyNotePin({
   )
 }
 
+const STYLE_THICKNESS_PRESETS: Array<{ label: string; value: number }> = [
+  { label: "Thin", value: 1 },
+  { label: "Medium", value: 3 },
+  { label: "Thick", value: 6 },
+]
+
+function colorSwatchesForTool(
+  tool: AnnotationToolType,
+): ReadonlyArray<{ label: string; value: string }> {
+  if (tool === "highlighter") return HIGHLIGHTER_COLORS
+  if (tool === "sticky_note") return STICKY_COLORS
+  if (tool === "pen" || tool === "text_label") return PEN_COLORS
+  return SHAPE_COLORS
+}
+
+function SelectionStyleBar({
+  annotation,
+  width,
+  height,
+  onUpdate,
+}: {
+  annotation: Annotation
+  width: number
+  height: number
+  onUpdate: (id: string, patch: AnnotationPatch) => void | Promise<void>
+}) {
+  const swatches = colorSwatchesForTool(annotation.toolType)
+  // Thickness controls don't apply to sticky notes (font/box presentation only)
+  // and aren't useful for text labels (the value drives font size, not stroke).
+  const showThickness =
+    annotation.toolType !== "sticky_note" && annotation.toolType !== "text_label"
+
+  // Anchor above the annotation's top edge. For lines/arrows we use the bbox
+  // of the segment.
+  const x = annotation.normalizedX * width
+  const y = annotation.normalizedY * height
+  const w = Math.max(0, annotation.normalizedW) * width
+  const left = x + w / 2
+  const top = Math.max(0, y - 8)
+
+  return (
+    <div
+      className="pointer-events-auto absolute z-30 flex items-center gap-2 rounded-md bg-slate-900/95 px-2 py-1.5 text-white shadow-lg ring-1 ring-white/15"
+      style={{
+        left: `${left}px`,
+        top: `${top}px`,
+        transform: "translate(-50%, -100%)",
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-1">
+        {swatches.map((s) => {
+          const active = annotation.color === s.value
+          return (
+            <button
+              key={s.value}
+              type="button"
+              title={s.label}
+              onClick={() => {
+                if (active) return
+                void onUpdate(annotation.id, { color: s.value })
+              }}
+              className={`h-5 w-5 rounded-full ring-2 transition ${
+                active ? "ring-blue-400 scale-110" : "ring-white/30 hover:ring-white/60"
+              }`}
+              style={{ background: s.value }}
+            />
+          )
+        })}
+      </div>
+      {showThickness ? (
+        <>
+          <span className="h-4 w-px bg-white/15" />
+          <div className="flex items-center gap-1">
+            {STYLE_THICKNESS_PRESETS.map((t) => {
+              const active = annotation.thickness === t.value
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  title={`${t.label} (${t.value}px)`}
+                  onClick={() => {
+                    if (active) return
+                    void onUpdate(annotation.id, { thickness: t.value })
+                  }}
+                  className={`flex h-6 items-center rounded px-1.5 text-[11px] transition ${
+                    active
+                      ? "bg-blue-600 text-white"
+                      : "text-slate-200 hover:bg-white/10"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              )
+            })}
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function SelectionOverlay({
+  annotation,
+  width,
+  height,
+  canResize,
+  onHandlePointerDown,
+}: {
+  annotation: Annotation
+  width: number
+  height: number
+  canResize: boolean
+  onHandlePointerDown: (mode: DragMode, event: ReactPointerEvent<SVGElement>) => void
+}) {
+  // Compute the bounding box in pixels. For lines/arrows we expand to a
+  // rectangle so the user can grab the endpoints visually.
+  const isEndpointShape = annotation.toolType === "line" || annotation.toolType === "arrow"
+  const x1 = annotation.normalizedX * width
+  const y1 = annotation.normalizedY * height
+  const x2 = (annotation.normalizedX + annotation.normalizedW) * width
+  const y2 = (annotation.normalizedY + annotation.normalizedH) * height
+  const bx = Math.min(x1, x2)
+  const by = Math.min(y1, y2)
+  const bw = Math.abs(x2 - x1)
+  const bh = Math.abs(y2 - y1)
+  const pad = 4
+  const handleSize = 8
+
+  // Build handle definitions per shape kind.
+  const handles: Array<{
+    cx: number
+    cy: number
+    mode: DragMode
+    cursor: CSSProperties["cursor"]
+  }> = []
+  if (canResize) {
+    if (isEndpointShape) {
+      handles.push(
+        { cx: x1, cy: y1, mode: "endpoint-start", cursor: "move" },
+        { cx: x2, cy: y2, mode: "endpoint-end", cursor: "move" },
+      )
+    } else if (annotation.toolType === "rectangle" || annotation.toolType === "ellipse") {
+      const left = annotation.normalizedX * width
+      const top = annotation.normalizedY * height
+      const right = (annotation.normalizedX + annotation.normalizedW) * width
+      const bottom = (annotation.normalizedY + annotation.normalizedH) * height
+      handles.push(
+        { cx: left, cy: top, mode: "resize-tl", cursor: "nwse-resize" },
+        { cx: right, cy: top, mode: "resize-tr", cursor: "nesw-resize" },
+        { cx: left, cy: bottom, mode: "resize-bl", cursor: "nesw-resize" },
+        { cx: right, cy: bottom, mode: "resize-br", cursor: "nwse-resize" },
+      )
+    }
+  }
+
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {/* Marquee */}
+      <rect
+        x={bx - pad}
+        y={by - pad}
+        width={Math.max(0, bw + pad * 2)}
+        height={Math.max(0, bh + pad * 2)}
+        fill="none"
+        stroke="#2563eb"
+        strokeWidth={1}
+        strokeDasharray="4 3"
+        opacity={0.85}
+      />
+      {handles.map((h) => (
+        <rect
+          key={h.mode}
+          x={h.cx - handleSize / 2}
+          y={h.cy - handleSize / 2}
+          width={handleSize}
+          height={handleSize}
+          fill="#ffffff"
+          stroke="#2563eb"
+          strokeWidth={1.5}
+          style={{ cursor: h.cursor, pointerEvents: "all" }}
+          onPointerDown={(event) => onHandlePointerDown(h.mode, event)}
+        />
+      ))}
+    </g>
+  )
+}
+
 export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
   const {
     width,
@@ -427,16 +832,21 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
     isAdmin,
     onCreate,
     onDelete,
+    onUpdate,
   } = props
 
   const svgRef = useRef<SVGSVGElement | null>(null)
   const [activeStroke, setActiveStroke] = useState<ActiveStroke | null>(null)
   const [editor, setEditor] = useState<PendingTextEditor | null>(null)
   const [editorValue, setEditorValue] = useState("")
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null)
+  const [dragPoint, setDragPoint] = useState<Point | null>(null)
   const isMobile = useIsMobileViewport()
 
   const isInteractive = enabled && showMarkup
   const isEraseMode = isInteractive && activeTool === "eraser"
+  const isSelectMode = isInteractive && activeTool === "select"
 
   // Filter annotations and drafts to this page.
   const pageAnnotations = useMemo(
@@ -523,6 +933,11 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
       // In erase mode, the SVG itself is non-drawing — clicks on annotations
       // are handled by their per-shape onClick. Avoid starting a stroke.
       if (activeTool === "eraser") return
+      // In select mode, clicking the SVG background deselects.
+      if (activeTool === "select") {
+        setSelectedId(null)
+        return
+      }
       if (preset.tool === "sticky_note" || preset.tool === "text_label") {
         const point = getRelativeCoords(event)
         if (!point) return
@@ -549,6 +964,11 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
 
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<SVGSVGElement>) => {
+      if (activeDrag) {
+        const point = getRelativeCoords(event)
+        if (point) setDragPoint(point)
+        return
+      }
       if (!activeStroke) return
       const point = getRelativeCoords(event)
       if (!point) return
@@ -560,27 +980,92 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
         return { ...prev, current: point }
       })
     },
-    [activeStroke],
+    [activeDrag, activeStroke],
   )
 
   const onPointerUp = useCallback(() => {
+    if (activeDrag) {
+      const original = activeDrag.original
+      const current = dragPoint ?? activeDrag.start
+      const after = applyDragToAnnotation(original, activeDrag, current)
+      const patch = buildPatchFromDrag(original, after)
+      if (Object.keys(patch).length > 0) {
+        void onUpdate(activeDrag.id, patch)
+      }
+      setActiveDrag(null)
+      setDragPoint(null)
+      return
+    }
     setActiveStroke((prev) => {
       if (prev) finishStroke(prev)
       return null
     })
-  }, [finishStroke])
+  }, [activeDrag, dragPoint, finishStroke, onUpdate])
 
   // If the user disables markup mode mid-stroke, abort.
   useEffect(() => {
     if (!isInteractive) {
       setActiveStroke(null)
       setEditor(null)
+      setSelectedId(null)
+      setActiveDrag(null)
+      setDragPoint(null)
     }
   }, [isInteractive])
+
+  // Switching away from select mode clears the selection.
+  useEffect(() => {
+    if (!isSelectMode) {
+      setSelectedId(null)
+      setActiveDrag(null)
+      setDragPoint(null)
+    }
+  }, [isSelectMode])
+
+  // If the selected annotation disappears (deleted, page change, etc.),
+  // clear the selection so handles don't render against a stale row.
+  useEffect(() => {
+    if (selectedId && !pageAnnotations.some((a) => a.id === selectedId)) {
+      setSelectedId(null)
+    }
+  }, [pageAnnotations, selectedId])
+
+  // Allow Escape to cancel a drag or selection.
+  useEffect(() => {
+    if (!isInteractive) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      if (activeDrag) {
+        e.preventDefault()
+        setActiveDrag(null)
+        setDragPoint(null)
+        return
+      }
+      if (selectedId) {
+        e.preventDefault()
+        setSelectedId(null)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [activeDrag, isInteractive, selectedId])
 
   const submitEditor = useCallback(() => {
     if (!editor) return
     const trimmed = editorValue.trim()
+    if (editor.editingId) {
+      // Editing an existing annotation — only persist if content changed
+      // and is non-empty.
+      if (!trimmed) {
+        setEditor(null)
+        setEditorValue("")
+        return
+      }
+      void onUpdate(editor.editingId, { content: trimmed })
+      setEditor(null)
+      setEditorValue("")
+      return
+    }
     if (!trimmed) {
       setEditor(null)
       setEditorValue("")
@@ -602,19 +1087,65 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
     })
     setEditor(null)
     setEditorValue("")
-  }, [editor, editorValue, onCreate, page])
+  }, [editor, editorValue, onCreate, onUpdate, page])
+
+  const beginEditStickyNote = useCallback(
+    (annotation: Annotation) => {
+      if (annotation.toolType !== "sticky_note" && annotation.toolType !== "text_label") {
+        return
+      }
+      setEditor({
+        tool: annotation.toolType,
+        x: annotation.normalizedX,
+        y: annotation.normalizedY,
+        preset: {
+          tool: annotation.toolType,
+          color: annotation.color,
+          thickness: annotation.thickness,
+          opacity: annotation.opacity,
+        },
+        editingId: annotation.id,
+      })
+      setEditorValue(annotation.content ?? "")
+    },
+    [],
+  )
 
   const handleAnnotationClick = useCallback(
     (annotation: Annotation) => {
-      if (!isEraseMode) return
-      const allowed = annotationCanBeDeletedBy(annotation, currentUserId, isAdmin)
-      if (!allowed) return
-      if (annotation.toolType === "sticky_note" && annotation.content) {
-        if (!window.confirm("Delete this sticky note?")) return
+      if (isEraseMode) {
+        const allowed = annotationCanBeDeletedBy(annotation, currentUserId, isAdmin)
+        if (!allowed) return
+        if (annotation.toolType === "sticky_note" && annotation.content) {
+          if (!window.confirm("Delete this sticky note?")) return
+        }
+        onDelete(annotation.id)
+        return
       }
-      onDelete(annotation.id)
+      if (isSelectMode) {
+        // Sticky notes have their own popover with an Edit button — don't
+        // hijack the click here.
+        if (annotation.toolType === "sticky_note") return
+        setSelectedId(annotation.id)
+      }
     },
-    [currentUserId, isAdmin, isEraseMode, onDelete],
+    [currentUserId, isAdmin, isEraseMode, isSelectMode, onDelete],
+  )
+
+  const beginAnnotationDrag = useCallback(
+    (annotation: Annotation, mode: DragMode, point: Point) => {
+      if (!isSelectMode) return
+      if (!annotationCanBeEditedBy(annotation, currentUserId, isAdmin)) return
+      setSelectedId(annotation.id)
+      setActiveDrag({
+        id: annotation.id,
+        mode,
+        start: point,
+        original: annotation,
+      })
+      setDragPoint(point)
+    },
+    [currentUserId, isAdmin, isSelectMode],
   )
 
   // Render preview for active stroke.
@@ -696,13 +1227,17 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
           // In erase mode the SVG itself is non-interactive — clicks land on
           // the per-shape onClick handler, not the surface. This prevents the
           // SVG from swallowing clicks meant for the annotation.
+          // In select mode the SVG IS interactive so background clicks can
+          // deselect, but individual shapes still receive their own events.
           pointerEvents: isInteractive && activeTool !== "eraser" ? "auto" : "none",
           cursor: isInteractive
             ? activeTool === "eraser"
               ? "default"
-              : preset.tool === "sticky_note" || preset.tool === "text_label"
-                ? "text"
-                : "crosshair"
+              : activeTool === "select"
+                ? "default"
+                : preset.tool === "sticky_note" || preset.tool === "text_label"
+                  ? "text"
+                  : "crosshair"
             : "default",
           touchAction: "none",
         }}
@@ -713,14 +1248,37 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
       >
         {pageAnnotations.map((a) => {
           const canDelete = annotationCanBeDeletedBy(a, currentUserId, isAdmin)
+          const canEdit = annotationCanBeEditedBy(a, currentUserId, isAdmin)
+          // While dragging, render the shape at its in-progress position so
+          // the user gets immediate feedback before the patch is committed.
+          const displayed =
+            activeDrag && activeDrag.id === a.id && dragPoint
+              ? applyDragToAnnotation(a, activeDrag, dragPoint)
+              : a
+          const handleClick = isEraseMode && canDelete ? () => handleAnnotationClick(a) : undefined
+          const shapePointerDown =
+            isSelectMode && canEdit
+              ? (event: ReactPointerEvent<SVGElement>) => {
+                  event.stopPropagation()
+                  const point = getRelativeCoords(
+                    event as unknown as ReactPointerEvent<SVGSVGElement>,
+                  )
+                  if (!point) return
+                  ;(event.target as Element).setPointerCapture?.(event.pointerId)
+                  beginAnnotationDrag(a, "move", point)
+                }
+              : undefined
+          const cursorOverride = isSelectMode && canEdit ? "move" : undefined
           return (
             <g key={a.id}>
               {renderAnnotationShape(
-                a,
+                displayed,
                 width,
                 height,
                 false,
-                isEraseMode && canDelete ? () => handleAnnotationClick(a) : undefined,
+                handleClick,
+                shapePointerDown,
+                cursorOverride,
               )}
             </g>
           )
@@ -736,24 +1294,79 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
               true,
             )
           : null}
+        {/* Selection overlay + resize handles */}
+        {isSelectMode && selectedId
+          ? (() => {
+              const selected = pageAnnotations.find((a) => a.id === selectedId)
+              if (!selected) return null
+              const canEdit = annotationCanBeEditedBy(selected, currentUserId, isAdmin)
+              const displayed =
+                activeDrag && activeDrag.id === selected.id && dragPoint
+                  ? applyDragToAnnotation(selected, activeDrag, dragPoint)
+                  : selected
+              return (
+                <SelectionOverlay
+                  annotation={displayed}
+                  width={width}
+                  height={height}
+                  canResize={canEdit && SUPPORTS_RESIZE[selected.toolType]}
+                  onHandlePointerDown={(mode, event) => {
+                    event.stopPropagation()
+                    const point = getRelativeCoords(
+                      event as unknown as ReactPointerEvent<SVGSVGElement>,
+                    )
+                    if (!point) return
+                    ;(event.target as Element).setPointerCapture?.(event.pointerId)
+                    beginAnnotationDrag(selected, mode, point)
+                  }}
+                />
+              )
+            })()
+          : null}
       </svg>
+
+      {/* Style bar (color + thickness) for the selected annotation. */}
+      {isSelectMode && selectedId
+        ? (() => {
+            const selected = pageAnnotations.find((a) => a.id === selectedId)
+            if (!selected) return null
+            if (!annotationCanBeEditedBy(selected, currentUserId, isAdmin)) return null
+            const displayed =
+              activeDrag && activeDrag.id === selected.id && dragPoint
+                ? applyDragToAnnotation(selected, activeDrag, dragPoint)
+                : selected
+            return (
+              <SelectionStyleBar
+                annotation={displayed}
+                width={width}
+                height={height}
+                onUpdate={onUpdate}
+              />
+            )
+          })()
+        : null}
 
       {/* Sticky-note pins as HTML overlays so they stay clickable / readable. */}
       {pageAnnotations
         .filter((a) => a.toolType === "sticky_note")
-        .map((a) => (
-          <StickyNotePin
-            key={a.id}
-            annotation={a}
-            width={width}
-            height={height}
-            canDelete={annotationCanBeDeletedBy(a, currentUserId, isAdmin)}
-            // Explicit Delete button click bypasses the eraser-mode gate
-            // since it's an unambiguous user intent.
-            onRequestDelete={() => onDelete(a.id)}
-            isMobile={isMobile}
-          />
-        ))}
+        .map((a) => {
+          const canEditNote = annotationCanBeEditedBy(a, currentUserId, isAdmin)
+          return (
+            <StickyNotePin
+              key={a.id}
+              annotation={a}
+              width={width}
+              height={height}
+              canDelete={annotationCanBeDeletedBy(a, currentUserId, isAdmin)}
+              canEdit={canEditNote}
+              // Explicit Delete button click bypasses the eraser-mode gate
+              // since it's an unambiguous user intent.
+              onRequestDelete={() => onDelete(a.id)}
+              onRequestEdit={canEditNote ? () => beginEditStickyNote(a) : undefined}
+              isMobile={isMobile}
+            />
+          )
+        })}
       {pageDrafts
         .filter((d) => d.toolType === "sticky_note")
         .map((d) => (
@@ -763,6 +1376,7 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
             width={width}
             height={height}
             canDelete={false}
+            canEdit={false}
             isMobile={isMobile}
           />
         ))}

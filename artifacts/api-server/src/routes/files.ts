@@ -23,6 +23,7 @@ import {
   getAnnotationOrThrow,
   listAnnotationsForFile,
   softDeleteAnnotation,
+  updateAnnotation,
 } from "../lib/file-annotations";
 import { isAdmin } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
@@ -348,6 +349,70 @@ router.post(
     });
 
     res.status(201).json({ annotation });
+  }),
+);
+
+const updateAnnotationSchema = z
+  .object({
+    color: z.string().trim().min(1).max(50).optional(),
+    thickness: z.coerce.number().min(0).max(64).optional().nullable(),
+    opacity: z.coerce.number().min(0).max(1).optional().nullable(),
+    normalizedX: normalizedCoord.optional(),
+    normalizedY: normalizedCoord.optional(),
+    normalizedW: normalizedSize.optional(),
+    normalizedH: normalizedSize.optional(),
+    content: z.string().max(2000).optional().nullable(),
+    pathData: z.array(pathPointSchema).max(20000).optional().nullable(),
+  })
+  .refine(
+    (val) => Object.values(val).some((v) => v !== undefined),
+    { message: "At least one field must be provided." },
+  );
+
+router.patch(
+  "/files/:id/annotations/:annotationId",
+  asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    const annotationId = getParam(req.params.annotationId, "annotation id");
+
+    // Must at least be able to view the file.
+    await assertCanViewFile(req.auth!, fileId);
+
+    const existing = await getAnnotationOrThrow(annotationId);
+    if (existing.fileId !== fileId) {
+      throw new HttpError(404, "Annotation not found.");
+    }
+
+    const isCreator = existing.createdBy === req.auth!.userId;
+    if (!isCreator && !isAdmin(req.auth!)) {
+      throw new HttpError(
+        403,
+        "Only the markup's author or an admin can edit it.",
+      );
+    }
+
+    const body = updateAnnotationSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      throw new HttpError(400, "Invalid annotation payload.", body.error.flatten());
+    }
+
+    const annotation = await updateAnnotation({
+      annotationId,
+      input: {
+        color: body.data.color,
+        thickness: body.data.thickness ?? undefined,
+        opacity: body.data.opacity ?? undefined,
+        normalizedX: body.data.normalizedX,
+        normalizedY: body.data.normalizedY,
+        normalizedW: body.data.normalizedW,
+        normalizedH: body.data.normalizedH,
+        content: body.data.content === undefined ? undefined : body.data.content,
+        pathData: body.data.pathData === undefined ? undefined : body.data.pathData,
+      },
+      userId: req.auth!.userId,
+    });
+
+    res.json({ annotation });
   }),
 );
 

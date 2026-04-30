@@ -3,6 +3,7 @@ import {
   Highlighter,
   Minus,
   MousePointer2,
+  MousePointer,
   Pencil,
   Square,
   StickyNote,
@@ -26,7 +27,7 @@ import {
   type ToolPreset,
 } from "./annotation-types"
 
-export type MarkupTool = AnnotationToolType | "eraser"
+export type MarkupTool = AnnotationToolType | "eraser" | "select"
 
 type Props = {
   active: MarkupTool
@@ -111,7 +112,8 @@ export function PdfMarkupToolbar({
   totalAnnotations,
   visibleAnnotations,
 }: Props) {
-  const presetTool = active === "eraser" ? null : presets[active]
+  const presetTool =
+    active === "eraser" || active === "select" ? null : presets[active]
   const swatches =
     active === "highlighter"
       ? HIGHLIGHTER_COLORS
@@ -124,13 +126,24 @@ export function PdfMarkupToolbar({
             : SHAPE_COLORS
 
   const showThickness =
-    active !== "sticky_note" && active !== "text_label" && active !== "eraser"
+    active !== "sticky_note" &&
+    active !== "text_label" &&
+    active !== "eraser" &&
+    active !== "select"
   const showOpacity = active === "highlighter"
   const showFontSize = active === "text_label"
 
   return (
     <div className="flex flex-col gap-2 border-b border-white/10 bg-slate-950/85 px-3 py-2 text-white">
       <div className="flex flex-wrap items-center gap-1.5">
+        <ToolButton
+          active={active === "select"}
+          onClick={() => onSelectTool("select")}
+          title="Select / move (click a markup to edit)"
+        >
+          <MousePointer className="size-4" />
+        </ToolButton>
+        <span className="mx-1 h-5 w-px bg-white/15" />
         <ToolButton
           active={active === "highlighter"}
           onClick={() => onSelectTool("highlighter")}

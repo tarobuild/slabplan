@@ -32,10 +32,7 @@ import {
   assertCanViewDailyLog,
 } from "../lib/authorization";
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
-import {
-  buildDailyLogVisibilityFilter,
-  canViewDailyLogSummary,
-} from "../lib/daily-log-visibility";
+import { buildDailyLogVisibilityFilter } from "../lib/daily-log-visibility";
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
@@ -931,9 +928,9 @@ router.get(
 
     const fetchDailyLogRows = async (
       whereParts: ReturnType<typeof and>[] | unknown[],
-      limit?: number,
+      options: { limit?: number; offset?: number } = {},
     ): Promise<DailyLogRow[]> => {
-      const queryBuilder = db
+      const baseQuery = db
         .select({
           id: dailyLogs.id,
           jobId: dailyLogs.jobId,
@@ -960,7 +957,13 @@ router.get(
         .where(and(...(whereParts as Parameters<typeof and>)))
         .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt), desc(dailyLogs.id));
 
-      return limit !== undefined ? await queryBuilder.limit(limit) : await queryBuilder;
+      if (options.limit !== undefined && options.offset !== undefined) {
+        return await baseQuery.limit(options.limit).offset(options.offset);
+      }
+      if (options.limit !== undefined) {
+        return await baseQuery.limit(options.limit);
+      }
+      return await baseQuery;
     };
 
     if (isCursorMode) {
@@ -1029,7 +1032,7 @@ router.get(
         );
       }
 
-      const fetched = await fetchDailyLogRows(conditions, cursorLimit + 1);
+      const fetched = await fetchDailyLogRows(conditions, { limit: cursorLimit + 1 });
       const hasMore = fetched.length > cursorLimit;
       const pageRows = hasMore ? fetched.slice(0, cursorLimit) : fetched;
       const pageIds = pageRows.map((row) => row.id);
@@ -1113,28 +1116,76 @@ router.get(
       return;
     }
 
-    // Page mode: preserved behavior — full scan + in-memory filter & paging.
-    const rows = await fetchDailyLogRows(baseConditions);
+    // Page mode: push visibility, sharedWith, multi-tag filters and the
+    // (limit, offset) page slice into SQL so we never load more than one
+    // page of rows into memory regardless of how many logs the job has.
+    const visibilityFilter = buildDailyLogVisibilityFilter(req.auth!);
+    const sharedWithFilter = (() => {
+      switch (query.data.sharedWith) {
+        case "internal":
+          return eq(dailyLogs.shareInternalUsers, true);
+        case "subs_vendors":
+        case "installers":
+          return eq(dailyLogs.shareSubsVendors, true);
+        case "client":
+        case "estimators":
+          return eq(dailyLogs.shareClient, true);
+        case "private":
+          return eq(dailyLogs.isPrivate, true);
+        default:
+          return undefined;
+      }
+    })();
 
-    const logIds = rows.map((row) => row.id);
+    const pageConditions: unknown[] = [...baseConditions];
+    if (visibilityFilter) {
+      pageConditions.push(visibilityFilter);
+    }
+    if (sharedWithFilter) {
+      pageConditions.push(sharedWithFilter);
+    }
+    // Multi-tag "all of" filter via one EXISTS per requested tag (matches
+    // the case-insensitive cursor-mode behavior and uses the
+    // (daily_log_id, tag_name) unique index).
+    for (const tag of requestedTags) {
+      pageConditions.push(
+        sql`EXISTS (SELECT 1 FROM ${dailyLogTags} WHERE ${dailyLogTags.dailyLogId} = ${dailyLogs.id} AND lower(${dailyLogTags.tagName}) = ${tag})`,
+      );
+    }
+
+    const pageOffset = (query.data.page - 1) * query.data.pageSize;
+    const [[totalRow], pageRows] = await Promise.all([
+      db
+        .select({ total: count() })
+        .from(dailyLogs)
+        .where(and(...(pageConditions as Parameters<typeof and>))),
+      fetchDailyLogRows(pageConditions, {
+        limit: query.data.pageSize,
+        offset: pageOffset,
+      }),
+    ]);
+
+    const totalItems = Number(totalRow?.total ?? 0);
+    const pageIds = pageRows.map((row) => row.id);
+
     const [tagRows, attachmentRows] = await Promise.all([
-      logIds.length > 0
+      pageIds.length > 0
         ? db
             .select({
               dailyLogId: dailyLogTags.dailyLogId,
               tagName: dailyLogTags.tagName,
             })
             .from(dailyLogTags)
-            .where(inArray(dailyLogTags.dailyLogId, logIds))
+            .where(inArray(dailyLogTags.dailyLogId, pageIds))
         : Promise.resolve([]),
-      logIds.length > 0
+      pageIds.length > 0
         ? db
             .select({
               dailyLogId: dailyLogAttachments.dailyLogId,
               total: count(),
             })
             .from(dailyLogAttachments)
-            .where(inArray(dailyLogAttachments.dailyLogId, logIds))
+            .where(inArray(dailyLogAttachments.dailyLogId, pageIds))
             .groupBy(dailyLogAttachments.dailyLogId)
         : Promise.resolve([]),
     ]);
@@ -1160,11 +1211,9 @@ router.get(
       attachmentCountByLogId.set(row.dailyLogId, Number(row.total));
     }
 
-    const engagement = await loadDailyLogEngagement(logIds, req.auth!.userId);
+    const engagement = await loadDailyLogEngagement(pageIds, req.auth!.userId);
 
-    let filtered = rows
-      .filter((row) => canViewDailyLogSummary(req.auth!, row))
-      .map((row) => {
+    const mapped = pageRows.map((row) => {
       const weather = decodeWeatherPayload(
         row.weatherData as Record<string, unknown> | null | undefined,
       );
@@ -1184,40 +1233,10 @@ router.get(
         completedTodoCount: engagement.completedTodosCountByLogId.get(row.id) ?? 0,
         status: row.publishedAt ? "published" : "draft",
       };
-      });
-
-    if (requestedTags.length > 0) {
-      filtered = filtered.filter((row) =>
-        requestedTags.every((expectedTag) =>
-          row.tags.some((tag) => tag.toLowerCase() === expectedTag),
-        ),
-      );
-    }
-
-    if (query.data.sharedWith) {
-      filtered = filtered.filter((row) => {
-        if (query.data.sharedWith === "internal") {
-          return !!row.shareInternalUsers;
-        }
-
-        if (query.data.sharedWith === "subs_vendors" || query.data.sharedWith === "installers") {
-          return !!row.shareSubsVendors;
-        }
-
-        if (query.data.sharedWith === "client" || query.data.sharedWith === "estimators") {
-          return !!row.shareClient;
-        }
-
-        return !!row.isPrivate;
-      });
-    }
-
-    const totalItems = filtered.length;
-    const offset = (query.data.page - 1) * query.data.pageSize;
-    filtered = filtered.slice(offset, offset + query.data.pageSize);
+    });
 
     res.json({
-      logs: filtered,
+      logs: mapped,
       pagination: {
         page: query.data.page,
         pageSize: query.data.pageSize,

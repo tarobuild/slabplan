@@ -819,6 +819,125 @@ test("GET /daily-logs/mine never returns logs created by other users", async () 
   }
 });
 
+test("GET /jobs/:jobId/daily-logs paginates in SQL when many logs exist", async () => {
+  // Spy on pool.query so we can prove the per-job daily_logs SELECT never
+  // returns more rows than the requested page size — even when many logs
+  // exist on the job. This guards against regressions back to the old
+  // load-everything-then-slice-in-memory behavior.
+  const { pool } = await import("@workspace/db");
+  type QueryArgs = Parameters<typeof pool.query>;
+  const originalQuery = pool.query.bind(pool) as (
+    ...args: QueryArgs
+  ) => Promise<{ rows: unknown[] }>;
+  const dailyLogPageQueries: { sqlText: string; rowCount: number }[] = [];
+
+  (pool as { query: unknown }).query = async (...args: QueryArgs) => {
+    const result = await originalQuery(...args);
+    const sqlText =
+      typeof args[0] === "string"
+        ? args[0]
+        : ((args[0] as { text?: string } | undefined)?.text ?? "");
+    if (
+      /from\s+"daily_logs"/i.test(sqlText) &&
+      !/count\(/i.test(sqlText) &&
+      /order by/i.test(sqlText) &&
+      Array.isArray(result.rows)
+    ) {
+      dailyLogPageQueries.push({ sqlText, rowCount: result.rows.length });
+    }
+    return result;
+  };
+
+  try {
+    const response = await fetch(
+      `${baseUrl}/api/jobs/${accessibleJobId}/daily-logs?pageSize=2&page=1`,
+      { headers: { authorization: `Bearer ${pmToken}` } },
+    );
+
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
+      logs: Array<{ id: string }>;
+      pagination: {
+        page: number;
+        pageSize: number;
+        totalItems: number;
+        totalPages: number;
+      };
+    };
+
+    assert.equal(
+      body.logs.length,
+      2,
+      "pageSize=2 must return exactly two rows even with many existing logs",
+    );
+    assert.equal(body.pagination.page, 1);
+    assert.equal(body.pagination.pageSize, 2);
+    assert.equal(body.pagination.totalItems, crewDailyLogIds.length);
+    assert.equal(
+      body.pagination.totalPages,
+      Math.ceil(crewDailyLogIds.length / 2),
+    );
+
+    assert.ok(
+      dailyLogPageQueries.length > 0,
+      "the main daily_logs SELECT must have executed",
+    );
+    for (const { sqlText, rowCount } of dailyLogPageQueries) {
+      assert.ok(
+        rowCount <= 2,
+        `daily_logs SELECT returned ${rowCount} rows but pageSize was 2 — pagination must be pushed into SQL`,
+      );
+      // Also assert the SQL itself is bounded — guards against a future
+      // change that re-introduces load-everything-then-slice behavior even
+      // when row counts happen to be small in this fixture.
+      assert.ok(
+        /\blimit\b/i.test(sqlText),
+        `daily_logs SELECT must include a SQL LIMIT clause; got: ${sqlText}`,
+      );
+    }
+  } finally {
+    (pool as { query: unknown }).query = originalQuery;
+  }
+});
+
+test("GET /jobs/:jobId/daily-logs returns subsequent pages without duplicates", async () => {
+  const firstResponse = await fetch(
+    `${baseUrl}/api/jobs/${accessibleJobId}/daily-logs?pageSize=2&page=1`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+  assert.equal(firstResponse.status, 200);
+  const firstBody = (await firstResponse.json()) as {
+    logs: Array<{ id: string }>;
+    pagination: { totalPages: number };
+  };
+
+  assert.equal(firstBody.logs.length, 2);
+  assert.equal(
+    firstBody.pagination.totalPages,
+    Math.ceil(crewDailyLogIds.length / 2),
+  );
+
+  const lastResponse = await fetch(
+    `${baseUrl}/api/jobs/${accessibleJobId}/daily-logs?pageSize=2&page=${firstBody.pagination.totalPages}`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+  assert.equal(lastResponse.status, 200);
+  const lastBody = (await lastResponse.json()) as {
+    logs: Array<{ id: string }>;
+  };
+
+  assert.ok(lastBody.logs.length > 0);
+
+  const firstIds = new Set(firstBody.logs.map((row) => row.id));
+  for (const row of lastBody.logs) {
+    assert.equal(
+      firstIds.has(row.id),
+      false,
+      "subsequent pages must not repeat earlier rows",
+    );
+  }
+});
+
 test("GET /jobs returns the {jobs, pagination} envelope with admin scope", async () => {
   const response = await fetch(`${baseUrl}/api/jobs?pageSize=100`, {
     headers: { authorization: `Bearer ${adminToken}` },

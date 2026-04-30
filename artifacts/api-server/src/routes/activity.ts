@@ -3,7 +3,7 @@ import { Router, type IRouter } from "express";
 import { listAccessibleJobIds, listAccessibleLeadIds } from "../lib/authorization";
 import { getActivityEntries } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
-import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
+import { decodeCursor, encodeCursor } from "../lib/cursor";
 
 const router: IRouter = Router();
 
@@ -50,7 +50,11 @@ router.get(
     const noJobAccess = accessibleJobIds !== null && accessibleJobIds.length === 0;
     const noLeadAccess = accessibleLeadIds !== null && accessibleLeadIds.length === 0;
 
-    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    // Cursor mode is opt-in only when an explicit `cursor` query param is
+    // present. `?limit=N` alone keeps page-mode semantics so callers always
+    // receive the visibility-scoped `totalItems`/`totalPages` they need to
+    // render counts.
+    const isCursorMode = Object.prototype.hasOwnProperty.call(req.query, "cursor");
     const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
     const cursor = cursorPayload
       ? { createdAt: String(cursorPayload.k[0] ?? ""), id: cursorPayload.id }

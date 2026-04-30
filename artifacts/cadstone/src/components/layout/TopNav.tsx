@@ -24,6 +24,7 @@ import GlobalSearch from "./GlobalSearch"
 import Sidebar from "./Sidebar"
 import { logoutSession } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
+import { hasRoleAccess, ROLE_GATES, type AppRole } from "@/lib/role-access"
 import { cn } from "@/lib/utils"
 
 function initials(name: string) {
@@ -41,12 +42,18 @@ const FILES_LINKS = [
   { label: "Videos", to: "/files/videos", icon: Film },
 ]
 
-const DRAWER_NAV = [
+type DrawerNavItem = {
+  label: string
+  to: string
+  allow?: ReadonlyArray<AppRole>
+}
+
+const DRAWER_NAV: DrawerNavItem[] = [
   { label: "Dashboard", to: "/dashboard" },
   { label: "Jobs", to: "/jobs" },
   { label: "Resources", to: "/resources" },
-  { label: "Sales", to: "/sales" },
-  { label: "Clients", to: "/clients" },
+  { label: "Sales", to: "/sales", allow: ROLE_GATES.sales },
+  { label: "Clients", to: "/clients", allow: ROLE_GATES.clients },
   { label: "My Daily Logs", to: "/daily-logs/mine" },
   { label: "Settings", to: "/settings" },
 ]
@@ -57,6 +64,14 @@ export default function TopNav() {
   const user = useAuthStore((s) => s.user)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+
+  const role = user?.role
+  const canSeeSales = hasRoleAccess(role, ROLE_GATES.sales)
+  const canSeeClients = hasRoleAccess(role, ROLE_GATES.clients)
+  const drawerNav = DRAWER_NAV.filter(
+    (item) => !item.allow || hasRoleAccess(role, item.allow),
+  )
+  const accountLabel = user?.fullName?.split(" ")[0] ?? "Account"
 
   useEffect(() => {
     setDrawerOpen(false)
@@ -152,33 +167,37 @@ export default function TopNav() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <NavLink
-            to="/sales"
-            className={({ isActive }) =>
-              cn(
-                "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
-                isActive
-                  ? "text-[#E85D04] bg-white/10"
-                  : "text-white/70 hover:text-white hover:bg-white/10",
-              )
-            }
-          >
-            Sales
-          </NavLink>
+          {canSeeSales && (
+            <NavLink
+              to="/sales"
+              className={({ isActive }) =>
+                cn(
+                  "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
+                  isActive
+                    ? "text-[#E85D04] bg-white/10"
+                    : "text-white/70 hover:text-white hover:bg-white/10",
+                )
+              }
+            >
+              Sales
+            </NavLink>
+          )}
 
-          <NavLink
-            to="/clients"
-            className={({ isActive }) =>
-              cn(
-                "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
-                isActive
-                  ? "text-[#E85D04] bg-white/10"
-                  : "text-white/70 hover:text-white hover:bg-white/10",
-              )
-            }
-          >
-            Clients
-          </NavLink>
+          {canSeeClients && (
+            <NavLink
+              to="/clients"
+              className={({ isActive }) =>
+                cn(
+                  "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
+                  isActive
+                    ? "text-[#E85D04] bg-white/10"
+                    : "text-white/70 hover:text-white hover:bg-white/10",
+                )
+              }
+            >
+              Clients
+            </NavLink>
+          )}
         </nav>
 
         <div className="flex-1" />
@@ -200,16 +219,20 @@ export default function TopNav() {
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="ml-1 flex items-center gap-1.5 rounded px-2 py-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors outline-none">
+            <button
+              type="button"
+              aria-label={`Open account menu for ${accountLabel}`}
+              className="ml-1 flex items-center gap-1.5 rounded px-2 py-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors outline-none"
+            >
               <Avatar className="size-7 border border-white/20 cursor-pointer">
                 <AvatarFallback className="text-[10px] font-semibold text-white" style={{ backgroundColor: "#E85D04" }}>
                   {user ? initials(user.fullName) : "CS"}
                 </AvatarFallback>
               </Avatar>
               <span className="hidden text-sm font-medium sm:block">
-                {user?.fullName?.split(" ")[0] ?? "Account"}
+                {accountLabel}
               </span>
-              <ChevronDown className="size-3.5 opacity-70" />
+              <ChevronDown aria-hidden="true" className="size-3.5 opacity-70" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 border-[#E5E7EB] shadow-lg mt-1">
@@ -257,7 +280,7 @@ export default function TopNav() {
 
           {/* Nav links */}
           <nav className="flex shrink-0 flex-col gap-0.5 p-2">
-            {DRAWER_NAV.map((item) => (
+            {drawerNav.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

@@ -330,10 +330,17 @@ export default function Sidebar() {
             variant="ghost"
             size="icon"
             className="size-6 text-slate-400 hover:text-slate-600"
-            title="Sort"
+            aria-label={
+              sortAsc
+                ? "Sort jobs A to Z (click to switch to Z to A)"
+                : "Sort jobs Z to A (click to switch to A to Z)"
+            }
             onClick={() => setSortAsc((v) => !v)}
           >
-            <ArrowUpDown className="size-3.5" />
+            <ArrowUpDown aria-hidden="true" className="size-3.5" />
+            <span className="sr-only">
+              {sortAsc ? "Sorted A to Z" : "Sorted Z to A"}
+            </span>
           </Button>
         </div>
       </div>

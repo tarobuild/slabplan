@@ -10,6 +10,8 @@ import {
 } from "react-router-dom"
 import { Toaster } from "sonner"
 import AppLayout from "@/components/layout/AppLayout"
+import RoleGate from "@/components/auth/RoleGate"
+import { ROLE_GATES } from "@/lib/role-access"
 import { FilePreviewProvider } from "@/components/files/file-preview-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
@@ -134,9 +136,13 @@ function buildRouter(ready: boolean, basename: string | undefined) {
               <Route path="schedule" element={<JobSchedulePage />} />
               <Route path="daily-logs" element={<JobDailyLogsPage />} />
             </Route>
-            <Route path="/sales" element={<LeadsPage />} />
-            <Route path="/sales/leads" element={<LeadsPage />} />
-            <Route path="/clients" element={<ClientsPage />} />
+            <Route element={<RoleGate allow={ROLE_GATES.sales} />}>
+              <Route path="/sales" element={<LeadsPage />} />
+              <Route path="/sales/leads" element={<LeadsPage />} />
+            </Route>
+            <Route element={<RoleGate allow={ROLE_GATES.clients} />}>
+              <Route path="/clients" element={<ClientsPage />} />
+            </Route>
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/403" element={<ForbiddenPage />} />
             <Route path="*" element={<NotFoundPage />} />

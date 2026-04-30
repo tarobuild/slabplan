@@ -44,7 +44,18 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 **Database (`lib/db`):**
 - PostgreSQL with Drizzle ORM.
 - Comprises 16 tables including users, jobs, folders, files, leads, schedule items, and activity logs.
-- Migration management via Drizzle.
+- Migration management: schema changes are applied via `drizzle-kit push --force`
+  against the live database, and the SQL files in `lib/db/migrations/` are
+  replayed by the custom runner in `lib/db/src/migrate.ts` (tracked in the
+  `workspace_schema_migrations` table by filename + checksum). The Drizzle
+  journal at `lib/db/migrations/meta/_journal.json` is **not** kept in sync —
+  it intentionally only records the initial `0000_far_doctor_strange`
+  baseline, and later SQL files (`0004_files-folder-created-id-index`,
+  `0005_pat-and-idempotency`, `0006_agent`) are orphan entries from the
+  custom-runner perspective only. Do **not** run `drizzle-kit generate` here:
+  it would diff the current schema against that stale baseline and produce
+  bogus migrations. Use `drizzle-kit push --force` (and, when needed, a new
+  hand-written SQL file in `lib/db/migrations/`) instead.
 - Operator runbooks live under `lib/db/runbooks/`. For example,
   `files-folder-created-id-index.md` documents how to pre-create the
   `files_folder_created_id_idx` composite index using

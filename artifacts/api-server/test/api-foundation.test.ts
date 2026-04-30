@@ -418,8 +418,8 @@ test("daily-logs cursor mode does SQL-side tag filtering and a single bounded re
   );
   assert.match(
     cursorBlock,
-    /fetchDailyLogRows\([^,]+,\s*cursorLimit \+ 1\)/,
-    "Must fetch cursorLimit + 1 rows",
+    /fetchDailyLogRows\([^,]+,\s*\{\s*limit:\s*cursorLimit \+ 1\s*\}\s*\)/,
+    "Must fetch cursorLimit + 1 rows via the options object",
   );
   assert.doesNotMatch(
     cursorBlock,

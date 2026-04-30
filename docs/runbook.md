@@ -794,6 +794,96 @@ transaction + GCS prefix delete; production target requires both
 Neither was used end-to-end on 2026-04-30; only the GCS half of the
 wipe script ran.
 
+### 2026-04-30 — Admin password rotation completed (task #235)
+
+**What we set out to do:** task #235 — rotate the production password
+hashes for `cesar@cadstone.works` and `anwar@cadstone.works` so the
+original `Test1!` / `Test2!` strings (still in git history per
+`.local/tasks/seed-script-hardening.md`) stop authenticating against
+production.
+
+**What actually happened:** the operator ran a single transaction in the
+Supabase SQL Editor that updated both rows. The transaction used
+pgcrypto's `crypt('<new-password>', gen_salt('bf', 10))` to produce
+`$2a$10$…` bcrypt hashes (cost factor 10, matching the `SALT_ROUNDS`
+constant in `artifacts/api-server/scripts/seed-users.mjs` so the
+api-server's `bcrypt.compare` accepts them), set `password_set_at` and
+`updated_at` to `NOW()`, and finished with a verifying `SELECT` that
+returned `rotated = true` for both rows.
+
+**The rotation actually happened twice on 2026-04-30** — once at
+~21:37 UTC ("rotation A") and again later in the same session
+("rotation B", the clean one). Rotation A is what set the
+`password_set_at` timestamps shown below; rotation B used the same
+SQL block with two brand-new passwords and is the one whose values
+are currently live. Rotation B was performed because rotation A's
+new passwords were exposed via a screenshot the operator pasted into
+the agent chat (recorded under "Transient exposure" below); rotation
+B replaced them with passwords the agent never saw.
+
+**Verified post-state (from rotation A's SQL Editor results panel —
+the one we have a results-table screenshot of):**
+
+| email | created_at | password_set_at | rotated |
+| --- | --- | --- | --- |
+| `cesar@cadstone.works` | `2026-04-09 17:50:46.801631+00` | `2026-04-30 21:37:30.245233+00` | `true` |
+| `anwar@cadstone.works` | `2026-04-09 17:50:46.889587+00` | `2026-04-30 21:37:30.245233+00` | `true` |
+
+Rotation B updated both rows again (so the live `password_set_at`
+values are slightly later than the table above) and the operator
+confirmed both accounts log in to https://cadstonesystems.com with
+the rotation-B passwords via private-window checks. The exact
+rotation-B timestamps were not captured into this entry because the
+operator's confirmation was a typed "done" rather than a results-panel
+screenshot (which is the safe pattern — see lesson-learned below); if
+needed for audit, the live values are queryable any time with:
+
+```sql
+SELECT email, created_at, password_set_at
+FROM users
+WHERE email IN ('cesar@cadstone.works', 'anwar@cadstone.works');
+```
+
+The leaked `Test1!` / `Test2!` literals from git history no longer
+authenticate against either row — the leaked-password sub-risk in
+`.local/tasks/seed-script-hardening.md` is **closed**. The earlier
+2026-04-30 entry above ("Account purge to leave only Cesar + Anwar")
+contained a "Cesar and Anwar's passwords were not rotated" follow-up
+callout; that callout is now resolved by this entry.
+
+**Where the live (rotation-B) passwords live:** in the operator's
+password manager only. They are not in any env var, the Replit
+Secrets UI, any source file, the agent's chat session, or any
+platform checkpoint. The seed script
+(`artifacts/api-server/scripts/seed-users.mjs`) deliberately does
+**not** overwrite an existing user's password hash on re-run, so the
+new hashes are safe from accidental seed re-runs.
+
+**Transient exposure on 2026-04-30 (rotation A only — fully
+remediated by rotation B):** during rotation A the operator pasted a
+screenshot of the SQL Editor in the agent chat with the rotation-A
+passwords visible inside the `crypt('...', ...)` calls. The Replit
+platform auto-committed that screenshot to `attached_assets/` when it
+was attached. The screenshot has since been removed from the working
+tree, but its bytes persist in this task's intermediate
+platform-checkpoint git history. **The exposed passwords from that
+screenshot are the rotation-A passwords, which are no longer live —
+rotation B invalidated them.** Anyone pulling the rotation-A
+passwords out of git history would find they no longer authenticate.
+
+**Lesson learned for future rotations:** when verifying the rotation
+worked, screenshot **only the Results panel** at the bottom of the
+SQL Editor (the `email | created_at | password_set_at | rotated`
+table) — never screenshot the SQL itself, because the SQL contains
+the new passwords in the `crypt('...', ...)` calls. A typed "done" is
+also sufficient; the verifying `SELECT` block confirms the update
+landed without needing a screenshot at all.
+
+**To rotate again later** (e.g. on a 6-month cadence per §5, or after
+any suspected exposure), use the same SQL block — it is idempotent.
+Append a new dated entry below recording the next rotation date. Do
+not edit this entry.
+
 ### 2026-04-30 — Cleared orphan file rows left over from the upload wipe
 
 **What we set out to do:** finish the loose end called out in the

@@ -17,7 +17,9 @@
     "push": "drizzle-kit push --config ./drizzle.config.js",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.js",
     "seed": "tsx ./src/seed-cli.ts",
-    "build-files-folder-index": "tsx ./src/scripts/build-files-folder-index-concurrently.ts"
+    "build-files-folder-index": "tsx ./src/scripts/build-files-folder-index-concurrently.ts",
+    "setup-test-db": "tsx ./src/scripts/setup-test-db.ts",
+    "ensure-test-db": "tsx ./src/scripts/ensure-test-db.ts"
   },
   "dependencies": {
     "bcrypt": "6.0.0",

@@ -52,6 +52,18 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
   `CREATE INDEX CONCURRENTLY`) before deploying to a large production
   database, so the migration's inline `CREATE INDEX IF NOT EXISTS` becomes a
   no-op and uploads aren't slowed by a write lock.
+- **Test database provisioning:** `pnpm run setup-test-db` (re)creates the
+  `cadstone_test` database at `127.0.0.1:5432` and runs `drizzle-kit push --force`
+  to materialize the full schema. The api-server `pretest` hook calls
+  `pnpm --filter @workspace/db run ensure-test-db`, which probes for sentinel
+  tables and only runs `setup-test-db` when the schema is missing — so
+  `pnpm --filter @workspace/api-server run test` is self-bootstrapping. Both
+  scripts honor `TEST_DATABASE_URL` (or `CADSTONE_TEST_DATABASE_URL`) to retarget
+  a different cluster and print a clear "start a local Postgres" message when
+  the server is unreachable. The api-server test scripts pin `DATABASE_URL` to
+  the same test URL so the existing `process.env.DATABASE_URL ??= testDatabaseUrl`
+  pattern in the test files always lands on `cadstone_test` rather than any
+  ambient Replit-provided `DATABASE_URL`.
 
 **Model Context Protocol (MCP) Server (`lib/mcp-server`):**
 - Wraps the REST API for external agents (Claude Desktop, Cursor, etc.).

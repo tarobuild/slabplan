@@ -10,6 +10,7 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "check-api-codegen": "pnpm --filter @workspace/scripts run check-api-codegen",
+    "setup-test-db": "pnpm --filter @workspace/db run setup-test-db",
     "validate": "pnpm run typecheck && pnpm run check-api-codegen"
   },
   "private": true,

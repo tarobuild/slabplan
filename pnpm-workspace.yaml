@@ -105,10 +105,16 @@ overrides:
   # NOT pinned (and remaining as a low-severity audit finding):
   #   @tootallnate/once <3.0.1 (deep transitive of @google-cloud/storage
   #   via teeny-request > http-proxy-agent). The patched 3.0.1 is
-  #   ESM-only; the consuming http-proxy-agent version still uses CJS,
-  #   so an override breaks @google-cloud/storage at runtime. Cannot fix
-  #   without a major bump of @google-cloud/storage, which is out of
-  #   scope per Task #100.
+  #   ESM-only; the consuming http-proxy-agent@5.0.0 still uses CJS, so
+  #   an override breaks @google-cloud/storage at runtime. Bumping
+  #   http-proxy-agent to ^6/^7 also breaks teeny-request@9.0.0 because
+  #   v6+ exports a named HttpProxyAgent class instead of being the
+  #   constructor itself, so teeny-request's `new Agent(...)` call would
+  #   throw TypeError. Cannot fix without a major bump of
+  #   @google-cloud/storage, which does not yet exist (latest is 7.19.0).
+  #   Tracked + re-check schedule documented in replit.md under the
+  #   "Security Advisories" section (Task #176, originally triaged in
+  #   Task #100).
   # ----- end audit pins -----
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"

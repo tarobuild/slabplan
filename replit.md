@@ -87,6 +87,29 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
     - Stdio: `bin/cadstone-mcp.mjs` for clients without HTTP transport support. Attributes actions to the user but not specifically `agent_via_mcp` due to process separation.
 - Auditing: All tool calls (reads and writes) are logged to `activity_log` with `mcp_tool_call` rows for complete attribution.
 
+## Security Advisories
+
+### Deferred: @tootallnate/once <3.0.1 (GHSA-vpq2-c234-7xj6, low severity)
+
+- Status: Knowingly deferred. This is the only outstanding production advisory reported by `pnpm audit --prod` and is expected to remain there until upstream Google releases a major version of `@google-cloud/storage` that drops `teeny-request`.
+- Path: `@workspace/api-server > @google-cloud/storage > teeny-request > http-proxy-agent@5.0.0 > @tootallnate/once@2.0.0`.
+- Upstream advisory: https://github.com/advisories/GHSA-vpq2-c234-7xj6
+- Why we cannot patch it today:
+  - `@google-cloud/storage` is pinned at the current latest, `7.19.0` (no `8.x` line exists yet, and `7.19.0` was published 2026-02-05). `pnpm update @google-cloud/storage` is a no-op.
+  - Adding `pnpm.overrides` for `@tootallnate/once` to the patched `3.0.1` breaks `@google-cloud/storage` at runtime: `3.x` is ESM-only but `http-proxy-agent@5.0.0` consumes it via `require(...)`, throwing `ERR_REQUIRE_ESM` on the first GCS call.
+  - Overriding `http-proxy-agent` to `^6` or `^7` removes the bad transitive but breaks `teeny-request@9.0.0`, which does `const Agent = require('http-proxy-agent'); new Agent(proxyOpts)`. `http-proxy-agent@>=6` switched to a named export (`{ HttpProxyAgent }`), so `new Agent(...)` throws `TypeError: Agent is not a constructor` (verified locally against `http-proxy-agent@7.0.2`).
+  - Overriding `teeny-request` to `^10` breaks `@google-cloud/storage` because v10 depends on the ESM-only `node-fetch@3` and the new proxy-agent API, neither of which the storage SDK's CJS code can load.
+- Why it is low risk for us:
+  - Severity is low. The flaw is in `@tootallnate/once`'s once-event listener semantics, only reachable through `http-proxy-agent`'s proxy-CONNECT flow.
+  - That flow only executes when `teeny-request` is given an HTTP/HTTPS proxy (via `HTTP_PROXY` / `HTTPS_PROXY` env vars or an explicit `proxy` request option). Our deployments do not set these env vars and we never pass a `proxy` option to GCS, so the vulnerable code path is not exercised in production.
+  - The package is a deep transitive of object-storage uploads/downloads only — it is not on any user-input parsing, auth, or rendering path.
+- Re-check on or before: 2026-11-01 (~6 months out). On that date, re-run `pnpm audit --prod` and recheck:
+  1. Is `@google-cloud/storage@8.x` published, or has 7.x dropped `teeny-request`? If yes, upgrade and remove this section.
+  2. Has `teeny-request` shipped a CJS-friendly release that no longer pulls `http-proxy-agent@5`? If yes, override it.
+  3. Otherwise, push the re-check date out another 6 months and update this entry.
+- Allowed audit baseline: `pnpm audit --prod` is expected to report exactly one advisory — this one. Any additional finding is not covered by this deferral and must be triaged.
+- See also: the comment block in `pnpm-workspace.yaml` under `overrides:` documents the same constraint at the override-site, and Task #100 captured the original triage.
+
 ## External Dependencies
 
 - **Monorepo Tool:** pnpm workspaces

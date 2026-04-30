@@ -5,24 +5,42 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CursorParamParameter } from "./cursorParamParameter";
 
 export type SearchGetSearchParams = {
   /**
-   * Search term. 1-100 characters, trimmed.
+   * Search query string (1–100 chars). Required on the first request. On follow-up requests that pass `?cursor=<token>` the query is taken from the cursor, so `q` may be omitted; if supplied alongside a cursor it must equal the cursor's embedded query.
    * @minLength 1
    * @maxLength 100
    */
-  q: string;
+  q?: string;
   /**
-   * 1-indexed page of results. Capped at 20.
+   * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied. Capped at 20.
    * @minimum 1
    * @maximum 20
    */
   page?: number;
   /**
-   * Number of results per page. Capped at 25.
+   * Page size for offset pagination. Ignored when `cursor` is supplied. Max 25.
    * @minimum 1
    * @maximum 25
    */
   pageSize?: number;
+  /**
+   * Page size for cursor pagination. Default 10; max 25.
+   * @minimum 1
+   * @maximum 25
+   */
+  limit?: number;
+  /**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
+
+ */
+  cursor?: CursorParamParameter;
 };

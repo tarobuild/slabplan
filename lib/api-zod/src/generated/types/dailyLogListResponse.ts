@@ -5,10 +5,14 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CursorPagination } from "./cursorPagination";
 import type { DailyLogListItem } from "./dailyLogListItem";
 import type { Pagination } from "./pagination";
 
+/**
+ * Paged daily-log list. The `pagination` field uses `Pagination` (page mode) or `CursorPagination` (cursor mode) depending on whether the request supplied `?cursor=` / `?limit=`.
+ */
 export interface DailyLogListResponse {
   logs: DailyLogListItem[];
-  pagination: Pagination;
+  pagination: Pagination | CursorPagination;
 }

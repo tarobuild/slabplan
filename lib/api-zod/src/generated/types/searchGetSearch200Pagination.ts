@@ -5,11 +5,17 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CursorPagination } from "./cursorPagination";
 
-export type SearchGetSearch200Pagination = {
-  /** @minimum 1 */
-  page: number;
-  /** @minimum 1 */
-  pageSize: number;
-  hasMore: boolean;
-};
+/**
+ * Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`.
+ */
+export type SearchGetSearch200Pagination =
+  | {
+      /** @minimum 1 */
+      page: number;
+      /** @minimum 1 */
+      pageSize: number;
+      hasMore: boolean;
+    }
+  | CursorPagination;

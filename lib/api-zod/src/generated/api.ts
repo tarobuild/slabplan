@@ -2737,91 +2737,190 @@ export const FilesGetFilesIdDownloadParams = zod.object({
 export const FilesGetFilesIdDownloadResponse = zod.unknown();
 
 /**
- * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with dailyLogListQuerySchema.
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with dailyLogListQuerySchema. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
  * @summary GET /jobs/{jobId}/daily-logs
  */
 export const dailyLogsGetJobsJobIdDailyLogsPathJobIdRegExp = new RegExp(
   "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
 );
 
-export const DailyLogsGetJobsJobIdDailyLogsParams = zod.object({
+export const DailyLogsGetJobsJobIdDailyLogsPathParams = zod.object({
   jobId: zod.coerce
     .string()
     .uuid()
     .regex(dailyLogsGetJobsJobIdDailyLogsPathJobIdRegExp),
 });
 
-export const dailyLogsGetJobsJobIdDailyLogsResponsePaginationTotalItemsMin = 0;
+export const dailyLogsGetJobsJobIdDailyLogsQueryPageSizeMax = 500;
 
-export const DailyLogsGetJobsJobIdDailyLogsResponse = zod.object({
-  logs: zod.array(
-    zod
-      .object({
-        id: zod.string().uuid(),
-        jobId: zod.string().uuid().nullish(),
-        jobTitle: zod.string().nullish(),
-        logDate: zod.string(),
-        title: zod.string().nullish(),
-        notes: zod.string(),
-        weatherData: zod
-          .object({
-            condition: zod.string(),
-            icon: zod.string(),
-            temperatureHigh: zod.number().nullish(),
-            temperatureLow: zod.number().nullish(),
-            windMph: zod.number().nullish(),
-            humidity: zod.number().nullish(),
-            precipitation: zod.number(),
-            fetchedAt: zod.coerce.date(),
-          })
-          .nullish()
-          .describe(
-            'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
-          ),
-        includeWeather: zod.boolean().optional(),
-        includeWeatherNotes: zod.boolean().optional(),
-        weatherNotes: zod.string().nullish(),
-        customFieldValues: zod
-          .record(
-            zod.string(),
-            zod.union([zod.string(), zod.number(), zod.boolean(), zod.null()]),
-          )
-          .optional(),
-        shareInternalUsers: zod.boolean().optional(),
-        shareSubsVendors: zod.boolean().optional(),
-        shareClient: zod.boolean().optional(),
-        isPrivate: zod.boolean().optional(),
-        createdBy: zod.string().uuid().nullish(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date(),
-        publishedAt: zod.coerce.date().nullish(),
-        createdByName: zod.string().nullish(),
-        notifyUserIds: zod.array(zod.string().uuid()).optional(),
-        tags: zod.array(zod.string()),
-        attachmentCount: zod.number().optional(),
-        likesCount: zod.number().optional(),
-        commentsCount: zod.number().optional(),
-        likedByCurrentUser: zod.boolean().optional(),
-        visibilityLabel: zod.string().optional(),
-        todoCount: zod.number().optional(),
-        completedTodoCount: zod.number().optional(),
-        status: zod.enum(["draft", "published"]),
-      })
-      .describe(
-        "Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).",
-      ),
-  ),
-  pagination: zod
-    .object({
-      page: zod.number().min(1),
-      pageSize: zod.number().min(1),
-      totalItems: zod
-        .number()
-        .min(dailyLogsGetJobsJobIdDailyLogsResponsePaginationTotalItemsMin),
-      totalPages: zod.number().min(1),
-    })
-    .describe("Standard pagination metadata returned with list responses."),
+export const dailyLogsGetJobsJobIdDailyLogsQueryLimitMax = 100;
+
+export const DailyLogsGetJobsJobIdDailyLogsQueryParams = zod.object({
+  page: zod.coerce
+    .number()
+    .min(1)
+    .optional()
+    .describe(
+      "Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  pageSize: zod.coerce
+    .number()
+    .min(1)
+    .max(dailyLogsGetJobsJobIdDailyLogsQueryPageSizeMax)
+    .optional()
+    .describe(
+      "Page size for offset pagination. Ignored when `cursor` is supplied.",
+    ),
+  keywords: zod.coerce
+    .string()
+    .optional()
+    .describe("Free-text filter across log title, notes, and weather notes."),
+  createdBy: zod.coerce
+    .string()
+    .uuid()
+    .optional()
+    .describe("Filter to logs authored by a specific user."),
+  from: zod
+    .date()
+    .optional()
+    .describe("Inclusive lower bound on log date (YYYY-MM-DD)."),
+  to: zod
+    .date()
+    .optional()
+    .describe("Inclusive upper bound on log date (YYYY-MM-DD)."),
+  tag: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to logs that include this tag (case-insensitive)."),
+  tags: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated tag list; logs must include every tag (case-insensitive).",
+    ),
+  sharedWith: zod
+    .enum([
+      "internal",
+      "subs_vendors",
+      "client",
+      "private",
+      "estimators",
+      "installers",
+    ])
+    .optional()
+    .describe("Filter by visibility audience."),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(dailyLogsGetJobsJobIdDailyLogsQueryLimitMax)
+    .optional()
+    .describe("Page size for cursor pagination. Default 25; max 100."),
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+    ),
 });
+
+export const dailyLogsGetJobsJobIdDailyLogsResponsePaginationOneTotalItemsMin = 0;
+
+export const DailyLogsGetJobsJobIdDailyLogsResponse = zod
+  .object({
+    logs: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          jobId: zod.string().uuid().nullish(),
+          jobTitle: zod.string().nullish(),
+          logDate: zod.string(),
+          title: zod.string().nullish(),
+          notes: zod.string(),
+          weatherData: zod
+            .object({
+              condition: zod.string(),
+              icon: zod.string(),
+              temperatureHigh: zod.number().nullish(),
+              temperatureLow: zod.number().nullish(),
+              windMph: zod.number().nullish(),
+              humidity: zod.number().nullish(),
+              precipitation: zod.number(),
+              fetchedAt: zod.coerce.date(),
+            })
+            .nullish()
+            .describe(
+              'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+            ),
+          includeWeather: zod.boolean().optional(),
+          includeWeatherNotes: zod.boolean().optional(),
+          weatherNotes: zod.string().nullish(),
+          customFieldValues: zod
+            .record(
+              zod.string(),
+              zod.union([
+                zod.string(),
+                zod.number(),
+                zod.boolean(),
+                zod.null(),
+              ]),
+            )
+            .optional(),
+          shareInternalUsers: zod.boolean().optional(),
+          shareSubsVendors: zod.boolean().optional(),
+          shareClient: zod.boolean().optional(),
+          isPrivate: zod.boolean().optional(),
+          createdBy: zod.string().uuid().nullish(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+          publishedAt: zod.coerce.date().nullish(),
+          createdByName: zod.string().nullish(),
+          notifyUserIds: zod.array(zod.string().uuid()).optional(),
+          tags: zod.array(zod.string()),
+          attachmentCount: zod.number().optional(),
+          likesCount: zod.number().optional(),
+          commentsCount: zod.number().optional(),
+          likedByCurrentUser: zod.boolean().optional(),
+          visibilityLabel: zod.string().optional(),
+          todoCount: zod.number().optional(),
+          completedTodoCount: zod.number().optional(),
+          status: zod.enum(["draft", "published"]),
+        })
+        .describe(
+          "Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).",
+        ),
+    ),
+    pagination: zod.union([
+      zod
+        .object({
+          page: zod.number().min(1),
+          pageSize: zod.number().min(1),
+          totalItems: zod
+            .number()
+            .min(
+              dailyLogsGetJobsJobIdDailyLogsResponsePaginationOneTotalItemsMin,
+            ),
+          totalPages: zod.number().min(1),
+        })
+        .describe("Standard pagination metadata returned with list responses."),
+      zod
+        .object({
+          limit: zod.number(),
+          hasMore: zod.boolean(),
+          nextCursor: zod
+            .string()
+            .nullish()
+            .describe(
+              "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
+            ),
+        })
+        .describe(
+          "Pagination shape returned when the request supplied a `cursor` query parameter.",
+        ),
+    ]),
+  })
+  .describe(
+    "Paged daily-log list. The `pagination` field uses `Pagination` (page mode) or `CursorPagination` (cursor mode) depending on whether the request supplied `?cursor=` \/ `?limit=`.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated request body with dailyLogPayloadSchema.
@@ -6503,34 +6602,60 @@ export const ActivityGetActivityResponse = zod.unknown();
 
 /**
  * Route defined in artifacts/api-server/src/routes/search.ts. Validated query with querySchema. Returns results paged through the {results, pagination} envelope so callers can scroll past the first page of matches.
+
+Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
+
+Cursor scroll usage: pass `?q=<text>` (and optionally `?limit=N`, default 10) on the first request, then echo *just* `?cursor=<nextCursor>` on every follow-up request. The cursor envelope embeds the original `q`, the effective `limit`, and the next page index, so follow-up requests do NOT need to repeat `q` or `limit`. If you do supply either alongside the cursor, the value must match what the cursor was minted with — mismatches return 400 to prevent silent skipping/duplication of rows. The first request must include `q`; a request that supplies neither `q` nor a valid `cursor` returns 400.
+
+Note: /search is a federated multi-source query (jobs, leads, files, schedule, clients, contacts), so its cursor is an *opaque page-token* over deterministic per-source ranking (not a true keyset cursor). Inserts/deletes between requests can shift items by ±1 row across pages; callers needing strict point-in-time consistency should query a single-source endpoint that exposes a real keyset cursor.
+
  * @summary GET /search
  */
 export const searchGetSearchQueryQMax = 100;
 
-export const searchGetSearchQueryPageDefault = 1;
 export const searchGetSearchQueryPageMax = 20;
 
-export const searchGetSearchQueryPageSizeDefault = 10;
 export const searchGetSearchQueryPageSizeMax = 25;
+
+export const searchGetSearchQueryLimitMax = 25;
 
 export const SearchGetSearchQueryParams = zod.object({
   q: zod.coerce
     .string()
     .min(1)
     .max(searchGetSearchQueryQMax)
-    .describe("Search term. 1-100 characters, trimmed."),
+    .optional()
+    .describe(
+      "Search query string (1–100 chars). Required on the first request. On follow-up requests that pass `?cursor=<token>` the query is taken from the cursor, so `q` may be omitted; if supplied alongside a cursor it must equal the cursor's embedded query.",
+    ),
   page: zod.coerce
     .number()
     .min(1)
     .max(searchGetSearchQueryPageMax)
-    .default(searchGetSearchQueryPageDefault)
-    .describe("1-indexed page of results. Capped at 20."),
+    .optional()
+    .describe(
+      "Page number (1-based) for offset pagination. Ignored when `cursor` is supplied. Capped at 20.",
+    ),
   pageSize: zod.coerce
     .number()
     .min(1)
     .max(searchGetSearchQueryPageSizeMax)
-    .default(searchGetSearchQueryPageSizeDefault)
-    .describe("Number of results per page. Capped at 25."),
+    .optional()
+    .describe(
+      "Page size for offset pagination. Ignored when `cursor` is supplied. Max 25.",
+    ),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(searchGetSearchQueryLimitMax)
+    .optional()
+    .describe("Page size for cursor pagination. Default 10; max 25."),
+  cursor: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+    ),
 });
 
 export const SearchGetSearchResponse = zod.object({
@@ -6543,11 +6668,31 @@ export const SearchGetSearchResponse = zod.object({
       href: zod.string(),
     }),
   ),
-  pagination: zod.object({
-    page: zod.number().min(1),
-    pageSize: zod.number().min(1),
-    hasMore: zod.boolean(),
-  }),
+  pagination: zod
+    .union([
+      zod.object({
+        page: zod.number().min(1),
+        pageSize: zod.number().min(1),
+        hasMore: zod.boolean(),
+      }),
+      zod
+        .object({
+          limit: zod.number(),
+          hasMore: zod.boolean(),
+          nextCursor: zod
+            .string()
+            .nullish()
+            .describe(
+              "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
+            ),
+        })
+        .describe(
+          "Pagination shape returned when the request supplied a `cursor` query parameter.",
+        ),
+    ])
+    .describe(
+      "Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`\/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`.",
+    ),
 });
 
 /**

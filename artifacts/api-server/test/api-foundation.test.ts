@@ -279,6 +279,21 @@ test("openapi.yaml documents the exact query parameter sets for cursor list endp
     "/leads": ["page", "pageSize", "search", "status", "cursor", "limit"],
     "/folders/{id}/files": ["id", "page", "limit", "sortBy", "includeDeleted", "cursor"],
     "/jobs/{jobId}/schedule": ["jobId", "page", "limit", "cursor"],
+    "/jobs/{jobId}/daily-logs": [
+      "jobId",
+      "page",
+      "pageSize",
+      "keywords",
+      "createdBy",
+      "from",
+      "to",
+      "tag",
+      "tags",
+      "sharedWith",
+      "limit",
+      "cursor",
+    ],
+    "/search": ["q", "page", "pageSize", "limit", "cursor"],
   };
 
   for (const [pathKey, wantNames] of Object.entries(expected)) {
@@ -300,4 +315,117 @@ test("openapi.yaml documents the exact query parameter sets for cursor list endp
       );
     }
   }
+});
+
+test("/search cursor is fully self-contained: follow-up requests echo just `cursor`", async () => {
+  // Regression: a `?q=x&limit=25` first request followed by just
+  // `?cursor=<token>` must continue at offset 25 with q="x" — not fall
+  // back to schema defaults and not 400 on a missing q. Cursor envelope
+  // must embed (page, limit, q); `q` must be optional on the wire.
+  const src = await fs.readFile(
+    path.resolve(import.meta.dirname, "../src/routes/search.ts"),
+    "utf8",
+  );
+  const specRaw = await fs.readFile(
+    path.resolve(import.meta.dirname, "../../../lib/api-spec/openapi.yaml"),
+    "utf8",
+  );
+  const spec = (await import("yaml")).default.parse(specRaw);
+
+  // OpenAPI `q` must not be required, or generated client types force it.
+  const searchOp = spec.paths?.["/search"]?.get;
+  assert.ok(searchOp, "GET /search not found in openapi.yaml");
+  const qParam = (searchOp.parameters ?? []).find((p) => p?.name === "q");
+  assert.ok(qParam, "GET /search must declare a `q` query parameter");
+  assert.notEqual(
+    qParam.required,
+    true,
+    "`q` must NOT be `required: true` — cursor follow-ups omit it. Documented as required-on-first-request only.",
+  );
+
+  assert.match(
+    src,
+    /q:\s*z\.string\(\)\.trim\(\)\.min\(1\)\.max\(100\)\.optional\(\)/,
+    "/search querySchema must mark `q` optional",
+  );
+  assert.match(
+    src,
+    /encodeCursor\(\{[\s\S]{0,200}k:\s*\[page \+ 1,\s*pageSize,\s*effectiveQ\][\s\S]{0,200}id:\s*queryFingerprint/,
+    "/search nextCursor must encode `[page + 1, pageSize, effectiveQ]` in `k`",
+  );
+  assert.match(
+    src,
+    /const encodedLimit = Number\(cursorPayload\.k\[1\][\s\S]*?\)/,
+    "/search must read the encoded limit from cursor.k[1]",
+  );
+  assert.match(
+    src,
+    /const encodedQRaw = cursorPayload\.k\[2\]/,
+    "/search must read the encoded q from cursor.k[2]",
+  );
+  assert.match(src, /cursorLimit = encodedLimit;/);
+  assert.match(src, /effectiveQ = encodedQ;/);
+  assert.match(
+    src,
+    /query\.data\.limit !== undefined && query\.data\.limit !== encodedLimit/,
+    "/search must reject `cursor + limit` mismatch",
+  );
+  assert.match(
+    src,
+    /query\.data\.q !== undefined && query\.data\.q !== encodedQ/,
+    "/search must reject `cursor + q` mismatch",
+  );
+  assert.match(
+    src,
+    /Search requires `q` on the first request, or a `cursor` from a previous response/,
+  );
+
+  // Cursor envelope round-trip locks in (page, limit, q) preservation.
+  const cursor = encodeCursor({ v: 1, k: [2, 25, "hello"], id: "fp" });
+  const decoded = decodeCursor(cursor);
+  assert.equal(decoded.k[0], 2);
+  assert.equal(decoded.k[1], 25);
+  assert.equal(decoded.k[2], "hello");
+});
+
+test("daily-logs cursor mode does SQL-side tag filtering and a single bounded read", async () => {
+  // Regression: an earlier rev applied tag filtering in memory after a
+  // capped batched scan, which could silently truncate sparse matches.
+  // Cursor branch must filter tags in SQL and fetch `limit + 1` once.
+  const src = await fs.readFile(
+    path.resolve(import.meta.dirname, "../src/routes/daily-logs.ts"),
+    "utf8",
+  );
+
+  const cursorBlockMatch = src.match(
+    /if \(isCursorMode\) \{[\s\S]*?const fetched = await fetchDailyLogRows\([\s\S]*?\);[\s\S]*?const hasMore = fetched\.length > cursorLimit;/,
+  );
+  assert.ok(cursorBlockMatch, "Could not locate the cursor-mode block in daily-logs.ts");
+  const cursorBlock = cursorBlockMatch[0];
+
+  assert.match(
+    cursorBlock,
+    /for \(const tag of requestedTags\) \{[\s\S]*?EXISTS \(SELECT 1 FROM \$\{dailyLogTags\}/,
+    "Tag filtering must be SQL-side per-tag EXISTS",
+  );
+  assert.match(
+    cursorBlock,
+    /lower\(\$\{dailyLogTags\.tagName\}\) = \$\{tag\}/,
+    "Tag EXISTS must use lower() for case-insensitive match",
+  );
+  assert.match(
+    cursorBlock,
+    /fetchDailyLogRows\([^,]+,\s*cursorLimit \+ 1\)/,
+    "Must fetch cursorLimit + 1 rows",
+  );
+  assert.doesNotMatch(
+    cursorBlock,
+    /MAX_ITERATIONS|for \(let iter\b/,
+    "No iteration loop — that path can silently truncate sparse matches",
+  );
+  assert.match(
+    cursorBlock,
+    /const hasMore = fetched\.length > cursorLimit;/,
+    "hasMore must be derived from fetched.length",
+  );
 });

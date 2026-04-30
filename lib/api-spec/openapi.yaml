@@ -4570,7 +4570,7 @@ paths:
       tags:
         - daily-logs
       summary: GET /jobs/{jobId}/daily-logs
-      description: Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with dailyLogListQuerySchema.
+      description: Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with dailyLogListQuerySchema. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
       responses:
         "200":
           description: Successful response
@@ -4647,6 +4647,82 @@ paths:
             type: string
             format: uuid
             pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
+          schema:
+            type: integer
+            minimum: 1
+        - name: pageSize
+          in: query
+          required: false
+          description: Page size for offset pagination. Ignored when `cursor` is supplied.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: keywords
+          in: query
+          required: false
+          description: Free-text filter across log title, notes, and weather notes.
+          schema:
+            type: string
+        - name: createdBy
+          in: query
+          required: false
+          description: Filter to logs authored by a specific user.
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: false
+          description: Inclusive lower bound on log date (YYYY-MM-DD).
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          description: Inclusive upper bound on log date (YYYY-MM-DD).
+          schema:
+            type: string
+            format: date
+        - name: tag
+          in: query
+          required: false
+          description: Filter to logs that include this tag (case-insensitive).
+          schema:
+            type: string
+        - name: tags
+          in: query
+          required: false
+          description: Comma-separated tag list; logs must include every tag (case-insensitive).
+          schema:
+            type: string
+        - name: sharedWith
+          in: query
+          required: false
+          description: Filter by visibility audience.
+          schema:
+            type: string
+            enum:
+              - internal
+              - subs_vendors
+              - client
+              - private
+              - estimators
+              - installers
+        - name: limit
+          in: query
+          required: false
+          description: Page size for cursor pagination. Default 25; max 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - $ref: "#/components/parameters/CursorParam"
       security:
         - bearerAuth: []
     post:
@@ -9722,12 +9798,19 @@ paths:
       tags:
         - search
       summary: GET /search
-      description: Route defined in artifacts/api-server/src/routes/search.ts. Validated query with querySchema. Returns results paged through the {results, pagination} envelope so callers can scroll past the first page of matches.
+      description: |
+        Route defined in artifacts/api-server/src/routes/search.ts. Validated query with querySchema. Returns results paged through the {results, pagination} envelope so callers can scroll past the first page of matches.
+
+        Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
+
+        Cursor scroll usage: pass `?q=<text>` (and optionally `?limit=N`, default 10) on the first request, then echo *just* `?cursor=<nextCursor>` on every follow-up request. The cursor envelope embeds the original `q`, the effective `limit`, and the next page index, so follow-up requests do NOT need to repeat `q` or `limit`. If you do supply either alongside the cursor, the value must match what the cursor was minted with — mismatches return 400 to prevent silent skipping/duplication of rows. The first request must include `q`; a request that supplies neither `q` nor a valid `cursor` returns 400.
+
+        Note: /search is a federated multi-source query (jobs, leads, files, schedule, clients, contacts), so its cursor is an *opaque page-token* over deterministic per-source ranking (not a true keyset cursor). Inserts/deletes between requests can shift items by ±1 row across pages; callers needing strict point-in-time consistency should query a single-source endpoint that exposes a real keyset cursor.
       parameters:
         - name: q
           in: query
-          required: true
-          description: Search term. 1-100 characters, trimmed.
+          required: false
+          description: Search query string (1–100 chars). Required on the first request. On follow-up requests that pass `?cursor=<token>` the query is taken from the cursor, so `q` may be omitted; if supplied alongside a cursor it must equal the cursor's embedded query.
           schema:
             type: string
             minLength: 1
@@ -9735,21 +9818,28 @@ paths:
         - name: page
           in: query
           required: false
-          description: 1-indexed page of results. Capped at 20.
+          description: Page number (1-based) for offset pagination. Ignored when `cursor` is supplied. Capped at 20.
           schema:
             type: integer
             minimum: 1
             maximum: 20
-            default: 1
         - name: pageSize
           in: query
           required: false
-          description: Number of results per page. Capped at 25.
+          description: Page size for offset pagination. Ignored when `cursor` is supplied. Max 25.
           schema:
             type: integer
             minimum: 1
             maximum: 25
-            default: 10
+        - name: limit
+          in: query
+          required: false
+          description: Page size for cursor pagination. Default 10; max 25.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 25
+        - $ref: "#/components/parameters/CursorParam"
       responses:
         "200":
           description: Paged search results.
@@ -9788,20 +9878,23 @@ paths:
                         href:
                           type: string
                   pagination:
-                    type: object
-                    required:
-                      - page
-                      - pageSize
-                      - hasMore
-                    properties:
-                      page:
-                        type: integer
-                        minimum: 1
-                      pageSize:
-                        type: integer
-                        minimum: 1
-                      hasMore:
-                        type: boolean
+                    description: Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`.
+                    oneOf:
+                      - type: object
+                        required:
+                          - page
+                          - pageSize
+                          - hasMore
+                        properties:
+                          page:
+                            type: integer
+                            minimum: 1
+                          pageSize:
+                            type: integer
+                            minimum: 1
+                          hasMore:
+                            type: boolean
+                      - $ref: "#/components/schemas/CursorPagination"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -12260,13 +12353,16 @@ components:
         - updatedAt
     DailyLogListResponse:
       type: object
+      description: Paged daily-log list. The `pagination` field uses `Pagination` (page mode) or `CursorPagination` (cursor mode) depending on whether the request supplied `?cursor=` / `?limit=`.
       properties:
         logs:
           type: array
           items:
             $ref: "#/components/schemas/DailyLogListItem"
         pagination:
-          $ref: "#/components/schemas/Pagination"
+          oneOf:
+            - $ref: "#/components/schemas/Pagination"
+            - $ref: "#/components/schemas/CursorPagination"
       required:
         - logs
         - pagination

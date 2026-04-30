@@ -31,7 +31,11 @@ import {
   assertCanEditDailyLog,
   assertCanViewDailyLog,
 } from "../lib/authorization";
-import { canViewDailyLogSummary } from "../lib/daily-log-visibility";
+import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
+import {
+  buildDailyLogVisibilityFilter,
+  canViewDailyLogSummary,
+} from "../lib/daily-log-visibility";
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
@@ -117,6 +121,8 @@ const customFieldValuesSchema = z.record(customFieldValueSchema).optional().defa
 const dailyLogListQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(500).optional().default(10),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
   keywords: z.string().trim().optional(),
   createdBy: z.string().uuid().optional(),
   from: optionalDate,
@@ -871,53 +877,244 @@ router.get(
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
 
-    const conditions = [eq(dailyLogs.jobId, jobId), isNull(dailyLogs.deletedAt)];
+    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
+    const cursorLimit = query.data.limit ?? 25;
+
+    const baseConditions = [eq(dailyLogs.jobId, jobId), isNull(dailyLogs.deletedAt)];
 
     if (query.data.createdBy) {
-      conditions.push(eq(dailyLogs.createdBy, query.data.createdBy));
+      baseConditions.push(eq(dailyLogs.createdBy, query.data.createdBy));
     }
 
     if (query.data.from) {
-      conditions.push(sql`${dailyLogs.logDate} >= ${query.data.from}`);
+      baseConditions.push(sql`${dailyLogs.logDate} >= ${query.data.from}`);
     }
 
     if (query.data.to) {
-      conditions.push(sql`${dailyLogs.logDate} <= ${query.data.to}`);
+      baseConditions.push(sql`${dailyLogs.logDate} <= ${query.data.to}`);
     }
 
     if (query.data.keywords) {
       const search = buildContainsLikePattern(query.data.keywords);
-      conditions.push(
+      baseConditions.push(
         sql`(${ilike(dailyLogs.title, search)} or ${ilike(dailyLogs.notes, search)} or ${ilike(dailyLogs.weatherNotes, search)})`,
       );
     }
 
-    const rows = await db
-      .select({
-        id: dailyLogs.id,
-        jobId: dailyLogs.jobId,
-        logDate: dailyLogs.logDate,
-        title: dailyLogs.title,
-        notes: dailyLogs.notes,
-        weatherData: dailyLogs.weatherData,
-        includeWeather: dailyLogs.includeWeather,
-        includeWeatherNotes: dailyLogs.includeWeatherNotes,
-        weatherNotes: dailyLogs.weatherNotes,
-        customFieldValues: dailyLogs.customFieldValues,
-        shareInternalUsers: dailyLogs.shareInternalUsers,
-        shareSubsVendors: dailyLogs.shareSubsVendors,
-        shareClient: dailyLogs.shareClient,
-        isPrivate: dailyLogs.isPrivate,
-        createdBy: dailyLogs.createdBy,
-        createdAt: dailyLogs.createdAt,
-        updatedAt: dailyLogs.updatedAt,
-        publishedAt: dailyLogs.publishedAt,
-        createdByName: users.fullName,
-      })
-      .from(dailyLogs)
-      .leftJoin(users, eq(dailyLogs.createdBy, users.id))
-      .where(and(...conditions))
-      .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt));
+    const requestedTags = normalizeUniqueStrings([
+      ...(query.data.tag ? [query.data.tag] : []),
+      ...query.data.tags,
+    ]).map((tag) => tag.toLowerCase());
+
+    type DailyLogRow = {
+      id: string;
+      jobId: string | null;
+      logDate: string;
+      title: string | null;
+      notes: string;
+      weatherData: unknown;
+      includeWeather: boolean | null;
+      includeWeatherNotes: boolean | null;
+      weatherNotes: string | null;
+      customFieldValues: unknown;
+      shareInternalUsers: boolean | null;
+      shareSubsVendors: boolean | null;
+      shareClient: boolean | null;
+      isPrivate: boolean | null;
+      createdBy: string | null;
+      createdAt: Date;
+      updatedAt: Date | null;
+      publishedAt: Date | null;
+      createdByName: string | null;
+    };
+
+    const fetchDailyLogRows = async (
+      whereParts: ReturnType<typeof and>[] | unknown[],
+      limit?: number,
+    ): Promise<DailyLogRow[]> => {
+      const queryBuilder = db
+        .select({
+          id: dailyLogs.id,
+          jobId: dailyLogs.jobId,
+          logDate: dailyLogs.logDate,
+          title: dailyLogs.title,
+          notes: dailyLogs.notes,
+          weatherData: dailyLogs.weatherData,
+          includeWeather: dailyLogs.includeWeather,
+          includeWeatherNotes: dailyLogs.includeWeatherNotes,
+          weatherNotes: dailyLogs.weatherNotes,
+          customFieldValues: dailyLogs.customFieldValues,
+          shareInternalUsers: dailyLogs.shareInternalUsers,
+          shareSubsVendors: dailyLogs.shareSubsVendors,
+          shareClient: dailyLogs.shareClient,
+          isPrivate: dailyLogs.isPrivate,
+          createdBy: dailyLogs.createdBy,
+          createdAt: dailyLogs.createdAt,
+          updatedAt: dailyLogs.updatedAt,
+          publishedAt: dailyLogs.publishedAt,
+          createdByName: users.fullName,
+        })
+        .from(dailyLogs)
+        .leftJoin(users, eq(dailyLogs.createdBy, users.id))
+        .where(and(...(whereParts as Parameters<typeof and>)))
+        .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt), desc(dailyLogs.id));
+
+      return limit !== undefined ? await queryBuilder.limit(limit) : await queryBuilder;
+    };
+
+    if (isCursorMode) {
+      // Keyset pagination over (logDate desc, createdAt desc, id desc).
+      // All filters (visibility, sharedWith, multi-tag) are pushed into
+      // SQL so a single `limit + 1` fetch returns exact matches.
+      if (cursorPayload) {
+        const cursorLogDate = String(cursorPayload.k[0] ?? "");
+        const cursorCreatedAtRaw = String(cursorPayload.k[1] ?? "");
+        const cursorCreatedAt = new Date(cursorCreatedAtRaw);
+        const cursorId = typeof cursorPayload.id === "string" ? cursorPayload.id : "";
+        // Validate id is a UUID before it reaches the SQL tuple — otherwise
+        // a malformed id would surface as a Postgres cast error, not a 400.
+        const uuidPattern =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(cursorLogDate) ||
+          Number.isNaN(cursorCreatedAt.getTime()) ||
+          !uuidPattern.test(cursorId)
+        ) {
+          throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+        }
+      }
+
+      const visibilityFilter = buildDailyLogVisibilityFilter(req.auth!);
+      const sharedWithFilter = (() => {
+        switch (query.data.sharedWith) {
+          case "internal":
+            return eq(dailyLogs.shareInternalUsers, true);
+          case "subs_vendors":
+          case "installers":
+            return eq(dailyLogs.shareSubsVendors, true);
+          case "client":
+          case "estimators":
+            return eq(dailyLogs.shareClient, true);
+          case "private":
+            return eq(dailyLogs.isPrivate, true);
+          default:
+            return undefined;
+        }
+      })();
+
+      const conditions: unknown[] = [...baseConditions];
+      if (visibilityFilter) {
+        conditions.push(visibilityFilter);
+      }
+      if (sharedWithFilter) {
+        conditions.push(sharedWithFilter);
+      }
+      // Multi-tag "all of" filter: one EXISTS per requested tag (uses
+      // the (daily_log_id, tag_name) unique index). lower() to match
+      // the case-insensitive page-mode behavior.
+      for (const tag of requestedTags) {
+        conditions.push(
+          sql`EXISTS (SELECT 1 FROM ${dailyLogTags} WHERE ${dailyLogTags.dailyLogId} = ${dailyLogs.id} AND lower(${dailyLogTags.tagName}) = ${tag})`,
+        );
+      }
+      if (cursorPayload) {
+        const anchorLogDate = String(cursorPayload.k[0]);
+        const anchorCreatedAtIso = new Date(
+          String(cursorPayload.k[1]),
+        ).toISOString();
+        const anchorId = cursorPayload.id;
+        conditions.push(
+          sql`(${dailyLogs.logDate}, ${dailyLogs.createdAt}, ${dailyLogs.id}) < (${anchorLogDate}::date, ${anchorCreatedAtIso}::timestamptz, ${anchorId})`,
+        );
+      }
+
+      const fetched = await fetchDailyLogRows(conditions, cursorLimit + 1);
+      const hasMore = fetched.length > cursorLimit;
+      const pageRows = hasMore ? fetched.slice(0, cursorLimit) : fetched;
+      const pageIds = pageRows.map((row) => row.id);
+
+      const [tagRows, attachmentRows] = await Promise.all([
+        pageIds.length > 0
+          ? db
+              .select({
+                dailyLogId: dailyLogTags.dailyLogId,
+                tagName: dailyLogTags.tagName,
+              })
+              .from(dailyLogTags)
+              .where(inArray(dailyLogTags.dailyLogId, pageIds))
+          : Promise.resolve([]),
+        pageIds.length > 0
+          ? db
+              .select({
+                dailyLogId: dailyLogAttachments.dailyLogId,
+                total: count(),
+              })
+              .from(dailyLogAttachments)
+              .where(inArray(dailyLogAttachments.dailyLogId, pageIds))
+              .groupBy(dailyLogAttachments.dailyLogId)
+          : Promise.resolve([]),
+      ]);
+
+      const tagsByLogId = new Map<string, string[]>();
+      const attachmentCountByLogId = new Map<string, number>();
+      for (const row of tagRows) {
+        if (!row.dailyLogId) continue;
+        const group = tagsByLogId.get(row.dailyLogId) ?? [];
+        group.push(row.tagName);
+        tagsByLogId.set(row.dailyLogId, group);
+      }
+      for (const row of attachmentRows) {
+        if (!row.dailyLogId) continue;
+        attachmentCountByLogId.set(row.dailyLogId, Number(row.total));
+      }
+
+      const engagement = await loadDailyLogEngagement(pageIds, req.auth!.userId);
+
+      const mapped = pageRows.map((row) => {
+        const weather = decodeWeatherPayload(
+          row.weatherData as Record<string, unknown> | null | undefined,
+        );
+        return {
+          ...row,
+          weatherData: weather.weatherData,
+          notifyUserIds: weather.notifyUserIds,
+          customFieldValues: normalizeCustomFieldValueRecord(row.customFieldValues),
+          tags: normalizeUniqueStrings(tagsByLogId.get(row.id) ?? []),
+          attachmentCount: attachmentCountByLogId.get(row.id) ?? 0,
+          likesCount: engagement.likesCountByLogId.get(row.id) ?? 0,
+          commentsCount: engagement.commentsCountByLogId.get(row.id) ?? 0,
+          likedByCurrentUser: engagement.likedByCurrentUser.has(row.id),
+          visibilityLabel: deriveVisibilityLabel(row),
+          todoCount: engagement.todosCountByLogId.get(row.id) ?? 0,
+          completedTodoCount: engagement.completedTodosCountByLogId.get(row.id) ?? 0,
+          status: row.publishedAt ? "published" : "draft",
+        };
+      });
+
+      const last = mapped[mapped.length - 1];
+      const nextCursor =
+        hasMore && last
+          ? encodeCursor({
+              v: 1,
+              k: [last.logDate, last.createdAt.toISOString()],
+              id: last.id,
+            })
+          : null;
+
+      res.json({
+        logs: mapped,
+        pagination: {
+          limit: cursorLimit,
+          hasMore,
+          nextCursor,
+        },
+      });
+      return;
+    }
+
+    // Page mode: preserved behavior — full scan + in-memory filter & paging.
+    const rows = await fetchDailyLogRows(baseConditions);
 
     const logIds = rows.map((row) => row.id);
     const [tagRows, attachmentRows] = await Promise.all([
@@ -988,11 +1185,6 @@ router.get(
         status: row.publishedAt ? "published" : "draft",
       };
       });
-
-    const requestedTags = normalizeUniqueStrings([
-      ...(query.data.tag ? [query.data.tag] : []),
-      ...query.data.tags,
-    ]).map((tag) => tag.toLowerCase());
 
     if (requestedTags.length > 0) {
       filtered = filtered.filter((row) =>

@@ -37,6 +37,7 @@ import type {
   DailyLogsCommentPayloadSchema,
   DailyLogsCommentReactionPayloadSchema,
   DailyLogsDailyLogPayloadSchema,
+  DailyLogsGetJobsJobIdDailyLogsParams,
   DailyLogsTodoPayloadSchema,
   DailyLogsTodoTogglePayloadSchema,
   FilesGetFoldersIdFilesParams,
@@ -4956,19 +4957,35 @@ export function useFilesGetFilesIdDownload<
 }
 
 /**
- * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with dailyLogListQuerySchema.
+ * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with dailyLogListQuerySchema. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
  * @summary GET /jobs/{jobId}/daily-logs
  */
-export const getDailyLogsGetJobsJobIdDailyLogsUrl = (jobId: string) => {
-  return `/api/jobs/${jobId}/daily-logs`;
+export const getDailyLogsGetJobsJobIdDailyLogsUrl = (
+  jobId: string,
+  params?: DailyLogsGetJobsJobIdDailyLogsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/jobs/${jobId}/daily-logs?${stringifiedParams}`
+    : `/api/jobs/${jobId}/daily-logs`;
 };
 
 export const dailyLogsGetJobsJobIdDailyLogs = async (
   jobId: string,
+  params?: DailyLogsGetJobsJobIdDailyLogsParams,
   options?: RequestInit,
 ): Promise<DailyLogListResponse> => {
   return customFetch<DailyLogListResponse>(
-    getDailyLogsGetJobsJobIdDailyLogsUrl(jobId),
+    getDailyLogsGetJobsJobIdDailyLogsUrl(jobId, params),
     {
       ...options,
       method: "GET",
@@ -4976,8 +4993,14 @@ export const dailyLogsGetJobsJobIdDailyLogs = async (
   );
 };
 
-export const getDailyLogsGetJobsJobIdDailyLogsQueryKey = (jobId: string) => {
-  return [`/api/jobs/${jobId}/daily-logs`] as const;
+export const getDailyLogsGetJobsJobIdDailyLogsQueryKey = (
+  jobId: string,
+  params?: DailyLogsGetJobsJobIdDailyLogsParams,
+) => {
+  return [
+    `/api/jobs/${jobId}/daily-logs`,
+    ...(params ? [params] : []),
+  ] as const;
 };
 
 export const getDailyLogsGetJobsJobIdDailyLogsQueryOptions = <
@@ -4985,6 +5008,7 @@ export const getDailyLogsGetJobsJobIdDailyLogsQueryOptions = <
   TError = ErrorType<Problem>,
 >(
   jobId: string,
+  params?: DailyLogsGetJobsJobIdDailyLogsParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>,
@@ -4997,12 +5021,16 @@ export const getDailyLogsGetJobsJobIdDailyLogsQueryOptions = <
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getDailyLogsGetJobsJobIdDailyLogsQueryKey(jobId);
+    queryOptions?.queryKey ??
+    getDailyLogsGetJobsJobIdDailyLogsQueryKey(jobId, params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>
   > = ({ signal }) =>
-    dailyLogsGetJobsJobIdDailyLogs(jobId, { signal, ...requestOptions });
+    dailyLogsGetJobsJobIdDailyLogs(jobId, params, {
+      signal,
+      ...requestOptions,
+    });
 
   return {
     queryKey,
@@ -5030,6 +5058,7 @@ export function useDailyLogsGetJobsJobIdDailyLogs<
   TError = ErrorType<Problem>,
 >(
   jobId: string,
+  params?: DailyLogsGetJobsJobIdDailyLogsParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof dailyLogsGetJobsJobIdDailyLogs>>,
@@ -5041,6 +5070,7 @@ export function useDailyLogsGetJobsJobIdDailyLogs<
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getDailyLogsGetJobsJobIdDailyLogsQueryOptions(
     jobId,
+    params,
     options,
   );
 
@@ -10881,9 +10911,16 @@ export function useActivityGetActivity<
 
 /**
  * Route defined in artifacts/api-server/src/routes/search.ts. Validated query with querySchema. Returns results paged through the {results, pagination} envelope so callers can scroll past the first page of matches.
+
+Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
+
+Cursor scroll usage: pass `?q=<text>` (and optionally `?limit=N`, default 10) on the first request, then echo *just* `?cursor=<nextCursor>` on every follow-up request. The cursor envelope embeds the original `q`, the effective `limit`, and the next page index, so follow-up requests do NOT need to repeat `q` or `limit`. If you do supply either alongside the cursor, the value must match what the cursor was minted with — mismatches return 400 to prevent silent skipping/duplication of rows. The first request must include `q`; a request that supplies neither `q` nor a valid `cursor` returns 400.
+
+Note: /search is a federated multi-source query (jobs, leads, files, schedule, clients, contacts), so its cursor is an *opaque page-token* over deterministic per-source ranking (not a true keyset cursor). Inserts/deletes between requests can shift items by ±1 row across pages; callers needing strict point-in-time consistency should query a single-source endpoint that exposes a real keyset cursor.
+
  * @summary GET /search
  */
-export const getSearchGetSearchUrl = (params: SearchGetSearchParams) => {
+export const getSearchGetSearchUrl = (params?: SearchGetSearchParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -10900,7 +10937,7 @@ export const getSearchGetSearchUrl = (params: SearchGetSearchParams) => {
 };
 
 export const searchGetSearch = async (
-  params: SearchGetSearchParams,
+  params?: SearchGetSearchParams,
   options?: RequestInit,
 ): Promise<SearchGetSearch200> => {
   return customFetch<SearchGetSearch200>(getSearchGetSearchUrl(params), {
@@ -10917,7 +10954,7 @@ export const getSearchGetSearchQueryOptions = <
   TData = Awaited<ReturnType<typeof searchGetSearch>>,
   TError = ErrorType<Problem>,
 >(
-  params: SearchGetSearchParams,
+  params?: SearchGetSearchParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof searchGetSearch>>,
@@ -10955,7 +10992,7 @@ export function useSearchGetSearch<
   TData = Awaited<ReturnType<typeof searchGetSearch>>,
   TError = ErrorType<Problem>,
 >(
-  params: SearchGetSearchParams,
+  params?: SearchGetSearchParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof searchGetSearch>>,

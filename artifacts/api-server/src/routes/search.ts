@@ -11,6 +11,7 @@ import {
   leads,
   scheduleItems,
 } from "@workspace/db/schema";
+import { createHash } from "node:crypto";
 import {
   assertCanViewFolder,
   assertCanViewScheduleItem,
@@ -18,8 +19,13 @@ import {
   listAccessibleJobIds,
   listAccessibleLeadIds,
 } from "../lib/authorization";
+import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
+
+function fingerprintQuery(q: string) {
+  return createHash("sha256").update(q).digest("base64url").slice(0, 12);
+}
 
 const router: IRouter = Router();
 
@@ -28,7 +34,9 @@ const MAX_PAGE = 20;
 const MAX_PER_SOURCE_FETCH = 200;
 
 const querySchema = z.object({
-  q: z.string().trim().min(1).max(100),
+  // Optional at the schema level — the handler enforces "required on
+  // first request" so it can mention the cursor alternative.
+  q: z.string().trim().min(1).max(100).optional(),
   page: z.coerce.number().int().positive().max(MAX_PAGE).optional().default(1),
   pageSize: z.coerce
     .number()
@@ -37,6 +45,13 @@ const querySchema = z.object({
     .max(MAX_PAGE_SIZE)
     .optional()
     .default(10),
+  cursor: z.string().optional(),
+  limit: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(MAX_PAGE_SIZE)
+    .optional(),
 });
 
 router.get(
@@ -48,8 +63,72 @@ router.get(
       throw new HttpError(400, "Invalid search query.", query.error.flatten());
     }
 
-    const search = buildContainsLikePattern(query.data.q);
-    const { page, pageSize } = query.data;
+    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    // Federated multi-source search with no shared sort key, so the
+    // cursor is an opaque page-token — not a true keyset cursor.
+    // Envelope: k = [nextPage, pageSize, q]; id = fingerprint(q).
+    // Embedding q + pageSize lets follow-ups be just `?cursor=<token>`.
+    const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
+    let cursorPageNumber = 1;
+    let cursorLimit = Math.min(query.data.limit ?? 10, MAX_PAGE_SIZE);
+    let effectiveQ: string | null = query.data.q ?? null;
+    if (isCursorMode && cursorPayload) {
+      const decoded = Number(cursorPayload.k[0] ?? 0);
+      if (!Number.isFinite(decoded) || !Number.isInteger(decoded) || decoded < 1) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      const encodedLimit = Number(cursorPayload.k[1] ?? 0);
+      if (
+        !Number.isFinite(encodedLimit) ||
+        !Number.isInteger(encodedLimit) ||
+        encodedLimit < 1 ||
+        encodedLimit > MAX_PAGE_SIZE
+      ) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      const encodedQRaw = cursorPayload.k[2];
+      if (typeof encodedQRaw !== "string" || encodedQRaw.length === 0) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      const encodedQ = encodedQRaw;
+      if (cursorPayload.id !== fingerprintQuery(encodedQ)) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      // Mismatched overrides must 400 — silently picking one would
+      // skip / duplicate rows.
+      if (query.data.q !== undefined && query.data.q !== encodedQ) {
+        throw new HttpError(
+          400,
+          "Cursor was minted for a different search query. Either omit `q` and pass only `cursor`, or supply the same `q` the cursor was minted with.",
+          undefined,
+          "validation",
+        );
+      }
+      if (query.data.limit !== undefined && query.data.limit !== encodedLimit) {
+        throw new HttpError(
+          400,
+          `Cursor was minted with limit=${encodedLimit}; either omit \`limit\` or pass the same value. Changing limit mid-scroll would skip or duplicate results.`,
+          undefined,
+          "validation",
+        );
+      }
+      cursorPageNumber = Math.min(decoded, MAX_PAGE);
+      cursorLimit = encodedLimit;
+      effectiveQ = encodedQ;
+    }
+    if (effectiveQ === null) {
+      throw new HttpError(
+        400,
+        "Search requires `q` on the first request, or a `cursor` from a previous response.",
+        undefined,
+        "validation",
+      );
+    }
+    const search = buildContainsLikePattern(effectiveQ);
+    const queryFingerprint = fingerprintQuery(effectiveQ);
+    const { page, pageSize } = isCursorMode
+      ? { page: cursorPageNumber, pageSize: cursorLimit }
+      : { page: query.data.page, pageSize: query.data.pageSize };
     const offset = (page - 1) * pageSize;
     const endIndex = offset + pageSize;
     // Fetch enough rows from each source to cover the requested page plus a
@@ -71,7 +150,9 @@ router.get(
     if (noJobAccess && noLeadAccess && noClientAccess) {
       res.json({
         results: [],
-        pagination: { page, pageSize, hasMore: false },
+        pagination: isCursorMode
+          ? { limit: pageSize, hasMore: false, nextCursor: null }
+          : { page, pageSize, hasMore: false },
       });
       return;
     }
@@ -362,6 +443,21 @@ router.get(
 
     const results = merged.slice(offset, endIndex);
     const hasMore = page < MAX_PAGE && merged.length > endIndex;
+
+    if (isCursorMode) {
+      const nextCursor = hasMore
+        ? encodeCursor({
+            v: 1,
+            k: [page + 1, pageSize, effectiveQ],
+            id: queryFingerprint,
+          })
+        : null;
+      res.json({
+        results,
+        pagination: { limit: pageSize, hasMore, nextCursor },
+      });
+      return;
+    }
 
     res.json({
       results,

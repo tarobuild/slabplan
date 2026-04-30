@@ -45,6 +45,8 @@ export * from "./dailyLogsCommentPayloadSchemaAttachmentsItem";
 export * from "./dailyLogsCommentReactionPayloadSchema";
 export * from "./dailyLogsDailyLogPayloadSchema";
 export * from "./dailyLogsDailyLogPayloadSchemaCustomFieldValues";
+export * from "./dailyLogsGetJobsJobIdDailyLogsParams";
+export * from "./dailyLogsGetJobsJobIdDailyLogsSharedWith";
 export * from "./dailyLogStatus";
 export * from "./dailyLogsTodoPayloadSchema";
 export * from "./dailyLogsTodoTogglePayloadSchema";

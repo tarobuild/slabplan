@@ -1194,9 +1194,22 @@ export interface DailyLog {
   status: DailyLogStatus;
 }
 
+/**
+ * Pagination shape returned when the request supplied a `cursor` query parameter.
+ */
+export interface CursorPagination {
+  limit: number;
+  hasMore: boolean;
+  /** Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page. */
+  nextCursor?: string | null;
+}
+
+/**
+ * Paged daily-log list. The `pagination` field uses `Pagination` (page mode) or `CursorPagination` (cursor mode) depending on whether the request supplied `?cursor=` / `?limit=`.
+ */
 export interface DailyLogListResponse {
   logs: DailyLogListItem[];
-  pagination: Pagination;
+  pagination: Pagination | CursorPagination;
 }
 
 export interface DailyLogDetailResponse {
@@ -1518,16 +1531,6 @@ export interface Problem {
   errors?: unknown;
 }
 
-/**
- * Pagination shape returned when the request supplied a `cursor` query parameter.
- */
-export interface CursorPagination {
-  limit: number;
-  hasMore: boolean;
-  /** Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page. */
-  nextCursor?: string | null;
-}
-
 export type PersonalAccessTokenScope =
   (typeof PersonalAccessTokenScope)[keyof typeof PersonalAccessTokenScope];
 
@@ -1745,6 +1748,77 @@ ignored.
   cursor?: CursorParamParameter;
 };
 
+export type DailyLogsGetJobsJobIdDailyLogsParams = {
+  /**
+   * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * Page size for offset pagination. Ignored when `cursor` is supplied.
+   * @minimum 1
+   * @maximum 500
+   */
+  pageSize?: number;
+  /**
+   * Free-text filter across log title, notes, and weather notes.
+   */
+  keywords?: string;
+  /**
+   * Filter to logs authored by a specific user.
+   */
+  createdBy?: string;
+  /**
+   * Inclusive lower bound on log date (YYYY-MM-DD).
+   */
+  from?: string;
+  /**
+   * Inclusive upper bound on log date (YYYY-MM-DD).
+   */
+  to?: string;
+  /**
+   * Filter to logs that include this tag (case-insensitive).
+   */
+  tag?: string;
+  /**
+   * Comma-separated tag list; logs must include every tag (case-insensitive).
+   */
+  tags?: string;
+  /**
+   * Filter by visibility audience.
+   */
+  sharedWith?: DailyLogsGetJobsJobIdDailyLogsSharedWith;
+  /**
+   * Page size for cursor pagination. Default 25; max 100.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
+
+ */
+  cursor?: CursorParamParameter;
+};
+
+export type DailyLogsGetJobsJobIdDailyLogsSharedWith =
+  (typeof DailyLogsGetJobsJobIdDailyLogsSharedWith)[keyof typeof DailyLogsGetJobsJobIdDailyLogsSharedWith];
+
+export const DailyLogsGetJobsJobIdDailyLogsSharedWith = {
+  internal: "internal",
+  subs_vendors: "subs_vendors",
+  client: "client",
+  private: "private",
+  estimators: "estimators",
+  installers: "installers",
+} as const;
+
 export type ScheduleGetJobsJobIdScheduleParams = {
   /**
    * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
@@ -1826,23 +1900,40 @@ export const ActivityGetActivityMediaType = {
 
 export type SearchGetSearchParams = {
   /**
-   * Search term. 1-100 characters, trimmed.
+   * Search query string (1–100 chars). Required on the first request. On follow-up requests that pass `?cursor=<token>` the query is taken from the cursor, so `q` may be omitted; if supplied alongside a cursor it must equal the cursor's embedded query.
    * @minLength 1
    * @maxLength 100
    */
-  q: string;
+  q?: string;
   /**
-   * 1-indexed page of results. Capped at 20.
+   * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied. Capped at 20.
    * @minimum 1
    * @maximum 20
    */
   page?: number;
   /**
-   * Number of results per page. Capped at 25.
+   * Page size for offset pagination. Ignored when `cursor` is supplied. Max 25.
    * @minimum 1
    * @maximum 25
    */
   pageSize?: number;
+  /**
+   * Page size for cursor pagination. Default 10; max 25.
+   * @minimum 1
+   * @maximum 25
+   */
+  limit?: number;
+  /**
+ * Opaque cursor for stable cursor-based pagination. To bootstrap the
+first cursor page, send `?cursor=&limit=N` (cursor present with no
+value) or simply `?limit=N` with no `page`/`pageSize` — the server
+returns the first page in the cursor envelope along with
+`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
+on subsequent calls. While in cursor mode `page`/`pageSize` are
+ignored.
+
+ */
+  cursor?: CursorParamParameter;
 };
 
 export type SearchGetSearch200ResultsItemType =
@@ -1864,15 +1955,21 @@ export type SearchGetSearch200ResultsItem = {
   href: string;
 };
 
-export type SearchGetSearch200Pagination = {
-  /** @minimum 1 */
-  page: number;
-  /** @minimum 1 */
-  pageSize: number;
-  hasMore: boolean;
-};
+/**
+ * Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`.
+ */
+export type SearchGetSearch200Pagination =
+  | {
+      /** @minimum 1 */
+      page: number;
+      /** @minimum 1 */
+      pageSize: number;
+      hasMore: boolean;
+    }
+  | CursorPagination;
 
 export type SearchGetSearch200 = {
   results: SearchGetSearch200ResultsItem[];
+  /** Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`. */
   pagination: SearchGetSearch200Pagination;
 };

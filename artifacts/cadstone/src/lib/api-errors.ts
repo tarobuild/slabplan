@@ -73,3 +73,17 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
   if (classified.kind === "toast") return classified.message
   return fallback
 }
+
+// Extract the machine-readable code the API surfaces inside problem+json
+// `errors` payloads (e.g. multer's `LIMIT_FILE_SIZE` from the upload
+// middleware). Returns null when the response shape doesn't match so
+// callers can fall back to the generic message handling.
+export function apiErrorDetailCode(err: unknown): string | null {
+  if (!isAxiosError(err)) return null
+  const data = err.response?.data
+  if (typeof data !== "object" || data === null) return null
+  const errors = (data as { errors?: unknown }).errors
+  if (typeof errors !== "object" || errors === null) return null
+  const code = (errors as { code?: unknown }).code
+  return typeof code === "string" ? code : null
+}

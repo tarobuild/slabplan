@@ -3,7 +3,7 @@ import { afterEach, describe, test } from "node:test"
 import { AxiosError, AxiosHeaders } from "axios"
 import { toast } from "sonner"
 
-import { classifyApiError, toastApiError } from "./api-errors.ts"
+import { apiErrorDetailCode, classifyApiError, toastApiError } from "./api-errors.ts"
 
 function buildAxiosError(options: {
   status?: number
@@ -224,5 +224,57 @@ describe("toastApiError", () => {
       "fallback",
     )
     assert.equal(calls.length, 0)
+  })
+})
+
+describe("apiErrorDetailCode", () => {
+  test("returns the multer code from a problem+json errors payload", () => {
+    // The upload middleware in artifacts/api-server/src/lib/uploads.ts wraps
+    // multer errors into HttpError with details = { limit, code, field }
+    // and the problem+json renderer surfaces those as the `errors` field.
+    // Comment-attachment toasts use this to swap the raw server detail for
+    // a friendly, copy-locked message.
+    const code = apiErrorDetailCode(
+      buildAxiosError({
+        status: 413,
+        data: {
+          message: "File exceeds the 10 MB upload size limit.",
+          errors: { limit: 10485760, code: "LIMIT_FILE_SIZE", field: "files" },
+        },
+      }),
+    )
+    assert.equal(code, "LIMIT_FILE_SIZE")
+  })
+
+  test("returns null when the response has no errors object", () => {
+    const code = apiErrorDetailCode(
+      buildAxiosError({ status: 422, data: { message: "Bad input" } }),
+    )
+    assert.equal(code, null)
+  })
+
+  test("returns null when errors.code is not a string", () => {
+    const code = apiErrorDetailCode(
+      buildAxiosError({
+        status: 413,
+        data: { message: "boom", errors: { code: 42 } },
+      }),
+    )
+    assert.equal(code, null)
+  })
+
+  test("returns null for non-axios errors", () => {
+    assert.equal(apiErrorDetailCode(new Error("local")), null)
+    assert.equal(apiErrorDetailCode(null), null)
+    assert.equal(apiErrorDetailCode("oops"), null)
+  })
+
+  test("returns null when the axios error has no response", () => {
+    assert.equal(
+      apiErrorDetailCode(
+        buildAxiosError({ code: "ERR_NETWORK", message: "Network Error" }),
+      ),
+      null,
+    )
   })
 })

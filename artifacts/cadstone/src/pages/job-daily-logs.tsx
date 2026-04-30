@@ -40,7 +40,7 @@ import {
   type DailyLogListResponse,
 } from "@workspace/api-client-react"
 import { api } from "@/lib/api"
-import { apiErrorMessage as apiError, toastApiError } from "@/lib/api-errors"
+import { apiErrorDetailCode, apiErrorMessage as apiError, toastApiError } from "@/lib/api-errors"
 import { cn } from "@/lib/utils"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { useAuthStore } from "@/store/auth"
@@ -347,6 +347,16 @@ const DATE_PRESET_OPTIONS: Array<{ value: FilterPreset; label: string }> = [
 ]
 const QUICK_REACTIONS = ["👍", "❤️", "👀"]
 const COMMENT_EMOJIS = ["😀", "👍", "🎉", "🚧", "📌", "✅"]
+
+// Mirror the server-side caps in artifacts/api-server/src/routes/daily-logs.ts
+// (MAX_COMMENT_ATTACHMENTS / MAX_COMMENT_ATTACHMENT_BYTES). Pre-checking on
+// the client lets us reject oversized or excess files before the upload so
+// the user keeps their typed body and any already-attached files instead of
+// losing the whole batch to a 413/4xx.
+const COMMENT_ATTACHMENT_MAX_COUNT = 10
+const COMMENT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+const COMMENT_ATTACHMENT_SIZE_MESSAGE = "Each attachment must be under 10 MB."
+const COMMENT_ATTACHMENT_COUNT_MESSAGE = `You can attach up to ${COMMENT_ATTACHMENT_MAX_COUNT} files per comment.`
 
 function todayString() {
   return new Date().toISOString().slice(0, 10)
@@ -1939,16 +1949,28 @@ function CommentsSheet({
     if (!log) return
     const list = Array.from(fileList || [])
     if (list.length === 0) return
-    // The server caps the comment-attachment count at 10. Reject early on the
-    // FE so the user does not lose the rest of their pick to a 4xx; keep the
-    // error message generic since the cap is enforced authoritatively
-    // server-side and could change.
-    if (attachments.length + list.length > 10) {
-      toast.error("You can attach up to 10 files per comment.")
+
+    // Reject oversized files locally so the user keeps the rest of their
+    // pick (and the typed body) instead of losing the whole batch to the
+    // server's 413 LIMIT_FILE_SIZE response. Name the offending files so
+    // the user knows exactly what to swap out.
+    const oversized = list.filter((file) => file.size > COMMENT_ATTACHMENT_MAX_BYTES)
+    const sized = list.filter((file) => file.size <= COMMENT_ATTACHMENT_MAX_BYTES)
+    if (oversized.length > 0) {
+      const names = oversized.map((file) => file.name).join(", ")
+      toast.error(`${COMMENT_ATTACHMENT_SIZE_MESSAGE} Skipped: ${names}`)
+    }
+    if (sized.length === 0) return
+
+    // Per-comment count cap. Mirrors MAX_COMMENT_ATTACHMENTS server-side so
+    // the multer-level rejection and this pre-check stay aligned.
+    if (attachments.length + sized.length > COMMENT_ATTACHMENT_MAX_COUNT) {
+      toast.error(COMMENT_ATTACHMENT_COUNT_MESSAGE)
       return
     }
+
     const formData = new FormData()
-    for (const file of list) {
+    for (const file of sized) {
       formData.append("files", file)
     }
     try {
@@ -1970,11 +1992,27 @@ function CommentsSheet({
         fileId: file.id,
         name: file.originalName,
         mimeType: file.mimeType,
-        previewUrl: URL.createObjectURL(list[idx]!),
+        previewUrl: URL.createObjectURL(sized[idx]!),
       }))
       setAttachments((current) => [...current, ...next])
     } catch (error) {
-      toastApiError(error, "Failed to attach one or more images.")
+      // Backstop the local pre-checks: if a file slipped through (e.g.
+      // the cap moved server-side, or magic-byte validation tripped a
+      // LIMIT_UNEXPECTED_FILE), translate the multer error code from the
+      // problem+json `errors.code` into a friendly message instead of
+      // showing the raw server detail. Existing attachments and the body
+      // text are untouched on failure so the user can fix the bad file
+      // and retry without losing their draft.
+      const code = apiErrorDetailCode(error)
+      if (code === "LIMIT_FILE_SIZE") {
+        toast.error(COMMENT_ATTACHMENT_SIZE_MESSAGE)
+      } else if (code === "LIMIT_FILE_COUNT") {
+        toast.error(COMMENT_ATTACHMENT_COUNT_MESSAGE)
+      } else if (code === "LIMIT_UNEXPECTED_FILE") {
+        toast.error("Unexpected upload field — please attach images only.")
+      } else {
+        toastApiError(error, "Failed to attach one or more images.")
+      }
     }
   }
 

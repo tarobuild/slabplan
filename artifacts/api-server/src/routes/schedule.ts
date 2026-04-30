@@ -258,6 +258,15 @@ const scheduleTodoUpdatePayloadSchema = z.object({
   isComplete: z.coerce.boolean().optional(),
 });
 
+// Narrow payload accepted by POST /schedule-items/:id/complete.
+// This is the assignee-side write path for crew members; it deliberately
+// only carries the completion-state fields and never touches schedule
+// dates, visibility, predecessors, or other admin/PM-managed properties.
+const scheduleCompletionPayloadSchema = z.object({
+  isComplete: z.coerce.boolean(),
+  progress: z.coerce.number().int().min(0).max(100).optional(),
+});
+
 type ScheduleMeta = {
   notes: string | null;
   tags: string[];
@@ -301,8 +310,14 @@ const requireScheduleJobRouteAccess = asyncHandler(async (req, _res, next) => {
 const requireScheduleItemRouteAccess = asyncHandler(async (req, _res, next) => {
   const itemId = getParam(req.params.id, "schedule item id");
   const path = req.path || "/";
+  // /complete is the narrow self-service endpoint a crew member uses to
+  // flip their own assignment's completion state — it must be reachable
+  // with view-level access. The handler then re-checks that the caller
+  // is either an assignee or has manage-level rights on the item.
   const isCollaborativeUpdate =
-    path.startsWith("/notes") || path.startsWith("/todos");
+    path.startsWith("/notes") ||
+    path.startsWith("/todos") ||
+    path.startsWith("/complete");
 
   if (req.method === "GET" || isCollaborativeUpdate) {
     await assertCanViewScheduleItem(req.auth!, itemId);
@@ -3128,6 +3143,129 @@ router.get(
     if (hydrated.item.isPersonalTodo && hydrated.item.createdBy !== req.auth!.userId) {
       throw new HttpError(403, "You do not have access to that schedule item.");
     }
+
+    res.json(hydrated);
+  }),
+);
+
+// Narrow self-service endpoint that lets an assigned crew member flip
+// just the completion-state fields on a schedule item from the field —
+// no dates, no predecessors, no visibility flags. Admins and PMs that
+// already have manage rights on the item can also call this; in their
+// case the route is just a smaller-payload alternative to the full PUT.
+router.post(
+  "/schedule-items/:id/complete",
+  asyncHandler(async (req, res) => {
+    const body = scheduleCompletionPayloadSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(
+        400,
+        "Invalid schedule item completion payload.",
+        body.error.flatten(),
+      );
+    }
+
+    const itemId = getParam(req.params.id, "schedule item id");
+    const existing = await getScheduleItemOrThrow(itemId);
+
+    if (!existing.jobId) {
+      throw new HttpError(400, "Schedule item is missing a job.");
+    }
+
+    if (existing.isPersonalTodo && existing.createdBy !== req.auth!.userId) {
+      throw new HttpError(403, "You do not have access to that schedule item.");
+    }
+
+    // Re-check write permission narrowly: caller must either be a manager
+    // of the item (admin / PM-on-job) OR be currently assigned to it.
+    // The route-level middleware only confirmed view access.
+    let canManage = false;
+    try {
+      await assertCanManageScheduleItem(req.auth!, itemId);
+      canManage = true;
+    } catch (err) {
+      if (!(err instanceof HttpError) || err.statusCode !== 403) {
+        throw err;
+      }
+    }
+
+    if (!canManage) {
+      const [assignment] = await db
+        .select({ userId: scheduleItemAssignees.userId })
+        .from(scheduleItemAssignees)
+        .where(
+          and(
+            eq(scheduleItemAssignees.scheduleItemId, itemId),
+            eq(scheduleItemAssignees.userId, req.auth!.userId),
+          ),
+        )
+        .limit(1);
+
+      if (!assignment) {
+        throw new HttpError(
+          403,
+          "Only assigned users can mark this schedule item complete.",
+        );
+      }
+    }
+
+    const existingHydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
+
+    const isComplete = body.data.isComplete;
+    // If the caller didn't pass an explicit progress value, derive a
+    // sensible one from the new completion state: 100 when flipping to
+    // complete, otherwise leave the existing progress alone (or pull it
+    // back from 100 to 99 when un-completing so the row stops looking
+    // "done" in progress views).
+    const previousProgress = existing.progress ?? 0;
+    let nextProgress: number;
+    if (typeof body.data.progress === "number") {
+      nextProgress = body.data.progress;
+    } else if (isComplete) {
+      nextProgress = 100;
+    } else {
+      nextProgress = previousProgress >= 100 ? 99 : previousProgress;
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(scheduleItems)
+        .set({
+          isComplete,
+          progress: nextProgress,
+          updatedAt: new Date(),
+        })
+        .where(eq(scheduleItems.id, itemId));
+
+      // Same atomicity guarantee as the full PUT — keep the cascade in
+      // sync with the persisted row inside one transaction.
+      await synchronizeJobSchedule(existing.jobId!, tx);
+    });
+
+    const hydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
+    const changes = buildScheduleHistoryChanges(existingHydrated.item, hydrated.item);
+    const markedComplete =
+      !existingHydrated.item.isComplete && hydrated.item.isComplete;
+
+    // writeActivity also fires emitRealtimeEvent("activity:created", ...),
+    // which is what the PM/admin views listen to for live updates.
+    await writeActivity({
+      entityType: "schedule_item",
+      entityId: itemId,
+      action: markedComplete ? "completed" : "updated",
+      userId: req.auth!.userId,
+      jobId: existing.jobId,
+      description: markedComplete
+        ? `Marked schedule item ${existing.title} complete`
+        : `Updated schedule item ${existing.title}`,
+      extra: {
+        scheduleItemId: itemId,
+        changes,
+        previous: buildScheduleHistorySnapshot(existingHydrated.item),
+        current: buildScheduleHistorySnapshot(hydrated.item),
+      },
+    });
 
     res.json(hydrated);
   }),

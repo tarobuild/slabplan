@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { toastApiError } from "@/lib/api-errors"
+import { useAuthStore } from "@/store/auth"
 import {
   calculateBusinessEndDate,
   calculateWorkDaysBetween,
@@ -250,6 +251,9 @@ export function ScheduleItemDialog({
   const today = dateKey(new Date())
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const filePreview = useFilePreview()
+
+  const currentUser = useAuthStore((s) => s.user)
+  const isCrewMember = currentUser?.role === "crew_member"
 
   const [topTab, setTopTab] = useState("details")
   const [subTab, setSubTab] = useState("predecessors")
@@ -883,6 +887,56 @@ export function ScheduleItemDialog({
     }
   }
 
+  // Crew members can't issue a full PUT on the schedule item (admin/PM-only),
+  // but they CAN call the narrow POST /complete endpoint when assigned to it.
+  // Persist their toggle immediately rather than buffering it into the form
+  // — the form's Save button calls PUT, which would 403 for them.
+  async function handleToggleCompleteAsCrew(nextIsComplete: boolean) {
+    if (!item || draftMode) {
+      return
+    }
+
+    const previousProgress = values.progress
+    const nextProgress = nextIsComplete
+      ? 100
+      : previousProgress >= 100
+      ? 99
+      : previousProgress
+
+    // Optimistic: flip the form state right away so the UI reflects the
+    // tap, then revert on failure.
+    updateValues((current) => ({
+      ...current,
+      isComplete: nextIsComplete,
+      progress: nextProgress,
+    }))
+
+    setSaving(true)
+    try {
+      const response = await api.post<{ item: ScheduleItemRecord }>(
+        `/schedule-items/${item.id}/complete`,
+        { isComplete: nextIsComplete, progress: nextProgress },
+      )
+      setItem(response.data.item)
+      setValues(formFromItem(response.data.item))
+      await onRefresh()
+      toast.success(
+        nextIsComplete
+          ? "Marked schedule item complete"
+          : "Reopened schedule item",
+      )
+    } catch (err) {
+      updateValues((current) => ({
+        ...current,
+        isComplete: !nextIsComplete,
+        progress: previousProgress,
+      }))
+      toastApiError(err, "Failed to update completion")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleToggleTodo(todo: ScheduleTodo) {
     if (draftMode) {
       toast.info("Publish draft changes before updating linked to-do's")
@@ -1066,13 +1120,20 @@ export function ScheduleItemDialog({
                         <div className="flex items-center gap-3">
                           <button
                             type="button"
+                            disabled={isCrewMember && saving}
                             className={cn(
                               "inline-flex size-7 items-center justify-center rounded-full border transition-colors shrink-0",
                               values.isComplete
                                 ? "border-emerald-600 bg-emerald-600 text-white"
                                 : "border-slate-300 bg-white text-slate-400 hover:border-slate-400",
+                              isCrewMember && saving && "opacity-60",
                             )}
-                            onClick={() =>
+                            onClick={() => {
+                              if (isCrewMember && !draftMode) {
+                                void handleToggleCompleteAsCrew(!values.isComplete)
+                                return
+                              }
+
                               updateValues((current) => ({
                                 ...current,
                                 isComplete: !current.isComplete,
@@ -1082,7 +1143,7 @@ export function ScheduleItemDialog({
                                     : current.progress
                                   : 100,
                               }))
-                            }
+                            }}
                           >
                             {values.isComplete ? (
                               <Check className="size-4" />

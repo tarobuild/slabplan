@@ -191,9 +191,11 @@ app.use("/api", (req, _res, next) => {
 });
 
 // Serve the compiled React frontend whenever the build output is present.
-// In production the build is always present. In the dev workflow the build
-// step also copies the frontend before starting the server, so this works
-// for the workspace preview too.
+// In production the build is always present (build:prod runs the cadstone
+// vite build and copies its dist into ./public). In development this is a
+// no-op: the api-server dev script intentionally skips the cadstone build
+// to avoid racing with `check-api-codegen`, and the cadstone vite dev
+// server runs as its own workflow to serve the SPA.
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(currentDir, "public");
 if (existsSync(path.join(clientDist, "index.html"))) {

@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { cp, rm } from "node:fs/promises";
+import { cp, rm, stat } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -129,11 +129,31 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     },
   });
 
-  // Copy the built frontend into dist/public so the deployment is self-contained
+  // Copy the built frontend into dist/public so the deployment is self-contained.
+  // In development the cadstone vite dev server runs as its own workflow and
+  // serves the SPA directly, so this copy is best-effort: we skip it when the
+  // cadstone build output isn't present rather than forcing the api-server
+  // dev script to run a full vite build (which used to race with
+  // `check-api-codegen` writing into the generated client dirs).
   const cadstonePublic = path.resolve(artifactDir, "../cadstone/dist/public");
   const serverPublic = path.resolve(distDir, "public");
-  await cp(cadstonePublic, serverPublic, { recursive: true });
-  console.log("✓ Copied cadstone frontend → dist/public");
+  try {
+    const st = await stat(cadstonePublic);
+    if (!st.isDirectory()) {
+      throw new Error(`${cadstonePublic} is not a directory`);
+    }
+    await cp(cadstonePublic, serverPublic, { recursive: true });
+    console.log("✓ Copied cadstone frontend → dist/public");
+  } catch (err) {
+    if (err && err.code === "ENOENT") {
+      console.log(
+        `• Skipping cadstone frontend copy (not built at ${cadstonePublic}). ` +
+          `Use \`pnpm --filter @workspace/cadstone run build\` to include the SPA.`,
+      );
+    } else {
+      throw err;
+    }
+  }
 }
 
 buildAll().catch((err) => {

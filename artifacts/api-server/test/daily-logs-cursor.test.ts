@@ -183,12 +183,17 @@ async function fetchPage(
   const response = await fetch(url, {
     headers: { authorization: `Bearer ${adminToken}` },
   });
+  // Read the body exactly once. The previous form interpolated
+  // `${await response.text()}` directly into the assert message, which
+  // is evaluated eagerly even when the assertion succeeds and drained
+  // the body before the subsequent `response.json()` could read it.
+  const bodyText = await response.text();
   assert.equal(
     response.status,
     200,
-    `GET ${url.pathname}${url.search} must return 200, got ${response.status}: ${await response.text()}`,
+    `GET ${url.pathname}${url.search} must return 200, got ${response.status}: ${bodyText}`,
   );
-  return (await response.json()) as CursorPage;
+  return JSON.parse(bodyText) as CursorPage;
 }
 
 async function fetchSeededLogs(params: Record<string, string | string[]> = {}) {

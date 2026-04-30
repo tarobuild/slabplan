@@ -42,6 +42,15 @@ const crewDailyLogIds = [
   crypto.randomUUID(),
 ];
 
+const fileListFolderId = crypto.randomUUID();
+const fileListFileIds = [
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+  crypto.randomUUID(),
+];
+
 // Schedule items seeded into `accessibleJobId` to exercise the SQL-side
 // visibility filter on `GET /jobs/:jobId/schedule`. Each item has a unique
 // startDate so ordering is deterministic across pages.
@@ -125,6 +134,8 @@ before(async () => {
     clients,
     scheduleItems,
     scheduleItemAssignees,
+    folders,
+    files,
   } = await import("@workspace/db/schema");
   const { eq: eqOp } = await import("drizzle-orm");
 
@@ -364,6 +375,29 @@ before(async () => {
     userId: crewUserId,
   });
 
+  await db.insert(folders).values({
+    id: fileListFolderId,
+    title: `ZZZ Pagination File List ${fileListFolderId}`,
+    scope: "job",
+    jobId: accessibleJobId,
+    mediaType: "document",
+  });
+
+  await db.insert(files).values(
+    fileListFileIds.map((id, i) => ({
+      id,
+      folderId: fileListFolderId,
+      filename: `pagination-file-${i}.pdf`,
+      originalName: `Pagination File ${i}.pdf`,
+      fileUrl: `/uploads/test/pagination-file-${i}.pdf`,
+      fileSize: 1024,
+      mimeType: "application/pdf",
+      uploadedBy: pmUserId,
+      createdAt: new Date(baseTime + 200_000 + i * 1000),
+      updatedAt: new Date(baseTime + 200_000 + i * 1000),
+    })),
+  );
+
   adminToken = auth.signAccessToken(
     makePublicUser(adminUserId, "admin", adminEmail, "ZZZ Pagination Admin"),
   );
@@ -407,10 +441,14 @@ after(async () => {
     scheduleItemAssignees,
     scheduleItems,
     users,
+    folders,
+    files,
   } = await import("@workspace/db/schema");
   const { inArray } = await import("drizzle-orm");
 
   try {
+    await db.delete(files).where(inArray(files.id, fileListFileIds));
+    await db.delete(folders).where(inArray(folders.id, [fileListFolderId]));
     await db
       .delete(activityLog)
       .where(inArray(activityLog.id, testActivityIds));
@@ -691,6 +729,62 @@ test("GET /daily-logs/mine returns subsequent pages without duplicates", async (
 
   const firstIds = new Set(firstBody.data.map((row) => row.id));
   for (const row of lastBody.data) {
+    assert.equal(
+      firstIds.has(row.id),
+      false,
+      "subsequent pages must not repeat earlier rows",
+    );
+  }
+});
+
+test("GET /folders/:id/files limits returned rows in SQL", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/folders/${fileListFolderId}/files?limit=2&page=1`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    files: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(
+    body.files.length,
+    2,
+    "limit=2 must cap returned rows even with many files in the folder",
+  );
+  assert.equal(body.pagination.page, 1);
+  assert.equal(body.pagination.limit, 2);
+  assert.equal(body.pagination.totalItems, fileListFileIds.length);
+  assert.equal(
+    body.pagination.totalPages,
+    Math.ceil(fileListFileIds.length / 2),
+  );
+});
+
+test("GET /folders/:id/files returns subsequent pages without duplicates", async () => {
+  const firstResponse = await fetch(
+    `${baseUrl}/api/folders/${fileListFolderId}/files?limit=2&page=1`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+  const firstBody = (await firstResponse.json()) as {
+    files: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  const lastPage = firstBody.pagination.totalPages;
+  const lastResponse = await fetch(
+    `${baseUrl}/api/folders/${fileListFolderId}/files?limit=2&page=${lastPage}`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+  const lastBody = (await lastResponse.json()) as {
+    files: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  const firstIds = new Set(firstBody.files.map((row) => row.id));
+  for (const row of lastBody.files) {
     assert.equal(
       firstIds.has(row.id),
       false,

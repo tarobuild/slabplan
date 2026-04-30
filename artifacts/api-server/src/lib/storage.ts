@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
+import { createReadStream } from "node:fs";
 import path from "node:path";
 import type { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { Response } from "express";
 import { Storage } from "@google-cloud/storage";
 import { HttpError } from "./http";
@@ -110,6 +112,20 @@ export async function writeUploadedBuffer(
     resumable: false,
     contentType: options?.contentType ?? "application/octet-stream",
   });
+}
+
+export async function writeUploadedFromPath(
+  fileUrl: string,
+  sourcePath: string,
+  options?: { contentType?: string | null },
+): Promise<void> {
+  const { bucketName, objectName } = fileUrlToObject(fileUrl);
+  const file = storageClient.bucket(bucketName).file(objectName);
+  const writeStream = file.createWriteStream({
+    resumable: false,
+    contentType: options?.contentType ?? "application/octet-stream",
+  });
+  await pipeline(createReadStream(sourcePath), writeStream);
 }
 
 export async function deletePhysicalFile(fileUrl: string | null | undefined): Promise<void> {

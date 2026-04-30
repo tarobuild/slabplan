@@ -1,4 +1,3 @@
-import multer from "multer";
 import {
   and,
   asc,
@@ -41,17 +40,12 @@ import {
   buildUploadPath,
   deletePhysicalFile,
   writeUploadedBuffer,
+  writeUploadedFromPath,
 } from "../lib/storage";
+import { cleanupTempUpload, uploadArray } from "../lib/uploads";
 
 const router: IRouter = Router();
 router.use(requireManagerOrAbove);
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 1024 * 1024 * 200,
-    files: 20,
-  },
-});
 
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
@@ -1003,7 +997,7 @@ router.delete(
 
 router.post(
   "/:id/attachments",
-  upload.array("files", 20),
+  uploadArray("files", 20),
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     await assertCanManageLead(req.auth!, leadId);
@@ -1028,9 +1022,19 @@ router.post(
         storedFileName: storedName,
       });
 
-      await writeUploadedBuffer(fileUrl, uploadedFile.buffer, {
-        contentType: uploadedFile.mimetype,
-      });
+      try {
+        if (uploadedFile.path) {
+          await writeUploadedFromPath(fileUrl, uploadedFile.path, {
+            contentType: uploadedFile.mimetype,
+          });
+        } else {
+          await writeUploadedBuffer(fileUrl, uploadedFile.buffer, {
+            contentType: uploadedFile.mimetype,
+          });
+        }
+      } finally {
+        await cleanupTempUpload(uploadedFile);
+      }
 
       const [file] = await db
         .insert(files)

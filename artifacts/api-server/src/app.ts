@@ -18,6 +18,7 @@ import { logger } from "./lib/logger";
 import { HttpError } from "./lib/http";
 import { readBearerToken } from "./middleware/require-auth";
 import { ensureUploadRoot, streamStoredFileToResponse } from "./lib/storage";
+import { ensureTempUploadDir } from "./lib/uploads";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -27,6 +28,7 @@ app.set("trust proxy", 1);
 
 export async function prepareApp() {
   await ensureUploadRoot();
+  await ensureTempUploadDir();
 }
 
 app.use(

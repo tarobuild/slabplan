@@ -20,7 +20,9 @@ import {
   openStoredFileReadStream,
   storedFileExists,
   writeUploadedBuffer,
+  writeUploadedFromPath,
 } from "./storage";
+import { cleanupTempUpload } from "./uploads";
 import { emitRealtimeEvent } from "./realtime";
 import { logger } from "./logger";
 
@@ -607,6 +609,73 @@ async function listFoldersForScope(params: {
   };
 }
 
+const ALL_KNOWN_EXTENSIONS = [
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".csv",
+  ...photoExtensions,
+  ...videoExtensions,
+] as const;
+
+function buildFileTypeCondition(fileTypes: string[]): SQL | undefined {
+  if (fileTypes.length === 0) return undefined;
+
+  const positiveExts = new Set<string>();
+  let includeOther = false;
+
+  for (const type of fileTypes) {
+    switch (type) {
+      case "pdf":
+        positiveExts.add(".pdf");
+        break;
+      case "word":
+        positiveExts.add(".doc");
+        positiveExts.add(".docx");
+        break;
+      case "excel":
+        positiveExts.add(".xls");
+        positiveExts.add(".xlsx");
+        positiveExts.add(".csv");
+        break;
+      case "images":
+        for (const ext of photoExtensions) positiveExts.add(ext);
+        break;
+      case "video":
+        for (const ext of videoExtensions) positiveExts.add(ext);
+        break;
+      case "other":
+        includeOther = true;
+        break;
+    }
+  }
+
+  const extExpr = sql`lower(substring(coalesce(nullif(${files.originalName}, ''), ${files.filename}) from '\.[^.]*$'))`;
+  const orParts: SQL[] = [];
+
+  if (positiveExts.size > 0) {
+    const list = sql.join(
+      [...positiveExts].map((ext) => sql`${ext}`),
+      sql`, `,
+    );
+    orParts.push(sql`${extExpr} in (${list})`);
+  }
+
+  if (includeOther) {
+    const list = sql.join(
+      ALL_KNOWN_EXTENSIONS.map((ext) => sql`${ext}`),
+      sql`, `,
+    );
+    orParts.push(sql`(${extExpr} is null or ${extExpr} not in (${list}))`);
+  }
+
+  if (orParts.length === 0) return undefined;
+  if (orParts.length === 1) return orParts[0];
+  return sql`(${sql.join(orParts, sql` or `)})`;
+}
+
 export async function listFilesForFolder(params: {
   folderId: string;
   search: string | null;
@@ -621,107 +690,105 @@ export async function listFilesForFolder(params: {
 }) {
   const folder = await getFolderOrThrow(params.folderId, params.includeDeleted ?? false);
 
-  const rows = await db
-    .select({
-      id: files.id,
-      folderId: files.folderId,
-      filename: files.filename,
-      originalName: files.originalName,
-      fileUrl: files.fileUrl,
-      fileSize: files.fileSize,
-      mimeType: files.mimeType,
-      note: files.note,
-      uploadedBy: files.uploadedBy,
-      createdAt: files.createdAt,
-      updatedAt: files.updatedAt,
-      deletedAt: files.deletedAt,
-      uploadedByName: users.fullName,
-    })
-    .from(files)
-    .leftJoin(users, eq(files.uploadedBy, users.id))
-    .where(
-      and(
-        eq(files.folderId, folder.id),
-        params.includeDeleted ? isNotNull(sql`1`) : isNull(files.deletedAt),
-      ),
-    );
+  const conditions: SQL[] = [eq(files.folderId, folder.id)];
 
-  let filtered = rows;
+  if (!params.includeDeleted) {
+    conditions.push(isNull(files.deletedAt));
+  }
 
   if (params.search) {
-    const query = params.search.toLowerCase();
-    filtered = filtered.filter((file) =>
-      [file.filename, file.originalName, file.mimeType]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
+    const pattern = `%${params.search}%`;
+    conditions.push(
+      sql`(${files.filename} ilike ${pattern} or ${files.originalName} ilike ${pattern} or ${files.mimeType} ilike ${pattern})`,
     );
   }
 
   if (params.uploadedBy) {
-    filtered = filtered.filter((file) => file.uploadedBy === params.uploadedBy);
+    conditions.push(eq(files.uploadedBy, params.uploadedBy));
   }
 
-  if (params.fileTypes.length > 0) {
-    filtered = filtered.filter((file) => {
-      const ext = lowerExtension(file.originalName || file.filename);
-      return params.fileTypes.some((type) => {
-        if (type === "pdf") return ext === ".pdf";
-        if (type === "word") return [".doc", ".docx"].includes(ext);
-        if (type === "excel") return [".xls", ".xlsx", ".csv"].includes(ext);
-        if (type === "images") return photoExtensions.includes(ext);
-        if (type === "video") return videoExtensions.includes(ext);
-        if (type === "other") {
-          return ![
-            ".pdf",
-            ".doc",
-            ".docx",
-            ".xls",
-            ".xlsx",
-            ".csv",
-            ...photoExtensions,
-            ...videoExtensions,
-          ].includes(ext);
-        }
-        return false;
-      });
-    });
+  const fileTypeCondition = buildFileTypeCondition(params.fileTypes);
+  if (fileTypeCondition) {
+    conditions.push(fileTypeCondition);
   }
 
   if (params.from) {
-    const fromDate = new Date(`${params.from}T00:00:00.000Z`);
-    filtered = filtered.filter((file) => new Date(file.createdAt) >= fromDate);
+    const fromIso = `${params.from}T00:00:00.000Z`;
+    conditions.push(sql`${files.createdAt} >= ${fromIso}::timestamptz`);
   }
 
   if (params.to) {
-    const toDate = new Date(`${params.to}T23:59:59.999Z`);
-    filtered = filtered.filter((file) => new Date(file.createdAt) <= toDate);
+    const toIso = `${params.to}T23:59:59.999Z`;
+    conditions.push(sql`${files.createdAt} <= ${toIso}::timestamptz`);
   }
 
-  const sorters: Record<string, (left: (typeof filtered)[number], right: (typeof filtered)[number]) => number> = {
-    name_asc: (left, right) => left.filename.localeCompare(right.filename),
-    name_desc: (left, right) => right.filename.localeCompare(left.filename),
-    modified_newest: (left, right) => +new Date(right.updatedAt) - +new Date(left.updatedAt),
-    modified_oldest: (left, right) => +new Date(left.updatedAt) - +new Date(right.updatedAt),
-    added_oldest: (left, right) => +new Date(left.createdAt) - +new Date(right.createdAt),
-    added_newest: (left, right) => +new Date(right.createdAt) - +new Date(left.createdAt),
-  };
-
-  filtered.sort(sorters[params.sortBy] ?? sorters.modified_newest);
+  let orderBy: SQL[];
+  switch (params.sortBy) {
+    case "name_asc":
+      orderBy = [asc(files.filename), desc(files.id)];
+      break;
+    case "name_desc":
+      orderBy = [desc(files.filename), desc(files.id)];
+      break;
+    case "modified_oldest":
+      orderBy = [asc(files.updatedAt), desc(files.id)];
+      break;
+    case "added_oldest":
+      orderBy = [asc(files.createdAt), desc(files.id)];
+      break;
+    case "added_newest":
+      orderBy = [desc(files.createdAt), desc(files.id)];
+      break;
+    case "modified_newest":
+    default:
+      orderBy = [desc(files.updatedAt), desc(files.id)];
+      break;
+  }
 
   const page = params.page ?? 1;
   const limit = params.limit ?? 100;
   const offset = (page - 1) * limit;
+  const whereClause = and(...conditions);
+
+  const [rows, [totalRow]] = await Promise.all([
+    db
+      .select({
+        id: files.id,
+        folderId: files.folderId,
+        filename: files.filename,
+        originalName: files.originalName,
+        fileUrl: files.fileUrl,
+        fileSize: files.fileSize,
+        mimeType: files.mimeType,
+        note: files.note,
+        uploadedBy: files.uploadedBy,
+        createdAt: files.createdAt,
+        updatedAt: files.updatedAt,
+        deletedAt: files.deletedAt,
+        uploadedByName: users.fullName,
+      })
+      .from(files)
+      .leftJoin(users, eq(files.uploadedBy, users.id))
+      .where(whereClause)
+      .orderBy(...orderBy)
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ total: count() })
+      .from(files)
+      .where(whereClause),
+  ]);
+
+  const totalItems = Number(totalRow?.total ?? 0);
 
   return {
     folder,
-    files: filtered.slice(offset, offset + limit),
+    files: rows,
     pagination: {
       page,
       limit,
-      totalItems: filtered.length,
-      totalPages: Math.max(1, Math.ceil(filtered.length / limit)),
+      totalItems,
+      totalPages: Math.max(1, Math.ceil(totalItems / limit)),
     },
   };
 }
@@ -1128,9 +1195,20 @@ export async function saveUploadedFiles(params: {
       storedFileName: storedName,
     });
 
-    await writeUploadedBuffer(fileUrl, uploadedFile.buffer, {
-      contentType: uploadedFile.mimetype,
-    });
+    try {
+      if (uploadedFile.path) {
+        await writeUploadedFromPath(fileUrl, uploadedFile.path, {
+          contentType: uploadedFile.mimetype,
+        });
+      } else {
+        await writeUploadedBuffer(fileUrl, uploadedFile.buffer, {
+          contentType: uploadedFile.mimetype,
+        });
+      }
+    } finally {
+      await cleanupTempUpload(uploadedFile);
+    }
+
     let file: File;
 
     try {

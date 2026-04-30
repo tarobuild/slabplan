@@ -1,4 +1,3 @@
-import multer from "multer";
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import {
@@ -18,15 +17,9 @@ import {
 import { HttpError, asyncHandler } from "../lib/http";
 import { requireAdmin } from "../middleware/require-auth";
 import { streamStoredFileToResponse } from "../lib/storage";
+import { uploadArray } from "../lib/uploads";
 
 const router: IRouter = Router();
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 1024 * 1024 * 200,
-    files: 20,
-  },
-});
 
 const folderListQuerySchema = z.object({
   parentId: z.string().uuid().optional(),
@@ -48,8 +41,8 @@ const fileListQuerySchema = z.object({
         ? value.flatMap((item) => item.split(",")).map((item) => item.trim()).filter(Boolean)
         : value.split(",").map((item) => item.trim()).filter(Boolean);
     }),
-  from: z.string().optional(),
-  to: z.string().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format, expected YYYY-MM-DD.").optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format, expected YYYY-MM-DD.").optional(),
   sortBy: z.string().optional().default("modified_newest"),
   page: z.coerce.number().int().positive().optional().default(1),
   limit: z.coerce.number().int().positive().max(100).optional().default(100),
@@ -139,7 +132,7 @@ router.get(
 router.post(
   "/resources/folders/:id/upload",
   requireAdmin,
-  upload.array("files", 20),
+  uploadArray("files", 20),
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
     await assertCanUploadToFolder(req.auth!, folderId);

@@ -267,6 +267,11 @@ export const files = pgTable(
   (table) => [
     index("files_folder_id_idx").on(table.folderId),
     index("files_uploaded_by_idx").on(table.uploadedBy),
+    index("files_folder_created_id_idx").on(
+      table.folderId,
+      sql`${table.createdAt} DESC`,
+      sql`${table.id} DESC`,
+    ),
   ],
 );
 

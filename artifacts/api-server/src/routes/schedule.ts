@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import multer from "multer";
 import {
   and,
   asc,
@@ -51,18 +50,12 @@ import {
   buildUploadPath,
   deletePhysicalFile,
   writeUploadedBuffer,
+  writeUploadedFromPath,
 } from "../lib/storage";
+import { cleanupTempUpload, uploadArray } from "../lib/uploads";
 
 const router: IRouter = Router();
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 1024 * 1024 * 200,
-    files: 20,
-  },
-});
 
 const dependencyTypes = [
   "finish_to_start",
@@ -3158,7 +3151,7 @@ router.post(
 router.post(
   "/schedule-items/:id/attachments",
   requireScheduleItemRouteAccess,
-  upload.array("files", 20),
+  uploadArray("files", 20),
   asyncHandler(async (req, res) => {
     const itemId = getParam(req.params.id, "schedule item id");
     const item = await getScheduleItemOrThrow(itemId);
@@ -3186,9 +3179,19 @@ router.post(
         storedFileName,
       });
 
-      await writeUploadedBuffer(uploadPath.fileUrl, uploadedFile.buffer, {
-        contentType: uploadedFile.mimetype,
-      });
+      try {
+        if (uploadedFile.path) {
+          await writeUploadedFromPath(uploadPath.fileUrl, uploadedFile.path, {
+            contentType: uploadedFile.mimetype,
+          });
+        } else {
+          await writeUploadedBuffer(uploadPath.fileUrl, uploadedFile.buffer, {
+            contentType: uploadedFile.mimetype,
+          });
+        }
+      } finally {
+        await cleanupTempUpload(uploadedFile);
+      }
 
       let file: typeof files.$inferSelect;
       let attachment: { id: string };

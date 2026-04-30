@@ -146,3 +146,34 @@ test("SEED_USER_IDENTITIES does not contain any password literals", async () => 
     assert.match(identity.passwordEnvVar, /^SEED_ADMIN_/);
   }
 });
+
+test("TARGETS: only the local target seeds the E2E fixture client + job", async () => {
+  const mod = await loadScript();
+  assert.equal(
+    mod.TARGETS.local.seedsLocalFixtures,
+    true,
+    "local target must opt in to fixture seeding",
+  );
+  assert.equal(
+    mod.TARGETS.production.seedsLocalFixtures,
+    false,
+    "production must NEVER seed the E2E fixture rows",
+  );
+});
+
+test("LOCAL_FIXTURE_CLIENT and LOCAL_FIXTURE_JOB expose the keys the e2e suite reads", async () => {
+  const mod = await loadScript();
+
+  // The Playwright suite picks these up via requireAnyClient /
+  // requireAnyJob, so the natural-key fields must exist and be
+  // non-empty strings.
+  assert.equal(typeof mod.LOCAL_FIXTURE_CLIENT.companyName, "string");
+  assert.ok(mod.LOCAL_FIXTURE_CLIENT.companyName.length > 0);
+
+  assert.equal(typeof mod.LOCAL_FIXTURE_JOB.title, "string");
+  assert.ok(mod.LOCAL_FIXTURE_JOB.title.length > 0);
+  // Done-criteria from the originating task: the fixture job must be
+  // open so the suite has an actionable target to attach schedule
+  // items / daily logs / files to.
+  assert.equal(mod.LOCAL_FIXTURE_JOB.status, "open");
+});

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { CESAR, loginViaApi } from "./helpers/auth"
-import { createTestJob, deleteJob, pickAnyClient } from "./helpers/api"
+import { createTestJob, deleteJob, requireAnyClient } from "./helpers/api"
 import { CESAR_STATE } from "./helpers/storage"
 
 test.use({ storageState: CESAR_STATE })
@@ -24,13 +24,12 @@ test.describe("jobs", () => {
     page,
     request,
   }) => {
-    const clientId = await pickAnyClient(request, token)
-    test.skip(!clientId, "Need at least one client seeded to attach a job to")
+    const clientId = await requireAnyClient(request, token)
 
     const title = `E2E smoke job ${Date.now()}`
     createdJobId = await createTestJob(request, token, {
       title,
-      clientId: clientId!,
+      clientId,
     })
 
     await page.goto("/jobs")

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { ANWAR, CESAR, authHeaders, loginViaApi } from "./helpers/auth"
-import { pickAnyJob } from "./helpers/api"
+import { requireAnyJob } from "./helpers/api"
 import { ANWAR_STATE } from "./helpers/storage"
 
 // Anwar navigates the UI to confirm he can't see Cesar's private todo,
@@ -24,9 +24,8 @@ test.describe("personal-todo isolation", () => {
     cesarToken = (await loginViaApi(request, CESAR)).accessToken
     anwarToken = (await loginViaApi(request, ANWAR)).accessToken
 
-    const job = await pickAnyJob(request, cesarToken)
-    test.skip(!job, "Need at least one job both users can access via the API")
-    jobId = job!.id
+    const job = await requireAnyJob(request, cesarToken)
+    jobId = job.id
 
     // Create a personal todo on the job as Cesar.
     const startDate = new Date().toISOString().slice(0, 10)

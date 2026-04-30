@@ -1,7 +1,7 @@
 /**
  * seed-users.mjs — upsert the CAD Stone admin users into a database, plus
- * a synthetic crew_member fixture for the Playwright e2e suite when
- * seeding the local database.
+ * a synthetic crew_member fixture and a baseline E2E client + open job
+ * for the Playwright e2e suite when seeding the local database.
  *
  * Usage:
  *   SEED_ADMIN_CESAR_PASSWORD=... SEED_ADMIN_ANWAR_PASSWORD=... \
@@ -13,7 +13,12 @@
  *     --db=production --i-know-what-im-doing
  *
  * Required arguments:
- *   --db=local        seed the local database (uses DATABASE_URL)
+ *   --db=local        seed the local database (uses DATABASE_URL).
+ *                     Also seeds a baseline E2E fixture (one client +
+ *                     one open job) so the Playwright suite has
+ *                     something to attach `pickAnyClient` /
+ *                     `pickAnyJob` results to. Production never
+ *                     receives the fixture.
  *   --db=production   seed the live database (uses SUPABASE_DATABASE_URL)
  *                     and ALSO requires --i-know-what-im-doing.
  *
@@ -100,6 +105,25 @@ export const WORKER_FIXTURE_IDENTITY = {
   passwordEnvVar: "SEED_WORKER_FIXTURE_PASSWORD",
 };
 
+// Baseline data the Playwright e2e suite expects to find. The suite's
+// `pickAnyClient` / `pickAnyJob` helpers used to silently `test.skip` on
+// a clean local DB; seeding these here keeps the suite running all
+// specs against a freshly-recreated database. Both rows are upserted by
+// a stable identifier (company_name / title) so re-running the seed is
+// idempotent. Production never gets these — they live behind the
+// `seedsLocalFixtures` flag below.
+export const LOCAL_FIXTURE_CLIENT = {
+  companyName: "E2E Fixture Client",
+  email: "fixture-client@cadstone.test",
+};
+
+export const LOCAL_FIXTURE_JOB = {
+  title: "E2E Fixture Job",
+  status: "open",
+  jobType: "custom",
+  contractType: "fixed_price",
+};
+
 export const TARGETS = {
   local: {
     label: "LOCAL",
@@ -107,11 +131,15 @@ export const TARGETS = {
     // Local also seeds the worker fixture so the Playwright suite can
     // exercise role-gated paths against a true crew_member user.
     extraIdentities: [WORKER_FIXTURE_IDENTITY],
+    // Local also seeds the baseline client + job the Playwright suite
+    // looks up via pickAnyClient / pickAnyJob.
+    seedsLocalFixtures: true,
   },
   production: {
     label: "PRODUCTION",
     envVar: "SUPABASE_DATABASE_URL",
     extraIdentities: [],
+    seedsLocalFixtures: false,
   },
 };
 
@@ -210,6 +238,126 @@ export function resolveSeedUsers(env, identities = SEED_USER_IDENTITIES) {
   });
 }
 
+// Stateful upsert of the baseline E2E client + open job. Uses
+// company_name / title as the natural key (both are soft-delete aware,
+// so we filter on deleted_at IS NULL to mirror how the API surfaces
+// them). Attaches the rows to the first admin user (Cesar) for
+// `created_by`, which is allowed to be null but is more useful as a
+// real id when debugging the seeded fixture.
+//
+// When the fixture rows already exist, we re-assert the canonical
+// values (job.status=open, job.client_id linked to the fixture client,
+// etc.). That way a local DB that has drifted — for example because a
+// previous run mutated job.status to "closed" — self-heals on the next
+// seed instead of leaving the e2e suite running against malformed
+// fixtures.
+async function seedLocalFixtures(client, label) {
+  const adminEmail = SEED_USER_IDENTITIES[0].email;
+  const adminLookup = await client.query(
+    "SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL LIMIT 1",
+    [adminEmail],
+  );
+  const adminId = adminLookup.rows[0]?.id ?? null;
+
+  if (!adminId) {
+    throw new Error(
+      `[${label}] Cannot seed E2E fixtures: admin user ${adminEmail} not found. ` +
+        `Make sure the user-seed step ran successfully first.`,
+    );
+  }
+
+  const existingClient = await client.query(
+    "SELECT id FROM clients WHERE company_name = $1 AND deleted_at IS NULL LIMIT 1",
+    [LOCAL_FIXTURE_CLIENT.companyName],
+  );
+
+  let clientRowId;
+  if (existingClient.rowCount && existingClient.rowCount > 0) {
+    clientRowId = existingClient.rows[0].id;
+    // Re-assert the canonical email + created_by so a hand-edited
+    // fixture row converges back on the expected shape.
+    await client.query(
+      `UPDATE clients
+          SET email = $2,
+              created_by = $3
+        WHERE id = $1`,
+      [clientRowId, LOCAL_FIXTURE_CLIENT.email, adminId],
+    );
+    console.log(
+      `[${label}] E2E fixture client already exists, re-asserted canonical fields: "${LOCAL_FIXTURE_CLIENT.companyName}"`,
+    );
+  } else {
+    clientRowId = crypto.randomUUID();
+    await client.query(
+      `INSERT INTO clients (id, company_name, email, created_by)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        clientRowId,
+        LOCAL_FIXTURE_CLIENT.companyName,
+        LOCAL_FIXTURE_CLIENT.email,
+        adminId,
+      ],
+    );
+    console.log(
+      `[${label}] Created E2E fixture client: "${LOCAL_FIXTURE_CLIENT.companyName}"`,
+    );
+  }
+
+  const existingJob = await client.query(
+    "SELECT id FROM jobs WHERE title = $1 AND deleted_at IS NULL LIMIT 1",
+    [LOCAL_FIXTURE_JOB.title],
+  );
+
+  if (existingJob.rowCount && existingJob.rowCount > 0) {
+    const existingJobId = existingJob.rows[0].id;
+    // Re-assert the fields the e2e suite depends on: status MUST be
+    // open (otherwise pickAnyJob's caller may operate on a closed
+    // job), the job MUST be linked to the fixture client (so
+    // requireAnyClient and requireAnyJob agree on which row is the
+    // baseline), and job_type / contract_type stay aligned with the
+    // values the suite uses for createTestJob.
+    await client.query(
+      `UPDATE jobs
+          SET status = $2,
+              job_type = $3,
+              contract_type = $4,
+              client_id = $5,
+              created_by = $6
+        WHERE id = $1`,
+      [
+        existingJobId,
+        LOCAL_FIXTURE_JOB.status,
+        LOCAL_FIXTURE_JOB.jobType,
+        LOCAL_FIXTURE_JOB.contractType,
+        clientRowId,
+        adminId,
+      ],
+    );
+    console.log(
+      `[${label}] E2E fixture job already exists, re-asserted canonical fields: "${LOCAL_FIXTURE_JOB.title}" (status=${LOCAL_FIXTURE_JOB.status})`,
+    );
+    return;
+  }
+
+  await client.query(
+    `INSERT INTO jobs
+       (id, title, status, job_type, contract_type, client_id, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      crypto.randomUUID(),
+      LOCAL_FIXTURE_JOB.title,
+      LOCAL_FIXTURE_JOB.status,
+      LOCAL_FIXTURE_JOB.jobType,
+      LOCAL_FIXTURE_JOB.contractType,
+      clientRowId,
+      adminId,
+    ],
+  );
+  console.log(
+    `[${label}] Created E2E fixture job: "${LOCAL_FIXTURE_JOB.title}" (status=${LOCAL_FIXTURE_JOB.status})`,
+  );
+}
+
 async function seedTarget(target, users, { pauseMs = PRODUCTION_PAUSE_MS } = {}) {
   const connectionString = process.env[target.envVar];
 
@@ -268,6 +416,11 @@ async function seedTarget(target, users, { pauseMs = PRODUCTION_PAUSE_MS } = {})
       console.log(
         `[${target.label}] Created user: ${user.email} (${user.role})`,
       );
+    }
+
+    if (target.seedsLocalFixtures) {
+      console.log(`[${target.label}] Seeding baseline E2E fixtures…`);
+      await seedLocalFixtures(client, target.label);
     }
   } finally {
     await client.end();

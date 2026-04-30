@@ -1,6 +1,6 @@
 import { expect, test, type Request } from "@playwright/test"
 import { CESAR, authHeaders, loginViaApi } from "./helpers/auth"
-import { createTestJob, deleteJob, pickAnyClient } from "./helpers/api"
+import { createTestJob, deleteJob, requireAnyClient } from "./helpers/api"
 import { CESAR_STATE } from "./helpers/storage"
 
 test.use({ storageState: CESAR_STATE })
@@ -32,15 +32,11 @@ test.describe("daily logs Load more (cursor pagination)", () => {
   test.beforeAll(async ({ request }) => {
     token = (await loginViaApi(request, CESAR)).accessToken
 
-    const clientId = await pickAnyClient(request, token)
-    test.skip(
-      !clientId,
-      "Need at least one client to attach a fresh test job to",
-    )
+    const clientId = await requireAnyClient(request, token)
 
     jobId = await createTestJob(request, token, {
       title: jobTitle,
-      clientId: clientId!,
+      clientId,
     })
 
     // logDate is the leading sort key (DESC). Seed across 28 distinct

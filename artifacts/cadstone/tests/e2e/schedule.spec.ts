@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { CESAR, authHeaders, loginViaApi } from "./helpers/auth"
-import { pickAnyJob } from "./helpers/api"
+import { requireAnyJob } from "./helpers/api"
 import { CESAR_STATE } from "./helpers/storage"
 
 test.use({ storageState: CESAR_STATE })
@@ -26,9 +26,8 @@ test.describe("schedule", () => {
 
   test.beforeAll(async ({ request }) => {
     token = (await loginViaApi(request, CESAR)).accessToken
-    const job = await pickAnyJob(request, token)
-    test.skip(!job, "Need at least one job")
-    jobId = job!.id
+    const job = await requireAnyJob(request, token)
+    jobId = job.id
   })
 
   test.afterAll(async ({ request }) => {

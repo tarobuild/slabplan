@@ -4,7 +4,7 @@ import {
   createTestJob,
   deleteJob,
   deleteScheduleItem,
-  pickAnyClient,
+  requireAnyClient,
 } from "./helpers/api"
 import { CESAR_STATE } from "./helpers/storage"
 
@@ -86,12 +86,11 @@ test.describe("schedule week-view touch long-press drag", () => {
 
   test.beforeAll(async ({ request }) => {
     token = (await loginViaApi(request, CESAR)).accessToken
-    const clientId = await pickAnyClient(request, token)
-    test.skip(!clientId, "Need at least one client seeded to attach a job to")
+    const clientId = await requireAnyClient(request, token)
 
     jobId = await createTestJob(request, token, {
       title: `Schedule touch-drag job ${Date.now()}`,
-      clientId: clientId!,
+      clientId,
     })
 
     // Next-week Monday so we don't collide with workday exceptions on today's week.

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { CESAR, authHeaders, loginViaApi } from "./helpers/auth"
-import { pickAnyJob } from "./helpers/api"
+import { requireAnyJob } from "./helpers/api"
 import { CESAR_STATE } from "./helpers/storage"
 
 test.use({ storageState: CESAR_STATE })
@@ -19,9 +19,8 @@ test.describe("file upload", () => {
 
   test.beforeAll(async ({ request }) => {
     token = (await loginViaApi(request, CESAR)).accessToken
-    const job = await pickAnyJob(request, token)
-    test.skip(!job, "Need at least one job Cesar can see")
-    jobId = job!.id
+    const job = await requireAnyJob(request, token)
+    jobId = job.id
   })
 
   test.afterAll(async ({ request }) => {
@@ -42,7 +41,13 @@ test.describe("file upload", () => {
     )
     expect(foldersRes.ok()).toBeTruthy()
     const folders = (await foldersRes.json()).folders ?? []
-    test.skip(folders.length === 0, "No documents folder for this job")
+    // listFoldersForJob auto-creates the "Global Documents" system
+    // folder on first read, so an empty array here means the API
+    // contract changed and we want to fail loudly instead of skipping.
+    expect(
+      folders.length,
+      "expected at least one document folder (Global Documents is auto-seeded)",
+    ).toBeGreaterThan(0)
     const folder = folders[0]
     const folderId = folder.id as string
     const folderTitle = folder.title as string

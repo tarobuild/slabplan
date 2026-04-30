@@ -17,6 +17,7 @@ import {
 import { HttpError } from "./http";
 import { logger } from "./logger";
 import { deletePhysicalFile } from "./storage";
+import { validateMagicBytesForFiles } from "./upload-magic-bytes";
 import { multipartIdempotencyMiddleware } from "../middleware/idempotency";
 
 const TMP_UPLOAD_DIR = path.resolve(process.cwd(), "tmp", "uploads");
@@ -534,6 +535,20 @@ function wrapMulter(
         return;
       }
       attachResponseCleanup(req, res);
+
+      // Magic-byte validation. Extension + Content-Type are trivially
+      // spoofable, so before any route logic runs we sniff the bytes
+      // multer already wrote to the temp file and reject mismatches
+      // with a 415 problem+json. This runs after `attachResponseCleanup`
+      // so the temp files get purged regardless of which middleware
+      // sends the response.
+      try {
+        await validateMagicBytesForFiles(collectRequestUploads(req));
+      } catch (validationErr) {
+        next(validationErr);
+        return;
+      }
+
       // Run the multipart-aware idempotency check now that multer has
       // parsed the form fields and populated `contentHash` on every
       // saved file. The global idempotency middleware (which fingerprints

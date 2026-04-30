@@ -769,3 +769,59 @@ transaction + GCS prefix delete; production target requires both
 `artifacts/api-server/scripts/seed-users.mjs` (same flag pattern).
 Neither was used end-to-end on 2026-04-30; only the GCS half of the
 wipe script ran.
+
+### 2026-04-30 — Cleared orphan file rows left over from the upload wipe
+
+**What we set out to do:** finish the loose end called out in the
+2026-04-30 entry above — the 26 `files` rows (and 4 `file_annotations`
+rows) that still pointed at GCS keys deleted earlier the same day. Those
+broken pointers would have rendered as 404 thumbnails / "couldn't load
+file" tiles the next time Cesar or Anwar opened a pre-wipe job, lead, or
+daily log.
+
+**What actually happened:**
+
+1. **Inventory.** Selected every `files` row with
+   `created_at <= 2026-05-01T00:00:00Z` (cutoff chosen to exclude any
+   uploads added after the wipe) and probed each row's
+   `file_url` against the App Storage bucket
+   (`replit-objstore-e7153229-d7cd-46a3-b318-10d50b6b412e`) using the
+   same sidecar GCS client `src/lib/storage.ts` uses at runtime.
+   Result: 26 rows inspected, 26 orphan, 0 present, 0 indeterminate
+   (no transient probe errors — every row's object was confirmed
+   missing, not just "couldn't reach GCS").
+2. **Hard delete inside a single transaction.** `DELETE FROM
+   file_annotations / lead_attachments / daily_log_attachments /
+   schedule_item_attachments WHERE file_id = ANY($orphans)` run
+   first so we get accurate counts (the FK cascades would have
+   removed them anyway), then `DELETE FROM files WHERE id =
+   ANY($orphans)`, then a verifying `SELECT COUNT(*)` on `files`
+   (must be zero), then `COMMIT`. A re-run dry-run confirms zero
+   pre-cutoff rows remain.
+3. **Counts removed:**
+   - `files`: 26 (5 of which were already soft-deleted; the other 21
+     were live rows that the UI would have tried to render)
+   - `file_annotations`: 4 (cascaded; matched the predicted count)
+   - `lead_attachments`: 3
+   - `daily_log_attachments`: 3
+   - `schedule_item_attachments`: 4
+4. **Why hard-delete and not `deleted_at = NOW()`:** the list/serve
+   paths already filter on `deleted_at IS NULL`, but soft-deleted
+   files still surface in the trash UI and are restorable — which
+   would just put a broken tile back in front of the operators. There
+   is no recovery path for the underlying GCS object (see § 6.2 — no
+   off-Replit copy exists), so retaining the metadata adds no value.
+
+**Re-running the procedure:** committed at
+`artifacts/api-server/scripts/cleanup-orphan-file-rows.mjs`. Same flag
+pattern as the wipe script (`--db=local|production`, production writes
+require `--i-know-what-im-doing`, `--dry-run` allowed against either
+target, `--cutoff=YYYY-MM-DDTHH:MM:SSZ` to expand or shrink the window).
+The script never touches the bucket itself — it only reads it to
+classify rows.
+
+**What was deliberately not touched:** uploads added after 2026-04-30
+(out of scope per task), the bucket itself (read-only probe), and any
+row whose storage probe came back "indeterminate" rather than
+"missing" (the script refuses to delete on uncertainty so a network
+blip can never destroy live data).

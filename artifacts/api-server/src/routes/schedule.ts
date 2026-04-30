@@ -2421,8 +2421,25 @@ router.get(
   "/jobs/:jobId/schedule/baseline",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await ensureJobExists(jobId);
-    await synchronizeJobSchedule(jobId);
+    // Read-only existence check; ensureJobExists also lazy-INSERTs a
+    // default phase + settings row, which would still be a hidden write
+    // on this read-shaped endpoint. Defaults are created on the next
+    // write path. Mirrors the #162 fix on GET /jobs/:jobId/schedule.
+    await verifyJobExists(jobId);
+
+    // Read-only endpoint: cascade is computed in memory and applied as
+    // overrides on the "current" dates returned in the response.
+    // Persistence happens on write paths and the periodic auto-complete
+    // sweeper. Mirrors the #162 fix on GET /jobs/:jobId/schedule — opening
+    // the baseline tab must never silently rewrite persisted dates,
+    // because that confuses read-scope PATs/agents and races concurrent
+    // viewers. Audit task #210 found and removed the hidden write here.
+    const cascadeInputs = await loadJobScheduleCascadeInputs(jobId);
+    const cascadedDates = computeJobScheduleCascade(
+      cascadeInputs.items,
+      cascadeInputs.predecessorRows,
+      cascadeInputs.exceptions,
+    );
 
     const [baseline] = await db
       .select({
@@ -2443,15 +2460,21 @@ router.get(
       return;
     }
 
-    const currentItems = await db
-      .select({
-        id: scheduleItems.id,
-        startDate: scheduleItems.startDate,
-        endDate: scheduleItems.endDate,
-      })
-      .from(scheduleItems)
-      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)));
-    const currentItemMap = new Map(currentItems.map((item) => [item.id, item]));
+    // Use the in-memory cascade-resolved dates as the "current" view; fall
+    // back to the persisted row for any item the cascade can't override.
+    const currentItemMap = new Map(
+      cascadeInputs.items.map((item) => {
+        const next = cascadedDates.get(item.id);
+        return [
+          item.id,
+          {
+            id: item.id,
+            startDate: next?.startDate ?? item.startDate,
+            endDate: next?.endDate ?? item.endDate,
+          },
+        ];
+      }),
+    );
     const items = (baseline.itemsSnapshot ?? []).map((entry: {
       scheduleItemId: string;
       title: string;

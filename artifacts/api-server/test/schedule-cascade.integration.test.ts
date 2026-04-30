@@ -22,12 +22,14 @@ const writeCascadeJobId = crypto.randomUUID();
 const sweeperJobId = crypto.randomUUID();
 const sweeperJobDisabledId = crypto.randomUUID();
 const concurrentJobId = crypto.randomUUID();
+const baselineReadOnlyJobId = crypto.randomUUID();
 const allJobIds = [
   readOnlyJobId,
   writeCascadeJobId,
   sweeperJobId,
   sweeperJobDisabledId,
   concurrentJobId,
+  baselineReadOnlyJobId,
 ];
 
 const WRITE_SQL = /^\s*(update|insert|delete)\b/i;
@@ -519,3 +521,205 @@ test("sweepAllAutomaticCompletion flips overdue items only when settings.opt-in 
   assert.equal(enabledAfter!.isComplete, true, "enabled job's overdue item must flip");
   assert.equal(disabledAfter!.isComplete, false, "disabled job's item must not flip");
 });
+
+// Audit task #210: GET /jobs/:jobId/schedule/baseline used to harbor
+// two hidden writes — (1) synchronizeJobSchedule(jobId) UPDATEing
+// schedule_items via cascade and possibly again via
+// applyAutomaticCompletionIfEnabled, and (2) ensureJobExists(jobId)
+// lazy-INSERTing a default schedule_phase + schedule_settings row on
+// first view of a job. Opening the baseline tab is a read-shaped
+// action — read-scope PATs and the in-app agent must be able to view
+// it without producing mutations, concurrent viewers must not race
+// writes, and the audit trail must not record rewrites that no human
+// caused. This test seeds a fresh job with NO defaults plus stale
+// persisted item dates that the cascade would otherwise rewrite, then
+// asserts: (a) the interceptor sees zero UPDATE/INSERT/DELETE, (b) the
+// response uses cascade-resolved dates as overrides, (c) persisted
+// dates remain stale, and (d) schedule_settings + schedule_phases for
+// the job are still empty after the GET (proves the lazy-init writes
+// are gone).
+test("GET /jobs/:jobId/schedule/baseline does NOT issue any UPDATE/INSERT/DELETE", async () => {
+  const { db, pool } = await import("@workspace/db");
+  const { scheduleItems, scheduleItemPredecessors, scheduleBaselines, scheduleSettings, schedulePhases } =
+    await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+
+  // Deliberately do NOT pre-insert schedule_settings or schedule_phases
+  // for this job. ensureJobExists used to lazy-INSERT both the first
+  // time anyone hit a schedule endpoint, so a fresh-job GET was secretly
+  // populating defaults. The fix swaps to verifyJobExists; this test
+  // proves the lazy-init writes are gone by asserting the interceptor
+  // sees zero writes AND that schedule_settings / schedule_phases
+  // remain empty for this job after the GET.
+
+  // A is the predecessor; B is FS-after-A. Persisted endDates are stale
+  // so cascade would want to push them forward, producing UPDATEs if the
+  // GET still called synchronizeJobSchedule. workDays=5 from
+  // Mon 2025-05-05 cascades to A.endDate=Fri 2025-05-09; B (FS-after-A)
+  // starts Mon 2025-05-12 and runs workDays=3 to Wed 2025-05-14.
+  const itemAId = crypto.randomUUID();
+  const itemBId = crypto.randomUUID();
+  await db.insert(scheduleItems).values([
+    {
+      id: itemAId,
+      jobId: baselineReadOnlyJobId,
+      title: "ZZZ baseline A predecessor",
+      startDate: "2025-05-05",
+      workDays: 5,
+      endDate: "2025-05-15",
+      createdBy: adminUserId,
+    },
+    {
+      id: itemBId,
+      jobId: baselineReadOnlyJobId,
+      title: "ZZZ baseline B downstream",
+      startDate: "2025-05-20",
+      workDays: 3,
+      endDate: "2025-05-22",
+      createdBy: adminUserId,
+    },
+  ]);
+  await db.insert(scheduleItemPredecessors).values({
+    scheduleItemId: itemBId,
+    predecessorId: itemAId,
+    dependencyType: "finish_to_start",
+    lagDays: 0,
+  });
+
+  // Seed a baseline directly so the GET has something to render.
+  // (Going through POST would itself synchronize and "fix" the persisted
+  // dates — defeating the test.) Snapshot baselineEndDate matches the
+  // current persisted value so shiftDays is well-defined relative to the
+  // cascade override.
+  await db.insert(scheduleBaselines).values({
+    id: crypto.randomUUID(),
+    jobId: baselineReadOnlyJobId,
+    capturedAt: new Date(),
+    capturedBy: adminUserId,
+    itemsSnapshot: [
+      {
+        scheduleItemId: itemAId,
+        title: "ZZZ baseline A predecessor",
+        baselineStartDate: "2025-05-05",
+        baselineEndDate: "2025-05-15",
+      },
+      {
+        scheduleItemId: itemBId,
+        title: "ZZZ baseline B downstream",
+        baselineStartDate: "2025-05-20",
+        baselineEndDate: "2025-05-22",
+      },
+    ],
+  });
+
+  // Pre-flight: confirm the test setup truly omits defaults, otherwise
+  // the lazy-init assertion below would be a tautology.
+  const settingsBefore = await db
+    .select({ jobId: scheduleSettings.jobId })
+    .from(scheduleSettings)
+    .where(eq(scheduleSettings.jobId, baselineReadOnlyJobId));
+  const phasesBefore = await db
+    .select({ id: schedulePhases.id })
+    .from(schedulePhases)
+    .where(eq(schedulePhases.jobId, baselineReadOnlyJobId));
+  assert.equal(settingsBefore.length, 0, "test invalid: schedule_settings already present");
+  assert.equal(phasesBefore.length, 0, "test invalid: schedule_phases already present");
+
+  const interceptor = installWriteInterceptor(pool);
+  let body: {
+    baseline: {
+      items: Array<{
+        scheduleItemId: string;
+        baselineEndDate: string;
+        currentStartDate: string | null;
+        currentEndDate: string | null;
+        shiftDays: number;
+      }>;
+    };
+  };
+  try {
+    const res = await authedGet(`/api/jobs/${baselineReadOnlyJobId}/schedule/baseline`);
+    assert.equal(res.status, 200, `GET baseline must return 200, got ${res.status}`);
+    body = (await res.json()) as typeof body;
+  } finally {
+    interceptor.restore();
+  }
+
+  assert.deepEqual(
+    interceptor.writes,
+    [],
+    `GET baseline must not issue any UPDATE/INSERT/DELETE; observed: ${JSON.stringify(interceptor.writes, null, 2)}`,
+  );
+
+  // Response must reflect the cascade overrides — currentEndDate is the
+  // cascade-resolved value, NOT the stale persisted endDate.
+  const aEntry = body.baseline.items.find((i) => i.scheduleItemId === itemAId);
+  const bEntry = body.baseline.items.find((i) => i.scheduleItemId === itemBId);
+  assert.ok(aEntry && bEntry, "both seeded items must appear in the baseline response");
+  assert.equal(aEntry!.currentStartDate, "2025-05-05");
+  assert.equal(aEntry!.currentEndDate, "2025-05-09", "A.currentEndDate must be cascade-resolved");
+  assert.equal(bEntry!.currentStartDate, "2025-05-12", "B.currentStartDate must be cascade-resolved");
+  assert.equal(bEntry!.currentEndDate, "2025-05-14", "B.currentEndDate must be cascade-resolved");
+
+  // Persisted dates must remain untouched — confirms no write-back by
+  // the cascade.
+  const [aPersisted] = await db
+    .select({ startDate: scheduleItems.startDate, endDate: scheduleItems.endDate })
+    .from(scheduleItems)
+    .where(eq(scheduleItems.id, itemAId));
+  const [bPersisted] = await db
+    .select({ startDate: scheduleItems.startDate, endDate: scheduleItems.endDate })
+    .from(scheduleItems)
+    .where(eq(scheduleItems.id, itemBId));
+
+  assert.equal(aPersisted!.startDate, "2025-05-05", "A.startDate must NOT have been rewritten");
+  assert.equal(aPersisted!.endDate, "2025-05-15", "A.endDate must NOT have been rewritten");
+  assert.equal(bPersisted!.startDate, "2025-05-20", "B.startDate must NOT have been rewritten");
+  assert.equal(bPersisted!.endDate, "2025-05-22", "B.endDate must NOT have been rewritten");
+
+  // Lazy-init must not have fired: schedule_settings and schedule_phases
+  // for this job are still empty after the GET. This is the assertion
+  // that catches regressions if anyone re-introduces ensureJobExists or
+  // any other lazy-default helper on this read path.
+  const settingsAfter = await db
+    .select({ jobId: scheduleSettings.jobId })
+    .from(scheduleSettings)
+    .where(eq(scheduleSettings.jobId, baselineReadOnlyJobId));
+  const phasesAfter = await db
+    .select({ id: schedulePhases.id })
+    .from(schedulePhases)
+    .where(eq(schedulePhases.jobId, baselineReadOnlyJobId));
+  assert.equal(
+    settingsAfter.length,
+    0,
+    "GET baseline must NOT lazy-INSERT a schedule_settings row",
+  );
+  assert.equal(
+    phasesAfter.length,
+    0,
+    "GET baseline must NOT lazy-INSERT a default schedule_phase row",
+  );
+});
+
+// Findings (audit task #210):
+// - Endpoints serving baseline data: GET /jobs/:jobId/schedule/baseline
+//   (read), POST and PUT /jobs/:jobId/schedule/baseline (writes), DELETE
+//   /jobs/:jobId/schedule/baseline (write). Helpers: buildBaselinePayload
+//   (pure read), upsertBaselineForJob (write — only called from POST/PUT).
+// - Hidden write #1: the GET previously called synchronizeJobSchedule(jobId),
+//   which UPDATEs schedule_items (cascade) and via
+//   applyAutomaticCompletionIfEnabled may UPDATE again. Fix: the GET now
+//   computes the cascade in memory (loadJobScheduleCascadeInputs +
+//   computeJobScheduleCascade) and uses the resolved dates as the
+//   response's "current" values. Mirrors the #162 fix on GET schedule.
+// - Hidden write #2: the GET also called ensureJobExists(jobId), which
+//   lazy-INSERTs a default schedule_phase + schedule_settings row the
+//   first time the endpoint is hit for a job. Fix: swapped to the
+//   read-only verifyJobExists; defaults are created on the next write
+//   path. Same pattern as GET schedule.
+// - The write paths (POST/PUT) still synchronize inside
+//   upsertBaselineForJob's transaction, so the persistence guarantees on
+//   user-initiated writes are unchanged. POST also still calls
+//   ensureJobExists, which is appropriate for a write endpoint.
+// - upsertBaselineForJob is only called from POST and PUT, so no other
+//   read-shaped surface persists baseline writes.

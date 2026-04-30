@@ -25,6 +25,7 @@ import {
   Settings2,
   X,
 } from "lucide-react"
+import { scheduleGetJobsJobIdSchedule } from "@workspace/api-client-react"
 import { api } from "@/lib/api"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import {
@@ -1825,18 +1826,17 @@ export default function JobSchedulePage() {
     // job schedule. The hard cap prevents an unbounded loop if the server
     // reports a runaway page count.
     while (page <= totalPages && page <= 20) {
-      const response = await api.get<{
-        data: ScheduleItemRecord[]
-        pagination: {
-          page: number
-          limit: number
-          totalItems: number
-          totalPages: number
-        }
-      }>(`/jobs/${jobId}/schedule`, { params: { page: String(page), limit: String(pageSize) } })
-      collected.push(...(response.data.data ?? []))
-      totalPages = response.data.pagination?.totalPages ?? 1
-      totalItems = response.data.pagination?.totalItems ?? collected.length
+      // The typed client returns `ScheduleListResponse` with the same shape
+      // we used to type inline. We assert the row element type because the
+      // local `ScheduleItemRecord` keeps a few derived fields the spec
+      // hasn't been updated to declare.
+      const response = await scheduleGetJobsJobIdSchedule(jobId, {
+        page,
+        limit: pageSize,
+      })
+      collected.push(...((response.data ?? []) as unknown as ScheduleItemRecord[]))
+      totalPages = response.pagination?.totalPages ?? 1
+      totalItems = response.pagination?.totalItems ?? collected.length
       page += 1
     }
     const nextItems = collected

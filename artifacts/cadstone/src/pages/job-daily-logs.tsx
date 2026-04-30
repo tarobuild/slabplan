@@ -33,6 +33,12 @@ import {
   FolderOpen,
   X,
 } from "lucide-react"
+import {
+  dailyLogsGetJobsJobIdDailyLogs,
+  type CursorPagination,
+  type DailyLogsGetJobsJobIdDailyLogsParams,
+  type DailyLogListResponse,
+} from "@workspace/api-client-react"
 import { api } from "@/lib/api"
 import { apiErrorMessage as apiError, toastApiError } from "@/lib/api-errors"
 import { cn } from "@/lib/utils"
@@ -2873,32 +2879,44 @@ export default function JobDailyLogsPage() {
       setLoadingMore(true)
     }
     try {
-      const params = new URLSearchParams()
-      params.set("cursor", cursor ?? "")
-      params.set("limit", String(PAGE_LIMIT))
-      if (appliedFilters.keywords.trim()) params.set("keywords", appliedFilters.keywords.trim())
-      if (appliedFilters.createdBy !== "all") params.set("createdBy", appliedFilters.createdBy)
-      if (appliedFilters.sharedWith !== "all") params.set("sharedWith", appliedFilters.sharedWith)
-      if (appliedFilters.from) params.set("from", appliedFilters.from)
-      if (appliedFilters.to) params.set("to", appliedFilters.to)
-      if (appliedFilters.tags.length > 0) params.set("tags", appliedFilters.tags.join(","))
+      // Build the typed query params object instead of a hand-rolled
+      // URLSearchParams. The generated URL builder takes care of
+      // serializing values exactly the way the backend expects.
+      const params: DailyLogsGetJobsJobIdDailyLogsParams = {
+        cursor: cursor ?? "",
+        limit: PAGE_LIMIT,
+      }
+      if (appliedFilters.keywords.trim()) params.keywords = appliedFilters.keywords.trim()
+      if (appliedFilters.createdBy !== "all") params.createdBy = appliedFilters.createdBy
+      if (appliedFilters.sharedWith !== "all") {
+        params.sharedWith =
+          appliedFilters.sharedWith as DailyLogsGetJobsJobIdDailyLogsParams["sharedWith"]
+      }
+      if (appliedFilters.from) params.from = appliedFilters.from
+      if (appliedFilters.to) params.to = appliedFilters.to
+      if (appliedFilters.tags.length > 0) params.tags = appliedFilters.tags.join(",")
 
-      const response = await api.get<{
-        logs: DailyLogListItem[]
-        pagination?: { limit: number; hasMore: boolean; nextCursor: string | null }
-      }>(`/jobs/${jobId}/daily-logs?${params.toString()}`)
+      const response: DailyLogListResponse = await dailyLogsGetJobsJobIdDailyLogs(jobId, params)
 
       if (requestId !== loadRequestIdRef.current) return
 
-      const fetched = (response.data.logs || []).map((log) => ({
+      // Cast to the local `DailyLogListItem` because this page tracks a few
+      // extra non-spec fields locally, but the generated DTO is the
+      // authoritative wire shape.
+      const fetched = ((response.logs ?? []) as unknown as DailyLogListItem[]).map((log) => ({
         ...log,
         weatherData: normalizeWeatherData(log.weatherData),
         customFieldValues: normalizeCustomFieldValues(log.customFieldValues),
       }))
 
+      // The cursor variant returns `CursorPagination`; the page-mode variant
+      // returns the offset shape with no cursor fields. We only ask for
+      // cursor pagination here (we always send `cursor`), but the typed
+      // union forces us to narrow before reading `hasMore`/`nextCursor`.
+      const pagination = response.pagination as CursorPagination | undefined
       setLogs((previous) => (isInitial ? fetched : [...previous, ...fetched]))
-      setHasMore(!!response.data.pagination?.hasMore)
-      setNextCursor(response.data.pagination?.nextCursor ?? null)
+      setHasMore(!!pagination?.hasMore)
+      setNextCursor(pagination?.nextCursor ?? null)
     } catch (error) {
       if (requestId !== loadRequestIdRef.current) return
       toastApiError(error, "Failed to load daily logs")

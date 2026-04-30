@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import {
   Building2,
@@ -24,7 +24,15 @@ import {
   User,
   X,
 } from "lucide-react"
+import {
+  getLeadsGetLeadsQueryKey,
+  useLeadsGetLeads,
+  type LeadsGetLeadsParams,
+} from "@workspace/api-client-react"
+import { LeadsPostLeadsBody, LeadsPutLeadsIdBody } from "@workspace/api-zod"
+import { useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import { validatePayload } from "@/lib/validate-payload"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -310,17 +318,15 @@ function DetailRow({
 
 export default function LeadsPage() {
   useDocumentTitle("Leads")
+  const queryClient = useQueryClient()
   const filePreview = useFilePreview()
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [pagination, setPagination] = useState<Pagination>({
-    page: 1,
-    pageSize: 10,
-    totalItems: 0,
-    totalPages: 1,
-  })
+  const [page, setPage] = useState(1)
+  const pageSize = 10
   const [search, setSearch] = useState("")
+  // Decoupled debounced value drives the typed query; the input updates
+  // `search` immediately so typing stays smooth.
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [status, setStatus] = useState("all")
-  const [loading, setLoading] = useState(true)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [form, setForm] = useState<CreateForm>(emptyCreate)
@@ -362,37 +368,58 @@ export default function LeadsPage() {
     serializeEditForm(editForm) !== serializeEditForm(savedEditForm)
   const leadUnsavedChanges = useUnsavedChangesGuard(hasUnsavedLeadChanges && !savingEdit)
 
-  const fetchLeads = (s = search, st = status, p = pagination.page) => {
-    setLoading(true)
-    const params = new URLSearchParams({ page: String(p), pageSize: "10" })
-    if (s) params.set("search", s)
-    if (st !== "all") params.set("status", st)
-    api
-      .get(`/leads?${params}`)
-      .then((r) => {
-        setLeads(r.data.leads)
-        setPagination(r.data.pagination)
-      })
-      .catch((err: unknown) => toastApiError(err, "Failed to load leads"))
-      .finally(() => setLoading(false))
-  }
+  const listParams = useMemo<LeadsGetLeadsParams>(() => {
+    const params: LeadsGetLeadsParams = { page, pageSize }
+    if (debouncedSearch) params.search = debouncedSearch
+    if (status !== "all") params.status = status as LeadsGetLeadsParams["status"]
+    return params
+  }, [page, pageSize, debouncedSearch, status])
+
+  const leadsQuery = useLeadsGetLeads(listParams, {
+    query: {
+      // tanstack-query v5 demands an explicit queryKey when the `query`
+      // override is supplied; the generated helper produces one keyed off
+      // the same params object so the cache lines up correctly.
+      queryKey: getLeadsGetLeadsQueryKey(listParams),
+      placeholderData: (previous) => previous,
+    },
+  })
 
   useEffect(() => {
-    fetchLeads()
-  }, [])
+    if (leadsQuery.error) {
+      toastApiError(leadsQuery.error, "Failed to load leads")
+    }
+  }, [leadsQuery.error])
+
+  // The list view used to keep its own `Lead`/`Pagination` shapes — the
+  // typed response is a structural superset of those, so we expose it under
+  // the same names to keep the existing JSX untouched.
+  const leads = (leadsQuery.data?.leads ?? []) as unknown as Lead[]
+  const pagination: Pagination = leadsQuery.data?.pagination ?? {
+    page,
+    pageSize,
+    totalItems: 0,
+    totalPages: 1,
+  }
+  const loading = leadsQuery.isPending
+
+  const invalidateLeadsList = () => {
+    void queryClient.invalidateQueries({ queryKey: getLeadsGetLeadsQueryKey() })
+  }
 
   const handleSearch = (v: string) => {
     setSearch(v)
+    setPage(1)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => fetchLeads(v, status, 1), 300)
+    debounceRef.current = setTimeout(() => setDebouncedSearch(v), 300)
   }
 
   const handleStatus = (v: string) => {
     setStatus(v)
-    fetchLeads(search, v, 1)
+    setPage(1)
   }
 
-  const handlePage = (p: number) => fetchLeads(search, status, p)
+  const handlePage = (p: number) => setPage(p)
 
   const openSheet = (leadId: string) => {
     setSheetLeadId(leadId)
@@ -451,7 +478,7 @@ export default function LeadsPage() {
         .map((s) => s.trim())
         .filter(Boolean)
 
-      const { data } = await api.put(`/leads/${sheetLeadId}`, {
+      const updatePayload = validatePayload(LeadsPutLeadsIdBody, {
         title: editForm.title,
         status: editForm.status,
         projectType: editForm.projectType || null,
@@ -469,6 +496,11 @@ export default function LeadsPage() {
         sources,
         salespeople: leadDetail.salespeople.map((sp) => sp.id),
       })
+      if (!updatePayload) {
+        setSavingEdit(false)
+        return
+      }
+      const { data } = await api.put(`/leads/${sheetLeadId}`, updatePayload)
 
       const existingContact = leadDetail.clientContact
       if (existingContact?.id) {
@@ -491,7 +523,7 @@ export default function LeadsPage() {
       setSavedEditForm(buildEditForm(freshData.lead))
       setIsEditing(false)
       toast.success("Lead updated")
-      fetchLeads()
+      invalidateLeadsList()
       invalidateAppData(["leads", "navigation"])
     } catch (err: unknown) {
       toastApiError(err, "Failed to save changes")
@@ -550,7 +582,7 @@ export default function LeadsPage() {
     let leadId = createdLeadId
     try {
       if (!leadId) {
-        const { data } = await api.post("/leads", {
+        const createPayload = validatePayload(LeadsPostLeadsBody, {
           title: form.title,
           status: form.status,
           projectType: form.projectType || null,
@@ -563,6 +595,11 @@ export default function LeadsPage() {
           notes: form.notes || null,
           leadSource: form.leadSource || null,
         })
+        if (!createPayload) {
+          setSaving(false)
+          return
+        }
+        const { data } = await api.post("/leads", createPayload)
 
         leadId = data.lead?.id ?? data.id
 
@@ -625,7 +662,7 @@ export default function LeadsPage() {
     const remainingFiles = createFiles.filter((_, i) => !successfulIndexes.includes(i))
     setCreateFiles(remainingFiles)
 
-    fetchLeads()
+    invalidateLeadsList()
     invalidateAppData(["leads", "navigation"])
 
     if (failures.length === 0) {
@@ -652,7 +689,7 @@ export default function LeadsPage() {
       toast.success("Lead deleted")
       setDeleteId(null)
       if (sheetLeadId === deleteId) setSheetLeadId(null)
-      fetchLeads()
+      invalidateLeadsList()
       invalidateAppData(["leads", "navigation"])
     } catch (err: unknown) {
       toastApiError(err, "Failed to delete lead")

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { ChevronRight, FileText, Loader2, Search, Users } from "lucide-react"
+import type { DailyLogListItem } from "@workspace/api-client-react"
 import { api } from "@/lib/api"
 import { apiErrorMessage } from "@/lib/api-errors"
 import { useDocumentTitle } from "@/hooks/use-document-title"
@@ -9,19 +10,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 
-type MyDailyLogItem = {
-  id: string
-  jobId: string | null
-  jobTitle: string | null
-  logDate: string
-  title: string | null
-  notes: string
-  visibilityLabel: string
-  attachmentCount: number
-  commentsCount: number
-  likesCount: number
-  status: "draft" | "published"
-}
+// Re-use the generated DTO so the page picks up future schema changes
+// for free. The endpoint's URL builder doesn't accept search params yet
+// (open spec drift), so we still issue the request through the existing
+// axios instance and pass `page`/`pageSize`/`keywords` directly.
+type MyDailyLogItem = DailyLogListItem
 
 const PAGE_LIMIT = 25
 

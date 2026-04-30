@@ -1,7 +1,16 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { Loader2, Search } from "lucide-react"
+import {
+  getJobsGetJobsQueryKey,
+  useJobsGetJobs,
+  type JobListItem as JobListItemDto,
+  type JobsGetJobsParams,
+} from "@workspace/api-client-react"
+import { ClientsPostClientsBody, JobsPostJobsBody } from "@workspace/api-zod"
+import { useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import { validatePayload } from "@/lib/validate-payload"
 import WorkerAssignmentPicker, { type WorkerOption } from "@/components/WorkerAssignmentPicker"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,19 +45,7 @@ import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
 
-type Job = {
-  id: string
-  title: string
-  status: "open" | "closed" | "archived"
-  city: string | null
-  state: string | null
-  jobType: string | null
-  contractPrice: string | null
-  clientId: string | null
-  clientName: string | null
-  createdAt: string
-  createdByName: string | null
-}
+type Job = JobListItemDto
 
 const STATUS_LABELS: Record<string, string> = { open: "Open", closed: "Closed", archived: "Archived" }
 const STATUS_COLORS: Record<string, string> = {
@@ -70,7 +67,7 @@ const toLabel = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase())
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
-function fmtCurrency(v: string | null) {
+function fmtCurrency(v: string | null | undefined) {
   if (!v) return "—"
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v))
 }
@@ -102,15 +99,17 @@ const emptyForm: CreateJobForm = {
 
 export default function JobsPage() {
   useDocumentTitle("Jobs")
+  const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === "admin"
-  const [jobs, setJobs] = useState<Job[]>([])
-  const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const pageSize = 10
   const [search, setSearch] = useState("")
+  // `debouncedSearch` is what actually gets sent to the API — `search`
+  // updates per keystroke for responsive input, the debounced value follows
+  // 300ms later so we don't issue a request for every character.
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [status, setStatus] = useState<string>("all")
-  const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [step, setStep] = useState<1 | 2>(1)
   const [form, setForm] = useState<CreateJobForm>(emptyForm)
@@ -181,34 +180,46 @@ export default function JobsPage() {
     }
   }, [location.state, location.pathname, location.search, location.hash, navigate])
 
-  const fetchJobs = (s = search, st = status, p = page) => {
-    setLoading(true)
-    const params = new URLSearchParams({ page: String(p), pageSize: String(pageSize) })
-    if (s) params.set("search", s)
-    if (st !== "all") params.set("status", st)
-    api.get(`/jobs?${params}`)
-      .then(r => { setJobs(r.data.jobs); setTotal(r.data.pagination?.totalItems ?? 0) })
-      .catch((err: unknown) => toastApiError(err, "Failed to load jobs"))
-      .finally(() => setLoading(false))
+  const listParams = useMemo<JobsGetJobsParams>(() => {
+    const params: JobsGetJobsParams = { page, pageSize }
+    if (debouncedSearch) params.search = debouncedSearch
+    if (status !== "all") params.status = status as JobsGetJobsParams["status"]
+    return params
+  }, [page, pageSize, debouncedSearch, status])
+
+  const jobsQuery = useJobsGetJobs(listParams, {
+    query: {
+      // Generated query options use a strict tanstack-query type that
+      // requires `queryKey` once `query` is overridden. The helper returns
+      // a stable, params-aware key, and `placeholderData: previous` keeps
+      // the prior page on screen while the next one loads.
+      queryKey: getJobsGetJobsQueryKey(listParams),
+      placeholderData: (previous) => previous,
+    },
+  })
+
+  useEffect(() => {
+    if (jobsQuery.error) {
+      toastApiError(jobsQuery.error, "Failed to load jobs")
+    }
+  }, [jobsQuery.error])
+
+  const jobs: Job[] = jobsQuery.data?.jobs ?? []
+  const total = jobsQuery.data?.pagination?.totalItems ?? 0
+  const loading = jobsQuery.isPending
+
+  const invalidateJobsList = () => {
+    void queryClient.invalidateQueries({ queryKey: getJobsGetJobsQueryKey() })
   }
 
-  useEffect(() => { fetchJobs() }, [])
-
-  // Track the currently visible search/status/page in refs so the data-refresh
-  // subscription reloads the dataset the user is actually looking at, rather
-  // than the values captured when the listener was first registered.
-  const searchRef = useRef(search)
-  const statusRef = useRef(status)
-  const pageRef = useRef(page)
-  useEffect(() => { searchRef.current = search }, [search])
-  useEffect(() => { statusRef.current = status }, [status])
-  useEffect(() => { pageRef.current = page }, [page])
-
+  // The legacy data-refresh bus is also bridged into the query cache by
+  // `configureApiClient`, but other tabs/components may still call it
+  // directly. Keep this subscription so the visible page refetches even
+  // when the bridge isn't the only listener.
   useEffect(
-    () =>
-      subscribeToDataRefresh("jobs", () => {
-        fetchJobs(searchRef.current, statusRef.current, pageRef.current)
-      }),
+    () => subscribeToDataRefresh("jobs", () => invalidateJobsList()),
+    // queryClient is stable; invalidation reads it through closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )
 
@@ -222,36 +233,38 @@ export default function JobsPage() {
     setSearch(v)
     setPage(1)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => fetchJobs(v, status, 1), 300)
+    debounceRef.current = setTimeout(() => setDebouncedSearch(v), 300)
   }
 
   const handleStatus = (v: string) => {
-    setStatus(v); setPage(1); fetchJobs(search, v, 1)
+    setStatus(v); setPage(1)
   }
 
   const handlePage = (p: number) => {
-    setPage(p); fetchJobs(search, status, p)
+    setPage(p)
   }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    const payload = validatePayload(JobsPostJobsBody, {
+      title: form.title,
+      status: form.status,
+      jobType: form.jobType || null,
+      contractType: form.contractType || null,
+      streetAddress: form.streetAddress || null,
+      city: form.city || null,
+      state: form.state || null,
+      zipCode: form.zipCode || null,
+      contractPrice: form.contractPrice || null,
+      projectedStart: form.projectedStart || null,
+      projectedCompletion: form.projectedCompletion || null,
+      clientId: form.clientId || null,
+      assigneeIds: isAdmin ? form.assigneeIds : [],
+    })
+    if (!payload) return
     setSaving(true)
     try {
-      await api.post("/jobs", {
-        title: form.title,
-        status: form.status,
-        jobType: form.jobType || null,
-        contractType: form.contractType || null,
-        streetAddress: form.streetAddress || null,
-        city: form.city || null,
-        state: form.state || null,
-        zipCode: form.zipCode || null,
-        contractPrice: form.contractPrice || null,
-        projectedStart: form.projectedStart || null,
-        projectedCompletion: form.projectedCompletion || null,
-        clientId: form.clientId || null,
-        assigneeIds: isAdmin ? form.assigneeIds : [],
-      })
+      await api.post("/jobs", payload)
       toast.success("Job created")
       setCreateOpen(false)
       setForm(emptyForm)
@@ -261,8 +274,8 @@ export default function JobsPage() {
       setNewClientEmail("")
       setNewClientPhone("")
       setStep(1)
-      fetchJobs(search, status, 1)
       setPage(1)
+      invalidateJobsList()
       invalidateAppData(["jobs", "navigation"])
     } catch (err: unknown) {
       toastApiError(err, "Failed to create job")
@@ -277,13 +290,15 @@ export default function JobsPage() {
       return
     }
 
+    const clientPayload = validatePayload(ClientsPostClientsBody, {
+      companyName: newClientCompanyName.trim(),
+      email: newClientEmail.trim() || null,
+      phone: newClientPhone.trim() || null,
+    })
+    if (!clientPayload) return
     setCreatingClient(true)
     try {
-      const response = await api.post("/clients", {
-        companyName: newClientCompanyName.trim(),
-        email: newClientEmail.trim() || null,
-        phone: newClientPhone.trim() || null,
-      })
+      const response = await api.post("/clients", clientPayload)
       const nextClient = response.data.client
 
       if (newClientContactName.trim()) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import {
   Building2,
@@ -13,7 +13,15 @@ import {
   User,
   X,
 } from "lucide-react"
+import {
+  getClientsGetClientsQueryKey,
+  useClientsGetClients,
+  type ClientListItem as ClientListItemDto,
+} from "@workspace/api-client-react"
+import { ClientsPostClientsBody, ClientsPutClientsIdBody } from "@workspace/api-zod"
+import { useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
+import { validatePayload } from "@/lib/validate-payload"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -68,20 +76,6 @@ type Contact = {
   phone: string | null
   cellPhone: string | null
   isPrimary: boolean | null
-}
-
-type ClientListItem = {
-  id: string
-  companyName: string
-  phone: string | null
-  email: string | null
-  city: string | null
-  state: string | null
-  createdAt: string
-  primaryContact: Contact | null
-  contactCount: number
-  jobCount: number
-  openJobCount: number
 }
 
 type ClientDetail = {
@@ -169,12 +163,14 @@ function fmtCurrency(v: string | null) {
 
 export default function ClientsPage() {
   useDocumentTitle("Clients")
-  const [clients, setClients] = useState<ClientListItem[]>([])
-  const [total, setTotal] = useState(0)
+  const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [search, setSearch] = useState("")
-  const [loading, setLoading] = useState(true)
+  // `debouncedSearch` is what actually drives the typed list query — the
+  // input updates `search` immediately for snappy UI, but we wait until the
+  // user pauses before refetching so we don't hammer the API.
+  const [debouncedSearch, setDebouncedSearch] = useState("")
 
   const [createOpen, setCreateOpen] = useState(false)
   const [clientForm, setClientForm] = useState<ClientForm>(emptyClientForm)
@@ -203,17 +199,45 @@ export default function ClientsPage() {
   const deepLinkClientId = searchParams.get("client")
   const lastDeepLinkRef = useRef<string | null>(null)
 
-  const fetchClients = (s = search, p = page) => {
-    setLoading(true)
-    const params = new URLSearchParams({ page: String(p), pageSize: String(pageSize) })
-    if (s) params.set("search", s)
-    api.get(`/clients?${params}`)
-      .then(r => { setClients(r.data.clients); setTotal(r.data.pagination?.totalItems ?? 0) })
-      .catch((err: unknown) => toastApiError(err, "Failed to load clients"))
-      .finally(() => setLoading(false))
-  }
+  const listParams = useMemo(
+    () => ({
+      page,
+      pageSize,
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    }),
+    [page, pageSize, debouncedSearch],
+  )
 
-  useEffect(() => { fetchClients() }, [])
+  // `placeholderData: previous` keeps the prior page visible while refetching
+  // so pagination/search feel snappy instead of flashing a spinner.
+  // tanstack-query's typed options require an explicit queryKey when the
+  // `query` block is overridden, so we pass the generated helper.
+  const clientsQuery = useClientsGetClients(listParams, {
+    query: {
+      queryKey: getClientsGetClientsQueryKey(listParams),
+      placeholderData: (previous) => previous,
+    },
+  })
+
+  // Surface load errors via the existing toast helper so behavior matches
+  // the previous hand-rolled fetch path. Effect tracks the query's error
+  // identity so we don't spam duplicate toasts on retries.
+  useEffect(() => {
+    if (clientsQuery.error) {
+      toastApiError(clientsQuery.error, "Failed to load clients")
+    }
+  }, [clientsQuery.error])
+
+  const clients: ClientListItemDto[] = clientsQuery.data?.clients ?? []
+  const total = clientsQuery.data?.pagination?.totalItems ?? 0
+  const loading = clientsQuery.isPending
+
+  const invalidateClientsList = () => {
+    // Calling the query-key helper without params yields the resource prefix
+    // (`["/api/clients"]`), which acts as a partial match for every paginated
+    // variant we have cached.
+    void queryClient.invalidateQueries({ queryKey: getClientsGetClientsQueryKey() })
+  }
 
   // Open the matching client automatically when the URL carries
   // ?client=<id> (e.g. from a global search result). Track the last id
@@ -233,10 +257,10 @@ export default function ClientsPage() {
     setSearch(v)
     setPage(1)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => fetchClients(v, 1), 300)
+    debounceRef.current = setTimeout(() => setDebouncedSearch(v), 300)
   }
 
-  const handlePage = (p: number) => { setPage(p); fetchClients(search, p) }
+  const handlePage = (p: number) => { setPage(p) }
 
   const openDetail = async (id: string) => {
     setLoadingDetail(true)
@@ -259,23 +283,29 @@ export default function ClientsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    // Validate the payload against the generated Zod schema before issuing
+    // the request so we surface a friendly toast instead of round-tripping
+    // to the server for shape errors. Returns `null` (after toasting) when
+    // invalid.
+    const payload = validatePayload(ClientsPostClientsBody, {
+      companyName: clientForm.companyName,
+      phone: clientForm.phone || null,
+      email: clientForm.email || null,
+      streetAddress: clientForm.streetAddress || null,
+      city: clientForm.city || null,
+      state: clientForm.state || null,
+      zipCode: clientForm.zipCode || null,
+      notes: clientForm.notes || null,
+    })
+    if (!payload) return
     setSaving(true)
     try {
-      const r = await api.post("/clients", {
-        companyName: clientForm.companyName,
-        phone: clientForm.phone || null,
-        email: clientForm.email || null,
-        streetAddress: clientForm.streetAddress || null,
-        city: clientForm.city || null,
-        state: clientForm.state || null,
-        zipCode: clientForm.zipCode || null,
-        notes: clientForm.notes || null,
-      })
+      const r = await api.post("/clients", payload)
       toast.success("Client created")
       setCreateOpen(false)
       setClientForm(emptyClientForm)
-      fetchClients(search, 1)
       setPage(1)
+      invalidateClientsList()
       invalidateAppData(["clients", "navigation"])
       await openDetail(r.data.client.id)
     } catch (err: unknown) {
@@ -303,22 +333,24 @@ export default function ClientsPage() {
   const handlePatchClient = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selected) return
+    const payload = validatePayload(ClientsPutClientsIdBody, {
+      companyName: clientPatch.companyName,
+      phone: clientPatch.phone || null,
+      email: clientPatch.email || null,
+      streetAddress: clientPatch.streetAddress || null,
+      city: clientPatch.city || null,
+      state: clientPatch.state || null,
+      zipCode: clientPatch.zipCode || null,
+      notes: clientPatch.notes || null,
+    })
+    if (!payload) return
     setPatchSaving(true)
     try {
-      const r = await api.put(`/clients/${selected.id}`, {
-        companyName: clientPatch.companyName,
-        phone: clientPatch.phone || null,
-        email: clientPatch.email || null,
-        streetAddress: clientPatch.streetAddress || null,
-        city: clientPatch.city || null,
-        state: clientPatch.state || null,
-        zipCode: clientPatch.zipCode || null,
-        notes: clientPatch.notes || null,
-      })
+      const r = await api.put(`/clients/${selected.id}`, payload)
       toast.success("Client updated")
       setEditingClient(false)
       setSelected(prev => prev ? { ...prev, ...r.data.client } : prev)
-      fetchClients(search, page)
+      invalidateClientsList()
       invalidateAppData(["clients", "navigation"])
     } catch (err: unknown) {
       toastApiError(err, "Failed to update client")
@@ -335,7 +367,7 @@ export default function ClientsPage() {
       toast.success("Client deleted")
       setDeleteClientId(null)
       if (selected?.id === deleteClientId) setSelected(null)
-      fetchClients(search, page)
+      invalidateClientsList()
       invalidateAppData(["clients", "navigation"])
     } catch (err: unknown) {
       toastApiError(err, "Failed to delete client")

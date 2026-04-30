@@ -9,6 +9,7 @@ import {
   useNavigate,
 } from "react-router-dom"
 import { Toaster } from "sonner"
+import { QueryClientProvider } from "@tanstack/react-query"
 import AppLayout from "@/components/layout/AppLayout"
 import RoleGate from "@/components/auth/RoleGate"
 import { ROLE_GATES } from "@/lib/role-access"
@@ -16,7 +17,14 @@ import { FilePreviewProvider } from "@/components/files/file-preview-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { bootstrapAuthSession, FORBIDDEN_EVENT } from "@/lib/api"
+import { configureApiClient, getQueryClient } from "@/lib/query-client"
 import { useAuthStore } from "@/store/auth"
+
+// Wire the generated react-query client (auth token getter, data-refresh
+// bridge) before any components mount so the first query already has the
+// configuration in place.
+configureApiClient()
+const queryClient = getQueryClient()
 
 const ClientsPage = lazy(() => import("@/pages/clients"))
 const DashboardPage = lazy(() => import("@/pages/dashboard"))
@@ -177,7 +185,7 @@ function App() {
   const router = useMemo(() => buildRouter(ready, basename), [ready, basename])
 
   return (
-    <>
+    <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
       <Toaster
         position="top-right"
@@ -191,7 +199,7 @@ function App() {
           },
         }}
       />
-    </>
+    </QueryClientProvider>
   )
 }
 

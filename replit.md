@@ -27,7 +27,8 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 - Built with React, Vite, Tailwind CSS v4, and shadcn/ui.
 - Runs on a dynamically assigned port, proxying `/api` requests to `localhost:8080`.
 - Routing: `react-router-dom v6` for protected and nested routes.
-- State Management: Zustand for authentication state.
+- State Management: Zustand for authentication state. TanStack Query (v5) is wired in `src/lib/query-client.ts` for server-state caching/invalidation; the QueryClient is provided in `App.tsx`, the typed client's auth bridge is configured via `setAuthTokenGetter`, and `subscribeToDataRefresh` invalidates per-resource query keys.
+- Typed API & Validation: High-traffic resource pages (`clients`, `jobs`, `leads`, `schedule`, `daily logs`) consume `@workspace/api-client-react` (typed react-query hooks + imperative functions) for reads, and `@workspace/api-zod` payload schemas through the `validatePayload` helper (`src/lib/validate-payload.ts`) for client-side validation of create/update mutations.
 - UI/UX: Adheres to shadcn/ui design principles, with a primary blue theme (`#2563EB`), light gray backgrounds, white cards, and 14px body text. All forms are in Dialog modals, and deletions use AlertDialogs.
 - Key features: Dashboard with stats and activity feed, job management (create, view, edit, delete), lead management (create, view, delete), schedule management, daily logs with BuilderTrend-style activity feeds, and a shared file browser for documents, photos, and videos.
 - In-App AI Assistant: A right-side chat drawer (`src/components/agent/ChatPanel.tsx`) opened from a Sparkles "Assistant" button in the top nav. Streams responses from the backend via SSE, renders citation chips that deep-link to the cited entity (job/lead/client/file/schedule), persists conversations per user, and shows monthly usage progress.

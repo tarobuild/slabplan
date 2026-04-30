@@ -369,12 +369,21 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.0
         version: 1.2.8(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@tanstack/react-query':
+        specifier: 'catalog:'
+        version: 5.90.21(react@18.3.1)
       '@tiptap/react':
         specifier: ^3.22.2
         version: 3.22.2(@floating-ui/dom@1.7.6)(@tiptap/core@3.22.2(@tiptap/pm@3.22.2))(@tiptap/pm@3.22.2)(@types/react-dom@18.3.1)(@types/react@18.3.12)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tiptap/starter-kit':
         specifier: ^3.22.2
         version: 3.22.2
+      '@workspace/api-client-react':
+        specifier: workspace:*
+        version: link:../../lib/api-client-react
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../../lib/api-zod
       axios:
         specifier: 1.15.2
         version: 1.15.2
@@ -6839,6 +6848,11 @@ snapshots:
       vite: 7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.3)
 
   '@tanstack/query-core@5.90.20': {}
+
+  '@tanstack/react-query@5.90.21(react@18.3.1)':
+    dependencies:
+      '@tanstack/query-core': 5.90.20
+      react: 18.3.1
 
   '@tanstack/react-query@5.90.21(react@19.1.0)':
     dependencies:

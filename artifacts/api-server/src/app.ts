@@ -23,6 +23,7 @@ import { readBearerToken } from "./middleware/require-auth";
 import publicSpecRouter from "./routes/public-spec";
 import { ensureUploadRoot, streamStoredFileToResponse } from "./lib/storage";
 import { ensureTempUploadDir } from "./lib/uploads";
+import { assertActiveAuthUser } from "./lib/active-user";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -135,6 +136,8 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
     if (!auth) {
       throw new HttpError(401, "Authentication required.");
     }
+
+    await assertActiveAuthUser(auth);
 
     const pathname = typeof req.params[0] === "string" ? req.params[0] : "";
 

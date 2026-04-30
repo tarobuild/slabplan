@@ -12,9 +12,12 @@ import type { Pool } from "pg";
 let server: Server;
 let baseUrl: string;
 let adminAccessJwt: string;
+let workerAccessJwt: string;
 
 const adminUserId = crypto.randomUUID();
+const workerUserId = crypto.randomUUID();
 const adminEmail = `admin-${adminUserId}@schedule-cascade-test.local`;
+const workerEmail = `worker-${workerUserId}@schedule-cascade-test.local`;
 
 // One job per scenario; ON DELETE CASCADE clears related rows in after().
 const readOnlyJobId = crypto.randomUUID();
@@ -23,6 +26,7 @@ const sweeperJobId = crypto.randomUUID();
 const sweeperJobDisabledId = crypto.randomUUID();
 const concurrentJobId = crypto.randomUUID();
 const baselineReadOnlyJobId = crypto.randomUUID();
+const baselineVisibilityJobId = crypto.randomUUID();
 const allJobIds = [
   readOnlyJobId,
   writeCascadeJobId,
@@ -30,6 +34,7 @@ const allJobIds = [
   sweeperJobDisabledId,
   concurrentJobId,
   baselineReadOnlyJobId,
+  baselineVisibilityJobId,
 ];
 
 const WRITE_SQL = /^\s*(update|insert|delete)\b/i;
@@ -66,17 +71,26 @@ before(async () => {
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
   const { db } = await import("@workspace/db");
-  const { users, jobs } = await import("@workspace/db/schema");
+  const { jobAssignees, users, jobs } = await import("@workspace/db/schema");
 
   await prepareApp();
 
-  await db.insert(users).values({
-    id: adminUserId,
-    email: adminEmail,
-    passwordHash: "test-not-a-real-hash",
-    fullName: "ZZZ Schedule Cascade Admin",
-    role: "admin",
-  });
+  await db.insert(users).values([
+    {
+      id: adminUserId,
+      email: adminEmail,
+      passwordHash: "test-not-a-real-hash",
+      fullName: "ZZZ Schedule Cascade Admin",
+      role: "admin",
+    },
+    {
+      id: workerUserId,
+      email: workerEmail,
+      passwordHash: "test-not-a-real-hash",
+      fullName: "ZZZ Schedule Cascade Worker",
+      role: "crew_member",
+    },
+  ]);
 
   await db.insert(jobs).values(
     allJobIds.map((id, i) => ({
@@ -86,12 +100,23 @@ before(async () => {
       projectManagerId: adminUserId,
     })),
   );
+  await db.insert(jobAssignees).values({ jobId: baselineVisibilityJobId, userId: workerUserId });
 
   adminAccessJwt = auth.signAccessToken({
     id: adminUserId,
     email: adminEmail,
     fullName: "ZZZ Schedule Cascade Admin",
     role: "admin",
+    avatarUrl: null,
+    phone: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  workerAccessJwt = auth.signAccessToken({
+    id: workerUserId,
+    email: workerEmail,
+    fullName: "ZZZ Schedule Cascade Worker",
+    role: "crew_member",
     avatarUrl: null,
     phone: null,
     createdAt: new Date(),
@@ -116,7 +141,7 @@ after(async () => {
     // activity_log doesn't cascade from users, so clear it before the
     // admin row goes.
     await db.delete(activityLog).where(eq(activityLog.userId, adminUserId));
-    await db.delete(users).where(eq(users.id, adminUserId));
+    await db.delete(users).where(inArray(users.id, [adminUserId, workerUserId]));
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => {
@@ -130,6 +155,12 @@ after(async () => {
 function authedGet(path: string) {
   return fetch(`${baseUrl}${path}`, {
     headers: { authorization: `Bearer ${adminAccessJwt}` },
+  });
+}
+
+function workerGet(path: string) {
+  return fetch(`${baseUrl}${path}`, {
+    headers: { authorization: `Bearer ${workerAccessJwt}` },
   });
 }
 
@@ -698,6 +729,76 @@ test("GET /jobs/:jobId/schedule/baseline does NOT issue any UPDATE/INSERT/DELETE
     phasesAfter.length,
     0,
     "GET baseline must NOT lazy-INSERT a default schedule_phase row",
+  );
+});
+
+test("GET baseline applies schedule visibility rules per viewer", async () => {
+  const { db } = await import("@workspace/db");
+  const { scheduleBaselines, scheduleItems } = await import("@workspace/db/schema");
+  const visibleItemId = crypto.randomUUID();
+  const personalTodoId = crypto.randomUUID();
+
+  await db.insert(scheduleItems).values([
+    {
+      id: visibleItemId,
+      jobId: baselineVisibilityJobId,
+      title: "ZZZ Worker Visible Baseline Item",
+      startDate: "2026-03-02",
+      workDays: 1,
+      endDate: "2026-03-02",
+      visibleToInstallers: true,
+      createdBy: adminUserId,
+    },
+    {
+      id: personalTodoId,
+      jobId: baselineVisibilityJobId,
+      title: "ZZZ Admin Personal Baseline Todo",
+      startDate: "2026-03-03",
+      workDays: 1,
+      endDate: "2026-03-03",
+      isPersonalTodo: true,
+      createdBy: adminUserId,
+    },
+  ]);
+
+  await db.insert(scheduleBaselines).values({
+    jobId: baselineVisibilityJobId,
+    capturedBy: adminUserId,
+    itemsSnapshot: [
+      {
+        scheduleItemId: visibleItemId,
+        title: "ZZZ Worker Visible Baseline Item",
+        baselineStartDate: "2026-03-02",
+        baselineEndDate: "2026-03-02",
+      },
+      {
+        scheduleItemId: personalTodoId,
+        title: "ZZZ Admin Personal Baseline Todo",
+        baselineStartDate: "2026-03-03",
+        baselineEndDate: "2026-03-03",
+      },
+    ],
+  });
+
+  const workerResponse = await workerGet(`/api/jobs/${baselineVisibilityJobId}/schedule/baseline`);
+  assert.equal(workerResponse.status, 200);
+  const workerBody = (await workerResponse.json()) as {
+    baseline: { items: Array<{ scheduleItemId: string; title: string }> };
+  };
+  assert.deepEqual(
+    workerBody.baseline.items.map((item) => item.scheduleItemId),
+    [visibleItemId],
+  );
+  assert.equal(JSON.stringify(workerBody).includes("ZZZ Admin Personal Baseline Todo"), false);
+
+  const adminResponse = await authedGet(`/api/jobs/${baselineVisibilityJobId}/schedule/baseline`);
+  assert.equal(adminResponse.status, 200);
+  const adminBody = (await adminResponse.json()) as {
+    baseline: { items: Array<{ scheduleItemId: string; title: string }> };
+  };
+  assert.deepEqual(
+    new Set(adminBody.baseline.items.map((item) => item.scheduleItemId)),
+    new Set([visibleItemId, personalTodoId]),
   );
 });
 

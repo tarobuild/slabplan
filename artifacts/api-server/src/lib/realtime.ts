@@ -1,6 +1,8 @@
 import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 import { ACCESS_TOKEN_TTL_SECONDS, verifyAccessToken } from "./auth";
+import { assertActiveAuthUser } from "./active-user";
+import { redactRealtimePayloadForAuth } from "./activity-visibility";
 import {
   isAdmin,
   listAccessibleJobIds,
@@ -51,6 +53,7 @@ export function initRealtime(server: HttpServer) {
         }
 
         const auth = verifyAccessToken(token);
+        await assertActiveAuthUser(auth);
         socket.data.auth = auth;
         socket.data.accessToken = token;
         socket.data.scopeIds = await listRealtimeScopeIds(auth);
@@ -60,7 +63,7 @@ export function initRealtime(server: HttpServer) {
   });
 
   io.on("connection", (socket) => {
-    const revalidateAccessToken = () => {
+    const revalidateAccessToken = async () => {
       const token = typeof socket.data.accessToken === "string" ? socket.data.accessToken : null;
 
       if (!token) {
@@ -70,7 +73,10 @@ export function initRealtime(server: HttpServer) {
       }
 
       try {
-        socket.data.auth = verifyAccessToken(token);
+        const auth = verifyAccessToken(token);
+        await assertActiveAuthUser(auth);
+        socket.data.auth = auth;
+        socket.data.scopeIds = await listRealtimeScopeIds(auth);
         return true;
       } catch (error) {
         logger.info(
@@ -86,47 +92,49 @@ export function initRealtime(server: HttpServer) {
       }
     };
 
-    if (!revalidateAccessToken()) {
-      return;
-    }
+    void (async () => {
+      if (!(await revalidateAccessToken())) {
+        return;
+      }
 
-    const tokenRevalidationTimer = setInterval(() => {
-      revalidateAccessToken();
-    }, REALTIME_TOKEN_REVALIDATION_INTERVAL_MS);
+      const tokenRevalidationTimer = setInterval(() => {
+        void revalidateAccessToken();
+      }, REALTIME_TOKEN_REVALIDATION_INTERVAL_MS);
 
-    socket.once("disconnect", () => {
-      clearInterval(tokenRevalidationTimer);
-    });
+      socket.once("disconnect", () => {
+        clearInterval(tokenRevalidationTimer);
+      });
 
-    const scopeIds = Array.isArray(socket.data.scopeIds)
-      ? socket.data.scopeIds.filter((scopeId: unknown): scopeId is string => typeof scopeId === "string")
-      : [];
+      const scopeIds = Array.isArray(socket.data.scopeIds)
+        ? socket.data.scopeIds.filter((scopeId: unknown): scopeId is string => typeof scopeId === "string")
+        : [];
 
-    if (isAdmin(socket.data.auth)) {
-      void socket.join(adminRoom);
-    }
+      if (isAdmin(socket.data.auth)) {
+        void socket.join(adminRoom);
+      }
 
-    if (scopeIds.length > 0) {
-      void socket.join(scopeIds);
-    }
+      if (scopeIds.length > 0) {
+        void socket.join(scopeIds);
+      }
 
-    const requestedScopeId =
-      typeof socket.handshake.auth?.jobId === "string"
-        ? socket.handshake.auth.jobId
-        : null;
+      const requestedScopeId =
+        typeof socket.handshake.auth?.jobId === "string"
+          ? socket.handshake.auth.jobId
+          : null;
 
-    if (requestedScopeId && scopeIds.includes(requestedScopeId)) {
-      void socket.join(requestedScopeId);
-    }
+      if (requestedScopeId && scopeIds.includes(requestedScopeId)) {
+        void socket.join(requestedScopeId);
+      }
 
-    logger.debug(
-      {
-        socketId: socket.id,
-        userId: socket.data.auth?.userId ?? null,
-        scopeCount: scopeIds.length,
-      },
-      "Realtime client connected",
-    );
+      logger.debug(
+        {
+          socketId: socket.id,
+          userId: socket.data.auth?.userId ?? null,
+          scopeCount: scopeIds.length,
+        },
+        "Realtime client connected",
+      );
+    })();
   });
 
   return io;
@@ -137,6 +145,11 @@ export function emitRealtimeEvent(event: string, payload: unknown, scopeId?: str
     return;
   }
 
+  if (event === "activity:created" || event === "file:uploaded") {
+    void emitRealtimeEventForAuthorizedSockets(event, payload, scopeId ?? null);
+    return;
+  }
+
   if (scopeId) {
     io.to(scopeId).emit(event, payload);
     io.to(adminRoom).emit(event, payload);
@@ -144,4 +157,41 @@ export function emitRealtimeEvent(event: string, payload: unknown, scopeId?: str
   }
 
   io.to(adminRoom).emit(event, payload);
+}
+
+async function emitRealtimeEventForAuthorizedSockets(
+  event: string,
+  payload: unknown,
+  scopeId: string | null,
+) {
+  if (!io) {
+    return;
+  }
+
+  try {
+    const room = scopeId ? [scopeId, adminRoom] : [adminRoom];
+    const sockets = await io.in(room).fetchSockets();
+    const seenSocketIds = new Set<string>();
+
+    await Promise.all(
+      sockets.map(async (socket) => {
+        if (seenSocketIds.has(socket.id)) {
+          return;
+        }
+        seenSocketIds.add(socket.id);
+
+        const auth = socket.data.auth;
+        if (!auth) {
+          return;
+        }
+
+        const redactedPayload = await redactRealtimePayloadForAuth(event, payload, auth);
+        if (redactedPayload !== null) {
+          socket.emit(event, redactedPayload);
+        }
+      }),
+    );
+  } catch (error) {
+    logger.warn({ err: error, event, scopeId }, "Failed to emit redacted realtime event");
+  }
 }

@@ -51,6 +51,7 @@ export async function resolvePersonalAccessToken(token: string): Promise<Resolve
       revokedAt: personalAccessTokens.revokedAt,
       email: users.email,
       role: users.role,
+      userIsActive: users.isActive,
       userDeletedAt: users.deletedAt,
     })
     .from(personalAccessTokens)
@@ -58,7 +59,7 @@ export async function resolvePersonalAccessToken(token: string): Promise<Resolve
     .where(eq(personalAccessTokens.tokenHash, tokenHash))
     .limit(1);
 
-  if (!row || row.userDeletedAt) {
+  if (!row || row.userDeletedAt || !row.userIsActive) {
     throw new HttpError(401, "Invalid or expired token.", undefined, "invalid-token");
   }
 

@@ -14,7 +14,7 @@ export function buildScheduleListVisibilityFilter(auth: AuthContext) {
   );
 
   if (isAdmin(auth)) {
-    return personalTodoFilter;
+    return undefined;
   }
 
   const assignedToCurrentUser = exists(

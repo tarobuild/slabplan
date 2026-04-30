@@ -29,6 +29,7 @@ import { isAdmin } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
 import { streamStoredFileToResponse } from "../lib/storage";
 import { uploadArray } from "../lib/uploads";
+import { assertActiveUserById } from "../lib/active-user";
 
 const router: IRouter = Router();
 
@@ -492,11 +493,12 @@ router.post(
   asyncHandler(async (req, res) => {
     const fileId = getParam(req.params.id, "file id");
     await assertCanViewFile(req.auth!, fileId);
+    await assertActiveUserById(req.auth!.userId);
 
     const [user] = await db
       .select()
       .from(users)
-      .where(and(eq(users.id, req.auth!.userId), isNull(users.deletedAt)))
+      .where(and(eq(users.id, req.auth!.userId), eq(users.isActive, true), isNull(users.deletedAt)))
       .limit(1);
 
     if (!user) {

@@ -1679,6 +1679,43 @@ async function buildBaselinePayload(jobId: string, executor: DbExecutor = db) {
   }));
 }
 
+type BaselineSnapshotEntry = {
+  scheduleItemId: string;
+  title: string;
+  baselineStartDate: string;
+  baselineEndDate: string;
+};
+
+async function filterBaselineSnapshotForAuth(
+  auth: AuthContext,
+  jobId: string,
+  entries: BaselineSnapshotEntry[],
+) {
+  if (entries.length === 0 || isAdmin(auth)) {
+    return entries;
+  }
+
+  const itemIds = Array.from(new Set(entries.map((entry) => entry.scheduleItemId)));
+  const visibility = buildScheduleListVisibilityFilter(auth);
+  const conditions: SQL[] = [
+    eq(scheduleItems.jobId, jobId),
+    inArray(scheduleItems.id, itemIds),
+    isNull(scheduleItems.deletedAt),
+  ];
+
+  if (visibility) {
+    conditions.push(visibility);
+  }
+
+  const visibleRows = await db
+    .select({ id: scheduleItems.id })
+    .from(scheduleItems)
+    .where(and(...conditions)!);
+  const visibleIds = new Set(visibleRows.map((row) => row.id));
+
+  return entries.filter((entry) => visibleIds.has(entry.scheduleItemId));
+}
+
 async function upsertBaselineForJob(jobId: string, userId: string) {
   // Persist cascade + auto-complete + baseline write atomically so a
   // failure in any step rolls back the others. Without this, a failed
@@ -2500,12 +2537,14 @@ router.get(
         ];
       }),
     );
-    const items = (baseline.itemsSnapshot ?? []).map((entry: {
-      scheduleItemId: string;
-      title: string;
-      baselineStartDate: string;
-      baselineEndDate: string;
-    }) => {
+    const snapshot = Array.isArray(baseline.itemsSnapshot)
+      ? await filterBaselineSnapshotForAuth(
+          req.auth!,
+          jobId,
+          baseline.itemsSnapshot as BaselineSnapshotEntry[],
+        )
+      : [];
+    const items = snapshot.map((entry) => {
       const current = currentItemMap.get(entry.scheduleItemId);
       const shiftDays = current
         ? diffInDays(parseIsoDate(entry.baselineEndDate), parseIsoDate(current.endDate))
@@ -2800,6 +2839,11 @@ router.post(
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
+    const visibility = buildScheduleListVisibilityFilter(req.auth!);
+    const conditions: SQL[] = [eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)];
+    if (visibility) {
+      conditions.push(visibility);
+    }
 
     const rows = await db
       .select({
@@ -2815,7 +2859,7 @@ router.post(
         eq(scheduleItemAssignees.scheduleItemId, scheduleItems.id),
       )
       .innerJoin(users, eq(scheduleItemAssignees.userId, users.id))
-      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
+      .where(and(...conditions)!)
       .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.title), asc(users.fullName));
 
     const recipients = new Map<string, { id: string; fullName: string; email: string }>();
@@ -2849,11 +2893,16 @@ router.post(
       });
     }
 
+    const recipientList = Array.from(recipients.values());
+    const responseRecipients = isAdmin(req.auth!) || req.auth!.role === "project_manager"
+      ? recipientList
+      : recipientList.filter((recipient) => recipient.id === req.auth!.userId);
+
     res.json({
       success: true,
       countUsers: recipients.size,
       countItems: itemsById.size,
-      recipients: Array.from(recipients.values()),
+      recipients: responseRecipients,
     });
   }),
 );

@@ -112,7 +112,7 @@ async function findActiveUserById(id: string) {
   const [user] = await db
     .select(safeUserColumns)
     .from(users)
-    .where(and(eq(users.id, id), isNull(users.deletedAt)))
+    .where(and(eq(users.id, id), eq(users.isActive, true), isNull(users.deletedAt)))
     .limit(1);
 
   return user ?? null;

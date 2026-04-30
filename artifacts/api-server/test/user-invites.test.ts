@@ -297,6 +297,23 @@ test("deactivated users cannot log in even with the right password", async () =>
   });
   assert.equal(accept.status, 200);
 
+  const pats = await import("../src/lib/personal-access-tokens.ts");
+  const { db } = await import("@workspace/db");
+  const { personalAccessTokens } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const generatedPat = pats.generateRawToken();
+  const [patRow] = await db
+    .insert(personalAccessTokens)
+    .values({
+      userId: user.id,
+      name: "Revoked on deactivate",
+      scope: "read_write",
+      tokenHash: generatedPat.tokenHash,
+      tokenPrefix: generatedPat.prefix,
+      lastFour: generatedPat.lastFour,
+    })
+    .returning({ id: personalAccessTokens.id });
+
   // Sanity: the password works before deactivation.
   const okLogin = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
@@ -315,6 +332,13 @@ test("deactivated users cannot log in even with the right password", async () =>
   const patched = (await patch.json()) as { user: { isActive: boolean } };
   assert.equal(patched.user.isActive, false);
 
+  const [revokedPat] = await db
+    .select({ revokedAt: personalAccessTokens.revokedAt })
+    .from(personalAccessTokens)
+    .where(eq(personalAccessTokens.id, patRow!.id))
+    .limit(1);
+  assert.ok(revokedPat?.revokedAt, "deactivation must synchronously revoke live PATs");
+
   // The password is still correct, but the account is disabled — login
   // must fail with 401 and a message that mentions deactivation.
   const blocked = await fetch(`${baseUrl}/api/auth/login`, {
@@ -329,6 +353,54 @@ test("deactivated users cannot log in even with the right password", async () =>
     /deactivat/,
     "401 body should explain that the account is deactivated",
   );
+});
+
+test("admin can demote another active admin when an active admin remains", async () => {
+  const otherAdminId = crypto.randomUUID();
+  const otherAdminEmail = `other-admin-${otherAdminId}@user-invites-test.local`;
+  trackInvitedEmail(otherAdminEmail);
+
+  const { db } = await import("@workspace/db");
+  const { users } = await import("@workspace/db/schema");
+
+  await db.insert(users).values({
+    id: otherAdminId,
+    email: otherAdminEmail,
+    passwordHash: "test-not-a-real-hash",
+    fullName: "ZZZ Other Active Admin",
+    role: "admin",
+  });
+
+  const response = await fetch(`${baseUrl}/api/users/${otherAdminId}`, {
+    method: "PATCH",
+    headers: adminHeaders(),
+    body: JSON.stringify({ role: "crew_member" }),
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { user: { role: string } };
+  assert.equal(body.user.role, "crew_member");
+});
+
+test("last active admin cannot demote themselves", async () => {
+  const response = await fetch(`${baseUrl}/api/users/${adminUserId}`, {
+    method: "PATCH",
+    headers: adminHeaders(),
+    body: JSON.stringify({ role: "crew_member" }),
+  });
+
+  assert.equal(response.status, 400);
+
+  const { db } = await import("@workspace/db");
+  const { users } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const [row] = await db
+    .select({ role: users.role, isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, adminUserId))
+    .limit(1);
+  assert.equal(row?.role, "admin");
+  assert.equal(row?.isActive, true);
 });
 
 test("admin cannot deactivate their own account through PATCH /users/:id", async () => {

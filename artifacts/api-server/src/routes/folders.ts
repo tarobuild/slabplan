@@ -102,6 +102,9 @@ router.post(
 
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanManageJob(req.auth!, jobId);
+    if (body.data.parentFolderId) {
+      await assertCanUploadToFolder(req.auth!, body.data.parentFolderId);
+    }
 
     const folder = await createFolder({
       jobId,
@@ -195,6 +198,9 @@ router.put(
 
     const folderId = getParam(req.params.id, "folder id");
     await assertCanUploadToFolder(req.auth!, folderId);
+    if (body.data.destinationFolderId) {
+      await assertCanUploadToFolder(req.auth!, body.data.destinationFolderId);
+    }
 
     const folder = await moveFolder({
       folderId,
@@ -267,6 +273,7 @@ router.get(
     const items = await listTrash({
       jobId,
       mediaType: query.data.mediaType,
+      auth: req.auth!,
     });
 
     res.json(items);

@@ -60,6 +60,7 @@ type DailyLogAccessRecord = {
   createdBy: string | null;
   isPrivate: boolean | null;
   shareInternalUsers: boolean | null;
+  publishedAt: Date | null;
 };
 
 type ScheduleItemAccessRecord = {
@@ -664,6 +665,7 @@ async function getDailyLogAccessOrThrow(logId: string) {
       createdBy: dailyLogs.createdBy,
       isPrivate: dailyLogs.isPrivate,
       shareInternalUsers: dailyLogs.shareInternalUsers,
+      publishedAt: dailyLogs.publishedAt,
     })
     .from(dailyLogs)
     .where(and(eq(dailyLogs.id, logId), isNull(dailyLogs.deletedAt)))
@@ -687,6 +689,10 @@ export async function assertCanViewDailyLog(auth: AuthContext, logId: string) {
 
   if (isAdmin(auth) || log.createdBy === auth.userId) {
     return log;
+  }
+
+  if (!log.publishedAt) {
+    throw new HttpError(403, "You do not have access to that daily log.");
   }
 
   if (log.isPrivate || log.shareInternalUsers === false) {
@@ -745,11 +751,15 @@ async function getScheduleItemAccessOrThrow(auth: AuthContext, itemId: string) {
 }
 
 function canViewScheduleItem(auth: AuthContext, item: ScheduleItemAccessRecord) {
+  if (isAdmin(auth)) {
+    return true;
+  }
+
   if (item.isPersonalTodo === true && item.createdBy !== auth.userId) {
     return false;
   }
 
-  if (isAdmin(auth) || item.createdBy === auth.userId || item.isAssignedToCurrentUser) {
+  if (item.createdBy === auth.userId || item.isAssignedToCurrentUser) {
     return true;
   }
 

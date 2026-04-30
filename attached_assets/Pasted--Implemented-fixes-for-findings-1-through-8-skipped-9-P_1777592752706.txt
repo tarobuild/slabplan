@@ -1,0 +1,30 @@
+ Implemented fixes for findings #1 through #8; skipped #9.
+
+  PR Summary
+
+  - #1 Deactivation lockout: added active-user DB checks for refresh, PATs, access JWTs, upload JWTs, signed file-view JWTs, and realtime auth. Deactivation now revokes live PATs in the same user update
+    transaction.
+  - #2 Activity/realtime redaction: added read-time activity redaction and per-socket realtime fanout for activity:created and file:uploaded.
+  - #3 Schedule baselines: baseline reads now filter snapshot rows by schedule visibility; stored snapshots remain complete.
+  - #4 Notify assigned users: route now applies schedule visibility, hides restricted recipients/titles, and writes only visible item metadata.
+  - #5 Folder parent/destination permissions: create/move now require upload permission on parent/destination.
+  - #6 Trash visibility: trash listing now applies folder visibility and limits deleted-parent file visibility to job managers/admins.
+  - #7 Draft daily logs: unpublished logs are visible only to creator/admin until published.
+  - #8 Admin invariant: user PATCH now prevents demoting/deactivating the last active admin atomically.
+
+  Main files changed: artifacts/api-server/src/lib/active-user.ts, activity-visibility.ts, authorization.ts, daily-log-visibility.ts, file-manager.ts, personal-access-tokens.ts, realtime.ts, schedule-
+  visibility.ts, middleware/require-auth.ts, and routes activity.ts, auth.ts, files*.ts, folders.ts, schedule.ts, users.ts.
+
+  Tests added/updated: deactivation-lockout.test.ts, activity-redaction.test.ts, daily-log-drafts.test.ts, folder-permissions-trash.test.ts, schedule-notify-visibility.test.ts, plus updates to schedule-
+  cascade.integration.test.ts and user-invites.test.ts.
+
+  Validation
+
+  - pnpm run typecheck passed.
+  - pnpm run check-api-codegen passed.
+  - pnpm audit --audit-level=moderate passed with no moderate+ advisories; it reports one low advisory.
+  - Full DB-backed API test command was attempted with TEST_DATABASE_URL=postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test, but this sandbox has no Postgres reachable at 127.0.0.1:5432, so pretest failed
+    before running tests.
+  - Non-DB subset passed: 84 tests, 0 failures.
+
+  No new dependencies, no OpenAPI shape changes, no Drizzle push/migration commands run.

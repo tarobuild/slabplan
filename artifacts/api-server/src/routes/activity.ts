@@ -86,6 +86,7 @@ router.get(
     }
 
     const result = await getActivityEntries({
+      auth: req.auth!,
       jobId: query.data.jobId ?? null,
       mediaType: query.data.mediaType ?? null,
       folderId: query.data.folderId ?? null,

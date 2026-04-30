@@ -3,6 +3,7 @@ import { isAdmin, isManagerOrAbove, type AppRole } from "../lib/authorization";
 import { HttpError } from "../lib/http";
 import { verifyAccessToken } from "../lib/auth";
 import { isPatToken, resolvePersonalAccessToken } from "../lib/personal-access-tokens";
+import { assertActiveAuthUser } from "../lib/active-user";
 
 export function readBearerToken(req: Request) {
   const authHeader = req.headers.authorization;
@@ -58,8 +59,15 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   }
 
   try {
-    req.auth = verifyAccessToken(token);
-    next();
+    const auth = verifyAccessToken(token);
+    assertActiveAuthUser(auth)
+      .then(() => {
+        req.auth = auth;
+        next();
+      })
+      .catch((error) => {
+        next(error);
+      });
   } catch (error) {
     next(error);
   }

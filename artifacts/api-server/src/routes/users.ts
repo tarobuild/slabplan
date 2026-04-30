@@ -5,6 +5,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
+  personalAccessTokens,
   safeUserColumns,
   userRoles,
   users,
@@ -502,16 +503,58 @@ router.patch(
       throw new HttpError(400, "You cannot deactivate your own account.");
     }
 
-    const [updated] = await db
-      .update(users)
-      .set({
-        fullName: parsed.data.fullName ?? target.fullName,
-        role: parsed.data.role ?? target.role,
-        isActive: parsed.data.isActive ?? target.isActive,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, target.id))
-      .returning();
+    const nextRole = parsed.data.role ?? target.role;
+    const nextIsActive = parsed.data.isActive ?? target.isActive;
+
+    const [updated] = await db.transaction(async (tx) => {
+      if (
+        target.role === "admin" &&
+        target.isActive &&
+        (nextRole !== "admin" || nextIsActive === false)
+      ) {
+        const [remainingAdmin] = await tx
+          .select({ total: count() })
+          .from(users)
+          .where(
+            and(
+              eq(users.role, "admin"),
+              eq(users.isActive, true),
+              isNull(users.deletedAt),
+              ne(users.id, target.id),
+            ),
+          );
+
+        if ((remainingAdmin?.total ?? 0) === 0) {
+          throw new HttpError(400, "Cannot demote or deactivate the last active admin.");
+        }
+      }
+
+      const now = new Date();
+      const updatedRows = await tx
+        .update(users)
+        .set({
+          fullName: parsed.data.fullName ?? target.fullName,
+          role: nextRole,
+          isActive: nextIsActive,
+          updatedAt: now,
+        })
+        .where(eq(users.id, target.id))
+        .returning();
+
+      if (target.isActive && nextIsActive === false) {
+        await tx
+          .update(personalAccessTokens)
+          .set({ revokedAt: now })
+          .where(
+            and(
+              eq(personalAccessTokens.userId, target.id),
+              isNull(personalAccessTokens.revokedAt),
+            ),
+          );
+      }
+
+      return updatedRows;
+    });
 
     if (!updated) {
       throw new HttpError(500, "Failed to update user.");

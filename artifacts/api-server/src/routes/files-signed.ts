@@ -1,8 +1,6 @@
 import { Router, type IRouter } from "express";
-import { and, eq, isNull } from "drizzle-orm";
-import { db } from "@workspace/db";
-import { users } from "@workspace/db/schema";
 import { assertCanViewFile, type AuthContext } from "../lib/authorization";
+import { assertActiveUserById } from "../lib/active-user";
 import { consumeFileViewJti, verifyFileViewToken } from "../lib/auth";
 import { getFileOrThrow } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
@@ -43,15 +41,7 @@ router.get(
 
     // Confirm the user still exists & is active. If they were deactivated
     // since the token was issued, deny access.
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(and(eq(users.id, verified.userId), isNull(users.deletedAt)))
-      .limit(1);
-
-    if (!user) {
-      throw new HttpError(401, "Authentication required.");
-    }
+    await assertActiveUserById(verified.userId);
 
     // Re-check access using the same authorization model that `/files/:id/view`
     // uses, so revoked permissions take effect even within the token TTL window.

@@ -12,7 +12,8 @@ import {
   type Folder,
   users,
 } from "@workspace/db/schema";
-import { buildFolderVisibilityCondition, type AuthContext } from "./authorization";
+import { assertCanManageJob, buildFolderVisibilityCondition, isAdmin, type AuthContext } from "./authorization";
+import { redactActivityRowsForAuth } from "./activity-visibility";
 import { encodeCursor, type CursorPayload } from "./cursor";
 import { FILE_RESPONSE_CSP } from "./file-serving";
 import { HttpError } from "./http";
@@ -1558,20 +1559,36 @@ export async function purgeFile(params: {
 export async function listTrash(params: {
   jobId: string;
   mediaType: string;
+  auth?: AuthContext;
 }) {
   await ensureJobExists(params.jobId);
+  const canManageTrash = params.auth ? await canManageTrashForJob(params.auth, params.jobId) : true;
+  const visibilityCondition = params.auth && !canManageTrash
+    ? buildFolderVisibilityCondition(params.auth)
+    : null;
+  const deletedFolderConditions: SQL[] = [
+    eq(folders.jobId, params.jobId),
+    eq(folders.mediaType, params.mediaType),
+    isNotNull(folders.deletedAt),
+  ];
+  if (visibilityCondition) {
+    deletedFolderConditions.push(visibilityCondition);
+  }
 
   const deletedFolders = await db
     .select()
     .from(folders)
-    .where(
-      and(
-        eq(folders.jobId, params.jobId),
-        eq(folders.mediaType, params.mediaType),
-        isNotNull(folders.deletedAt),
-      ),
-    )
+    .where(and(...deletedFolderConditions)!)
     .orderBy(desc(folders.deletedAt));
+
+  const deletedFileConditions: SQL[] = [
+    eq(folders.jobId, params.jobId),
+    eq(folders.mediaType, params.mediaType),
+    isNotNull(files.deletedAt),
+  ];
+  if (visibilityCondition) {
+    deletedFileConditions.push(and(isNull(folders.deletedAt), visibilityCondition)!);
+  }
 
   const deletedFiles = await db
     .select({
@@ -1591,19 +1608,30 @@ export async function listTrash(params: {
     .from(files)
     .leftJoin(users, eq(files.uploadedBy, users.id))
     .leftJoin(folders, eq(files.folderId, folders.id))
-    .where(
-      and(
-        eq(folders.jobId, params.jobId),
-        eq(folders.mediaType, params.mediaType),
-        isNotNull(files.deletedAt),
-      ),
-    )
+    .where(and(...deletedFileConditions)!)
     .orderBy(desc(files.deletedAt));
 
   return {
     folders: deletedFolders,
     files: deletedFiles,
   };
+}
+
+async function canManageTrashForJob(auth: AuthContext, jobId: string) {
+  if (isAdmin(auth)) {
+    return true;
+  }
+
+  try {
+    await assertCanManageJob(auth, jobId);
+    return true;
+  } catch (error) {
+    if (error instanceof HttpError && error.statusCode === 403) {
+      return false;
+    }
+
+    throw error;
+  }
 }
 
 export async function emptyTrash(params: {
@@ -1640,6 +1668,7 @@ export async function emptyTrash(params: {
 }
 
 export async function getActivityEntries(params: {
+  auth: AuthContext;
   jobId?: string | null;
   mediaType?: string | null;
   folderId?: string | null;
@@ -1763,8 +1792,10 @@ export async function getActivityEntries(params: {
       ? { createdAt: last.createdAt.toISOString(), id: last.id }
       : null;
 
+    const data = await redactActivityRowsForAuth(trimmed, params.auth);
+
     return {
-      data: trimmed,
+      data,
       pagination: {
         limit,
         hasMore,
@@ -1804,8 +1835,10 @@ export async function getActivityEntries(params: {
 
   const totalItems = totalRow?.total ?? 0;
 
+  const data = await redactActivityRowsForAuth(rows, params.auth);
+
   return {
-    data: rows,
+    data,
     pagination: {
       page,
       limit,

@@ -82,11 +82,35 @@ If Replit's log pipeline itself is down, the internal alerts won't fire. The ext
 
 **To verify:** temporarily change the monitored URL to a known-bad path (e.g. `/api/healthz-broken`), confirm both contacts get a "DOWN" email within 2 polling intervals, then change it back.
 
-### 2c. What to do when an alert fires
+### 2c. Weekly storage drift audit (scheduled deployment)
+
+Independently of the api-server, a Replit **Scheduled Deployment** runs `audit-storage-drift.mjs` every week against production. It is read-only — it never writes to either the database or the bucket — so the failure mode is "we didn't catch the drift this week", never "we deleted something we shouldn't have". Full implementation notes are in §9 ("Weekly storage drift audit"); this section is just the alert wiring.
+
+The audit reports two directions:
+
+- **db_only** — `files` rows whose underlying GCS object is missing (the same condition cleanup-orphan-file-rows.mjs deletes when an operator runs it).
+- **bucket_only** — GCS objects under `<privateDir>/cadstone/uploads/` with no `files` row pointing at them (a leak — the upload happened but the row that lets the UI find it is gone or was never written).
+
+If either side is non-zero the script exits 1 and emits a single pino-style line to stderr containing `"level":50` and `msg:"storage drift detected"`. If the script fails to *complete* (DB unreachable, bucket listing erroring, env misconfigured), it exits 2 and emits `"level":50` with `msg:"storage drift audit failed to complete"`.
+
+**One-time alert configuration** (matches the §2a pattern but on a different deployment):
+
+1. In the Replit Deployments console, open the **scheduled** deployment for `audit-storage-drift` (see §9 for the artifact wiring).
+2. **Settings → Alerts → Add alert**.
+3. Trigger: log line containing `"level":50` (this catches both the "drift detected" and "audit failed" cases — they both emit `"level":50`).
+4. Notify: Cesar + Anwar (same emails as the §2a alerts).
+5. Save.
+
+We deliberately do *not* reuse the api-server's existing "Unhandled error" alert: that alert watches the api-server deployment's log stream, but the audit runs as its own scheduled deployment so its logs land in a separate stream.
+
+**To verify:** in a *staging* scheduled deployment only, point the `DATABASE_URL` at an empty test DB while leaving `DEFAULT_OBJECT_STORAGE_BUCKET_ID` / `PRIVATE_OBJECT_DIR` pointed at a bucket with a non-empty uploads prefix. Every bucket object will show up as `bucket_only`, the script will exit 1, and the alert email should arrive. Don't run this against production — it'll fire a real "drift detected" email even though the data is fine.
+
+### 2d. What to do when an alert fires
 
 1. Open the smoke check in §1. If healthz is green, the alert is likely stale or noisy — record the timestamp and move on.
 2. If healthz is failing or returning 5xx, jump to §4 for the matching failure mode.
-3. Post in the team channel ("api looks down, investigating") so users know somebody is on it.
+3. If the alert is from the storage drift audit (§2c), jump to §9 ("Weekly storage drift audit — what to do when it fires") for the triage steps.
+4. Post in the team channel ("api looks down, investigating" / "storage drift email arrived, investigating") so users know somebody is on it.
 
 ---
 
@@ -825,3 +849,89 @@ classify rows.
 row whose storage probe came back "indeterminate" rather than
 "missing" (the script refuses to delete on uncertainty so a network
 blip can never destroy live data).
+
+### Weekly storage drift audit
+
+**Why this exists:** the cleanup above only happened because somebody
+remembered to write the orphan risk down as a follow-up. Without an
+unattended check, the next round of drift — a partial bucket delete,
+a botched migration, a half-finished restore drill, a manual fix-up
+that forgets one side — would again surface as broken thumbnails in
+front of Cesar / Anwar before anyone noticed. This audit is the
+early-warning system.
+
+**Where it lives:**
+`artifacts/api-server/scripts/audit-storage-drift.mjs`. It is read-
+only on both the database and the bucket; there is no `--dry-run`
+flag because there is no non-dry mode. Re-running it costs only a
+DB query and a bucket listing.
+
+**Schedule:** **weekly** Replit Scheduled Deployment, Sundays 09:00
+UTC (early morning Pacific so the team can act on a finding during
+business hours Monday). The deployment is configured outside this
+repo via the Replit Deployments UI:
+
+1. Replit Deployments console → **+ New Deployment** → type
+   **Scheduled**.
+2. Source: this workspace, build command:
+   `pnpm --filter @workspace/api-server install`.
+3. Run command:
+   `node artifacts/api-server/scripts/audit-storage-drift.mjs --db=production`.
+4. Schedule: cron `0 9 * * 0` (weekly, Sunday 09:00 UTC).
+5. Secrets: `SUPABASE_DATABASE_URL`,
+   `DEFAULT_OBJECT_STORAGE_BUCKET_ID`, `PRIVATE_OBJECT_DIR` — same
+   values as the api-server deployment. The script asserts that the
+   bucket segment of `PRIVATE_OBJECT_DIR` matches
+   `DEFAULT_OBJECT_STORAGE_BUCKET_ID` before doing anything, so a
+   misconfigured pair surfaces as exit-2 + alert email rather than a
+   silently-wrong report.
+6. Configure the alert in §2c — it watches this scheduled
+   deployment's logs, *not* the api-server's.
+
+**Where the report lands:**
+
+- **stdout:** a JSON summary every run (committed shape: `target`,
+  `bucket`, `prefix`, `inspected.{db_rows,bucket_objects}`,
+  `drift.{db_only,bucket_only,db_invalid}`, `samples.{...}`). Lives
+  in the scheduled deployment's log stream — viewable in the
+  Deployments console.
+- **stderr (only on drift or failure):** one pino-style line with
+  `"level":50` and `msg:"storage drift detected"` (or `"…audit
+  failed to complete"`). This is what the §2c alert matches on.
+- **email:** when the alert fires, Cesar + Anwar get a notification
+  containing the matched log line.
+
+**What to do when it fires:**
+
+1. Open the scheduled deployment's logs in the Replit Deployments
+   console; the most recent run's JSON summary tells you the
+   counts and a sample of up to 50 affected `/uploads/...` URLs per
+   side.
+2. **db_only > 0** — `files` rows pointing at missing objects.
+   Re-run the audit locally (`--db=production`) to confirm the
+   list is stable, then run
+   `cleanup-orphan-file-rows.mjs --db=production --dry-run`
+   to see exactly what it would delete; if the lists agree and you
+   want to clear the broken tiles, re-run with
+   `--i-know-what-im-doing` per §9 "Cleared orphan file rows…".
+3. **bucket_only > 0** — objects in the bucket with no `files` row.
+   This is a *leak*, not a broken-tile problem (the UI can't see
+   these objects at all). Investigate before deleting: was a row
+   hard-deleted recently without `deletePhysicalFile()` running?
+   Did a partial migration drop the row? If the object is unwanted
+   you can delete it via the GCS console; do not add a delete path
+   to this script.
+4. **db_invalid > 0** — `files` rows whose `file_url` is malformed
+   (the serve path would 500 on them). These are independent of
+   bucket state — fix the row directly in the DB, or delete it if
+   it's clearly junk.
+5. **audit failed to complete (exit 2)** — DB unreachable, bucket
+   listing erroring, env misconfigured. Open the log line for the
+   specific reason; treat as "we don't know whether there's drift
+   this week" and re-run manually once the underlying problem is
+   fixed.
+
+**Out of scope:** auto-deletion. The script is forbidden from
+writing — neither the DB nor the bucket — so a runaway audit can
+never destroy live data. Cleanup remains a deliberate operator
+action via `cleanup-orphan-file-rows.mjs --i-know-what-im-doing`.

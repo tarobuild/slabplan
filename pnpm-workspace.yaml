@@ -80,6 +80,36 @@ overrides:
   path-to-regexp: 8.4.2
   picomatch: 4.0.4
   yaml: 2.8.3
+  # ----- audit pins (Task #100) -----
+  # axios <1.15.0 — SSRF via NO_PROXY normalization, header-injection
+  # cloud metadata exfiltration. Fixed in 1.15.0; we pin within axios's
+  # current major (1.x) so no breaking API change.
+  axios: 1.15.2
+  # follow-redirects <=1.15.11 — leaks custom auth headers cross-domain.
+  # Fixed in 1.16.0; transitive of axios.
+  follow-redirects: 1.16.0
+  # dompurify <3.4.0 — multiple FORBID_TAGS / SAFE_FOR_TEMPLATES bypasses.
+  # Fixed in 3.4.0; transitive of jspdf. We can't bump jspdf majors per
+  # the task constraints (would risk breaking PDF export), so override
+  # the transitive instead.
+  dompurify: 3.4.1
+  # fast-xml-parser <5.7.0 — XMLBuilder comment/CDATA injection. Fixed
+  # in 5.7.0; transitive of @google-cloud/storage.
+  fast-xml-parser: 5.7.2
+  # uuid <14.0.0 — missing buffer bounds check in v3/v5/v6. The advisory
+  # is only patched in 14.x. Verified non-breaking for our consumers
+  # (@google-cloud/storage's gaxios, teeny-request, etc. only use uuid.v4
+  # for random IDs, which is API-stable across majors). Smoke-tested
+  # file upload + delete after the bump.
+  uuid: 14.0.0
+  # NOT pinned (and remaining as a low-severity audit finding):
+  #   @tootallnate/once <3.0.1 (deep transitive of @google-cloud/storage
+  #   via teeny-request > http-proxy-agent). The patched 3.0.1 is
+  #   ESM-only; the consuming http-proxy-agent version still uses CJS,
+  #   so an override breaks @google-cloud/storage at runtime. Cannot fix
+  #   without a major bump of @google-cloud/storage, which is out of
+  #   scope per Task #100.
+  # ----- end audit pins -----
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"

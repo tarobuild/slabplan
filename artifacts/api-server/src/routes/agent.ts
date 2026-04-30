@@ -9,9 +9,9 @@ import {
   type AgentToolCall,
 } from "@workspace/db/schema";
 import { HttpError, asyncHandler } from "../lib/http";
-import { readBearerToken } from "../middleware/require-auth";
+import { readBearerToken, requireAdmin } from "../middleware/require-auth";
 import { runAgentTurn, writeSse } from "../lib/agent/orchestrator";
-import { loadUsageSnapshot } from "../lib/agent/usage";
+import { loadOrgUsageSnapshot, loadUsageSnapshot } from "../lib/agent/usage";
 import {
   maxInFlightPerUser,
   releaseSlot,
@@ -91,6 +91,20 @@ router.get(
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
     const snapshot = await loadUsageSnapshot(userId);
+    res.json(snapshot);
+  }),
+);
+
+// Admin-only org-wide month-to-date usage view. Returns the same shape the
+// org-budget cap evaluates against (`exceeded` flips to `true` once the
+// budget is hit), so an operator can confirm "are we close to the cap?"
+// without going to Anthropic's billing console. Per-user `/usage` is
+// unaffected and still serves the calling user's own snapshot.
+router.get(
+  "/usage/org",
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    const snapshot = await loadOrgUsageSnapshot();
     res.json(snapshot);
   }),
 );
@@ -180,8 +194,24 @@ router.post(
     const body = sendMessageSchema.parse(req.body ?? {});
     const conversation = await loadOwnedConversation(userId, id);
 
-    // Token cap check.
-    const usage = await loadUsageSnapshot(userId);
+    // Token cap checks. Per-user and org-wide are independent budgets —
+    // either one tripping blocks the send. Run them in parallel since
+    // both are single DB round-trips against the same usage table.
+    const [usage, orgUsage] = await Promise.all([
+      loadUsageSnapshot(userId),
+      loadOrgUsageSnapshot(),
+    ]);
+    if (orgUsage.exceeded) {
+      // Org-level budget is the global kill switch; surface it with a
+      // distinct error code so the UI / runbook can tell it apart from
+      // the per-user cap.
+      throw new HttpError(
+        429,
+        `Agent monthly budget exhausted (${orgUsage.budget.toLocaleString()} tokens for the workspace). Please contact an admin to raise the cap or wait for the new month.`,
+        undefined,
+        "org-usage-limit",
+      );
+    }
     if (usage.exceeded) {
       throw new HttpError(
         429,

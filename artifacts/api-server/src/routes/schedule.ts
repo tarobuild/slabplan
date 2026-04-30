@@ -42,7 +42,7 @@ import {
   isAdmin,
   type AuthContext,
 } from "../lib/authorization";
-import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
+import { decodeCursor, encodeCursor } from "../lib/cursor";
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
@@ -2597,7 +2597,13 @@ router.get(
     }
 
     const { page, limit, cursor: rawCursor } = parsedQuery.data;
-    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    // Cursor mode is opt-in by passing an explicit `cursor` query param.
+    // `?limit=N` alone keeps page-mode semantics so callers always receive the
+    // visibility-scoped `totalItems`/`totalPages` they need to render counts.
+    const isCursorMode = Object.prototype.hasOwnProperty.call(
+      req.query,
+      "cursor",
+    );
     const cursorPayload = rawCursor ? decodeCursor(rawCursor) : null;
     const auth = req.auth!;
     const currentUserId = auth.userId;

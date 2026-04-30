@@ -8,6 +8,9 @@ out-tsc
 .expo
 .expo-shared
 
+# database backup snapshots — contain real data, never commit
+backups/
+
 # dependencies
 node_modules
 

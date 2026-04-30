@@ -6,14 +6,30 @@ export type Credentials = { email: string; password: string }
 
 const REFRESH_COOKIE = "cadstone_refresh_token"
 
+function requireSeedPassword(envVar: string, who: string): string {
+  const value = process.env[envVar]
+  if (!value) {
+    throw new Error(
+      `${envVar} is not set. The Playwright suite needs ${who}'s password ` +
+        `to match what seed-users.mjs --db=local was run with. Set it to ` +
+        `the same value passed to the seed script.`,
+    )
+  }
+  return value
+}
+
 export const CESAR: Credentials = {
   email: "cesar@cadstone.works",
-  password: "Test1!",
+  get password() {
+    return requireSeedPassword("SEED_ADMIN_CESAR_PASSWORD", "Cesar")
+  },
 }
 
 export const ANWAR: Credentials = {
   email: "anwar@cadstone.works",
-  password: "Test2!",
+  get password() {
+    return requireSeedPassword("SEED_ADMIN_ANWAR_PASSWORD", "Anwar")
+  },
 }
 
 // Synthetic crew_member fixture used to assert worker-level role gates

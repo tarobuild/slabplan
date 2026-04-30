@@ -82,14 +82,16 @@ test("parseCursorParams flips into cursor-mode when a cursor is provided", () =>
   });
 });
 
-test("isCursorModeRequested gives agents two ways to bootstrap the first cursor page", () => {
+test("isCursorModeRequested only opts in on an explicit `cursor` query key", () => {
   // Explicit empty cursor: ?cursor=&limit=25 → first cursor page.
   assert.equal(isCursorModeRequested({ cursor: "", limit: "25" }), true);
-  // Limit-only: ?limit=25 with no page/pageSize/cursor → first cursor page.
-  assert.equal(isCursorModeRequested({ limit: "25" }), true);
   // Cursor with token: ?cursor=<token> → cursor mode.
   assert.equal(isCursorModeRequested({ cursor: "abc" }), true);
-  // Page-mode wins when explicit page params are present, even with a limit.
+  // Limit-only must stay in page mode so callers still get
+  // `totalItems`/`totalPages`. Silently flipping it into cursor mode dropped
+  // those totals and broke list counts across jobs/leads/search/files/daily-logs.
+  assert.equal(isCursorModeRequested({ limit: "25" }), false);
+  // Page-mode wins when explicit page params are present.
   assert.equal(isCursorModeRequested({ page: "1", pageSize: "20" }), false);
   assert.equal(isCursorModeRequested({ page: "1", limit: "20" }), false);
   // Empty query stays in page mode (default).
@@ -105,11 +107,11 @@ test("parseCursorParams supports first-page bootstrap (cursor key with empty val
   assert.equal(result.limit, 25);
 });
 
-test("parseCursorParams treats limit-only requests as cursor-mode bootstrap", () => {
-  // No cursor, no page, no pageSize — but a limit. Treat as cursor mode so
-  // limit-only callers also get nextCursor without needing to read the spec.
+test("parseCursorParams keeps limit-only requests in page mode", () => {
+  // No cursor, no page, no pageSize — just a limit. Page mode must win so
+  // callers still receive `totalItems`/`totalPages` for list counts.
   const result = parseCursorParams({ limit: "10" });
-  assert.equal(result.isCursorMode, true);
+  assert.equal(result.isCursorMode, false);
   assert.equal(result.cursor, null);
   assert.equal(result.limit, 10);
 });

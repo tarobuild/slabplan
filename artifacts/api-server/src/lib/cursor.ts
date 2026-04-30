@@ -71,21 +71,19 @@ const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 
 /**
- * Cursor mode is opt-in by the *presence* of the `cursor` query key — even when
- * it has no value. That gives external clients a discoverable path to the first
- * page in cursor format: `GET /things?cursor=&limit=25` returns the initial
- * page along with `pagination.nextCursor`. Subsequent calls echo the cursor
- * back: `GET /things?cursor=<token>`. `?limit=N` alone (no `cursor` key) is
- * also accepted as cursor mode so agents that only know "give me a page" can
- * still kick off pagination without reading the spec.
+ * Cursor mode is opt-in by the *presence* of the `cursor` query key — even
+ * when it has no value. That gives external clients a discoverable path to the
+ * first page in cursor format: `GET /things?cursor=&limit=25` returns the
+ * initial page along with `pagination.nextCursor`. Subsequent calls echo the
+ * cursor back: `GET /things?cursor=<token>`.
+ *
+ * `?limit=N` alone (no `cursor` key) stays in page mode so callers always
+ * receive the visibility-scoped `totalItems`/`totalPages` they need to render
+ * counts. Silently flipping limit-only requests into cursor mode used to drop
+ * those totals and produced wrong list counts in the UI.
  */
 export function isCursorModeRequested(query: Record<string, unknown>): boolean {
-  if (Object.prototype.hasOwnProperty.call(query, "cursor")) return true;
-  // A `limit` parameter, in the absence of any page-mode key, also opts in.
-  const hasPageKey =
-    Object.prototype.hasOwnProperty.call(query, "page") ||
-    Object.prototype.hasOwnProperty.call(query, "pageSize");
-  return !hasPageKey && Object.prototype.hasOwnProperty.call(query, "limit");
+  return Object.prototype.hasOwnProperty.call(query, "cursor");
 }
 
 export function parseCursorParams(query: Record<string, unknown>): {

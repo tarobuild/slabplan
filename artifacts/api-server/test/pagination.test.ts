@@ -2738,3 +2738,171 @@ test("POST /schedule-items/:id/todos allows an assigned crew member to add a col
   assert.equal(body.todo.title, "Crew assignee follow-up");
   assert.ok(body.todo.id);
 });
+
+// ---------------------------------------------------------------------------
+// Regression: `?limit=N` alone must NOT silently flip a list endpoint into
+// cursor mode. The bug fixed for `GET /activity` in task #148 existed in
+// every other route that called `isCursorModeRequested`. After the helper
+// was tightened (cursor mode requires an explicit `cursor` query key),
+// limit-only callers must keep getting the page-mode envelope with
+// visibility-scoped totals so list counts in the UI stay correct.
+// ---------------------------------------------------------------------------
+
+test("GET /jobs?limit=N (no cursor, no page) stays in page mode and returns totalItems/totalPages", async () => {
+  const response = await fetch(`${baseUrl}/api/jobs?limit=1`, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    jobs: unknown[];
+    pagination: Record<string, unknown>;
+  };
+
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.pageSize, "number");
+  assert.equal(typeof body.pagination.totalItems, "number");
+  assert.equal(typeof body.pagination.totalPages, "number");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(body.pagination, "nextCursor"),
+    false,
+    "limit-only must not flip into cursor mode",
+  );
+  assert.ok(
+    (body.pagination.totalItems as number) >= testJobIds.length,
+    "totalItems must include seeded jobs",
+  );
+});
+
+test("GET /leads?limit=N (no cursor, no page) stays in page mode and returns totalItems/totalPages", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/leads?limit=1&search=ZZZ%20Pagination`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    leads: unknown[];
+    pagination: Record<string, unknown>;
+    summary: Record<string, string>;
+  };
+
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.pageSize, "number");
+  assert.equal(body.pagination.totalItems, allLeadIds.length);
+  assert.equal(
+    body.pagination.totalPages,
+    Math.max(
+      1,
+      Math.ceil(allLeadIds.length / (body.pagination.pageSize as number)),
+    ),
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(body.pagination, "nextCursor"),
+    false,
+    "limit-only must not flip into cursor mode",
+  );
+  assert.equal(typeof body.summary, "object");
+});
+
+test("GET /search?limit=N (no cursor, no page) stays in page mode and returns the page envelope", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/search?q=ZZZ%20Pagination&limit=2`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    results: unknown[];
+    pagination: Record<string, unknown>;
+  };
+
+  // /search reports `hasMore` instead of totals, but the envelope shape must
+  // still be the page-mode one — never the cursor-mode `{ limit, hasMore,
+  // nextCursor }` shape.
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.pageSize, "number");
+  assert.equal(typeof body.pagination.hasMore, "boolean");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(body.pagination, "nextCursor"),
+    false,
+    "limit-only must not flip into cursor mode",
+  );
+});
+
+test("GET /jobs/:jobId/daily-logs?limit=N (no cursor, no page) stays in page mode and returns totalItems/totalPages", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/jobs/${accessibleJobId}/daily-logs?limit=2`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    logs: unknown[];
+    pagination: Record<string, unknown>;
+  };
+
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.pageSize, "number");
+  assert.equal(body.pagination.totalItems, crewDailyLogIds.length);
+  assert.equal(
+    body.pagination.totalPages,
+    Math.max(1, Math.ceil(crewDailyLogIds.length / (body.pagination.pageSize as number))),
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(body.pagination, "nextCursor"),
+    false,
+    "limit-only must not flip into cursor mode",
+  );
+});
+
+test("GET /daily-logs/mine?limit=N (no cursor, no page) stays in page mode and returns totalItems/totalPages", async () => {
+  const response = await fetch(`${baseUrl}/api/daily-logs/mine?limit=2`, {
+    headers: { authorization: `Bearer ${crewToken}` },
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    logs: unknown[];
+    pagination: Record<string, unknown>;
+  };
+
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.pageSize, "number");
+  assert.equal(body.pagination.totalItems, crewDailyLogIds.length);
+  assert.equal(
+    body.pagination.totalPages,
+    Math.max(1, Math.ceil(crewDailyLogIds.length / (body.pagination.pageSize as number))),
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(body.pagination, "nextCursor"),
+    false,
+    "limit-only must not flip into cursor mode",
+  );
+});
+
+test("GET /folders/:id/files?limit=N (no cursor, no page) stays in page mode and returns totalItems/totalPages", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/folders/${fileListFolderId}/files?limit=2`,
+    { headers: { authorization: `Bearer ${pmToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    files: unknown[];
+    pagination: Record<string, unknown>;
+  };
+
+  assert.equal(typeof body.pagination.page, "number");
+  assert.equal(typeof body.pagination.limit, "number");
+  assert.equal(body.pagination.totalItems, fileListFileIds.length);
+  assert.equal(
+    body.pagination.totalPages,
+    Math.ceil(fileListFileIds.length / 2),
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(body.pagination, "nextCursor"),
+    false,
+    "limit-only must not flip into cursor mode",
+  );
+});

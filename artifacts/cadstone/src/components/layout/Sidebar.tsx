@@ -111,7 +111,7 @@ export default function Sidebar() {
     setErrorMessage(null)
 
     api
-      .get("/jobs?limit=200")
+      .get("/jobs?pageSize=100")
       .then((r) => setJobs(r.data.jobs ?? r.data ?? []))
       .catch((err: unknown) => {
         const classified = classifyApiError(err, "Couldn't refresh jobs right now.")

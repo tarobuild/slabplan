@@ -52,19 +52,30 @@ type ToolButtonProps = {
   onClick: () => void
   title: string
   children: React.ReactNode
+  disabled?: boolean
+  ariaLabel?: string
 }
 
-function ToolButton({ active, onClick, title, children }: ToolButtonProps) {
+function ToolButton({
+  active,
+  onClick,
+  title,
+  children,
+  disabled = false,
+  ariaLabel,
+}: ToolButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
+      aria-label={ariaLabel ?? title}
+      disabled={disabled}
       className={`flex h-8 w-8 items-center justify-center rounded-md transition ${
         active
           ? "bg-blue-600 text-white shadow"
           : "text-slate-200 hover:bg-white/10 hover:text-white"
-      }`}
+      } ${disabled ? "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-slate-200" : ""}`}
     >
       {children}
     </button>
@@ -214,20 +225,24 @@ export function PdfMarkupToolbar({
         <ToolButton
           active={false}
           onClick={onUndo}
-          title="Undo (only your own latest)"
+          disabled={!canUndo}
+          title={
+            canUndo
+              ? "Undo last markup change (your own create, edit, or delete)"
+              : "Nothing to undo"
+          }
+          ariaLabel="Undo last markup change"
         >
-          <span className={canUndo ? "" : "opacity-30"}>
-            <Undo2 className="size-4" />
-          </span>
+          <Undo2 className="size-4" />
         </ToolButton>
         <ToolButton
           active={false}
           onClick={onRedo}
-          title="Redo"
+          disabled={!canRedo}
+          title={canRedo ? "Redo last undone markup change" : "Nothing to redo"}
+          ariaLabel="Redo last undone markup change"
         >
-          <span className={canRedo ? "" : "opacity-30"}>
-            <Redo2 className="size-4" />
-          </span>
+          <Redo2 className="size-4" />
         </ToolButton>
 
         <span className="mx-1 h-5 w-px bg-white/15" />

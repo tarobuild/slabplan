@@ -2039,108 +2039,33 @@ export default function JobSchedulePage() {
     }
   }, [dragSelection?.pointerId])
 
+  // Block drag listeners attach synchronously in handleBlockPointerDown
+  // so the very first pointermove (which can arrive in the same tick)
+  // is handled. Refs hold the function identities for removeEventListener.
+  const blockDragMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null)
+  const blockDragUpHandlerRef = useRef<((event: PointerEvent) => void) | null>(null)
+  const blockDragCancelHandlerRef = useRef<((event: PointerEvent) => void) | null>(null)
+
+  function detachBlockDragListeners() {
+    if (blockDragMoveHandlerRef.current) {
+      window.removeEventListener("pointermove", blockDragMoveHandlerRef.current)
+      blockDragMoveHandlerRef.current = null
+    }
+    if (blockDragUpHandlerRef.current) {
+      window.removeEventListener("pointerup", blockDragUpHandlerRef.current)
+      blockDragUpHandlerRef.current = null
+    }
+    if (blockDragCancelHandlerRef.current) {
+      window.removeEventListener("pointercancel", blockDragCancelHandlerRef.current)
+      blockDragCancelHandlerRef.current = null
+    }
+  }
+
   useEffect(() => {
-    if (!blockDrag) {
-      return
-    }
-
-    function handleMove(event: PointerEvent) {
-      const current = blockDragRef.current
-      if (!current || current.pointerId !== event.pointerId) {
-        return
-      }
-
-      let activeColumn = current.columns.find((col) => col.dayKey === current.dayKey) ?? current.columns[0]
-      if (current.mode === "move" && current.columns.length > 1) {
-        const hit = current.columns.find(
-          (col) => event.clientX >= col.left && event.clientX <= col.right,
-        )
-        if (hit) {
-          activeColumn = hit
-        }
-      }
-
-      let nextStart = current.startMinutes
-      let nextEnd = current.endMinutes
-      let nextDayKey = current.dayKey
-
-      if (current.mode === "move") {
-        const pointerRaw = rawMinutesFromClientY(event.clientY, activeColumn.top, activeColumn.height)
-        let start = clampMinutes(snapMinutes(pointerRaw - current.anchorOffsetMinutes))
-        let end = start + current.durationMinutes
-        if (end > TIMED_GRID_TOTAL_MINUTES) {
-          end = TIMED_GRID_TOTAL_MINUTES
-          start = Math.max(0, end - current.durationMinutes)
-        }
-        nextStart = start
-        nextEnd = end
-        nextDayKey = activeColumn.dayKey
-      } else if (current.mode === "resize-start") {
-        const pointer = minutesFromClientY(event.clientY, activeColumn.top, activeColumn.height)
-        let start = pointer
-        if (start > current.endMinutes - DRAG_SNAP_MINUTES) {
-          start = current.endMinutes - DRAG_SNAP_MINUTES
-        }
-        nextStart = clampMinutes(start)
-      } else {
-        const pointer = minutesFromClientY(event.clientY, activeColumn.top, activeColumn.height)
-        let end = pointer
-        if (end < current.startMinutes + DRAG_SNAP_MINUTES) {
-          end = current.startMinutes + DRAG_SNAP_MINUTES
-        }
-        nextEnd = clampMinutes(end)
-      }
-
-      const moved =
-        current.moved ||
-        nextStart !== current.origStartMinutes ||
-        nextEnd !== current.origEndMinutes ||
-        nextDayKey !== current.origDayKey
-
-      const next: BlockDrag = {
-        ...current,
-        startMinutes: nextStart,
-        endMinutes: nextEnd,
-        dayKey: nextDayKey,
-        rectTop: activeColumn.top,
-        rectHeight: activeColumn.height,
-        moved,
-      }
-      blockDragRef.current = next
-      setBlockDrag(next)
-    }
-
-    function handleUp(event: PointerEvent) {
-      const current = blockDragRef.current
-      if (!current || current.pointerId !== event.pointerId) {
-        return
-      }
-      blockDragRef.current = null
-      setBlockDrag(null)
-      if (current.moved) {
-        blockClickSuppressRef.current = current.itemId
-        void commitBlockDrag(current)
-      }
-    }
-
-    function handleCancel(event: PointerEvent) {
-      const current = blockDragRef.current
-      if (!current || current.pointerId !== event.pointerId) {
-        return
-      }
-      blockDragRef.current = null
-      setBlockDrag(null)
-    }
-
-    window.addEventListener("pointermove", handleMove)
-    window.addEventListener("pointerup", handleUp)
-    window.addEventListener("pointercancel", handleCancel)
     return () => {
-      window.removeEventListener("pointermove", handleMove)
-      window.removeEventListener("pointerup", handleUp)
-      window.removeEventListener("pointercancel", handleCancel)
+      detachBlockDragListeners()
     }
-  }, [blockDrag?.pointerId])
+  }, [])
 
   useEffect(() => {
     if (historyOpen) {
@@ -3378,7 +3303,8 @@ export default function JobSchedulePage() {
     if (event.button !== 0) {
       return
     }
-    if (event.pointerType !== "mouse") {
+    // Skip touch so the calendar keeps native scrolling on phones.
+    if (event.pointerType === "touch") {
       return
     }
     if (!isBlockDraggable(item)) {
@@ -3452,6 +3378,105 @@ export default function JobSchedulePage() {
     }
     blockDragRef.current = next
     setBlockDrag(next)
+
+    detachBlockDragListeners()
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const current = blockDragRef.current
+      if (!current || current.pointerId !== moveEvent.pointerId) {
+        return
+      }
+
+      let activeColumn = current.columns.find((col) => col.dayKey === current.dayKey) ?? current.columns[0]
+      if (current.mode === "move" && current.columns.length > 1) {
+        const hit = current.columns.find(
+          (col) => moveEvent.clientX >= col.left && moveEvent.clientX <= col.right,
+        )
+        if (hit) {
+          activeColumn = hit
+        }
+      }
+
+      let nextStart = current.startMinutes
+      let nextEnd = current.endMinutes
+      let nextDayKey = current.dayKey
+
+      if (current.mode === "move") {
+        const pointerRaw = rawMinutesFromClientY(moveEvent.clientY, activeColumn.top, activeColumn.height)
+        let start = clampMinutes(snapMinutes(pointerRaw - current.anchorOffsetMinutes))
+        let endVal = start + current.durationMinutes
+        if (endVal > TIMED_GRID_TOTAL_MINUTES) {
+          endVal = TIMED_GRID_TOTAL_MINUTES
+          start = Math.max(0, endVal - current.durationMinutes)
+        }
+        nextStart = start
+        nextEnd = endVal
+        nextDayKey = activeColumn.dayKey
+      } else if (current.mode === "resize-start") {
+        const pointer = minutesFromClientY(moveEvent.clientY, activeColumn.top, activeColumn.height)
+        let start = pointer
+        if (start > current.endMinutes - DRAG_SNAP_MINUTES) {
+          start = current.endMinutes - DRAG_SNAP_MINUTES
+        }
+        nextStart = clampMinutes(start)
+      } else {
+        const pointer = minutesFromClientY(moveEvent.clientY, activeColumn.top, activeColumn.height)
+        let endVal = pointer
+        if (endVal < current.startMinutes + DRAG_SNAP_MINUTES) {
+          endVal = current.startMinutes + DRAG_SNAP_MINUTES
+        }
+        nextEnd = clampMinutes(endVal)
+      }
+
+      const moved =
+        current.moved ||
+        nextStart !== current.origStartMinutes ||
+        nextEnd !== current.origEndMinutes ||
+        nextDayKey !== current.origDayKey
+
+      const nextDrag: BlockDrag = {
+        ...current,
+        startMinutes: nextStart,
+        endMinutes: nextEnd,
+        dayKey: nextDayKey,
+        rectTop: activeColumn.top,
+        rectHeight: activeColumn.height,
+        moved,
+      }
+      blockDragRef.current = nextDrag
+      setBlockDrag(nextDrag)
+    }
+
+    const handleUp = (upEvent: PointerEvent) => {
+      const current = blockDragRef.current
+      if (!current || current.pointerId !== upEvent.pointerId) {
+        return
+      }
+      detachBlockDragListeners()
+      blockDragRef.current = null
+      setBlockDrag(null)
+      if (current.moved) {
+        blockClickSuppressRef.current = current.itemId
+        void commitBlockDrag(current)
+      }
+    }
+
+    const handleCancel = (cancelEvent: PointerEvent) => {
+      const current = blockDragRef.current
+      if (!current || current.pointerId !== cancelEvent.pointerId) {
+        return
+      }
+      detachBlockDragListeners()
+      blockDragRef.current = null
+      setBlockDrag(null)
+    }
+
+    blockDragMoveHandlerRef.current = handleMove
+    blockDragUpHandlerRef.current = handleUp
+    blockDragCancelHandlerRef.current = handleCancel
+    window.addEventListener("pointermove", handleMove)
+    window.addEventListener("pointerup", handleUp)
+    window.addEventListener("pointercancel", handleCancel)
   }
 
   function dismissUndoBlockDragToast() {
@@ -3535,11 +3560,15 @@ export default function JobSchedulePage() {
     }
     const itemTitle = target.title
     const previousItems = items
+    // Single-day hourly block (per isBlockDraggable), so endDate must
+    // track startDate; otherwise the optimistic render briefly has
+    // endDate < startDate and the block disappears from every column.
     const optimistic = items.map((entry) =>
       entry.id === target.id
         ? {
             ...entry,
             startDate: newStartDate,
+            endDate: newStartDate,
             startTime: newStartTime,
             endTime: newEndTime,
             isHourly: true,
@@ -4001,7 +4030,10 @@ export default function JobSchedulePage() {
                         setCalendarExpanded(false)
                       }}
                     >
-                      <SelectTrigger className="h-10 w-[150px] border-[#E5E7EB]">
+                      <SelectTrigger
+                        className="h-10 w-[150px] border-[#E5E7EB]"
+                        data-testid="calendar-period-select"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -4415,12 +4447,22 @@ export default function JobSchedulePage() {
                           const dk = dateKey(day)
                           const segments = buildDayTimelineSegments(dk, filteredItems.filter((item) => item.isHourly))
                           const workday = classifyWorkday(day, workdayExceptions)
+                          const isBlockDropTarget =
+                            !!blockDrag
+                            && blockDrag.mode === "move"
+                            && blockDrag.dayKey === dk
+                            && blockDrag.origDayKey !== dk
 
                           return (
                             <div
                               key={dk}
                               data-timed-day={dk}
-                              className="relative border-r border-[#E5E7EB] last:border-r-0 select-none touch-pan-y"
+                              data-week-day-column={dk}
+                              data-drop-target={isBlockDropTarget ? "true" : undefined}
+                              className={cn(
+                                "relative border-r border-[#E5E7EB] last:border-r-0 select-none touch-pan-y transition-colors",
+                                isBlockDropTarget && "bg-orange-100/60 ring-2 ring-inset ring-orange-300",
+                              )}
                               style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
                               onPointerDown={(event) => handleTimedColumnPointerDown(event, dk)}
                             >

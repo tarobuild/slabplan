@@ -4,6 +4,10 @@ import app, { prepareApp } from "./app";
 import { logger } from "./lib/logger";
 import { initRealtime } from "./lib/realtime";
 import {
+  startScheduleAutoCompleteSweeper,
+  type ScheduleAutoCompleteSweeperHandle,
+} from "./routes/schedule";
+import {
   startTempUploadSweeper,
   type TempUploadSweeperHandle,
 } from "./lib/uploads";
@@ -30,6 +34,10 @@ async function bootstrap() {
   // requests. Started after prepareApp() so the temp dir definitely exists.
   const tempUploadSweeper = startTempUploadSweeper();
 
+  // Periodically apply auto-complete-overdue to schedule items now that
+  // the schedule GET endpoint is read-only.
+  const scheduleAutoCompleteSweeper = startScheduleAutoCompleteSweeper();
+
   server.on("error", (err) => {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
@@ -39,12 +47,13 @@ async function bootstrap() {
     logger.info({ host, port }, "Server listening");
   });
 
-  registerShutdownHandlers(server, tempUploadSweeper);
+  registerShutdownHandlers(server, tempUploadSweeper, scheduleAutoCompleteSweeper);
 }
 
 function registerShutdownHandlers(
   server: Server,
   tempUploadSweeper: TempUploadSweeperHandle,
+  scheduleAutoCompleteSweeper: ScheduleAutoCompleteSweeperHandle,
 ) {
   let shuttingDown = false;
 
@@ -58,6 +67,7 @@ function registerShutdownHandlers(
     logger.info({ signal }, "Shutdown signal received — draining connections");
 
     tempUploadSweeper.stop();
+    scheduleAutoCompleteSweeper.stop();
 
     const drainTimer = setTimeout(() => {
       logger.warn(

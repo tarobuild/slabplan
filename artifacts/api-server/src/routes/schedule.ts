@@ -61,7 +61,7 @@ import {
 } from "../lib/uploads";
 
 const router: IRouter = Router();
-type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
+type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete" | "execute">;
 
 const dependencyTypes = [
   "finish_to_start",
@@ -683,6 +683,28 @@ async function ensureJobExists(jobId: string) {
   return job;
 }
 
+/**
+ * Read-only variant of ensureJobExists. Skips the lazy INSERTs of a
+ * default phase / settings row so the schedule GET endpoint stays
+ * write-free; defaults are created on the next write path instead.
+ */
+async function verifyJobExists(jobId: string) {
+  const [job] = await db
+    .select({
+      id: jobs.id,
+      title: jobs.title,
+    })
+    .from(jobs)
+    .where(and(eq(jobs.id, jobId), isNull(jobs.deletedAt)))
+    .limit(1);
+
+  if (!job) {
+    throw new HttpError(404, "Job not found.");
+  }
+
+  return job;
+}
+
 async function getScheduleItemOrThrow(id: string) {
   const [item] = await db
     .select()
@@ -765,8 +787,11 @@ async function ensureDefaultPhase(jobId: string) {
   return phase;
 }
 
-async function ensureDefaultScheduleSettings(jobId: string) {
-  await db
+async function ensureDefaultScheduleSettings(
+  jobId: string,
+  executor: DbExecutor = db,
+) {
+  await executor
     .insert(scheduleSettings)
     .values({
       id: crypto.randomUUID(),
@@ -781,7 +806,7 @@ async function ensureDefaultScheduleSettings(jobId: string) {
       target: scheduleSettings.jobId,
     });
 
-  const [created] = await db
+  const [created] = await executor
     .select()
     .from(scheduleSettings)
     .where(eq(scheduleSettings.jobId, jobId))
@@ -794,8 +819,10 @@ async function ensureDefaultScheduleSettings(jobId: string) {
   return created;
 }
 
-async function loadAllWorkdayExceptions(): Promise<WorkdayExceptionRecord[]> {
-  const rows = await db
+async function loadAllWorkdayExceptions(
+  executor: DbExecutor = db,
+): Promise<WorkdayExceptionRecord[]> {
+  const rows = await executor
     .select({
       id: scheduleWorkdayExceptions.id,
       title: scheduleWorkdayExceptions.title,
@@ -827,8 +854,11 @@ async function loadAllWorkdayExceptions(): Promise<WorkdayExceptionRecord[]> {
   }));
 }
 
-async function getWorkdayExceptionsForJob(jobId: string): Promise<WorkdayExceptionRecord[]> {
-  const all = await loadAllWorkdayExceptions();
+async function getWorkdayExceptionsForJob(
+  jobId: string,
+  executor: DbExecutor = db,
+): Promise<WorkdayExceptionRecord[]> {
+  const all = await loadAllWorkdayExceptions(executor);
   return all.filter((row) => row.appliesToAllJobs || row.jobIds.includes(jobId));
 }
 
@@ -1082,8 +1112,11 @@ async function assertWorkdayExceptionCategoryBelongsToJob(jobId: string, categor
   }
 }
 
-async function applyAutomaticCompletionIfEnabled(jobId: string) {
-  const settings = await ensureDefaultScheduleSettings(jobId);
+async function applyAutomaticCompletionIfEnabled(
+  jobId: string,
+  executor: DbExecutor = db,
+) {
+  const settings = await ensureDefaultScheduleSettings(jobId, executor);
 
   if (!settings.automaticallyMarkItemsComplete) {
     return;
@@ -1092,7 +1125,7 @@ async function applyAutomaticCompletionIfEnabled(jobId: string) {
   const todayDate = new Date();
   const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(todayDate.getDate()).padStart(2, "0")}`;
 
-  await db
+  await executor
     .update(scheduleItems)
     .set({
       isComplete: true,
@@ -1108,38 +1141,117 @@ async function applyAutomaticCompletionIfEnabled(jobId: string) {
     );
 }
 
-async function synchronizeJobSchedule(jobId: string) {
-  const [items, exceptions, predecessorRows] = await Promise.all([
-    db
-      .select({
-        id: scheduleItems.id,
-        title: scheduleItems.title,
-        startDate: scheduleItems.startDate,
-        endDate: scheduleItems.endDate,
-        workDays: scheduleItems.workDays,
-      })
-      .from(scheduleItems)
-      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
-      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.title)),
-    getWorkdayExceptionsForJob(jobId),
-    db
-      .select({
-        scheduleItemId: scheduleItemPredecessors.scheduleItemId,
-        predecessorId: scheduleItemPredecessors.predecessorId,
-        dependencyType: scheduleItemPredecessors.dependencyType,
-        lagDays: scheduleItemPredecessors.lagDays,
-      })
-      .from(scheduleItemPredecessors)
-      .innerJoin(
-        scheduleItems,
-        eq(scheduleItemPredecessors.scheduleItemId, scheduleItems.id),
-      )
-      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt))),
-  ]);
+/**
+ * Mark overdue, incomplete schedule items complete for every job whose
+ * `automaticallyMarkItemsComplete` setting is enabled. Single statement,
+ * safe to call from a periodic timer. Returns the row count flipped.
+ */
+export async function sweepAllAutomaticCompletion(now: Date = new Date()) {
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  const result = await db.execute<{ id: string }>(sql`
+    UPDATE ${scheduleItems} AS si
+    SET is_complete = true,
+        updated_at = NOW()
+    FROM ${scheduleSettings} AS ss
+    WHERE si.job_id = ss.job_id
+      AND ss.automatically_mark_items_complete = true
+      AND si.deleted_at IS NULL
+      AND (si.is_complete = false OR si.is_complete IS NULL)
+      AND si.end_date < ${today}::date
+    RETURNING si.id
+  `);
+
+  return result.rows.length;
+}
+
+export interface ScheduleAutoCompleteSweeperHandle {
+  /** Stop the periodic sweeper. Safe to call multiple times. */
+  stop: () => void;
+  /** Run a sweep immediately. Used internally and in tests. */
+  runNow: () => Promise<number>;
+}
+
+const DEFAULT_AUTO_COMPLETE_SWEEP_INTERVAL_MS = 60 * 60 * 1000; // every hour
+
+/**
+ * Run sweepAllAutomaticCompletion on a periodic timer. Returns a handle
+ * that can stop the timer or run an immediate sweep (for tests).
+ */
+export function startScheduleAutoCompleteSweeper(
+  options: { intervalMs?: number } = {},
+): ScheduleAutoCompleteSweeperHandle {
+  const intervalMs = options.intervalMs ?? DEFAULT_AUTO_COMPLETE_SWEEP_INTERVAL_MS;
+  let running = false;
+
+  const runNow = async (): Promise<number> => {
+    if (running) return 0;
+    running = true;
+    try {
+      const flipped = await sweepAllAutomaticCompletion();
+      if (flipped > 0) {
+        logger.info({ flipped }, "Schedule auto-complete sweep flipped overdue items");
+      }
+      return flipped;
+    } catch (err) {
+      logger.error({ err }, "Schedule auto-complete sweep failed");
+      return 0;
+    } finally {
+      running = false;
+    }
+  };
+
+  // Kick off an initial sweep, but don't block startup on it.
+  void runNow();
+
+  const timer = setInterval(() => {
+    void runNow();
+  }, intervalMs);
+  // Don't keep the event loop alive purely for this timer.
+  timer.unref();
+
+  logger.info({ intervalMs }, "Schedule auto-complete sweeper started");
+
+  return {
+    stop: () => clearInterval(timer),
+    runNow,
+  };
+}
+
+export type ScheduleCascadeItem = {
+  id: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  workDays: number;
+};
+
+export type ScheduleCascadePredecessor = {
+  scheduleItemId: string;
+  predecessorId: string;
+  dependencyType: z.infer<typeof predecessorSchema>["dependencyType"];
+  lagDays: number;
+};
+
+export type ScheduleCascadeResult = {
+  startDate: string;
+  endDate: string;
+};
+
+/**
+ * Pure cascade math. Returns itemId -> cascade-resolved
+ * {startDate, endDate} given items, predecessor edges, and workday
+ * exceptions. No DB access — used by both read and write paths.
+ */
+export function computeJobScheduleCascade(
+  items: ScheduleCascadeItem[],
+  predecessorRows: ScheduleCascadePredecessor[],
+  exceptions: WorkdayExceptionRecord[],
+): Map<string, ScheduleCascadeResult> {
+  const result = new Map<string, ScheduleCascadeResult>();
 
   if (items.length === 0) {
-    await applyAutomaticCompletionIfEnabled(jobId);
-    return;
+    return result;
   }
 
   const itemIds = new Set(items.map((item) => item.id));
@@ -1161,7 +1273,7 @@ async function synchronizeJobSchedule(jobId: string) {
     const current = predecessorsByItemId.get(row.scheduleItemId) ?? [];
     current.push({
       scheduleItemId: row.predecessorId,
-      dependencyType: row.dependencyType as z.infer<typeof predecessorSchema>["dependencyType"],
+      dependencyType: row.dependencyType,
       lagDays: row.lagDays,
     });
     predecessorsByItemId.set(row.scheduleItemId, current);
@@ -1174,14 +1286,13 @@ async function synchronizeJobSchedule(jobId: string) {
 
     for (const item of orderedItems) {
       const predecessors = predecessorsByItemId.get(item.id) ?? [];
+      const current = itemsById.get(item.id);
+
+      if (!current) {
+        continue;
+      }
 
       if (predecessors.length === 0) {
-        const current = itemsById.get(item.id);
-
-        if (!current) {
-          continue;
-        }
-
         const computedEndDate = calculateBusinessEndDate(current.startDate, current.workDays, exceptions);
 
         if (computedEndDate !== current.endDate) {
@@ -1209,11 +1320,6 @@ async function synchronizeJobSchedule(jobId: string) {
       }
 
       const predecessorMap = new Map<string, { startDate: string; endDate: string }>(predecessorEntries);
-      const current = itemsById.get(item.id);
-
-      if (!current) {
-        continue;
-      }
 
       const nextStartDate = resolvePredecessorStartDate(
         current.startDate,
@@ -1236,9 +1342,86 @@ async function synchronizeJobSchedule(jobId: string) {
     }
   }
 
-  const updates = [...itemsById.values()].filter((item) => {
-    const original = items.find((candidate) => candidate.id === item.id);
-    return original && (original.startDate !== item.startDate || original.endDate !== item.endDate);
+  for (const item of itemsById.values()) {
+    result.set(item.id, { startDate: item.startDate, endDate: item.endDate });
+  }
+
+  return result;
+}
+
+/**
+ * Load the cascade inputs for a job in a single round-trip: items,
+ * predecessors, and the workday exceptions that apply.
+ */
+async function loadJobScheduleCascadeInputs(
+  jobId: string,
+  executor: DbExecutor = db,
+) {
+  const [items, exceptions, predecessorRows] = await Promise.all([
+    executor
+      .select({
+        id: scheduleItems.id,
+        title: scheduleItems.title,
+        startDate: scheduleItems.startDate,
+        endDate: scheduleItems.endDate,
+        workDays: scheduleItems.workDays,
+      })
+      .from(scheduleItems)
+      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
+      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.title)),
+    getWorkdayExceptionsForJob(jobId, executor),
+    executor
+      .select({
+        scheduleItemId: scheduleItemPredecessors.scheduleItemId,
+        predecessorId: scheduleItemPredecessors.predecessorId,
+        dependencyType: scheduleItemPredecessors.dependencyType,
+        lagDays: scheduleItemPredecessors.lagDays,
+      })
+      .from(scheduleItemPredecessors)
+      .innerJoin(
+        scheduleItems,
+        eq(scheduleItemPredecessors.scheduleItemId, scheduleItems.id),
+      )
+      .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt))),
+  ]);
+
+  return {
+    items,
+    exceptions,
+    predecessorRows: predecessorRows.map((row) => ({
+      ...row,
+      dependencyType: row.dependencyType as z.infer<typeof predecessorSchema>["dependencyType"],
+    })),
+  };
+}
+
+/**
+ * Persist the cascaded start/end dates for a job. Write-paths only —
+ * reads call computeJobScheduleCascade directly to stay side-effect free.
+ */
+async function synchronizeJobSchedule(
+  jobId: string,
+  executor: DbExecutor = db,
+) {
+  const { items, exceptions, predecessorRows } = await loadJobScheduleCascadeInputs(
+    jobId,
+    executor,
+  );
+
+  if (items.length === 0) {
+    await applyAutomaticCompletionIfEnabled(jobId, executor);
+    return;
+  }
+
+  const cascaded = computeJobScheduleCascade(items, predecessorRows, exceptions);
+
+  const updates = items.flatMap((original) => {
+    const next = cascaded.get(original.id);
+    if (!next) return [];
+    if (next.startDate === original.startDate && next.endDate === original.endDate) {
+      return [];
+    }
+    return [{ id: original.id, startDate: next.startDate, endDate: next.endDate }];
   });
 
   if (updates.length > 0) {
@@ -1249,7 +1432,7 @@ async function synchronizeJobSchedule(jobId: string) {
       sql`, `,
     );
 
-    await db.execute(sql`
+    await executor.execute(sql`
       UPDATE ${scheduleItems}
       SET
         start_date = data.start_date::date,
@@ -1260,7 +1443,7 @@ async function synchronizeJobSchedule(jobId: string) {
     `);
   }
 
-  await applyAutomaticCompletionIfEnabled(jobId);
+  await applyAutomaticCompletionIfEnabled(jobId, executor);
 }
 
 async function ensureScheduleAttachmentFolder(scheduleItemId: string, jobId: string) {
@@ -1451,14 +1634,17 @@ async function resolveWorkdayExceptionTargetJobIds(
   return jobIds;
 }
 
-async function synchronizeAffectedJobSchedules(jobIds: string[]) {
+async function synchronizeAffectedJobSchedules(
+  jobIds: string[],
+  executor: DbExecutor = db,
+) {
   for (const affectedJobId of uniqueJobIds(jobIds)) {
-    await synchronizeJobSchedule(affectedJobId);
+    await synchronizeJobSchedule(affectedJobId, executor);
   }
 }
 
-async function buildBaselinePayload(jobId: string) {
-  const rows = await db
+async function buildBaselinePayload(jobId: string, executor: DbExecutor = db) {
+  const rows = await executor
     .select({
       id: scheduleItems.id,
       title: scheduleItems.title,
@@ -1478,34 +1664,47 @@ async function buildBaselinePayload(jobId: string) {
 }
 
 async function upsertBaselineForJob(jobId: string, userId: string) {
-  await synchronizeJobSchedule(jobId);
-  const itemsSnapshot = await buildBaselinePayload(jobId);
+  // Persist cascade + auto-complete + baseline write atomically so a
+  // failure in any step rolls back the others. Without this, a failed
+  // baseline INSERT could leave the cascade UPDATE committed (or vice
+  // versa) and the persisted state would drift from what the user saw.
+  const txResult = await db.transaction(async (tx) => {
+    await synchronizeJobSchedule(jobId, tx);
+    const items = await buildBaselinePayload(jobId, tx);
 
-  const [existing] = await db
-    .select({ id: scheduleBaselines.id })
-    .from(scheduleBaselines)
-    .where(eq(scheduleBaselines.jobId, jobId))
-    .limit(1);
+    const [prior] = await tx
+      .select({ id: scheduleBaselines.id })
+      .from(scheduleBaselines)
+      .where(eq(scheduleBaselines.jobId, jobId))
+      .limit(1);
 
-  if (existing) {
-    await db
-      .update(scheduleBaselines)
-      .set({
+    if (prior) {
+      await tx
+        .update(scheduleBaselines)
+        .set({
+          capturedAt: new Date(),
+          capturedBy: userId,
+          itemsSnapshot: items,
+          updatedAt: new Date(),
+        })
+        .where(eq(scheduleBaselines.id, prior.id));
+    } else {
+      await tx.insert(scheduleBaselines).values({
+        id: crypto.randomUUID(),
+        jobId,
         capturedAt: new Date(),
         capturedBy: userId,
-        itemsSnapshot,
-        updatedAt: new Date(),
-      })
-      .where(eq(scheduleBaselines.id, existing.id));
-  } else {
-    await db.insert(scheduleBaselines).values({
-      id: crypto.randomUUID(),
-      jobId,
-      capturedAt: new Date(),
-      capturedBy: userId,
-      itemsSnapshot,
-    });
-  }
+        itemsSnapshot: items,
+      });
+    }
+
+    return { existed: !!prior, itemsSnapshot: items };
+  });
+
+  // `existing` and `itemsSnapshot` are still needed in the response shape
+  // below — pull them out of the transaction result.
+  const existing = txResult.existed ? { id: jobId } : null;
+  const itemsSnapshot = txResult.itemsSnapshot;
 
   const [baseline] = await db
     .select({
@@ -1536,7 +1735,17 @@ async function upsertBaselineForJob(jobId: string, userId: string) {
   };
 }
 
-async function hydrateScheduleItems(itemIds: string[], requestingUserId?: string) {
+async function hydrateScheduleItems(
+  itemIds: string[],
+  requestingUserId?: string,
+  /**
+   * Optional override map of cascade-resolved start/end dates. The read
+   * endpoint passes this so the response reflects the cascade WITHOUT the
+   * handler having to write the cascaded dates back to the DB. Without an
+   * override the rows' persisted dates are used unchanged.
+   */
+  cascadedDates?: Map<string, { startDate: string; endDate: string }>,
+) {
   const uniqueItemIds = Array.from(new Set(itemIds))
 
   if (uniqueItemIds.length === 0) {
@@ -1730,11 +1939,18 @@ async function hydrateScheduleItems(itemIds: string[], requestingUserId?: string
   }
 
   return uniqueItemIds.flatMap((itemId) => {
-    const row = rowById.get(itemId)
+    const dbRow = rowById.get(itemId)
 
-    if (!row) {
+    if (!dbRow) {
       return []
     }
+
+    // Apply optional cascade overrides so the read endpoint can show the
+    // cascaded dates without persisting them.
+    const cascadeOverride = cascadedDates?.get(itemId)
+    const row = cascadeOverride
+      ? { ...dbRow, startDate: cascadeOverride.startDate, endDate: cascadeOverride.endDate }
+      : dbRow
 
     const meta = decodeScheduleMeta(row.notes)
     const predecessorRowsForItem = predecessorsByItemId.get(itemId) ?? []
@@ -1752,14 +1968,20 @@ async function hydrateScheduleItems(itemIds: string[], requestingUserId?: string
         : []
     const resolvedPredecessorRows = predecessorRowsForItem.length > 0 ? predecessorRowsForItem : fallbackPredecessors
     const predecessorMap = new Map(
-      resolvedPredecessorRows.map((predecessor) => [
-        predecessor.scheduleItemId,
-        {
-          title: predecessor.title ?? "Unknown task",
-          startDate: predecessor.startDate,
-          endDate: predecessor.endDate,
-        },
-      ]),
+      resolvedPredecessorRows.map((predecessor) => {
+        // Cascaded dates also apply to predecessor rows so conflict
+        // detection compares against the cascade-resolved values, not the
+        // stale persisted ones.
+        const predOverride = cascadedDates?.get(predecessor.scheduleItemId)
+        return [
+          predecessor.scheduleItemId,
+          {
+            title: predecessor.title ?? "Unknown task",
+            startDate: predOverride?.startDate ?? predecessor.startDate,
+            endDate: predOverride?.endDate ?? predecessor.endDate,
+          },
+        ]
+      }),
     )
     const predecessorEntries = resolvedPredecessorRows.map((predecessor) => ({
       scheduleItemId: predecessor.scheduleItemId,
@@ -1919,25 +2141,34 @@ router.put(
     }
 
     const jobId = getParam(req.params.jobId, "job id");
-    const existing = await ensureDefaultScheduleSettings(jobId);
 
-    const [updated] = await db
-      .update(scheduleSettings)
-      .set({
-        defaultView: body.data.defaultView ?? existing.defaultView,
-        showTimesOnMonthView: body.data.showTimesOnMonthView ?? existing.showTimesOnMonthView,
-        showJobNameOnAllListedJobs:
-          body.data.showJobNameOnAllListedJobs ?? existing.showJobNameOnAllListedJobs,
-        automaticallyMarkItemsComplete:
-          body.data.automaticallyMarkItemsComplete ?? existing.automaticallyMarkItemsComplete,
-        includeHeaderOnPdfExports:
-          body.data.includeHeaderOnPdfExports ?? existing.includeHeaderOnPdfExports,
-        updatedAt: new Date(),
-      })
-      .where(eq(scheduleSettings.jobId, jobId))
-      .returning();
+    // Persist the settings change and the (possibly new) auto-complete
+    // sweep atomically. If the sweep fails the settings change rolls back,
+    // so a viewer never observes the new value while the sweep is still
+    // in flight.
+    const updated = await db.transaction(async (tx) => {
+      const existing = await ensureDefaultScheduleSettings(jobId, tx);
 
-    await applyAutomaticCompletionIfEnabled(jobId);
+      const [row] = await tx
+        .update(scheduleSettings)
+        .set({
+          defaultView: body.data.defaultView ?? existing.defaultView,
+          showTimesOnMonthView: body.data.showTimesOnMonthView ?? existing.showTimesOnMonthView,
+          showJobNameOnAllListedJobs:
+            body.data.showJobNameOnAllListedJobs ?? existing.showJobNameOnAllListedJobs,
+          automaticallyMarkItemsComplete:
+            body.data.automaticallyMarkItemsComplete ?? existing.automaticallyMarkItemsComplete,
+          includeHeaderOnPdfExports:
+            body.data.includeHeaderOnPdfExports ?? existing.includeHeaderOnPdfExports,
+          updatedAt: new Date(),
+        })
+        .where(eq(scheduleSettings.jobId, jobId))
+        .returning();
+
+      await applyAutomaticCompletionIfEnabled(jobId, tx);
+      return row;
+    });
+
     res.json({ settings: updated });
   }),
 );
@@ -2372,24 +2603,31 @@ router.post(
       jobIds: body.data.appliesToAllJobs ? [] : body.data.jobIds,
     });
 
-    const [exception] = await db
-      .insert(scheduleWorkdayExceptions)
-      .values({
-        id: crypto.randomUUID(),
-        title: body.data.title,
-        type: body.data.type,
-        startDate: body.data.startDate,
-        endDate: body.data.endDate,
-        sameEveryYear: body.data.sameEveryYear,
-        categoryId: body.data.categoryId,
-        appliesToAllJobs: body.data.appliesToAllJobs,
-        jobIds: body.data.appliesToAllJobs ? [] : body.data.jobIds,
-        notes: body.data.notes,
-        createdBy: req.auth!.userId,
-      })
-      .returning();
+    // Insert + per-job cascade run together so a cascade failure rolls
+    // back the exception (otherwise the new holiday would be saved but
+    // schedule items still reflect the old workday math).
+    const exception = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(scheduleWorkdayExceptions)
+        .values({
+          id: crypto.randomUUID(),
+          title: body.data.title,
+          type: body.data.type,
+          startDate: body.data.startDate,
+          endDate: body.data.endDate,
+          sameEveryYear: body.data.sameEveryYear,
+          categoryId: body.data.categoryId,
+          appliesToAllJobs: body.data.appliesToAllJobs,
+          jobIds: body.data.appliesToAllJobs ? [] : body.data.jobIds,
+          notes: body.data.notes,
+          createdBy: req.auth!.userId,
+        })
+        .returning();
 
-    await synchronizeAffectedJobSchedules(affectedJobIds);
+      await synchronizeAffectedJobSchedules(affectedJobIds, tx);
+      return created;
+    });
+
     res.status(201).json({ exception });
   }),
 );
@@ -2428,27 +2666,31 @@ router.put(
       jobIds: nextAppliesToAllJobs ? [] : nextJobIds,
     });
 
-    const [exception] = await db
-      .update(scheduleWorkdayExceptions)
-      .set({
-        title: body.data.title ?? existing.title,
-        type: body.data.type ?? existing.type,
-        startDate: body.data.startDate ?? existing.startDate,
-        endDate: body.data.endDate ?? existing.endDate,
-        sameEveryYear: body.data.sameEveryYear ?? existing.sameEveryYear,
-        categoryId: nextCategoryId,
-        appliesToAllJobs: nextAppliesToAllJobs,
-        jobIds: nextAppliesToAllJobs ? [] : nextJobIds,
-        notes: body.data.notes ?? existing.notes,
-        updatedAt: new Date(),
-      })
-      .where(eq(scheduleWorkdayExceptions.id, exceptionId))
-      .returning();
+    const exception = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(scheduleWorkdayExceptions)
+        .set({
+          title: body.data.title ?? existing.title,
+          type: body.data.type ?? existing.type,
+          startDate: body.data.startDate ?? existing.startDate,
+          endDate: body.data.endDate ?? existing.endDate,
+          sameEveryYear: body.data.sameEveryYear ?? existing.sameEveryYear,
+          categoryId: nextCategoryId,
+          appliesToAllJobs: nextAppliesToAllJobs,
+          jobIds: nextAppliesToAllJobs ? [] : nextJobIds,
+          notes: body.data.notes ?? existing.notes,
+          updatedAt: new Date(),
+        })
+        .where(eq(scheduleWorkdayExceptions.id, exceptionId))
+        .returning();
 
-    await synchronizeAffectedJobSchedules([
-      ...previouslyAffectedJobIds,
-      ...nextAffectedJobIds,
-    ]);
+      await synchronizeAffectedJobSchedules(
+        [...previouslyAffectedJobIds, ...nextAffectedJobIds],
+        tx,
+      );
+      return updated;
+    });
+
     res.json({ exception });
   }),
 );
@@ -2467,8 +2709,12 @@ router.delete(
 
     const affectedJobIds = await resolveWorkdayExceptionTargetJobIds(req.auth!, existing);
 
-    await db.delete(scheduleWorkdayExceptions).where(eq(scheduleWorkdayExceptions.id, exceptionId));
-    await synchronizeAffectedJobSchedules(affectedJobIds);
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(scheduleWorkdayExceptions)
+        .where(eq(scheduleWorkdayExceptions.id, exceptionId));
+      await synchronizeAffectedJobSchedules(affectedJobIds, tx);
+    });
     res.json({ success: true });
   }),
 );
@@ -2583,8 +2829,17 @@ router.get(
   "/jobs/:jobId/schedule",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await ensureJobExists(jobId);
-    await synchronizeJobSchedule(jobId);
+    await verifyJobExists(jobId);
+
+    // Read-only endpoint: cascade is computed in memory and applied as
+    // overrides during hydration. Persistence happens on write paths and
+    // in the periodic auto-complete sweeper.
+    const cascadeInputs = await loadJobScheduleCascadeInputs(jobId);
+    const cascadedDates = computeJobScheduleCascade(
+      cascadeInputs.items,
+      cascadeInputs.predecessorRows,
+      cascadeInputs.exceptions,
+    );
 
     const parsedQuery = scheduleListQuerySchema.safeParse(req.query);
 
@@ -2604,9 +2859,8 @@ router.get(
     const auth = req.auth!;
     const currentUserId = auth.userId;
 
-    // Compose visibility rules in SQL so we don't have to hydrate every row in
-    // the job just to compute the total count or to filter out items the
-    // requesting user cannot see.
+    // Filter visibility in SQL; ordering is applied in memory against
+    // the cascaded dates.
     const filters: SQL[] = [
       eq(scheduleItems.jobId, jobId),
       isNull(scheduleItems.deletedAt),
@@ -2619,24 +2873,48 @@ router.get(
       if (!/^\d{4}-\d{2}-\d{2}$/.test(cursorStartDateRaw)) {
         throw new HttpError(400, "Invalid cursor.", undefined, "validation");
       }
-      filters.push(
-        sql`(${scheduleItems.startDate}, ${scheduleItems.id}) > (${cursorStartDateRaw}::date, ${cursorPayload.id})`,
-      );
     }
 
     const baseWhere = and(...filters);
 
-    if (isCursorMode) {
-      const fetchLimit = limit + 1;
-      const fetched = await db
-        .select({ id: scheduleItems.id, startDate: scheduleItems.startDate })
-        .from(scheduleItems)
-        .where(baseWhere)
-        .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id))
-        .limit(fetchLimit);
+    // Persisted start_date can lag the cascade now that GET is read-only,
+    // so order in memory by the cascaded (startDate, id) to keep cursor
+    // traversal consistent with the dates the response surfaces.
+    const candidates = await db
+      .select({ id: scheduleItems.id, startDate: scheduleItems.startDate })
+      .from(scheduleItems)
+      .where(baseWhere);
 
-      const hasMore = fetched.length > limit;
-      const pageRows = hasMore ? fetched.slice(0, limit) : fetched;
+    const orderedCandidates = candidates
+      .map((row) => ({
+        id: row.id,
+        startDate: cascadedDates.get(row.id)?.startDate ?? row.startDate,
+      }))
+      .sort((a, b) => {
+        if (a.startDate !== b.startDate) {
+          return a.startDate < b.startDate ? -1 : 1;
+        }
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+
+    if (isCursorMode) {
+      // Cursor key is (cascaded startDate, id) — same source of truth
+      // as the response.
+      const startIndex = cursorPayload
+        ? orderedCandidates.findIndex((row) => {
+            const cursorStartDate = String(cursorPayload.k[0] ?? "");
+            const cursorId = cursorPayload.id;
+            if (row.startDate !== cursorStartDate) {
+              return row.startDate > cursorStartDate;
+            }
+            return row.id > cursorId;
+          })
+        : 0;
+      const sliceFrom = startIndex < 0 ? orderedCandidates.length : startIndex;
+      const window = orderedCandidates.slice(sliceFrom, sliceFrom + limit + 1);
+
+      const hasMore = window.length > limit;
+      const pageRows = hasMore ? window.slice(0, limit) : window;
       const last = pageRows[pageRows.length - 1];
       const nextCursor = hasMore && last
         ? encodeCursor({
@@ -2649,6 +2927,7 @@ router.get(
       const hydrated = await hydrateScheduleItems(
         pageRows.map((row) => row.id),
         currentUserId,
+        cascadedDates,
       );
       const data = hydrated.map((entry) => entry.item);
 
@@ -2663,28 +2942,19 @@ router.get(
       return;
     }
 
-    const [{ value: totalItems }] = await db
-      .select({ value: count() })
-      .from(scheduleItems)
-      .where(baseWhere);
-
+    const totalItems = orderedCandidates.length;
     const totalPages = Math.max(1, Math.ceil(totalItems / limit));
     const offset = (page - 1) * limit;
 
     const pageRows =
       totalItems === 0 || offset >= totalItems
         ? []
-        : await db
-            .select({ id: scheduleItems.id })
-            .from(scheduleItems)
-            .where(baseWhere)
-            .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id))
-            .limit(limit)
-            .offset(offset);
+        : orderedCandidates.slice(offset, offset + limit);
 
     const hydrated = await hydrateScheduleItems(
       pageRows.map((row) => row.id),
       currentUserId,
+      cascadedDates,
     );
     const data = hydrated.map((entry) => entry.item);
 
@@ -2774,10 +3044,14 @@ router.post(
       await syncAssignees(createdItem.id, normalizedPayload.assigneeIds, tx);
       await syncPredecessors(createdItem.id, normalizedPayload.predecessors, tx);
 
+      // Cascade persistence and auto-complete sweep run inside the same
+      // transaction as the user's insert, so a failure in either step
+      // rolls back the whole write instead of leaving a half-applied
+      // schedule on disk.
+      await synchronizeJobSchedule(jobId, tx);
+
       return createdItem;
     });
-
-    await synchronizeJobSchedule(jobId);
 
     if (normalizedPayload.notifyUserIds.length > 0) {
       const recipients = await db
@@ -2921,9 +3195,11 @@ router.put(
 
       await syncAssignees(itemId, normalizedPayload.assigneeIds, tx);
       await syncPredecessors(itemId, normalizedPayload.predecessors, tx);
-    });
 
-    await synchronizeJobSchedule(existing.jobId);
+      // Same atomicity guarantee as the POST handler — cascade
+      // persistence shares this transaction with the user's update.
+      await synchronizeJobSchedule(existing.jobId, tx);
+    });
 
     if (normalizedPayload.notifyUserIds.length > 0) {
       const recipients = await db
@@ -3512,13 +3788,21 @@ router.delete(
       throw new HttpError(400, "Schedule item is missing a job.");
     }
 
-    await db
-      .update(scheduleItems)
-      .set({
-        deletedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(scheduleItems.id, itemId));
+    // Soft-delete + cascade in a single transaction. Removing an item
+    // changes the predecessor graph for the rest of the job, so a failed
+    // cascade must roll back the soft delete (otherwise downstream items'
+    // persisted dates go stale until the next unrelated write).
+    await db.transaction(async (tx) => {
+      await tx
+        .update(scheduleItems)
+        .set({
+          deletedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(scheduleItems.id, itemId));
+
+      await synchronizeJobSchedule(existing.jobId, tx);
+    });
 
     await writeActivity({
       entityType: "schedule_item",

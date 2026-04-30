@@ -1716,6 +1716,7 @@ export default function JobSchedulePage() {
   const [blockDrag, setBlockDrag] = useState<BlockDrag | null>(null)
   const blockDragRef = useRef<BlockDrag | null>(null)
   const blockClickSuppressRef = useRef<string | null>(null)
+  const undoBlockDragToastIdRef = useRef<string | number | null>(null)
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const [draftFilters, setDraftFilters] = useState<FilterState>(() => buildFilterPreset("all"))
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
@@ -2152,6 +2153,15 @@ export default function JobSchedulePage() {
       setDraftFilters(appliedFilters)
     }
   }, [appliedFilters, filterOpen])
+
+  useEffect(() => {
+    return () => {
+      if (undoBlockDragToastIdRef.current !== null) {
+        toast.dismiss(undoBlockDragToastIdRef.current)
+        undoBlockDragToastIdRef.current = null
+      }
+    }
+  }, [jobId])
 
   const activeItems = scheduleOffline ? draftItems : items
 
@@ -3387,6 +3397,7 @@ export default function JobSchedulePage() {
 
     event.stopPropagation()
     event.preventDefault()
+    dismissUndoBlockDragToast()
 
     const columns: BlockDragColumn[] = []
     const parent = columnEl.parentElement
@@ -3443,6 +3454,62 @@ export default function JobSchedulePage() {
     setBlockDrag(next)
   }
 
+  function dismissUndoBlockDragToast() {
+    if (undoBlockDragToastIdRef.current !== null) {
+      toast.dismiss(undoBlockDragToastIdRef.current)
+      undoBlockDragToastIdRef.current = null
+    }
+  }
+
+  async function undoBlockDrag(snapshot: {
+    itemId: string
+    startDate: string
+    startTime: string | null
+    endTime: string | null
+    isHourly: boolean
+  }) {
+    let snapshotTarget: ScheduleItemRecord | null = null
+    let previousItems: ScheduleItemRecord[] | null = null
+    setItems((current) => {
+      const target = current.find((entry) => entry.id === snapshot.itemId)
+      if (!target) {
+        return current
+      }
+      snapshotTarget = target
+      previousItems = current
+      return current.map((entry) =>
+        entry.id === snapshot.itemId
+          ? {
+              ...entry,
+              startDate: snapshot.startDate,
+              startTime: snapshot.startTime,
+              endTime: snapshot.endTime,
+              isHourly: snapshot.isHourly,
+            }
+          : entry,
+      )
+    })
+    if (!snapshotTarget || !previousItems) {
+      return
+    }
+
+    try {
+      const payload: ScheduleItemPayload = {
+        ...schedulePayloadFromItem(snapshotTarget),
+        startDate: snapshot.startDate,
+        isHourly: snapshot.isHourly,
+        startTime: snapshot.isHourly ? snapshot.startTime : null,
+        endTime: snapshot.isHourly ? snapshot.endTime : null,
+      }
+      await api.put(`/schedule-items/${snapshot.itemId}`, payload)
+      await refreshScheduleData()
+      toast.success("Schedule change undone")
+    } catch (error) {
+      setItems(previousItems)
+      toastApiError(error, "Failed to undo schedule change")
+    }
+  }
+
   async function commitBlockDrag(drag: BlockDrag) {
     const target = items.find((entry) => entry.id === drag.itemId)
     if (!target) {
@@ -3459,6 +3526,14 @@ export default function JobSchedulePage() {
       return
     }
 
+    const previousSnapshot = {
+      itemId: target.id,
+      startDate: target.startDate,
+      startTime: target.startTime,
+      endTime: target.endTime,
+      isHourly: !!target.isHourly,
+    }
+    const itemTitle = target.title
     const previousItems = items
     const optimistic = items.map((entry) =>
       entry.id === target.id
@@ -3483,6 +3558,29 @@ export default function JobSchedulePage() {
       }
       await api.put(`/schedule-items/${target.id}`, payload)
       await refreshScheduleData()
+      dismissUndoBlockDragToast()
+      const label = itemTitle.trim() ? `Moved "${itemTitle}"` : "Schedule block updated"
+      const toastId = toast.success(label, {
+        duration: 6000,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            undoBlockDragToastIdRef.current = null
+            void undoBlockDrag(previousSnapshot)
+          },
+        },
+        onDismiss: (current) => {
+          if (undoBlockDragToastIdRef.current === current.id) {
+            undoBlockDragToastIdRef.current = null
+          }
+        },
+        onAutoClose: (current) => {
+          if (undoBlockDragToastIdRef.current === current.id) {
+            undoBlockDragToastIdRef.current = null
+          }
+        },
+      })
+      undoBlockDragToastIdRef.current = toastId
     } catch (error) {
       setItems(previousItems)
       toastApiError(error, "Failed to update schedule item")

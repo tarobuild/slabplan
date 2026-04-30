@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { ChevronRight, FileText, Search, Users } from "lucide-react"
+import { ChevronRight, FileText, Loader2, Search, Users } from "lucide-react"
 import { api } from "@/lib/api"
 import { apiErrorMessage } from "@/lib/api-errors"
 import { useDocumentTitle } from "@/hooks/use-document-title"
@@ -23,6 +23,8 @@ type MyDailyLogItem = {
   status: "draft" | "published"
 }
 
+const PAGE_LIMIT = 25
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "short",
@@ -44,10 +46,14 @@ function titleForLog(log: MyDailyLogItem) {
 export default function MyDailyLogsPage() {
   useDocumentTitle("My daily logs")
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [search, setSearch] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [logs, setLogs] = useState<MyDailyLogItem[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
+  const loadRequestIdRef = useRef(0)
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -59,21 +65,67 @@ export default function MyDailyLogsPage() {
     }
   }, [search])
 
-  useEffect(() => {
-    setLoading(true)
-    setErrorMessage("")
+  async function loadLogs(cursor: string | null) {
+    const isInitial = cursor === null
+    const requestId = ++loadRequestIdRef.current
 
-    api
-      .get<{ logs: MyDailyLogItem[] }>("/daily-logs/mine", {
-        params: {
-          page: 1,
-          pageSize: 100,
-          keywords: debouncedSearch.trim() || undefined,
-        },
-      })
-      .then((response) => setLogs(response.data.logs ?? []))
-      .catch((error) => setErrorMessage(apiErrorMessage(error, "Failed to load your daily logs")))
-      .finally(() => setLoading(false))
+    if (isInitial) {
+      setLoading(true)
+      setErrorMessage("")
+    } else {
+      setLoadingMore(true)
+    }
+
+    try {
+      const params: Record<string, string | number> = {
+        cursor: cursor ?? "",
+        limit: PAGE_LIMIT,
+      }
+      const trimmed = debouncedSearch.trim()
+      if (trimmed) {
+        params.keywords = trimmed
+      }
+
+      const response = await api.get<{
+        logs: MyDailyLogItem[]
+        pagination?: { limit: number; hasMore: boolean; nextCursor: string | null }
+      }>("/daily-logs/mine", { params })
+
+      if (requestId !== loadRequestIdRef.current) return
+
+      const fetched = response.data.logs ?? []
+      setLogs((previous) => (isInitial ? fetched : [...previous, ...fetched]))
+      setHasMore(!!response.data.pagination?.hasMore)
+      setNextCursor(response.data.pagination?.nextCursor ?? null)
+    } catch (error) {
+      if (requestId !== loadRequestIdRef.current) return
+      setErrorMessage(apiErrorMessage(error, "Failed to load your daily logs"))
+      if (isInitial) {
+        setLogs([])
+        setHasMore(false)
+        setNextCursor(null)
+      }
+    } finally {
+      if (requestId === loadRequestIdRef.current) {
+        if (isInitial) {
+          setLoading(false)
+        } else {
+          setLoadingMore(false)
+        }
+      }
+    }
+  }
+
+  async function loadMoreLogs() {
+    if (!nextCursor || loadingMore) return
+    await loadLogs(nextCursor)
+  }
+
+  useEffect(() => {
+    setNextCursor(null)
+    setHasMore(false)
+    void loadLogs(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch])
 
   return (
@@ -111,46 +163,71 @@ export default function MyDailyLogsPage() {
           <div className="mt-2 text-sm text-slate-500">Daily logs you create will appear here across all jobs.</div>
         </div>
       ) : (
-        <div className="space-y-4">
-          {logs.map((log) => (
-            <div key={log.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                      to={log.jobId ? `/jobs/${log.jobId}/daily-logs` : "/jobs"}
-                      className="text-lg font-semibold text-slate-950 hover:text-orange-700"
-                    >
-                      {titleForLog(log)}
+        <>
+          <div className="space-y-4">
+            {logs.map((log) => (
+              <div key={log.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        to={log.jobId ? `/jobs/${log.jobId}/daily-logs` : "/jobs"}
+                        className="text-lg font-semibold text-slate-950 hover:text-orange-700"
+                      >
+                        {titleForLog(log)}
+                      </Link>
+                      <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-600">
+                        {log.status}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                      <span>{log.jobTitle || "Unknown job"}</span>
+                      <Badge variant="outline" className="gap-1 border-slate-200 bg-slate-50 text-slate-700">
+                        <Users className="size-3.5" />
+                        {log.visibilityLabel || "Internal"}
+                      </Badge>
+                      <span>{log.attachmentCount} files</span>
+                      <span>{log.commentsCount} comments</span>
+                      <span>{log.likesCount} likes</span>
+                    </div>
+                    <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
+                      {truncateText(log.notes)}
+                    </p>
+                  </div>
+                  <Button asChild variant="outline" className="shrink-0">
+                    <Link to={log.jobId ? `/jobs/${log.jobId}/daily-logs` : "/jobs"}>
+                      Open Job
+                      <ChevronRight className="size-4" />
                     </Link>
-                    <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-600">
-                      {log.status}
-                    </Badge>
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
-                    <span>{log.jobTitle || "Unknown job"}</span>
-                    <Badge variant="outline" className="gap-1 border-slate-200 bg-slate-50 text-slate-700">
-                      <Users className="size-3.5" />
-                      {log.visibilityLabel || "Internal"}
-                    </Badge>
-                    <span>{log.attachmentCount} files</span>
-                    <span>{log.commentsCount} comments</span>
-                    <span>{log.likesCount} likes</span>
-                  </div>
-                  <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
-                    {truncateText(log.notes)}
-                  </p>
+                  </Button>
                 </div>
-                <Button asChild variant="outline" className="shrink-0">
-                  <Link to={log.jobId ? `/jobs/${log.jobId}/daily-logs` : "/jobs"}>
-                    Open Job
-                    <ChevronRight className="size-4" />
-                  </Link>
-                </Button>
               </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col items-center gap-2 pt-1 sm:flex-row sm:justify-between">
+            <div className="text-sm text-slate-500">
+              {`${logs.length} ${logs.length === 1 ? "item" : "items"} loaded`}
             </div>
-          ))}
-        </div>
+            {hasMore ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void loadMoreLogs()}
+                disabled={loadingMore}
+              >
+                {loadingMore ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading…
+                  </>
+                ) : (
+                  "Load more"
+                )}
+              </Button>
+            ) : null}
+          </div>
+        </>
       )}
     </div>
   )

@@ -26,6 +26,7 @@ import {
   jobs,
   users,
 } from "@workspace/db/schema";
+import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
 import { requireAdmin } from "../middleware/require-auth";
@@ -76,6 +77,8 @@ const customFieldPayloadSchema = z.object({
 const myDailyLogsQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(50),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
   keywords: z.string().trim().optional(),
 });
 
@@ -120,6 +123,114 @@ function firstParamValue(value: string | string[] | undefined) {
   }
 
   return value ?? null;
+}
+
+async function loadMyDailyLogEngagement(logIds: string[], currentUserId: string) {
+  const [tagRows, attachmentRows, likeRows, commentRows, todoRows] = await Promise.all([
+    logIds.length > 0
+      ? db
+          .select({
+            dailyLogId: dailyLogTags.dailyLogId,
+            tagName: dailyLogTags.tagName,
+          })
+          .from(dailyLogTags)
+          .where(inArray(dailyLogTags.dailyLogId, logIds))
+      : Promise.resolve([]),
+    logIds.length > 0
+      ? db
+          .select({
+            dailyLogId: dailyLogAttachments.dailyLogId,
+            total: count(),
+          })
+          .from(dailyLogAttachments)
+          .where(inArray(dailyLogAttachments.dailyLogId, logIds))
+          .groupBy(dailyLogAttachments.dailyLogId)
+      : Promise.resolve([]),
+    logIds.length > 0
+      ? db
+          .select({
+            dailyLogId: dailyLogLikes.dailyLogId,
+            userId: dailyLogLikes.userId,
+          })
+          .from(dailyLogLikes)
+          .where(inArray(dailyLogLikes.dailyLogId, logIds))
+      : Promise.resolve([]),
+    logIds.length > 0
+      ? db
+          .select({
+            dailyLogId: dailyLogComments.dailyLogId,
+            total: count(),
+          })
+          .from(dailyLogComments)
+          .where(
+            and(
+              inArray(dailyLogComments.dailyLogId, logIds),
+              isNull(dailyLogComments.deletedAt),
+            ),
+          )
+          .groupBy(dailyLogComments.dailyLogId)
+      : Promise.resolve([]),
+    logIds.length > 0
+      ? db
+          .select({
+            dailyLogId: dailyLogTodos.dailyLogId,
+            total: count(),
+            complete: sql<number>`sum(case when ${dailyLogTodos.isComplete} then 1 else 0 end)`,
+          })
+          .from(dailyLogTodos)
+          .where(inArray(dailyLogTodos.dailyLogId, logIds))
+          .groupBy(dailyLogTodos.dailyLogId)
+      : Promise.resolve([]),
+  ]);
+
+  const tagsByLogId = new Map<string, string[]>();
+  const attachmentCountByLogId = new Map<string, number>();
+  const likesCountByLogId = new Map<string, number>();
+  const likedByCurrentUser = new Set<string>();
+  const commentsCountByLogId = new Map<string, number>();
+  const todosCountByLogId = new Map<string, number>();
+  const completedTodosCountByLogId = new Map<string, number>();
+
+  for (const row of tagRows) {
+    if (!row.dailyLogId) continue;
+    const group = tagsByLogId.get(row.dailyLogId) ?? [];
+    group.push(row.tagName);
+    tagsByLogId.set(row.dailyLogId, group);
+  }
+
+  for (const row of attachmentRows) {
+    if (!row.dailyLogId) continue;
+    attachmentCountByLogId.set(row.dailyLogId, Number(row.total));
+  }
+
+  for (const row of likeRows) {
+    likesCountByLogId.set(
+      row.dailyLogId,
+      (likesCountByLogId.get(row.dailyLogId) ?? 0) + 1,
+    );
+    if (row.userId === currentUserId) {
+      likedByCurrentUser.add(row.dailyLogId);
+    }
+  }
+
+  for (const row of commentRows) {
+    commentsCountByLogId.set(row.dailyLogId, Number(row.total));
+  }
+
+  for (const row of todoRows) {
+    todosCountByLogId.set(row.dailyLogId, Number(row.total));
+    completedTodosCountByLogId.set(row.dailyLogId, Number(row.complete ?? 0));
+  }
+
+  return {
+    tagsByLogId,
+    attachmentCountByLogId,
+    likesCountByLogId,
+    likedByCurrentUser,
+    commentsCountByLogId,
+    todosCountByLogId,
+    completedTodosCountByLogId,
+  };
 }
 
 async function ensureSettingsRow() {
@@ -361,6 +472,109 @@ router.get(
       );
     }
 
+    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
+    const cursorLimit = query.data.limit ?? 25;
+
+    if (isCursorMode) {
+      if (cursorPayload) {
+        const cursorLogDate = String(cursorPayload.k[0] ?? "");
+        const cursorCreatedAtRaw = String(cursorPayload.k[1] ?? "");
+        const cursorCreatedAt = new Date(cursorCreatedAtRaw);
+        const cursorId = typeof cursorPayload.id === "string" ? cursorPayload.id : "";
+        const uuidPattern =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(cursorLogDate) ||
+          Number.isNaN(cursorCreatedAt.getTime()) ||
+          !uuidPattern.test(cursorId)
+        ) {
+          throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+        }
+
+        const anchorCreatedAtIso = cursorCreatedAt.toISOString();
+        conditions.push(
+          sql`(${dailyLogs.logDate}, ${dailyLogs.createdAt}, ${dailyLogs.id}) < (${cursorLogDate}::date, ${anchorCreatedAtIso}::timestamptz, ${cursorId})`,
+        );
+      }
+
+      const fetched = await db
+        .select({
+          id: dailyLogs.id,
+          jobId: dailyLogs.jobId,
+          jobTitle: jobs.title,
+          logDate: dailyLogs.logDate,
+          title: dailyLogs.title,
+          notes: dailyLogs.notes,
+          weatherData: dailyLogs.weatherData,
+          includeWeather: dailyLogs.includeWeather,
+          includeWeatherNotes: dailyLogs.includeWeatherNotes,
+          weatherNotes: dailyLogs.weatherNotes,
+          customFieldValues: dailyLogs.customFieldValues,
+          shareInternalUsers: dailyLogs.shareInternalUsers,
+          shareSubsVendors: dailyLogs.shareSubsVendors,
+          shareClient: dailyLogs.shareClient,
+          isPrivate: dailyLogs.isPrivate,
+          createdBy: dailyLogs.createdBy,
+          createdAt: dailyLogs.createdAt,
+          updatedAt: dailyLogs.updatedAt,
+          publishedAt: dailyLogs.publishedAt,
+          createdByName: users.fullName,
+        })
+        .from(dailyLogs)
+        .leftJoin(users, eq(dailyLogs.createdBy, users.id))
+        .leftJoin(jobs, eq(dailyLogs.jobId, jobs.id))
+        .where(and(...conditions))
+        .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt), desc(dailyLogs.id))
+        .limit(cursorLimit + 1);
+
+      const hasMore = fetched.length > cursorLimit;
+      const pageRows = hasMore ? fetched.slice(0, cursorLimit) : fetched;
+      const pageIds = pageRows.map((row) => row.id);
+
+      const engagement = await loadMyDailyLogEngagement(pageIds, req.auth!.userId);
+
+      const mapped = pageRows.map((row) => ({
+        ...row,
+        tags: normalizeUniqueStrings(engagement.tagsByLogId.get(row.id) ?? []),
+        customFieldValues:
+          row.customFieldValues &&
+          typeof row.customFieldValues === "object" &&
+          !Array.isArray(row.customFieldValues)
+            ? (row.customFieldValues as Record<string, string | number | boolean | null>)
+            : {},
+        attachmentCount: engagement.attachmentCountByLogId.get(row.id) ?? 0,
+        likesCount: engagement.likesCountByLogId.get(row.id) ?? 0,
+        commentsCount: engagement.commentsCountByLogId.get(row.id) ?? 0,
+        likedByCurrentUser: engagement.likedByCurrentUser.has(row.id),
+        visibilityLabel: deriveVisibilityLabel(row),
+        todoCount: engagement.todosCountByLogId.get(row.id) ?? 0,
+        completedTodoCount: engagement.completedTodosCountByLogId.get(row.id) ?? 0,
+        status: row.publishedAt ? ("published" as const) : ("draft" as const),
+      }));
+
+      const last = mapped[mapped.length - 1];
+      const nextCursor =
+        hasMore && last
+          ? encodeCursor({
+              v: 1,
+              k: [last.logDate, last.createdAt.toISOString()],
+              id: last.id,
+            })
+          : null;
+
+      res.json({
+        data: mapped,
+        logs: mapped,
+        pagination: {
+          limit: cursorLimit,
+          hasMore,
+          nextCursor,
+        },
+      });
+      return;
+    }
+
     const offset = (query.data.page - 1) * query.data.pageSize;
 
     const [[totalRow], rows] = await Promise.all([
@@ -402,116 +616,25 @@ router.get(
     ]);
 
     const logIds = rows.map((row) => row.id);
-    const [tagRows, attachmentRows, likeRows, commentRows, todoRows] = await Promise.all([
-      logIds.length > 0
-        ? db
-            .select({
-              dailyLogId: dailyLogTags.dailyLogId,
-              tagName: dailyLogTags.tagName,
-            })
-            .from(dailyLogTags)
-            .where(inArray(dailyLogTags.dailyLogId, logIds))
-        : Promise.resolve([]),
-      logIds.length > 0
-        ? db
-            .select({
-              dailyLogId: dailyLogAttachments.dailyLogId,
-              total: count(),
-            })
-            .from(dailyLogAttachments)
-            .where(inArray(dailyLogAttachments.dailyLogId, logIds))
-            .groupBy(dailyLogAttachments.dailyLogId)
-        : Promise.resolve([]),
-      logIds.length > 0
-        ? db
-            .select({
-              dailyLogId: dailyLogLikes.dailyLogId,
-              userId: dailyLogLikes.userId,
-            })
-            .from(dailyLogLikes)
-            .where(inArray(dailyLogLikes.dailyLogId, logIds))
-        : Promise.resolve([]),
-      logIds.length > 0
-        ? db
-            .select({
-              dailyLogId: dailyLogComments.dailyLogId,
-              total: count(),
-            })
-            .from(dailyLogComments)
-            .where(
-              and(
-                inArray(dailyLogComments.dailyLogId, logIds),
-                isNull(dailyLogComments.deletedAt),
-              ),
-            )
-            .groupBy(dailyLogComments.dailyLogId)
-        : Promise.resolve([]),
-      logIds.length > 0
-        ? db
-            .select({
-              dailyLogId: dailyLogTodos.dailyLogId,
-              total: count(),
-              complete: sql<number>`sum(case when ${dailyLogTodos.isComplete} then 1 else 0 end)`,
-            })
-            .from(dailyLogTodos)
-            .where(inArray(dailyLogTodos.dailyLogId, logIds))
-            .groupBy(dailyLogTodos.dailyLogId)
-        : Promise.resolve([]),
-    ]);
-
-    const tagsByLogId = new Map();
-    const attachmentCountByLogId = new Map();
-    const likesCountByLogId = new Map();
-    const likedByCurrentUser = new Set();
-    const commentsCountByLogId = new Map();
-    const todosCountByLogId = new Map();
-    const completedTodosCountByLogId = new Map();
-
-    for (const row of tagRows) {
-      if (!row.dailyLogId) continue;
-      const group = tagsByLogId.get(row.dailyLogId) ?? [];
-      group.push(row.tagName);
-      tagsByLogId.set(row.dailyLogId, group);
-    }
-
-    for (const row of attachmentRows) {
-      if (!row.dailyLogId) continue;
-      attachmentCountByLogId.set(row.dailyLogId, Number(row.total));
-    }
-
-    for (const row of likeRows) {
-      likesCountByLogId.set(row.dailyLogId, (likesCountByLogId.get(row.dailyLogId) ?? 0) + 1);
-      if (row.userId === req.auth!.userId) {
-        likedByCurrentUser.add(row.dailyLogId);
-      }
-    }
-
-    for (const row of commentRows) {
-      commentsCountByLogId.set(row.dailyLogId, Number(row.total));
-    }
-
-    for (const row of todoRows) {
-      todosCountByLogId.set(row.dailyLogId, Number(row.total));
-      completedTodosCountByLogId.set(row.dailyLogId, Number(row.complete ?? 0));
-    }
+    const engagement = await loadMyDailyLogEngagement(logIds, req.auth!.userId);
 
     const totalItems = Number(totalRow?.total ?? 0);
     const paged = rows.map((row) => ({
       ...row,
-      tags: normalizeUniqueStrings(tagsByLogId.get(row.id) ?? []),
+      tags: normalizeUniqueStrings(engagement.tagsByLogId.get(row.id) ?? []),
       customFieldValues:
         row.customFieldValues &&
         typeof row.customFieldValues === "object" &&
         !Array.isArray(row.customFieldValues)
           ? (row.customFieldValues as Record<string, string | number | boolean | null>)
           : {},
-      attachmentCount: attachmentCountByLogId.get(row.id) ?? 0,
-      likesCount: likesCountByLogId.get(row.id) ?? 0,
-      commentsCount: commentsCountByLogId.get(row.id) ?? 0,
-      likedByCurrentUser: likedByCurrentUser.has(row.id),
+      attachmentCount: engagement.attachmentCountByLogId.get(row.id) ?? 0,
+      likesCount: engagement.likesCountByLogId.get(row.id) ?? 0,
+      commentsCount: engagement.commentsCountByLogId.get(row.id) ?? 0,
+      likedByCurrentUser: engagement.likedByCurrentUser.has(row.id),
       visibilityLabel: deriveVisibilityLabel(row),
-      todoCount: todosCountByLogId.get(row.id) ?? 0,
-      completedTodoCount: completedTodosCountByLogId.get(row.id) ?? 0,
+      todoCount: engagement.todosCountByLogId.get(row.id) ?? 0,
+      completedTodoCount: engagement.completedTodosCountByLogId.get(row.id) ?? 0,
       status: row.publishedAt ? "published" : "draft",
     }));
 

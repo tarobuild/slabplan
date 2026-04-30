@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import { useDropzone } from "react-dropzone"
 import {
+  AlertTriangle,
   Check,
   ChevronLeft,
   Cloud,
@@ -27,6 +28,7 @@ import {
   Settings2,
   Smile,
   Sun,
+  Trash2,
   Upload,
   Users,
   Video,
@@ -135,6 +137,7 @@ type DailyLogAttachment = {
   mimeType: string | null
   createdAt: string
   uploadedByName: string | null
+  storageStatus?: "ok" | "missing"
 }
 
 
@@ -963,9 +966,10 @@ function AttachmentThumbnail({
   const mime = attachment.mimeType || ""
   const isImage = mime.startsWith("image/")
   const isVideo = mime.startsWith("video/")
+  const isMissing = attachment.storageStatus === "missing"
 
   useEffect(() => {
-    if (!isImage || !attachment.fileUrl) return
+    if (!isImage || !attachment.fileUrl || isMissing) return
     let cancelled = false
     setLoading(true)
     api
@@ -987,10 +991,24 @@ function AttachmentThumbnail({
         return null
       })
     }
-  }, [attachment.fileUrl, isImage])
+  }, [attachment.fileUrl, isImage, isMissing])
 
   const handleClick = () => {
     filePreview.open(dailyLogAttachmentsToPreviewFiles(attachments), index)
+  }
+
+  if (isMissing) {
+    return (
+      <div className="flex flex-col items-stretch" title="Original file unavailable">
+        <div className="flex h-[150px] flex-col items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 text-center">
+          <AlertTriangle className="size-7 text-amber-500" />
+          <div className="text-xs font-medium text-amber-700">Original file unavailable</div>
+        </div>
+        <div className="mt-1.5 truncate text-xs text-slate-500 line-through decoration-amber-400">
+          {attachment.originalName}
+        </div>
+      </div>
+    )
   }
 
   if (isImage) {
@@ -2528,12 +2546,14 @@ function DailyLogDialog({
         name: attachment.originalName,
         existing: true,
         mimeType: attachment.mimeType,
+        storageStatus: attachment.storageStatus,
       })),
     ...pendingFiles.map((file) => ({
       key: `${file.name}-${file.size}-${file.lastModified}`,
       name: file.name,
       existing: false,
       mimeType: file.type || null,
+      storageStatus: undefined as "ok" | "missing" | undefined,
     })),
   ]
 
@@ -2812,15 +2832,46 @@ function DailyLogDialog({
                     {combinedAttachments.length === 0 ? (
                       <div className="text-sm text-slate-500">No attachments yet.</div>
                     ) : (
-                      combinedAttachments.map((attachment) => (
-                        <div key={attachment.key} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-3">
+                      combinedAttachments.map((attachment) => {
+                        const isMissing = attachment.storageStatus === "missing"
+                        return (
+                        <div
+                          key={attachment.key}
+                          className={cn(
+                            "flex items-center justify-between rounded-xl border px-3 py-3",
+                            isMissing
+                              ? "border-amber-200 bg-amber-50"
+                              : "border-slate-200",
+                          )}
+                        >
                           <div className="flex min-w-0 items-center gap-3">
-                            <FileText className="size-4 text-slate-400" />
-                            <div className="truncate text-sm text-slate-700">{attachment.name}</div>
+                            {isMissing ? (
+                              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+                            ) : (
+                              <FileText className="size-4 shrink-0 text-slate-400" />
+                            )}
+                            <div className="min-w-0">
+                              <div
+                                className={cn(
+                                  "truncate text-sm",
+                                  isMissing ? "text-slate-700 line-through decoration-amber-400" : "text-slate-700",
+                                )}
+                              >
+                                {attachment.name}
+                              </div>
+                              {isMissing ? (
+                                <div className="mt-0.5 text-xs text-amber-700">Original file unavailable</div>
+                              ) : null}
+                            </div>
                           </div>
                           <button
                             type="button"
-                            className="text-slate-400 hover:text-red-600"
+                            className={cn(
+                              "shrink-0",
+                              isMissing ? "text-amber-700 hover:text-red-600" : "text-slate-400 hover:text-red-600",
+                            )}
+                            title={isMissing ? "Remove orphan attachment" : undefined}
+                            aria-label={isMissing ? "Remove orphan attachment" : "Remove attachment"}
                             onClick={() => {
                               if (attachment.existing) {
                                 setRemovedAttachmentIds((current) => uniqueStrings([...current, attachment.key]))
@@ -2833,10 +2884,11 @@ function DailyLogDialog({
                               }
                             }}
                           >
-                            <X className="size-4" />
+                            {isMissing ? <Trash2 className="size-4" /> : <X className="size-4" />}
                           </button>
                         </div>
-                      ))
+                        )
+                      })
                     )}
                   </div>
                 </div>

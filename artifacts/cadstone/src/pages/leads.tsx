@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import {
+  AlertTriangle,
   Building2,
   Calendar,
   ChevronLeft,
@@ -128,6 +129,7 @@ type LeadAttachment = {
   mimeType: string | null
   createdAt: string
   uploadedByName: string | null
+  storageStatus?: "ok" | "missing"
 }
 
 type LeadDetail = {
@@ -1852,38 +1854,72 @@ export default function LeadsPage() {
                               uploadedByName: a.uploadedByName,
                               createdAt: a.createdAt,
                             }))
+                            const isMissing = att.storageStatus === "missing"
                             return (
                             <div
                               key={att.id}
-                              className="flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-slate-50 group"
+                              className={
+                                isMissing
+                                  ? "flex items-center gap-2.5 px-3 py-2 rounded-md border border-amber-200 bg-amber-50 group"
+                                  : "flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-slate-50 group"
+                              }
                             >
                               <span className="shrink-0">
-                                {getAttachmentIcon(att.mimeType)}
+                                {isMissing ? (
+                                  <AlertTriangle className="size-5 text-amber-600" />
+                                ) : (
+                                  getAttachmentIcon(att.mimeType)
+                                )}
                               </span>
                               <div className="flex-1 min-w-0">
-                                <button
-                                  type="button"
-                                  onClick={() => filePreview.open(previewFiles, attIdx)}
-                                  className="text-sm text-slate-800 font-medium truncate block hover:text-orange-600 hover:underline text-left w-full"
-                                  title={att.originalName}
-                                >
-                                  {att.originalName}
-                                </button>
-                                <p className="text-xs text-slate-400 mt-0.5">
-                                  {[
-                                    fmtFileSize(att.fileSize),
-                                    fmtDate(att.createdAt),
-                                    att.uploadedByName,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </p>
+                                {isMissing ? (
+                                  <>
+                                    <span
+                                      className="text-sm text-slate-700 font-medium truncate block line-through decoration-amber-400"
+                                      title={att.originalName}
+                                    >
+                                      {att.originalName}
+                                    </span>
+                                    <p className="text-xs text-amber-700 mt-0.5">
+                                      Original file unavailable
+                                    </p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => filePreview.open(previewFiles, attIdx)}
+                                      className="text-sm text-slate-800 font-medium truncate block hover:text-orange-600 hover:underline text-left w-full"
+                                      title={att.originalName}
+                                    >
+                                      {att.originalName}
+                                    </button>
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                      {[
+                                        fmtFileSize(att.fileSize),
+                                        fmtDate(att.createdAt),
+                                        att.uploadedByName,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" · ")}
+                                    </p>
+                                  </>
+                                )}
                               </div>
                               <button
-                                className="shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
+                                className={
+                                  isMissing
+                                    ? "shrink-0 text-amber-700 hover:text-red-600"
+                                    : "shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
+                                }
                                 disabled={deletingAttachmentId === att.id}
                                 onClick={() => setConfirmDeleteAttachmentId(att.id)}
-                                aria-label="Delete attachment"
+                                aria-label={
+                                  isMissing
+                                    ? "Permanently remove orphan attachment"
+                                    : "Delete attachment"
+                                }
+                                title={isMissing ? "Remove orphan row" : undefined}
                               >
                                 {deletingAttachmentId === att.id ? (
                                   <Loader2 className="size-4 animate-spin" />

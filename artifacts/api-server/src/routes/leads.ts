@@ -40,6 +40,7 @@ import {
   buildStoredFileName,
   buildUploadPath,
   deletePhysicalFile,
+  probeStorageStatuses,
   writeUploadedBuffer,
   writeUploadedFromPath,
 } from "../lib/storage";
@@ -500,6 +501,17 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
         .orderBy(asc(leadContacts.displayName)),
     ]);
 
+  const attachmentStatuses = await probeStorageStatuses(
+    attachments.map((att) => att.fileUrl),
+  );
+  const annotatedAttachments = attachments.map((att) => ({
+    ...att,
+    storageStatus:
+      att.fileUrl && attachmentStatuses.get(att.fileUrl) === "ok"
+        ? ("ok" as const)
+        : ("missing" as const),
+  }));
+
   return {
     lead: {
       ...lead,
@@ -508,7 +520,7 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
       salespeople,
       tags: tags.map((tag) => tag.tagName),
       sources: sources.map((source) => source.sourceName),
-      attachments,
+      attachments: annotatedAttachments,
       availableContacts,
     },
   };
@@ -1152,6 +1164,7 @@ router.post(
         fileSize: file.fileSize,
         mimeType: file.mimeType,
         createdAt: file.createdAt,
+        storageStatus: "ok" as const,
       });
     }
 

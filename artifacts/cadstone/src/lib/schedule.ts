@@ -34,6 +34,7 @@ export type ScheduleAttachment = {
   mimeType: string | null
   createdAt: string
   icon: string
+  storageStatus?: "ok" | "missing"
 }
 
 export type ScheduleTodo = {

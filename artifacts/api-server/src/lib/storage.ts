@@ -161,6 +161,58 @@ export async function storedFileExists(fileUrl: string | null | undefined): Prom
   }
 }
 
+export type StorageStatus = "ok" | "missing";
+
+/**
+ * Probe whether a stored file is still backed by an object in GCS.
+ *
+ * Distinct from {@link storedFileExists} in how errors are handled: this is the
+ * helper used by listing endpoints to surface a "file unavailable" badge in the
+ * UI, and we never want to label a file as missing because of a transient
+ * network/permissions blip. Only a definitive "object does not exist" response
+ * from GCS produces "missing"; everything else (including thrown errors and
+ * an empty/invalid fileUrl that we still need to render somehow) collapses to
+ * "ok" so the row continues to behave normally.
+ */
+export async function probeStorageStatus(
+  fileUrl: string | null | undefined,
+): Promise<StorageStatus> {
+  if (!fileUrl) {
+    return "missing";
+  }
+  try {
+    const { bucketName, objectName } = fileUrlToObject(fileUrl);
+    const [exists] = await storageClient.bucket(bucketName).file(objectName).exists();
+    return exists ? "ok" : "missing";
+  } catch (error) {
+    logger.warn({ err: error, fileUrl }, "Failed to probe stored file status");
+    // Fail-open: keep the file looking healthy so we don't flag every row as
+    // missing during a transient outage.
+    return "ok";
+  }
+}
+
+/**
+ * Probe storage status for many fileUrls in parallel, deduplicating identical
+ * URLs so each is only checked once per request.
+ */
+export async function probeStorageStatuses(
+  fileUrls: ReadonlyArray<string | null | undefined>,
+): Promise<Map<string, StorageStatus>> {
+  const unique = new Set<string>();
+  for (const url of fileUrls) {
+    if (typeof url === "string" && url.length > 0) {
+      unique.add(url);
+    }
+  }
+  const entries = await Promise.all(
+    Array.from(unique).map(
+      async (url) => [url, await probeStorageStatus(url)] as const,
+    ),
+  );
+  return new Map(entries);
+}
+
 export function openStoredFileReadStream(fileUrl: string): Readable {
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   return storageClient.bucket(bucketName).file(objectName).createReadStream();

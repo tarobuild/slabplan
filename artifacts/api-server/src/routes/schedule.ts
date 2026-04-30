@@ -51,6 +51,7 @@ import {
   buildStoredFileName,
   buildUploadPath,
   deletePhysicalFile,
+  probeStorageStatuses,
   writeUploadedBuffer,
   writeUploadedFromPath,
 } from "../lib/storage";
@@ -1946,6 +1947,10 @@ async function hydrateScheduleItems(
     attachmentsByItemId.set(row.scheduleItemId, group)
   }
 
+  const attachmentStorageStatuses = await probeStorageStatuses(
+    attachmentRows.map((row) => row.fileUrl),
+  )
+
   const todosByItemId = new Map<string, typeof todoRows>()
   for (const row of todoRows) {
     const group = todosByItemId.get(row.scheduleItemId) ?? []
@@ -2047,6 +2052,11 @@ async function hydrateScheduleItems(
       mimeType: attachment.mimeType,
       createdAt: attachment.createdAt,
       icon: fileIconKind(attachment.mimeType),
+      storageStatus:
+        attachment.fileUrl &&
+        attachmentStorageStatuses.get(attachment.fileUrl) === "ok"
+          ? ("ok" as const)
+          : ("missing" as const),
     }))
     const relatedTodos = (todosByItemId.get(itemId) ?? []).map((todo) => ({
       id: todo.id,
@@ -3748,6 +3758,7 @@ router.post(
         mimeType: file.mimeType,
         createdAt: file.createdAt,
         icon: fileIconKind(file.mimeType),
+        storageStatus: "ok" as const,
       });
     }
 
@@ -3858,6 +3869,7 @@ router.post(
         mimeType: file.mimeType,
         createdAt: file.createdAt,
         icon: fileIconKind(file.mimeType),
+        storageStatus: "ok" as const,
       },
     });
   }),

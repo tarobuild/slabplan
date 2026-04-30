@@ -42,6 +42,7 @@ import {
   buildStoredFileName,
   buildUploadPath,
   deletePhysicalFile,
+  probeStorageStatuses,
   writeUploadedBuffer,
   writeUploadedFromPath,
 } from "../lib/storage";
@@ -927,6 +928,17 @@ async function hydrateDailyLog(id: string, currentUserId: string) {
           .orderBy(asc(users.fullName))
       : [];
 
+  const attachmentStatuses = await probeStorageStatuses(
+    attachmentRows.map((att) => att.fileUrl),
+  );
+  const annotatedAttachments = attachmentRows.map((att) => ({
+    ...att,
+    storageStatus:
+      att.fileUrl && attachmentStatuses.get(att.fileUrl) === "ok"
+        ? ("ok" as const)
+        : ("missing" as const),
+  }));
+
   return {
     log: {
       ...row,
@@ -935,7 +947,7 @@ async function hydrateDailyLog(id: string, currentUserId: string) {
       notifyUsers,
       tags: tagRows.map((tag) => tag.tagName),
       customFieldValues: normalizeCustomFieldValueRecord(row.customFieldValues),
-      attachments: attachmentRows,
+      attachments: annotatedAttachments,
       likesCount: engagement.likesCountByLogId.get(id) ?? 0,
       commentsCount: engagement.commentsCountByLogId.get(id) ?? 0,
       likedByCurrentUser: engagement.likedByCurrentUser.has(id),
@@ -2126,6 +2138,7 @@ router.post(
         fileSize: file.fileSize,
         mimeType: file.mimeType,
         createdAt: file.createdAt,
+        storageStatus: "ok" as const,
       });
     }
 

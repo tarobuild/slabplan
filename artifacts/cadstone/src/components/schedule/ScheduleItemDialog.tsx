@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useDropzone } from "react-dropzone"
 import {
+  AlertTriangle,
   Check,
   ChevronDown,
   Circle,
@@ -1753,30 +1754,63 @@ export function ScheduleItemDialog({
                                   fileSize: a.fileSize,
                                   createdAt: a.createdAt,
                                 }))
+                                const isMissing = attachment.storageStatus === "missing"
 
                                 return (
-                                  <div key={attachment.id} className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-4 py-3">
+                                  <div
+                                    key={attachment.id}
+                                    className={
+                                      isMissing
+                                        ? "flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+                                        : "flex items-center justify-between rounded-lg border border-[#E5E7EB] px-4 py-3"
+                                    }
+                                  >
                                     <div className="flex items-center gap-3">
-                                      <div className="rounded-lg bg-slate-100 p-2 text-slate-500">
-                                        <Icon className="size-4" />
+                                      <div
+                                        className={
+                                          isMissing
+                                            ? "rounded-lg bg-amber-100 p-2 text-amber-600"
+                                            : "rounded-lg bg-slate-100 p-2 text-slate-500"
+                                        }
+                                      >
+                                        {isMissing ? (
+                                          <AlertTriangle className="size-4" />
+                                        ) : (
+                                          <Icon className="size-4" />
+                                        )}
                                       </div>
                                       <div>
-                                        <button
-                                          type="button"
-                                          onClick={() => filePreview.open(previewFiles, attIndex)}
-                                          className="text-left text-sm font-medium text-slate-900 hover:text-orange-700"
-                                        >
-                                          {attachment.originalName}
-                                        </button>
-                                        <p className="text-xs text-slate-500">
-                                          {attachment.mimeType || "Unknown"} • {fmtDateTime(attachment.createdAt)}
-                                        </p>
+                                        {isMissing ? (
+                                          <>
+                                            <span className="text-sm font-medium text-slate-900 line-through decoration-amber-400">
+                                              {attachment.originalName}
+                                            </span>
+                                            <p className="text-xs text-amber-700">Original file unavailable</p>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => filePreview.open(previewFiles, attIndex)}
+                                              className="text-left text-sm font-medium text-slate-900 hover:text-orange-700"
+                                            >
+                                              {attachment.originalName}
+                                            </button>
+                                            <p className="text-xs text-slate-500">
+                                              {attachment.mimeType || "Unknown"} • {fmtDateTime(attachment.createdAt)}
+                                            </p>
+                                          </>
+                                        )}
                                       </div>
                                     </div>
                                     <Button
                                       type="button"
                                       variant="ghost"
                                       onClick={() => void handleDeleteAttachment(attachment.id)}
+                                      title={isMissing ? "Remove orphan attachment" : "Delete attachment"}
+                                      aria-label={
+                                        isMissing ? "Remove orphan attachment" : "Delete attachment"
+                                      }
                                     >
                                       <Trash2 className="size-4" />
                                     </Button>

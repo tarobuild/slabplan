@@ -21,9 +21,11 @@ import {
   buildUploadPath,
   deletePhysicalFile,
   openStoredFileReadStream,
+  probeStorageStatuses,
   storedFileExists,
   writeUploadedBuffer,
   writeUploadedFromPath,
+  type StorageStatus,
 } from "./storage";
 import { cleanupTempUpload } from "./uploads";
 import { emitRealtimeEvent } from "./realtime";
@@ -855,7 +857,7 @@ export async function listFilesForFolder(params: {
 
     return {
       folder,
-      files: rows,
+      files: await annotateFilesWithStorageStatus(rows),
       pagination: {
         limit,
         hasMore,
@@ -873,7 +875,7 @@ export async function listFilesForFolder(params: {
 
   return {
     folder,
-    files: rows,
+    files: await annotateFilesWithStorageStatus(rows),
     pagination: {
       page,
       limit,
@@ -881,6 +883,18 @@ export async function listFilesForFolder(params: {
       totalPages: Math.max(1, Math.ceil(totalItems / limit)),
     },
   };
+}
+
+async function annotateFilesWithStorageStatus<T extends { fileUrl: string | null }>(
+  rows: T[],
+): Promise<Array<T & { storageStatus: StorageStatus }>> {
+  if (rows.length === 0) return [];
+  const statuses = await probeStorageStatuses(rows.map((row) => row.fileUrl));
+  return rows.map((row) => ({
+    ...row,
+    storageStatus:
+      row.fileUrl && statuses.get(row.fileUrl) === "ok" ? "ok" : "missing",
+  }));
 }
 
 export async function createFolder(params: {

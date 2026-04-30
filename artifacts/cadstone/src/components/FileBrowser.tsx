@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useDropzone } from "react-dropzone"
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -85,6 +86,7 @@ type FileItem = {
   uploadedBy: string | null
   uploadedByName: string | null
   createdAt: string
+  storageStatus?: "ok" | "missing"
 }
 
 type MediaType = "document" | "photo" | "video"
@@ -339,13 +341,22 @@ export default function FileBrowser({
   const handleDeleteFile = async () => {
     if (!deleteConfirmFile) return
     setDeletingFile(true)
+    const isMissing = deleteConfirmFile.storageStatus === "missing"
     try {
-      await api.delete(`/files/${deleteConfirmFile.id}`)
-      toast.success("File deleted")
+      // For an orphan row (the underlying object is gone) we go straight to
+      // /purge so admins don't have to do the soft-delete-then-empty-trash
+      // dance just to clear an entry that's already broken.
+      if (isMissing) {
+        await api.delete(`/files/${deleteConfirmFile.id}/purge`)
+        toast.success("Orphan file row removed")
+      } else {
+        await api.delete(`/files/${deleteConfirmFile.id}`)
+        toast.success("File deleted")
+      }
       setDeleteConfirmFile(null)
       if (currentFolderId) loadFiles(currentFolderId)
     } catch (err: unknown) {
-      toastApiError(err, "Failed to delete file")
+      toastApiError(err, isMissing ? "Failed to remove orphan row" : "Failed to delete file")
     } finally {
       setDeletingFile(false)
     }
@@ -1126,12 +1137,25 @@ export default function FileBrowser({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this file?</AlertDialogTitle>
-            <AlertDialogDescription>
-              "{deleteConfirmFile ? displayName(deleteConfirmFile) : ""}" will be
-              moved to trash. An admin can restore it from the database within
-              30 days.
-            </AlertDialogDescription>
+            {deleteConfirmFile?.storageStatus === "missing" ? (
+              <>
+                <AlertDialogTitle>Remove this orphan file row?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  "{deleteConfirmFile ? displayName(deleteConfirmFile) : ""}"
+                  no longer has an underlying upload. The database row will be
+                  permanently removed. This cannot be undone.
+                </AlertDialogDescription>
+              </>
+            ) : (
+              <>
+                <AlertDialogTitle>Delete this file?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  "{deleteConfirmFile ? displayName(deleteConfirmFile) : ""}" will be
+                  moved to trash. An admin can restore it from the database within
+                  30 days.
+                </AlertDialogDescription>
+              </>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deletingFile}>Cancel</AlertDialogCancel>
@@ -1146,7 +1170,7 @@ export default function FileBrowser({
               className="bg-red-600 hover:bg-red-700"
             >
               {deletingFile && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-              Delete
+              {deleteConfirmFile?.storageStatus === "missing" ? "Remove permanently" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1287,7 +1311,47 @@ function AuthPhoto({
     return () => observer.disconnect()
   }, [isVisible])
 
-  const { blobUrl, loading, error } = useAuthenticatedUrl(isVisible ? viewUrl : null)
+  const isMissing = file.storageStatus === "missing"
+  const { blobUrl, loading, error } = useAuthenticatedUrl(
+    isVisible && !isMissing ? viewUrl : null,
+  )
+
+  if (isMissing) {
+    return (
+      <div
+        ref={containerRef}
+        className="group relative flex flex-col rounded-xl overflow-hidden border border-amber-200 bg-amber-50 text-left"
+      >
+        <div className="flex flex-col text-left">
+          <div className="relative aspect-square overflow-hidden bg-amber-50">
+            <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 px-3 text-center text-amber-700">
+              <AlertTriangle className="size-7" />
+              <span className="text-xs font-semibold">
+                Original file unavailable
+              </span>
+            </div>
+          </div>
+          <div className="px-2.5 py-2 border-t border-amber-200 bg-white w-full">
+            <p className="text-xs font-medium text-slate-800 truncate">{displayName(file)}</p>
+            <p className="text-xs text-amber-600">Upload missing from storage</p>
+            {file.note ? (
+              <p className="mt-1 line-clamp-2 text-xs text-slate-500">{file.note}</p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="absolute top-1.5 right-1.5 z-10">
+          <FileActionsMenu
+            file={file}
+            canManage={canManage}
+            onDownload={onDownload}
+            onRequestDelete={onRequestDelete}
+            triggerClassName="p-1 rounded-md bg-white/90 text-slate-600 hover:text-slate-900 hover:bg-white shadow-sm"
+          />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -1388,39 +1452,67 @@ function VideoGrid({
 }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-      {files.map((file) => (
-        <div
-          key={file.id}
-          className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-orange-300 transition-colors text-left"
-        >
-          <button
-            onClick={() => onOpenPlayer(file)}
-            className="absolute inset-0 text-left"
-            aria-label={`Play ${displayName(file)}`}
-          >
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="size-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/30 transition-colors">
-                <Play className="size-5 text-white fill-white ml-0.5" />
+      {files.map((file) => {
+        const isMissing = file.storageStatus === "missing"
+        if (isMissing) {
+          return (
+            <div
+              key={file.id}
+              className="group relative rounded-xl overflow-hidden border border-amber-200 bg-amber-50 aspect-video text-left"
+            >
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-3 text-center text-amber-700">
+                <AlertTriangle className="size-7" />
+                <span className="text-xs font-semibold">
+                  Original file unavailable
+                </span>
+                <span className="text-[10px] truncate max-w-full">{displayName(file)}</span>
+              </div>
+              <div className="absolute top-1.5 right-1.5 z-10">
+                <FileActionsMenu
+                  file={file}
+                  canManage={canManageFile(file)}
+                  onDownload={onDownload}
+                  onRequestDelete={onRequestDelete}
+                  triggerClassName="p-1 rounded-md bg-white/90 text-slate-600 hover:text-slate-900 hover:bg-white shadow-sm"
+                />
               </div>
             </div>
-            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2">
-              <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
-              <p className="text-white/60 text-xs">{formatFileSize(file.fileSize)}</p>
-            </div>
-          </button>
+          )
+        }
+        return (
+          <div
+            key={file.id}
+            className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-orange-300 transition-colors text-left"
+          >
+            <button
+              onClick={() => onOpenPlayer(file)}
+              className="absolute inset-0 text-left"
+              aria-label={`Play ${displayName(file)}`}
+            >
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="size-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/30 transition-colors">
+                  <Play className="size-5 text-white fill-white ml-0.5" />
+                </div>
+              </div>
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2">
+                <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
+                <p className="text-white/60 text-xs">{formatFileSize(file.fileSize)}</p>
+              </div>
+            </button>
 
-          <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-            <FileActionsMenu
-              file={file}
-              canManage={canManageFile(file)}
-              onOpen={() => onOpenPlayer(file)}
-              onDownload={onDownload}
-              onRequestDelete={onRequestDelete}
-              triggerClassName="p-1 rounded-md bg-white/90 text-slate-600 hover:text-slate-900 hover:bg-white shadow-sm"
-            />
+            <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+              <FileActionsMenu
+                file={file}
+                canManage={canManageFile(file)}
+                onOpen={() => onOpenPlayer(file)}
+                onDownload={onDownload}
+                onRequestDelete={onRequestDelete}
+                triggerClassName="p-1 rounded-md bg-white/90 text-slate-600 hover:text-slate-900 hover:bg-white shadow-sm"
+              />
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -1448,6 +1540,7 @@ function FileActionsMenu({
   triggerClassName?: string
   triggerAriaLabel?: string
 }) {
+  const isMissing = file.storageStatus === "missing"
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1463,8 +1556,8 @@ function FileActionsMenu({
           <MoreHorizontal className="size-4" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
-        {onOpen && (
+      <DropdownMenuContent align="end" className="w-48">
+        {onOpen && !isMissing && (
           <DropdownMenuItem
             onClick={(e) => {
               e.stopPropagation()
@@ -1474,17 +1567,19 @@ function FileActionsMenu({
             Open
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation()
-            onDownload(file)
-          }}
-        >
-          Download
-        </DropdownMenuItem>
+        {!isMissing && (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation()
+              onDownload(file)
+            }}
+          >
+            Download
+          </DropdownMenuItem>
+        )}
         {canManage && (
           <>
-            <DropdownMenuSeparator />
+            {!isMissing && <DropdownMenuSeparator />}
             <DropdownMenuItem
               onClick={(e) => {
                 e.stopPropagation()
@@ -1492,7 +1587,7 @@ function FileActionsMenu({
               }}
               className="text-red-600 focus:text-red-600"
             >
-              Delete file
+              {isMissing ? "Remove orphan row" : "Delete file"}
             </DropdownMenuItem>
           </>
         )}
@@ -1545,19 +1640,40 @@ function FileTable({
         <tbody className="divide-y divide-slate-100">
           {files.map((file) => {
             const label = displayName(file)
-            const canPhoto = mediaType === "photo" && !!onOpenLightbox
-            const canVideo = mediaType === "video" && !!onOpenPlayer
+            const isMissing = file.storageStatus === "missing"
+            const canPhoto = mediaType === "photo" && !!onOpenLightbox && !isMissing
+            const canVideo = mediaType === "video" && !!onOpenPlayer && !isMissing
             const handleOpen = canPhoto
               ? () => onOpenLightbox!(file)
               : canVideo
                 ? () => onOpenPlayer!(file)
                 : () => onOpenInNewTab(file)
             return (
-              <tr key={file.id} className="group hover:bg-slate-50">
+              <tr
+                key={file.id}
+                className={
+                  isMissing
+                    ? "group bg-amber-50/40 hover:bg-amber-50"
+                    : "group hover:bg-slate-50"
+                }
+              >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <FileIcon mimeType={file.mimeType} />
-                    {canPhoto ? (
+                    {isMissing ? (
+                      <AlertTriangle className="size-4 text-amber-600 shrink-0" />
+                    ) : (
+                      <FileIcon mimeType={file.mimeType} />
+                    )}
+                    {isMissing ? (
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-700 truncate max-w-xs line-through decoration-amber-400">
+                          {label}
+                        </span>
+                        <span className="text-[11px] font-medium text-amber-700">
+                          Original file unavailable
+                        </span>
+                      </div>
+                    ) : canPhoto ? (
                       <button
                         type="button"
                         onClick={() => onOpenLightbox!(file)}
@@ -1599,19 +1715,21 @@ function FileTable({
                 <td className="px-4 py-3 text-slate-500">{fmtDate(file.createdAt)}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="inline-flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => onDownload(file)}
-                      className="inline-flex items-center justify-center rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-                      aria-label={`Download ${label}`}
-                      title="Download"
-                    >
-                      <Download className="size-4" />
-                    </button>
+                    {!isMissing && (
+                      <button
+                        type="button"
+                        onClick={() => onDownload(file)}
+                        className="inline-flex items-center justify-center rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                        aria-label={`Download ${label}`}
+                        title="Download"
+                      >
+                        <Download className="size-4" />
+                      </button>
+                    )}
                     <FileActionsMenu
                       file={file}
                       canManage={canManageFile(file)}
-                      onOpen={handleOpen}
+                      onOpen={isMissing ? undefined : handleOpen}
                       onDownload={onDownload}
                       onRequestDelete={onRequestDelete}
                       triggerAriaLabel={`Actions for ${label}`}

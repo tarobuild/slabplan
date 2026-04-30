@@ -21,7 +21,7 @@ export type AgentToolCall = {
   id: string
   name: string
   input: unknown
-  status: "ok" | "error"
+  status: "pending" | "ok" | "error"
   resultSummary?: string
   errorMessage?: string
   durationMs?: number

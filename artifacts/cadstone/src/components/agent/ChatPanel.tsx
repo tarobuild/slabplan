@@ -267,7 +267,7 @@ export default function ChatPanel() {
               id: event.id,
               name: event.name,
               input: event.input,
-              status: "ok",
+              status: "pending",
             })
             setStatusText(`Calling ${event.name}…`)
             setMessages((prev) =>

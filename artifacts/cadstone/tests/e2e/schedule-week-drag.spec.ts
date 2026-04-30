@@ -136,6 +136,10 @@ test.describe("schedule week-view cross-day drag", () => {
     ).toBeVisible()
 
     const block = await findBlockInColumn(page, mondayKey, title)
+    // Scroll the 9 AM block into the visible viewport before dragging.
+    // Playwright's mouse uses viewport-relative coordinates, so a block
+    // that sits below the default 720px viewport can't be picked up.
+    await block.scrollIntoViewIfNeeded()
     const blockBox = await block.boundingBox()
     if (!blockBox) throw new Error("Block has no bounding box")
 

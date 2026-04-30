@@ -17,6 +17,7 @@ import {
   getClientsGetClientsQueryKey,
   useClientsGetClients,
   type ClientListItem as ClientListItemDto,
+  type ClientsGetClientsQueryResult,
 } from "@workspace/api-client-react"
 import { ClientsPostClientsBody, ClientsPutClientsIdBody } from "@workspace/api-zod"
 import { useQueryClient } from "@tanstack/react-query"
@@ -215,7 +216,7 @@ export default function ClientsPage() {
   const clientsQuery = useClientsGetClients(listParams, {
     query: {
       queryKey: getClientsGetClientsQueryKey(listParams),
-      placeholderData: (previous) => previous,
+      placeholderData: (previous: ClientsGetClientsQueryResult | undefined) => previous,
     },
   })
 

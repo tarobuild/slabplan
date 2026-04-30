@@ -28,6 +28,7 @@ import {
   getLeadsGetLeadsQueryKey,
   useLeadsGetLeads,
   type LeadsGetLeadsParams,
+  type LeadsGetLeadsQueryResult,
 } from "@workspace/api-client-react"
 import { LeadsPostLeadsBody, LeadsPutLeadsIdBody } from "@workspace/api-zod"
 import { useQueryClient } from "@tanstack/react-query"
@@ -381,7 +382,7 @@ export default function LeadsPage() {
       // override is supplied; the generated helper produces one keyed off
       // the same params object so the cache lines up correctly.
       queryKey: getLeadsGetLeadsQueryKey(listParams),
-      placeholderData: (previous) => previous,
+      placeholderData: (previous: LeadsGetLeadsQueryResult | undefined) => previous,
     },
   })
 

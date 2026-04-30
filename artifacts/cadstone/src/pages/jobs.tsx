@@ -6,6 +6,7 @@ import {
   useJobsGetJobs,
   type JobListItem as JobListItemDto,
   type JobsGetJobsParams,
+  type JobsGetJobsQueryResult,
 } from "@workspace/api-client-react"
 import { ClientsPostClientsBody, JobsPostJobsBody } from "@workspace/api-zod"
 import { useQueryClient } from "@tanstack/react-query"
@@ -194,7 +195,7 @@ export default function JobsPage() {
       // a stable, params-aware key, and `placeholderData: previous` keeps
       // the prior page on screen while the next one loads.
       queryKey: getJobsGetJobsQueryKey(listParams),
-      placeholderData: (previous) => previous,
+      placeholderData: (previous: JobsGetJobsQueryResult | undefined) => previous,
     },
   })
 

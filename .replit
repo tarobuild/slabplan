@@ -36,23 +36,23 @@ args = "check-api-codegen"
 name = "typecheck"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pnpm run typecheck"
-
 [workflows.workflow.metadata]
 isValidation = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "flock -s /tmp/cadstone-api-codegen.lock pnpm run typecheck"
 
 [[workflows.workflow]]
 name = "check-api-codegen"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pnpm run check-api-codegen"
-
 [workflows.workflow.metadata]
 isValidation = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "flock -x /tmp/cadstone-api-codegen.lock pnpm run check-api-codegen"
 
 [agent]
 stack = "PNPM_WORKSPACE"

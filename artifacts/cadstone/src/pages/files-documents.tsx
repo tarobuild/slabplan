@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { FileText, FolderOpen } from "lucide-react"
-import { useJobsGetJobs } from "@workspace/api-client-react"
+import { useJobsGetJobs, type JobListItem } from "@workspace/api-client-react"
 import FileBrowser from "@/components/FileBrowser"
 import {
   Select,
@@ -20,7 +20,7 @@ export default function FilesDocumentsPage() {
   // Use the generated typed hook so this page benefits from the same
   // tanstack-query cache and refetch behavior as the rest of the app.
   const jobsQuery = useJobsGetJobs()
-  const jobs = jobsQuery.data?.jobs ?? []
+  const jobs: JobListItem[] = jobsQuery.data?.jobs ?? []
   const loading = jobsQuery.isPending
 
   useEffect(() => {

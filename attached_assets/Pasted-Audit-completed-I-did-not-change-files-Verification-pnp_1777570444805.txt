@@ -1,0 +1,43 @@
+Audit completed. I did not change files.
+
+  Verification
+
+  - pnpm run check-api-codegen: passed
+  - pnpm run typecheck: passed
+  - pnpm run build: passed
+  - Frontend unit tests: passed
+  - API tests: blocked because the test DB has no app schema, e.g. missing job_assignees
+  - pnpm audit --prod: 1 known low-severity advisory via @tootallnate/once
+
+  P1 Fixes
+
+  - GET /jobs/:jobId/schedule performs writes. A read-only schedule fetch calls sync logic and can update completion state for all schedule items, including items the viewer may not normally manage. See artifacts/api-server/src/
+    routes/schedule.ts:2586, artifacts/api-server/src/routes/schedule.ts:1088.
+  - Folder visibility is not enforced deeply enough. Job-level folder listing exposes folder metadata/counts, and folder ZIP download can include restricted or deleted descendants. See artifacts/api-server/src/routes/
+    folders.ts:69, artifacts/api-server/src/routes/folders.ts:240, artifacts/api-server/src/lib/file-manager.ts:617, artifacts/api-server/src/lib/file-manager.ts:1758.
+  - Test infrastructure needs a reliable migrated DB before API integration tests run. Current failures are mostly schema absence, not asserted product behavior.
+
+  P2 Fixes
+
+  - Idempotency middleware does not hash multipart file contents, so the same Idempotency-Key with different files can replay the previous response. See artifacts/api-server/src/middleware/idempotency.ts:1.
+  - Global API rate limiting is mounted before auth, so it is effectively IP-based despite trying to use req.auth.userId. Users behind the same office/NAT can throttle one another. See artifacts/api-server/src/app.ts:86,
+    artifacts/api-server/src/lib/rate-limit.ts:48.
+  - Frontend upload limit says 200 MB, backend enforces 100 MB, and oversized multer errors likely surface as generic 500s instead of 413s. See artifacts/cadstone/src/lib/uploads.ts:3, artifacts/api-server/src/lib/uploads.ts:10,
+    artifacts/api-server/src/lib/uploads.ts:237.
+  - Lead and daily-log attachment uploads write object storage plus DB rows without the transaction/rollback pattern used elsewhere. Failures can orphan files or partial records. See artifacts/api-server/src/routes/leads.ts:1058,
+    artifacts/api-server/src/routes/daily-logs.ts:1775.
+  - Agent message handling has no per-user in-flight cap, no dedicated agent rate limit, and request aborts do not cancel downstream Anthropic/tool work. See artifacts/api-server/src/routes/agent.ts:1, artifacts/api-server/src/
+    lib/agent/orchestrator.ts:1.
+  - MCP HTTP default base URL uses port 5000 if PORT is unset, while the API defaults to 8080. See lib/mcp-server/src/http-transport.ts:132, artifacts/api-server/src/index.ts:11.
+
+  P3 Fixes
+
+  - Copying a folder reads deleted folders/files and recreates them as active rows. See artifacts/api-server/src/lib/file-manager.ts:1030.
+  - Folder permissions cannot be reset to null because update logic uses ??. See artifacts/api-server/src/lib/file-manager.ts:959.
+  - Dashboard schedule query does not validate start/end dates before DB use. See artifacts/api-server/src/routes/dashboard.ts:195.
+  - Migration metadata is inconsistent: custom runner sees SQL files, but Drizzle journal metadata only lists the first migration. Reconcile this before relying on Drizzle diff/generate workflows.
+  - One static API test is stale: it expects the old positional fetchDailyLogRows(..., cursorLimit + 1) shape while implementation now uses an options object.
+  - Daily-log comment attachments are base64 data URLs in JSON with no explicit size/count policy. This risks bad UX now and DB bloat if JSON limits are raised. See artifacts/cadstone/src/pages/job-daily-logs.tsx:1857, artifacts/
+    api-server/src/routes/daily-logs.ts:72.
+  - Track the low-severity @tootallnate/once advisory through the @google-cloud/storage dependency chain, and plan dependency maintenance for available patch/major upgrades.
+  - Consider magic-byte validation for uploaded PDFs/images/videos; current validation mostly relies on extension plus client MIME headers.

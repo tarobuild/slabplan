@@ -500,6 +500,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
+      '@types/pg':
+        specifier: ^8.18.0
+        version: 8.18.0
       '@types/react':
         specifier: 18.3.12
         version: 18.3.12
@@ -512,6 +515,9 @@ importers:
       jsdom:
         specifier: ^29.1.0
         version: 29.1.0
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
       tailwindcss:
         specifier: 'catalog:'
         version: 4.2.1

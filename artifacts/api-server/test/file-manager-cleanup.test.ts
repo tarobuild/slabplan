@@ -281,6 +281,186 @@ test("copyFolder skips soft-deleted descendants and files", async () => {
   assert.equal(copiedFiles[0].filename, "live.pdf");
 });
 
+test("restoreFolder leaves individually-deleted descendants in the trash", async () => {
+  const { db } = await import("@workspace/db");
+  const { files, folders } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const { softDeleteFolder, restoreFolder, getFolderOrThrow } = await import(
+    "../src/lib/file-manager.ts"
+  );
+
+  // Build a fresh subtree dedicated to this test:
+  //   restoreRoot
+  //     ├── alreadyDeletedChild   (deleted on its own BEFORE the parent)
+  //     │      └── alreadyDeletedFile
+  //     └── liveChild             (still live when parent is deleted)
+  //            ├── liveFile
+  //            └── individuallyDeletedFile (deleted on its own BEFORE the parent)
+  const restoreRootFolderId = crypto.randomUUID();
+  const alreadyDeletedChildFolderId = crypto.randomUUID();
+  const liveChildFolderId2 = crypto.randomUUID();
+  const alreadyDeletedFileId = crypto.randomUUID();
+  const liveFileInLiveChildId = crypto.randomUUID();
+  const individuallyDeletedFileId = crypto.randomUUID();
+
+  await db.insert(folders).values([
+    {
+      id: restoreRootFolderId,
+      jobId,
+      scope: "job",
+      title: "ZZZ Restore Root",
+      mediaType: "document",
+      isGlobal: false,
+      viewingPermissions: { internal: true },
+      uploadingPermissions: { admin: true },
+    },
+    {
+      id: alreadyDeletedChildFolderId,
+      jobId,
+      scope: "job",
+      parentFolderId: restoreRootFolderId,
+      title: "ZZZ Restore Already Deleted Child",
+      mediaType: "document",
+      isGlobal: false,
+      viewingPermissions: { internal: true },
+      uploadingPermissions: { admin: true },
+    },
+    {
+      id: liveChildFolderId2,
+      jobId,
+      scope: "job",
+      parentFolderId: restoreRootFolderId,
+      title: "ZZZ Restore Live Child",
+      mediaType: "document",
+      isGlobal: false,
+      viewingPermissions: { internal: true },
+      uploadingPermissions: { admin: true },
+    },
+  ]);
+
+  await db.insert(files).values([
+    {
+      id: alreadyDeletedFileId,
+      folderId: alreadyDeletedChildFolderId,
+      filename: "already-deleted.pdf",
+      originalName: "already-deleted.pdf",
+      mimeType: "application/pdf",
+      uploadedBy: adminUserId,
+    },
+    {
+      id: liveFileInLiveChildId,
+      folderId: liveChildFolderId2,
+      filename: "live-file.pdf",
+      originalName: "live-file.pdf",
+      mimeType: "application/pdf",
+      uploadedBy: adminUserId,
+    },
+    {
+      id: individuallyDeletedFileId,
+      folderId: liveChildFolderId2,
+      filename: "individually-deleted.pdf",
+      originalName: "individually-deleted.pdf",
+      mimeType: "application/pdf",
+      uploadedBy: adminUserId,
+    },
+  ]);
+
+  // Step 1: trash the "already deleted" subtree on its own. Stamp the rows
+  // directly so we can capture a deletedAt strictly earlier than the one
+  // softDeleteFolder will use for the parent.
+  const earlierDeletedAt = new Date(Date.now() - 60_000);
+  await db
+    .update(folders)
+    .set({ deletedAt: earlierDeletedAt, updatedAt: earlierDeletedAt })
+    .where(eq(folders.id, alreadyDeletedChildFolderId));
+  await db
+    .update(files)
+    .set({ deletedAt: earlierDeletedAt, updatedAt: earlierDeletedAt })
+    .where(eq(files.id, alreadyDeletedFileId));
+
+  // Step 2: trash one file inside the live subtree on its own.
+  await db
+    .update(files)
+    .set({ deletedAt: earlierDeletedAt, updatedAt: earlierDeletedAt })
+    .where(eq(files.id, individuallyDeletedFileId));
+
+  // Step 3: now soft-delete the parent. softDeleteFolder must NOT overwrite
+  // the deletedAt timestamps of rows already in the trash.
+  await softDeleteFolder({ folderId: restoreRootFolderId, userId: adminUserId });
+
+  // Sanity: the live child + live file picked up the parent's deletion stamp,
+  // while the previously-trashed rows kept their original earlier stamp.
+  const [alreadyDeletedChildAfterSoftDelete] = await db
+    .select({ deletedAt: folders.deletedAt })
+    .from(folders)
+    .where(eq(folders.id, alreadyDeletedChildFolderId));
+  assert.equal(
+    alreadyDeletedChildAfterSoftDelete.deletedAt?.getTime(),
+    earlierDeletedAt.getTime(),
+    "softDeleteFolder must not overwrite an already-deleted child folder's deletedAt",
+  );
+
+  const [individuallyDeletedFileAfterSoftDelete] = await db
+    .select({ deletedAt: files.deletedAt })
+    .from(files)
+    .where(eq(files.id, individuallyDeletedFileId));
+  assert.equal(
+    individuallyDeletedFileAfterSoftDelete.deletedAt?.getTime(),
+    earlierDeletedAt.getTime(),
+    "softDeleteFolder must not overwrite an already-deleted file's deletedAt",
+  );
+
+  // Step 4: restore the parent folder.
+  await restoreFolder({ folderId: restoreRootFolderId, userId: adminUserId });
+
+  // Parent + the child that was deleted with it should now be live.
+  const restoredRoot = await getFolderOrThrow(restoreRootFolderId);
+  assert.equal(restoredRoot.deletedAt, null, "parent folder should be restored");
+
+  const [restoredLiveChild] = await db
+    .select({ deletedAt: folders.deletedAt })
+    .from(folders)
+    .where(eq(folders.id, liveChildFolderId2));
+  assert.equal(restoredLiveChild.deletedAt, null, "live child folder should be restored");
+
+  const [restoredLiveFile] = await db
+    .select({ deletedAt: files.deletedAt })
+    .from(files)
+    .where(eq(files.id, liveFileInLiveChildId));
+  assert.equal(restoredLiveFile.deletedAt, null, "live file should be restored");
+
+  // The individually-trashed rows must STILL be soft-deleted.
+  const [stillDeletedChildFolder] = await db
+    .select({ deletedAt: folders.deletedAt })
+    .from(folders)
+    .where(eq(folders.id, alreadyDeletedChildFolderId));
+  assert.notEqual(
+    stillDeletedChildFolder.deletedAt,
+    null,
+    "individually-deleted child folder must NOT be resurrected by restoring the parent",
+  );
+
+  const [stillDeletedFileInDeletedFolder] = await db
+    .select({ deletedAt: files.deletedAt })
+    .from(files)
+    .where(eq(files.id, alreadyDeletedFileId));
+  assert.notEqual(
+    stillDeletedFileInDeletedFolder.deletedAt,
+    null,
+    "file inside individually-deleted folder must NOT be resurrected",
+  );
+
+  const [stillDeletedFileInLiveFolder] = await db
+    .select({ deletedAt: files.deletedAt })
+    .from(files)
+    .where(eq(files.id, individuallyDeletedFileId));
+  assert.notEqual(
+    stillDeletedFileInLiveFolder.deletedAt,
+    null,
+    "individually-deleted file must NOT be resurrected when its parent folder is restored",
+  );
+});
+
 test("renameOrUpdateFolder clears permissions when payload sets them to null", async () => {
   const { renameOrUpdateFolder, getFolderOrThrow } = await import("../src/lib/file-manager.ts");
 

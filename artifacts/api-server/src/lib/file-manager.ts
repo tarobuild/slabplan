@@ -1157,15 +1157,18 @@ export async function softDeleteFolder(params: {
   const deletedAt = new Date();
 
   await db.transaction(async (tx) => {
+    // Only stamp rows that are still live. Overwriting an already-deleted
+    // child's deletedAt would erase the evidence that it was trashed
+    // separately, which restoreFolder relies on to avoid resurrecting it.
     await tx
       .update(folders)
       .set({ deletedAt, updatedAt: deletedAt })
-      .where(inArray(folders.id, folderIds));
+      .where(and(inArray(folders.id, folderIds), isNull(folders.deletedAt)));
 
     await tx
       .update(files)
       .set({ deletedAt, updatedAt: deletedAt })
-      .where(inArray(files.folderId, folderIds));
+      .where(and(inArray(files.folderId, folderIds), isNull(files.deletedAt)));
   });
 
   await writeActivity({
@@ -1211,6 +1214,13 @@ export async function restoreFolder(params: {
   }
 
   const restoredAt = new Date();
+  // Only un-delete descendants that were trashed in the same operation as the
+  // folder itself. softDeleteFolder stamps every newly-deleted row with one
+  // shared Date value, so equality on deletedAt distinguishes "deleted with
+  // the parent" from "deleted individually beforehand". Without this filter,
+  // restoring the folder would resurrect children the user had already
+  // trashed on their own.
+  const folderDeletedAt = folder.deletedAt;
 
   await db.transaction(async (tx) => {
     if (ancestorIdsToRestore.length > 0) {
@@ -1223,12 +1233,12 @@ export async function restoreFolder(params: {
     await tx
       .update(folders)
       .set({ deletedAt: null, updatedAt: restoredAt })
-      .where(inArray(folders.id, folderIds));
+      .where(and(inArray(folders.id, folderIds), eq(folders.deletedAt, folderDeletedAt)));
 
     await tx
       .update(files)
       .set({ deletedAt: null, updatedAt: restoredAt })
-      .where(inArray(files.folderId, folderIds));
+      .where(and(inArray(files.folderId, folderIds), eq(files.deletedAt, folderDeletedAt)));
   });
 
   await writeActivity({

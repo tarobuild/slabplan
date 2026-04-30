@@ -317,6 +317,8 @@ const DAY_END_HOUR = 19
 const HOUR_HEIGHT = 56
 const TIMED_GRID_TOTAL_MINUTES = (DAY_END_HOUR - DAY_START_HOUR + 1) * 60
 const DRAG_SNAP_MINUTES = 15
+const TOUCH_LONG_PRESS_MS = 400
+const TOUCH_LONG_PRESS_MOVE_TOLERANCE = 10
 const DRAG_MOVE_THRESHOLD_MINUTES = 8
 
 type DragSelection = {
@@ -2066,6 +2068,18 @@ export default function JobSchedulePage() {
   const blockDragMoveHandlerRef = useRef<((event: PointerEvent) => void) | null>(null)
   const blockDragUpHandlerRef = useRef<((event: PointerEvent) => void) | null>(null)
   const blockDragCancelHandlerRef = useRef<((event: PointerEvent) => void) | null>(null)
+  // Long-press wait + non-passive touchmove suppressor for the touch
+  // path. The suppressor is installed only after the long-press arms,
+  // so a quick swipe starting on a block still scrolls the page.
+  const blockTouchLongPressCleanupRef = useRef<(() => void) | null>(null)
+  const blockTouchMovePreventRef = useRef<((event: TouchEvent) => void) | null>(null)
+
+  function detachBlockTouchScrollPrevention() {
+    if (blockTouchMovePreventRef.current) {
+      window.removeEventListener("touchmove", blockTouchMovePreventRef.current)
+      blockTouchMovePreventRef.current = null
+    }
+  }
 
   function detachBlockDragListeners() {
     if (blockDragMoveHandlerRef.current) {
@@ -2080,11 +2094,14 @@ export default function JobSchedulePage() {
       window.removeEventListener("pointercancel", blockDragCancelHandlerRef.current)
       blockDragCancelHandlerRef.current = null
     }
+    detachBlockTouchScrollPrevention()
   }
 
   useEffect(() => {
     return () => {
       detachBlockDragListeners()
+      blockTouchLongPressCleanupRef.current?.()
+      blockTouchLongPressCleanupRef.current = null
     }
   }, [])
 
@@ -3412,16 +3429,100 @@ export default function JobSchedulePage() {
     if (event.button !== 0) {
       return
     }
-    // Skip touch so the calendar keeps native scrolling on phones.
-    if (event.pointerType === "touch") {
-      return
-    }
     if (!isBlockDraggable(item)) {
       return
     }
-    const startMin = timeStringToGridMinutes(item.startTime)
-    const endMin = timeStringToGridMinutes(item.endTime)
-    if (startMin === null || endMin === null) {
+
+    if (event.pointerType === "touch") {
+      // Long-press to arm: phone users get drag without losing
+      // native scroll for plain taps or swipes.
+      const columnEl = (event.currentTarget as HTMLElement).closest<HTMLElement>("[data-timed-day]")
+      if (!columnEl) {
+        return
+      }
+      blockTouchLongPressCleanupRef.current?.()
+
+      const startX = event.clientX
+      const startY = event.clientY
+      const pointerId = event.pointerId
+      let lastClientX = startX
+      let lastClientY = startY
+      let armed = false
+      let timerId: number | null = null
+
+      const onPreMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId) {
+          return
+        }
+        lastClientX = moveEvent.clientX
+        lastClientY = moveEvent.clientY
+        if (armed) {
+          return
+        }
+        const dx = moveEvent.clientX - startX
+        const dy = moveEvent.clientY - startY
+        if (Math.hypot(dx, dy) > TOUCH_LONG_PRESS_MOVE_TOLERANCE) {
+          teardownPre()
+        }
+      }
+      const onPreUp = (upEvent: PointerEvent) => {
+        if (upEvent.pointerId !== pointerId) {
+          return
+        }
+        // Released before arm — fall through to the click handler so
+        // a quick tap still opens the editor.
+        teardownPre()
+      }
+      const onPreCancel = (cancelEvent: PointerEvent) => {
+        if (cancelEvent.pointerId !== pointerId) {
+          return
+        }
+        teardownPre()
+      }
+
+      function teardownPre() {
+        if (timerId !== null) {
+          window.clearTimeout(timerId)
+          timerId = null
+        }
+        window.removeEventListener("pointermove", onPreMove)
+        window.removeEventListener("pointerup", onPreUp)
+        window.removeEventListener("pointercancel", onPreCancel)
+        blockTouchLongPressCleanupRef.current = null
+      }
+
+      timerId = window.setTimeout(() => {
+        timerId = null
+        armed = true
+        teardownPre()
+        try {
+          if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+            navigator.vibrate(20)
+          }
+        } catch {
+          // vibration is best-effort
+        }
+        // Suppress the trailing click so the editor doesn't open after
+        // the drag commits.
+        blockClickSuppressRef.current = item.id
+        beginBlockDrag(item, dayKey, mode, pointerId, columnEl, lastClientX, lastClientY)
+        // Install touchmove suppressor AFTER beginBlockDrag — it calls
+        // detachBlockDragListeners which would otherwise clear it.
+        // Subsequent pointerup/cancel inside beginBlockDrag detaches
+        // it via the same path.
+        const preventTouchScroll = (touchEvent: TouchEvent) => {
+          if (touchEvent.cancelable) {
+            touchEvent.preventDefault()
+          }
+        }
+        blockTouchMovePreventRef.current = preventTouchScroll
+        window.addEventListener("touchmove", preventTouchScroll, { passive: false })
+      }, TOUCH_LONG_PRESS_MS)
+
+      blockTouchLongPressCleanupRef.current = teardownPre
+      window.addEventListener("pointermove", onPreMove)
+      window.addEventListener("pointerup", onPreUp)
+      window.addEventListener("pointercancel", onPreCancel)
       return
     }
 
@@ -3432,6 +3533,24 @@ export default function JobSchedulePage() {
 
     event.stopPropagation()
     event.preventDefault()
+    beginBlockDrag(item, dayKey, mode, event.pointerId, columnEl, event.clientX, event.clientY)
+  }
+
+  function beginBlockDrag(
+    item: ScheduleItemRecord,
+    dayKey: string,
+    mode: BlockDragMode,
+    pointerId: number,
+    columnEl: HTMLElement,
+    clientX: number,
+    clientY: number,
+  ) {
+    const startMin = timeStringToGridMinutes(item.startTime)
+    const endMin = timeStringToGridMinutes(item.endTime)
+    if (startMin === null || endMin === null) {
+      return
+    }
+
     dismissUndoBlockDragToast()
 
     const columns: BlockDragColumn[] = []
@@ -3465,12 +3584,12 @@ export default function JobSchedulePage() {
     }
 
     const myColumn = columns.find((col) => col.dayKey === dayKey) ?? columns[0]
-    const pointerRaw = rawMinutesFromClientY(event.clientY, myColumn.top, myColumn.height)
+    const pointerRaw = rawMinutesFromClientY(clientY, myColumn.top, myColumn.height)
     const anchorOffset = pointerRaw - startMin
 
     const next: BlockDrag = {
       itemId: item.id,
-      pointerId: event.pointerId,
+      pointerId,
       mode,
       durationMinutes: endMin - startMin,
       anchorOffsetMinutes: anchorOffset,

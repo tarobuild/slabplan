@@ -2,7 +2,7 @@
   "cookies": [
     {
       "name": "cadstone_refresh_token",
-      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoicmVmcmVzaCIsImVtYWlsIjoiY2VzYXJAY2Fkc3RvbmUud29ya3MiLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NzYzNjI3NTUsImV4cCI6MTc3ODk1NDc1NSwic3ViIjoiY2RjMWE1NjUtYzU3Yi00MmRhLTkzYjUtYmJiYzExYzgzY2EzIn0.f36eA1M3qVHIT2GAGprF-n5inePN0x4ijKzU7yrSqp8",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoicmVmcmVzaCIsImVtYWlsIjoiY2VzYXJAY2Fkc3RvbmUud29ya3MiLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3Nzc1NjczNTIsImV4cCI6MTc4MDE1OTM1Miwic3ViIjoiY2RjMWE1NjUtYzU3Yi00MmRhLTkzYjUtYmJiYzExYzgzY2EzIn0.CLvErfroH-elzNCxH1XPqXS-B3k8563XuLWzfYHT0Bc",
       "domain": "localhost",
       "path": "/api/auth",
       "expires": -1,
@@ -12,7 +12,7 @@
     },
     {
       "name": "cadstone_upload_token",
-      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoidXBsb2FkIiwiZW1haWwiOiJjZXNhckBjYWRzdG9uZS53b3JrcyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NjM2Mjc1NSwiZXhwIjoxNzc2NDQ5MTU1LCJzdWIiOiJjZGMxYTU2NS1jNTdiLTQyZGEtOTNiNS1iYmJjMTFjODNjYTMifQ.QFZzD6uhzEwTx35eqj6RmNXwymxrDcE4eRpGqPUqs6U",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoidXBsb2FkIiwiZW1haWwiOiJjZXNhckBjYWRzdG9uZS53b3JrcyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NzU2NzM1MiwiZXhwIjoxNzc3NjUzNzUyLCJzdWIiOiJjZGMxYTU2NS1jNTdiLTQyZGEtOTNiNS1iYmJjMTFjODNjYTMifQ.v6YPU9COBOiMp67kWGtltbNruyfdBdpU9y5f0ASKyVY",
       "domain": "localhost",
       "path": "/uploads",
       "expires": -1,

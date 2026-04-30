@@ -80,6 +80,8 @@ Seed credentials: `cruz.martinez@cadstone.internal` / `Cadstone123!` (also maria
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages
+- `pnpm run check-api-codegen` — re-run `@workspace/api-spec` codegen and fail if the generated React Query (`lib/api-client-react/src/generated/`) or Zod (`lib/api-zod/src/generated/`) clients drift from `lib/api-spec/openapi.yaml`
+- `pnpm run validate` — `typecheck` + `check-api-codegen` (CI-style check; both are also registered as named validation commands)
 - `pnpm run build` — typecheck + build all packages
 - `pnpm test` — run the checked-in automated test suite
 - `pnpm --filter @workspace/db run migrate` — apply checked-in SQL migrations

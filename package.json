@@ -8,7 +8,9 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "test": "pnpm -r --if-present run test",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "check-api-codegen": "pnpm --filter @workspace/scripts run check-api-codegen",
+    "validate": "pnpm run typecheck && pnpm run check-api-codegen"
   },
   "private": true,
   "devDependencies": {

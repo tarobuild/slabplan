@@ -1,3 +1,4 @@
+import "./boot-diagnostic";
 import { createServer, type Server } from "node:http";
 import { pool } from "@workspace/db";
 import app, { prepareApp } from "./app";
@@ -39,11 +40,13 @@ async function bootstrap() {
   const scheduleAutoCompleteSweeper = startScheduleAutoCompleteSweeper();
 
   server.on("error", (err) => {
+    console.error("[boot:fatal] server.error", err);
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   });
 
   server.listen(port, host, () => {
+    console.error("[boot] LISTENING", { host, port });
     logger.info({ host, port }, "Server listening");
   });
 

@@ -1,0 +1,23 @@
+  
+  Concrete next steps (no code changes yet):                                                                        
+                                                                  
+  - In Replit Deployments → Logs tab, look for stream selector / filter. There are usually separate streams for     
+  "Build", "Deploy", and "Application/Runtime". You're likely on Build/Deploy. Switch to the Runtime/Application
+  stream — that's where pino output lands.                                                                          
+  - Check Deployments → Resources or the Reserved VM machine tab for a "Console" / "Connect" / "Open shell" button.
+  Reserved VMs often allow shell-in. If you can run curl http://localhost:8080/api/healthz from inside the VM,      
+  you'll know whether the app is alive but on the wrong port, or genuinely dead.
+  - Confirm the running command and PORT injected. Same Resources/Manage panel often shows the exec'd command and   
+  env vars at runtime.                                                                                              
+   
+  If those three checks don't yield an answer, the cheapest diagnostic edit is one line at the top of               
+  artifacts/api-server/src/index.ts:                              
+                                                                                                                    
+  console.log("[boot]", { cwd: process.cwd(), port: process.env.PORT, host: process.env.HOST, argv: process.argv });
+                                                                                                                    
+  Redeploy. If that line doesn't appear in any log, the process literally isn't running. If it does, we'll see the  
+  real PORT value and can fix the mismatch.                                                                         
+                                                                                                                    
+  Want me to make that diagnostic edit (one line, easy to revert), or do you want to chase the runtime-log-stream / 
+  SSH route first?
+                                                  

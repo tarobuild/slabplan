@@ -1,0 +1,187 @@
+2026-05-01T03:47:49Z info: Deployment: 2c6633f3-c289-4343-b3e1-fe8eda621ada
+2026-05-01T03:47:49Z info: Build: bc9f3cfe-2518-465b-af09-3d8bdbc1ad22
+2026-05-01T03:47:51Z info: Running Security Scan
+2026-05-01T03:48:11Z info: Security Scan Complete
+2026-05-01T03:48:23Z info: Installing packages
+--> pnpm install
+
+--> pnpm install
+
+Scope: all 11 workspace projects
+
+Scope: all 11 workspace projects
+
+
+   ╭──────────────────────────────────────────╮
+   │                                          │
+   │   Update available! 10.33.0 → 10.33.2.   │
+   │   Changelog: https://pnpm.io/v/10.33.2   │
+   │     To update, run: pnpm add -g pnpm     │
+   │                                          │
+   ╰──────────────────────────────────────────╯
+
+
+
+   ╭──────────────────────────────────────────╮
+   │                                          │
+   │   Update available! 10.33.0 → 10.33.2.   │
+   │   Changelog: https://pnpm.io/v/10.33.2   │
+   │     To update, run: pnpm add -g pnpm     │
+   │                                          │
+   ╰──────────────────────────────────────────╯
+
+
+Lockfile is up to date, resolution step is skipped
+
+Lockfile is up to date, resolution step is skipped
+
+Already up to date
+
+Already up to date
+
+. preinstall$ sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_user_agent" in pnpm/*) ;; *) echo "Use pnpm instead" >&2; exit 1 ;; esac'
+
+. preinstall$ sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_user_agent" in pnpm/*) ;; *) echo "Use pnpm instead" >&2; exit 1 ;; esac'
+
+. preinstall: Done
+
+. preinstall: Done
+
+Done in 8.3s using pnpm v10.33.0
+
+Done in 8.3s using pnpm v10.33.0
+
+2026-05-01T03:48:32Z info: Starting Build
+
+> @workspace/api-server@0.0.0 build /home/runner/workspace/artifacts/api-server
+> pnpm --filter @workspace/cadstone run build && node ./build.mjs
+
+
+
+> @workspace/cadstone@0.0.0 build /home/runner/workspace/artifacts/cadstone
+> vite build --config vite.config.ts
+
+
+vite v7.3.2 building client environment for production...
+
+transforming...
+
+✓ 2470 modules transformed.
+
+rendering chunks...
+
+computing gzip size...
+
+dist/public/index.html                    3.98 kB │ gzip:   0.97 kB
+dist/public/assets/qwK7q_zL.mjs       1,046.21 kB
+
+✓ built in 10.44s
+
+
+  dist/index.mjs                       4.7mb ⚠️
+  dist/pino-worker.mjs               153.4kb
+  dist/pino-file.mjs                 142.1kb
+  dist/pino-pretty.mjs               114.6kb
+  dist/thread-stream-worker.mjs        7.3kb
+  dist/index.mjs.map                   8.8mb
+  dist/pino-worker.mjs.map           256.9kb
+  dist/pino-file.mjs.map             229.0kb
+  dist/pino-pretty.mjs.map           203.9kb
+  dist/thread-stream-worker.mjs.map   12.0kb
+
+⚡ Done in 997ms
+
+✓ Copied cadstone frontend → dist/public
+
+
+> @workspace/api-server@0.0.0 build:prod /home/runner/workspace/artifacts/api-server
+> pnpm --filter @workspace/cadstone run build && node ./build.mjs
+
+
+
+> @workspace/cadstone@0.0.0 build /home/runner/workspace/artifacts/cadstone
+> vite build --config vite.config.ts
+
+
+vite v7.3.2 building client environment for production...
+
+transforming...
+
+✓ 2470 modules transformed.
+
+rendering chunks...
+
+computing gzip size...
+
+dist/public/assets/CBjRDurV.js            4.46 kB │ gzip:   1.92 kB
+dist/public/assets/BOdiREjT.js            5.10 kB │ gzip:   2.28 kB
+dist/public/assets/BGPRjnj4.js            5.59 kB │ gzip:   2.23 kB
+dist/public/assets/BmLRrqXH.js            5.66 kB │ gzip:   1.39 kB
+dist/public/assets/CDQQVD1D.js            5.69 kB │ gzip:   1.27 kB
+dist/public/assets/BY52BgHM.js            6.01 kB │ gzip:   2.45 kB
+dist/public/assets/B2WnmEVw.js            6.41 kB │ gzip:   3.25 kB
+dist/public/assets/ru0osqke.js            7.50 kB │ gzip:   3.30 kB
+
+dist/public/assets/XVknYYUA.js           17.94 kB │ gzip:   5.04 kB
+dist/public/assets/byINKDyE.js           18.10 kB │ gzip:   5.80 kB
+dist/public/assets/Blww4n_s.js           19.89 kB │ gzip:   7.37 kB
+dist/public/assets/n3Pgozwg.js           21.62 kB │ gzip:   7.62 kB
+dist/public/assets/CGSZni47.js           22.75 kB │ gzip:   7.79 kB
+dist/public/assets/OpeaODd9.js           24.10 kB │ gzip:   9.02 kB
+dist/public/assets/BM5DIJRd.js           24.27 kB │ gzip:   5.95 kB
+dist/public/assets/CPcsbTWB.js           26.28 kB │ gzip:   8.20 kB
+dist/public/assets/BrYwSnn4.js           29.64 kB │ gzip:   7.86 kB
+dist/public/assets/DPTYtM4V.js           30.97 kB │ gzip:   9.20 kB
+dist/public/assets/CXDdw_J3.js           33.41 kB │ gzip:   9.48 kB
+dist/public/assets/DKiXY4h5.js           34.97 kB │ gzip:   8.86 kB
+dist/public/assets/CaZdm87W.js           38.50 kB │ gzip:  15.33 kB
+dist/public/assets/BCkyQYY7.js           43.76 kB │ gzip:  11.34 kB
+dist/public/assets/DC0D_kqf.js           46.73 kB │ gzip:  18.84 kB
+dist/public/assets/D5iT3pgJ.js           54.07 kB │ gzip:  12.32 kB
+dist/public/assets/CQlAFxAS.js           64.05 kB │ gzip:  16.63 kB
+dist/public/assets/CNgQbw40.js           82.06 kB │ gzip:  23.84 kB
+dist/public/assets/DX5AluRj.js          113.16 kB │ gzip:  32.96 kB
+dist/public/assets/index-D0ztmner.js    115.26 kB │ gzip:  31.86 kB
+dist/public/assets/BupUm_xE.js          117.33 kB │ gzip:  12.72 kB
+
+dist/public/assets/Cm1IIct2.js          174.69 kB │ gzip:  43.68 kB
+dist/public/assets/DXEQVQnt.js          201.04 kB │ gzip:  47.07 kB
+dist/public/assets/CSlps8yj.js          214.17 kB │ gzip:  70.08 kB
+dist/public/assets/BK1x-yxZ.js          339.11 kB │ gzip: 109.45 kB
+dist/public/assets/CD92Pjf_.js          400.28 kB │ gzip: 116.73 kB
+
+✓ built in 7.22s
+
+
+  dist/index.mjs                       4.7mb ⚠️
+  dist/pino-worker.mjs               153.4kb
+  dist/pino-file.mjs                 142.1kb
+  dist/pino-pretty.mjs               114.6kb
+  dist/thread-stream-worker.mjs        7.3kb
+  dist/index.mjs.map                   8.8mb
+  dist/pino-worker.mjs.map           256.9kb
+  dist/pino-file.mjs.map             229.0kb
+  dist/pino-pretty.mjs.map           203.9kb
+  dist/thread-stream-worker.mjs.map   12.0kb
+
+⚡ Done in 345ms
+
+✓ Copied cadstone frontend → dist/public
+
+Removed all cached metadata files
+
+Removed 45999 files
+
+Removed 912 packages
+
+2026-05-01T03:49:04Z info: Pushing pid1 binary layer...
+2026-05-01T03:49:06Z info: Created pid1 binary layer
+2026-05-01T03:49:07Z info: Pushing Repl layer...
+2026-05-01T03:49:07Z info: Pushing hosting layer...
+2026-05-01T03:49:07Z info: Retrieved cached nix layer
+2026-05-01T03:49:07Z info: Created hosting layer
+2026-05-01T03:50:21Z info: Created Repl layer
+2026-05-01T03:50:24Z info: Pushed image manifest
+2026-05-01T03:50:26Z info: Pushed soci index manifest
+2026-05-01T03:50:31Z info: Creating virtual machine
+2026-05-01T03:50:44Z info: Virtual machine created

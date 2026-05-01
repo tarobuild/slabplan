@@ -583,11 +583,18 @@ test("GET /jobs/:jobId/schedule/baseline does NOT issue any UPDATE/INSERT/DELETE
   // sees zero writes AND that schedule_settings / schedule_phases
   // remain empty for this job after the GET.
 
-  // A is the predecessor; B is FS-after-A. Persisted endDates are stale
-  // so cascade would want to push them forward, producing UPDATEs if the
-  // GET still called synchronizeJobSchedule. workDays=5 from
-  // Mon 2025-05-05 cascades to A.endDate=Fri 2025-05-09; B (FS-after-A)
-  // starts Mon 2025-05-12 and runs workDays=3 to Wed 2025-05-14.
+  // A is the predecessor; B is FS-after-A. Both have stale persisted
+  // dates that the cascade engine would want to fix on a write path,
+  // producing UPDATEs if the GET still called synchronizeJobSchedule.
+  //   A: workDays=5 from Mon 2025-05-05 cascades to endDate=Fri 2025-05-09
+  //      (persisted endDate=2025-05-15 is stale).
+  //   B: persisted Mon 2025-05-06 -> Wed 2025-05-08 is BEFORE A finishes,
+  //      so the FS-after-A cascade pushes B's start to the next workday
+  //      after A's cascaded end (Mon 2025-05-12) and recomputes
+  //      endDate to Wed 2025-05-14 from workDays=3.
+  // (Note: resolvePredecessorStartDate only ever pushes a successor
+  // forward, never pulls it back. B's persisted start must therefore
+  // be EARLIER than A's cascaded end for the cascade to take effect.)
   const itemAId = crypto.randomUUID();
   const itemBId = crypto.randomUUID();
   await db.insert(scheduleItems).values([
@@ -604,9 +611,9 @@ test("GET /jobs/:jobId/schedule/baseline does NOT issue any UPDATE/INSERT/DELETE
       id: itemBId,
       jobId: baselineReadOnlyJobId,
       title: "ZZZ baseline B downstream",
-      startDate: "2025-05-20",
+      startDate: "2025-05-06",
       workDays: 3,
-      endDate: "2025-05-22",
+      endDate: "2025-05-08",
       createdBy: adminUserId,
     },
   ]);
@@ -637,8 +644,8 @@ test("GET /jobs/:jobId/schedule/baseline does NOT issue any UPDATE/INSERT/DELETE
       {
         scheduleItemId: itemBId,
         title: "ZZZ baseline B downstream",
-        baselineStartDate: "2025-05-20",
-        baselineEndDate: "2025-05-22",
+        baselineStartDate: "2025-05-06",
+        baselineEndDate: "2025-05-08",
       },
     ],
   });
@@ -705,8 +712,8 @@ test("GET /jobs/:jobId/schedule/baseline does NOT issue any UPDATE/INSERT/DELETE
 
   assert.equal(aPersisted!.startDate, "2025-05-05", "A.startDate must NOT have been rewritten");
   assert.equal(aPersisted!.endDate, "2025-05-15", "A.endDate must NOT have been rewritten");
-  assert.equal(bPersisted!.startDate, "2025-05-20", "B.startDate must NOT have been rewritten");
-  assert.equal(bPersisted!.endDate, "2025-05-22", "B.endDate must NOT have been rewritten");
+  assert.equal(bPersisted!.startDate, "2025-05-06", "B.startDate must NOT have been rewritten");
+  assert.equal(bPersisted!.endDate, "2025-05-08", "B.endDate must NOT have been rewritten");
 
   // Lazy-init must not have fired: schedule_settings and schedule_phases
   // for this job are still empty after the GET. This is the assertion

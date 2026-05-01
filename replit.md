@@ -163,6 +163,34 @@ script's source — the agent must not learn them.
   unhandled error) plus an UptimeRobot HTTPS monitor against the smoke check.
   Setup steps in §2 of the runbook.
 
+### Production database — two URLs, only one is real
+
+The deployment has TWO Postgres connections available at runtime:
+
+- `SUPABASE_DATABASE_URL` (Supabase `aws-1-us-west-2.pooler.supabase.com`) —
+  the **real production database**. All real activity (jobs, daily logs,
+  schedule items, activity log) lives here. Drizzle schema pushes target this
+  DB.
+- `DATABASE_URL` (Replit-managed Helium PG, `helium/heliumdb`) — a stale
+  legacy DB carried over from before the Supabase migration. Has the user rows
+  but only stub data in secondary tables.
+
+`lib/db/src/index.ts` selects `SUPABASE_DATABASE_URL || DATABASE_URL`, so
+Supabase wins **as long as the secret is propagated to the deployment
+runtime**. If a deploy ever falls back to Helium silently, login crashes
+because Helium's schema is older. To detect this fast, the connection module
+logs `[db] connecting via <SOURCE> host=<host> db=<db>` at startup — check
+deployment logs after every publish.
+
+**2026-05-01 incident:** Login returned "internal service error" after a
+republish because the auth query referenced `is_active` and the deploy was
+hitting Helium, whose `users` table was missing four columns added during
+the Codex security audit. Fix applied: `ALTER TABLE users ADD COLUMN IF NOT
+EXISTS … (is_active, invite_token_hash, invite_token_expires_at,
+password_set_at)` against Helium, plus admin password reset in Helium to
+match the Supabase value. Long-term fix: consolidate to a single DB
+(deferred — see follow-up task).
+
 ## Security Operations
 
 ### Playwright auth-state files must never be committed

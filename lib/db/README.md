@@ -13,7 +13,13 @@ every artifact in the monorepo.
   in lexicographic order by the runner. Each is recorded by filename and
   sha256 in the `workspace_schema_migrations` table so it never re-runs
   with a different body.
-- `src/migrate.ts` / `src/migrate-cli.ts` — the migration runner.
+- `src/migrate.ts` / `src/migrate-cli.ts` — the migration runner. On the
+  first run against a database that was previously bootstrapped via
+  `drizzle-kit push` (the `users` table already exists but
+  `workspace_schema_migrations` doesn't), the runner records the
+  non-idempotent baseline `0000_far_doctor_strange.sql` as already
+  applied. Every later migration is written to be idempotent so it can
+  run safely on top of that baseline.
 - `migrations/meta/` — Drizzle-kit's snapshot/journal. **Not** consulted
   by the runner, but kept in sync (one snapshot + one journal entry per
   migration file) so future `drizzle-kit generate` calls diff against an

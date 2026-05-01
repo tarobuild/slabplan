@@ -4,6 +4,12 @@ import { applyMigrations } from "./migrate";
 async function main() {
   const result = await applyMigrations();
 
+  if (result.baselined.length > 0) {
+    console.log(
+      `Recorded baseline migrations as already applied: ${result.baselined.join(", ")}`,
+    );
+  }
+
   if (result.applied.length > 0) {
     console.log(`Applied migrations: ${result.applied.join(", ")}`);
     return;

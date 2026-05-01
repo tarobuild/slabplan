@@ -12,7 +12,6 @@ paths = ["/"]
 [services.env]
 PORT = "8080"
 NODE_ENV = "production"
-SUPABASE_DATABASE_URL = ""
 
 [services.development]
 run = "pnpm --filter @workspace/api-server run dev"

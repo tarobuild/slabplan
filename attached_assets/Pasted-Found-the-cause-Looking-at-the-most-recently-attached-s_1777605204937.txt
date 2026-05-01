@@ -1,0 +1,52 @@
+Found the cause. Looking at the most recently attached screenshots:                          
+                                                                                               
+  Screenshot 1 (Screenshot_2026-04-30_at_7.48.22_PM) — Production app secrets                  
+  The deployment-scoped secrets list visible on the Overview/Manage page shows only:           
+  - SESSION_SECRET                                                                             
+  - DATABASE_URL                                                                               
+  - PGDATABASE                                                                                 
+  - PGHOST (cut off)                                                                           
+                                                                                               
+  SUPABASE_DATABASE_URL is NOT in the deployment's Production app secrets. Workspace secrets do
+   not auto-inherit into Reserved VM / Autoscale deployments — they have to be explicitly added
+   (or "imported" from workspace) in Deployments → Manage → Production app secrets.
+                                                                                               
+  That's exactly the same crash you already pulled from the deployment-logs API:               
+  Error: SUPABASE_DATABASE_URL is required in production but is not set.
+    at lib/db/src/index.ts:18                                                                  
+  exit status 1                                                   
+  not all artifact ports opened within timeout expected=[8080] detected=0                      
+                                                                         
+  Screenshot 2 (Screenshot_2026-04-30_at_7.51.12_PM) — Manage tab                              
+  The deployment is still showing "Autoscale machine configuration" with an unaccepted "Approve
+   and update" button. So even though .replit:11 is now gce in HEAD c07b065, the running       
+  deployment hasn't accepted the type flip yet — it's still running on autoscale settings until
+   you click Approve and update.                                                               
+                                                                  
+  Screenshot 3 (Screenshot_2026-04-30_at_7.55.36_PM) — Adjust settings                         
+  This is the new Reserved VM proposal (0.5 vCPU / 2 GiB / $20). Confirms the user is mid-flow
+  on the type change but hasn't applied it.                                                    
+                                                                  
+  Repo-side state (clean, ready to deploy):                                                    
+  - HEAD c07b065 — .replit:11 flipped to deploymentTarget = "gce" 
+  - 6ad86d7 — lib/db/src/index.ts now gates SUPABASE_DATABASE_URL to production only (your     
+  proposed fix landed verbatim, lines 7-17)                                               
+  - 7c355fd — empty-string artifact.toml override removed                                      
+  - d40c38c — production hard-fail in place                       
+                                                                                               
+  What needs to happen in the Replit Deployments UI (not in code):                             
+                                                                                               
+  1. Add SUPABASE_DATABASE_URL to Production app secrets (Deployments → Overview → Production  
+  app secrets → add new entry, or "Import from workspace"). Value should match the workspace   
+  secret — postgresql://postgres.mfuoenq...@aws-1-us-west-2.pooler.supabase.com:5432/postgres. 
+  This unblocks the boot crash.                                   
+  2. While you're in there, also confirm JWT_ACCESS_SECRET, JWT_REFRESH_SECRET,
+  JWT_UPLOAD_SECRET, PRIVATE_OBJECT_DIR are present — auth.ts and storage.ts will crash        
+  similarly if those are missing in production.
+  3. Click Approve and update on the Reserved VM proposal so the type flip actually takes      
+  effect (otherwise the rate-limit / Socket.IO / agent-inflight correctness bug we discussed   
+  remains live regardless of .replit).
+  4. Republish.                                                                                
+                                                                  
+  The repo is in good shape. The remaining failure is configuration on the Deployments side,   
+  not code.

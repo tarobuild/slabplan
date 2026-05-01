@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Briefcase, Check, ChevronDown, Loader2, Search } from "lucide-react"
+import { Briefcase, Calendar, Check, ChevronDown, Loader2, Search, User } from "lucide-react"
 import {
   getJobsGetJobsQueryKey,
   useJobsGetJobs,
@@ -124,6 +124,208 @@ function StatusPopoverBadge({
     </Popover>
   )
 }
+
+// Inline popover for assigning the project manager from the listing.
+// Only admins reach this UI — when a PM saves a job edit, the API
+// overwrites projectManagerId with their own id, so letting a PM
+// reassign would be a lie.
+function ProjectManagerPopover({
+  projectManagerId,
+  options,
+  onChange,
+}: {
+  projectManagerId: string | null | undefined
+  options: WorkerOption[]
+  onChange: (next: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const current = options.find((option) => option.id === projectManagerId)
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return options
+    return options.filter((option) =>
+      [option.fullName, option.email].join(" ").toLowerCase().includes(q),
+    )
+  }, [options, query])
+  const label = current?.fullName ?? "Unassigned"
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setQuery("")
+        setOpen(next)
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen((current) => !current)
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          aria-label={`Change project manager (currently ${label})`}
+          className="group inline-flex max-w-[160px] items-center gap-1 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+        >
+          <User className="size-3.5 text-slate-400 shrink-0" />
+          <span className={`truncate ${current ? "" : "text-slate-400 italic"}`}>
+            {label}
+          </span>
+          <ChevronDown className="size-3 opacity-60 group-hover:opacity-100 shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-64 p-2"
+        align="start"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search project managers"
+          className="h-8 mb-2"
+          onKeyDown={(e) => e.stopPropagation()}
+        />
+        <div role="menu" className="max-h-56 overflow-y-auto">
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={!projectManagerId}
+            onClick={(e) => {
+              e.stopPropagation()
+              setOpen(false)
+              if (projectManagerId) onChange(null)
+            }}
+            className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none"
+          >
+            <span className="italic text-slate-500">Unassigned</span>
+            {!projectManagerId ? <Check className="size-3.5 text-orange-600" /> : null}
+          </button>
+          {filtered.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={projectManagerId === option.id}
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpen(false)
+                if (projectManagerId !== option.id) onChange(option.id)
+              }}
+              className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none"
+            >
+              <span className="truncate">{option.fullName}</span>
+              {projectManagerId === option.id ? (
+                <Check className="size-3.5 text-orange-600 shrink-0" />
+              ) : null}
+            </button>
+          ))}
+          {filtered.length === 0 ? (
+            <p className="px-2 py-2 text-xs text-slate-400">No matching managers.</p>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+// Inline popover for editing a YYYY-MM-DD date field. Uses a draft so the
+// user can pick or clear without committing until they hit Save / Clear.
+function DatePopover({
+  value,
+  ariaLabel,
+  placeholder = "—",
+  onChange,
+}: {
+  value: string | null | undefined
+  ariaLabel: string
+  placeholder?: string
+  onChange: (next: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(value ?? "")
+  useEffect(() => {
+    if (!open) setDraft(value ?? "")
+  }, [value, open])
+  const display = value
+    ? new Date(`${value}T00:00:00`).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : placeholder
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setDraft(value ?? "")
+        setOpen(next)
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen((current) => !current)
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          aria-label={ariaLabel}
+          className="group inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+        >
+          <Calendar className="size-3.5 text-slate-400 shrink-0" />
+          <span className={value ? "" : "text-slate-400"}>{display}</span>
+          <ChevronDown className="size-3 opacity-60 group-hover:opacity-100 shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-56 p-3"
+        align="start"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Input
+          type="date"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          className="h-8 mb-3"
+          autoFocus
+          onKeyDown={(e) => e.stopPropagation()}
+        />
+        <div className="flex justify-between gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation()
+              setOpen(false)
+              if (value) onChange(null)
+            }}
+          >
+            Clear
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            style={{ backgroundColor: "#E85D04", color: "#fff" }}
+            className="hover:opacity-90 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation()
+              setOpen(false)
+              const next = draft || null
+              if (next !== (value ?? null)) onChange(next)
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 const JOB_TYPES = [
   "Kitchen Countertops",
   "Flooring",
@@ -454,12 +656,12 @@ export default function JobsPage() {
     return false
   }
 
-  // Optimistically updates the visible status for `jobId`, mutating the
-  // tanstack-query cache for every active /jobs query. Returns a snapshot
-  // map so we can roll back on failure.
-  const applyOptimisticStatus = (
+  // Optimistically applies a partial patch to `jobId` across every active
+  // /jobs query in the cache. Returns a snapshot map so we can roll back
+  // on failure. Used by every inline editor on the row.
+  const applyOptimisticPatch = (
     jobId: string,
-    nextStatus: Job["status"],
+    patch: Partial<Job>,
   ): Map<readonly unknown[], unknown> => {
     const snapshots = new Map<readonly unknown[], unknown>()
     const matches = queryClient.getQueriesData<JobsGetJobsQueryResult>({
@@ -471,9 +673,7 @@ export default function JobsPage() {
       const next = {
         ...(value as { jobs: Job[] }),
         jobs: (value as { jobs: Job[] }).jobs.map((existing) =>
-          existing.id === jobId
-            ? { ...existing, status: nextStatus }
-            : existing,
+          existing.id === jobId ? { ...existing, ...patch } : existing,
         ),
       }
       queryClient.setQueryData(key, next)
@@ -481,7 +681,7 @@ export default function JobsPage() {
     return snapshots
   }
 
-  const rollbackOptimisticStatus = (
+  const rollbackOptimisticPatch = (
     snapshots: Map<readonly unknown[], unknown>,
   ) => {
     snapshots.forEach((value, key) => {
@@ -489,22 +689,32 @@ export default function JobsPage() {
     })
   }
 
-  const handleInlineStatusChange = async (
+  // Generic inline-edit helper. The PUT endpoint requires the full job
+  // payload, so we GET the hydrated record, merge the field-specific
+  // override, and PUT it back. Optimistic patch is rolled back on error.
+  const performInlineUpdate = async (
     job: Job,
-    nextStatus: "open" | "closed" | "archived",
+    {
+      patch,
+      payloadOverride,
+      successMessage,
+      errorMessage,
+    }: {
+      patch: Partial<Job>
+      payloadOverride: Record<string, unknown>
+      successMessage: string
+      errorMessage: string
+    },
   ) => {
-    if (job.status === nextStatus) return
-    const snapshots = applyOptimisticStatus(job.id, nextStatus)
+    const snapshots = applyOptimisticPatch(job.id, patch)
     try {
-      // The hydrated GET returns the full record we need to round-trip
-      // through PUT (which expects the complete payload shape).
       const detail = await api.get(`/jobs/${job.id}`)
       const current = detail.data?.job
       if (!current) throw new Error("Job not found")
 
       const payload = {
         title: current.title,
-        status: nextStatus,
+        status: current.status,
         jobType: current.jobType ?? null,
         contractType: current.contractType ?? null,
         streetAddress: current.streetAddress ?? null,
@@ -521,15 +731,74 @@ export default function JobsPage() {
         permitNumber: current.permitNumber ?? null,
         clientId: current.clientId ?? null,
         projectManagerId: current.projectManagerId ?? null,
+        ...payloadOverride,
       }
       await api.put(`/jobs/${job.id}`, payload)
-      toast.success(`Status updated to ${STATUS_LABELS[nextStatus]}`)
+      toast.success(successMessage)
       invalidateJobsList()
       invalidateAppData(["jobs"])
     } catch (err: unknown) {
-      rollbackOptimisticStatus(snapshots)
-      toastApiError(err, "Failed to update status")
+      rollbackOptimisticPatch(snapshots)
+      toastApiError(err, errorMessage)
     }
+  }
+
+  const handleInlineStatusChange = (
+    job: Job,
+    nextStatus: "open" | "closed" | "archived",
+  ) => {
+    if (job.status === nextStatus) return
+    return performInlineUpdate(job, {
+      patch: { status: nextStatus },
+      payloadOverride: { status: nextStatus },
+      successMessage: `Status updated to ${STATUS_LABELS[nextStatus]}`,
+      errorMessage: "Failed to update status",
+    })
+  }
+
+  // Project managers come from the existing workerOptions list filtered
+  // to the project_manager role only — only those can be set as PM.
+  const projectManagerOptions = useMemo(
+    () => workerOptions.filter((option) => option.role === "project_manager"),
+    [workerOptions],
+  )
+
+  // The PUT /jobs/:id handler force-rewrites `projectManagerId` to the
+  // caller's own id whenever a project_manager calls it. As a result a
+  // PM-of-job cannot actually reassign the manager — any selection they
+  // made would be silently overwritten on the server. We therefore gate
+  // the inline PM picker to admins only (status + dates still mirror the
+  // canEditStatus gate so PMs can edit those on jobs they own).
+  const canEditProjectManager = (_job: Job): boolean => isAdmin
+
+  const handleInlineProjectManagerChange = (job: Job, nextId: string | null) => {
+    if ((job.projectManagerId ?? null) === nextId) return
+    const next = projectManagerOptions.find((option) => option.id === nextId)
+    return performInlineUpdate(job, {
+      patch: { projectManagerId: nextId },
+      payloadOverride: { projectManagerId: nextId },
+      successMessage: nextId
+        ? `Assigned to ${next?.fullName ?? "project manager"}`
+        : "Project manager cleared",
+      errorMessage: "Failed to update project manager",
+    })
+  }
+
+  const handleInlineDateChange = (
+    job: Job,
+    field: "projectedStart" | "projectedCompletion",
+    next: string | null,
+  ) => {
+    const currentValue = (job[field] as string | null | undefined) ?? null
+    if (currentValue === next) return
+    const fieldLabel =
+      field === "projectedStart" ? "Start date" : "Estimated completion"
+    return performInlineUpdate(job, {
+      patch: { [field]: next } as Partial<Job>,
+      payloadOverride: { [field]: next },
+      successMessage: next ? `${fieldLabel} updated` : `${fieldLabel} cleared`,
+      errorMessage: `Failed to update ${fieldLabel.toLowerCase()}`,
+    })
   }
 
   return (
@@ -570,7 +839,10 @@ export default function JobsPage() {
               <TableHead className="font-semibold text-slate-600">Client</TableHead>
               <TableHead className="font-semibold text-slate-600">Location</TableHead>
               <TableHead className="font-semibold text-slate-600">Type</TableHead>
+              <TableHead className="font-semibold text-slate-600">Project Manager</TableHead>
               <TableHead className="font-semibold text-slate-600">Status</TableHead>
+              <TableHead className="font-semibold text-slate-600">Start</TableHead>
+              <TableHead className="font-semibold text-slate-600">End</TableHead>
               <TableHead className="font-semibold text-slate-600 text-right">Contract Price</TableHead>
               <TableHead className="font-semibold text-slate-600">Created</TableHead>
             </TableRow>
@@ -579,14 +851,14 @@ export default function JobsPage() {
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 7 }).map((_, j) => (
+                  {Array.from({ length: 10 }).map((_, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : jobs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="p-0">
+                <TableCell colSpan={10} className="p-0">
                   {hasActiveFilters ? (
                     <EmptyState
                       icon={Search}
@@ -641,6 +913,25 @@ export default function JobsPage() {
                     {job.jobType || "—"}
                   </TableCell>
                   <TableCell>
+                    {canEditProjectManager(job) ? (
+                      <ProjectManagerPopover
+                        projectManagerId={job.projectManagerId ?? null}
+                        options={projectManagerOptions}
+                        onChange={(next) => {
+                          void handleInlineProjectManagerChange(job, next)
+                        }}
+                      />
+                    ) : (
+                      <span className="text-sm text-slate-600">
+                        {projectManagerOptions.find(
+                          (option) => option.id === job.projectManagerId,
+                        )?.fullName ?? (
+                          <span className="italic text-slate-400">Unassigned</span>
+                        )}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
                     {canEditStatus(job) ? (
                       <StatusPopoverBadge
                         status={job.status}
@@ -652,6 +943,44 @@ export default function JobsPage() {
                       <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[job.status]}`}>
                         {STATUS_LABELS[job.status]}
                       </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {canEditStatus(job) ? (
+                      <DatePopover
+                        value={job.projectedStart ?? null}
+                        ariaLabel={`Change start date for ${job.title}`}
+                        onChange={(next) => {
+                          void handleInlineDateChange(job, "projectedStart", next)
+                        }}
+                      />
+                    ) : (
+                      <span className="text-sm text-slate-600">
+                        {job.projectedStart
+                          ? fmtDate(job.projectedStart)
+                          : "—"}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {canEditStatus(job) ? (
+                      <DatePopover
+                        value={job.projectedCompletion ?? null}
+                        ariaLabel={`Change estimated completion for ${job.title}`}
+                        onChange={(next) => {
+                          void handleInlineDateChange(
+                            job,
+                            "projectedCompletion",
+                            next,
+                          )
+                        }}
+                      />
+                    ) : (
+                      <span className="text-sm text-slate-600">
+                        {job.projectedCompletion
+                          ? fmtDate(job.projectedCompletion)
+                          : "—"}
+                      </span>
                     )}
                   </TableCell>
                   <TableCell className="text-right text-sm text-slate-700">
@@ -730,6 +1059,55 @@ export default function JobsPage() {
                     </Badge>
                   )}
                   {job.jobType && <span className="text-xs capitalize text-slate-500">{job.jobType}</span>}
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  {canEditProjectManager(job) ? (
+                    <ProjectManagerPopover
+                      projectManagerId={job.projectManagerId ?? null}
+                      options={projectManagerOptions}
+                      onChange={(next) => {
+                        void handleInlineProjectManagerChange(job, next)
+                      }}
+                    />
+                  ) : job.projectManagerId ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                      <User className="size-3" />
+                      {projectManagerOptions.find(
+                        (option) => option.id === job.projectManagerId,
+                      )?.fullName ?? "Project manager"}
+                    </span>
+                  ) : null}
+                  {canEditStatus(job) ? (
+                    <>
+                      <DatePopover
+                        value={job.projectedStart ?? null}
+                        ariaLabel={`Change start date for ${job.title}`}
+                        placeholder="Start"
+                        onChange={(next) => {
+                          void handleInlineDateChange(job, "projectedStart", next)
+                        }}
+                      />
+                      <DatePopover
+                        value={job.projectedCompletion ?? null}
+                        ariaLabel={`Change estimated completion for ${job.title}`}
+                        placeholder="End"
+                        onChange={(next) => {
+                          void handleInlineDateChange(
+                            job,
+                            "projectedCompletion",
+                            next,
+                          )
+                        }}
+                      />
+                    </>
+                  ) : (job.projectedStart || job.projectedCompletion) ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                      <Calendar className="size-3" />
+                      {job.projectedStart ? fmtDate(job.projectedStart) : "—"}
+                      {" → "}
+                      {job.projectedCompletion ? fmtDate(job.projectedCompletion) : "—"}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
                   {job.clientName && <p>{job.clientName}</p>}

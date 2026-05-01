@@ -1689,7 +1689,7 @@ type BaselineSnapshotEntry = {
 async function filterBaselineSnapshotForAuth(
   auth: AuthContext,
   jobId: string,
-  entries: BaselineSnapshotEntry[],
+  entries: Array<{ scheduleItemId: string }>,
 ) {
   if (entries.length === 0 || isAdmin(auth)) {
     return entries;
@@ -2538,13 +2538,9 @@ router.get(
       }),
     );
     const snapshot = Array.isArray(baseline.itemsSnapshot)
-      ? await filterBaselineSnapshotForAuth(
-          req.auth!,
-          jobId,
-          baseline.itemsSnapshot as BaselineSnapshotEntry[],
-        )
+      ? (baseline.itemsSnapshot as BaselineSnapshotEntry[])
       : [];
-    const items = snapshot.map((entry) => {
+    const allItems = snapshot.map((entry) => {
       const current = currentItemMap.get(entry.scheduleItemId);
       const shiftDays = current
         ? diffInDays(parseIsoDate(entry.baselineEndDate), parseIsoDate(current.endDate))
@@ -2560,6 +2556,7 @@ router.get(
         shiftDays,
       };
     });
+    const items = await filterBaselineSnapshotForAuth(req.auth!, jobId, allItems);
 
     res.json({
       baseline: {

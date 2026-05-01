@@ -751,15 +751,11 @@ async function getScheduleItemAccessOrThrow(auth: AuthContext, itemId: string) {
 }
 
 function canViewScheduleItem(auth: AuthContext, item: ScheduleItemAccessRecord) {
-  if (isAdmin(auth)) {
-    return true;
-  }
-
   if (item.isPersonalTodo === true && item.createdBy !== auth.userId) {
     return false;
   }
 
-  if (item.createdBy === auth.userId || item.isAssignedToCurrentUser) {
+  if (isAdmin(auth) || item.createdBy === auth.userId || item.isAssignedToCurrentUser) {
     return true;
   }
 

@@ -354,6 +354,7 @@ before(async () => {
         title: `ZZZ Pagination Daily Log ${i}`,
         notes: `Notes ${i}`,
         createdBy: crewUserId,
+        publishedAt: new Date(baseTime + i * 1000),
       };
     }),
   );

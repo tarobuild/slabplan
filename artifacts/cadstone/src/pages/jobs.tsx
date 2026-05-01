@@ -407,9 +407,26 @@ export default function JobsPage() {
               </TableRow>
             ) : (
               jobs.map(job => (
-                <TableRow key={job.id} className="hover:bg-slate-50">
+                <TableRow
+                  key={job.id}
+                  className="cursor-pointer hover:bg-slate-50"
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault()
+                      navigate(`/jobs/${job.id}`)
+                    }
+                  }}
+                  tabIndex={0}
+                  role="link"
+                  aria-label={`Open job ${job.title}`}
+                >
                   <TableCell>
-                    <Link to={`/jobs/${job.id}`} className="font-medium text-orange-600 hover:underline">
+                    <Link
+                      to={`/jobs/${job.id}`}
+                      className="font-medium text-orange-600 hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {job.title}
                     </Link>
                   </TableCell>
@@ -458,9 +475,26 @@ export default function JobsPage() {
           </div>
         ) : (
           jobs.map(job => (
-            <div key={job.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
+            <div
+              key={job.id}
+              role="link"
+              tabIndex={0}
+              aria-label={`Open job ${job.title}`}
+              onClick={() => navigate(`/jobs/${job.id}`)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  navigate(`/jobs/${job.id}`)
+                }
+              }}
+              className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-white p-4 hover:bg-slate-50"
+            >
               <div className="min-w-0 flex-1">
-                <Link to={`/jobs/${job.id}`} className="block truncate text-sm font-medium text-orange-600 hover:underline">
+                <Link
+                  to={`/jobs/${job.id}`}
+                  className="block truncate text-sm font-medium text-orange-600 hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {job.title}
                 </Link>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, inArray, isNull, lte, lt, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lte, lt, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
@@ -247,7 +247,7 @@ router.get(
 
     const scheduleVisibilityFilter = buildScheduleListVisibilityFilter(req.auth!);
 
-    const items = await db
+    const scheduleItemRows = await db
       .select({
         id: scheduleItems.id,
         title: scheduleItems.title,
@@ -280,6 +280,83 @@ router.get(
       )
       .orderBy(scheduleItems.startDate)
       .limit(500);
+
+    // Also include jobs themselves as calendar items so a freshly created job
+    // with projected/actual dates shows up immediately on the home calendar
+    // (before any schedule items have been added to it). A job uses
+    // actualStart/actualCompletion if both are set, otherwise it falls back to
+    // projectedStart/projectedCompletion. A single date (start only, no end)
+    // is rendered as a one-day pin on its start date.
+    const jobRows = await db
+      .select({
+        id: jobs.id,
+        title: jobs.title,
+        status: jobs.status,
+        projectedStart: jobs.projectedStart,
+        projectedCompletion: jobs.projectedCompletion,
+        actualStart: jobs.actualStart,
+        actualCompletion: jobs.actualCompletion,
+        city: jobs.city,
+        state: jobs.state,
+      })
+      .from(jobs)
+      .where(
+        and(
+          isNull(jobs.deletedAt),
+          accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+          // The job has at least one date that lets it appear on the calendar.
+          or(
+            sql`${jobs.actualStart} is not null`,
+            sql`${jobs.projectedStart} is not null`,
+          ),
+          // SQL-level date-range overlap. effectiveStart = coalesce(actual_start, projected_start).
+          // effectiveEnd = coalesce(actual_completion when actual_start is set,
+          //                         projected_completion otherwise, effectiveStart).
+          sql`coalesce(${jobs.actualStart}, ${jobs.projectedStart}) <= ${endParam}`,
+          sql`coalesce(
+            case when ${jobs.actualStart} is not null then ${jobs.actualCompletion}
+                 else ${jobs.projectedCompletion}
+            end,
+            ${jobs.actualStart},
+            ${jobs.projectedStart}
+          ) >= ${startParam}`,
+        ),
+      )
+      .limit(500);
+
+    const jobItems = jobRows
+      .map((job) => {
+        const start = job.actualStart ?? job.projectedStart;
+        if (!start) return null;
+        const end =
+          (job.actualStart ? job.actualCompletion : job.projectedCompletion) ??
+          start;
+        // Range-overlap filter applied in JS because two distinct date pairs
+        // (projected vs actual) collapse into one effective pair per job above.
+        if (start > endParam) return null;
+        if (end < startParam) return null;
+        return {
+          id: `job:${job.id}`,
+          kind: "job" as const,
+          title: job.title,
+          startDate: start,
+          endDate: end,
+          workDays: null,
+          displayColor: "#475569", // slate-600 — visually distinct from schedule items
+          progress: null,
+          isComplete: job.status === "closed" || job.status === "archived",
+          jobId: job.id,
+          jobTitle: job.title,
+          jobCity: job.city,
+          jobState: job.state,
+        };
+      })
+      .filter((value): value is NonNullable<typeof value> => value !== null);
+
+    const items = [
+      ...scheduleItemRows.map((row) => ({ ...row, kind: "schedule_item" as const })),
+      ...jobItems,
+    ].sort((a, b) => a.startDate.localeCompare(b.startDate));
 
     res.json({ items });
   }),

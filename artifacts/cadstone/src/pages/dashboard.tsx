@@ -40,6 +40,16 @@ type CalItem = {
   isComplete: boolean | null
   jobId: string
   jobTitle: string | null
+  kind?: "schedule_item" | "job"
+}
+
+// Where a calendar bar should navigate when clicked. Job items go to the job
+// overview; schedule items keep their long-standing behavior of jumping to
+// that job's schedule tab.
+function calItemHref(item: CalItem): string {
+  return item.kind === "job"
+    ? `/jobs/${item.jobId}`
+    : `/jobs/${item.jobId}/schedule`
 }
 
 type ActivityEntry = {
@@ -205,7 +215,7 @@ function MonthCalendar({ anchor, items, navigate }: {
                       width: `calc(${((seg.endIndex - seg.startIndex + 1) / 7) * 100}% - 8px)`,
                       top: `${seg.lane * 28}px`,
                     }}
-                    onClick={() => navigate(`/jobs/${seg.item.jobId}/schedule`)}
+                    onClick={() => navigate(calItemHref(seg.item))}
                     title={`${seg.item.title}${seg.item.jobTitle ? ` — ${seg.item.jobTitle}` : ""}`}
                   >
                     <span className="truncate">
@@ -290,7 +300,7 @@ function WeekCalendar({ anchor, items, navigate }: {
                 width: `calc(${((seg.endIndex - seg.startIndex + 1) / 7) * 100}% - 8px)`,
                 top: `${seg.lane * 32}px`,
               }}
-              onClick={() => navigate(`/jobs/${seg.item.jobId}/schedule`)}
+              onClick={() => navigate(calItemHref(seg.item))}
               title={`${seg.item.title}${seg.item.jobTitle ? ` — ${seg.item.jobTitle}` : ""}`}
             >
               <span className="truncate">
@@ -345,7 +355,7 @@ function ListCalendar({ items, navigate }: { items: CalItem[]; navigate: (path: 
               key={item.id}
               type="button"
               className="grid w-full grid-cols-[minmax(0,1fr)_120px_120px_100px] items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
-              onClick={() => navigate(`/jobs/${item.jobId}/schedule`)}
+              onClick={() => navigate(calItemHref(item))}
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />

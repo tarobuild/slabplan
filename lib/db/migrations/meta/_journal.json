@@ -8,6 +8,41 @@
       "when": 1775693694896,
       "tag": "0000_far_doctor_strange",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777514199082,
+      "tag": "0004_files-folder-created-id-index",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777522095057,
+      "tag": "0005_pat-and-idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777532679579,
+      "tag": "0006_agent",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777582292066,
+      "tag": "0007_user_invitations",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777652539753,
+      "tag": "0008_folder_scope_columns",
+      "breakpoints": true
     }
   ]
 }

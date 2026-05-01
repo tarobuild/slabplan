@@ -1,0 +1,56 @@
+Diagnosis (no changes made)                                                                  
+                                                                                               
+  What the log shows. The deployment is running the artifact ("artifact processes running,     
+  waiting for signal..." is the supervisor's normal "child launched" message). Inside the      
+  child, the api-server started up far enough to:                                              
+  1. Construct the pg.Pool — proven by the pg-connection-string SSL deprecation warning, which 
+  only fires after a connection string with sslmode=require/prefer/verify-ca has been parsed   
+  (Supabase URLs use ?sslmode=require). So SUPABASE_DATABASE_URL IS set and the recent fix in
+  7c355fd worked.                                                                              
+  2. Reach startScheduleAutoCompleteSweeper() in artifacts/api-server/src/index.ts:39 — proven 
+  by the truncated "msg":"Schedule auto-comple..." pino line.                                 
+                                                                                               
+  The very next code path is server.listen(8080, "0.0.0.0", () => logger.info(..., "Server 
+  listening")) (index.ts:46). Your pasted log cuts off mid-message, so I can't tell whether    
+  Server listening actually fired. That is the critical missing line — please grab whatever
+  follows that pino entry.                                                                     
+                                                                  
+  The SSL warning is not the problem. It's a deprecation notice from pg-connection-string v2   
+  about v3 changing semantics. Connections still work today.
+                                                                                               
+  Real configuration concerns I'd flag separately.                                             
+   
+  1. .replit deploys to autoscale, but the codebase requires single-instance:                  
+    - .replit:11 → deploymentTarget = "autoscale"                 
+    - replit.md:5 → "optimized for a single Reserved VM deployment"                            
+    - artifacts/api-server/src/lib/rate-limit.ts:17-22 warns explicitly: "If anyone ever       
+  switches the deployment type to autoscale, this must be moved to a shared store"             
+    - In-memory state that breaks under autoscale: rate-limit buckets, agent in-flight cap     
+  (lib/agent/inflight.ts), Socket.IO realtime fan-out                                          
+                                                                  
+  Under autoscale, every cold start spawns a fresh container — health probes hitting one       
+  container while the boot is racing on another can intermittently fail and look "stuck".
+  2. Health-probe config is split between two files:                                           
+    - .replit:[deployment] (build/run lines) doesn't declare a startup probe.                  
+    - artifacts/api-server/.replit-artifact/artifact.toml:23-24 declares path = "/api/healthz",
+   but .replit[deployment] runs the start script directly from the workspace, bypassing        
+  [services.production].                                                                       
+    - Whether the artifact's health probe applies under autoscale is ambiguous; the deploy may 
+  be using a default TCP-port check.                                                           
+  3. The 2026-04-30 → 2026-05-01 incident chain still bears on this:
+    - aad2f22 added SUPABASE_DATABASE_URL = "" to artifact.toml so dev wouldn't hit Supabase.  
+  That empty string clobbered the prod secret.                                                 
+    - d40c38c added a hard-fail when missing in production — but if aad2f22's empty-string was 
+  still present, NODE_ENV=production + empty SUPABASE → silent fallback to Helium, which is    
+  what wedged login earlier.                                      
+    - 7c355fd removed the empty-string. Good. But check that workspace dev still works         
+  correctly — that change re-opens the dev-routes-to-prod-DB hole that #229 was tracking.      
+   
+  What I'd ask to confirm root cause. Please share:                                            
+  - The deploy log lines AFTER "Schedule auto-comple..." — specifically whether "Server 
+  listening" appears, or any error.                                                            
+  - The deploy "Promotion" / "Health" stage status text (separate from artifact logs).
+  - Whether SUPABASE_DATABASE_URL, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, JWT_UPLOAD_SECRET,   
+  PRIVATE_OBJECT_DIR are set in Deployments → Secrets (deployment-scoped, not workspace        
+  Secrets).                                                                                    
+                                                   

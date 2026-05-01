@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Loader2, Search } from "lucide-react"
+import { Briefcase, Check, ChevronDown, Loader2, Search } from "lucide-react"
 import {
   getJobsGetJobsQueryKey,
   useJobsGetJobs,
@@ -25,6 +25,11 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -45,14 +50,79 @@ import {
 import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
+import { EmptyState } from "@/components/EmptyState"
 
 type Job = JobListItemDto
+
+type JobStatus = "open" | "closed" | "archived"
 
 const STATUS_LABELS: Record<string, string> = { open: "Open", closed: "Closed", archived: "Archived" }
 const STATUS_COLORS: Record<string, string> = {
   open: "bg-green-50 text-green-700 border-green-200",
   closed: "bg-slate-50 text-slate-600 border-slate-200",
   archived: "bg-slate-50 text-slate-400 border-slate-200",
+}
+const STATUS_OPTIONS: JobStatus[] = ["open", "closed", "archived"]
+
+function StatusPopoverBadge({
+  status,
+  onChange,
+}: {
+  status: string
+  onChange: (next: JobStatus) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen((current) => !current)
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          aria-label={`Change status (currently ${STATUS_LABELS[status] ?? status})`}
+          className="group inline-flex items-center gap-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-1"
+        >
+          <Badge
+            variant="outline"
+            className={`text-xs capitalize cursor-pointer ${STATUS_COLORS[status] ?? ""}`}
+          >
+            {STATUS_LABELS[status] ?? status}
+            <ChevronDown className="ml-0.5 size-3 opacity-60 group-hover:opacity-100" />
+          </Badge>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-40 p-1"
+        align="start"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div role="menu" className="flex flex-col">
+          {STATUS_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="menuitemradio"
+              aria-checked={status === option}
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpen(false)
+                if (status !== option) onChange(option)
+              }}
+              className="flex items-center justify-between rounded-sm px-2 py-1.5 text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none"
+            >
+              <span className="capitalize">{STATUS_LABELS[option]}</span>
+              {status === option ? (
+                <Check className="size-3.5 text-orange-600" />
+              ) : null}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
 }
 const JOB_TYPES = [
   "Kitchen Countertops",
@@ -245,6 +315,16 @@ export default function JobsPage() {
     setStatus(v); setPage(1)
   }
 
+  const hasActiveFilters = Boolean(debouncedSearch) || status !== "all"
+
+  const clearFilters = () => {
+    setSearch("")
+    setDebouncedSearch("")
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setStatus("all")
+    setPage(1)
+  }
+
   const handlePage = (p: number) => {
     setPage(p)
   }
@@ -268,9 +348,27 @@ export default function JobsPage() {
     })
     if (!payload) return
     setSaving(true)
+    const hadStartDate = Boolean(form.projectedStart)
     try {
-      await api.post("/jobs", payload)
-      toast.success("Job created")
+      const res = await api.post<{ id?: string }>("/jobs", payload)
+      const newJobId = res?.data?.id
+      const openNewJob = () => {
+        if (newJobId) navigate(`/jobs/${newJobId}`)
+      }
+      toast.success("Job created", {
+        action: newJobId
+          ? { label: "Open job", onClick: openNewJob }
+          : undefined,
+      })
+      if (!hadStartDate) {
+        toast("Add a start date later", {
+          description:
+            "This job won't appear on the calendar until you set a start date.",
+          action: newJobId
+            ? { label: "Open job", onClick: openNewJob }
+            : undefined,
+        })
+      }
       setCreateOpen(false)
       setForm(emptyForm)
       setShowCreateClient(false)
@@ -344,6 +442,96 @@ export default function JobsPage() {
   const setField = (k: keyof CreateJobForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
+  // Determines whether the current user can flip the status of a row from
+  // the listing. Admins can edit any job; project managers only the jobs
+  // they manage. Crew/clients see the badge as a static pill.
+  const canEditStatus = (job: Job): boolean => {
+    if (!user) return false
+    if (user.role === "admin") return true
+    if (user.role === "project_manager") {
+      return Boolean(job.projectManagerId && job.projectManagerId === user.id)
+    }
+    return false
+  }
+
+  // Optimistically updates the visible status for `jobId`, mutating the
+  // tanstack-query cache for every active /jobs query. Returns a snapshot
+  // map so we can roll back on failure.
+  const applyOptimisticStatus = (
+    jobId: string,
+    nextStatus: Job["status"],
+  ): Map<readonly unknown[], unknown> => {
+    const snapshots = new Map<readonly unknown[], unknown>()
+    const matches = queryClient.getQueriesData<JobsGetJobsQueryResult>({
+      queryKey: getJobsGetJobsQueryKey(),
+    })
+    matches.forEach(([key, value]) => {
+      if (!value || !Array.isArray((value as { jobs?: Job[] }).jobs)) return
+      snapshots.set(key, value)
+      const next = {
+        ...(value as { jobs: Job[] }),
+        jobs: (value as { jobs: Job[] }).jobs.map((existing) =>
+          existing.id === jobId
+            ? { ...existing, status: nextStatus }
+            : existing,
+        ),
+      }
+      queryClient.setQueryData(key, next)
+    })
+    return snapshots
+  }
+
+  const rollbackOptimisticStatus = (
+    snapshots: Map<readonly unknown[], unknown>,
+  ) => {
+    snapshots.forEach((value, key) => {
+      queryClient.setQueryData(key, value)
+    })
+  }
+
+  const handleInlineStatusChange = async (
+    job: Job,
+    nextStatus: "open" | "closed" | "archived",
+  ) => {
+    if (job.status === nextStatus) return
+    const snapshots = applyOptimisticStatus(job.id, nextStatus)
+    try {
+      // The hydrated GET returns the full record we need to round-trip
+      // through PUT (which expects the complete payload shape).
+      const detail = await api.get(`/jobs/${job.id}`)
+      const current = detail.data?.job
+      if (!current) throw new Error("Job not found")
+
+      const payload = {
+        title: current.title,
+        status: nextStatus,
+        jobType: current.jobType ?? null,
+        contractType: current.contractType ?? null,
+        streetAddress: current.streetAddress ?? null,
+        city: current.city ?? null,
+        state: current.state ?? null,
+        zipCode: current.zipCode ?? null,
+        contractPrice: current.contractPrice ?? null,
+        projectedStart: current.projectedStart ?? null,
+        projectedCompletion: current.projectedCompletion ?? null,
+        actualStart: current.actualStart ?? null,
+        actualCompletion: current.actualCompletion ?? null,
+        workDays: current.workDays ?? null,
+        squareFeet: current.squareFeet ?? null,
+        permitNumber: current.permitNumber ?? null,
+        clientId: current.clientId ?? null,
+        projectManagerId: current.projectManagerId ?? null,
+      }
+      await api.put(`/jobs/${job.id}`, payload)
+      toast.success(`Status updated to ${STATUS_LABELS[nextStatus]}`)
+      invalidateJobsList()
+      invalidateAppData(["jobs"])
+    } catch (err: unknown) {
+      rollbackOptimisticStatus(snapshots)
+      toastApiError(err, "Failed to update status")
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -398,11 +586,24 @@ export default function JobsPage() {
               ))
             ) : jobs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-slate-400 text-sm">
-                  No jobs found.{" "}
-                  <button onClick={openCreateDialog} className="text-orange-600 hover:underline">
-                    Create your first job
-                  </button>
+                <TableCell colSpan={7} className="p-0">
+                  {hasActiveFilters ? (
+                    <EmptyState
+                      icon={Search}
+                      title="No jobs match your filters"
+                      description="Try clearing the search box or switching the status filter to see more jobs."
+                      action={{ label: "Clear filters", onClick: clearFilters }}
+                      className="border-0 rounded-none"
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={Briefcase}
+                      title="No jobs yet"
+                      description="Create your first job to start tracking work, daily logs, schedules, and files."
+                      action={{ label: "+ New Job", onClick: openCreateDialog }}
+                      className="border-0 rounded-none"
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             ) : (
@@ -440,9 +641,18 @@ export default function JobsPage() {
                     {job.jobType || "—"}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[job.status]}`}>
-                      {STATUS_LABELS[job.status]}
-                    </Badge>
+                    {canEditStatus(job) ? (
+                      <StatusPopoverBadge
+                        status={job.status}
+                        onChange={(next) => {
+                          void handleInlineStatusChange(job, next)
+                        }}
+                      />
+                    ) : (
+                      <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[job.status]}`}>
+                        {STATUS_LABELS[job.status]}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-right text-sm text-slate-700">
                     {fmtCurrency(job.contractPrice)}
@@ -467,12 +677,21 @@ export default function JobsPage() {
             </div>
           ))
         ) : jobs.length === 0 ? (
-          <div className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center text-sm text-slate-400">
-            No jobs found.{" "}
-            <button onClick={openCreateDialog} className="text-orange-600 hover:underline">
-              Create your first job
-            </button>
-          </div>
+          hasActiveFilters ? (
+            <EmptyState
+              icon={Search}
+              title="No jobs match your filters"
+              description="Try clearing the search box or switching the status filter to see more jobs."
+              action={{ label: "Clear filters", onClick: clearFilters }}
+            />
+          ) : (
+            <EmptyState
+              icon={Briefcase}
+              title="No jobs yet"
+              description="Create your first job to start tracking work, daily logs, schedules, and files."
+              action={{ label: "+ New Job", onClick: openCreateDialog }}
+            />
+          )
         ) : (
           jobs.map(job => (
             <div
@@ -498,9 +717,18 @@ export default function JobsPage() {
                   {job.title}
                 </Link>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[job.status]}`}>
-                    {STATUS_LABELS[job.status]}
-                  </Badge>
+                  {canEditStatus(job) ? (
+                    <StatusPopoverBadge
+                      status={job.status}
+                      onChange={(next) => {
+                        void handleInlineStatusChange(job, next)
+                      }}
+                    />
+                  ) : (
+                    <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[job.status]}`}>
+                      {STATUS_LABELS[job.status]}
+                    </Badge>
+                  )}
                   {job.jobType && <span className="text-xs capitalize text-slate-500">{job.jobType}</span>}
                 </div>
                 <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
@@ -644,6 +872,27 @@ export default function JobsPage() {
                     />
                   </div>
                 ) : null}
+                <div className="space-y-1.5">
+                  <Label htmlFor="projectedStart">Start Date</Label>
+                  <Input
+                    id="projectedStart"
+                    type="date"
+                    value={form.projectedStart}
+                    onChange={setField("projectedStart")}
+                  />
+                  <p className="text-xs text-slate-400">
+                    Required for the job to appear on the schedule.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="projectedCompletion">Est. Completion</Label>
+                  <Input
+                    id="projectedCompletion"
+                    type="date"
+                    value={form.projectedCompletion}
+                    onChange={setField("projectedCompletion")}
+                  />
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4 py-4">
@@ -690,19 +939,9 @@ export default function JobsPage() {
                     ))}
                   </div>
                 </div>
-                <div className="space-y-1.5">
+                <div className="col-span-2 space-y-1.5">
                   <Label htmlFor="contractPrice">Contract Price ($)</Label>
                   <Input id="contractPrice" value={form.contractPrice} onChange={setField("contractPrice")} placeholder="0.00" type="number" min="0" step="0.01" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="projectedStart">Start Date</Label>
-                    <Input id="projectedStart" type="date" value={form.projectedStart} onChange={setField("projectedStart")} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="projectedCompletion">Est. Completion</Label>
-                    <Input id="projectedCompletion" type="date" value={form.projectedCompletion} onChange={setField("projectedCompletion")} />
-                  </div>
                 </div>
               </div>
             )}

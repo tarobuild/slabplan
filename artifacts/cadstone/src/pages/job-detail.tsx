@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, Outlet, useLocation, useNavigate, useParams } from "react-router-dom"
 import { useDropzone } from "react-dropzone"
 import {
@@ -95,6 +95,27 @@ export default function JobDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState("")
   const [deletingJob, setDeletingJob] = useState(false)
+  const stickySentinelRef = useRef<HTMLDivElement | null>(null)
+  const [isStickyDocked, setIsStickyDocked] = useState(false)
+
+  // Toggle a subtle shadow under the sticky job header when the user
+  // has scrolled it into its docked position. We watch a 1px sentinel
+  // placed above the sticky element so we can detect when it leaves
+  // the scroll viewport without binding to any specific scroll parent.
+  useEffect(() => {
+    const sentinel = stickySentinelRef.current
+    if (!sentinel || typeof IntersectionObserver === "undefined") {
+      return
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsStickyDocked(!entry.isIntersecting)
+      },
+      { threshold: [0, 1] },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [])
 
   const isOnFilesTab = location.pathname.includes("/files/")
 
@@ -315,8 +336,21 @@ export default function JobDetailPage() {
         </Link>
       </div>
 
-      {/* Row 2: H1 title + status + location + actions */}
-      <div className="flex items-center gap-3 pb-3">
+      {/* Sticky sentinel: when this scrolls out of view we know the
+          sticky title bar has docked, and can render the subtle shadow. */}
+      <div ref={stickySentinelRef} aria-hidden className="h-px w-full" />
+
+      {/* Sticky header: row 2 (title + status + actions) and the tab bar
+          stay glued to the top of the scrollable region while the user
+          scrolls through long detail pages. */}
+      <div
+        className={cn(
+          "sticky top-0 z-20 -mx-4 lg:-mx-5 px-4 lg:px-5 bg-[#F9FAFB]/95 backdrop-blur supports-[backdrop-filter]:bg-[#F9FAFB]/85 transition-shadow",
+          isStickyDocked ? "shadow-[0_2px_8px_-4px_rgba(15,23,42,0.18)]" : "",
+        )}
+      >
+        {/* Row 2: H1 title + status + location + actions */}
+        <div className="flex items-center gap-3 pb-3 pt-2">
         {loading ? (
           <Skeleton className="h-8 w-64" />
         ) : (
@@ -385,30 +419,31 @@ export default function JobDetailPage() {
         )}
       </div>
 
-      <div className="border-b border-[#E5E7EB]">
-        <nav className="-mb-px flex gap-0 overflow-x-auto scrollbar-none">
-          {TABS.map((tab) => {
-            const Icon = tab.icon
-            const isActive = tab.matchPrefix
-              ? location.pathname.includes(`/${tab.matchPrefix}`)
-              : location.pathname.endsWith(`/${tab.path}`)
-            return (
-              <Link
-                key={tab.path}
-                to={`/jobs/${jobId}/${tab.path}`}
-                className={cn(
-                  "inline-flex shrink-0 items-center whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                  isActive
-                    ? "border-orange-500 text-orange-600"
-                    : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900",
-                )}
-              >
-                <Icon className="size-3.5 mr-1.5" />
-                {tab.label}
-              </Link>
-            )
-          })}
-        </nav>
+        <div className="border-b border-[#E5E7EB]">
+          <nav className="-mb-px flex gap-0 overflow-x-auto scrollbar-none">
+            {TABS.map((tab) => {
+              const Icon = tab.icon
+              const isActive = tab.matchPrefix
+                ? location.pathname.includes(`/${tab.matchPrefix}`)
+                : location.pathname.endsWith(`/${tab.path}`)
+              return (
+                <Link
+                  key={tab.path}
+                  to={`/jobs/${jobId}/${tab.path}`}
+                  className={cn(
+                    "inline-flex shrink-0 items-center whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                    isActive
+                      ? "border-orange-500 text-orange-600"
+                      : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900",
+                  )}
+                >
+                  <Icon className="size-3.5 mr-1.5" />
+                  {tab.label}
+                </Link>
+              )
+            })}
+          </nav>
+        </div>
       </div>
 
       <div className="pt-4">

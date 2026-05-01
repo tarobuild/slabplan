@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { api } from "@/lib/api"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import {
@@ -1066,6 +1066,31 @@ export default function JobSchedulePage() {
     setDialogInitIsHourly(null)
     setDialogOpen(true)
   }
+
+  // Allow the dashboard quick-create menu (or any other deep link) to drop
+  // straight into the New Schedule Item dialog by navigating with
+  // `state: { openCreate: true }`. The flag is consumed once.
+  const scheduleLocation = useLocation()
+  const scheduleNavigate = useNavigate()
+  useEffect(() => {
+    const incoming = scheduleLocation.state as Record<string, unknown> | null
+    if (incoming && (incoming as { openCreate?: unknown }).openCreate) {
+      openNewItem()
+      const { openCreate: _openCreate, ...rest } = incoming as {
+        openCreate?: unknown
+      } & Record<string, unknown>
+      const nextState = Object.keys(rest).length > 0 ? rest : null
+      scheduleNavigate(
+        {
+          pathname: scheduleLocation.pathname,
+          search: scheduleLocation.search,
+          hash: scheduleLocation.hash,
+        },
+        { replace: true, state: nextState },
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleLocation.state])
 
 
   function openExistingItem(itemId: string) {

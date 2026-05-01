@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import {
   AlertTriangle,
   Building2,
@@ -554,6 +554,34 @@ export default function LeadsPage() {
       setCreateOpen(true)
     }
   }
+
+  // Lets the dashboard quick-create menu drop us straight into the New Lead
+  // dialog by navigating with `state: { openCreate: true }`. We consume the
+  // flag once and clear it so refreshes don't re-open the dialog.
+  const location = useLocation()
+  const routerNavigate = useNavigate()
+  useEffect(() => {
+    const incoming = location.state as Record<string, unknown> | null
+    if (incoming && (incoming as { openCreate?: unknown }).openCreate) {
+      resetCreateDialogState()
+      setCreateOpen(true)
+      const { openCreate: _openCreate, ...rest } = incoming as {
+        openCreate?: unknown
+      } & Record<string, unknown>
+      const nextState = Object.keys(rest).length > 0 ? rest : null
+      routerNavigate(
+        {
+          pathname: location.pathname,
+          search: location.search,
+          hash: location.hash,
+        },
+        { replace: true, state: nextState },
+      )
+    }
+    // We only want this to fire when the location changes meaningfully,
+    // not when the consumed state replays.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state])
 
   const handleSelectCreateFiles = (fileList: FileList) => {
     const newFiles = Array.from(fileList)

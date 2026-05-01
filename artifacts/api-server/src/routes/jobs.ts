@@ -364,6 +364,7 @@ router.get(
         permitNumber: jobs.permitNumber,
         clientId: jobs.clientId,
         clientName: clients.companyName,
+        projectManagerId: jobs.projectManagerId,
         createdAt: jobs.createdAt,
         updatedAt: jobs.updatedAt,
       })

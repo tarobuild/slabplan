@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useOutletContext } from "react-router-dom"
+import { useLocation, useNavigate, useOutletContext } from "react-router-dom"
 import { useDropzone } from "react-dropzone"
 import {
   AlertTriangle,
@@ -3209,6 +3209,31 @@ export default function JobDailyLogsPage() {
     setEditingLogId(null)
     setDialogOpen(true)
   }
+
+  // Allow the dashboard quick-create menu (or any other deep link) to drop
+  // straight into the New Daily Log dialog by navigating with
+  // `state: { openCreate: true }`. The flag is consumed once.
+  const dailyLogLocation = useLocation()
+  const dailyLogNavigate = useNavigate()
+  useEffect(() => {
+    const incoming = dailyLogLocation.state as Record<string, unknown> | null
+    if (incoming && (incoming as { openCreate?: unknown }).openCreate) {
+      openCreateDialog()
+      const { openCreate: _openCreate, ...rest } = incoming as {
+        openCreate?: unknown
+      } & Record<string, unknown>
+      const nextState = Object.keys(rest).length > 0 ? rest : null
+      dailyLogNavigate(
+        {
+          pathname: dailyLogLocation.pathname,
+          search: dailyLogLocation.search,
+          hash: dailyLogLocation.hash,
+        },
+        { replace: true, state: nextState },
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailyLogLocation.state])
 
   function openEditDialog(logId: string) {
     setEditingLogId(logId)

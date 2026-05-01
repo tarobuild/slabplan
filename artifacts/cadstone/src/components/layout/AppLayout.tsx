@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom"
 import ChatPanel from "@/components/agent/ChatPanel"
 import Sidebar from "./Sidebar"
 import TopNav from "./TopNav"
+import KeyboardShortcuts from "./KeyboardShortcuts"
 
 export default function AppLayout() {
   return (
@@ -26,6 +27,7 @@ export default function AppLayout() {
       </div>
 
       <ChatPanel />
+      <KeyboardShortcuts />
     </div>
   )
 }

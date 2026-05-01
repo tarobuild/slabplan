@@ -81,6 +81,29 @@ export default function TopNav() {
     setSearchOpen(false)
   }, [location.pathname])
 
+  // Wire the `/` global keyboard shortcut to either focus the desktop
+  // search input directly or open the mobile search sheet (where the
+  // input is auto-focused on mount).
+  useEffect(() => {
+    function handleFocusSearch() {
+      const desktopInput = document.querySelector<HTMLInputElement>(
+        '#cadstone-topbar-search input[type="search"]',
+      )
+      if (desktopInput && desktopInput.offsetParent !== null) {
+        desktopInput.focus()
+        desktopInput.select?.()
+        return
+      }
+      setSearchOpen(true)
+    }
+    window.addEventListener("cadstone:focus-global-search", handleFocusSearch)
+    return () =>
+      window.removeEventListener(
+        "cadstone:focus-global-search",
+        handleFocusSearch,
+      )
+  }, [])
+
   return (
     <header className="sticky top-0 z-30 shadow-md" style={{ backgroundColor: "#1D1D1D" }}>
       <div className="flex h-14 lg:h-12 items-center gap-1 px-3">
@@ -206,7 +229,7 @@ export default function TopNav() {
         <div className="flex-1" />
 
         {/* Global search — desktop only */}
-        <div className="hidden lg:block w-72 mr-1">
+        <div id="cadstone-topbar-search" className="hidden lg:block w-72 mr-1">
           <GlobalSearch />
         </div>
 

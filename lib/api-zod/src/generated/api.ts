@@ -1011,6 +1011,7 @@ export const JobsGetJobsResponse = zod.object({
       permitNumber: zod.string().nullish(),
       clientId: zod.string().uuid().nullish(),
       clientName: zod.string().nullish(),
+      projectManagerId: zod.string().uuid().nullish(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),

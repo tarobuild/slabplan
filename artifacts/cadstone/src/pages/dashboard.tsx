@@ -2,11 +2,23 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import {
   CalendarDays,
+  CalendarPlus,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   List,
   MapPin,
+  Plus,
+  Sparkles,
 } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import JobPickerDialog from "@/components/dashboard/JobPickerDialog"
 import {
   activityGetActivity,
   dashboardGetDashboardAgenda,
@@ -462,6 +474,12 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([])
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([])
   const [sidebarLoading, setSidebarLoading] = useState(true)
+  // Quick-action picker state. We open the same picker dialog for both
+  // "New Daily Log" and "New Schedule Item" but route to different pages
+  // when a job is chosen, indicated by `quickPickerKind`.
+  const [quickPickerKind, setQuickPickerKind] = useState<
+    null | "daily-log" | "schedule"
+  >(null)
 
   const [calView, setCalView] = useState<CalView>("calendar")
   const [calPeriod, setCalPeriod] = useState<CalPeriod>("month")
@@ -553,11 +571,92 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-500 mt-0.5">{todayDisplay}</p>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" variant="orange" className="text-xs h-8" asChild>
-              <Link to="/jobs">New Job</Link>
-            </Button>
+            {/* Split button: the primary half jumps straight into Create Job
+                (the most common action) while the chevron half discloses the
+                full set of "+ Daily Log / Schedule Item / Lead" shortcuts so
+                the dashboard CTA covers all four entry points. */}
+            <div className="inline-flex rounded-md shadow-sm" role="group">
+              <Button
+                size="sm"
+                variant="orange"
+                className="text-xs h-8 gap-1 rounded-r-none border-r border-orange-700/40 pr-2.5"
+                onClick={() =>
+                  navigate("/jobs", { state: { openCreate: true } })
+                }
+              >
+                <Plus className="size-3.5" />
+                New Job
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="orange"
+                    className="text-xs h-8 px-1.5 rounded-l-none"
+                    aria-label="More create options"
+                  >
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      navigate("/jobs", { state: { openCreate: true } })
+                    }}
+                  >
+                    <Plus className="mr-2 size-4 text-orange-500" />
+                    New Job
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => setQuickPickerKind("daily-log")}
+                  >
+                    <ClipboardList className="mr-2 size-4 text-orange-500" />
+                    Daily Log
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => setQuickPickerKind("schedule")}
+                  >
+                    <CalendarPlus className="mr-2 size-4 text-orange-500" />
+                    Schedule Item
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      navigate("/leads", { state: { openCreate: true } })
+                    }}
+                  >
+                    <Sparkles className="mr-2 size-4 text-orange-500" />
+                    Lead
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
+
+        <JobPickerDialog
+          open={quickPickerKind !== null}
+          onOpenChange={(next) => {
+            if (!next) setQuickPickerKind(null)
+          }}
+          title={
+            quickPickerKind === "schedule"
+              ? "Pick a job for the schedule item"
+              : "Pick a job for the daily log"
+          }
+          description={
+            quickPickerKind === "schedule"
+              ? "Schedule items live inside a job. Choose the job you'd like to add the item to."
+              : "Daily logs live inside a job. Choose the job you'd like to log against."
+          }
+          onSelect={(jobId) => {
+            const path =
+              quickPickerKind === "schedule"
+                ? `/jobs/${jobId}/schedule`
+                : `/jobs/${jobId}/daily-logs`
+            setQuickPickerKind(null)
+            navigate(path, { state: { openCreate: true } })
+          }}
+        />
 
         {/* Calendar + Sidebar */}
         <div className="flex flex-col gap-5 lg:flex-row">

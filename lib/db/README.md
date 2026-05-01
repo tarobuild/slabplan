@@ -1,78 +1,87 @@
 # `@workspace/db`
 
-Drizzle schema, migrations, and seed helpers for the application database.
+# `@workspace/db`
 
-- Schema lives in `src/schema/` and is the source of truth for the table
-  shapes used by the rest of the codebase.
-- Applied SQL migrations live in `migrations/` and are executed in order by
-  the migrate CLI (`pnpm --filter @workspace/db run migrate`).
-- The `migrations/meta/` directory is drizzle-kit's snapshot bookkeeping and
-  is what `drizzle-kit generate` uses to compute the diff for the next
-  migration.
+Shared Drizzle schema (`src/schema/`) and the SQL migration runner used by
+every artifact in the monorepo.
 
-## Adding a new migration
+## Layout
 
-There are two supported ways to author a migration. **Pick one per change.**
-Don't mix the two for the same migration.
+- `src/schema/{index,agent}.ts` — the canonical Drizzle ORM schema. All
+  application code reads/writes through these table definitions.
+- `migrations/*.sql` — hand-written, **idempotent** SQL migrations applied
+  in lexicographic order by the runner. Each is recorded by filename and
+  sha256 in the `workspace_schema_migrations` table so it never re-runs
+  with a different body.
+- `src/migrate.ts` / `src/migrate-cli.ts` — the migration runner.
+- `migrations/meta/` — Drizzle-kit's snapshot/journal. **Not** consulted
+  by the runner, but kept in sync (one snapshot + one journal entry per
+  migration file) so future `drizzle-kit generate` calls diff against an
+  accurate baseline. When you add a new `NNNN_*.sql`, also add a matching
+  `NNNN_snapshot.json` (copy from the previous snapshot, give it a fresh
+  `id`, and set `prevId` to the previous snapshot's `id`) and append an
+  entry to `_journal.json`.
 
-### 1. Generated migrations (preferred)
+## Day-to-day workflow
 
-For ordinary additive schema changes — new tables, new columns, new
-indexes, new enums, new foreign keys — let drizzle-kit do the work:
+1. Edit the Drizzle schema in `src/schema/`.
+2. Hand-write an idempotent SQL migration with the next number prefix
+   (e.g. `0010_my_change.sql`). Use `IF NOT EXISTS`, `DO $$ … pg_constraint
+   lookup … END$$;`, and `CREATE INDEX IF NOT EXISTS` patterns so the file
+   can be re-applied against any database state. `0008_folder_scope_columns.sql`
+   and `0009_schema_audit_alignment.sql` are good templates.
+3. Add a matching `migrations/meta/NNNN_snapshot.json` and `_journal.json`
+   entry as described above (so `drizzle-kit generate` keeps a clean
+   baseline).
+4. Run `pnpm --filter @workspace/db migrate` against your local Postgres
+   to apply it.
+5. Verify there is no drift between the schema and migrations (see below).
+6. Ship.
 
-1. Edit the schema in `lib/db/src/schema/` to describe the desired final
-   state.
-2. From the repo root, run:
+We deliberately do **not** use `drizzle-kit generate`. Generated migrations
+are not idempotent and don't survive partial failures or hand-patched
+databases.
 
-   ```bash
-   pnpm --filter @workspace/db run generate
-   ```
+## Verifying schema ↔ migrations parity
 
-   This compares the current schema against the most recent snapshot in
-   `migrations/meta/` and writes a new `NNNN_<slug>.sql` file along with a
-   matching `NNNN_snapshot.json` and an entry in `_journal.json`.
-3. Inspect the generated SQL. Tweak it if necessary (e.g. swap `CREATE
-   INDEX` for `CREATE INDEX CONCURRENTLY` would not be safe here — see
-   "Hand-written migrations" below for that case).
-4. Apply it locally with `pnpm --filter @workspace/db run migrate` and
-   commit the SQL file together with the updated meta files.
+Anyone (or any future audit) can confirm `src/schema/` and
+`migrations/*.sql` agree by diffing two fresh databases:
 
-### 2. Hand-written migrations
+```bash
+# Database A: built from migrations only.
+createdb schema_migrations_db
+DATABASE_URL="postgresql://…/schema_migrations_db" \
+  pnpm --filter @workspace/db migrate
 
-Use this only when the change cannot be expressed by the schema +
-generator, for example:
+# Database B: built from the Drizzle schema only.
+createdb schema_target_db
+DATABASE_URL="postgresql://…/schema_target_db" \
+  npx drizzle-kit push --config lib/db/drizzle.config.js --force
 
-- Data backfills (`UPDATE ...`) that have to run as part of the deploy.
-- DDL drizzle-kit can't emit cleanly (e.g. partial / expression indexes,
-  policies, triggers).
-- Ops-sensitive DDL that needs a runbook (see
-  `runbooks/files-folder-created-id-index.md` for an example).
+# Compare.
+pg_dump --schema-only --no-owner --no-privileges -n public \
+  -d "postgresql://…/schema_migrations_db" > /tmp/migrations.sql
+pg_dump --schema-only --no-owner --no-privileges -n public \
+  -d "postgresql://…/schema_target_db"     > /tmp/target.sql
+diff /tmp/migrations.sql /tmp/target.sql
+```
 
-When you go this route:
+The diff is expected to contain a few **cosmetic** lines that are safe to
+ignore:
 
-1. Add the SQL file at `migrations/NNNN_<slug>.sql`, picking the next free
-   number after the last entry in `migrations/meta/_journal.json`.
-2. Update `lib/db/src/schema/` so the schema reflects the post-migration
-   state. **This step is not optional** — if the schema and the database
-   drift apart, the next call to `pnpm run generate` will try to "fix" the
-   drift by emitting a phantom migration.
-3. Refresh the snapshot so future generated migrations diff against the
-   current state. The cheapest way is to run `pnpm --filter @workspace/db
-   run generate` immediately after step 2; if everything is in sync it
-   will print `No schema changes, nothing to migrate` and rewrite the
-   snapshot files in place. If it instead proposes a diff, the schema in
-   step 2 doesn't match the SQL you wrote — fix the schema, don't accept
-   the generated migration.
-4. Apply locally with `pnpm --filter @workspace/db run migrate` and commit
-   the SQL file together with the updated meta files.
+- `workspace_schema_migrations` — the runner's own bookkeeping table; only
+  exists in the migrations DB.
+- `daily_log_settings_singleton_unique` — the migration declares it as a
+  `UNIQUE` constraint while the schema declares it as a `uniqueIndex`. Both
+  produce the same underlying btree-unique on `singleton`.
+- A handful of foreign keys named `*_fkey` (Postgres default style used in
+  older migrations like `0005`/`0006`) vs. `*_<table>_id_fk` (Drizzle's
+  default style emitted by `drizzle-kit push`). Same column, same target,
+  same `ON DELETE` behavior — just a different constraint name.
+- Column ordering inside `CREATE TABLE` — `pg_dump` prints columns in the
+  order they were added, so a column added by a later migration appears
+  after `deleted_at` even when the schema lists it earlier. Functionally
+  equivalent.
 
-## Why the meta directory matters
-
-`drizzle-kit generate` reads the latest entry in
-`migrations/meta/_journal.json`, loads the matching `NNNN_snapshot.json`,
-and diffs it against the schema in `src/schema/`. If the journal /
-snapshot fall behind the actual database (because a hand-written
-migration was committed without refreshing meta), the next call to
-`generate` will try to recreate everything that has been added since the
-stale snapshot. That's why every hand-written migration must be followed
-by a snapshot refresh.
+Anything else is real drift and should ship as a new idempotent migration
+following the rules above.

@@ -43,6 +43,13 @@
       "when": 1777652539753,
       "tag": "0008_folder_scope_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777653195268,
+      "tag": "0009_schema_audit_alignment",
+      "breakpoints": true
     }
   ]
 }

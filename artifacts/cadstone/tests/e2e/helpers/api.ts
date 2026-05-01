@@ -98,6 +98,133 @@ export async function deleteJob(
   await request.delete(`/api/jobs/${jobId}`, { headers: authHeaders(token) })
 }
 
+/**
+ * Create a custom job with optional assignees and projected dates. Used by
+ * specs that need to seed a job in a specific shape (e.g. the worker
+ * read-only test, which needs to be assigned to the job to see it).
+ */
+export async function createCustomJob(
+  request: APIRequestContext,
+  token: string,
+  opts: {
+    title: string
+    clientId: string
+    assigneeIds?: string[]
+    projectedStart?: string | null
+    projectedCompletion?: string | null
+    projectManagerId?: string | null
+  },
+): Promise<string> {
+  const res = await request.post("/api/jobs", {
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    data: {
+      title: opts.title,
+      jobType: "custom",
+      contractType: "fixed_price",
+      status: "open",
+      clientId: opts.clientId,
+      assigneeIds: opts.assigneeIds ?? [],
+      projectedStart: opts.projectedStart ?? null,
+      projectedCompletion: opts.projectedCompletion ?? null,
+      projectManagerId: opts.projectManagerId ?? null,
+    },
+  })
+  if (!res.ok()) {
+    throw new Error(`createCustomJob failed: ${res.status()} ${await res.text()}`)
+  }
+  const body = await res.json()
+  return body.job?.id ?? body.id
+}
+
+export interface JobDetail {
+  id: string
+  projectManagerId: string | null
+  projectedStart: string | null
+  projectedCompletion: string | null
+  status: string
+  title: string
+}
+
+/** Fetch the full job record, used by inline-edit specs to assert persistence. */
+export async function fetchJobDetail(
+  request: APIRequestContext,
+  token: string,
+  jobId: string,
+): Promise<JobDetail> {
+  const res = await request.get(`/api/jobs/${jobId}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok()) {
+    throw new Error(`fetchJobDetail failed: ${res.status()} ${await res.text()}`)
+  }
+  const body = await res.json()
+  return body.job
+}
+
+/** Resolve a user's id by email. Caller must hold a manager+ token. */
+export async function findUserIdByEmail(
+  request: APIRequestContext,
+  token: string,
+  email: string,
+): Promise<string | null> {
+  const res = await request.get("/api/users?limit=200", {
+    headers: authHeaders(token),
+  })
+  if (!res.ok()) {
+    throw new Error(`findUserIdByEmail failed: ${res.status()} ${await res.text()}`)
+  }
+  const body = await res.json()
+  const match = (body.users ?? []).find(
+    (u: { email: string; id: string }) => u.email.toLowerCase() === email.toLowerCase(),
+  )
+  return match?.id ?? null
+}
+
+/**
+ * Ensure at least one project_manager user exists in the local DB so the
+ * inline PM picker on /jobs has a real option to choose. Idempotent —
+ * reuses an existing PM if one is found, otherwise invites a synthetic
+ * fixture PM (the seed script does not seed one because production has
+ * no PMs by default; the E2E suite is the only consumer that needs it).
+ */
+export async function ensureProjectManagerFixture(
+  request: APIRequestContext,
+  token: string,
+): Promise<{ id: string; fullName: string }> {
+  const res = await request.get("/api/users?roles=project_manager&limit=200", {
+    headers: authHeaders(token),
+  })
+  if (!res.ok()) {
+    throw new Error(
+      `ensureProjectManagerFixture list failed: ${res.status()} ${await res.text()}`,
+    )
+  }
+  const body = await res.json()
+  const existing = (body.users ?? []).find(
+    (u: { isActive?: boolean | null }) => u.isActive !== false,
+  )
+  if (existing) {
+    return { id: existing.id, fullName: existing.fullName }
+  }
+
+  const fullName = "E2E Fixture Project Manager"
+  const invite = await request.post("/api/users", {
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    data: {
+      email: "fixture-pm@cadstone.test",
+      fullName,
+      role: "project_manager",
+    },
+  })
+  if (!invite.ok()) {
+    throw new Error(
+      `ensureProjectManagerFixture invite failed: ${invite.status()} ${await invite.text()}`,
+    )
+  }
+  const inviteBody = await invite.json()
+  return { id: inviteBody.user.id, fullName: inviteBody.user.fullName }
+}
+
 /** Mark a schedule item as deleted via the REST API, best-effort. */
 export async function deleteScheduleItem(
   request: APIRequestContext,

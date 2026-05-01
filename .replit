@@ -8,7 +8,7 @@ id = "artifacts/mockup-sandbox"
 
 [deployment]
 router = "application"
-deploymentTarget = "autoscale"
+deploymentTarget = "gce"
 build = "pnpm --filter @workspace/api-server run build"
 run = "pnpm --filter @workspace/api-server run start"
 

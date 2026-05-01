@@ -4,9 +4,17 @@ import * as schema from "./schema/index.js";
 
 const { Pool } = pg;
 
-const supabaseUrl = process.env.SUPABASE_DATABASE_URL;
-const fallbackUrl = process.env.DATABASE_URL;
 const isProduction = process.env.NODE_ENV === "production";
+const rawSupabaseUrl = process.env.SUPABASE_DATABASE_URL;
+const fallbackUrl = process.env.DATABASE_URL;
+
+// Only honor SUPABASE_DATABASE_URL in production. In development we always use
+// the runtime-managed DATABASE_URL (Helium) so that local work cannot
+// accidentally read or write the live Supabase data. This keeps dev and prod
+// strictly separated without relying on artifact.toml `[services.env]` to
+// blank the variable (the empty-string trick previously clobbered the prod
+// secret and crashed every deploy — see incident 2026-04-30).
+const supabaseUrl = isProduction ? rawSupabaseUrl : undefined;
 
 if (isProduction && !supabaseUrl) {
   // Hard fail in production: the runtime-managed DATABASE_URL points at a

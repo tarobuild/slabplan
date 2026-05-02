@@ -63,3 +63,49 @@ test("document uploads still allow office and text files", () => {
     }),
   );
 });
+
+test("document uploads accept .docx with application/octet-stream MIME", () => {
+  // Some Windows file pickers report a generic MIME for legitimate
+  // .docx files. The server-side magic-byte sniffer (and the PDF
+  // header check) is the authoritative content gate, so a recognised
+  // document extension must not be blocked here just because the
+  // browser failed to label it.
+  assert.doesNotThrow(() =>
+    validateUploadForMediaType("document", {
+      originalname: "spec.docx",
+      mimetype: "application/octet-stream",
+    }),
+  );
+});
+
+test("document uploads accept .csv with an empty MIME (Safari)", () => {
+  assert.doesNotThrow(() =>
+    validateUploadForMediaType("document", {
+      originalname: "data.csv",
+      mimetype: "",
+    }),
+  );
+});
+
+test("document uploads accept .pdf with application/octet-stream MIME", () => {
+  assert.doesNotThrow(() =>
+    validateUploadForMediaType("document", {
+      originalname: "plan.pdf",
+      mimetype: "application/octet-stream",
+    }),
+  );
+});
+
+test("document uploads still reject .exe even with application/octet-stream MIME", () => {
+  // Loosening the MIME check must not loosen the extension check —
+  // a renamed executable still has a non-document extension and must
+  // be refused.
+  assert.throws(
+    () =>
+      validateUploadForMediaType("document", {
+        originalname: "payload.exe",
+        mimetype: "application/octet-stream",
+      }),
+    (error) => error instanceof HttpError && error.statusCode === 400,
+  );
+});

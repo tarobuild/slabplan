@@ -32,6 +32,32 @@ const tempFiles: string[] = [];
 // PDF: minimal header + EOF marker. file-type only needs the %PDF- prefix.
 const PDF_BYTES = Buffer.from("%PDF-1.4\n%\xC4\xE5\xF2\xE5\xEB\xA7\n%%EOF\n");
 
+// PDF with a leading UTF-8 BOM. Per the PDF spec the `%PDF-` header may
+// appear anywhere in the first 1024 bytes, and many real PDFs in the
+// wild have a BOM written by older Office or scan-to-PDF pipelines.
+const PDF_WITH_BOM_BYTES = Buffer.concat([
+  Buffer.from([0xef, 0xbb, 0xbf]),
+  PDF_BYTES,
+]);
+
+// PDF with a few bytes of leading whitespace / blank lines before the
+// header — also legal per the spec.
+const PDF_WITH_WHITESPACE_BYTES = Buffer.concat([
+  Buffer.from("   \r\n\n"),
+  PDF_BYTES,
+]);
+
+// Minimal "encrypted" PDF: a real %PDF- header with an /Encrypt entry
+// in the trailer dictionary. We don't need a full xref / object table —
+// the magic-byte layer only inspects the header and looks for the
+// `/Encrypt` keyword to flag password-protected files.
+const ENCRYPTED_PDF_BYTES = Buffer.from(
+  "%PDF-1.6\n" +
+    "1 0 obj << /Type /Catalog >> endobj\n" +
+    "trailer << /Size 1 /Root 1 0 R /Encrypt 2 0 R >>\n" +
+    "%%EOF\n",
+);
+
 // PNG: 8-byte signature + IHDR chunk + IEND. Smallest viable PNG sniffer
 // will recognise.
 const PNG_BYTES = Buffer.from([
@@ -193,6 +219,39 @@ test("legitimate PDF upload passes magic-byte validation", async () => {
   assert.deepEqual(await response.json(), { ok: true });
 });
 
+test("PDF with a leading UTF-8 BOM passes magic-byte validation", async () => {
+  // Many real PDFs (especially older Office exports and scan-to-PDF
+  // pipelines) emit a BOM before the %PDF- header. The PDF spec allows
+  // up to ~1 KB of preamble, so this must be accepted.
+  const response = await uploadFile(
+    "bom.pdf",
+    "application/pdf",
+    PDF_WITH_BOM_BYTES,
+  );
+  assert.equal(response.status, 200);
+});
+
+test("PDF with leading whitespace before the header passes magic-byte validation", async () => {
+  const response = await uploadFile(
+    "padded.pdf",
+    "application/pdf",
+    PDF_WITH_WHITESPACE_BYTES,
+  );
+  assert.equal(response.status, 200);
+});
+
+test("encrypted PDF returns an actionable 415 about removing the password", async () => {
+  const response = await uploadFile(
+    "secret.pdf",
+    "application/pdf",
+    ENCRYPTED_PDF_BYTES,
+  );
+  assert.equal(response.status, 415);
+  const body = await readJson(response);
+  assert.equal(body.errors?.code, "MAGIC_BYTE_MISMATCH");
+  assert.match(body.detail, /password/i);
+});
+
 test("legitimate JPEG upload passes magic-byte validation", async () => {
   const response = await uploadFile("photo.jpg", "image/jpeg", JPEG_BYTES);
   assert.equal(response.status, 200);
@@ -245,12 +304,14 @@ test("renamed HTML masquerading as a JPEG is rejected with 415 problem+json", as
 
 test("PNG bytes uploaded with a .pdf extension are rejected as not-a-PDF", async () => {
   // Client claims it's a PDF (extension + MIME) but the bytes are PNG.
-  // The mismatch must be caught: we reject because it isn't really a PDF.
+  // PDFs use a tolerant header scan (no `file-type` lookup) so the
+  // sniffedMimeType is null — what matters is that we still reject the
+  // file with a PDF-specific message instead of accepting it.
   const response = await uploadFile("invoice.pdf", "application/pdf", PNG_BYTES);
   assert.equal(response.status, 415);
   const body = await readJson(response);
   assert.equal(body.errors?.code, "MAGIC_BYTE_MISMATCH");
-  assert.equal(body.errors?.sniffedMimeType, "image/png");
+  assert.equal(body.errors?.sniffedMimeType, null);
   assert.match(body.detail, /PDF/);
 });
 

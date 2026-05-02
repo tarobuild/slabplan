@@ -216,13 +216,23 @@ export function validateUploadForMediaType(
   }
 
   if (mediaType === "document") {
+    // Some browsers and OS combinations report a generic MIME type for
+    // perfectly valid documents (Windows file picker for `.docx`,
+    // Safari for `.csv`, etc.). The magic-byte sniffer that runs
+    // before us in the upload pipeline already does the authoritative
+    // content check for PDFs, so when the extension is one we accept
+    // we treat an empty or `application/octet-stream` MIME as
+    // plausibly a document and let it through. This mirrors the
+    // client-side validator and avoids dead-ending real users.
     validateAllowedUpload(
       extension,
       mimeType,
       documentExtensions,
       (value) =>
         allowedDocumentMimeTypes.has(value) ||
-        value.startsWith("application/vnd.openxmlformats-officedocument."),
+        value.startsWith("application/vnd.openxmlformats-officedocument.") ||
+        value === "" ||
+        value === "application/octet-stream",
       "Documents must be supported office, text, or PDF files.",
     );
     return;

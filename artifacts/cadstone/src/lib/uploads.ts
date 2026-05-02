@@ -74,6 +74,17 @@ function isAllowedDocumentMimeType(value: string) {
   return documentMimeTypes.has(value) || value.startsWith("application/vnd.openxmlformats-officedocument.")
 }
 
+// Some browsers and OS combinations report a generic MIME type for
+// perfectly valid documents (Windows file picker for `.docx`, Safari
+// for `.csv`, etc.). The server still does the authoritative magic-byte
+// check, so when the extension is one we accept we treat an empty or
+// `application/octet-stream` MIME as plausibly a document and let the
+// upload through instead of dead-ending the user with a confusing toast.
+function isLikelyDocumentMimeType(value: string) {
+  if (isAllowedDocumentMimeType(value)) return true
+  return value === "" || value === "application/octet-stream"
+}
+
 function invalidTypeMessage(mediaType: UploadMediaType) {
   if (mediaType === "photo") {
     return "Photos must be image files (.jpg, .png, .gif, .webp)."
@@ -126,7 +137,7 @@ export function validateSelectedFiles(
         ? photoExtensions.includes(extension) && photoMimeTypes.has(mimeType)
         : mediaType === "video"
           ? videoExtensions.includes(extension) && videoMimeTypes.has(mimeType)
-          : documentExtensions.includes(extension) && isAllowedDocumentMimeType(mimeType)
+          : documentExtensions.includes(extension) && isLikelyDocumentMimeType(mimeType)
 
     if (!isAllowed) {
       return `${file.name}: ${invalidTypeMessage(mediaType)}`

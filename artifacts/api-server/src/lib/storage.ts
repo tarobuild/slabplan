@@ -380,11 +380,35 @@ export interface SendStoredFileOptions {
   cacheControl?: string;
 }
 
+type StreamStoredFileImpl = (
+  res: Response,
+  fileUrl: string,
+  opts: SendStoredFileOptions,
+) => Promise<void>;
+
+let streamStoredFileImpl: StreamStoredFileImpl | null = null;
+
+/**
+ * Internal hook used by the test suite to swap the GCS-backed streaming
+ * implementation with a stub. Not part of the public API.
+ */
+export const __streamStoredFileTesting = {
+  setImpl(fn: StreamStoredFileImpl) {
+    streamStoredFileImpl = fn;
+  },
+  reset() {
+    streamStoredFileImpl = null;
+  },
+};
+
 export async function streamStoredFileToResponse(
   res: Response,
   fileUrl: string,
   opts: SendStoredFileOptions,
 ): Promise<void> {
+  if (streamStoredFileImpl) {
+    return streamStoredFileImpl(res, fileUrl, opts);
+  }
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   const file = storageClient.bucket(bucketName).file(objectName);
 

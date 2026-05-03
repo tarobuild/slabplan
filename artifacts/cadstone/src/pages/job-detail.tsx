@@ -231,7 +231,7 @@ export default function JobDetailPage() {
         state: (current.state as string | null) ?? null,
         zipCode: (current.zipCode as string | null) ?? null,
         contractPrice: (current.contractPrice as string | null) ?? null,
-        jobType: (current.jobType as string | null) ?? null,
+        jobType: (current.jobType as JobsJobPayloadSchema["jobType"]) ?? null,
         workDays: (current.workDays as JobsJobPayloadSchema["workDays"]) ?? null,
         projectedStart: (current.projectedStart as string | null) ?? null,
         projectedCompletion: (current.projectedCompletion as string | null) ?? null,

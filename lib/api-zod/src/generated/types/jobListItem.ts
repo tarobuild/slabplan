@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { JobListItemJobType } from "./jobListItemJobType";
 
 export interface JobListItem {
   id: string;
@@ -14,7 +15,7 @@ export interface JobListItem {
   state?: string | null;
   streetAddress?: string | null;
   zipCode?: string | null;
-  jobType?: string | null;
+  jobType?: JobListItemJobType;
   contractPrice?: string | null;
   contractType?: string | null;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */

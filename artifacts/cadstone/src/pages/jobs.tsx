@@ -328,15 +328,25 @@ function DatePopover({
 }
 
 const JOB_TYPES = [
-  "Kitchen Countertops",
-  "Flooring",
-  "Bathrooms",
-  "Full House Projects",
-  "Custom",
-]
+  "kitchen_countertops",
+  "bathrooms",
+  "flooring",
+  "backsplash",
+  "full_house_project",
+  "custom",
+] as const
+const JOB_TYPE_LABELS: Record<string, string> = {
+  kitchen_countertops: "Kitchen Countertops",
+  bathrooms: "Bathrooms",
+  flooring: "Flooring",
+  backsplash: "Backsplash",
+  full_house_project: "Full House Project",
+  custom: "Custom",
+}
 const ADD_NEW_CLIENT_VALUE = "__add_new_client__"
 
-const toLabel = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase())
+const toLabel = (s: string) =>
+  JOB_TYPE_LABELS[s] ?? s.replace(/\b\w/g, (c) => c.toUpperCase())
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -957,8 +967,8 @@ export default function JobsPage() {
                   <TableCell className="text-slate-600 text-sm">
                     {[job.city, job.state].filter(Boolean).join(", ") || "—"}
                   </TableCell>
-                  <TableCell className="text-slate-600 text-sm capitalize">
-                    {job.jobType || "—"}
+                  <TableCell className="text-slate-600 text-sm">
+                    {job.jobType ? toLabel(job.jobType) : "—"}
                   </TableCell>
                   <TableCell>
                     {canEditProjectManager(job) ? (
@@ -1114,7 +1124,7 @@ export default function JobsPage() {
                       {STATUS_LABELS[job.status]}
                     </Badge>
                   )}
-                  {job.jobType && <span className="text-xs capitalize text-slate-500">{job.jobType}</span>}
+                  {job.jobType && <span className="text-xs text-slate-500">{toLabel(job.jobType)}</span>}
                 </div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   {canEditProjectManager(job) ? (

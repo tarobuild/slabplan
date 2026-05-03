@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { JobSummaryJobType } from "./jobSummaryJobType";
 
 /**
  * Summary view of a job used in client detail and client-job listings.
@@ -15,7 +16,7 @@ export interface JobSummary {
   status?: string | null;
   city?: string | null;
   state?: string | null;
-  jobType?: string | null;
+  jobType?: JobSummaryJobType;
   /** Decimal price serialized as string. */
   contractPrice?: string | null;
   /** @minimum 0 */

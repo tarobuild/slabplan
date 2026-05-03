@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { JobsJobPayloadSchemaContractType } from "./jobsJobPayloadSchemaContractType";
+import type { JobsJobPayloadSchemaJobType } from "./jobsJobPayloadSchemaJobType";
 import type { JobsJobPayloadSchemaStatus } from "./jobsJobPayloadSchemaStatus";
 import type { JobsJobPayloadSchemaWorkDaysItem } from "./jobsJobPayloadSchemaWorkDaysItem";
 
@@ -29,7 +30,7 @@ export interface JobsJobPayloadSchema {
    * @nullable
    */
   contractPrice?: string | number | null;
-  jobType?: string | null;
+  jobType?: JobsJobPayloadSchemaJobType;
   workDays?: JobsJobPayloadSchemaWorkDaysItem[] | null;
   /**
    * Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — **not** an ISO timestamp and **not** coerced to a `Date` (the handler rejects any other form, including timezone offsets). `format: date` is intentionally omitted so generated clients keep this as a `string`, matching the handler's `optionalDate` zod transform.

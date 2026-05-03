@@ -52,6 +52,15 @@ export const projectTypes = [
   "custom",
   "none",
 ] as const;
+export const jobTypes = [
+  "kitchen_countertops",
+  "bathrooms",
+  "flooring",
+  "backsplash",
+  "full_house_project",
+  "custom",
+] as const;
+export type JobType = (typeof jobTypes)[number];
 export const reminderOptions = [
   "none",
   "1_hour_before",
@@ -189,6 +198,10 @@ export const jobs = pgTable(
     check(
       "jobs_contract_type_check",
       sql`${table.contractType} is null or ${table.contractType} in ('fixed_price', 'open_book')`,
+    ),
+    check(
+      "jobs_job_type_check",
+      sql`${table.jobType} is null or ${table.jobType} in ('kitchen_countertops', 'bathrooms', 'flooring', 'backsplash', 'full_house_project', 'custom')`,
     ),
     check(
       "jobs_amount_paid_lte_contract_check",

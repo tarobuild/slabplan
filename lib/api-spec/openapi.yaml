@@ -11143,6 +11143,13 @@ components:
         jobType:
           type: string
           nullable: true
+          enum:
+            - kitchen_countertops
+            - bathrooms
+            - flooring
+            - backsplash
+            - full_house_project
+            - custom
         workDays:
           type: array
           nullable: true
@@ -11766,6 +11773,13 @@ components:
         jobType:
           type: string
           nullable: true
+          enum:
+            - kitchen_countertops
+            - bathrooms
+            - flooring
+            - backsplash
+            - full_house_project
+            - custom
         contractPrice:
           type: string
           nullable: true
@@ -12730,6 +12744,13 @@ components:
         jobType:
           type: string
           nullable: true
+          enum:
+            - kitchen_countertops
+            - bathrooms
+            - flooring
+            - backsplash
+            - full_house_project
+            - custom
         contractPrice:
           type: string
           nullable: true
@@ -12824,6 +12845,13 @@ components:
         jobType:
           type: string
           nullable: true
+          enum:
+            - kitchen_countertops
+            - bathrooms
+            - flooring
+            - backsplash
+            - full_house_project
+            - custom
         contractPrice:
           type: string
           nullable: true

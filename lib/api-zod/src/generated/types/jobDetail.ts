@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { JobAssignee } from "./jobAssignee";
+import type { JobDetailJobType } from "./jobDetailJobType";
 
 /**
  * Hydrated job returned by `GET /jobs/{id}`, `POST /jobs`, and `PUT /jobs/{id}`.
@@ -18,7 +19,7 @@ export interface JobDetail {
   state?: string | null;
   streetAddress?: string | null;
   zipCode?: string | null;
-  jobType?: string | null;
+  jobType?: JobDetailJobType;
   contractPrice?: string | null;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   projectedStart?: string | null;

@@ -138,6 +138,19 @@ export const JobsJobPayloadSchemaStatus = {
   archived: "archived",
 } as const;
 
+export type JobsJobPayloadSchemaJobType =
+  | (typeof JobsJobPayloadSchemaJobType)[keyof typeof JobsJobPayloadSchemaJobType]
+  | null;
+
+export const JobsJobPayloadSchemaJobType = {
+  kitchen_countertops: "kitchen_countertops",
+  bathrooms: "bathrooms",
+  flooring: "flooring",
+  backsplash: "backsplash",
+  full_house_project: "full_house_project",
+  custom: "custom",
+} as const;
+
 export type JobsJobPayloadSchemaWorkDaysItem =
   (typeof JobsJobPayloadSchemaWorkDaysItem)[keyof typeof JobsJobPayloadSchemaWorkDaysItem];
 
@@ -180,7 +193,7 @@ export interface JobsJobPayloadSchema {
    * @nullable
    */
   contractPrice?: string | number | null;
-  jobType?: string | null;
+  jobType?: JobsJobPayloadSchemaJobType;
   workDays?: JobsJobPayloadSchemaWorkDaysItem[] | null;
   /**
    * Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — **not** an ISO timestamp and **not** coerced to a `Date` (the handler rejects any other form, including timezone offsets). `format: date` is intentionally omitted so generated clients keep this as a `string`, matching the handler's `optionalDate` zod transform.
@@ -588,6 +601,19 @@ export interface SuccessResponse {
   success: boolean;
 }
 
+export type JobSummaryJobType =
+  | (typeof JobSummaryJobType)[keyof typeof JobSummaryJobType]
+  | null;
+
+export const JobSummaryJobType = {
+  kitchen_countertops: "kitchen_countertops",
+  bathrooms: "bathrooms",
+  flooring: "flooring",
+  backsplash: "backsplash",
+  full_house_project: "full_house_project",
+  custom: "custom",
+} as const;
+
 /**
  * Summary view of a job used in client detail and client-job listings.
  */
@@ -597,7 +623,7 @@ export interface JobSummary {
   status?: string | null;
   city?: string | null;
   state?: string | null;
-  jobType?: string | null;
+  jobType?: JobSummaryJobType;
   /** Decimal price serialized as string. */
   contractPrice?: string | null;
   /** @minimum 0 */
@@ -1082,6 +1108,19 @@ export interface JobAssignee {
   avatarUrl?: string | null;
 }
 
+export type JobListItemJobType =
+  | (typeof JobListItemJobType)[keyof typeof JobListItemJobType]
+  | null;
+
+export const JobListItemJobType = {
+  kitchen_countertops: "kitchen_countertops",
+  bathrooms: "bathrooms",
+  flooring: "flooring",
+  backsplash: "backsplash",
+  full_house_project: "full_house_project",
+  custom: "custom",
+} as const;
+
 export interface JobListItem {
   id: string;
   title: string;
@@ -1090,7 +1129,7 @@ export interface JobListItem {
   state?: string | null;
   streetAddress?: string | null;
   zipCode?: string | null;
-  jobType?: string | null;
+  jobType?: JobListItemJobType;
   contractPrice?: string | null;
   contractType?: string | null;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
@@ -1123,6 +1162,19 @@ export interface JobListItem {
   updatedAt: string;
 }
 
+export type JobDetailJobType =
+  | (typeof JobDetailJobType)[keyof typeof JobDetailJobType]
+  | null;
+
+export const JobDetailJobType = {
+  kitchen_countertops: "kitchen_countertops",
+  bathrooms: "bathrooms",
+  flooring: "flooring",
+  backsplash: "backsplash",
+  full_house_project: "full_house_project",
+  custom: "custom",
+} as const;
+
 /**
  * Hydrated job returned by `GET /jobs/{id}`, `POST /jobs`, and `PUT /jobs/{id}`.
  */
@@ -1134,7 +1186,7 @@ export interface JobDetail {
   state?: string | null;
   streetAddress?: string | null;
   zipCode?: string | null;
-  jobType?: string | null;
+  jobType?: JobDetailJobType;
   contractPrice?: string | null;
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   projectedStart?: string | null;

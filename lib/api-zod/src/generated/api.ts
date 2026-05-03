@@ -594,7 +594,16 @@ export const ClientsGetClientsIdResponse = zod
                 status: zod.string().nullish(),
                 city: zod.string().nullish(),
                 state: zod.string().nullish(),
-                jobType: zod.string().nullish(),
+                jobType: zod
+                  .enum([
+                    "kitchen_countertops",
+                    "bathrooms",
+                    "flooring",
+                    "backsplash",
+                    "full_house_project",
+                    "custom",
+                  ])
+                  .nullish(),
                 contractPrice: zod
                   .string()
                   .nullish()
@@ -764,7 +773,16 @@ export const ClientsPutClientsIdResponse = zod
                 status: zod.string().nullish(),
                 city: zod.string().nullish(),
                 state: zod.string().nullish(),
-                jobType: zod.string().nullish(),
+                jobType: zod
+                  .enum([
+                    "kitchen_countertops",
+                    "bathrooms",
+                    "flooring",
+                    "backsplash",
+                    "full_house_project",
+                    "custom",
+                  ])
+                  .nullish(),
                 contractPrice: zod
                   .string()
                   .nullish()
@@ -950,7 +968,16 @@ export const ClientsGetClientsIdJobsResponse = zod
           status: zod.string().nullish(),
           city: zod.string().nullish(),
           state: zod.string().nullish(),
-          jobType: zod.string().nullish(),
+          jobType: zod
+            .enum([
+              "kitchen_countertops",
+              "bathrooms",
+              "flooring",
+              "backsplash",
+              "full_house_project",
+              "custom",
+            ])
+            .nullish(),
           contractPrice: zod
             .string()
             .nullish()
@@ -1181,7 +1208,16 @@ export const JobsGetJobsResponse = zod.object({
       state: zod.string().nullish(),
       streetAddress: zod.string().nullish(),
       zipCode: zod.string().nullish(),
-      jobType: zod.string().nullish(),
+      jobType: zod
+        .enum([
+          "kitchen_countertops",
+          "bathrooms",
+          "flooring",
+          "backsplash",
+          "full_house_project",
+          "custom",
+        ])
+        .nullish(),
       contractPrice: zod.string().nullish(),
       contractType: zod.string().nullish(),
       projectedStart: zod
@@ -1304,7 +1340,16 @@ export const JobsPostJobsBody = zod
           ),
       ])
       .nullish(),
-    jobType: zod.string().nullish(),
+    jobType: zod
+      .enum([
+        "kitchen_countertops",
+        "bathrooms",
+        "flooring",
+        "backsplash",
+        "full_house_project",
+        "custom",
+      ])
+      .nullish(),
     workDays: zod
       .array(zod.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
       .nullish()
@@ -1449,7 +1494,16 @@ export const JobsGetJobsIdResponse = zod.object({
       state: zod.string().nullish(),
       streetAddress: zod.string().nullish(),
       zipCode: zod.string().nullish(),
-      jobType: zod.string().nullish(),
+      jobType: zod
+        .enum([
+          "kitchen_countertops",
+          "bathrooms",
+          "flooring",
+          "backsplash",
+          "full_house_project",
+          "custom",
+        ])
+        .nullish(),
       contractPrice: zod.string().nullish(),
       projectedStart: zod
         .string()
@@ -1586,7 +1640,16 @@ export const JobsPutJobsIdBody = zod
           ),
       ])
       .nullish(),
-    jobType: zod.string().nullish(),
+    jobType: zod
+      .enum([
+        "kitchen_countertops",
+        "bathrooms",
+        "flooring",
+        "backsplash",
+        "full_house_project",
+        "custom",
+      ])
+      .nullish(),
     workDays: zod
       .array(zod.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
       .nullish()
@@ -1700,7 +1763,16 @@ export const JobsPutJobsIdResponse = zod.object({
       state: zod.string().nullish(),
       streetAddress: zod.string().nullish(),
       zipCode: zod.string().nullish(),
-      jobType: zod.string().nullish(),
+      jobType: zod
+        .enum([
+          "kitchen_countertops",
+          "bathrooms",
+          "flooring",
+          "backsplash",
+          "full_house_project",
+          "custom",
+        ])
+        .nullish(),
       contractPrice: zod.string().nullish(),
       projectedStart: zod
         .string()

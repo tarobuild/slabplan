@@ -92,7 +92,18 @@ const jobPayloadBaseSchema = z.object({
   }),
   zipCode: optionalString,
   contractPrice: optionalMoney,
-  jobType: optionalString,
+  jobType: z
+    .enum([
+      "kitchen_countertops",
+      "bathrooms",
+      "flooring",
+      "backsplash",
+      "full_house_project",
+      "custom",
+    ])
+    .nullable()
+    .optional()
+    .default(null),
   workDays: z
     .array(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
     .nullable()
@@ -182,7 +193,7 @@ function toJobInsert(data: z.infer<typeof jobPayloadBaseSchema>, createdBy: stri
     state: data.state,
     zipCode: data.zipCode,
     contractPrice: data.contractPrice,
-    jobType: data.jobType,
+    jobType: data.jobType ?? null,
     workDays: data.workDays,
     projectedStart: data.projectedStart,
     projectedCompletion: data.projectedCompletion,

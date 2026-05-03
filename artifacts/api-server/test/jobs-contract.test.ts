@@ -38,7 +38,7 @@ function basePayload() {
     state: "TX",
     zipCode: "78701",
     contractPrice: "12345.67",
-    jobType: "kitchen",
+    jobType: "kitchen_countertops",
     workDays: null,
     projectedStart: "2026-04-01",
     projectedCompletion: "2026-06-15",

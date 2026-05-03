@@ -75,13 +75,23 @@ type Job = {
 type ClientOption = { id: string; companyName: string }
 
 const JOB_TYPES = [
-  "Kitchen Countertops",
-  "Flooring",
-  "Bathrooms",
-  "Full House Projects",
-  "Custom",
-]
-const toLabel = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase())
+  "kitchen_countertops",
+  "bathrooms",
+  "flooring",
+  "backsplash",
+  "full_house_project",
+  "custom",
+] as const
+const JOB_TYPE_LABELS: Record<string, string> = {
+  kitchen_countertops: "Kitchen Countertops",
+  bathrooms: "Bathrooms",
+  flooring: "Flooring",
+  backsplash: "Backsplash",
+  full_house_project: "Full House Project",
+  custom: "Custom",
+}
+const toLabel = (s: string) =>
+  JOB_TYPE_LABELS[s] ?? s.replace(/\b\w/g, (c) => c.toUpperCase())
 const WORK_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 const WORK_DAYS_LABELS: Record<string, string> = {
   mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun"
@@ -218,7 +228,7 @@ export default function JobSummaryPage() {
       const payload: JobsJobPayloadSchema = {
         title: job.title,
         status: job.status as JobsJobPayloadSchema["status"],
-        jobType: job.jobType || null,
+        jobType: (job.jobType as JobsJobPayloadSchema["jobType"]) || null,
         streetAddress: job.streetAddress || null,
         city: job.city || null,
         state: job.state || null,

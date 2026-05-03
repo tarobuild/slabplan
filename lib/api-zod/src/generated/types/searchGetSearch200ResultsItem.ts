@@ -13,4 +13,8 @@ export type SearchGetSearch200ResultsItem = {
   title: string;
   subtitle?: string;
   href: string;
+  /** For job results, the linked client UUID (or null when unassigned). Omitted for non-job results. */
+  clientId?: string | null;
+  /** For job results, the linked client's company name (or null when unassigned). Omitted for non-job results. */
+  clientName?: string | null;
 };

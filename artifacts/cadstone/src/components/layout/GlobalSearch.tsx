@@ -32,6 +32,8 @@ type SearchResult = {
   title: string
   subtitle?: string
   href: string
+  clientId?: string | null
+  clientName?: string | null
 }
 
 type SearchResponse = {
@@ -251,7 +253,43 @@ export default function GlobalSearch({
     inputRef.current?.focus()
   }, [])
 
-  const results = response?.results ?? []
+  const rawResults = response?.results ?? []
+  // Group jobs under their client when both appear in the same page of
+  // results: emit each client immediately followed by any jobs whose
+  // clientId matches it. Remaining jobs (and other types) keep their
+  // original order afterwards.
+  const results = useMemo(() => {
+    if (rawResults.length === 0) return rawResults
+    const clientResults = rawResults.filter((r) => r.type === "client")
+    if (clientResults.length === 0) return rawResults
+    const clientIds = new Set(clientResults.map((c) => c.id))
+    const grouped: SearchResult[] = []
+    const consumed = new Set<string>()
+    for (const client of clientResults) {
+      grouped.push(client)
+      consumed.add(`${client.type}:${client.id}`)
+      for (const r of rawResults) {
+        if (r.type !== "job") continue
+        if (r.clientId !== client.id) continue
+        grouped.push(r)
+        consumed.add(`${r.type}:${r.id}`)
+      }
+    }
+    for (const r of rawResults) {
+      const key = `${r.type}:${r.id}`
+      if (consumed.has(key)) continue
+      // Show orphan jobs whose client isn't in this page with their
+      // client name in the subtitle so the grouping intent is still
+      // visible.
+      if (r.type === "job" && r.clientId && !clientIds.has(r.clientId)) {
+        const tag = r.clientName ? `${r.clientName} · ` : ""
+        grouped.push({ ...r, subtitle: `${tag}${r.subtitle ?? ""}` })
+      } else {
+        grouped.push(r)
+      }
+    }
+    return grouped
+  }, [rawResults])
   const hasMore = response?.pagination?.hasMore ?? false
   const showDropdown = open
   const showPager = queryReady && response !== null && (page > 1 || hasMore)

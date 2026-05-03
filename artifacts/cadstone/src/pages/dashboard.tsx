@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import JobPickerDialog from "@/components/dashboard/JobPickerDialog"
+import ClientPickerDialog from "@/components/dashboard/ClientPickerDialog"
 import {
   activityGetActivity,
   dashboardGetDashboardAgenda,
@@ -480,6 +481,37 @@ export default function DashboardPage() {
   const [quickPickerKind, setQuickPickerKind] = useState<
     null | "daily-log" | "schedule"
   >(null)
+  const [newJobClientPickerOpen, setNewJobClientPickerOpen] = useState(false)
+  // Optional ?client= filter — when present, restrict the calendar to a single
+  // client's jobs/items so the dashboard mirrors the in-context Clients > Job
+  // navigation.
+  const clientFilterId = useMemo(() => {
+    if (typeof window === "undefined") return null
+    const sp = new URLSearchParams(window.location.search)
+    const cid = sp.get("client")
+    return cid && cid.length > 0 ? cid : null
+  }, [])
+  const [clientFilterName, setClientFilterName] = useState<string | null>(null)
+  useEffect(() => {
+    if (!clientFilterId) {
+      setClientFilterName(null)
+      return
+    }
+    let cancelled = false
+    import("@/lib/api").then(({ api }) =>
+      api
+        .get(`/clients/${clientFilterId}`)
+        .then((r) => {
+          if (!cancelled) setClientFilterName(r.data?.client?.companyName ?? null)
+        })
+        .catch(() => {
+          if (!cancelled) setClientFilterName(null)
+        }),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [clientFilterId])
 
   const [calView, setCalView] = useState<CalView>("calendar")
   const [calPeriod, setCalPeriod] = useState<CalPeriod>("month")
@@ -507,12 +539,13 @@ export default function DashboardPage() {
       dashboardGetDashboardSchedule({
         start: fetchRange.start,
         end: fetchRange.end,
+        ...(clientFilterId ? { clientId: clientFilterId } : {}),
       }) as Promise<{ items?: CalItem[] }>
     )
       .then((data) => setCalItems((data.items ?? []).filter((i) => i.startDate)))
       .catch((err: unknown) => toastApiError(err, "Failed to load schedule"))
       .finally(() => setCalLoading(false))
-  }, [fetchRange])
+  }, [fetchRange, clientFilterId])
 
   useEffect(() => { fetchCal() }, [fetchCal])
 
@@ -581,9 +614,7 @@ export default function DashboardPage() {
                   size="sm"
                   variant="orange"
                   className="text-xs h-8 gap-1 rounded-r-none border-r border-orange-700/40 pr-2.5"
-                  onClick={() =>
-                    navigate("/jobs", { state: { openCreate: true } })
-                  }
+                  onClick={() => setNewJobClientPickerOpen(true)}
                 >
                   <Plus className="size-3.5" />
                   New Job
@@ -611,9 +642,7 @@ export default function DashboardPage() {
                 <DropdownMenuContent align="end" className="w-56">
                   {user?.role === "admin" ? (
                     <DropdownMenuItem
-                      onSelect={() => {
-                        navigate("/jobs", { state: { openCreate: true } })
-                      }}
+                      onSelect={() => setNewJobClientPickerOpen(true)}
                     >
                       <Plus className="mr-2 size-4 text-orange-500" />
                       New Job
@@ -644,6 +673,35 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {clientFilterId ? (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">
+              Client: {clientFilterName ?? "Loading…"}
+              <button
+                type="button"
+                onClick={() => navigate("/dashboard")}
+                aria-label="Clear client filter"
+                className="ml-1 text-orange-700 hover:text-orange-900"
+              >
+                ×
+              </button>
+            </span>
+          </div>
+        ) : null}
+
+        <ClientPickerDialog
+          open={newJobClientPickerOpen}
+          onOpenChange={setNewJobClientPickerOpen}
+          title="Pick a client for the new job"
+          description="Every job belongs to a client. Choose one to continue — you'll fill out the rest of the job details next."
+          onSelect={(clientId) => {
+            setNewJobClientPickerOpen(false)
+            navigate("/jobs", {
+              state: { openCreate: true, clientId, lockClient: true },
+            })
+          }}
+        />
 
         <JobPickerDialog
           open={quickPickerKind !== null}

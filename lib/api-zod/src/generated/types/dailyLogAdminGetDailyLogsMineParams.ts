@@ -24,6 +24,10 @@ export type DailyLogAdminGetDailyLogsMineParams = {
    */
   keywords?: string;
   /**
+   * Optional UUID. When provided, only logs whose job is linked to this client are returned.
+   */
+  clientId?: string;
+  /**
    * Page size for cursor pagination. Default 25; max 100.
    * @minimum 1
    * @maximum 100

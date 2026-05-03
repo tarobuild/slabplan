@@ -2032,6 +2032,10 @@ export type DailyLogAdminGetDailyLogsMineParams = {
    */
   keywords?: string;
   /**
+   * Optional UUID. When provided, only logs whose job is linked to this client are returned.
+   */
+  clientId?: string;
+  /**
    * Page size for cursor pagination. Default 25; max 100.
    * @minimum 1
    * @maximum 100
@@ -2084,6 +2088,10 @@ export type DashboardGetDashboardScheduleParams = {
    * Inclusive upper bound on the schedule range (YYYY-MM-DD). Defaults to today + 60 days. Must be on or after `start`.
    */
   end?: string;
+  /**
+   * Optional UUID. When provided, only schedule items and jobs linked to this client are returned.
+   */
+  clientId?: string;
 };
 
 export type ActivityGetActivityParams = {
@@ -2195,6 +2203,10 @@ export type SearchGetSearch200ResultsItem = {
   title: string;
   subtitle?: string;
   href: string;
+  /** For job results, the linked client UUID (or null when unassigned). Omitted for non-job results. */
+  clientId?: string | null;
+  /** For job results, the linked client's company name (or null when unassigned). Omitted for non-job results. */
+  clientName?: string | null;
 };
 
 /**

@@ -15,4 +15,8 @@ export type DashboardGetDashboardScheduleParams = {
    * Inclusive upper bound on the schedule range (YYYY-MM-DD). Defaults to today + 60 days. Must be on or after `start`.
    */
   end?: Date;
+  /**
+   * Optional UUID. When provided, only schedule items and jobs linked to this client are returned.
+   */
+  clientId?: string;
 };

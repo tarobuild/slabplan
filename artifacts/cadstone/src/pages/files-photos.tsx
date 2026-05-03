@@ -12,14 +12,20 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toastApiError } from "@/lib/api-errors"
+import {
+  ClientFilterChip,
+  useClientFilterFromUrl,
+} from "@/components/ClientFilterChip"
 
 export default function FilesPhotosPage() {
   useDocumentTitle("Photos")
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
 
-  // Use the generated typed hook so this page benefits from the same
-  // tanstack-query cache and refetch behavior as the rest of the app.
-  const jobsQuery = useJobsGetJobs()
+  const clientFilterId = useClientFilterFromUrl()
+
+  const jobsQuery = useJobsGetJobs(
+    clientFilterId ? { clientId: clientFilterId } : undefined,
+  )
   const jobs: JobListItem[] = jobsQuery.data?.jobs ?? []
   const loading = jobsQuery.isPending
 
@@ -47,6 +53,9 @@ export default function FilesPhotosPage() {
           <div className="flex items-center gap-2">
             <ImageIcon className="size-6 text-slate-700" />
             <h1 className="text-2xl font-bold text-slate-900">Photos</h1>
+            {clientFilterId ? (
+              <ClientFilterChip clientId={clientFilterId} clearTo="/files/photos" />
+            ) : null}
           </div>
           {selectedJob && <p className="mt-0.5 text-sm text-slate-500">{selectedJob.title}</p>}
         </div>

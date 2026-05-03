@@ -80,6 +80,7 @@ const myDailyLogsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
   keywords: z.string().trim().optional(),
+  clientId: z.string().uuid().optional(),
 });
 
 function deriveVisibilityLabel(log: {
@@ -464,6 +465,10 @@ router.get(
       eq(dailyLogs.createdBy, req.auth!.userId),
       isNull(dailyLogs.deletedAt),
     ];
+
+    if (query.data.clientId) {
+      conditions.push(eq(jobs.clientId, query.data.clientId));
+    }
 
     if (query.data.keywords) {
       const search = buildContainsLikePattern(query.data.keywords);

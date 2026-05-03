@@ -49,6 +49,34 @@ export default function MyDailyLogsPage() {
   const [errorMessage, setErrorMessage] = useState("")
   const loadRequestIdRef = useRef(0)
 
+  const clientFilterId = (() => {
+    if (typeof window === "undefined") return null
+    const sp = new URLSearchParams(window.location.search)
+    const cid = sp.get("client")
+    return cid && cid.length > 0 ? cid : null
+  })()
+  const [clientFilterName, setClientFilterName] = useState<string | null>(null)
+  useEffect(() => {
+    if (!clientFilterId) {
+      setClientFilterName(null)
+      return
+    }
+    let cancelled = false
+    import("@/lib/api").then(({ api }) =>
+      api
+        .get(`/clients/${clientFilterId}`)
+        .then((r) => {
+          if (!cancelled) setClientFilterName(r.data?.client?.companyName ?? null)
+        })
+        .catch(() => {
+          if (!cancelled) setClientFilterName(null)
+        }),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [clientFilterId])
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setDebouncedSearch(search)
@@ -76,6 +104,7 @@ export default function MyDailyLogsPage() {
         cursor: cursor ?? "",
         limit: PAGE_LIMIT,
         ...(trimmed ? { keywords: trimmed } : {}),
+        ...(clientFilterId ? { clientId: clientFilterId } : {}),
       }
 
       const validated = validatePayload(
@@ -139,6 +168,20 @@ export default function MyDailyLogsPage() {
         <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Dashboard</div>
         <h1 className="mt-2 text-2xl font-semibold text-slate-950">My Daily Logs</h1>
         <p className="mt-1 text-sm text-slate-500">Recent daily logs created by your account across all jobs.</p>
+        {clientFilterId ? (
+          <div className="mt-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">
+              Client: {clientFilterName ?? "Loading…"}
+              <Link
+                to="/daily-logs/mine"
+                aria-label="Clear client filter"
+                className="ml-1 text-orange-700 hover:text-orange-900"
+              >
+                ×
+              </Link>
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="relative max-w-md">

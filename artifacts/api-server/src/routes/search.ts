@@ -177,8 +177,11 @@ router.get(
               city: jobs.city,
               state: jobs.state,
               status: jobs.status,
+              clientId: jobs.clientId,
+              clientName: clients.companyName,
             })
             .from(jobs)
+            .leftJoin(clients, eq(jobs.clientId, clients.id))
             .where(
               and(
                 isNull(jobs.deletedAt),
@@ -492,6 +495,8 @@ router.get(
           [job.streetAddress, job.city, job.state].filter(Boolean).join(", ") ||
           `Status: ${job.status.replaceAll("_", " ")}`,
         href: `/jobs/${job.id}`,
+        clientId: job.clientId ?? null,
+        clientName: job.clientName ?? null,
       })),
       ...Array.from(leadMap.values()).map((lead) => ({
         id: lead.id,

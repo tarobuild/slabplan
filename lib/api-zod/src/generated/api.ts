@@ -4714,6 +4714,13 @@ export const DailyLogAdminGetDailyLogsMineQueryParams = zod.object({
     .describe(
       "Free-text filter across log title, notes, weather notes, and job title.",
     ),
+  clientId: zod.coerce
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Optional UUID. When provided, only logs whose job is linked to this client are returned.",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
@@ -7130,6 +7137,13 @@ export const DashboardGetDashboardScheduleQueryParams = zod.object({
     .describe(
       "Inclusive upper bound on the schedule range (YYYY-MM-DD). Defaults to today + 60 days. Must be on or after `start`.",
     ),
+  clientId: zod.coerce
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Optional UUID. When provided, only schedule items and jobs linked to this client are returned.",
+    ),
 });
 
 export const DashboardGetDashboardScheduleResponse = zod.unknown();
@@ -7256,6 +7270,18 @@ export const SearchGetSearchResponse = zod.object({
       title: zod.string(),
       subtitle: zod.string().optional(),
       href: zod.string(),
+      clientId: zod
+        .string()
+        .nullish()
+        .describe(
+          "For job results, the linked client UUID (or null when unassigned). Omitted for non-job results.",
+        ),
+      clientName: zod
+        .string()
+        .nullish()
+        .describe(
+          "For job results, the linked client's company name (or null when unassigned). Omitted for non-job results.",
+        ),
     }),
   ),
   pagination: zod

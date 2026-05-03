@@ -19,6 +19,7 @@ import {
 import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
 import { classifyApiError } from "@/lib/api-errors"
+import { useAuthStore } from "@/store/auth"
 
 type Job = {
   id: string
@@ -26,6 +27,8 @@ type Job = {
   status: "open" | "closed" | "archived"
   city: string | null
   state: string | null
+  clientId: string | null
+  clientName: string | null
 }
 
 type StatusFilter = "open" | "closed" | "archived" | "all"
@@ -97,7 +100,9 @@ function readStoredSortAsc(): boolean {
 export default function Sidebar() {
   const { jobId } = useParams<{ jobId?: string }>()
   const navigate = useNavigate()
-  const isAdmin = useAuthStore((s) => s.user?.role === "admin")
+  const user = useAuthStore((state) => state.user)
+  const isAdmin = user?.role === "admin"
+  const canSeeClients = user?.role !== "crew_member"
   const [jobs, setJobs] = useState<Job[]>([])
   const [search, setSearch] = useState(readStoredSearch)
   const [sortAsc, setSortAsc] = useState(readStoredSortAsc)
@@ -224,6 +229,8 @@ export default function Sidebar() {
           status: job.status,
           city: job.city ?? null,
           state: job.state ?? null,
+          clientId: job.clientId ?? null,
+          clientName: job.clientName ?? null,
         })
       })
       .catch(() => {
@@ -246,13 +253,24 @@ export default function Sidebar() {
           <p className="mt-0.5 truncate text-sm font-semibold text-slate-900">
             {activeJob?.title ?? "Loading…"}
           </p>
-          <Link
-            to="/jobs"
-            className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-orange-700 hover:text-orange-800"
-          >
-            <ArrowLeft className="size-3.5" />
-            All Jobs
-          </Link>
+          <div className="mt-1 flex flex-col gap-0.5">
+            {canSeeClients && activeJob?.clientId ? (
+              <Link
+                to={`/clients/${activeJob.clientId}`}
+                className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 hover:text-orange-800"
+              >
+                <ArrowLeft className="size-3.5" />
+                Back to {activeJob.clientName ?? "client"}
+              </Link>
+            ) : null}
+            <Link
+              to={canSeeClients ? "/clients" : "/jobs"}
+              className="inline-flex items-center gap-1 text-xs font-medium text-orange-700/80 hover:text-orange-800"
+            >
+              <ArrowLeft className="size-3.5" />
+              {canSeeClients ? "All Clients" : "All Jobs"}
+            </Link>
+          </div>
         </div>
       )}
       {isAdmin ? (

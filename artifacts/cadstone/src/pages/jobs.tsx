@@ -51,6 +51,7 @@ import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
 import { EmptyState } from "@/components/EmptyState"
+import { ClientPickerDialog } from "@/components/dashboard/ClientPickerDialog"
 
 type Job = JobListItemDto
 
@@ -399,13 +400,27 @@ export default function JobsPage() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  const openCreateDialog = () => {
+  const [lockClient, setLockClient] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  const handleNewJobClick = () => {
     // Defense-in-depth: job creation is admin-only (post-#277). Every
     // visible trigger is already role-gated, but this internal guard
     // ensures any future caller (deeplink, command palette, etc.) cannot
-    // open the dialog for a non-admin even by accident.
+    // open the picker for a non-admin even by accident.
     if (!isAdmin) return
-    setForm(emptyForm)
+    setPickerOpen(true)
+  }
+
+  const openCreateDialog = (
+    options?: { defaultClientId?: string; lockClient?: boolean },
+  ) => {
+    if (!isAdmin) return
+    setForm({
+      ...emptyForm,
+      clientId: options?.defaultClientId ?? "",
+    })
+    setLockClient(Boolean(options?.lockClient && options?.defaultClientId))
     setShowCreateClient(false)
     setNewClientCompanyName("")
     setNewClientContactName("")
@@ -456,9 +471,19 @@ export default function JobsPage() {
       // for non-admins so they never see the create dialog flash open and
       // hit a 403 on submit.
       if (isAdmin) {
-        openCreateDialog()
+        const stateClientId =
+          typeof (currentState as { clientId?: unknown }).clientId === "string"
+            ? ((currentState as { clientId?: string }).clientId as string)
+            : undefined
+        const stateLock = Boolean((currentState as { lockClient?: unknown }).lockClient)
+        if (stateClientId) {
+          openCreateDialog({ defaultClientId: stateClientId, lockClient: stateLock })
+        } else {
+          setPickerOpen(true)
+        }
       }
-      const { openCreate: _openCreate, ...rest } = currentState as { openCreate?: unknown } & Record<string, unknown>
+      const { openCreate: _openCreate, clientId: _cid, lockClient: _lc, ...rest } =
+        currentState as { openCreate?: unknown; clientId?: unknown; lockClient?: unknown } & Record<string, unknown>
       const nextState = Object.keys(rest).length > 0 ? rest : null
       navigate(
         { pathname: location.pathname, search: location.search, hash: location.hash },
@@ -893,7 +918,7 @@ export default function JobsPage() {
                       }
                       action={
                         isAdmin
-                          ? { label: "+ New Job", onClick: openCreateDialog }
+                          ? { label: "+ New Job", onClick: handleNewJobClick }
                           : undefined
                       }
                       className="border-0 rounded-none"
@@ -1047,7 +1072,7 @@ export default function JobsPage() {
               }
               action={
                 isAdmin
-                  ? { label: "+ New Job", onClick: openCreateDialog }
+                  ? { label: "+ New Job", onClick: handleNewJobClick }
                   : undefined
               }
             />
@@ -1188,9 +1213,10 @@ export default function JobsPage() {
                   <Input id="title" value={form.title} onChange={setField("title")} required placeholder="e.g. Johnson Kitchen Countertops" />
                 </div>
                 <div className="col-span-2 space-y-1.5">
-                  <Label>Client</Label>
+                  <Label>Client {lockClient ? <span className="text-[10px] text-slate-400">(locked)</span> : null}</Label>
                   <Select
                     value={form.clientId || "_none"}
+                    disabled={lockClient}
                     onValueChange={(value) => {
                       if (value === ADD_NEW_CLIENT_VALUE) {
                         setShowCreateClient(true)
@@ -1389,6 +1415,15 @@ export default function JobsPage() {
           </form>
         </DialogContent>
       </Dialog>
+      <ClientPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        title="Pick a client for this job"
+        description="Every job belongs to a client. Choose one to start the new-job form."
+        onSelect={(chosenClientId) => {
+          openCreateDialog({ defaultClientId: chosenClientId, lockClient: true })
+        }}
+      />
     </div>
   )
 }

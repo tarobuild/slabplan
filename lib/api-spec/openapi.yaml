@@ -7186,6 +7186,13 @@ paths:
           description: Free-text filter across log title, notes, weather notes, and job title.
           schema:
             type: string
+        - name: clientId
+          in: query
+          required: false
+          description: Optional UUID. When provided, only logs whose job is linked to this client are returned.
+          schema:
+            type: string
+            format: uuid
         - name: limit
           in: query
           required: false
@@ -10470,6 +10477,13 @@ paths:
           schema:
             type: string
             format: date
+        - name: clientId
+          in: query
+          required: false
+          description: Optional UUID. When provided, only schedule items and jobs linked to this client are returned.
+          schema:
+            type: string
+            format: uuid
   /activity:
     get:
       operationId: activity_get_activity
@@ -10673,6 +10687,14 @@ paths:
                           type: string
                         href:
                           type: string
+                        clientId:
+                          type: string
+                          nullable: true
+                          description: For job results, the linked client UUID (or null when unassigned). Omitted for non-job results.
+                        clientName:
+                          type: string
+                          nullable: true
+                          description: For job results, the linked client's company name (or null when unassigned). Omitted for non-job results.
                   pagination:
                     description: Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`.
                     oneOf:

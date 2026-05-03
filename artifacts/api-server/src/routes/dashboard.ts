@@ -35,6 +35,7 @@ export const dashboardScheduleQuerySchema = z
   .object({
     start: isoDate.optional(),
     end: isoDate.optional(),
+    clientId: z.string().uuid().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.start && value.end && value.start > value.end) {
@@ -239,6 +240,9 @@ router.get(
       new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
         .toISOString()
         .split("T")[0];
+    const clientFilter = parsed.data.clientId
+      ? eq(jobs.clientId, parsed.data.clientId)
+      : undefined;
 
     if (accessibleJobIds && accessibleJobIds.length === 0) {
       res.json({ items: [] });
@@ -269,6 +273,7 @@ router.get(
           isNull(scheduleItems.deletedAt),
           isNull(jobs.deletedAt),
           accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
+          clientFilter,
           // items that overlap the requested range
           lte(scheduleItems.startDate, endParam),
           or(
@@ -304,6 +309,7 @@ router.get(
         and(
           isNull(jobs.deletedAt),
           accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+          clientFilter,
           // The job has at least one date that lets it appear on the calendar.
           or(
             sql`${jobs.actualStart} is not null`,

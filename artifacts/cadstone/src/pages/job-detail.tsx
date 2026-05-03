@@ -58,6 +58,8 @@ type Job = {
   status: "open" | "closed" | "archived"
   city: string | null
   state: string | null
+  clientId: string | null
+  clientName: string | null
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -329,14 +331,25 @@ export default function JobDetailPage() {
         </div>
       )}
 
-      {/* Row 1: back link */}
-      <div className="mb-2">
+      {/* Row 1: back link / breadcrumb */}
+      <div className="mb-2 flex items-center gap-2 text-xs">
+        {!isCrewMember && job?.clientId ? (
+          <>
+            <Link
+              to={`/clients/${job.clientId}`}
+              className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <ArrowLeft className="size-3.5" />
+              Back to {job.clientName ?? "client"}
+            </Link>
+            <span className="text-slate-300">·</span>
+          </>
+        ) : null}
         <Link
-          to="/jobs"
-          className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
+          to={isCrewMember || !job?.clientId ? "/jobs" : "/clients"}
+          className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-700 transition-colors"
         >
-          <ArrowLeft className="size-3.5" />
-          All jobs
+          {isCrewMember || !job?.clientId ? "All jobs" : "All clients"}
         </Link>
       </div>
 

@@ -14,7 +14,7 @@ import {
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { clientContacts, clients, jobs } from "@workspace/db/schema";
+import { clientContacts, clients, jobs, users } from "@workspace/db/schema";
 import {
   assertCanAccessClient,
   assertCanManageClient,
@@ -396,10 +396,15 @@ router.get(
               amountPaidCents: jobs.amountPaidCents,
               projectedStart: jobs.projectedStart,
               projectedCompletion: jobs.projectedCompletion,
+              actualStart: jobs.actualStart,
+              actualCompletion: jobs.actualCompletion,
+              projectManagerId: jobs.projectManagerId,
+              projectManagerName: users.fullName,
               updatedAt: jobs.updatedAt,
               createdAt: jobs.createdAt,
             })
             .from(jobs)
+            .leftJoin(users, eq(jobs.projectManagerId, users.id))
             .where(
               and(
                 eq(jobs.clientId, clientId),

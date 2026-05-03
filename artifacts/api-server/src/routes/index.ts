@@ -21,6 +21,7 @@ import usersRouter from "./users";
 import { requireAuth } from "../middleware/require-auth";
 import { idempotencyMiddleware } from "../middleware/idempotency";
 import { captureMcpContext } from "../middleware/mcp-context";
+import { fileViewErrorLogger } from "../lib/file-view-log";
 import { createPerUserApiRateLimit } from "../lib/rate-limit";
 
 const router: IRouter = Router();
@@ -70,5 +71,13 @@ router.use("/users", usersRouter);
 router.use("/jobs", jobsRouter);
 router.use("/leads", leadsRouter);
 router.use("/clients", clientsRouter);
+
+// Catch errors propagating from any of the routes above (including the
+// pre-route `requireAuth` rejection) and emit a structured `view.fail`
+// for the four file-view paths so an operator can debug "user can't
+// open the file" reports the same way they grep for `upload.fail`.
+// `withFileViewLogging` marks the request so route-level failures it
+// already logged are not double-counted here.
+router.use(fileViewErrorLogger);
 
 export default router;

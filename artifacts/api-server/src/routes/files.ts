@@ -26,6 +26,7 @@ import {
   updateAnnotation,
 } from "../lib/file-annotations";
 import { isAdmin } from "../lib/authorization";
+import { withFileViewLogging } from "../lib/file-view-log";
 import { HttpError, asyncHandler } from "../lib/http";
 import { streamStoredFileToResponse } from "../lib/storage";
 import { uploadArray } from "../lib/uploads";
@@ -278,26 +279,42 @@ router.get(
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.folderId, "folder id");
     const fileId = getParam(req.params.fileId, "file id");
+    const requesterId = req.auth?.userId ?? null;
 
-    await assertCanViewFolder(req.auth!, folderId);
-    await assertCanViewFile(req.auth!, fileId);
+    await withFileViewLogging(
+      req,
+      {
+        route: "/api/folders/:folderId/files/:fileId/view",
+        fileId,
+        getRequesterId: () => requesterId,
+      },
+      async (progress) => {
+        await assertCanViewFolder(req.auth!, folderId);
+        await assertCanViewFile(req.auth!, fileId);
 
-    const file = await getFileOrThrow(fileId);
+        const file = await getFileOrThrow(fileId);
 
-    if (file.folderId !== folderId) {
-      throw new HttpError(404, "File not found.");
-    }
+        if (file.folderId !== folderId) {
+          throw new HttpError(404, "File not found.");
+        }
 
-    if (!file.fileUrl) {
-      throw new HttpError(404, "Stored file missing.");
-    }
+        if (!file.fileUrl) {
+          throw new HttpError(404, "Stored file missing.");
+        }
 
-    const displayName = file.originalName ?? file.filename;
-    await streamStoredFileToResponse(res, file.fileUrl, {
-      disposition: "inline",
-      filename: displayName,
-      contentType: file.mimeType,
-    });
+        const displayName = file.originalName ?? file.filename;
+        return streamStoredFileToResponse(
+          res,
+          file.fileUrl,
+          {
+            disposition: "inline",
+            filename: displayName,
+            contentType: file.mimeType,
+          },
+          progress,
+        );
+      },
+    );
   }),
 );
 
@@ -305,19 +322,36 @@ router.get(
   "/files/:id/view",
   asyncHandler(async (req, res) => {
     const fileId = getParam(req.params.id, "file id");
-    await assertCanViewFile(req.auth!, fileId);
-    const file = await getFileOrThrow(fileId);
+    const requesterId = req.auth?.userId ?? null;
 
-    if (!file.fileUrl) {
-      throw new HttpError(404, "Stored file missing.");
-    }
+    await withFileViewLogging(
+      req,
+      {
+        route: "/api/files/:id/view",
+        fileId,
+        getRequesterId: () => requesterId,
+      },
+      async (progress) => {
+        await assertCanViewFile(req.auth!, fileId);
+        const file = await getFileOrThrow(fileId);
 
-    const displayName = file.originalName ?? file.filename;
-    await streamStoredFileToResponse(res, file.fileUrl, {
-      disposition: "inline",
-      filename: displayName,
-      contentType: file.mimeType,
-    });
+        if (!file.fileUrl) {
+          throw new HttpError(404, "Stored file missing.");
+        }
+
+        const displayName = file.originalName ?? file.filename;
+        return streamStoredFileToResponse(
+          res,
+          file.fileUrl,
+          {
+            disposition: "inline",
+            filename: displayName,
+            contentType: file.mimeType,
+          },
+          progress,
+        );
+      },
+    );
   }),
 );
 

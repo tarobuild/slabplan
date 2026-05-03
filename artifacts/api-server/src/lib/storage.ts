@@ -380,11 +380,35 @@ export interface SendStoredFileOptions {
   cacheControl?: string;
 }
 
+export interface StreamStoredFileProgress {
+  /**
+   * Bytes that have actually been piped to the response so far. Caller
+   * passes a mutable object so the running count is observable from
+   * outside the promise — including from the catch path of the caller
+   * when the GCS read stream errors mid-transfer.
+   */
+  bytesStreamed: number;
+}
+
+export interface StreamStoredFileResult {
+  /** Final bytes piped to the response. */
+  bytesStreamed: number;
+  /**
+   * `true` when the response socket closed before the stream finished
+   * (typical for a user navigating away from a slow PDF, or an `<img>`
+   * src swap mid-load). The streamed bytes are still meaningful but
+   * the transfer was not complete; callers should report this as a
+   * failure when they want partial-view visibility in logs.
+   */
+  aborted: boolean;
+}
+
 type StreamStoredFileImpl = (
   res: Response,
   fileUrl: string,
   opts: SendStoredFileOptions,
-) => Promise<void>;
+  progress?: StreamStoredFileProgress,
+) => Promise<StreamStoredFileResult>;
 
 let streamStoredFileImpl: StreamStoredFileImpl | null = null;
 
@@ -405,9 +429,10 @@ export async function streamStoredFileToResponse(
   res: Response,
   fileUrl: string,
   opts: SendStoredFileOptions,
-): Promise<void> {
+  progress?: StreamStoredFileProgress,
+): Promise<StreamStoredFileResult> {
   if (streamStoredFileImpl) {
-    return streamStoredFileImpl(res, fileUrl, opts);
+    return streamStoredFileImpl(res, fileUrl, opts, progress);
   }
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   const file = storageClient.bucket(bucketName).file(objectName);
@@ -444,6 +469,9 @@ export async function streamStoredFileToResponse(
     res.setHeader("Content-Length", String(size));
   }
 
+  let bytesStreamed = 0;
+  let aborted = false;
+
   await new Promise<void>((resolve, reject) => {
     const stream = file.createReadStream();
     let settled = false;
@@ -460,6 +488,7 @@ export async function streamStoredFileToResponse(
 
     const onResClose = () => {
       if (!res.writableEnded) {
+        aborted = true;
         stream.destroy();
         settle(() => {
           cleanup();
@@ -467,6 +496,17 @@ export async function streamStoredFileToResponse(
         });
       }
     };
+
+    stream.on("data", (chunk: Buffer | string) => {
+      const len =
+        typeof chunk === "string"
+          ? Buffer.byteLength(chunk)
+          : chunk.length;
+      bytesStreamed += len;
+      if (progress) {
+        progress.bytesStreamed = bytesStreamed;
+      }
+    });
 
     stream.on("error", (err) => {
       const code = (err as { code?: number })?.code;
@@ -492,6 +532,12 @@ export async function streamStoredFileToResponse(
     res.on("close", onResClose);
     stream.pipe(res);
   });
+
+  if (progress) {
+    progress.bytesStreamed = bytesStreamed;
+  }
+
+  return { bytesStreamed, aborted };
 }
 
 export function resolveAbsolutePathFromFileUrl(_fileUrl: string): never {

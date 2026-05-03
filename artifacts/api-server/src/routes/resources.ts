@@ -14,6 +14,7 @@ import {
   saveUploadedFiles,
   softDeleteFile,
 } from "../lib/file-manager";
+import { withFileViewLogging } from "../lib/file-view-log";
 import { HttpError, asyncHandler } from "../lib/http";
 import { requireAdmin } from "../middleware/require-auth";
 import { streamStoredFileToResponse } from "../lib/storage";
@@ -171,31 +172,47 @@ router.get(
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.folderId, "folder id");
     const fileId = getParam(req.params.fileId, "file id");
+    const requesterId = req.auth?.userId ?? null;
 
-    const folder = await assertCanViewFolder(req.auth!, folderId);
+    await withFileViewLogging(
+      req,
+      {
+        route: "/api/resources/folders/:folderId/files/:fileId/view",
+        fileId,
+        getRequesterId: () => requesterId,
+      },
+      async (progress) => {
+        const folder = await assertCanViewFolder(req.auth!, folderId);
 
-    if (folder.jobId) {
-      throw new HttpError(400, "Not a resource folder.");
-    }
+        if (folder.jobId) {
+          throw new HttpError(400, "Not a resource folder.");
+        }
 
-    await assertCanViewFile(req.auth!, fileId);
+        await assertCanViewFile(req.auth!, fileId);
 
-    const file = await getFileOrThrow(fileId);
+        const file = await getFileOrThrow(fileId);
 
-    if (file.folderId !== folderId) {
-      throw new HttpError(404, "File not found.");
-    }
+        if (file.folderId !== folderId) {
+          throw new HttpError(404, "File not found.");
+        }
 
-    if (!file.fileUrl) {
-      throw new HttpError(404, "Stored file missing.");
-    }
+        if (!file.fileUrl) {
+          throw new HttpError(404, "Stored file missing.");
+        }
 
-    const displayName = file.originalName ?? file.filename;
-    await streamStoredFileToResponse(res, file.fileUrl, {
-      disposition: "inline",
-      filename: displayName,
-      contentType: file.mimeType,
-    });
+        const displayName = file.originalName ?? file.filename;
+        return streamStoredFileToResponse(
+          res,
+          file.fileUrl,
+          {
+            disposition: "inline",
+            filename: displayName,
+            contentType: file.mimeType,
+          },
+          progress,
+        );
+      },
+    );
   }),
 );
 

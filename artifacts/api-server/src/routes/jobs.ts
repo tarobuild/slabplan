@@ -10,6 +10,7 @@ import {
   listAccessibleJobIds,
 } from "../lib/authorization";
 import { ensureSystemFolders, writeActivity } from "../lib/file-manager";
+import { getTrackerTotalsByJobIds } from "./financials";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
@@ -315,10 +316,21 @@ async function findJobById(id: string) {
   }
 
   const assignees = await listJobAssignees(id);
+  const trackerMap = await getTrackerTotalsByJobIds([id]);
+  const trackerTotals = trackerMap.get(id) ?? null;
 
   return {
     ...job,
     assignees,
+    hasTracker: trackerTotals !== null,
+    trackerTotals,
+    // When a tracker exists, prefer its values for the contract/billed
+    // numbers shown to clients of this endpoint. Falls back to the
+    // job-level money fields when no tracker is configured.
+    contractValueCents: trackerTotals
+      ? trackerTotals.contractWithChangesCents
+      : job.contractValueCents,
+    amountPaidCents: trackerTotals ? trackerTotals.billedCents : job.amountPaidCents,
   };
 }
 
@@ -437,6 +449,24 @@ router.get(
       .limit(fetchLimit)
       .offset(offset);
 
+    // Enrich each row with tracker totals so the list view can show
+    // tracker-managed contract/billed values (and the read-only money
+    // field hint) without an extra round trip.
+    const enrich = async <T extends { id: string; contractValueCents: number | null; amountPaidCents: number | null }>(items: T[]) => {
+      if (items.length === 0) return items.map((j) => ({ ...j, hasTracker: false, trackerTotals: null }));
+      const trackerMap = await getTrackerTotalsByJobIds(items.map((j) => j.id));
+      return items.map((j) => {
+        const t = trackerMap.get(j.id) ?? null;
+        return {
+          ...j,
+          hasTracker: t !== null,
+          trackerTotals: t,
+          contractValueCents: t ? t.contractWithChangesCents : j.contractValueCents,
+          amountPaidCents: t ? t.billedCents : j.amountPaidCents,
+        };
+      });
+    };
+
     if (isCursorMode) {
       const hasMore = rows.length > effectiveLimit;
       const trimmed = hasMore ? rows.slice(0, effectiveLimit) : rows;
@@ -445,7 +475,7 @@ router.get(
         ? encodeCursor({ v: 1, k: [last.createdAt.toISOString()], id: last.id })
         : null;
       res.json({
-        jobs: trimmed,
+        jobs: await enrich(trimmed),
         pagination: { limit: effectiveLimit, hasMore, nextCursor },
       });
       return;
@@ -454,7 +484,7 @@ router.get(
     const totalItems = Number(totalRow?.total ?? 0);
 
     res.json({
-      jobs: rows,
+      jobs: await enrich(rows),
       pagination: {
         page,
         pageSize,

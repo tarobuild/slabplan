@@ -11,6 +11,7 @@ import filesRouter from "./files";
 import filesSignedRouter from "./files-signed";
 import foldersRouter from "./folders";
 import healthRouter from "./health";
+import financialsRouter from "./financials";
 import jobsRouter from "./jobs";
 import leadsRouter from "./leads";
 import mcpRouter from "./mcp";
@@ -69,6 +70,7 @@ router.use(searchRouter);
 router.use(scheduleRouter);
 router.use("/users", usersRouter);
 router.use("/jobs", jobsRouter);
+router.use("/jobs", financialsRouter);
 router.use("/leads", leadsRouter);
 router.use("/clients", clientsRouter);
 

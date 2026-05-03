@@ -38,6 +38,7 @@ type ClientJob = {
   jobType: string | null
   contractValueCents: number | null
   amountPaidCents: number | null
+  hasTracker?: boolean
   projectedStart: string | null
   projectedCompletion: string | null
   updatedAt: string | null
@@ -96,15 +97,30 @@ function fmtDate(d: string | null) {
 function InlineMoneyInput({
   valueCents,
   onSave,
+  disabled,
+  disabledTitle,
 }: {
   valueCents: number
   onSave: (dollars: number) => void | Promise<void>
+  disabled?: boolean
+  disabledTitle?: string
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(() => (valueCents / 100).toFixed(2))
   useEffect(() => {
     setDraft((valueCents / 100).toFixed(2))
   }, [valueCents])
+  if (disabled) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-right text-slate-700"
+        title={disabledTitle ?? "Tracker-managed"}
+      >
+        {fmtMoney(valueCents)}
+        <span className="text-[10px] text-slate-400">🔒</span>
+      </span>
+    )
+  }
   if (!editing) {
     return (
       <button
@@ -393,6 +409,8 @@ export default function ClientDetailPage() {
                         >
                           <InlineMoneyInput
                             valueCents={contract}
+                            disabled={!!j.hasTracker}
+                            disabledTitle="Managed by Financial Tracker"
                             onSave={(v) => saveJobMoney(j.id, "contractValueCents", v)}
                           />
                         </td>
@@ -402,6 +420,8 @@ export default function ClientDetailPage() {
                         >
                           <InlineMoneyInput
                             valueCents={paid}
+                            disabled={!!j.hasTracker}
+                            disabledTitle="Managed by Financial Tracker"
                             onSave={(v) => saveJobMoney(j.id, "amountPaidCents", v)}
                           />
                         </td>

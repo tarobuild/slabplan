@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   CalendarDays,
   ClipboardList,
+  DollarSign,
   FileText,
   FolderOpen,
   Loader2,
@@ -75,6 +76,7 @@ const TABS: readonly TabDef[] = [
   { label: "Daily Logs", path: "daily-logs", icon: ClipboardList },
   { label: "Schedule", path: "schedule", icon: CalendarDays },
   { label: "Summary", path: "summary", icon: FileText },
+  { label: "Financials", path: "financials", icon: DollarSign },
   { label: "Files", path: "files/documents", matchPrefix: "files/", icon: FolderOpen },
 ]
 
@@ -84,6 +86,8 @@ export default function JobDetailPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === "admin"
+  const isCrewMember = user?.role === "crew_member"
+  const visibleTabs = TABS.filter((t) => t.path !== "financials" || !isCrewMember)
   const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -421,7 +425,7 @@ export default function JobDetailPage() {
 
         <div className="border-b border-[#E5E7EB]">
           <nav className="-mb-px flex gap-0 overflow-x-auto scrollbar-none">
-            {TABS.map((tab) => {
+            {visibleTabs.map((tab) => {
               const Icon = tab.icon
               const isActive = tab.matchPrefix
                 ? location.pathname.includes(`/${tab.matchPrefix}`)

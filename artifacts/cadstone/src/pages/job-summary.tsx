@@ -64,6 +64,12 @@ type Job = {
   createdAt: string
   createdByName: string | null
   assignees: WorkerOption[]
+  hasTracker?: boolean
+  trackerTotals?: {
+    contractWithChangesCents?: number
+    billedCents?: number
+    outstandingCents?: number
+  } | null
 }
 
 type ClientOption = { id: string; companyName: string }
@@ -353,11 +359,24 @@ export default function JobSummaryPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Contract Price ($)</Label>
+              <Label className="flex items-center gap-2">
+                Contract Price ($)
+                {job.hasTracker ? (
+                  <span className="text-xs font-normal text-slate-500">
+                    🔒 Managed by Financial Tracker
+                  </span>
+                ) : null}
+              </Label>
               <Input
-                value={job.contractPrice ?? ""}
+                value={
+                  job.hasTracker && job.trackerTotals?.contractWithChangesCents != null
+                    ? ((job.trackerTotals.contractWithChangesCents ?? 0) / 100).toFixed(2)
+                    : (job.contractPrice ?? "")
+                }
                 onChange={e => setField("contractPrice", e.target.value || null)}
                 type="number" step="0.01" min="0" placeholder="0.00"
+                disabled={!!job.hasTracker}
+                title={job.hasTracker ? "This job uses a Financial Tracker. Edit values on the Financials tab." : undefined}
               />
             </div>
 

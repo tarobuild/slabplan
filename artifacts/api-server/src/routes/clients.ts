@@ -24,6 +24,7 @@ import {
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
 import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
+import { getTrackerTotalsByJobIds } from "./financials";
 
 const router: IRouter = Router();
 
@@ -267,6 +268,12 @@ router.get(
       contactsByClient[c.clientId].push(c);
     }
 
+    // Per-job tracker totals (Task #269). When a job has a financial
+    // tracker, the SOV-derived contract and billed numbers replace the
+    // legacy job-level money fields in the client AR rollup.
+    const allJobIds = jobRows.map((j) => j.id);
+    const trackerTotals = await getTrackerTotalsByJobIds(allJobIds);
+
     type Rollup = {
       total: number;
       active: number;
@@ -286,8 +293,14 @@ router.get(
       });
       r.total += 1;
       if (j.status !== "archived" && j.status !== "closed") r.active += 1;
-      if (typeof j.contractValueCents === "number") r.contract += j.contractValueCents;
-      if (typeof j.amountPaidCents === "number") r.paid += j.amountPaidCents;
+      const tt = trackerTotals.get(j.id);
+      if (tt) {
+        r.contract += tt.contractWithChangesCents;
+        r.paid += tt.billedCents;
+      } else {
+        if (typeof j.contractValueCents === "number") r.contract += j.contractValueCents;
+        if (typeof j.amountPaidCents === "number") r.paid += j.amountPaidCents;
+      }
       if (j.updatedAt && (!r.lastActivityAt || j.updatedAt > r.lastActivityAt)) {
         r.lastActivityAt = j.updatedAt;
       }
@@ -397,18 +410,38 @@ router.get(
             .orderBy(desc(jobs.createdAt)),
     ]);
 
+    const detailJobIds = jobList.map((j) => j.id);
+    const detailTrackers = await getTrackerTotalsByJobIds(detailJobIds);
+
     let contractTotal = 0;
     let paidTotal = 0;
     let activeJobCount = 0;
     let lastActivityAt: Date | null = null;
-    for (const j of jobList) {
+    const enrichedJobs = jobList.map((j) => {
+      const tt = detailTrackers.get(j.id);
       if (j.status !== "archived" && j.status !== "closed") activeJobCount += 1;
-      if (typeof j.contractValueCents === "number") contractTotal += j.contractValueCents;
-      if (typeof j.amountPaidCents === "number") paidTotal += j.amountPaidCents;
+      const contract = tt
+        ? tt.contractWithChangesCents
+        : typeof j.contractValueCents === "number"
+          ? j.contractValueCents
+          : 0;
+      const paid = tt
+        ? tt.billedCents
+        : typeof j.amountPaidCents === "number"
+          ? j.amountPaidCents
+          : 0;
+      contractTotal += contract;
+      paidTotal += paid;
       if (j.updatedAt && (!lastActivityAt || j.updatedAt > lastActivityAt)) {
         lastActivityAt = j.updatedAt;
       }
-    }
+      return {
+        ...j,
+        contractValueCents: contract,
+        amountPaidCents: paid,
+        hasTracker: tt !== undefined,
+      };
+    });
     const rollups = {
       contractValueCents: contractTotal,
       amountPaidCents: paidTotal,
@@ -423,7 +456,7 @@ router.get(
         ...client,
         archived: client.deletedAt !== null,
         contacts,
-        jobs: jobList,
+        jobs: enrichedJobs,
         rollups,
       },
     });

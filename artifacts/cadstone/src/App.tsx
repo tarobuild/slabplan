@@ -41,6 +41,7 @@ const JobFilesPhotosPage = lazy(() => import("@/pages/job-files-photos"))
 const JobFilesVideosPage = lazy(() => import("@/pages/job-files-videos"))
 const JobSchedulePage = lazy(() => import("@/pages/job-schedule"))
 const JobSummaryPage = lazy(() => import("@/pages/job-summary"))
+const JobFinancialsPage = lazy(() => import("@/pages/job-financials"))
 const JobsPage = lazy(() => import("@/pages/jobs"))
 const LeadsPage = lazy(() => import("@/pages/leads"))
 const LoginPage = lazy(() => import("@/pages/login"))
@@ -148,6 +149,7 @@ function buildRouter(ready: boolean, basename: string | undefined) {
               <Route path="files/videos" element={<JobFilesVideosPage />} />
               <Route path="schedule" element={<JobSchedulePage />} />
               <Route path="daily-logs" element={<JobDailyLogsPage />} />
+              <Route path="financials" element={<JobFinancialsPage />} />
             </Route>
             <Route element={<RoleGate allow={ROLE_GATES.sales} />}>
               <Route path="/sales" element={<LeadsPage />} />

@@ -965,3 +965,134 @@ export type ActivityLogEntry = typeof activityLog.$inferSelect;
 
 // Re-export agent-related schema (in-app AI agent — Task #109)
 export * from "./agent";
+
+// ---------------------------------------------------------------------------
+// Financial Tracker (Task #269) — per-job Schedule of Values
+// ---------------------------------------------------------------------------
+
+export const financialTrackers = pgTable(
+  "financial_trackers",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+    projectName: varchar("project_name", { length: 255 }),
+    contractDate: date("contract_date", { mode: "string" }),
+    currency: varchar("currency", { length: 8 }).notNull().default("USD"),
+    rawEstimateResponse: json("raw_estimate_response").$type<unknown>(),
+    estimateFileId: uuid("estimate_file_id").references(() => files.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    ...baseTimestamps,
+  },
+  (table) => [
+    uniqueIndex("financial_trackers_job_id_unique").on(table.jobId),
+  ],
+);
+
+export const sovAreas = pgTable(
+  "sov_areas",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    trackerId: uuid("tracker_id")
+      .references(() => financialTrackers.id, { onDelete: "cascade" })
+      .notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    floor: varchar("floor", { length: 100 }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isChangeOrderGroup: boolean("is_change_order_group").notNull().default(false),
+    ...baseTimestamps,
+  },
+  (table) => [index("sov_areas_tracker_id_idx").on(table.trackerId)],
+);
+
+export const sovLineItems = pgTable(
+  "sov_line_items",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    areaId: uuid("area_id").references(() => sovAreas.id, { onDelete: "cascade" }).notNull(),
+    description: text("description").notNull(),
+    qty: numeric("qty", { precision: 12, scale: 3 }).notNull().default("1"),
+    rateCents: bigint("rate_cents", { mode: "number" }).notNull().default(0),
+    scheduledValueCents: bigint("scheduled_value_cents", { mode: "number" }).notNull().default(0),
+    billedCents: bigint("billed_cents", { mode: "number" }).notNull().default(0),
+    percentComplete: numeric("percent_complete", { precision: 5, scale: 2 }).notNull().default("0"),
+    isRemoved: boolean("is_removed").notNull().default(false),
+    isChangeOrder: boolean("is_change_order").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...baseTimestamps,
+  },
+  (table) => [
+    index("sov_line_items_area_id_idx").on(table.areaId),
+    check(
+      "sov_line_items_percent_range",
+      sql`${table.percentComplete} >= 0 AND ${table.percentComplete} <= 100`,
+    ),
+  ],
+);
+
+export const changeOrders = pgTable(
+  "change_orders",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    trackerId: uuid("tracker_id")
+      .references(() => financialTrackers.id, { onDelete: "cascade" })
+      .notNull(),
+    number: varchar("number", { length: 64 }).notNull(),
+    description: text("description"),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull().default(0),
+    status: varchar("status", { length: 32 }).notNull().default("pending"),
+    areaId: uuid("area_id").references(() => sovAreas.id, { onDelete: "set null" }),
+    ...baseTimestamps,
+  },
+  (table) => [index("change_orders_tracker_id_idx").on(table.trackerId)],
+);
+
+export const trackerInvoices = pgTable(
+  "tracker_invoices",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    trackerId: uuid("tracker_id")
+      .references(() => financialTrackers.id, { onDelete: "cascade" })
+      .notNull(),
+    invoiceNumber: varchar("invoice_number", { length: 128 }),
+    invoiceDate: date("invoice_date", { mode: "string" }),
+    totalCents: bigint("total_cents", { mode: "number" }).notNull().default(0),
+    fileId: uuid("file_id").references(() => files.id, { onDelete: "set null" }),
+    rawAiResponse: json("raw_ai_response").$type<unknown>(),
+    appliedAt: timestampTz("applied_at"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    ...baseTimestamps,
+  },
+  (table) => [index("tracker_invoices_tracker_id_idx").on(table.trackerId)],
+);
+
+export const invoiceLinePayments = pgTable(
+  "invoice_line_payments",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    invoiceId: uuid("invoice_id")
+      .references(() => trackerInvoices.id, { onDelete: "cascade" })
+      .notNull(),
+    lineItemId: uuid("line_item_id")
+      .references(() => sovLineItems.id, { onDelete: "cascade" })
+      .notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull().default(0),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("invoice_line_payments_invoice_id_idx").on(table.invoiceId),
+    index("invoice_line_payments_line_item_id_idx").on(table.lineItemId),
+  ],
+);
+
+export type FinancialTracker = typeof financialTrackers.$inferSelect;
+export type NewFinancialTracker = typeof financialTrackers.$inferInsert;
+export type SovArea = typeof sovAreas.$inferSelect;
+export type NewSovArea = typeof sovAreas.$inferInsert;
+export type SovLineItem = typeof sovLineItems.$inferSelect;
+export type NewSovLineItem = typeof sovLineItems.$inferInsert;
+export type ChangeOrder = typeof changeOrders.$inferSelect;
+export type NewChangeOrder = typeof changeOrders.$inferInsert;
+export type TrackerInvoice = typeof trackerInvoices.$inferSelect;
+export type NewTrackerInvoice = typeof trackerInvoices.$inferInsert;
+export type InvoiceLinePayment = typeof invoiceLinePayments.$inferSelect;
+export type NewInvoiceLinePayment = typeof invoiceLinePayments.$inferInsert;

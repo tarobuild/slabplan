@@ -159,6 +159,13 @@ const JOB_TEMPLATE_FOLDERS: Array<{
     viewingPermissions: { internal: true },
     uploadingPermissions: { admin: true, project_manager: true, crew_member: true },
   },
+  {
+    mediaType: "document",
+    title: "11. FINANCIALS",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
 ];
 
 const allowedPhotoMimeTypes = new Set([

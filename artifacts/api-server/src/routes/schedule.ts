@@ -3986,6 +3986,59 @@ router.post(
 );
 
 router.post(
+  "/schedule-items/:id/attachments/new-doc/preview",
+  requireScheduleItemRouteAccess,
+  asyncHandler(async (req, res) => {
+    const body = createDocPayloadSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid schedule item document payload.", body.error.flatten());
+    }
+
+    const itemId = getParam(req.params.id, "schedule item id");
+    const item = await getScheduleItemOrThrow(itemId);
+
+    if (!item.jobId) {
+      throw new HttpError(400, "Schedule item is missing a job.");
+    }
+
+    const [hydrated, jobRecord, creatorRecord] = await Promise.all([
+      hydrateScheduleItem(itemId, req.auth!.userId),
+      db
+        .select({ title: jobs.title })
+        .from(jobs)
+        .where(eq(jobs.id, item.jobId))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({ fullName: users.fullName })
+        .from(users)
+        .where(eq(users.id, req.auth!.userId))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+    ]);
+
+    const defaultTitle = `${item.title} Notes`;
+    const requestedTitle = body.data.title?.trim() || defaultTitle;
+    const documentContents = buildScheduleItemDocBody({
+      item: hydrated.item,
+      jobTitle: jobRecord?.title ?? null,
+      createdByName: creatorRecord?.fullName ?? null,
+      createdByEmail: req.auth!.email,
+      createdAt: new Date(),
+    });
+
+    res.json({
+      preview: {
+        title: requestedTitle,
+        defaultTitle,
+        body: documentContents,
+      },
+    });
+  }),
+);
+
+router.post(
   "/schedule-items/:id/attachments/new-doc",
   requireScheduleItemRouteAccess,
   asyncHandler(async (req, res) => {

@@ -278,6 +278,10 @@ export function ScheduleItemDialog({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [multiDay, setMultiDay] = useState(false)
   const [createDocConfirmOpen, setCreateDocConfirmOpen] = useState(false)
+  const [docPreviewOpen, setDocPreviewOpen] = useState(false)
+  const [docPreviewLoading, setDocPreviewLoading] = useState(false)
+  const [docPreviewBody, setDocPreviewBody] = useState("")
+  const [docPreviewTitle, setDocPreviewTitle] = useState("")
 
   useEffect(() => {
     if (!open) {
@@ -757,9 +761,36 @@ export function ScheduleItemDialog({
     }
 
     const baseName = (defaultTitleSource ?? item.title).trim() || item.title
-    const title = window.prompt("Document name", `${baseName} Notes`)
+    const initialTitle = `${baseName} Notes`
 
+    setDocPreviewTitle(initialTitle)
+    setDocPreviewBody("")
+    setDocPreviewOpen(true)
+    setDocPreviewLoading(true)
+
+    try {
+      const response = await api.post<{
+        preview: { title: string; defaultTitle: string; body: string }
+      }>(`/schedule-items/${item.id}/attachments/new-doc/preview`, {
+        title: initialTitle,
+      })
+      setDocPreviewBody(response.data.preview.body)
+    } catch (err) {
+      setDocPreviewOpen(false)
+      toastApiError(err, "Failed to load document preview")
+    } finally {
+      setDocPreviewLoading(false)
+    }
+  }
+
+  async function handleConfirmCreateDoc() {
+    if (!item) {
+      return
+    }
+
+    const title = docPreviewTitle.trim()
     if (!title) {
+      toast.error("Document name is required")
       return
     }
 
@@ -768,6 +799,7 @@ export function ScheduleItemDialog({
     try {
       await api.post(`/schedule-items/${item.id}/attachments/new-doc`, { title })
       await Promise.all([loadItem(item.id), onRefresh()])
+      setDocPreviewOpen(false)
       toast.success("Document created")
     } catch (err) {
       toastApiError(err, "Failed to create document")
@@ -2242,6 +2274,60 @@ export function ScheduleItemDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    <Dialog open={docPreviewOpen} onOpenChange={(next) => { if (!saving) setDocPreviewOpen(next) }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Preview document</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label htmlFor="schedule-doc-title">Document name</Label>
+            <Input
+              id="schedule-doc-title"
+              value={docPreviewTitle}
+              onChange={(event) => setDocPreviewTitle(event.target.value)}
+              disabled={saving}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Preview</Label>
+            <div className="rounded-md border bg-muted/30">
+              {docPreviewLoading ? (
+                <div className="flex items-center justify-center p-6 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Building preview…
+                </div>
+              ) : (
+                <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap p-3 text-xs font-mono">
+                  {docPreviewBody}
+                </pre>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Saved as a .txt attachment on this schedule item.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving}
+            onClick={() => setDocPreviewOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={saving || docPreviewLoading || !docPreviewTitle.trim()}
+            onClick={() => void handleConfirmCreateDoc()}
+          >
+            {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+            Save document
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
     <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>

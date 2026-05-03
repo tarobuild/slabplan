@@ -181,16 +181,25 @@ export async function findUserIdByEmail(
 }
 
 /**
- * Ensure at least one project_manager user exists in the local DB so the
- * inline PM picker on /jobs has a real option to choose. Idempotent —
- * reuses an existing PM if one is found, otherwise invites a synthetic
- * fixture PM (the seed script does not seed one because production has
- * no PMs by default; the E2E suite is the only consumer that needs it).
+ * Ensure the synthetic fixture PM (`fixture-pm@cadstone.test`) exists
+ * in the local DB so:
+ *   1. The inline PM picker on /jobs has a real option to choose.
+ *   2. `auth.setup.ts` can deterministically reissue an invite token
+ *      for THAT specific user and consume it via /auth/accept-invite
+ *      to provision the PM session.
+ *
+ * Idempotent: if the fixture user already exists (active), reuses it.
+ * Otherwise invites it. Crucially, the lookup keys on email — not
+ * "any active project_manager" — so an environment that already has
+ * other PMs still ends up with `fixture-pm@cadstone.test` provisioned.
+ * That keeps the e2e suite working on non-clean DBs (e.g. a developer
+ * box where someone manually invited a real PM).
  */
 export async function ensureProjectManagerFixture(
   request: APIRequestContext,
   token: string,
 ): Promise<{ id: string; fullName: string }> {
+  const fixtureEmail = "fixture-pm@cadstone.test"
   const res = await request.get("/api/users?roles=project_manager&limit=200", {
     headers: authHeaders(token),
   })
@@ -201,7 +210,8 @@ export async function ensureProjectManagerFixture(
   }
   const body = await res.json()
   const existing = (body.users ?? []).find(
-    (u: { isActive?: boolean | null }) => u.isActive !== false,
+    (u: { email: string; isActive?: boolean | null }) =>
+      u.email.toLowerCase() === fixtureEmail && u.isActive !== false,
   )
   if (existing) {
     return { id: existing.id, fullName: existing.fullName }
@@ -211,7 +221,7 @@ export async function ensureProjectManagerFixture(
   const invite = await request.post("/api/users", {
     headers: { ...authHeaders(token), "Content-Type": "application/json" },
     data: {
-      email: "fixture-pm@cadstone.test",
+      email: fixtureEmail,
       fullName,
       role: "project_manager",
     },
@@ -223,6 +233,35 @@ export async function ensureProjectManagerFixture(
   }
   const inviteBody = await invite.json()
   return { id: inviteBody.user.id, fullName: inviteBody.user.fullName }
+}
+
+/**
+ * Reissue an invite token for an existing user, returning the raw token
+ * string (the API returns it exactly once in the response and never
+ * persists it server-side). Used by auth.setup.ts to mint a fresh
+ * invite for the PM fixture so it can be consumed by /auth/accept-invite
+ * to (re)set the PM's password to a known value.
+ */
+export async function reissueInvite(
+  request: APIRequestContext,
+  adminToken: string,
+  userId: string,
+): Promise<{ token: string }> {
+  const res = await request.post(`/api/users/${userId}/invite`, {
+    headers: authHeaders(adminToken),
+  })
+  if (!res.ok()) {
+    throw new Error(
+      `reissueInvite failed for ${userId}: ${res.status()} ${await res.text()}`,
+    )
+  }
+  const body = await res.json()
+  if (typeof body.inviteToken !== "string") {
+    throw new Error(
+      `reissueInvite: unexpected response shape, missing inviteToken: ${JSON.stringify(body)}`,
+    )
+  }
+  return { token: body.inviteToken }
 }
 
 /** Mark a schedule item as deleted via the REST API, best-effort. */

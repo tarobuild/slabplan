@@ -1,6 +1,6 @@
 import type { Page, APIRequestContext } from "@playwright/test"
 import fs from "node:fs"
-import { ANWAR_STATE, CESAR_STATE, WORKER_STATE } from "./storage"
+import { ANWAR_STATE, CESAR_STATE, PM_STATE, WORKER_STATE } from "./storage"
 
 export type Credentials = { email: string; password: string }
 
@@ -52,6 +52,32 @@ export function getWorkerCredentials(): Credentials {
   return { email: WORKER_EMAIL, password }
 }
 
+// Synthetic project_manager fixture used by Playwright to drive PM-positive
+// flows (PM-of-job CAN edit own job, manage schedule, view financials).
+// Unlike the worker fixture, the PM is NOT seeded by seed-users.mjs — it
+// is provisioned by auth.setup.ts via the existing
+// `ensureProjectManagerFixture` helper (admin-invites the user, then
+// auth.setup reissues a fresh invite token and consumes it via
+// /auth/accept-invite to set the password to SEED_PM_FIXTURE_PASSWORD).
+// The Playwright suite is the only consumer that needs a logged-in PM,
+// so production never gets this user.
+export const PM_EMAIL = "fixture-pm@cadstone.test"
+
+export function getPmCredentials(): Credentials {
+  const password = process.env.SEED_PM_FIXTURE_PASSWORD
+  if (!password) {
+    throw new Error(
+      "SEED_PM_FIXTURE_PASSWORD is not set. The Playwright PM fixture " +
+        "(fixture-pm@cadstone.test) requires this env var so auth.setup " +
+        "can consume the invite token and so loginViaApi can fall back " +
+        "to /auth/login if the refresh cookie is invalidated. Pick any " +
+        "password that satisfies the API's password policy (>= 12 chars, " +
+        "no obvious weak patterns).",
+    )
+  }
+  return { email: PM_EMAIL, password }
+}
+
 // Module-level memoization: the API server rate-limits /auth/login to
 // 5 attempts per email per 10 minutes, so hitting it once per test would
 // trip the limiter long before the suite finishes. With workers=1 every
@@ -80,6 +106,7 @@ function stateFileFor(creds: Credentials) {
   if (creds.email === CESAR.email) return CESAR_STATE
   if (creds.email === ANWAR.email) return ANWAR_STATE
   if (creds.email === WORKER_EMAIL) return WORKER_STATE
+  if (creds.email === PM_EMAIL) return PM_STATE
   return null
 }
 

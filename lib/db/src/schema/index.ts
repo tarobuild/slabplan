@@ -142,7 +142,13 @@ export const clientContacts = pgTable(
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },
-  (table) => [index("client_contacts_client_id_idx").on(table.clientId)],
+  (table) => [
+    index("client_contacts_client_id_idx").on(table.clientId),
+    check(
+      "client_contacts_name_present_check",
+      sql`${table.firstName} is not null or ${table.lastName} is not null`,
+    ),
+  ],
 );
 
 export const jobs = pgTable(
@@ -180,6 +186,10 @@ export const jobs = pgTable(
     index("jobs_created_by_idx").on(table.createdBy),
     index("jobs_project_manager_id_idx").on(table.projectManagerId),
     check("jobs_status_check", sql`${table.status} in ('open', 'closed', 'archived')`),
+    check(
+      "jobs_contract_type_check",
+      sql`${table.contractType} is null or ${table.contractType} in ('fixed_price', 'open_book')`,
+    ),
     check(
       "jobs_amount_paid_lte_contract_check",
       sql`${table.amountPaidCents} is null or ${table.contractValueCents} is null or ${table.amountPaidCents} <= ${table.contractValueCents}`,
@@ -226,6 +236,10 @@ export const folders = pgTable(
       foreignColumns: [table.id],
       name: "folders_parent_folder_id_fkey",
     }).onDelete("cascade"),
+    check(
+      "folders_media_type_check",
+      sql`${table.mediaType} in ('document', 'photo', 'video')`,
+    ),
     index("folders_scope_idx").on(table.scope),
     index("folders_lead_id_idx").on(table.leadId),
     index("folders_daily_log_id_idx").on(table.dailyLogId),

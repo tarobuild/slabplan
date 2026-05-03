@@ -25,6 +25,27 @@ const baseTimestamps = {
 
 export const agentMessageRoles = ["user", "assistant", "system", "tool"] as const;
 
+// Allowed values for `agent_messages.stopped_reason`. Includes both the
+// Anthropic SDK stop_reason values that the orchestrator forwards verbatim
+// and our own sentinels (`aborted`, `api_error`, `max_iterations`). The
+// OpenAI-style values (`length`, `content_filter`, `tool_calls`, `error`)
+// are tolerated for forward compatibility with future model adapters.
+export const agentMessageStoppedReasons = [
+  "end_turn",
+  "max_tokens",
+  "stop_sequence",
+  "tool_use",
+  "pause_turn",
+  "refusal",
+  "aborted",
+  "api_error",
+  "max_iterations",
+  "length",
+  "content_filter",
+  "tool_calls",
+  "error",
+] as const;
+
 export const agentConversations = pgTable(
   "agent_conversations",
   {
@@ -102,6 +123,10 @@ export const agentMessages = pgTable(
     check(
       "agent_messages_role_check",
       sql`${table.role} in ('user', 'assistant', 'system', 'tool')`,
+    ),
+    check(
+      "agent_messages_stopped_reason_check",
+      sql`${table.stoppedReason} is null or ${table.stoppedReason} in ('end_turn', 'max_tokens', 'stop_sequence', 'tool_use', 'pause_turn', 'refusal', 'aborted', 'api_error', 'max_iterations', 'length', 'content_filter', 'tool_calls', 'error')`,
     ),
   ],
 );

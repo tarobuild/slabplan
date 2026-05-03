@@ -58,6 +58,22 @@ The api-server uses `exceljs` (not `xlsx` / SheetJS Community) to read uploaded 
 - PostgreSQL with Drizzle ORM, comprising 16 tables.
 - Schema changes are managed via `drizzle-kit push --force` and custom SQL migration files.
 - Test database provisioning is automated for local development and testing.
+- **Schema-level integrity guards (Task #290):** the database (not just the
+  TypeScript layer) enforces these invariants — all backed by CHECK / FK
+  constraints in `0012_schema_hardening.sql`:
+  - `financial_trackers.job_id` is `NOT NULL` and `ON DELETE CASCADE`, so
+    deleting a job removes its tracker (and SOV areas, line items,
+    invoices, and payments through the existing per-table cascades).
+  - `jobs.contract_type` accepts only `NULL`, `'fixed_price'`, or `'open_book'`.
+  - `folders.media_type` accepts only `'document'`, `'photo'`, `'video'`.
+  - `agent_messages.stopped_reason` accepts `NULL` plus the Anthropic SDK
+    stop_reason values (`end_turn`, `max_tokens`, `stop_sequence`,
+    `tool_use`, `pause_turn`, `refusal`) and the orchestrator sentinels
+    (`aborted`, `api_error`, `max_iterations`); OpenAI-style values
+    (`length`, `content_filter`, `tool_calls`, `error`) are tolerated for
+    forward compatibility.
+  - `client_contacts` requires at least one of `first_name` / `last_name`
+    to be non-null.
 
 **Model Context Protocol (MCP) Server (`lib/mcp-server`):**
 - Wraps the REST API for external agents, authenticating via PATs.

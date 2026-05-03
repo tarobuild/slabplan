@@ -245,7 +245,10 @@ test(
             updated_at timestamp with time zone default now() not null
           );
           create table jobs (
-            id uuid primary key
+            id uuid primary key,
+            client_id uuid,
+            contract_type varchar(50),
+            updated_at timestamp with time zone default now() not null
           );
           create table leads (
             id uuid primary key
@@ -255,6 +258,22 @@ test(
           );
           create table schedule_items (
             id uuid primary key
+          );
+          create table clients (
+            id uuid primary key,
+            company_name varchar(255) not null,
+            client_id uuid,
+            notes text,
+            created_at timestamp with time zone default now() not null,
+            updated_at timestamp with time zone default now() not null
+          );
+          create table client_contacts (
+            id uuid primary key,
+            client_id uuid references clients(id) on delete cascade not null,
+            first_name varchar(100),
+            last_name varchar(100),
+            created_at timestamp with time zone default now() not null,
+            updated_at timestamp with time zone default now() not null
           );
           create table folders (
             id uuid primary key,
@@ -293,6 +312,9 @@ test(
         "0007_user_invitations.sql",
         "0008_folder_scope_columns.sql",
         "0009_schema_audit_alignment.sql",
+        "0010_clients_first_money.sql",
+        "0011_financial_tracker.sql",
+        "0012_schema_hardening.sql",
       ];
       assert.deepEqual(
         result.applied.sort(),
@@ -323,6 +345,92 @@ test(
           `select to_regclass('job_assignees') is not null as exists`,
         );
         assert.equal(jobAssignees[0].exists, true, "job_assignees should exist after 0009");
+
+        // 0012 — schema hardening checks. Each CHECK should reject the
+        // matching bad insert; cascades and NOT NULL guards must hold.
+
+        // jobs.contract_type CHECK rejects unknown values.
+        await assert.rejects(
+          verifyClient.query(
+            `insert into jobs (id, contract_type, updated_at)
+               values ('11111111-1111-1111-1111-111111111111', 'bogus', now())`,
+          ),
+          /jobs_contract_type_check/i,
+          "jobs.contract_type CHECK must reject non-enum values",
+        );
+
+        // folders.media_type CHECK rejects unknown values. We need a
+        // valid `scope` (added in 0008) to satisfy notNull.
+        await assert.rejects(
+          verifyClient.query(
+            `insert into folders (id, title, scope, media_type)
+               values ('22222222-2222-2222-2222-222222222222', 'x',
+                       'resource', 'audio')`,
+          ),
+          /folders_media_type_check/i,
+          "folders.media_type CHECK must reject non-enum values",
+        );
+
+        // client_contacts CHECK rejects rows with neither name set.
+        await verifyClient.query(
+          `insert into clients (id, company_name)
+             values ('33333333-3333-3333-3333-333333333333', 'Acme')`,
+        );
+        await assert.rejects(
+          verifyClient.query(
+            `insert into client_contacts (id, client_id, first_name, last_name)
+               values ('44444444-4444-4444-4444-444444444444',
+                       '33333333-3333-3333-3333-333333333333',
+                       null, null)`,
+          ),
+          /client_contacts_name_present_check/i,
+          "client_contacts CHECK must reject rows with no name at all",
+        );
+
+        // agent_messages.stopped_reason CHECK rejects unknown values.
+        // agent_conversations + agent_messages were created by 0006.
+        await verifyClient.query(
+          `insert into users (id) values ('77777777-7777-7777-7777-777777777777')`,
+        );
+        await verifyClient.query(
+          `insert into agent_conversations (id, user_id)
+             values ('88888888-8888-8888-8888-888888888888',
+                     '77777777-7777-7777-7777-777777777777')`,
+        );
+        await assert.rejects(
+          verifyClient.query(
+            `insert into agent_messages (id, conversation_id, role, stopped_reason)
+               values ('99999999-9999-9999-9999-999999999999',
+                       '88888888-8888-8888-8888-888888888888',
+                       'assistant', 'definitely_not_a_real_reason')`,
+          ),
+          /agent_messages_stopped_reason_check/i,
+          "agent_messages.stopped_reason CHECK must reject non-enum values",
+        );
+
+        // financial_trackers.job_id cascades on jobs delete.
+        await verifyClient.query(
+          `insert into jobs (id, client_id, updated_at)
+             values ('55555555-5555-5555-5555-555555555555',
+                     '33333333-3333-3333-3333-333333333333', now())`,
+        );
+        await verifyClient.query(
+          `insert into financial_trackers (id, job_id, created_at, updated_at)
+             values ('66666666-6666-6666-6666-666666666666',
+                     '55555555-5555-5555-5555-555555555555', now(), now())`,
+        );
+        await verifyClient.query(
+          `delete from jobs where id = '55555555-5555-5555-5555-555555555555'`,
+        );
+        const { rows: trackerRows } = await verifyClient.query<{ count: string }>(
+          `select count(*)::text as count from financial_trackers
+             where id = '66666666-6666-6666-6666-666666666666'`,
+        );
+        assert.equal(
+          trackerRows[0].count,
+          "0",
+          "financial_trackers row must cascade away when its job is deleted",
+        );
       } finally {
         verifyClient.release();
       }

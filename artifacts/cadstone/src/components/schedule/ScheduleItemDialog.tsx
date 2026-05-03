@@ -277,6 +277,7 @@ export function ScheduleItemDialog({
   const [showEditTags, setShowEditTags] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [multiDay, setMultiDay] = useState(false)
+  const [createDocConfirmOpen, setCreateDocConfirmOpen] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -736,17 +737,27 @@ export function ScheduleItemDialog({
     }
   }
 
-  async function handleCreateDoc() {
-    if (draftMode) {
-      toast.info("Publish draft changes before creating attachments")
-      return
+  function isFormDirty(): boolean {
+    if (!item) {
+      return false
     }
+    if (noteDraft.trim().length > 0) {
+      return true
+    }
+    try {
+      return JSON.stringify(values) !== JSON.stringify(formFromItem(item))
+    } catch {
+      return false
+    }
+  }
 
+  async function performCreateDoc(defaultTitleSource?: string) {
     if (!item) {
       return
     }
 
-    const title = window.prompt("Document name", `${item.title} Notes`)
+    const baseName = (defaultTitleSource ?? item.title).trim() || item.title
+    const title = window.prompt("Document name", `${baseName} Notes`)
 
     if (!title) {
       return
@@ -763,6 +774,38 @@ export function ScheduleItemDialog({
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleCreateDoc() {
+    if (draftMode) {
+      toast.info("Publish draft changes before creating attachments")
+      return
+    }
+
+    if (!item) {
+      return
+    }
+
+    if (isFormDirty()) {
+      setCreateDocConfirmOpen(true)
+      return
+    }
+
+    await performCreateDoc()
+  }
+
+  async function handleSaveThenCreateDoc() {
+    setCreateDocConfirmOpen(false)
+    const savedTitle = values.title
+    const savedId = await handleSave("stay")
+    if (savedId) {
+      await performCreateDoc(savedTitle)
+    }
+  }
+
+  async function handleCreateDocAnyway() {
+    setCreateDocConfirmOpen(false)
+    await performCreateDoc()
   }
 
   async function handleDeleteAttachment(attachmentId: string) {
@@ -2168,6 +2211,37 @@ export function ScheduleItemDialog({
         )}
       </DialogContent>
     </Dialog>
+    <AlertDialog open={createDocConfirmOpen} onOpenChange={setCreateDocConfirmOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+          <AlertDialogDescription>
+            The document will use the last saved version of this item. Save your changes first?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving}
+            onClick={() => void handleCreateDocAnyway()}
+          >
+            Create anyway
+          </Button>
+          <AlertDialogAction
+            disabled={saving}
+            onClick={(event) => {
+              event.preventDefault()
+              void handleSaveThenCreateDoc()
+            }}
+          >
+            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+            Save &amp; create
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>

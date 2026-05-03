@@ -2145,6 +2145,179 @@ async function hydrateScheduleItem(itemId: string, requestingUserId?: string) {
 
   return hydrated
 }
+
+export type HydratedScheduleItem = Awaited<ReturnType<typeof hydrateScheduleItem>>["item"];
+
+const SCHEDULE_DOC_NOTES_LIMIT = 20;
+
+const SCHEDULE_COLOR_LABELS: Record<string, string> = {
+  "#7b2d26": "Maroon",
+  "#7a1f3d": "Merlot",
+  "#9b2c2c": "Tuscan Red",
+  "#e76f8a": "Rose",
+  "#7c6aa6": "Victoria",
+  "#7b5b3a": "Brown",
+  "#6f4e37": "Coffee",
+  "#d99a1c": "Amber",
+  "#4f8a10": "Cucumber",
+  "#6e3c5d": "Plum",
+  "#7e3ace": "Purple",
+  "#b695e0": "Lavender",
+  "#5f6edc": "Iris",
+  "#8b5cf6": "Violet",
+  "#1f3c88": "Navy",
+  "#2563eb": "Levi",
+};
+
+function formatColorLabel(value: string | null | undefined) {
+  if (!value) return "Not set";
+  const normalized = value.toLowerCase();
+  const named = SCHEDULE_COLOR_LABELS[normalized];
+  return named ? `${named} (${normalized})` : `Custom (${value})`;
+}
+
+function formatHourTimeLabel(value: string | null) {
+  if (!value) return null;
+  const [hhRaw, mmRaw = "00"] = value.split(":");
+  const hour = Number.parseInt(hhRaw ?? "", 10);
+  const minute = Number.parseInt(mmRaw, 10);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return value;
+  const period = hour >= 12 ? "PM" : "AM";
+  const display = ((hour + 11) % 12) + 1;
+  return `${display}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
+function placeholderText(value: string | null | undefined, fallback = "Not set") {
+  if (value === null || value === undefined) return fallback;
+  const trimmed = String(value).trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
+function formatYesNoLabel(value: boolean | null | undefined) {
+  if (value === null || value === undefined) return "Not set";
+  return value ? "Yes" : "No";
+}
+
+export function buildScheduleItemDocBody(params: {
+  item: HydratedScheduleItem;
+  jobTitle: string | null;
+  createdByName: string | null;
+  createdByEmail: string;
+  createdAt: Date;
+}): string {
+  const { item, jobTitle, createdByName, createdByEmail, createdAt } = params;
+  const lines: string[] = [];
+
+  lines.push(item.title);
+  lines.push("=".repeat(Math.max(item.title.length, 3)));
+  lines.push("");
+
+  const completionLabel = item.isComplete ? "Complete" : "In Progress";
+  const progressValue = item.progress ?? 0;
+  lines.push("STATUS");
+  lines.push(`  Completion: ${completionLabel}`);
+  lines.push(`  Progress: ${progressValue}%`);
+  lines.push(`  Display Color: ${formatColorLabel(item.displayColor ?? null)}`);
+  lines.push("");
+
+  lines.push("JOB");
+  lines.push(`  Job: ${placeholderText(jobTitle, "Unknown job")}`);
+  lines.push(`  Phase: ${placeholderText(item.phaseName ?? null, "None")}`);
+  lines.push("");
+
+  lines.push("ASSIGNEES");
+  if (item.assignees.length === 0) {
+    lines.push("  None");
+  } else {
+    for (const assignee of item.assignees) {
+      const name = assignee.fullName?.trim() || assignee.email;
+      lines.push(`  - ${name}`);
+    }
+  }
+  lines.push("");
+
+  lines.push("SCHEDULE");
+  lines.push(`  Start Date: ${item.startDate}`);
+  lines.push(`  End Date: ${item.endDate}`);
+  lines.push(`  Work Days: ${item.workDays}`);
+  lines.push(`  Hourly: ${item.isHourly ? "Yes" : "No"}`);
+  if (item.isHourly) {
+    lines.push(`  Start Time: ${placeholderText(formatHourTimeLabel(item.startTime))}`);
+    lines.push(`  End Time: ${placeholderText(formatHourTimeLabel(item.endTime))}`);
+  }
+  lines.push("");
+
+  lines.push("TAGS");
+  lines.push(`  ${item.tags.length > 0 ? item.tags.join(", ") : "None"}`);
+  lines.push("");
+
+  lines.push("REMINDER");
+  lines.push(`  ${labelizeScheduleValue(item.reminder ?? "none")}`);
+  lines.push("");
+
+  lines.push("PREDECESSORS");
+  if (item.predecessors.length === 0) {
+    lines.push("  None");
+  } else {
+    for (const predecessor of item.predecessors) {
+      const lagSuffix = predecessor.lagDays === 1 ? "" : "s";
+      lines.push(
+        `  - ${predecessor.title} • ${predecessorDependencyLabel(predecessor.dependencyType)} • lag ${predecessor.lagDays} day${lagSuffix}`,
+      );
+    }
+  }
+  lines.push("");
+
+  lines.push("VISIBILITY");
+  lines.push(`  Show on Gantt: ${formatYesNoLabel(item.showOnGantt)}`);
+  lines.push(`  Visible to Estimators: ${formatYesNoLabel(item.visibleToEstimators)}`);
+  lines.push(`  Visible to Installers: ${formatYesNoLabel(item.visibleToInstallers)}`);
+  lines.push(`  Visible to Office Staff: ${formatYesNoLabel(item.visibleToOfficeStaff)}`);
+  lines.push("");
+
+  const totalNotes = item.notesStream.length;
+  const notesHeading =
+    totalNotes > SCHEDULE_DOC_NOTES_LIMIT
+      ? `NOTES (most recent first, showing latest ${SCHEDULE_DOC_NOTES_LIMIT} of ${totalNotes})`
+      : "NOTES (most recent first)";
+  lines.push(notesHeading);
+  if (totalNotes === 0) {
+    lines.push("  None");
+  } else {
+    const slice = item.notesStream
+      .slice()
+      .sort((a, b) => {
+        const aTs = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt as string).getTime();
+        const bTs = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt as string).getTime();
+        return bTs - aTs;
+      })
+      .slice(0, SCHEDULE_DOC_NOTES_LIMIT);
+    for (const note of slice) {
+      const author = note.authorName?.trim() || "Unknown author";
+      const ts =
+        note.createdAt instanceof Date
+          ? note.createdAt.toISOString()
+          : String(note.createdAt ?? "");
+      lines.push(`  [${ts}] ${author}:`);
+      for (const noteLine of note.note.split("\n")) {
+        lines.push(`    ${noteLine}`);
+      }
+    }
+  }
+  lines.push("");
+
+  lines.push("---");
+  const creator = createdByName?.trim() || createdByEmail;
+  lines.push(`Item ID: ${item.id}`);
+  lines.push(`Document created by: ${creator}`);
+  lines.push(`Document created at: ${createdAt.toISOString()}`);
+
+  return lines.join("\n");
+}
+
+export const __scheduleDocTesting = {
+  hydrateScheduleItem,
+};
 router.get(
   "/jobs/:jobId/schedule/settings",
   asyncHandler(async (req, res) => {
@@ -3840,14 +4013,30 @@ router.post(
       mediaType: "document",
       storedFileName,
     });
-    const documentContents = [
-      item.title,
-      "",
-      "Created from the schedule item files tab.",
-      "",
-      `Item ID: ${item.id}`,
-      `Created: ${new Date().toISOString()}`,
-    ].join("\n");
+    const [hydrated, jobRecord, creatorRecord] = await Promise.all([
+      hydrateScheduleItem(itemId, req.auth!.userId),
+      db
+        .select({ title: jobs.title })
+        .from(jobs)
+        .where(eq(jobs.id, item.jobId))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({ fullName: users.fullName })
+        .from(users)
+        .where(eq(users.id, req.auth!.userId))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+    ]);
+
+    const documentCreatedAt = new Date();
+    const documentContents = buildScheduleItemDocBody({
+      item: hydrated.item,
+      jobTitle: jobRecord?.title ?? null,
+      createdByName: creatorRecord?.fullName ?? null,
+      createdByEmail: req.auth!.email,
+      createdAt: documentCreatedAt,
+    });
 
     await writeUploadedBuffer(uploadPath.fileUrl, Buffer.from(documentContents, "utf8"), {
       contentType: "text/plain; charset=utf-8",

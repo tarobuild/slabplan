@@ -17,7 +17,9 @@ import {
   Play,
   Plus,
   Upload,
+  X,
 } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
 import { api } from "@/lib/api"
 import { useFilePreview } from "@/components/files/file-preview-context"
 import type { PreviewFile } from "@/components/files/FilePreview"
@@ -239,8 +241,20 @@ export default function FileBrowser({
   // Resource scope is admin-only write, so we skip the fetch there.
   const [jobProjectManagerId, setJobProjectManagerId] = useState<string | null>(null)
 
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  type UploadTask = {
+    id: number
+    fileNames: string[]
+    fileCount: number
+    totalBytes: number
+    loaded: number
+    percent: number
+    status: "uploading" | "retrying"
+    retryAttempt: number
+    retryReason: string | null
+    abort: () => void
+  }
+  const [uploadTask, setUploadTask] = useState<UploadTask | null>(null)
+  const uploading = uploadTask !== null
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([])
@@ -437,6 +451,11 @@ export default function FileBrowser({
 
   const handleUploadSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return
+    if (uploadTask) {
+      toast.info("Wait for the current upload to finish or cancel it first.")
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      return
+    }
     const nextFiles = Array.from(e.target.files)
     const validationError = validateSelectedFiles(nextFiles, mediaType)
 
@@ -460,6 +479,7 @@ export default function FileBrowser({
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (uploadTask) return
     if (!currentFolderId || selectedUploadFiles.length === 0) {
       setUploadError("Select at least one file to upload.")
       return
@@ -475,18 +495,46 @@ export default function FileBrowser({
     if (uploadNote.trim()) {
       formData.append("note", uploadNote.trim())
     }
-    setUploading(true)
+    const controller = new AbortController()
+    const totalBytes = selectedUploadFiles.reduce((sum, f) => sum + f.size, 0)
+    const taskId = Date.now()
+    setUploadTask({
+      id: taskId,
+      fileNames: selectedUploadFiles.map((f) => f.name),
+      fileCount: selectedUploadFiles.length,
+      totalBytes,
+      loaded: 0,
+      percent: 0,
+      status: "uploading",
+      retryAttempt: 0,
+      retryReason: null,
+      abort: () => controller.abort(),
+    })
     try {
       await uploadWithProgress({
         url: isResourceScope
           ? `/resources/folders/${currentFolderId}/upload`
           : `/folders/${currentFolderId}/files`,
         formData,
-        onProgress: (p) => setUploadProgress(p.percent),
+        signal: controller.signal,
+        onProgress: (p) =>
+          setUploadTask((prev) =>
+            prev && prev.id === taskId
+              ? {
+                  ...prev,
+                  loaded: p.loaded,
+                  totalBytes: p.total || prev.totalBytes,
+                  percent: p.percent,
+                  status: "uploading",
+                }
+              : prev,
+          ),
         onRetry: (attempt, reason) => {
-          toast.info(`Retrying upload (attempt ${attempt})…`, {
-            description: reason,
-          })
+          setUploadTask((prev) =>
+            prev && prev.id === taskId
+              ? { ...prev, status: "retrying", retryAttempt: attempt, retryReason: reason }
+              : prev,
+          )
         },
       })
       toast.success(`${selectedUploadFiles.length} file(s) uploaded`)
@@ -495,10 +543,13 @@ export default function FileBrowser({
       setUploadNote("")
       loadFiles(currentFolderId)
     } catch (err: unknown) {
-      toastApiError(err, "Upload failed")
+      if ((err as { code?: string })?.code === "UPLOAD_ABORTED") {
+        toast.info("Upload cancelled")
+      } else {
+        toastApiError(err, "Upload failed")
+      }
     } finally {
-      setUploading(false)
-      setUploadProgress(null)
+      setUploadTask(null)
       if (fileInputRef.current) fileInputRef.current.value = ""
     }
   }
@@ -665,39 +716,80 @@ export default function FileBrowser({
 
   async function uploadFilesImmediately(files: File[], note?: string) {
     if (!currentFolderId || files.length === 0) return
+    if (uploadTask) {
+      toast.info("Wait for the current upload to finish or cancel it first.")
+      return
+    }
     const formData = new FormData()
     files.forEach((file) => formData.append("files", file))
     if (note?.trim()) {
       formData.append("note", note.trim())
     }
-    setUploading(true)
     setUploadError(null)
+    const controller = new AbortController()
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
+    const taskId = Date.now()
+    setUploadTask({
+      id: taskId,
+      fileNames: files.map((f) => f.name),
+      fileCount: files.length,
+      totalBytes,
+      loaded: 0,
+      percent: 0,
+      status: "uploading",
+      retryAttempt: 0,
+      retryReason: null,
+      abort: () => controller.abort(),
+    })
     try {
       await uploadWithProgress({
         url: isResourceScope
           ? `/resources/folders/${currentFolderId}/upload`
           : `/folders/${currentFolderId}/files`,
         formData,
-        onProgress: (p) => setUploadProgress(p.percent),
+        signal: controller.signal,
+        onProgress: (p) =>
+          setUploadTask((prev) =>
+            prev && prev.id === taskId
+              ? {
+                  ...prev,
+                  loaded: p.loaded,
+                  totalBytes: p.total || prev.totalBytes,
+                  percent: p.percent,
+                  status: "uploading",
+                }
+              : prev,
+          ),
         onRetry: (attempt, reason) => {
-          toast.info(`Retrying upload (attempt ${attempt})…`, {
-            description: reason,
-          })
+          setUploadTask((prev) =>
+            prev && prev.id === taskId
+              ? { ...prev, status: "retrying", retryAttempt: attempt, retryReason: reason }
+              : prev,
+          )
         },
       })
       toast.success(`${files.length} file(s) uploaded`)
       loadFiles(currentFolderId)
     } catch (err: unknown) {
-      toastApiError(err, "Upload failed")
+      if ((err as { code?: string })?.code === "UPLOAD_ABORTED") {
+        toast.info("Upload cancelled")
+      } else {
+        toastApiError(err, "Upload failed")
+      }
     } finally {
-      setUploading(false)
-      setUploadProgress(null)
+      setUploadTask(null)
     }
   }
 
   const onDrop = useCallback(
     (droppedFiles: File[]) => {
       if (!currentFolderId || isReadOnly) return
+      // Refuse a second concurrent upload — we only track one task and
+      // letting another overwrite it would corrupt the progress UI.
+      if (uploadTask) {
+        toast.info("Wait for the current upload to finish or cancel it first.")
+        return
+      }
       const validationError = validateSelectedFiles(droppedFiles, mediaType)
       if (validationError) {
         setUploadError(validationError)
@@ -713,14 +805,14 @@ export default function FileBrowser({
       // Instant upload — no dialog
       void uploadFilesImmediately(droppedFiles)
     },
-    [currentFolderId, isReadOnly, mediaType, showCrewPhotoNote],
+    [currentFolderId, isReadOnly, mediaType, showCrewPhotoNote, uploadTask],
   )
 
   const { getRootProps, getInputProps, isDragActive, open: openDropzone } = useDropzone({
     onDrop,
     noClick: true,
     noKeyboard: true,
-    disabled: !currentFolderId || isReadOnly,
+    disabled: !currentFolderId || isReadOnly || uploading,
   })
 
   return (
@@ -845,6 +937,61 @@ export default function FileBrowser({
       {uploadError ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {uploadError}
+        </div>
+      ) : null}
+
+      {uploadTask ? (
+        <div
+          className={`rounded-lg border px-3 py-2.5 text-sm ${
+            uploadTask.status === "retrying"
+              ? "border-amber-200 bg-amber-50"
+              : "border-orange-200 bg-orange-50"
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              {uploadTask.status === "retrying" ? (
+                <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+              ) : (
+                <Loader2 className="size-4 shrink-0 animate-spin text-orange-600" />
+              )}
+              <div className="min-w-0">
+                <div
+                  className={`font-medium ${
+                    uploadTask.status === "retrying" ? "text-amber-800" : "text-orange-800"
+                  }`}
+                >
+                  {uploadTask.status === "retrying"
+                    ? `Retrying upload (attempt ${uploadTask.retryAttempt})…`
+                    : `Uploading ${uploadTask.fileCount} file${uploadTask.fileCount === 1 ? "" : "s"}…`}
+                </div>
+                <div className="truncate text-xs text-slate-600">
+                  {uploadTask.status === "retrying" && uploadTask.retryReason
+                    ? uploadTask.retryReason
+                    : uploadTask.fileNames.join(", ")}
+                </div>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-xs tabular-nums text-slate-600">
+                {formatFileSize(uploadTask.loaded)} / {formatFileSize(uploadTask.totalBytes)} ·{" "}
+                {uploadTask.percent}%
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-slate-600 hover:text-red-600"
+                onClick={() => uploadTask.abort()}
+                aria-label="Cancel upload"
+              >
+                <X className="mr-1 size-3.5" />
+                Cancel
+              </Button>
+            </div>
+          </div>
+          <Progress value={uploadTask.percent} className="mt-2 h-1.5" />
         </div>
       ) : null}
 
@@ -995,6 +1142,10 @@ export default function FileBrowser({
       <Dialog
         open={uploadDialogOpen}
         onOpenChange={(open) => {
+          // Don't allow the dialog to close while an upload is in flight —
+          // the user should explicitly cancel via the Cancel button so we
+          // can abort the request rather than orphan it.
+          if (!open && uploading) return
           setUploadDialogOpen(open)
           if (!open) {
             setSelectedUploadFiles([])
@@ -1022,8 +1173,48 @@ export default function FileBrowser({
                 onChange={(event) => setUploadNote(event.target.value)}
                 placeholder="Describe the area or work shown in these photos"
                 required
+                disabled={uploading}
               />
             </div>
+
+            {uploadTask ? (
+              <div
+                className={`rounded-lg border px-3 py-2.5 text-sm ${
+                  uploadTask.status === "retrying"
+                    ? "border-amber-200 bg-amber-50"
+                    : "border-orange-200 bg-orange-50"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex items-center gap-2">
+                  {uploadTask.status === "retrying" ? (
+                    <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+                  ) : (
+                    <Loader2 className="size-4 shrink-0 animate-spin text-orange-600" />
+                  )}
+                  <div
+                    className={`font-medium ${
+                      uploadTask.status === "retrying" ? "text-amber-800" : "text-orange-800"
+                    }`}
+                  >
+                    {uploadTask.status === "retrying"
+                      ? `Retrying upload (attempt ${uploadTask.retryAttempt})…`
+                      : `Uploading ${uploadTask.fileCount} file${uploadTask.fileCount === 1 ? "" : "s"}…`}
+                  </div>
+                </div>
+                {uploadTask.status === "retrying" && uploadTask.retryReason ? (
+                  <div className="mt-1 truncate text-xs text-slate-600">
+                    {uploadTask.retryReason}
+                  </div>
+                ) : null}
+                <Progress value={uploadTask.percent} className="mt-2 h-1.5" />
+                <div className="mt-1 text-right text-xs tabular-nums text-slate-600">
+                  {formatFileSize(uploadTask.loaded)} / {formatFileSize(uploadTask.totalBytes)} ·{" "}
+                  {uploadTask.percent}%
+                </div>
+              </div>
+            ) : null}
 
             {uploadError ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -1032,13 +1223,27 @@ export default function FileBrowser({
             ) : null}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setUploadDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={uploading}>
-                {uploading && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-                Upload
-              </Button>
+              {uploading ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => uploadTask?.abort()}
+                >
+                  <X className="mr-1.5 size-3.5" />
+                  Cancel upload
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setUploadDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit">Upload</Button>
+                </>
+              )}
             </DialogFooter>
           </form>
         </DialogContent>

@@ -12,6 +12,7 @@ import {
   type User,
 } from "@workspace/db/schema";
 import { toPublicUser } from "../lib/auth";
+import { sendInvite, sendPasswordReset, truncateEmailError } from "../lib/email";
 import { writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import {
@@ -29,6 +30,107 @@ function hashInviteToken(rawToken: string) {
 
 function buildInvitePath(token: string) {
   return `/accept-invite?token=${encodeURIComponent(token)}`;
+}
+
+// Resolve an absolute URL for the invitee. Production sets APP_PUBLIC_URL
+// (e.g. https://cadstone.example.com) to the canonical host; in dev we
+// fall back to the REPLIT_DEV_DOMAIN proxy host. We always return a URL
+// with an `https://` scheme so the email is clickable from any client —
+// if neither env var is set we throw, because emailing a relative path
+// would silently produce a broken link.
+function buildInviteUrl(token: string): string {
+  const path = buildInvitePath(token);
+  const explicit = process.env.APP_PUBLIC_URL?.trim();
+  if (explicit) {
+    const normalised = /^https?:\/\//i.test(explicit)
+      ? explicit
+      : `https://${explicit}`;
+    return `${normalised.replace(/\/$/, "")}${path}`;
+  }
+  const replit = process.env.REPLIT_DEV_DOMAIN?.trim();
+  if (replit) {
+    return `https://${replit.replace(/^https?:\/\//i, "").replace(/\/$/, "")}${path}`;
+  }
+  throw new HttpError(
+    500,
+    "Cannot build an invite URL: neither APP_PUBLIC_URL nor REPLIT_DEV_DOMAIN is configured.",
+  );
+}
+
+type InviteEmailOutcome = {
+  emailed: boolean;
+  emailError: string | null;
+  lastInviteEmailSentAt: string | null;
+};
+
+async function resolveInviterName(userId: string): Promise<string> {
+  const [row] = await db
+    .select({ fullName: users.fullName })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row?.fullName?.trim() || "An administrator";
+}
+
+async function deliverInviteEmail(params: {
+  userId: string;
+  to: string;
+  fullName: string;
+  inviterName: string;
+  inviteToken: string;
+  /**
+   * When true, the user already has a password set — this is an admin-driven
+   * forced password reset, not a first-time invite. We still mint and store
+   * a single-use invite token (the `accept-invite` route handles password
+   * setting either way) but the email body is reworded accordingly via
+   * `sendPasswordReset`.
+   */
+  isPasswordReset: boolean;
+}): Promise<InviteEmailOutcome> {
+  const inviteLink = buildInviteUrl(params.inviteToken);
+  const now = new Date();
+  try {
+    if (params.isPasswordReset) {
+      await sendPasswordReset({ to: params.to, resetLink: inviteLink });
+    } else {
+      await sendInvite({
+        to: params.to,
+        inviteLink,
+        inviterName: params.inviterName,
+        inviteeName: params.fullName,
+      });
+    }
+    await db
+      .update(users)
+      .set({
+        lastInviteEmailSentAt: now,
+        lastInviteEmailError: null,
+        updatedAt: now,
+      })
+      .where(eq(users.id, params.userId));
+    return {
+      emailed: true,
+      emailError: null,
+      lastInviteEmailSentAt: now.toISOString(),
+    };
+  } catch (err) {
+    const message = truncateEmailError(
+      (err as Error)?.message ?? "Unknown email error.",
+    );
+    // Clear any stale `lastInviteEmailSentAt` from a previous successful
+    // delivery — the *current* invite token has not been emailed, and the
+    // UI must show the failure rather than a misleading old timestamp.
+    await db
+      .update(users)
+      .set({
+        lastInviteEmailSentAt: null,
+        lastInviteEmailError: message,
+        updatedAt: now,
+      })
+      .where(eq(users.id, params.userId))
+      .catch(() => {});
+    return { emailed: false, emailError: message, lastInviteEmailSentAt: null };
+  }
 }
 
 function generateInvite() {
@@ -171,6 +273,8 @@ function publicUserWithStatus(user: Pick<User,
   isActive?: boolean | null;
   passwordSetAt?: Date | null;
   inviteTokenExpiresAt?: Date | null;
+  lastInviteEmailSentAt?: Date | null;
+  lastInviteEmailError?: string | null;
 }) {
   const base = toPublicUser(user);
   return {
@@ -178,6 +282,10 @@ function publicUserWithStatus(user: Pick<User,
     isActive: user.isActive ?? true,
     passwordSetAt: user.passwordSetAt ?? null,
     inviteTokenExpiresAt: user.inviteTokenExpiresAt ?? null,
+    lastInviteEmailSentAt: user.lastInviteEmailSentAt
+      ? user.lastInviteEmailSentAt.toISOString()
+      : null,
+    lastInviteEmailError: user.lastInviteEmailError ?? null,
   };
 }
 
@@ -403,11 +511,33 @@ router.post(
       console.warn("[users] failed to record invite activity:", error);
     });
 
+    const inviterName = await resolveInviterName(req.auth!.userId);
+    const delivery = await deliverInviteEmail({
+      userId: created.id,
+      to: created.email,
+      fullName: created.fullName,
+      inviterName,
+      inviteToken: invite.token,
+      // First-time invite by definition — the row was just inserted with a
+      // placeholder password and no `passwordSetAt`.
+      isPasswordReset: false,
+    });
+
     res.status(201).json({
-      user: publicUserWithStatus(created),
+      user: {
+        ...publicUserWithStatus(created),
+        lastInviteEmailSentAt: delivery.lastInviteEmailSentAt,
+        lastInviteEmailError: delivery.emailError,
+      },
       inviteToken: invite.token,
       invitePath: buildInvitePath(invite.token),
+      inviteUrl: buildInviteUrl(invite.token),
       inviteTokenExpiresAt: invite.expiresAt.toISOString(),
+      emailDelivery: {
+        emailed: delivery.emailed,
+        emailError: delivery.emailError,
+        lastInviteEmailSentAt: delivery.lastInviteEmailSentAt,
+      },
     });
   }),
 );
@@ -458,11 +588,35 @@ router.post(
       console.warn("[users] failed to record reissue activity:", error);
     });
 
+    const inviterName = await resolveInviterName(req.auth!.userId);
+    // If the user already finished setup (passwordSetAt is non-null), this
+    // reissue is functioning as an admin-driven password reset. Send the
+    // reworded password-reset email instead of the first-time invite email.
+    const isPasswordReset = target.passwordSetAt !== null;
+    const delivery = await deliverInviteEmail({
+      userId: target.id,
+      to: target.email,
+      fullName: target.fullName,
+      inviterName,
+      inviteToken: invite.token,
+      isPasswordReset,
+    });
+
     res.json({
-      user: publicUserWithStatus(updated!),
+      user: {
+        ...publicUserWithStatus(updated!),
+        lastInviteEmailSentAt: delivery.lastInviteEmailSentAt,
+        lastInviteEmailError: delivery.emailError,
+      },
       inviteToken: invite.token,
       invitePath: buildInvitePath(invite.token),
+      inviteUrl: buildInviteUrl(invite.token),
       inviteTokenExpiresAt: invite.expiresAt.toISOString(),
+      emailDelivery: {
+        emailed: delivery.emailed,
+        emailError: delivery.emailError,
+        lastInviteEmailSentAt: delivery.lastInviteEmailSentAt,
+      },
     });
   }),
 );

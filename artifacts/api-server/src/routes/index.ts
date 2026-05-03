@@ -12,6 +12,7 @@ import filesRouter from "./files";
 import filesSignedRouter from "./files-signed";
 import foldersRouter from "./folders";
 import healthRouter from "./health";
+import internalBackupRouter from "./internal-backup";
 import financialsRouter from "./financials";
 import jobsRouter from "./jobs";
 import leadsRouter from "./leads";
@@ -29,6 +30,10 @@ import { createPerUserApiRateLimit } from "../lib/rate-limit";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+// Internal backup-trigger webhook — auth is its own shared-secret header,
+// not the user/PAT bearer token, so it must be mounted BEFORE requireAuth.
+// Dormant (503) until BACKUP_TRIGGER_SECRET is configured.
+router.use(internalBackupRouter);
 // Anonymous client-error sink: mounted BEFORE requireAuth because a render
 // crash may happen in the frontend before the auth state hydrates. Has its
 // own per-IP rate limiter inside the route file.

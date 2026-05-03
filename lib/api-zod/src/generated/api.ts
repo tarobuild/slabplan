@@ -164,7 +164,16 @@ export const UsersGetUsersQueryParams = zod.object({
 export const UsersGetUsersResponse = zod.unknown();
 
 /**
- * Admin-only. Invite a new worker. Creates the user with a random unguessable placeholder password and a single-use setup token. The raw token is returned exactly once (never persisted in plain text). Hand the resulting `invitePath` to the new user out of band.
+ * Admin-only. Invite a new worker. Creates the user with a random unguessable placeholder password and a single-use setup token. The raw token is returned exactly once (never persisted in plain text).
+
+The server also attempts to send the setup link via the configured transactional email provider (Resend). The response body always includes:
+  - `inviteToken` — the raw one-time token (also embedded in `inviteUrl`).
+  - `invitePath` — relative path including the token, for in-product navigation.
+  - `inviteUrl` — absolute URL the email body uses; safe to copy/paste as a fallback.
+  - `inviteTokenExpiresAt` — ISO timestamp.
+  - `emailDelivery` — `{ emailed: boolean, emailError: string | null, lastInviteEmailSentAt: string | null }`. When `emailed=false`, the user was still created and the token is valid; the admin must share `inviteUrl` manually.
+  - `user` — the created user, now also exposing `lastInviteEmailSentAt` and `lastInviteEmailError`.
+
  * @summary POST /users
  */
 export const usersPostUsersHeaderIdempotencyKeyMin = 8;
@@ -242,6 +251,9 @@ export const UsersPatchUsersIdResponse = zod.unknown();
 
 /**
  * Admin-only. Reissue a one-time setup token for an existing user (e.g. their original setup link expired or they need a forced password reset).
+
+Same response shape as `POST /users` — see that endpoint for the `emailDelivery`, `inviteUrl`, `inviteToken`, and updated `user` fields. The server emails the new setup link automatically; if delivery fails, the token is still returned so the admin can share it manually.
+
  * @summary POST /users/{id}/invite
  */
 export const UsersPostUsersIdInviteParams = zod.object({

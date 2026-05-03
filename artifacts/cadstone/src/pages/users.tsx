@@ -61,13 +61,23 @@ type AdminUser = {
   isActive?: boolean
   passwordSetAt?: string | null
   inviteTokenExpiresAt?: string | null
+  lastInviteEmailSentAt?: string | null
+  lastInviteEmailError?: string | null
+}
+
+type EmailDelivery = {
+  emailed: boolean
+  emailError: string | null
+  lastInviteEmailSentAt: string | null
 }
 
 type InviteResponse = {
   user: AdminUser
   inviteToken: string
   invitePath: string
+  inviteUrl?: string
   inviteTokenExpiresAt: string
+  emailDelivery?: EmailDelivery
 }
 
 const ROLE_OPTIONS: Array<{ value: AdminUser["role"]; label: string }> = [
@@ -162,9 +172,19 @@ export default function UsersPage() {
       setLatestInvite(response)
       setInviteForm({ email: "", fullName: "", role: "crew_member" })
       setInviteDialogOpen(false)
-      toast.success(
-        `Invite created for ${response.user.fullName}. Copy the setup link to send to them.`,
-      )
+      if (response.emailDelivery?.emailed) {
+        toast.success(
+          `Invite emailed to ${response.user.email}. The setup link is also shown below in case you need to copy it.`,
+        )
+      } else if (response.emailDelivery?.emailError) {
+        toast.error(
+          `Failed to send invite — copy this link and share it with ${response.user.fullName}.`,
+        )
+      } else {
+        toast.success(
+          `Invite created for ${response.user.fullName}. Copy the setup link to send to them.`,
+        )
+      }
       await refreshList()
     } catch (err: unknown) {
       toastApiError(err, "Failed to invite user")
@@ -231,7 +251,15 @@ export default function UsersPage() {
     try {
       const response = (await usersPostUsersIdInvite(user.id)) as InviteResponse
       setLatestInvite(response)
-      toast.success(`New setup link generated for ${user.fullName}`)
+      if (response.emailDelivery?.emailed) {
+        toast.success(`New setup link emailed to ${user.email}`)
+      } else if (response.emailDelivery?.emailError) {
+        toast.error(
+          `New setup link generated, but the email failed to send — copy the link below.`,
+        )
+      } else {
+        toast.success(`New setup link generated for ${user.fullName}`)
+      }
       await refreshList()
     } catch (err: unknown) {
       toastApiError(err, "Failed to reissue invite")
@@ -395,9 +423,30 @@ export default function UsersPage() {
                           Invite expired
                         </Badge>
                       ) : inviteOutstanding ? (
-                        <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
-                          Invite pending
-                        </Badge>
+                        <div className="flex flex-col gap-0.5">
+                          <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 w-fit">
+                            Invite pending
+                          </Badge>
+                          {user.lastInviteEmailSentAt ? (
+                            <span className="text-[11px] text-slate-500">
+                              Last emailed{" "}
+                              {new Date(
+                                user.lastInviteEmailSentAt,
+                              ).toLocaleString()}
+                            </span>
+                          ) : user.lastInviteEmailError ? (
+                            <span
+                              className="text-[11px] text-red-600"
+                              title={user.lastInviteEmailError}
+                            >
+                              Email failed — share link manually
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">
+                              Not emailed yet
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}

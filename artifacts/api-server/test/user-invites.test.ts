@@ -22,6 +22,20 @@ const crewEmail = `crew-${crewUserId}@user-invites-test.local`;
 // test took (created/accepted/deactivated).
 const emailsToCleanup = new Set<string>([adminEmail, crewEmail]);
 
+// In-memory log of every transactional email the routes attempt to
+// send. Tests inspect this to confirm the right payload shape (subject,
+// recipient, link) is dispatched without ever needing a real Resend
+// account. The stub itself is wired in `before()` via
+// `__setEmailSenderForTests`.
+type CapturedEmail = {
+  to: string;
+  subject: string;
+  text: string;
+  tag: string;
+};
+const capturedEmails: CapturedEmail[] = [];
+let nextEmailFailureMessage: string | null = null;
+
 function trackInvitedEmail(email: string) {
   emailsToCleanup.add(email.toLowerCase());
 }
@@ -41,6 +55,23 @@ before(async () => {
   const { users } = await import("@workspace/db/schema");
 
   await prepareApp();
+
+  // Stub the transactional email sender so the invite route never tries
+  // to reach Resend during tests. The stub captures every payload for
+  // assertion and can be configured to fail on demand via
+  // `nextEmailFailureMessage`.
+  const emailModule = await import("../src/lib/email.ts");
+  emailModule.__setEmailSenderForTests({
+    async send({ to, subject, text, tag }) {
+      capturedEmails.push({ to, subject, text, tag });
+      if (nextEmailFailureMessage) {
+        const msg = nextEmailFailureMessage;
+        nextEmailFailureMessage = null;
+        throw new Error(msg);
+      }
+      return { id: `test-stub-${capturedEmails.length}` };
+    },
+  });
 
   // Seed an admin (Cesar-style) and a crew member with real password
   // hashes so the login endpoint can authenticate them later.
@@ -97,6 +128,8 @@ before(async () => {
 });
 
 after(async () => {
+  const emailModule = await import("../src/lib/email.ts");
+  emailModule.__setEmailSenderForTests(null);
   const { db, pool } = await import("@workspace/db");
   const { users, idempotencyKeys } = await import("@workspace/db/schema");
   const { inArray } = await import("drizzle-orm");
@@ -141,6 +174,131 @@ const PUBLIC_HEADERS = {
   "content-type": "application/json",
   "x-requested-with": "XMLHttpRequest",
 } as const;
+
+test("invite endpoint sends a transactional email with the setup link and reports lastInviteEmailSentAt", async () => {
+  const inviteeEmail = `email-${crypto.randomUUID()}@user-invites-test.local`;
+  trackInvitedEmail(inviteeEmail);
+  const before = capturedEmails.length;
+
+  const ok = await fetch(`${baseUrl}/api/users`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      email: inviteeEmail,
+      fullName: "Email Recipient",
+      role: "crew_member",
+    }),
+  });
+  assert.equal(ok.status, 201);
+  const body = (await ok.json()) as {
+    user: { lastInviteEmailSentAt: string | null; lastInviteEmailError: string | null };
+    inviteToken: string;
+    inviteUrl: string;
+    emailDelivery: { emailed: boolean; emailError: string | null; lastInviteEmailSentAt: string | null };
+  };
+
+  assert.equal(body.emailDelivery.emailed, true, "stub sender must report success");
+  assert.equal(body.emailDelivery.emailError, null);
+  assert.ok(body.emailDelivery.lastInviteEmailSentAt, "lastInviteEmailSentAt is set");
+  assert.ok(body.user.lastInviteEmailSentAt, "user payload mirrors lastInviteEmailSentAt");
+  assert.equal(body.user.lastInviteEmailError, null);
+  assert.match(
+    body.inviteUrl,
+    /^https?:\/\/.+\/accept-invite\?token=/,
+    "inviteUrl must be an absolute URL the email body can include",
+  );
+
+  assert.equal(
+    capturedEmails.length,
+    before + 1,
+    "exactly one email must have been dispatched",
+  );
+  const sent = capturedEmails[capturedEmails.length - 1]!;
+  assert.equal(sent.to, inviteeEmail.toLowerCase());
+  assert.equal(sent.tag, "invite");
+  assert.match(sent.subject, /invited you to Cadstone/i);
+  assert.ok(
+    sent.text.includes(body.inviteUrl),
+    "email body must include the absolute setup link",
+  );
+});
+
+test("invite endpoint surfaces email failure but still creates the user and returns the link", async () => {
+  const inviteeEmail = `failmail-${crypto.randomUUID()}@user-invites-test.local`;
+  trackInvitedEmail(inviteeEmail);
+  nextEmailFailureMessage = "Simulated SMTP timeout";
+
+  const ok = await fetch(`${baseUrl}/api/users`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      email: inviteeEmail,
+      fullName: "Will Fail Mail",
+      role: "crew_member",
+    }),
+  });
+  assert.equal(ok.status, 201, "user creation must succeed even if email fails");
+  const body = (await ok.json()) as {
+    user: { lastInviteEmailSentAt: string | null; lastInviteEmailError: string | null };
+    inviteToken: string;
+    inviteUrl: string;
+    emailDelivery: { emailed: boolean; emailError: string | null };
+  };
+  assert.equal(body.emailDelivery.emailed, false);
+  assert.match(body.emailDelivery.emailError ?? "", /Simulated SMTP timeout/);
+  assert.match(body.user.lastInviteEmailError ?? "", /Simulated SMTP timeout/);
+  assert.equal(body.user.lastInviteEmailSentAt, null);
+  assert.ok(body.inviteToken.length > 20, "raw token still returned for fallback copy/paste");
+});
+
+test("reissue for a user who already set their password sends a password-reset email (not a fresh invite)", async () => {
+  const inviteeEmail = `pwreset-${crypto.randomUUID()}@user-invites-test.local`;
+  trackInvitedEmail(inviteeEmail);
+
+  // 1. Create the user and accept the invite so passwordSetAt is non-null.
+  const created = await fetch(`${baseUrl}/api/users`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      email: inviteeEmail,
+      fullName: "Already Onboarded",
+      role: "crew_member",
+    }),
+  });
+  assert.equal(created.status, 201);
+  const { user, inviteToken } = (await created.json()) as {
+    user: { id: string };
+    inviteToken: string;
+  };
+
+  const accepted = await fetch(`${baseUrl}/api/auth/accept-invite`, {
+    method: "POST",
+    headers: PUBLIC_HEADERS,
+    body: JSON.stringify({ token: inviteToken, password: "OnboardedPass#1" }),
+  });
+  assert.equal(accepted.status, 200, "user must complete onboarding before reset path triggers");
+
+  const before = capturedEmails.length;
+
+  // 2. Admin reissues the invite — this should now be a password-reset email.
+  const reset = await fetch(`${baseUrl}/api/users/${user.id}/invite`, {
+    method: "POST",
+    headers: adminHeaders(),
+  });
+  assert.equal(reset.status, 200);
+  const body = (await reset.json()) as {
+    emailDelivery: { emailed: boolean; emailError: string | null };
+    inviteUrl: string;
+  };
+  assert.equal(body.emailDelivery.emailed, true);
+  assert.equal(body.emailDelivery.emailError, null);
+
+  assert.equal(capturedEmails.length, before + 1);
+  const sent = capturedEmails[capturedEmails.length - 1]!;
+  assert.equal(sent.tag, "password-reset", "should route through sendPasswordReset, not sendInvite");
+  assert.match(sent.subject, /reset your .* password/i);
+  assert.ok(sent.text.includes(body.inviteUrl), "reset email body must include the absolute reset link");
+});
 
 test("only admins can invite users; crew members get 403", async () => {
   const inviteeEmail = `invitee-${crypto.randomUUID()}@user-invites-test.local`;

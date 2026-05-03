@@ -16,10 +16,11 @@ import { HttpError, asyncHandler } from "../lib/http";
 import { clearRateLimitBucket, createRateLimit } from "../lib/rate-limit";
 import { requireAdmin, requireAuth } from "../middleware/require-auth";
 
-// NOTE: There is intentionally no `/forgot-password` or `/reset-password` route.
-// The team is small (single-digit users) and the admin manages passwords directly
-// out of band — no transactional email provider is wired up. See `replit.md`
-// ("Auth & password management") for the rationale.
+// NOTE: There is no public `/forgot-password` or `/reset-password` route by design.
+// Admins force a password reset by reissuing the invite token via
+// `POST /api/users/:id/invite`, which now triggers a transactional invite
+// email (Resend) wired through `src/lib/email.ts`. See `replit.md`
+// ("Transactional email") for the operator setup.
 
 const router: IRouter = Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

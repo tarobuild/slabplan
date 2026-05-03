@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   Dialog,
@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
+import { useAuthStore } from "@/store/auth"
 
 export const FOCUS_GLOBAL_SEARCH_EVENT = "cadstone:focus-global-search"
 
@@ -20,25 +21,29 @@ type ShortcutGroup = {
   shortcuts: ShortcutDef[]
 }
 
-const SHORTCUT_GROUPS: ShortcutGroup[] = [
-  {
-    heading: "Navigation",
-    shortcuts: [
-      { keys: ["g", "d"], label: "Go to Dashboard" },
-      { keys: ["g", "j"], label: "Go to Jobs" },
-      { keys: ["g", "c"], label: "Go to Clients" },
-      { keys: ["g", "l"], label: "Go to Leads" },
-    ],
-  },
-  {
-    heading: "Actions",
-    shortcuts: [
-      { keys: ["/"], label: "Focus the global search" },
-      { keys: ["n"], label: "Create a new job" },
-      { keys: ["?"], label: "Show this shortcut overlay" },
-    ],
-  },
-]
+// "Create a new job" is admin-only (post-#277). Non-admins don't see the
+// `n` shortcut in the help overlay and the keydown handler ignores it.
+function buildShortcutGroups(isAdmin: boolean): ShortcutGroup[] {
+  const actions: ShortcutDef[] = [
+    { keys: ["/"], label: "Focus the global search" },
+  ]
+  if (isAdmin) {
+    actions.push({ keys: ["n"], label: "Create a new job" })
+  }
+  actions.push({ keys: ["?"], label: "Show this shortcut overlay" })
+  return [
+    {
+      heading: "Navigation",
+      shortcuts: [
+        { keys: ["g", "d"], label: "Go to Dashboard" },
+        { keys: ["g", "j"], label: "Go to Jobs" },
+        { keys: ["g", "c"], label: "Go to Clients" },
+        { keys: ["g", "l"], label: "Go to Leads" },
+      ],
+    },
+    { heading: "Actions", shortcuts: actions },
+  ]
+}
 
 // Returns true when the user is typing into an input-like element so we don't
 // hijack their keystrokes. Accounts for shadcn Dialog/Select children which
@@ -77,6 +82,8 @@ const SEQUENCE_TIMEOUT_MS = 1200
 
 export function KeyboardShortcuts() {
   const navigate = useNavigate()
+  const isAdmin = useAuthStore((s) => s.user?.role === "admin")
+  const shortcutGroups = useMemo(() => buildShortcutGroups(isAdmin), [isAdmin])
   const [helpOpen, setHelpOpen] = useState(false)
   const pendingPrefix = useRef<string | null>(null)
   const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -151,7 +158,7 @@ export function KeyboardShortcuts() {
         return
       }
 
-      if (key === "n") {
+      if (key === "n" && isAdmin) {
         event.preventDefault()
         navigate("/jobs", { state: { openCreate: true } })
         return
@@ -160,7 +167,7 @@ export function KeyboardShortcuts() {
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [navigate, clearPending, helpOpen])
+  }, [navigate, clearPending, helpOpen, isAdmin])
 
   return (
     <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
@@ -169,7 +176,7 @@ export function KeyboardShortcuts() {
           <DialogTitle>Keyboard shortcuts</DialogTitle>
         </DialogHeader>
         <div className="space-y-5 pt-1">
-          {SHORTCUT_GROUPS.map((group) => (
+          {shortcutGroups.map((group) => (
             <div key={group.heading}>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
                 {group.heading}

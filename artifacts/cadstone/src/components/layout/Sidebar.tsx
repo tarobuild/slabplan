@@ -8,6 +8,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { useAuthStore } from "@/store/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -96,6 +97,7 @@ function readStoredSortAsc(): boolean {
 export default function Sidebar() {
   const { jobId } = useParams<{ jobId?: string }>()
   const navigate = useNavigate()
+  const isAdmin = useAuthStore((s) => s.user?.role === "admin")
   const [jobs, setJobs] = useState<Job[]>([])
   const [search, setSearch] = useState(readStoredSearch)
   const [sortAsc, setSortAsc] = useState(readStoredSortAsc)
@@ -253,17 +255,19 @@ export default function Sidebar() {
           </Link>
         </div>
       )}
-      <div className="border-b border-[#E5E7EB] p-2.5">
-        <Button
-          variant="orange"
-          className="w-full"
-          size="sm"
-          onClick={() => navigate("/jobs", { state: { openCreate: true } })}
-        >
-          <Plus className="size-4" />
-          New Job
-        </Button>
-      </div>
+      {isAdmin ? (
+        <div className="border-b border-[#E5E7EB] p-2.5">
+          <Button
+            variant="orange"
+            className="w-full"
+            size="sm"
+            onClick={() => navigate("/jobs", { state: { openCreate: true } })}
+          >
+            <Plus className="size-4" />
+            New Job
+          </Button>
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">

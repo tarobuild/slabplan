@@ -576,37 +576,49 @@ export default function DashboardPage() {
                 full set of "+ Daily Log / Schedule Item / Lead" shortcuts so
                 the dashboard CTA covers all four entry points. */}
             <div className="inline-flex rounded-md shadow-sm" role="group">
-              <Button
-                size="sm"
-                variant="orange"
-                className="text-xs h-8 gap-1 rounded-r-none border-r border-orange-700/40 pr-2.5"
-                onClick={() =>
-                  navigate("/jobs", { state: { openCreate: true } })
-                }
-              >
-                <Plus className="size-3.5" />
-                New Job
-              </Button>
+              {user?.role === "admin" ? (
+                <Button
+                  size="sm"
+                  variant="orange"
+                  className="text-xs h-8 gap-1 rounded-r-none border-r border-orange-700/40 pr-2.5"
+                  onClick={() =>
+                    navigate("/jobs", { state: { openCreate: true } })
+                  }
+                >
+                  <Plus className="size-3.5" />
+                  New Job
+                </Button>
+              ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     size="sm"
                     variant="orange"
-                    className="text-xs h-8 px-1.5 rounded-l-none"
+                    className={
+                      user?.role === "admin"
+                        ? "text-xs h-8 px-1.5 rounded-l-none"
+                        : "text-xs h-8 px-2 gap-1"
+                    }
                     aria-label="More create options"
                   >
+                    {user?.role === "admin" ? null : (
+                      <Plus className="size-3.5" />
+                    )}
+                    {user?.role === "admin" ? null : <span>Create</span>}
                     <ChevronDown className="size-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      navigate("/jobs", { state: { openCreate: true } })
-                    }}
-                  >
-                    <Plus className="mr-2 size-4 text-orange-500" />
-                    New Job
-                  </DropdownMenuItem>
+                  {user?.role === "admin" ? (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        navigate("/jobs", { state: { openCreate: true } })
+                      }}
+                    >
+                      <Plus className="mr-2 size-4 text-orange-500" />
+                      New Job
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem
                     onSelect={() => setQuickPickerKind("daily-log")}
                   >

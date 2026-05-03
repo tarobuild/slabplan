@@ -400,6 +400,11 @@ export default function JobsPage() {
   const navigate = useNavigate()
 
   const openCreateDialog = () => {
+    // Defense-in-depth: job creation is admin-only (post-#277). Every
+    // visible trigger is already role-gated, but this internal guard
+    // ensures any future caller (deeplink, command palette, etc.) cannot
+    // open the dialog for a non-admin even by accident.
+    if (!isAdmin) return
     setForm(emptyForm)
     setShowCreateClient(false)
     setNewClientCompanyName("")
@@ -447,7 +452,12 @@ export default function JobsPage() {
   useEffect(() => {
     const currentState = location.state as Record<string, unknown> | null
     if (currentState && (currentState as { openCreate?: unknown }).openCreate) {
-      openCreateDialog()
+      // Job creation is admin-only (post-#277). Strip the openCreate hint
+      // for non-admins so they never see the create dialog flash open and
+      // hit a 403 on submit.
+      if (isAdmin) {
+        openCreateDialog()
+      }
       const { openCreate: _openCreate, ...rest } = currentState as { openCreate?: unknown } & Record<string, unknown>
       const nextState = Object.keys(rest).length > 0 ? rest : null
       navigate(
@@ -455,7 +465,7 @@ export default function JobsPage() {
         { replace: true, state: nextState },
       )
     }
-  }, [location.state, location.pathname, location.search, location.hash, navigate])
+  }, [location.state, location.pathname, location.search, location.hash, navigate, isAdmin])
 
   const listParams = useMemo<JobsGetJobsParams>(() => {
     const params: JobsGetJobsParams = { page, pageSize }
@@ -876,8 +886,16 @@ export default function JobsPage() {
                     <EmptyState
                       icon={Briefcase}
                       title="No jobs yet"
-                      description="Create your first job to start tracking work, daily logs, schedules, and files."
-                      action={{ label: "+ New Job", onClick: openCreateDialog }}
+                      description={
+                        isAdmin
+                          ? "Create your first job to start tracking work, daily logs, schedules, and files."
+                          : "An admin will add jobs here."
+                      }
+                      action={
+                        isAdmin
+                          ? { label: "+ New Job", onClick: openCreateDialog }
+                          : undefined
+                      }
                       className="border-0 rounded-none"
                     />
                   )}
@@ -1022,8 +1040,16 @@ export default function JobsPage() {
             <EmptyState
               icon={Briefcase}
               title="No jobs yet"
-              description="Create your first job to start tracking work, daily logs, schedules, and files."
-              action={{ label: "+ New Job", onClick: openCreateDialog }}
+              description={
+                isAdmin
+                  ? "Create your first job to start tracking work, daily logs, schedules, and files."
+                  : "An admin will add jobs here."
+              }
+              action={
+                isAdmin
+                  ? { label: "+ New Job", onClick: openCreateDialog }
+                  : undefined
+              }
             />
           )
         ) : (

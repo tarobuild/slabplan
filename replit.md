@@ -19,6 +19,7 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 **Backend (`artifacts/api-server`):**
 - Built with Express 5, providing REST APIs at `/api` on port 8080.
 - **Authentication:** JWT with in-memory access tokens and HTTP-only refresh cookies. Includes role-based access control (`admin`, `project_manager`, `crew_member`) with seeded user accounts and an in-app team management system.
+- **Job creation is admin-only** (post-#277 owner directive). Only admins can `POST /api/jobs` and `POST /api/jobs/:id/assignees`; PMs continue to edit jobs they manage via `PUT /api/jobs/:id` but cannot create new ones or assign workers. The frontend hides every "+ New Job" affordance (dashboard split-button, jobs-list empty states, in-job sidebar) for non-admin roles.
 - **File Storage:** Utilizes Replit App Storage (GCS via sidecar) for secure file management.
 - **Role-gating:** Centralized visibility helpers enforce access control based on user roles across all API routes.
 - **API for Agents:** Features Personal Access Tokens (PATs), RFC 7807 problem details for errors, `Idempotency-Key` for write endpoints, cursor pagination, and `X-RateLimit-*` headers.

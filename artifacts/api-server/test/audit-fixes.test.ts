@@ -295,74 +295,56 @@ after(async () => {
   }
 });
 
-// -- 1. PM self-PM rule on POST /jobs --------------------------------------
+// -- 1. POST /jobs is admin-only (post-#277 owner directive) ---------------
+//
+// Owner clarified: only admins create jobs and assign people. The earlier
+// "PM may create with self as PM" carve-out is gone — every non-admin
+// caller, including PM, must get a 403.
 
-test("POST /jobs — PM trying to set a different projectManagerId is rejected 403", async () => {
+test("POST /jobs — PM is rejected 403 even when setting self as PM", async () => {
+  const res = await fetch(`${baseUrl}/api/jobs`, {
+    method: "POST",
+    headers: jsonHeaders(pmToken),
+    body: JSON.stringify({
+      title: "PM self-create attempt",
+      clientId,
+      projectManagerId: pmUserId,
+    }),
+  });
+  assert.equal(res.status, 403);
+});
+
+test("POST /jobs — PM is rejected 403 when omitting projectManagerId", async () => {
+  const res = await fetch(`${baseUrl}/api/jobs`, {
+    method: "POST",
+    headers: jsonHeaders(pmToken),
+    body: JSON.stringify({
+      title: "PM omit-PM attempt",
+      clientId,
+    }),
+  });
+  assert.equal(res.status, 403);
+});
+
+test("POST /jobs — PM is rejected 403 when setting another PM", async () => {
   const res = await fetch(`${baseUrl}/api/jobs`, {
     method: "POST",
     headers: jsonHeaders(pmToken),
     body: JSON.stringify({
       title: "PM-foreign-PM attempt",
       clientId,
-      projectManagerId: otherPmUserId, // not self → must 403
+      projectManagerId: otherPmUserId,
     }),
   });
   assert.equal(res.status, 403);
-  const body = (await res.json()) as { error?: { message?: string } };
-  assert.match(
-    body.error?.message ?? "",
-    /Project managers can only create jobs with themselves as PM/,
-  );
 });
 
-test("POST /jobs — PM omitting projectManagerId defaults to self (200)", async () => {
-  const res = await fetch(`${baseUrl}/api/jobs`, {
-    method: "POST",
-    headers: jsonHeaders(pmToken),
-    body: JSON.stringify({
-      title: "ZZZ Audit PM omit",
-      clientId,
-    }),
-  });
-  assert.equal(res.status, 201);
-  const body = (await res.json()) as {
-    job: { id: string; projectManagerId: string };
-  };
-  assert.equal(body.job.projectManagerId, pmUserId);
-  // cleanup
-  const { db } = await import("@workspace/db");
-  const { jobs } = await import("@workspace/db/schema");
-  const { eq } = await import("drizzle-orm");
-  await db.delete(jobs).where(eq(jobs.id, body.job.id));
-});
-
-test("POST /jobs — PM passing self as projectManagerId is allowed (200)", async () => {
-  const res = await fetch(`${baseUrl}/api/jobs`, {
-    method: "POST",
-    headers: jsonHeaders(pmToken),
-    body: JSON.stringify({
-      title: "ZZZ Audit PM self-set",
-      clientId,
-      projectManagerId: pmUserId,
-    }),
-  });
-  assert.equal(res.status, 201);
-  const body = (await res.json()) as {
-    job: { id: string; projectManagerId: string };
-  };
-  assert.equal(body.job.projectManagerId, pmUserId);
-  const { db } = await import("@workspace/db");
-  const { jobs } = await import("@workspace/db/schema");
-  const { eq } = await import("drizzle-orm");
-  await db.delete(jobs).where(eq(jobs.id, body.job.id));
-});
-
-test("POST /jobs — admin can assign any PM (no self-PM rule)", async () => {
+test("POST /jobs — admin can create and assign any PM + workers", async () => {
   const res = await fetch(`${baseUrl}/api/jobs`, {
     method: "POST",
     headers: jsonHeaders(adminToken),
     body: JSON.stringify({
-      title: "ZZZ Audit Admin set foreign PM",
+      title: "ZZZ Audit Admin create",
       clientId,
       projectManagerId: otherPmUserId,
     }),
@@ -376,6 +358,34 @@ test("POST /jobs — admin can assign any PM (no self-PM rule)", async () => {
   const { jobs } = await import("@workspace/db/schema");
   const { eq } = await import("drizzle-orm");
   await db.delete(jobs).where(eq(jobs.id, body.job.id));
+});
+
+// -- 1b. POST /leads/:id/convert-to-job is also admin-only -----------------
+//
+// Previously the lead-conversion path only required manager-or-above and
+// quietly inserted into `jobs`, allowing PMs to create jobs indirectly.
+
+test("POST /leads/:id/convert-to-job — PM is rejected 403", async () => {
+  const { db } = await import("@workspace/db");
+  const { leads } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const [lead] = await db
+    .insert(leads)
+    .values({
+      title: "ZZZ Audit Lead for PM convert attempt",
+      status: "qualified",
+      createdBy: pmUserId,
+    })
+    .returning();
+  try {
+    const res = await fetch(
+      `${baseUrl}/api/leads/${lead.id}/convert-to-job`,
+      { method: "POST", headers: jsonHeaders(pmToken), body: "{}" },
+    );
+    assert.equal(res.status, 403);
+  } finally {
+    await db.delete(leads).where(eq(leads.id, lead.id));
+  }
 });
 
 // -- 2. DELETE /clients/:id ownership/role check ---------------------------

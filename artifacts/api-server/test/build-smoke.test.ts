@@ -8,7 +8,7 @@ import { test } from "node:test";
 // ---------------------------------------------------------------------------
 // Build-output regression guard for #274.
 //
-// Background: file-type@22, mammoth, xlsx and fflate use ESM dynamic
+// Background: file-type@22, mammoth, exceljs and fflate use ESM dynamic
 // imports that esbuild cannot statically include. When we previously
 // bundled file-type into dist/index.mjs, production crashed at the
 // first PDF upload with `Cannot find package 'strtok3'` because the
@@ -48,8 +48,8 @@ test("build-smoke: dist/index.mjs does not statically bundle dynamic-import pack
   const source = readFileSync(distEntry, "utf8");
 
   // Each package below is loaded by file-type's dynamic detector graph
-  // (or by mammoth/xlsx). If esbuild ever inlines one of them again we
-  // lose runtime resolvability against `pnpm install --prod`'s
+  // (or by mammoth/exceljs). If esbuild ever inlines one of them again
+  // we lose runtime resolvability against `pnpm install --prod`'s
   // node_modules and uploads start failing with `ERR_MODULE_NOT_FOUND`.
   const forbiddenStaticImports: Array<[label: string, pattern: RegExp]> = [
     ["strtok3", /from\s*["']strtok3(?:\/[^"']+)?["']/],
@@ -57,6 +57,10 @@ test("build-smoke: dist/index.mjs does not statically bundle dynamic-import pack
     ["token-types", /from\s*["']token-types["']/],
     ["@tokenizer/inflate", /from\s*["']@tokenizer\/inflate["']/],
     ["@tokenizer/token", /from\s*["']@tokenizer\/token["']/],
+    // #286: exceljs replaced the abandoned `xlsx` package. It must
+    // remain external so its dynamic-import graph (archiver, unzipper,
+    // fast-csv, saxes, etc.) resolves from node_modules at runtime.
+    ["exceljs", /from\s*["']exceljs(?:\/[^"']+)?["']/],
   ];
 
   for (const [label, pattern] of forbiddenStaticImports) {

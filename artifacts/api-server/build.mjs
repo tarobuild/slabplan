@@ -115,9 +115,12 @@ async function buildAll() {
       // imports that esbuild can't statically follow. Bundling silently
       // drops the inner modules, then production crashes at runtime
       // with `Cannot find package 'strtok3'`. The same risk applies to
-      // mammoth, xlsx and fflate (route-level dynamic import()s with
+      // mammoth, exceljs and fflate (route-level dynamic import()s with
       // sub-deps that won't be reachable from the bundle). Keep all of
       // them external so node resolves them from node_modules normally.
+      // exceljs (the xlsx replacement, post-#286) ships with its own
+      // dynamic-import graph (archiver, unzipper, fast-csv, saxes, etc.)
+      // that esbuild can't statically follow either.
       "file-type",
       "strtok3",
       "strtok3/*",
@@ -126,7 +129,7 @@ async function buildAll() {
       "@tokenizer/inflate",
       "@tokenizer/token",
       "mammoth",
-      "xlsx",
+      "exceljs",
       "fflate",
     ],
     sourcemap: "linked",

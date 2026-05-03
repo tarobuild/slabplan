@@ -42,7 +42,11 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 **Production deploy smoke check (api-server):**
 After every deploy, verify the bundled server can sniff binary uploads (regression guard for `file-type` ESM dynamic-import bundling):
 1. `curl -fsS https://<deploy-host>/api/healthz` — expect `200`.
-2. As an admin, upload a small PDF and DOCX to a folder via `POST /api/folders/:id/files` (multipart, with `X-Requested-With: XMLHttpRequest`). Expect `201` for both. A `415` with "Unsupported file type" on a real PDF/DOCX indicates `file-type`'s dynamic deps (`strtok3`, `token-types`, `@tokenizer/inflate`) were not shipped — re-check `artifacts/api-server/build.mjs` externals and `package.json` dependencies, and that `node_modules` is deployed alongside `dist/`.
+2. As an admin, upload a small PDF, DOCX and XLSX to a folder via `POST /api/folders/:id/files` (multipart, with `X-Requested-With: XMLHttpRequest`). Expect `201` for all three. A `415` with "Unsupported file type" on a real PDF/DOCX indicates `file-type`'s dynamic deps (`strtok3`, `token-types`, `@tokenizer/inflate`) were not shipped — re-check `artifacts/api-server/build.mjs` externals and `package.json` dependencies, and that `node_modules` is deployed alongside `dist/`.
+3. As an admin/PM, on a job upload an `.xlsx` estimate via `POST /api/jobs/:jobId/financials/estimate` (multipart, with `X-Requested-With: XMLHttpRequest`). Expect `200` and the parsed CSV preview to come back from Anthropic. A 5xx or `Cannot find package 'exceljs'` indicates `exceljs` was not externalized correctly — re-check `build.mjs` externals.
+
+**Spreadsheet parsing (api-server):**
+The api-server uses `exceljs` (not `xlsx` / SheetJS Community) to read uploaded `.xlsx` estimate and invoice spreadsheets. The `xlsx` package was removed in #286 because it had two HIGH CVEs (CVE-2023-30533 prototype pollution and CVE-2024-22363 ReDoS) and was permanently abandoned on npm — fixes only ship via `cdn.sheetjs.com`. Legacy `.xls` (binary BIFF) uploads return a clean 400 asking the user to "Save As .xlsx" and re-upload, since exceljs only reads OOXML. The thin parsing helper lives at `src/lib/spreadsheet.ts` (`parseXlsxToSheets`).
 
 **Database (`lib/db`):**
 - PostgreSQL with Drizzle ORM, comprising 16 tables.

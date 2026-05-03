@@ -503,21 +503,25 @@ async function buildAnthropicContent(
       },
     ];
   }
-  // XLSX/XLS → xlsx → CSV per sheet → text
+  // Legacy .xls (binary BIFF) — exceljs only reads .xlsx, so surface a
+  // clear "save as .xlsx" message instead of pretending to support it.
+  if (mt === "application/vnd.ms-excel" || ext === "xls") {
+    throw new HttpError(
+      400,
+      "Legacy .xls files (Excel 97–2003) are not supported. " +
+        "Please open the file in Excel or Numbers and save it as .xlsx, then re-upload.",
+    );
+  }
+  // XLSX → exceljs → CSV per sheet → text
   if (
     mt === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-    mt === "application/vnd.ms-excel" ||
-    ext === "xlsx" ||
-    ext === "xls"
+    ext === "xlsx"
   ) {
-    const XLSX = await import("xlsx");
-    const wb = XLSX.read(bytes, { type: "buffer" });
-    const parts: string[] = [];
-    for (const sheetName of wb.SheetNames) {
-      const sheet = wb.Sheets[sheetName];
-      if (!sheet) continue;
-      parts.push(`### Sheet: ${sheetName}\n${XLSX.utils.sheet_to_csv(sheet)}`);
-    }
+    const { parseXlsxToSheets } = await import("../lib/spreadsheet");
+    const parsed = await parseXlsxToSheets(bytes);
+    const parts = parsed.sheets.map(
+      (s) => `### Sheet: ${s.name}\n${s.csv}`,
+    );
     const text = parts.join("\n\n").slice(0, 200_000);
     return [
       {
@@ -538,7 +542,7 @@ async function buildAnthropicContent(
   }
   throw new HttpError(
     400,
-    "AI parse supports PDF, images (JPEG/PNG/GIF/WebP), DOCX, XLSX/XLS, or " +
+    "AI parse supports PDF, images (JPEG/PNG/GIF/WebP), DOCX, XLSX, or " +
       "text/CSV files.",
   );
 }

@@ -37,10 +37,29 @@ import {
 } from "lucide-react"
 import {
   dailyLogsGetJobsJobIdDailyLogs,
+  dailyLogsPostDailyLogsIdAttachments,
+  dailyLogsPostDailyLogsIdCommentAttachments,
+  useDailyLogsPostJobsJobIdDailyLogs,
+  useDailyLogsPutDailyLogsId,
+  useDailyLogsDeleteDailyLogsId,
+  useDailyLogsPostDailyLogsIdPublish,
+  useDailyLogsPostDailyLogsIdLike,
+  useDailyLogsDeleteDailyLogsIdAttachmentsAttachmentId,
+  useDailyLogsPostDailyLogsIdComments,
+  useDailyLogsPostDailyLogsIdCommentsCommentIdReactions,
   type CursorPagination,
   type DailyLogsGetJobsJobIdDailyLogsParams,
   type DailyLogListResponse,
+  type DailyLogsPostJobsJobIdDailyLogsMutationBody,
+  type DailyLogsPutDailyLogsIdMutationBody,
 } from "@workspace/api-client-react"
+import {
+  DailyLogsPostJobsJobIdDailyLogsBody,
+  DailyLogsPutDailyLogsIdBody,
+  DailyLogsPostDailyLogsIdCommentsBody,
+  DailyLogsPostDailyLogsIdCommentsCommentIdReactionsBody,
+} from "@workspace/api-zod"
+import { validatePayload } from "@/lib/validate-payload"
 import { api } from "@/lib/api"
 import { apiErrorDetailCode, apiErrorMessage as apiError, toastApiError } from "@/lib/api-errors"
 import { cn } from "@/lib/utils"
@@ -1932,6 +1951,11 @@ function CommentsSheet({
   const [attachments, setAttachments] = useState<CommentDraftAttachment[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
+  // All writes go through generated mutation hooks (see replit.md).
+  const postCommentMutation = useDailyLogsPostDailyLogsIdComments()
+  const toggleReactionMutation =
+    useDailyLogsPostDailyLogsIdCommentsCommentIdReactions()
+
   async function loadComments() {
     if (!log) return
     setLoading(true)
@@ -1999,7 +2023,13 @@ function CommentsSheet({
       formData.append("files", file)
     }
     try {
-      const response = await api.post<{
+      // Multipart upload: the generated mutation hook only accepts `{ id }`
+      // in its variables, so we call the bare generated function with
+      // `body: formData` to stay on the generated client (no axios).
+      const response = (await dailyLogsPostDailyLogsIdCommentAttachments(
+        log.id,
+        { body: formData },
+      )) as {
         files: Array<{
           id: string
           originalName: string
@@ -2007,13 +2037,13 @@ function CommentsSheet({
           fileSize: number | null
           fileUrl: string
         }>
-      }>(`/daily-logs/${log.id}/comment-attachments`, formData)
+      }
 
       // Pair the server-issued fileIds with locally generated object URLs so
       // the composer can show a thumbnail without round-tripping through the
       // authenticated /uploads stream just to preview a file the user just
       // picked. previewUrl is revoked on remove/submit/unmount.
-      const next: CommentDraftAttachment[] = response.data.files.map((file, idx) => ({
+      const next: CommentDraftAttachment[] = response.files.map((file, idx) => ({
         fileId: file.id,
         name: file.originalName,
         mimeType: file.mimeType,
@@ -2063,7 +2093,7 @@ function CommentsSheet({
     if (!log || (!body.trim() && attachments.length === 0 && !linkValue.trim())) return
     setSending(true)
     try {
-      const response = await api.post<{ comments: CommentRecord[] }>(`/daily-logs/${log.id}/comments`, {
+      const payload = validatePayload(DailyLogsPostDailyLogsIdCommentsBody, {
         body: body.trim() || "Shared an attachment",
         parentCommentId: replyTo?.id ?? null,
         mentions: selectedMentionIds,
@@ -2073,7 +2103,15 @@ function CommentsSheet({
         attachments: attachments.map((a) => ({ fileId: a.fileId })),
         links: linkValue.trim() ? [linkValue.trim()] : [],
       })
-      setComments(response.data.comments)
+      if (!payload) {
+        setSending(false)
+        return
+      }
+      const response = await postCommentMutation.mutateAsync({
+        id: log.id,
+        data: payload,
+      })
+      setComments(response.comments as unknown as CommentRecord[])
       setBody("")
       // Revoke composer previews now that the draft is committed; the
       // posted comment renders via authenticated blob fetch from fileUrl.
@@ -2096,11 +2134,17 @@ function CommentsSheet({
   async function toggleReaction(commentId: string, emoji: string) {
     if (!log) return
     try {
-      const response = await api.post<{ comments: CommentRecord[] }>(
-        `/daily-logs/${log.id}/comments/${commentId}/reactions`,
+      const payload = validatePayload(
+        DailyLogsPostDailyLogsIdCommentsCommentIdReactionsBody,
         { emoji },
       )
-      setComments(response.data.comments)
+      if (!payload) return
+      const response = await toggleReactionMutation.mutateAsync({
+        id: log.id,
+        commentId,
+        data: payload,
+      })
+      setComments(response.comments as unknown as CommentRecord[])
       await onChanged()
     } catch (error) {
       toastApiError(error, "Failed to update reaction")
@@ -2366,6 +2410,14 @@ function DailyLogDialog({
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [initialSnapshot, setInitialSnapshot] = useState("")
 
+  // All writes go through generated mutation hooks (see replit.md).
+  const createLogMutation = useDailyLogsPostJobsJobIdDailyLogs()
+  const updateLogMutation = useDailyLogsPutDailyLogsId()
+  const publishLogMutation = useDailyLogsPostDailyLogsIdPublish()
+  const deleteLogFromDialogMutation = useDailyLogsDeleteDailyLogsId()
+  const deleteLogAttachmentMutation =
+    useDailyLogsDeleteDailyLogsIdAttachmentsAttachmentId()
+
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === values.jobId) || jobs.find((job) => job.id === jobId) || null,
     [jobs, jobId, values.jobId],
@@ -2479,13 +2531,17 @@ function DailyLogDialog({
     if (pendingFiles.length === 0) return
     const formData = new FormData()
     pendingFiles.forEach((file) => formData.append("files", file))
-    await api.post(`/daily-logs/${targetLogId}/attachments`, formData)
+    // Multipart: bare generated function (orval drops body from hook vars).
+    await dailyLogsPostDailyLogsIdAttachments(targetLogId, { body: formData })
   }
 
   async function deleteRemovedFiles(targetLogId: string) {
     if (removedAttachmentIds.length === 0) return
     for (const attachmentId of removedAttachmentIds) {
-      await api.delete(`/daily-logs/${targetLogId}/attachments/${attachmentId}`)
+      await deleteLogAttachmentMutation.mutateAsync({
+        id: targetLogId,
+        attachmentId,
+      })
     }
   }
 
@@ -2511,14 +2567,22 @@ function DailyLogDialog({
       }
 
       const response = currentLog
-        ? await api.put<{ log: DailyLogDetail }>(`/daily-logs/${currentLog.id}`, payload)
-        : await api.post<{ log: DailyLogDetail }>(`/jobs/${values.jobId}/daily-logs`, payload)
+        ? ((await updateLogMutation.mutateAsync({
+            id: currentLog.id,
+            data: (validatePayload(DailyLogsPutDailyLogsIdBody, payload) ??
+              payload) as DailyLogsPutDailyLogsIdMutationBody,
+          })) as { log: DailyLogDetail })
+        : ((await createLogMutation.mutateAsync({
+            jobId: values.jobId,
+            data: (validatePayload(DailyLogsPostJobsJobIdDailyLogsBody, payload) ??
+              payload) as DailyLogsPostJobsJobIdDailyLogsMutationBody,
+          })) as { log: DailyLogDetail })
 
-      const savedId = response.data.log.id
+      const savedId = response.log.id
       await uploadPendingFiles(savedId)
       await deleteRemovedFiles(savedId)
       if (!currentLog && publishAfterCreate) {
-        await api.post(`/daily-logs/${savedId}/publish`)
+        await publishLogMutation.mutateAsync({ id: savedId })
       }
       toast.success(currentLog ? "Daily log saved" : "Daily log published")
       await onSaved(savedId)
@@ -2534,7 +2598,7 @@ function DailyLogDialog({
     if (!currentLog) return
     setDeleting(true)
     try {
-      await api.delete(`/daily-logs/${currentLog.id}`)
+      await deleteLogFromDialogMutation.mutateAsync({ id: currentLog.id })
       toast.success("Daily log deleted")
       onOpenChange(false)
       await onDeleted()
@@ -3005,6 +3069,10 @@ export default function JobDailyLogsPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const loadRequestIdRef = useRef(0)
 
+  // All writes go through generated mutation hooks (see replit.md).
+  const toggleLikeMutation = useDailyLogsPostDailyLogsIdLike()
+  const deleteLogMutation = useDailyLogsDeleteDailyLogsId()
+
   async function loadReferenceData() {
     // Some of these endpoints (settings + custom-fields) are admin-only, and
     // /users is manager-or-above. Crew members and PMs without those
@@ -3257,7 +3325,7 @@ export default function JobDailyLogsPage() {
   async function handleToggleLike() {
     if (!selectedLog) return
     try {
-      await api.post(`/daily-logs/${selectedLog.id}/like`)
+      await toggleLikeMutation.mutateAsync({ id: selectedLog.id })
       await refreshAll(selectedLog.id)
     } catch (error) {
       toastApiError(error, "Failed to update like")
@@ -3465,7 +3533,9 @@ export default function JobDailyLogsPage() {
                                 className="text-red-600 focus:text-red-600"
                                 onClick={async () => {
                                   try {
-                                    await api.delete(`/daily-logs/${selectedLog.id}`)
+                                    await deleteLogMutation.mutateAsync({
+                                      id: selectedLog.id,
+                                    })
                                     toast.success("Daily log deleted")
                                     setSelectedLog(null)
                                     await loadLogs()

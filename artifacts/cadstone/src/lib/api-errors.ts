@@ -1,4 +1,5 @@
 import { isAxiosError } from "axios"
+import { ApiError } from "@workspace/api-client-react"
 import { toast } from "sonner"
 
 export type ApiErrorClassification =
@@ -6,10 +7,42 @@ export type ApiErrorClassification =
   | { kind: "session-expired" }
   | { kind: "toast"; message: string }
 
+// Generated mutation hooks throw `ApiError` (from customFetch) instead of an
+// AxiosError. The shape carries problem+json on `.data` and the HTTP status
+// on `.status`, so we surface both error families through one classifier.
+function classifyGeneratedApiError(
+  err: ApiError,
+  fallback: string,
+): ApiErrorClassification {
+  const status = err.status
+  if (status === 401) return { kind: "session-expired" }
+  if (status === 403) return { kind: "forbidden" }
+
+  const data = err.data
+  const serverMessage =
+    typeof data === "object" && data !== null
+      ? (data as { message?: unknown }).message
+      : undefined
+  if (typeof serverMessage === "string" && serverMessage.trim().length > 0) {
+    return { kind: "toast", message: serverMessage }
+  }
+  if (status >= 500) {
+    return {
+      kind: "toast",
+      message: "Server error — please try again in a moment.",
+    }
+  }
+  return { kind: "toast", message: fallback }
+}
+
 export function classifyApiError(
   err: unknown,
   fallback: string,
 ): ApiErrorClassification {
+  if (err instanceof ApiError) {
+    return classifyGeneratedApiError(err, fallback)
+  }
+
   if (isAxiosError(err)) {
     const status = err.response?.status
     const serverMessage =
@@ -79,8 +112,12 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
 // middleware). Returns null when the response shape doesn't match so
 // callers can fall back to the generic message handling.
 export function apiErrorDetailCode(err: unknown): string | null {
-  if (!isAxiosError(err)) return null
-  const data = err.response?.data
+  let data: unknown = null
+  if (err instanceof ApiError) {
+    data = err.data
+  } else if (isAxiosError(err)) {
+    data = err.response?.data
+  }
   if (typeof data !== "object" || data === null) return null
   const errors = (data as { errors?: unknown }).errors
   if (typeof errors !== "object" || errors === null) return null

@@ -15,11 +15,23 @@ import {
 } from "lucide-react"
 import {
   getClientsGetClientsQueryKey,
+  getClientsGetClientsIdQueryKey,
   useClientsGetClients,
+  useClientsPostClients,
+  useClientsPutClientsId,
+  useClientsDeleteClientsId,
+  useClientsPostClientsIdContacts,
+  useClientsPutClientsIdContactsContactId,
+  useClientsDeleteClientsIdContactsContactId,
   type ClientListItem as ClientListItemDto,
   type ClientsGetClientsQueryResult,
 } from "@workspace/api-client-react"
-import { ClientsPostClientsBody, ClientsPutClientsIdBody } from "@workspace/api-zod"
+import {
+  ClientsPostClientsBody,
+  ClientsPutClientsIdBody,
+  ClientsPostClientsIdContactsBody,
+  ClientsPutClientsIdContactsContactIdBody,
+} from "@workspace/api-zod"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { validatePayload } from "@/lib/validate-payload"
@@ -253,6 +265,17 @@ export default function ClientsPage() {
     // variant we have cached.
     void queryClient.invalidateQueries({ queryKey: getClientsGetClientsQueryKey() })
   }
+  const invalidateClientDetail = (id: string) => {
+    void queryClient.invalidateQueries({ queryKey: getClientsGetClientsIdQueryKey(id) })
+  }
+
+  // All writes go through generated mutation hooks (see replit.md).
+  const createClientMutation = useClientsPostClients()
+  const updateClientMutation = useClientsPutClientsId()
+  const deleteClientMutation = useClientsDeleteClientsId()
+  const createContactMutation = useClientsPostClientsIdContacts()
+  const updateContactMutation = useClientsPutClientsIdContactsContactId()
+  const deleteContactMutation = useClientsDeleteClientsIdContactsContactId()
 
   // Open the matching client automatically when the URL carries
   // ?client=<id> (e.g. from a global search result). Track the last id
@@ -315,14 +338,14 @@ export default function ClientsPage() {
     if (!payload) return
     setSaving(true)
     try {
-      const r = await api.post("/clients", payload)
+      const r = await createClientMutation.mutateAsync({ data: payload })
       toast.success("Client created")
       setCreateOpen(false)
       setClientForm(emptyClientForm)
       setPage(1)
       invalidateClientsList()
       invalidateAppData(["clients", "navigation"])
-      await openDetail(r.data.client.id)
+      await openDetail(r.client.id)
     } catch (err: unknown) {
       toastApiError(err, "Failed to create client")
     } finally {
@@ -361,11 +384,15 @@ export default function ClientsPage() {
     if (!payload) return
     setPatchSaving(true)
     try {
-      const r = await api.put(`/clients/${selected.id}`, payload)
+      const r = await updateClientMutation.mutateAsync({
+        id: selected.id,
+        data: payload,
+      })
       toast.success("Client updated")
       setEditingClient(false)
-      setSelected(prev => prev ? { ...prev, ...r.data.client } : prev)
+      setSelected(prev => prev ? { ...prev, ...(r.client as ClientDetail) } : prev)
       invalidateClientsList()
+      invalidateClientDetail(selected.id)
       invalidateAppData(["clients", "navigation"])
     } catch (err: unknown) {
       toastApiError(err, "Failed to update client")
@@ -378,11 +405,13 @@ export default function ClientsPage() {
     if (!deleteClientId) return
     setDeleting(true)
     try {
-      await api.delete(`/clients/${deleteClientId}`)
+      await deleteClientMutation.mutateAsync({ id: deleteClientId })
       toast.success("Client deleted")
+      const deletedId = deleteClientId
       setDeleteClientId(null)
-      if (selected?.id === deleteClientId) setSelected(null)
+      if (selected?.id === deletedId) setSelected(null)
       invalidateClientsList()
+      invalidateClientDetail(deletedId)
       invalidateAppData(["clients", "navigation"])
     } catch (err: unknown) {
       toastApiError(err, "Failed to delete client")
@@ -415,7 +444,7 @@ export default function ClientsPage() {
     if (!selected) return
     setContactSaving(true)
     try {
-      const payload = {
+      const rawPayload = {
         firstName: contactForm.firstName || null,
         lastName: contactForm.lastName || null,
         title: contactForm.title || null,
@@ -425,13 +454,31 @@ export default function ClientsPage() {
         isPrimary: contactForm.isPrimary,
       }
       if (editingContact) {
-        await api.put(`/clients/${selected.id}/contacts/${editingContact.id}`, payload)
+        const payload = validatePayload(
+          ClientsPutClientsIdContactsContactIdBody,
+          rawPayload,
+        )
+        if (!payload) return
+        await updateContactMutation.mutateAsync({
+          id: selected.id,
+          contactId: editingContact.id,
+          data: payload,
+        })
         toast.success("Contact updated")
       } else {
-        await api.post(`/clients/${selected.id}/contacts`, payload)
+        const payload = validatePayload(
+          ClientsPostClientsIdContactsBody,
+          rawPayload,
+        )
+        if (!payload) return
+        await createContactMutation.mutateAsync({
+          id: selected.id,
+          data: payload,
+        })
         toast.success("Contact added")
       }
       setContactDialogOpen(false)
+      invalidateClientDetail(selected.id)
       const r = await api.get(`/clients/${selected.id}`)
       setSelected(r.data.client)
     } catch (err: unknown) {
@@ -445,9 +492,13 @@ export default function ClientsPage() {
     if (!deleteContactId || !selected) return
     setDeleting(true)
     try {
-      await api.delete(`/clients/${selected.id}/contacts/${deleteContactId}`)
+      await deleteContactMutation.mutateAsync({
+        id: selected.id,
+        contactId: deleteContactId,
+      })
       toast.success("Contact removed")
       setDeleteContactId(null)
+      invalidateClientDetail(selected.id)
       const r = await api.get(`/clients/${selected.id}`)
       setSelected(r.data.client)
     } catch (err: unknown) {

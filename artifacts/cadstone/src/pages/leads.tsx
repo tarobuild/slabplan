@@ -27,11 +27,26 @@ import {
 } from "lucide-react"
 import {
   getLeadsGetLeadsQueryKey,
+  getLeadsGetLeadsIdQueryKey,
+  leadsPostLeadsIdAttachments,
   useLeadsGetLeads,
+  useLeadsPostLeads,
+  useLeadsPutLeadsId,
+  useLeadsDeleteLeadsId,
+  useLeadsPostLeadsIdContacts,
+  useLeadsPutLeadsIdContactsContactId,
+  useLeadsDeleteLeadsIdAttachmentsAttachmentId,
   type LeadsGetLeadsParams,
   type LeadsGetLeadsQueryResult,
+  type LeadsPostLeadsMutationBody,
+  type LeadsPutLeadsIdMutationBody,
 } from "@workspace/api-client-react"
-import { LeadsPostLeadsBody, LeadsPutLeadsIdBody } from "@workspace/api-zod"
+import {
+  LeadsPostLeadsBody,
+  LeadsPutLeadsIdBody,
+  LeadsPostLeadsIdContactsBody,
+  LeadsPutLeadsIdContactsContactIdBody,
+} from "@workspace/api-zod"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { validatePayload } from "@/lib/validate-payload"
@@ -409,6 +424,17 @@ export default function LeadsPage() {
   const invalidateLeadsList = () => {
     void queryClient.invalidateQueries({ queryKey: getLeadsGetLeadsQueryKey() })
   }
+  const invalidateLeadDetail = (id: string) => {
+    void queryClient.invalidateQueries({ queryKey: getLeadsGetLeadsIdQueryKey(id) })
+  }
+
+  // All writes go through generated mutation hooks (see replit.md).
+  const createLeadMutation = useLeadsPostLeads()
+  const updateLeadMutation = useLeadsPutLeadsId()
+  const deleteLeadMutation = useLeadsDeleteLeadsId()
+  const createLeadContactMutation = useLeadsPostLeadsIdContacts()
+  const updateLeadContactMutation = useLeadsPutLeadsIdContactsContactId()
+  const deleteLeadAttachmentMutation = useLeadsDeleteLeadsIdAttachmentsAttachmentId()
 
   const handleSearch = (v: string) => {
     setSearch(v)
@@ -503,21 +529,37 @@ export default function LeadsPage() {
         setSavingEdit(false)
         return
       }
-      const { data } = await api.put(`/leads/${sheetLeadId}`, updatePayload)
+      await updateLeadMutation.mutateAsync({
+        id: sheetLeadId,
+        data: updatePayload as LeadsPutLeadsIdMutationBody,
+      })
 
       const existingContact = leadDetail.clientContact
       if (existingContact?.id) {
-        await api.put(`/leads/${sheetLeadId}/contacts/${existingContact.id}`, {
+        const contactPayload = validatePayload(LeadsPutLeadsIdContactsContactIdBody, {
           displayName: editForm.contactDisplayName || null,
           email: editForm.contactEmail || null,
           phone: editForm.contactPhone || null,
         })
+        if (contactPayload) {
+          await updateLeadContactMutation.mutateAsync({
+            id: sheetLeadId,
+            contactId: existingContact.id,
+            data: contactPayload,
+          })
+        }
       } else if (editForm.contactDisplayName && editForm.contactEmail) {
-        await api.post(`/leads/${sheetLeadId}/contacts`, {
+        const contactPayload = validatePayload(LeadsPostLeadsIdContactsBody, {
           displayName: editForm.contactDisplayName,
           email: editForm.contactEmail,
           phone: editForm.contactPhone || null,
         })
+        if (contactPayload) {
+          await createLeadContactMutation.mutateAsync({
+            id: sheetLeadId,
+            data: contactPayload,
+          })
+        }
       }
 
       const { data: freshData } = await api.get(`/leads/${sheetLeadId}`)
@@ -527,6 +569,7 @@ export default function LeadsPage() {
       setIsEditing(false)
       toast.success("Lead updated")
       invalidateLeadsList()
+      invalidateLeadDetail(sheetLeadId)
       invalidateAppData(["leads", "navigation"])
     } catch (err: unknown) {
       toastApiError(err, "Failed to save changes")
@@ -630,9 +673,11 @@ export default function LeadsPage() {
           setSaving(false)
           return
         }
-        const { data } = await api.post("/leads", createPayload)
+        const data = (await createLeadMutation.mutateAsync({
+          data: createPayload as LeadsPostLeadsMutationBody,
+        })) as { lead?: { id?: string }; id?: string }
 
-        leadId = data.lead?.id ?? data.id
+        leadId = data.lead?.id ?? data.id ?? null
 
         if (!leadId) {
           toast.error("Failed to create lead")
@@ -644,11 +689,17 @@ export default function LeadsPage() {
 
         if (contactForm.displayName && contactForm.email) {
           try {
-            await api.post(`/leads/${leadId}/contacts`, {
+            const contactPayload = validatePayload(LeadsPostLeadsIdContactsBody, {
               displayName: contactForm.displayName,
               email: contactForm.email,
               phone: contactForm.phone || null,
             })
+            if (contactPayload) {
+              await createLeadContactMutation.mutateAsync({
+                id: leadId,
+                data: contactPayload,
+              })
+            }
           } catch (err: unknown) {
             const classified = classifyApiError(err, "Lead created but failed to add contact")
             // 401 (session expired) and 403 (forbidden) are already toasted by
@@ -674,9 +725,11 @@ export default function LeadsPage() {
       try {
         const fd = new FormData()
         fd.append("files", file)
-        await api.post(`/leads/${leadId}/attachments`, fd, {
-          headers: { "Content-Type": "multipart/form-data" },
-        })
+        // The generated `useLeadsPostLeadsIdAttachments` hook only accepts
+        // `{ id }` in its variables (orval drops multipart bodies from the
+        // mutation surface). We still go through the generated client by
+        // calling the bare function with `body: fd`, which avoids axios.
+        await leadsPostLeadsIdAttachments(leadId, { body: fd })
         successfulIndexes.push(i)
       } catch (err) {
         const classified = classifyApiError(err, "Upload failed")
@@ -716,11 +769,13 @@ export default function LeadsPage() {
     if (!deleteId) return
     setDeleting(true)
     try {
-      await api.delete(`/leads/${deleteId}`)
+      await deleteLeadMutation.mutateAsync({ id: deleteId })
       toast.success("Lead deleted")
+      const deletedId = deleteId
       setDeleteId(null)
-      if (sheetLeadId === deleteId) setSheetLeadId(null)
+      if (sheetLeadId === deletedId) setSheetLeadId(null)
       invalidateLeadsList()
+      invalidateLeadDetail(deletedId)
       invalidateAppData(["leads", "navigation"])
     } catch (err: unknown) {
       toastApiError(err, "Failed to delete lead")
@@ -745,9 +800,10 @@ export default function LeadsPage() {
     try {
       const formData = new FormData()
       selectedFiles.forEach((file) => formData.append("files", file))
-      const { data } = await api.post(`/leads/${sheetLeadId}/attachments`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
+      // See note in handleCreate: bare generated function for multipart.
+      const data = (await leadsPostLeadsIdAttachments(sheetLeadId, {
+        body: formData,
+      })) as { attachments: LeadAttachment[] }
       const newAttachments: LeadAttachment[] = data.attachments
       toast.success(
         newAttachments.length === 1
@@ -769,7 +825,10 @@ export default function LeadsPage() {
     setDeletingAttachmentId(confirmDeleteAttachmentId)
     setConfirmDeleteAttachmentId(null)
     try {
-      await api.delete(`/leads/${sheetLeadId}/attachments/${confirmDeleteAttachmentId}`)
+      await deleteLeadAttachmentMutation.mutateAsync({
+        id: sheetLeadId,
+        attachmentId: confirmDeleteAttachmentId,
+      })
       setLeadDetail((prev) =>
         prev
           ? {

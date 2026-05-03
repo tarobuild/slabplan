@@ -2096,6 +2096,9 @@ export const leadsPostLeadsBodyConfidenceDefault = 0;
 export const leadsPostLeadsBodyConfidenceMin = 0;
 export const leadsPostLeadsBodyConfidenceMax = 100;
 
+export const leadsPostLeadsBodyProjectedSalesDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
 export const leadsPostLeadsBodyStatusDefault = `open`;
 export const leadsPostLeadsBodySalespeopleDefault = [];
 export const leadsPostLeadsBodyTagsItemMax = 100;
@@ -2117,7 +2120,13 @@ export const LeadsPostLeadsBody = zod
       .min(leadsPostLeadsBodyConfidenceMin)
       .max(leadsPostLeadsBodyConfidenceMax)
       .default(leadsPostLeadsBodyConfidenceDefault),
-    projectedSalesDate: zod.coerce.date().nullish(),
+    projectedSalesDate: zod
+      .string()
+      .regex(leadsPostLeadsBodyProjectedSalesDateRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — \*\*not\*\* an ISO timestamp and \*\*not\*\* coerced to a `Date` (the handler's `optionalDate` zod transform rejects any other form). `format: date` is intentionally omitted so generated clients keep this as a `string`, matching the handler.",
+      ),
     estimatedRevenueMin: zod
       .union([
         zod
@@ -2350,6 +2359,9 @@ export const leadsPutLeadsIdBodyConfidenceDefault = 0;
 export const leadsPutLeadsIdBodyConfidenceMin = 0;
 export const leadsPutLeadsIdBodyConfidenceMax = 100;
 
+export const leadsPutLeadsIdBodyProjectedSalesDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
 export const leadsPutLeadsIdBodyStatusDefault = `open`;
 export const leadsPutLeadsIdBodySalespeopleDefault = [];
 export const leadsPutLeadsIdBodyTagsItemMax = 100;
@@ -2371,7 +2383,13 @@ export const LeadsPutLeadsIdBody = zod
       .min(leadsPutLeadsIdBodyConfidenceMin)
       .max(leadsPutLeadsIdBodyConfidenceMax)
       .default(leadsPutLeadsIdBodyConfidenceDefault),
-    projectedSalesDate: zod.coerce.date().nullish(),
+    projectedSalesDate: zod
+      .string()
+      .regex(leadsPutLeadsIdBodyProjectedSalesDateRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — \*\*not\*\* an ISO timestamp and \*\*not\*\* coerced to a `Date` (the handler's `optionalDate` zod transform rejects any other form). `format: date` is intentionally omitted so generated clients keep this as a `string`, matching the handler.",
+      ),
     estimatedRevenueMin: zod
       .union([
         zod

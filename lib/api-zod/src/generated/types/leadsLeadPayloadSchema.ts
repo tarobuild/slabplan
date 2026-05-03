@@ -26,7 +26,11 @@ export interface LeadsLeadPayloadSchema {
    * @maximum 100
    */
   confidence?: number;
-  projectedSalesDate?: Date | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — **not** an ISO timestamp and **not** coerced to a `Date` (the handler's `optionalDate` zod transform rejects any other form). `format: date` is intentionally omitted so generated clients keep this as a `string`, matching the handler.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  projectedSalesDate?: string | null;
   /**
    * Decimal serialized as a string in responses; accepted as either string or number on input.
    * @nullable

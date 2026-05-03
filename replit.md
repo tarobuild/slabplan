@@ -41,9 +41,14 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 - Implements per-user monthly token caps and an organization-wide monthly token budget. Includes per-user in-flight and rate limits.
 - Supports abort handling for ongoing operations and extracts citations from tool results.
 
+**Health endpoints (api-server):**
+- `GET /api/livez` — shallow always-200 liveness probe used by container-level health checks. Returns `{status:"ok"}`. Has no dependencies and never blocks the load balancer from routing traffic.
+- `GET /api/healthz` — deep readiness probe. Runs `SELECT 1` against the primary DB and a `bucket.exists()` head call against the upload bucket in parallel with a hard 1.5s timeout per check. Returns `200 {status:"ok", db:true, storage:true, durationMs, errors:[]}` on success or `503 {status:"degraded", db:bool, storage:bool, durationMs, errors:[{code,message}]}` if any dependency is unhealthy. Failures are logged via `logger.warn` with `errorCode: "HEALTHZ_DEGRADED"` so an operator can grep production logs without reading bodies.
+- `POST /api/_client-error` — anonymous sink for browser-side render crashes caught by the frontend `ErrorBoundary`. Validates a small zod payload (`message`, `stack?`, `componentStack?`, `url`, `userAgent?`, `releaseSha?`), truncates stacks to 8 KB, strips query strings/fragments from `url`, and emits a structured `logger.warn` with `errorCode: "CLIENT_RENDER_CRASH"`. Returns 204 with no body. Has its own per-IP rate limit (default 30/min, override via `CLIENT_ERROR_PER_IP_MAX` / `CLIENT_ERROR_PER_IP_WINDOW_MS`) so a buggy client cannot flood the log sink. Mounted before `requireAuth` because a render crash may happen before auth state hydrates; if a valid Bearer token is present the user id is attached to the log entry on a best-effort basis.
+
 **Production deploy smoke check (api-server):**
 After every deploy, verify the bundled server can sniff binary uploads (regression guard for `file-type` ESM dynamic-import bundling):
-1. `curl -fsS https://<deploy-host>/api/healthz` — expect `200`.
+1. `curl -fsS https://<deploy-host>/api/healthz` — expect `200` and a body with `db:true, storage:true`. A `503` (with `db:false` or `storage:false`) means a dependency is broken; investigate before letting traffic continue to flow.
 2. As an admin, upload a small PDF, DOCX and XLSX to a folder via `POST /api/folders/:id/files` (multipart, with `X-Requested-With: XMLHttpRequest`). Expect `201` for all three. A `415` with "Unsupported file type" on a real PDF/DOCX indicates `file-type`'s dynamic deps (`strtok3`, `token-types`, `@tokenizer/inflate`) were not shipped — re-check `artifacts/api-server/build.mjs` externals and `package.json` dependencies, and that `node_modules` is deployed alongside `dist/`.
 3. As an admin/PM, on a job upload an `.xlsx` estimate via `POST /api/jobs/:jobId/financials/estimate` (multipart, with `X-Requested-With: XMLHttpRequest`). Expect `200` and the parsed CSV preview to come back from Anthropic. A 5xx or `Cannot find package 'exceljs'` indicates `exceljs` was not externalized correctly — re-check `build.mjs` externals.
 

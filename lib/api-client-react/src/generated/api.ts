@@ -21,6 +21,7 @@ import type {
   AnyValue,
   AuthAcceptInviteSchema,
   ClientDetailResponse,
+  ClientErrorsClientErrorPayload,
   ClientJobsResponse,
   ClientListResponse,
   ClientsClientPayloadSchema,
@@ -51,6 +52,7 @@ import type {
   FoldersMoveFolderSchema,
   GenericObject,
   HealthStatus,
+  HealthStatusDeep,
   JobAssigneesResponse,
   JobDetailResponse,
   JobListResponse,
@@ -11810,7 +11812,83 @@ export function useSearchGetSearch<
 }
 
 /**
- * Route defined in artifacts/api-server/src/routes/health.ts.
+ * Shallow liveness probe that returns 200 as long as the event loop can answer. Use for container-level liveness checks.
+ * @summary GET /livez
+ */
+export const getHealthGetLivezUrl = () => {
+  return `/api/livez`;
+};
+
+export const healthGetLivez = async (
+  options?: RequestInit,
+): Promise<HealthStatus> => {
+  return customFetch<HealthStatus>(getHealthGetLivezUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getHealthGetLivezQueryKey = () => {
+  return [`/api/livez`] as const;
+};
+
+export const getHealthGetLivezQueryOptions = <
+  TData = Awaited<ReturnType<typeof healthGetLivez>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof healthGetLivez>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getHealthGetLivezQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof healthGetLivez>>> = ({
+    signal,
+  }) => healthGetLivez({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof healthGetLivez>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type HealthGetLivezQueryResult = NonNullable<
+  Awaited<ReturnType<typeof healthGetLivez>>
+>;
+export type HealthGetLivezQueryError = ErrorType<unknown>;
+
+/**
+ * @summary GET /livez
+ */
+
+export function useHealthGetLivez<
+  TData = Awaited<ReturnType<typeof healthGetLivez>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof healthGetLivez>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getHealthGetLivezQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Deep readiness probe that exercises the primary database and the upload bucket in parallel with a hard 1.5s timeout per check. Returns 503 + status="degraded" if any dependency is unhealthy so the load balancer can stop routing to this instance.
  * @summary GET /healthz
  */
 export const getHealthGetHealthzUrl = () => {
@@ -11819,8 +11897,8 @@ export const getHealthGetHealthzUrl = () => {
 
 export const healthGetHealthz = async (
   options?: RequestInit,
-): Promise<HealthStatus> => {
-  return customFetch<HealthStatus>(getHealthGetHealthzUrl(), {
+): Promise<HealthStatusDeep> => {
+  return customFetch<HealthStatusDeep>(getHealthGetHealthzUrl(), {
     ...options,
     method: "GET",
   });
@@ -11832,7 +11910,7 @@ export const getHealthGetHealthzQueryKey = () => {
 
 export const getHealthGetHealthzQueryOptions = <
   TData = Awaited<ReturnType<typeof healthGetHealthz>>,
-  TError = ErrorType<Problem>,
+  TError = ErrorType<HealthStatusDeep>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthGetHealthz>>,
@@ -11859,7 +11937,7 @@ export const getHealthGetHealthzQueryOptions = <
 export type HealthGetHealthzQueryResult = NonNullable<
   Awaited<ReturnType<typeof healthGetHealthz>>
 >;
-export type HealthGetHealthzQueryError = ErrorType<Problem>;
+export type HealthGetHealthzQueryError = ErrorType<HealthStatusDeep>;
 
 /**
  * @summary GET /healthz
@@ -11867,7 +11945,7 @@ export type HealthGetHealthzQueryError = ErrorType<Problem>;
 
 export function useHealthGetHealthz<
   TData = Awaited<ReturnType<typeof healthGetHealthz>>,
-  TError = ErrorType<Problem>,
+  TError = ErrorType<HealthStatusDeep>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthGetHealthz>>,
@@ -11884,6 +11962,94 @@ export function useHealthGetHealthz<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Sink for browser-side render crashes caught by the frontend ErrorBoundary. Anonymous and IP-rate-limited (default 30/min/IP). Always returns 204; never echoes the payload back.
+ * @summary POST /_client-error
+ */
+export const getClientErrorsPostClientErrorUrl = () => {
+  return `/api/_client-error`;
+};
+
+export const clientErrorsPostClientError = async (
+  clientErrorsClientErrorPayload: ClientErrorsClientErrorPayload,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getClientErrorsPostClientErrorUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(clientErrorsClientErrorPayload),
+  });
+};
+
+export const getClientErrorsPostClientErrorMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientErrorsPostClientError>>,
+    TError,
+    { data: BodyType<ClientErrorsClientErrorPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clientErrorsPostClientError>>,
+  TError,
+  { data: BodyType<ClientErrorsClientErrorPayload> },
+  TContext
+> => {
+  const mutationKey = ["clientErrorsPostClientError"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clientErrorsPostClientError>>,
+    { data: BodyType<ClientErrorsClientErrorPayload> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return clientErrorsPostClientError(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClientErrorsPostClientErrorMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clientErrorsPostClientError>>
+>;
+export type ClientErrorsPostClientErrorMutationBody =
+  BodyType<ClientErrorsClientErrorPayload>;
+export type ClientErrorsPostClientErrorMutationError = ErrorType<Problem>;
+
+/**
+ * @summary POST /_client-error
+ */
+export const useClientErrorsPostClientError = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clientErrorsPostClientError>>,
+    TError,
+    { data: BodyType<ClientErrorsClientErrorPayload> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clientErrorsPostClientError>>,
+  TError,
+  { data: BodyType<ClientErrorsClientErrorPayload> },
+  TContext
+> => {
+  return useMutation(getClientErrorsPostClientErrorMutationOptions(options));
+};
 
 /**
  * @summary List personal access tokens for the current user.

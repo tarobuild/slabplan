@@ -38,6 +38,8 @@ tags:
     description: Search operations
   - name: health
     description: Health operations
+  - name: client-errors
+    description: Client-side error reporting
   - name: account-tokens
     description: Personal access token operations
 paths:
@@ -10763,16 +10765,16 @@ paths:
       x-zod-query-schema: querySchema
       security:
         - bearerAuth: []
-  /healthz:
+  /livez:
     get:
-      operationId: health_get_healthz
+      operationId: health_get_livez
       tags:
         - health
-      summary: GET /healthz
-      description: Route defined in artifacts/api-server/src/routes/health.ts.
+      summary: GET /livez
+      description: Shallow liveness probe that returns 200 as long as the event loop can answer. Use for container-level liveness checks.
       responses:
         "200":
-          description: Healthy
+          description: Alive
           content:
             application/json:
               schema:
@@ -10784,12 +10786,35 @@ paths:
               $ref: "#/components/headers/X-RateLimit-Remaining"
             X-RateLimit-Reset:
               $ref: "#/components/headers/X-RateLimit-Reset"
-        "400":
-          description: Bad request
+      x-source-file: artifacts/api-server/src/routes/health.ts
+      security: []
+  /healthz:
+    get:
+      operationId: health_get_healthz
+      tags:
+        - health
+      summary: GET /healthz
+      description: Deep readiness probe that exercises the primary database and the upload bucket in parallel with a hard 1.5s timeout per check. Returns 503 + status="degraded" if any dependency is unhealthy so the load balancer can stop routing to this instance.
+      responses:
+        "200":
+          description: Healthy — every dependency reachable.
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/Problem"
+                $ref: "#/components/schemas/HealthStatusDeep"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "503":
+          description: Degraded — at least one dependency is unhealthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatusDeep"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -10799,6 +10824,42 @@ paths:
               $ref: "#/components/headers/X-RateLimit-Reset"
       x-source-file: artifacts/api-server/src/routes/health.ts
       security: []
+  /_client-error:
+    post:
+      operationId: client_errors_post_client_error
+      tags:
+        - client-errors
+      summary: POST /_client-error
+      description: Sink for browser-side render crashes caught by the frontend ErrorBoundary. Anonymous and IP-rate-limited (default 30/min/IP). Always returns 204; never echoes the payload back.
+      x-source-file: artifacts/api-server/src/routes/client-errors.ts
+      x-zod-body-schema: clientErrorPayloadSchema
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/client_errors_clientErrorPayload"
+      responses:
+        "204":
+          description: Report accepted; nothing returned.
+        "400":
+          description: Invalid payload.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: Too many client error reports from this IP.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                minimum: 1
   /account/tokens:
     get:
       operationId: accountTokens_list
@@ -10968,6 +11029,62 @@ components:
           type: string
       required:
         - status
+    HealthStatusDeep:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        db:
+          type: boolean
+        storage:
+          type: boolean
+        durationMs:
+          type: integer
+          minimum: 0
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+            required:
+              - code
+              - message
+      required:
+        - status
+        - db
+        - storage
+        - durationMs
+        - errors
+    client_errors_clientErrorPayload:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+        stack:
+          type: string
+          nullable: true
+        componentStack:
+          type: string
+          nullable: true
+        url:
+          type: string
+          minLength: 1
+        userAgent:
+          type: string
+          nullable: true
+        releaseSha:
+          type: string
+          nullable: true
+      required:
+        - message
+        - url
+      description: Client-side render-crash payload submitted by the frontend ErrorBoundary.
     Error:
       type: object
       properties:

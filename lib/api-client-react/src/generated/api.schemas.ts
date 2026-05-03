@@ -9,6 +9,42 @@ export interface HealthStatus {
   status: string;
 }
 
+export type HealthStatusDeepStatus =
+  (typeof HealthStatusDeepStatus)[keyof typeof HealthStatusDeepStatus];
+
+export const HealthStatusDeepStatus = {
+  ok: "ok",
+  degraded: "degraded",
+} as const;
+
+export type HealthStatusDeepErrorsItem = {
+  code: string;
+  message: string;
+};
+
+export interface HealthStatusDeep {
+  status: HealthStatusDeepStatus;
+  db: boolean;
+  storage: boolean;
+  /** @minimum 0 */
+  durationMs: number;
+  errors: HealthStatusDeepErrorsItem[];
+}
+
+/**
+ * Client-side render-crash payload submitted by the frontend ErrorBoundary.
+ */
+export interface ClientErrorsClientErrorPayload {
+  /** @minLength 1 */
+  message: string;
+  stack?: string | null;
+  componentStack?: string | null;
+  /** @minLength 1 */
+  url: string;
+  userAgent?: string | null;
+  releaseSha?: string | null;
+}
+
 export interface Error {
   error: string;
   details?: unknown;

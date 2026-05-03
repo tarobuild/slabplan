@@ -84,6 +84,42 @@ export async function ensureUploadRoot(): Promise<void> {
   // compatibility with existing startup code.
 }
 
+type HeadBucketImpl = () => Promise<void>;
+
+const defaultHeadBucket: HeadBucketImpl = async () => {
+  const { bucketName } = parseBucketAndPrefix(getPrivateObjectDir());
+  const [exists] = await storageClient.bucket(bucketName).exists();
+  if (!exists) {
+    throw new Error(`Upload bucket '${bucketName}' is not reachable.`);
+  }
+};
+
+let headBucketImpl: HeadBucketImpl = defaultHeadBucket;
+
+/**
+ * Lightweight readiness probe for the upload bucket. Used by /healthz to
+ * confirm storage is reachable before the load balancer routes traffic at
+ * this instance. Throws on any failure (missing env, network error, missing
+ * bucket); the caller is responsible for downgrading that into a `503` and
+ * a structured log entry.
+ */
+export async function headBucket(): Promise<void> {
+  await headBucketImpl();
+}
+
+/**
+ * Internal hook used by the test suite to swap the bucket head check with a
+ * stub. Not part of the public API.
+ */
+export const __headBucketTesting = {
+  setImpl(fn: HeadBucketImpl) {
+    headBucketImpl = fn;
+  },
+  reset() {
+    headBucketImpl = defaultHeadBucket;
+  },
+};
+
 export function buildStoredFileName(originalName: string) {
   const ext = path.extname(originalName);
   const base = path.basename(originalName, ext);

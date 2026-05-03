@@ -7517,12 +7517,49 @@ export const SearchGetSearchResponse = zod.object({
 });
 
 /**
- * Route defined in artifacts/api-server/src/routes/health.ts.
- * @summary GET /healthz
+ * Shallow liveness probe that returns 200 as long as the event loop can answer. Use for container-level liveness checks.
+ * @summary GET /livez
  */
-export const HealthGetHealthzResponse = zod.object({
+export const HealthGetLivezResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Deep readiness probe that exercises the primary database and the upload bucket in parallel with a hard 1.5s timeout per check. Returns 503 + status="degraded" if any dependency is unhealthy so the load balancer can stop routing to this instance.
+ * @summary GET /healthz
+ */
+export const healthGetHealthzResponseDurationMsMin = 0;
+
+export const HealthGetHealthzResponse = zod.object({
+  status: zod.enum(["ok", "degraded"]),
+  db: zod.boolean(),
+  storage: zod.boolean(),
+  durationMs: zod.number().min(healthGetHealthzResponseDurationMsMin),
+  errors: zod.array(
+    zod.object({
+      code: zod.string(),
+      message: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * Sink for browser-side render crashes caught by the frontend ErrorBoundary. Anonymous and IP-rate-limited (default 30/min/IP). Always returns 204; never echoes the payload back.
+ * @summary POST /_client-error
+ */
+
+export const ClientErrorsPostClientErrorBody = zod
+  .object({
+    message: zod.string().min(1),
+    stack: zod.string().nullish(),
+    componentStack: zod.string().nullish(),
+    url: zod.string().min(1),
+    userAgent: zod.string().nullish(),
+    releaseSha: zod.string().nullish(),
+  })
+  .describe(
+    "Client-side render-crash payload submitted by the frontend ErrorBoundary.",
+  );
 
 /**
  * @summary List personal access tokens for the current user.

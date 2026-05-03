@@ -53,15 +53,20 @@ after(async () => {
   await pool.end();
 });
 
-test("health endpoint stays public", async () => {
-  const response = await fetch(`${baseUrl}/api/healthz`);
+// /livez is the always-200 shallow liveness probe; /healthz performs the
+// deep DB+storage readiness check (covered separately in healthz-deep.test.ts).
+// We use /livez here so these smoke tests don't depend on a configured
+// PRIVATE_OBJECT_DIR or test-database wiring beyond a TCP listener.
+
+test("liveness endpoint stays public", async () => {
+  const response = await fetch(`${baseUrl}/api/livez`);
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: "ok" });
 });
 
-test("health endpoint applies security headers", async () => {
-  const response = await fetch(`${baseUrl}/api/healthz`);
+test("liveness endpoint applies security headers", async () => {
+  const response = await fetch(`${baseUrl}/api/livez`);
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
@@ -69,7 +74,7 @@ test("health endpoint applies security headers", async () => {
 });
 
 test("cors allows configured app origin", async () => {
-  const response = await fetch(`${baseUrl}/api/healthz`, {
+  const response = await fetch(`${baseUrl}/api/livez`, {
     headers: {
       origin: "https://app.example.com",
     },
@@ -81,7 +86,7 @@ test("cors allows configured app origin", async () => {
 });
 
 test("cors allows replit dev origin", async () => {
-  const response = await fetch(`${baseUrl}/api/healthz`, {
+  const response = await fetch(`${baseUrl}/api/livez`, {
     headers: {
       origin: "https://workspace.kirk.replit.dev",
     },
@@ -92,7 +97,7 @@ test("cors allows replit dev origin", async () => {
 });
 
 test("cors does not reflect disallowed origins", async () => {
-  const response = await fetch(`${baseUrl}/api/healthz`, {
+  const response = await fetch(`${baseUrl}/api/livez`, {
     headers: {
       origin: "https://evil.example.com",
     },

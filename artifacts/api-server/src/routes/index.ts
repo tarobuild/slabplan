@@ -3,6 +3,7 @@ import accountTokensRouter from "./account-tokens";
 import activityRouter from "./activity";
 import agentRouter from "./agent";
 import authRouter from "./auth";
+import clientErrorsRouter from "./client-errors";
 import clientsRouter from "./clients";
 import dashboardRouter from "./dashboard";
 import dailyLogAdminRouter from "./daily-log-admin";
@@ -28,6 +29,10 @@ import { createPerUserApiRateLimit } from "../lib/rate-limit";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+// Anonymous client-error sink: mounted BEFORE requireAuth because a render
+// crash may happen in the frontend before the auth state hydrates. Has its
+// own per-IP rate limiter inside the route file.
+router.use(clientErrorsRouter);
 router.use("/auth", authRouter);
 // Signed-file viewing carries its own short-lived token in the query string,
 // so it must be mounted BEFORE the global Bearer-token requirement.

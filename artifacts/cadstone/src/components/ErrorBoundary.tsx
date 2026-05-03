@@ -40,19 +40,32 @@ export class ErrorBoundary extends Component<Props, State> {
     // may not exist in every environment) so reporting can never itself
     // crash the boundary.
     try {
+      // Shape mirrors the zod schema on the server (see
+      // `artifacts/api-server/src/routes/client-errors.ts`). Keep these in
+      // lockstep — drift here means every reported crash 400s and the sink
+      // sees nothing.
       const payload = JSON.stringify({
         message: error?.message ?? String(error),
         stack: error?.stack ?? null,
         componentStack: info?.componentStack ?? null,
-        url: typeof window !== "undefined" ? window.location.href : null,
+        url:
+          typeof window !== "undefined" && window.location?.href
+            ? window.location.href
+            : "unknown",
         userAgent:
           typeof navigator !== "undefined" ? navigator.userAgent : null,
-        ts: new Date().toISOString(),
+        releaseSha:
+          (import.meta as unknown as { env?: Record<string, string | undefined> })
+            ?.env?.VITE_RELEASE_SHA ?? null,
       })
       if (typeof fetch === "function") {
         void fetch("/api/_client-error", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            // Required by the server's CSRF gate for state-changing requests.
+            "X-Requested-With": "XMLHttpRequest",
+          },
           body: payload,
           keepalive: true,
           credentials: "same-origin",

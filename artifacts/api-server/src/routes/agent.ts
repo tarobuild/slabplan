@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { db } from "@workspace/db";
 import {
   agentConversations,
@@ -109,17 +110,134 @@ router.get(
   }),
 );
 
+// GET /agent/conversations
+//
+// Two response shapes:
+//   - Legacy "page mode" (no `cursor` query key) returns
+//     `{ conversations }` with up to 100 rows so existing UI keeps
+//     working without a code change.
+//   - Cursor mode (any `?cursor=...`, even empty) returns
+//     `{ conversations, pagination: { nextCursor, hasMore } }` and
+//     paginates with a stable (pinned, last_message_at, id) tuple so a
+//     long history can be walked without OFFSET-based drift (Task #277).
+//
+// Sort order is `pinned DESC, last_message_at DESC, id DESC` — same as
+// before — so pinned conversations always sort to the top of page 1 and
+// every later page continues the same ordering.
+const conversationsCursorLimit = 25;
+const conversationsCursorMaxLimit = 100;
+
+function parseConversationsLimit(raw: unknown): number {
+  if (raw === undefined || raw === null || raw === "") {
+    return conversationsCursorLimit;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+    throw new HttpError(
+      400,
+      "limit must be a positive integer.",
+      undefined,
+      "validation",
+    );
+  }
+  return Math.min(n, conversationsCursorMaxLimit);
+}
+
 router.get(
   "/conversations",
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
+    const cursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+
+    if (!cursorMode) {
+      const rows = await db
+        .select()
+        .from(agentConversations)
+        .where(eq(agentConversations.userId, userId))
+        .orderBy(
+          desc(agentConversations.pinned),
+          desc(agentConversations.lastMessageAt),
+          desc(agentConversations.id),
+        )
+        .limit(100);
+      res.json({ conversations: rows });
+      return;
+    }
+
+    const limit = parseConversationsLimit(
+      (req.query as Record<string, unknown>).limit ??
+        (req.query as Record<string, unknown>).pageSize,
+    );
+    const rawCursor =
+      typeof req.query.cursor === "string" ? req.query.cursor.trim() : "";
+    const cursor = rawCursor.length > 0 ? decodeCursor(rawCursor) : null;
+
+    // Cursor key shape: `k = [pinned ? 1 : 0, lastMessageAt.toISOString()]`,
+    // `id` is the universal tie-breaker. Decoding rejects anything else
+    // with a 400.
+    let cursorPredicate;
+    if (cursor) {
+      if (cursor.k.length !== 2) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      const [pinnedRaw, lastAtRaw] = cursor.k;
+      if (
+        (pinnedRaw !== 0 && pinnedRaw !== 1) ||
+        typeof lastAtRaw !== "string"
+      ) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      const pinnedBool = pinnedRaw === 1;
+      const lastAt = new Date(lastAtRaw);
+      if (Number.isNaN(lastAt.getTime())) {
+        throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+      }
+      // (pinned, last_message_at, id) DESC tuple comparison.
+      cursorPredicate = or(
+        sql`${agentConversations.pinned} < ${pinnedBool}`,
+        and(
+          eq(agentConversations.pinned, pinnedBool),
+          lt(agentConversations.lastMessageAt, lastAt),
+        ),
+        and(
+          eq(agentConversations.pinned, pinnedBool),
+          eq(agentConversations.lastMessageAt, lastAt),
+          lt(agentConversations.id, cursor.id),
+        ),
+      );
+    }
+
     const rows = await db
       .select()
       .from(agentConversations)
-      .where(eq(agentConversations.userId, userId))
-      .orderBy(desc(agentConversations.pinned), desc(agentConversations.lastMessageAt))
-      .limit(100);
-    res.json({ conversations: rows });
+      .where(
+        cursorPredicate
+          ? and(eq(agentConversations.userId, userId), cursorPredicate)
+          : eq(agentConversations.userId, userId),
+      )
+      .orderBy(
+        desc(agentConversations.pinned),
+        desc(agentConversations.lastMessageAt),
+        desc(agentConversations.id),
+      )
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeCursor({
+            v: 1,
+            k: [last.pinned ? 1 : 0, last.lastMessageAt.toISOString()],
+            id: last.id,
+          })
+        : null;
+
+    res.json({
+      conversations: page,
+      pagination: { nextCursor, hasMore },
+    });
   }),
 );
 

@@ -498,6 +498,12 @@ router.delete(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
+    // Task #277 audit item 2: belt-and-suspenders ownership check.
+    // requireAdmin already gates the route on role, but this second
+    // call enforces the per-resource visibility predicate consistently
+    // with every other client mutation (PATCH, contacts, etc.). Pinned
+    // by `audit-fixes.test.ts` so a future regression that drops it
+    // surfaces immediately.
     await assertCanAccessClient(req.auth!, clientId);
     await getClientOrThrow(clientId);
 

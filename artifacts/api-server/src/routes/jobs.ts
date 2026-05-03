@@ -505,6 +505,23 @@ router.post(
       throw new HttpError(400, "Invalid job payload.", body.error.flatten());
     }
 
+    // Per #99 / Task #277: only admins can hand a job's PM role to
+    // someone else. A project_manager creating a job may either omit
+    // `projectManagerId` (defaults to self) or set it to their own user
+    // id; setting it to anyone else is an explicit 403 rather than a
+    // silent override, so the rule is testable and discoverable.
+    if (
+      req.auth!.role === "project_manager" &&
+      body.data.projectManagerId !== null &&
+      body.data.projectManagerId !== undefined &&
+      body.data.projectManagerId !== req.auth!.userId
+    ) {
+      throw new HttpError(
+        403,
+        "Project managers can only create jobs with themselves as PM. Ask an admin to assign a different PM.",
+      );
+    }
+
     const payload =
       req.auth!.role === "project_manager"
         ? {

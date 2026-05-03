@@ -1023,30 +1023,32 @@ async function applyInvoiceMatches(
   invoiceId: string,
   matches: Array<{ sovLineItemId: string; amountCents: number }>,
 ) {
+  const startedAt = Date.now();
   await db.transaction(async (tx) => {
-    // Reverse any existing payments for this invoice first.
+    // Reverse any existing payments for this invoice first. Net the
+    // reversals per line item so a single batched UPDATE replaces what
+    // used to be N sequential per-row UPDATEs holding row locks for the
+    // duration of the transaction (Task #277).
     const existing = await tx
       .select()
       .from(invoiceLinePayments)
       .where(eq(invoiceLinePayments.invoiceId, invoiceId));
-    for (const p of existing) {
-      await tx
-        .update(sovLineItems)
-        .set({
-          billedCents: sql`greatest(0, ${sovLineItems.billedCents} - ${Number(p.amountCents)})`,
-          updatedAt: new Date(),
-        })
-        .where(eq(sovLineItems.id, p.lineItemId));
-    }
-    await tx.delete(invoiceLinePayments).where(eq(invoiceLinePayments.invoiceId, invoiceId));
 
-    if (matches.length > 0) {
-      // Cap each applied amount to the line item's remaining capacity
-      // (scheduled - current billed) so we never store more in
-      // invoice_line_payments than we actually credit to billed_cents.
-      // This guarantees that a later reversal subtracts exactly what
-      // was applied — no drift below the true billed total.
-      const lineIds = Array.from(new Set(matches.map((m) => m.sovLineItemId)));
+    // Pre-load current scheduled/billed for every line item we may
+    // touch (existing reversals + new matches) in one round-trip.
+    const touchedIds = Array.from(
+      new Set<string>([
+        ...existing.map((p) => p.lineItemId),
+        ...matches.map((m) => m.sovLineItemId),
+      ]),
+    );
+    type ItemSnapshot = {
+      id: string;
+      scheduled: number;
+      billed: number;
+    };
+    const snapshot = new Map<string, ItemSnapshot>();
+    if (touchedIds.length > 0) {
       const items = await tx
         .select({
           id: sovLineItems.id,
@@ -1054,68 +1056,79 @@ async function applyInvoiceMatches(
           billedCents: sovLineItems.billedCents,
         })
         .from(sovLineItems)
-        .where(inArray(sovLineItems.id, lineIds));
-      const remaining = new Map<string, number>();
+        .where(inArray(sovLineItems.id, touchedIds));
       for (const li of items) {
-        remaining.set(
-          li.id,
-          Math.max(
-            0,
-            Number(li.scheduledValueCents ?? 0) - Number(li.billedCents ?? 0),
-          ),
-        );
-      }
-      const cappedMatches: Array<{ sovLineItemId: string; amountCents: number }> = [];
-      for (const m of matches) {
-        const cap = remaining.get(m.sovLineItemId) ?? 0;
-        const applied = Math.max(0, Math.min(Number(m.amountCents), cap));
-        if (applied > 0) {
-          cappedMatches.push({ sovLineItemId: m.sovLineItemId, amountCents: applied });
-          remaining.set(m.sovLineItemId, cap - applied);
-        }
-      }
-      if (cappedMatches.length > 0) {
-        await tx.insert(invoiceLinePayments).values(
-          cappedMatches.map((m) => ({
-            invoiceId,
-            lineItemId: m.sovLineItemId,
-            amountCents: m.amountCents,
-          })),
-        );
-        for (const m of cappedMatches) {
-          await tx
-            .update(sovLineItems)
-            .set({
-              billedCents: sql`${sovLineItems.billedCents} + ${m.amountCents}`,
-              updatedAt: new Date(),
-            })
-            .where(eq(sovLineItems.id, m.sovLineItemId));
-        }
+        snapshot.set(li.id, {
+          id: li.id,
+          scheduled: Number(li.scheduledValueCents ?? 0),
+          billed: Number(li.billedCents ?? 0),
+        });
       }
     }
 
-    // Recompute percent_complete for every line item touched by either
-    // the prior payments (now reversed) or the new matches.
-    const affectedIds = Array.from(
-      new Set<string>([
-        ...existing.map((p) => p.lineItemId),
-        ...matches.map((m) => m.sovLineItemId),
-      ]),
-    );
-    if (affectedIds.length > 0) {
-      const refreshed = await tx
-        .select()
-        .from(sovLineItems)
-        .where(inArray(sovLineItems.id, affectedIds));
-      for (const li of refreshed) {
-        const sched = Number(li.scheduledValueCents ?? 0);
-        const billed = Number(li.billedCents ?? 0);
-        const pct = sched > 0 ? Math.min(100, (billed / sched) * 100) : 0;
-        await tx
-          .update(sovLineItems)
-          .set({ percentComplete: pct.toFixed(2) })
-          .where(eq(sovLineItems.id, li.id));
+    // 1) Reverse existing payments in-memory.
+    for (const p of existing) {
+      const s = snapshot.get(p.lineItemId);
+      if (!s) continue;
+      s.billed = Math.max(0, s.billed - Number(p.amountCents ?? 0));
+    }
+    if (existing.length > 0) {
+      await tx
+        .delete(invoiceLinePayments)
+        .where(eq(invoiceLinePayments.invoiceId, invoiceId));
+    }
+
+    // 2) Cap and apply each new match in-memory against the post-reversal
+    // billed totals so the invariant `applied <= scheduled - billed`
+    // still holds (and a future reversal subtracts exactly what was
+    // applied).
+    const cappedMatches: Array<{ sovLineItemId: string; amountCents: number }> = [];
+    for (const m of matches) {
+      const s = snapshot.get(m.sovLineItemId);
+      if (!s) continue;
+      const cap = Math.max(0, s.scheduled - s.billed);
+      const applied = Math.max(0, Math.min(Number(m.amountCents), cap));
+      if (applied > 0) {
+        cappedMatches.push({ sovLineItemId: m.sovLineItemId, amountCents: applied });
+        s.billed += applied;
       }
+    }
+    if (cappedMatches.length > 0) {
+      await tx.insert(invoiceLinePayments).values(
+        cappedMatches.map((m) => ({
+          invoiceId,
+          lineItemId: m.sovLineItemId,
+          amountCents: m.amountCents,
+        })),
+      );
+    }
+
+    // 3) Single batched UPDATE per area/invoice instead of N sequential
+    // UPDATEs. Using `update … from (values …) v(id, billed, pct)`
+    // collapses every billed/percent_complete change into one
+    // round-trip and one short-lived row lock per touched line item.
+    if (touchedIds.length > 0) {
+      const rows: Array<{ id: string; billed: number; pct: string }> = [];
+      for (const s of snapshot.values()) {
+        const pct = s.scheduled > 0
+          ? Math.min(100, (s.billed / s.scheduled) * 100)
+          : 0;
+        rows.push({ id: s.id, billed: s.billed, pct: pct.toFixed(2) });
+      }
+      const valuesSql = sql.join(
+        rows.map(
+          (r) => sql`(${r.id}::uuid, ${r.billed}::bigint, ${r.pct}::numeric)`,
+        ),
+        sql`, `,
+      );
+      await tx.execute(sql`
+        update ${sovLineItems} as li
+           set billed_cents = v.billed,
+               percent_complete = v.pct,
+               updated_at = now()
+          from (values ${valuesSql}) as v(id, billed, pct)
+         where li.id = v.id
+      `);
     }
 
     await tx
@@ -1123,6 +1136,42 @@ async function applyInvoiceMatches(
       .set({ appliedAt: new Date(), updatedAt: new Date() })
       .where(eq(trackerInvoices.id, invoiceId));
   });
+  // Observability: surfaces the batch size + wall time so a regression
+  // (e.g. accidentally re-introducing per-row UPDATEs) shows up in logs.
+  if (matches.length >= 25) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[financials] applyInvoiceMatches invoice=${invoiceId} matches=${matches.length} took=${Date.now() - startedAt}ms`,
+    );
+  }
+}
+
+/**
+ * Single batched ownership check for a list of SOV line items: every id
+ * MUST belong to a tracker for the given job. Returns nothing on success;
+ * throws 403/404 otherwise. Replaces a per-id `assertLineItemInJob` loop
+ * (Task #277) so PATCH matches with N rows costs one query instead of N.
+ */
+async function assertLineItemsInJob(lineItemIds: string[], jobId: string) {
+  const uniqueIds = Array.from(new Set(lineItemIds));
+  if (uniqueIds.length === 0) return;
+  const rows = await db
+    .select({ id: sovLineItems.id })
+    .from(sovLineItems)
+    .innerJoin(sovAreas, eq(sovLineItems.areaId, sovAreas.id))
+    .innerJoin(financialTrackers, eq(sovAreas.trackerId, financialTrackers.id))
+    .where(
+      and(
+        inArray(sovLineItems.id, uniqueIds),
+        eq(financialTrackers.jobId, jobId),
+      ),
+    );
+  if (rows.length !== uniqueIds.length) {
+    throw new HttpError(
+      403,
+      "One or more line items do not belong to this job.",
+    );
+  }
 }
 
 router.post(
@@ -1270,10 +1319,13 @@ router.patch(
     await assertInvoiceInJob(invoiceId, jobId);
     const body = invoiceMatchesPatchSchema.safeParse(req.body);
     if (!body.success) throw new HttpError(400, "Invalid matches.", body.error.flatten());
-    // Each referenced line item must belong to this job's tracker.
-    for (const m of body.data.matches) {
-      await assertLineItemInJob(m.sovLineItemId, jobId);
-    }
+    // Single batched ownership check: every referenced line item must
+    // belong to this job's tracker. Replaces the prior O(N) loop of
+    // `assertLineItemInJob` (Task #277).
+    await assertLineItemsInJob(
+      body.data.matches.map((m) => m.sovLineItemId),
+      jobId,
+    );
     await applyInvoiceMatches(invoiceId, body.data.matches);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const data = await loadTrackerWithChildren(tracker.id);

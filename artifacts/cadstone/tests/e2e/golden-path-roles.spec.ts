@@ -13,6 +13,7 @@ import {
   findUserIdByEmail,
   requireAnyClient,
 } from "./helpers/api"
+import { gotoViaTopNav, isMobileViewport } from "./helpers/mobile"
 import { CESAR_STATE, WORKER_STATE } from "./helpers/storage"
 
 /**
@@ -157,8 +158,18 @@ test.describe("golden path — crew (worker) UI", () => {
     const { jobId } = seeded
 
     // ---- 1. Assigned job is visible on the crew /jobs list, and the
-    //         "+ New Job" affordance is hidden (admin-only).
-    await page.goto("/jobs")
+    //         "+ New Job" affordance is hidden (admin-only). On
+    //         mobile, also confirm the hamburger drawer is the entry
+    //         point and that the admin-only "+ New Job" remains
+    //         hidden inside that drawer-driven layout.
+    if (isMobileViewport(page)) {
+      await page.goto("/dashboard")
+      await expect(
+        page.getByRole("button", { name: /open navigation menu/i }),
+        "crew on mobile sees the hamburger nav trigger",
+      ).toBeVisible()
+    }
+    await gotoViaTopNav(page, "/jobs", /^my jobs$/i)
     await page
       .getByPlaceholder(/search/i)
       .first()
@@ -170,7 +181,7 @@ test.describe("golden path — crew (worker) UI", () => {
 
     await expect(
       page.getByRole("button", { name: /\+ ?new job/i }),
-      "+ New Job button must be hidden for crew",
+      "+ New Job button must be hidden for crew (desktop or mobile)",
     ).toHaveCount(0)
 
     // ---- 2. Schedule sub-page renders for the crew member, but the

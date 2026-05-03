@@ -112,5 +112,27 @@ export default defineConfig({
           : {}),
       },
     },
+    // Mobile (iPhone 13) variant of the golden-path smoke. Foremen and
+    // crew use the app from their phones, where the layout switches to
+    // a hamburger drawer + sheet-based search and the desktop top nav
+    // is hidden (see `lg:hidden` / `hidden lg:flex` rules in TopNav).
+    // This project re-runs ONLY the golden-path specs at an iPhone-
+    // sized viewport with hasTouch so layout / tap-target / drawer
+    // regressions surface before they reach the field. Per-spec
+    // mobile branches assert mobile-specific selectors (hamburger
+    // visibility, drawer-driven navigation) instead of duplicating
+    // the entire scenario.
+    {
+      name: "mobile-chromium",
+      testMatch: /golden-path-.*\.spec\.ts$/,
+      dependencies: ["setup"],
+      use: {
+        ...devices["iPhone 13"],
+        baseURL,
+        ...(chromiumExecutable
+          ? { launchOptions: { executablePath: chromiumExecutable } }
+          : {}),
+      },
+    },
   ],
 })

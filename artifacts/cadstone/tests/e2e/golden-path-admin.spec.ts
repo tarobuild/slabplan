@@ -1,5 +1,6 @@
 import { expect, test, type Route } from "@playwright/test"
 import { CESAR, authHeaders, loginViaApi } from "./helpers/auth"
+import { gotoViaTopNav, isMobileViewport } from "./helpers/mobile"
 import { CESAR_STATE } from "./helpers/storage"
 
 /**
@@ -76,8 +77,27 @@ test.describe("golden path — admin", () => {
     await page.goto("/dashboard")
     await expect(page).toHaveURL(/\/dashboard/)
 
-    // ---- 2. Create a client through the UI.
-    await page.goto("/clients")
+    // On mobile the desktop top-nav links are hidden behind a
+    // hamburger-driven Sheet drawer. Confirm that affordance is the
+    // one rendered at iPhone widths so a regression in the
+    // `lg:hidden` / `hidden lg:flex` rules surfaces here instead of
+    // silently breaking the field UX.
+    if (isMobileViewport(page)) {
+      await expect(
+        page.getByRole("button", { name: /open navigation menu/i }),
+        "hamburger nav trigger must be visible on mobile",
+      ).toBeVisible()
+      await expect(
+        page.locator("nav.hidden.lg\\:flex"),
+        "desktop top nav must be hidden on mobile",
+      ).toBeHidden()
+    }
+
+    // ---- 2. Create a client through the UI. The first navigation
+    //         goes through the mobile drawer when running under the
+    //         `mobile-chromium` Playwright project; on desktop it
+    //         degrades to a plain page.goto.
+    await gotoViaTopNav(page, "/clients", /^clients$/i)
     await page.getByRole("button", { name: /^new client$/i }).first().click()
     const clientDialog = page.getByRole("dialog", { name: /new client/i })
     await expect(clientDialog).toBeVisible({ timeout: 10_000 })

@@ -29,6 +29,8 @@ import { EmptyState } from "../components"
 export interface BaselineTabProps {
   baseline: ScheduleBaselineRecord | null
   scheduleOffline: boolean
+  // Admin/PM may set/reset baseline; crew gets read-only.
+  canWrite: boolean
   setSettingsOpen: Dispatch<SetStateAction<boolean>>
   setFilterOpen: Dispatch<SetStateAction<boolean>>
   enterDraftMode: () => void
@@ -42,6 +44,7 @@ export function BaselineTab(props: BaselineTabProps) {
   const {
     baseline,
     scheduleOffline,
+    canWrite,
     setSettingsOpen,
     setFilterOpen,
     enterDraftMode,
@@ -58,26 +61,32 @@ export function BaselineTab(props: BaselineTabProps) {
           <div className="flex flex-wrap items-center gap-2" />
 
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setSettingsOpen(true)}>
-              <Settings2 className="size-4" />
-            </Button>
-            <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
-              <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
-              <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white">
-                  <MoreHorizontal className="size-4" />
-                  More Actions
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem disabled={!baseline} onClick={() => void handleResetBaseline()}>
-                  Reset Baseline
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {canWrite ? (
+              <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setSettingsOpen(true)}>
+                <Settings2 className="size-4" />
+              </Button>
+            ) : null}
+            {canWrite ? (
+              <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
+                <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
+                <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
+              </div>
+            ) : null}
+            {canWrite ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white">
+                    <MoreHorizontal className="size-4" />
+                    More Actions
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem disabled={!baseline} onClick={() => void handleResetBaseline()}>
+                    Reset Baseline
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white">
@@ -94,10 +103,12 @@ export function BaselineTab(props: BaselineTabProps) {
               <Filter className="size-4" />
               Filter
             </Button>
-            <Button type="button" size="sm" onClick={() => void handleSetBaseline()}>
-              <Plus className="size-4" />
-              Set Baseline
-            </Button>
+            {canWrite ? (
+              <Button type="button" size="sm" onClick={() => void handleSetBaseline()}>
+                <Plus className="size-4" />
+                Set Baseline
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -106,8 +117,8 @@ export function BaselineTab(props: BaselineTabProps) {
         <EmptyState
           title="Perfect your schedule with baseline"
           description="Take a snapshot of your ideal project schedule and compare to timeline changes to improve planning of future projects."
-          actionLabel="Set Baseline"
-          onAction={() => void handleSetBaseline()}
+          actionLabel={canWrite ? "Set Baseline" : undefined}
+          onAction={canWrite ? () => void handleSetBaseline() : undefined}
         />
       ) : (
         <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">

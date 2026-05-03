@@ -49,6 +49,8 @@ export interface ExceptionsTabProps {
   jobId: string | undefined
   jobs: JobOption[]
   scheduleOffline: boolean
+  // Admin/PM only — crew gets a read-only view of exceptions.
+  canWrite: boolean
   workdayExceptions: ScheduleWorkdayException[]
   workdayEditorOpen: boolean
   workdayForm: WorkdayExceptionForm
@@ -80,6 +82,7 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
     jobId,
     jobs,
     scheduleOffline,
+    canWrite,
     workdayExceptions,
     workdayEditorOpen,
     workdayForm,
@@ -113,13 +116,17 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
           <div className="flex flex-wrap items-center gap-2" />
 
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setSettingsOpen(true)}>
-              <Settings2 className="size-4" />
-            </Button>
-            <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
-              <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
-              <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
-            </div>
+            {canWrite ? (
+              <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setSettingsOpen(true)}>
+                <Settings2 className="size-4" />
+              </Button>
+            ) : null}
+            {canWrite ? (
+              <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
+                <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
+                <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
+              </div>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white">
@@ -136,10 +143,12 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
               <Filter className="size-4" />
               Filter
             </Button>
-            <Button type="button" size="sm" onClick={openNewWorkdayException}>
-              <Plus className="size-4" />
-              Workday Exception
-            </Button>
+            {canWrite ? (
+              <Button type="button" size="sm" onClick={openNewWorkdayException}>
+                <Plus className="size-4" />
+                Workday Exception
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -357,14 +366,18 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
         <EmptyState
           title="Plan for any circumstance with workday exceptions"
           description="Schedule days off or plan for work outside of the usual weekdays to keep projects on time."
-          actionLabel="Add a Workday Exception"
-          onAction={openNewWorkdayException}
+          actionLabel={canWrite ? "Add a Workday Exception" : undefined}
+          onAction={canWrite ? openNewWorkdayException : undefined}
         />
       ) : (
         <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
           <div className="border-b border-[#E5E7EB] px-6 py-5">
             <p className="text-sm font-semibold text-slate-900">Workday exceptions</p>
-            <p className="mt-1 text-sm text-slate-500">Click an exception to edit its schedule impact and scope.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {canWrite
+                ? "Click an exception to edit its schedule impact and scope."
+                : "Read-only view of workday exceptions for this job."}
+            </p>
           </div>
           <div className="p-4">
             <Table>
@@ -380,7 +393,11 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
               </TableHeader>
               <TableBody>
                 {workdayExceptions.map((exception) => (
-                  <TableRow key={exception.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openExistingWorkdayException(exception)}>
+                  <TableRow
+                    key={exception.id}
+                    className={canWrite ? "cursor-pointer hover:bg-slate-50" : undefined}
+                    onClick={canWrite ? () => openExistingWorkdayException(exception) : undefined}
+                  >
                     <TableCell className="font-medium text-orange-700">{exception.title}</TableCell>
                     <TableCell>{exception.type === "non_workday" ? "Non workday" : "Extra workday"}</TableCell>
                     <TableCell>{fmtDate(exception.startDate)}</TableCell>

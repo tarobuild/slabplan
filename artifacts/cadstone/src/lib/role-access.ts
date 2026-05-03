@@ -12,6 +12,17 @@ export const ROLE_GATES = {
   myJobs: ["crew_member"] as const,
 } satisfies Record<string, ReadonlyArray<AppRole>>
 
+// Roles that may perform write/mutation actions on Financials and Schedule
+// (Set Baseline, Workday Exceptions, Settings save, Delete All Items, etc).
+// Crew members get a strictly read-only experience on these pages — write
+// affordances are hidden, never just disabled. Convention: derive a local
+// `canWrite = canWriteRole(user?.role)` and gate JSX on it.
+export const WRITE_ROLES: ReadonlyArray<AppRole> = ["admin", "project_manager"]
+
+export function canWriteRole(role: string | null | undefined): boolean {
+  return hasRoleAccess(role, WRITE_ROLES)
+}
+
 export function hasRoleAccess(
   role: string | null | undefined,
   allow: ReadonlyArray<AppRole>,

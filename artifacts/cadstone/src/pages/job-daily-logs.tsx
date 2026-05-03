@@ -1058,11 +1058,16 @@ function ActivityFeedItem({
   onSelect,
   onEdit,
   onPrint,
+  canEdit,
 }: {
   log: DailyLogListItem
   onSelect: (logId: string) => void
   onEdit: (logId: string) => void
   onPrint: (logId: string) => void
+  // Whether the current user is allowed to edit this specific log.
+  // True when they authored it OR they're admin/PM. The pencil button
+  // is hidden — never just disabled — when false.
+  canEdit: boolean
 }) {
   const [detail, setDetail] = useState<DailyLogDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -1135,9 +1140,11 @@ function ActivityFeedItem({
             <Button variant="ghost" size="sm" className="size-8 p-0" onClick={() => onPrint(log.id)}>
               <Printer className="size-3.5 text-slate-400" />
             </Button>
-            <Button variant="ghost" size="sm" className="size-8 p-0" onClick={() => onEdit(log.id)}>
-              <Pencil className="size-3.5 text-slate-400" />
-            </Button>
+            {canEdit ? (
+              <Button variant="ghost" size="sm" className="size-8 p-0" onClick={() => onEdit(log.id)}>
+                <Pencil className="size-3.5 text-slate-400" />
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -2945,6 +2952,13 @@ export default function JobDailyLogsPage() {
   const { job, jobId } = useOutletContext<JobContext>()
   useDocumentTitle(job?.title ? `${job.title} · Daily logs` : "Daily logs")
   const currentUser = useAuthStore((state) => state.user)
+  // Daily log ownership: the author can always edit/delete their own log;
+  // admin/PM can edit/delete any log. Crew members never see the
+  // Edit/Delete affordances on logs they didn't author.
+  const isLogManager =
+    currentUser?.role === "admin" || currentUser?.role === "project_manager"
+  const canEditLog = (createdBy: string | null) =>
+    isLogManager || (createdBy !== null && createdBy === currentUser?.id)
   const [settings, setSettings] = useState<DailyLogSettings>(DEFAULT_SETTINGS)
   const [customFields, setCustomFields] = useState<DailyLogCustomField[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -3368,6 +3382,7 @@ export default function JobDailyLogsPage() {
                               onSelect={(logId) => void loadDetail(logId)}
                               onEdit={openEditDialog}
                               onPrint={(logId) => void handlePrintDetail(logId)}
+                              canEdit={canEditLog(log.createdBy)}
                             />
                           </div>
                         ))}
@@ -3445,31 +3460,35 @@ export default function JobDailyLogsPage() {
                               <Printer className="size-4" />
                               Print
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-red-600 focus:text-red-600"
-                              onClick={async () => {
-                                try {
-                                  await api.delete(`/daily-logs/${selectedLog.id}`)
-                                  toast.success("Daily log deleted")
-                                  setSelectedLog(null)
-                                  await loadLogs()
-                                } catch (error) {
-                                  toastApiError(error, "Failed to delete daily log")
-                                }
-                              }}
-                            >
-                              <X className="size-4" />
-                              Delete
-                            </DropdownMenuItem>
+                            {canEditLog(selectedLog.createdBy) ? (
+                              <DropdownMenuItem
+                                className="text-red-600 focus:text-red-600"
+                                onClick={async () => {
+                                  try {
+                                    await api.delete(`/daily-logs/${selectedLog.id}`)
+                                    toast.success("Daily log deleted")
+                                    setSelectedLog(null)
+                                    await loadLogs()
+                                  } catch (error) {
+                                    toastApiError(error, "Failed to delete daily log")
+                                  }
+                                }}
+                              >
+                                <X className="size-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            ) : null}
                           </DropdownMenuContent>
                         </DropdownMenu>
                         <Button variant="outline" size="sm" onClick={() => setCommentsOpen(true)}>
                           <MessageSquare className="size-4" />
                           {selectedLog.commentsCount}
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => openEditDialog(selectedLog.id)}>
-                          <Pencil className="size-4" />
-                        </Button>
+                        {canEditLog(selectedLog.createdBy) ? (
+                          <Button variant="outline" size="sm" onClick={() => openEditDialog(selectedLog.id)}>
+                            <Pencil className="size-4" />
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
 

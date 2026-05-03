@@ -13,6 +13,7 @@ import { QueryClientProvider } from "@tanstack/react-query"
 import AdminRoute from "@/components/AdminRoute"
 import AppLayout from "@/components/layout/AppLayout"
 import RoleGate from "@/components/auth/RoleGate"
+import ErrorBoundary from "@/components/ErrorBoundary"
 import { ROLE_GATES } from "@/lib/role-access"
 import { FilePreviewProvider } from "@/components/files/file-preview-context"
 import { Card, CardContent } from "@/components/ui/card"
@@ -196,21 +197,23 @@ function App() {
   const router = useMemo(() => buildRouter(ready, basename), [ready, basename])
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      <Toaster
-        position="top-right"
-        duration={4000}
-        richColors
-        closeButton
-        toastOptions={{
-          classNames: {
-            toast: "border border-[#E5E7EB] bg-white text-slate-900 shadow-lg",
-            description: "text-slate-500",
-          },
-        }}
-      />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+        <Toaster
+          position="top-right"
+          duration={4000}
+          richColors
+          closeButton
+          toastOptions={{
+            classNames: {
+              toast: "border border-[#E5E7EB] bg-white text-slate-900 shadow-lg",
+              description: "text-slate-500",
+            },
+          }}
+        />
+      </QueryClientProvider>
+    </ErrorBoundary>
   )
 }
 

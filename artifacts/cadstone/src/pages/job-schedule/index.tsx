@@ -15,6 +15,8 @@ import {
   type ScheduleWorkdayException,
 } from "@/lib/schedule"
 import { useAuthStore } from "@/store/auth"
+import { canWriteRole } from "@/lib/role-access"
+import { invalidateAppData } from "@/lib/data-refresh"
 import { ScheduleItemDialog, type SchedulePreview } from "@/components/schedule/ScheduleItemDialog"
 import { ScheduleQuickCreate, type QuickCreateState } from "@/components/schedule/ScheduleQuickCreate"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -81,6 +83,11 @@ export default function JobSchedulePage() {
   useDocumentTitle("Schedule")
   const { jobId } = useParams<{ jobId: string }>()
   const currentUser = useAuthStore((s) => s.user)
+  // Hide write affordances (Set Baseline, Workday Exception editor,
+  // Settings cog, New Schedule Item, Delete All, etc.) for crew. Writes
+  // are still authoritatively enforced server-side; this just keeps the
+  // UI honest. See `canWrite` convention in replit.md.
+  const canWrite = canWriteRole(currentUser?.role)
   const monthPickerRef = useRef<HTMLInputElement | null>(null)
   const ganttTimelineRef = useRef<HTMLDivElement | null>(null)
   const scheduleExportRef = useRef<HTMLDivElement | null>(null)
@@ -610,6 +617,9 @@ export default function JobSchedulePage() {
     try {
       await api.delete(`/jobs/${jobId}/schedule/baseline`)
       setBaseline(null)
+      // Bridge the delete into the typed react-query cache so any
+      // /api/jobs reads (sidebar, dashboard, jobs list) refresh.
+      invalidateAppData(["jobs"])
       toast.success("Baseline removed")
     } catch (error) {
       toastApiError(error, "Failed to reset baseline")
@@ -690,6 +700,10 @@ export default function JobSchedulePage() {
     try {
       await api.delete(`/jobs/${jobId}/workday-exceptions/${workdayForm.id}`)
       await refreshScheduleData()
+      // refreshScheduleData() reloads this page's local state; also
+      // bridge into the react-query cache so other surfaces that read
+      // /api/jobs see the change.
+      invalidateAppData(["jobs"])
       setWorkdayEditorOpen(false)
       setWorkdayForm(defaultExceptionForm(jobId))
       toast.success("Workday exception deleted")
@@ -884,6 +898,7 @@ export default function JobSchedulePage() {
       setDialogOpen(false)
       setActiveItemId(null)
       await refreshScheduleData()
+      invalidateAppData(["jobs"])
       toast.success("All schedule items deleted")
     } catch (error) {
       toastApiError(error, "Failed to delete all schedule items")
@@ -1292,6 +1307,7 @@ export default function JobSchedulePage() {
               draftFutureLength={draftFuture.length}
               activeFilterCount={activeFilterCount}
               hasActiveItems={activeItems.length > 0}
+              canWrite={canWrite}
               enterDraftMode={enterDraftMode}
               handleDiscardDraft={handleDiscardDraft}
               handleDraftUndo={handleDraftUndo}
@@ -1420,6 +1436,7 @@ export default function JobSchedulePage() {
             <BaselineTab
               baseline={baseline}
               scheduleOffline={scheduleOffline}
+              canWrite={canWrite}
               setSettingsOpen={setSettingsOpen}
               setFilterOpen={setFilterOpen}
               enterDraftMode={enterDraftMode}
@@ -1435,6 +1452,7 @@ export default function JobSchedulePage() {
               jobId={jobId}
               jobs={jobs}
               scheduleOffline={scheduleOffline}
+              canWrite={canWrite}
               workdayExceptions={workdayExceptions}
               workdayEditorOpen={workdayEditorOpen}
               workdayForm={workdayForm}

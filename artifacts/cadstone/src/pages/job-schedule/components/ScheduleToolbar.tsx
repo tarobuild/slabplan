@@ -40,6 +40,10 @@ type ScheduleToolbarProps = {
   draftFutureLength: number
   activeFilterCount: number
   hasActiveItems: boolean
+  // Whether the current user may perform write actions (admin/PM).
+  // Crew members get a read-only toolbar — write affordances are
+  // hidden, never just disabled.
+  canWrite: boolean
   enterDraftMode: () => void
   handleDiscardDraft: () => void
   handleDraftUndo: () => void
@@ -68,6 +72,7 @@ export function ScheduleToolbar({
   draftFutureLength,
   activeFilterCount,
   hasActiveItems,
+  canWrite,
   enterDraftMode,
   handleDiscardDraft,
   handleDraftUndo,
@@ -128,15 +133,17 @@ export function ScheduleToolbar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="border-[#E5E7EB] bg-white"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Settings2 className="size-4" />
-          </Button>
+          {canWrite ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-[#E5E7EB] bg-white"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <Settings2 className="size-4" />
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -161,11 +168,13 @@ export function ScheduleToolbar({
               </Badge>
             ) : null}
           </Button>
-          <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
-            <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
-            <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
-          </div>
-          {scheduleOffline ? (
+          {canWrite ? (
+            <div className="flex h-10 items-center gap-3 rounded-lg border border-[#E5E7EB] px-3">
+              <span className="text-sm font-medium text-slate-700">Schedule Offline</span>
+              <Switch checked={scheduleOffline} onCheckedChange={(checked) => (checked ? enterDraftMode() : handleDiscardDraft())} />
+            </div>
+          ) : null}
+          {canWrite && scheduleOffline ? (
             <>
               <Button
                 type="button"
@@ -204,21 +213,29 @@ export function ScheduleToolbar({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onClick={() => setTemplateDialogOpen(true)}>
-                Import From Templates
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void handleTrackConflicts()}>
-                Track Conflicts
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!hasActiveItems}
-                onClick={() => void handleNotifyAssignedUsers()}
-              >
-                Notify Assigned Users
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled={!hasActiveItems} onClick={() => void handleDeleteAllItems()}>
-                Delete All Items
-              </DropdownMenuItem>
+              {canWrite ? (
+                <DropdownMenuItem onClick={() => setTemplateDialogOpen(true)}>
+                  Import From Templates
+                </DropdownMenuItem>
+              ) : null}
+              {canWrite ? (
+                <DropdownMenuItem onClick={() => void handleTrackConflicts()}>
+                  Track Conflicts
+                </DropdownMenuItem>
+              ) : null}
+              {canWrite ? (
+                <DropdownMenuItem
+                  disabled={!hasActiveItems}
+                  onClick={() => void handleNotifyAssignedUsers()}
+                >
+                  Notify Assigned Users
+                </DropdownMenuItem>
+              ) : null}
+              {canWrite ? (
+                <DropdownMenuItem disabled={!hasActiveItems} onClick={() => void handleDeleteAllItems()}>
+                  Delete All Items
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem onClick={() => handleExport("schedule")}>
                 Export to PDF
               </DropdownMenuItem>
@@ -242,11 +259,13 @@ export function ScheduleToolbar({
               </Badge>
             ) : null}
           </Button>
-          <Button type="button" size="sm" onClick={openNewItem}>
-            <Plus className="size-4" />
-            New Schedule Item
-          </Button>
-          {scheduleOffline ? (
+          {canWrite ? (
+            <Button type="button" size="sm" onClick={openNewItem}>
+              <Plus className="size-4" />
+              New Schedule Item
+            </Button>
+          ) : null}
+          {canWrite && scheduleOffline ? (
             <>
               <Button
                 type="button"

@@ -24,6 +24,7 @@ import { ApiError } from "@workspace/api-client-react"
 import { isAxiosError } from "axios"
 import { apiErrorDetailCode, toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
+import { canWriteRole } from "@/lib/role-access"
 import { invalidateFinancialsRollups } from "@/lib/query-client"
 import { formatCurrencyCents } from "@/lib/format"
 import { describePercentLowering } from "@/lib/percent-confirm"
@@ -512,7 +513,11 @@ const SovAreaRow = memo(function SovAreaRow({
 export default function JobFinancialsPage() {
   const { jobId } = useParams<{ jobId: string }>()
   const user = useAuthStore((s) => s.user)
-  const canManage = user?.role === "admin" || user?.role === "project_manager"
+  // canWrite is the canonical write-affordance gate (admin | PM); see
+  // replit.md "canWrite role gating". The page already early-returns
+  // an access-denied card below when this is false, so every write
+  // affordance is intrinsically hidden for crew members.
+  const canManage = canWriteRole(user?.role)
   const queryClient = useQueryClient()
   const [data, setData] = useState<TrackerData | null>(null)
   const [loading, setLoading] = useState(true)

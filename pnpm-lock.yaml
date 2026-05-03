@@ -183,6 +183,12 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@3.25.76)
+      '@tokenizer/inflate':
+        specifier: 0.4.1
+        version: 0.4.1
+      '@tokenizer/token':
+        specifier: 0.3.0
+        version: 0.3.0
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -234,6 +240,9 @@ importers:
       multer:
         specifier: 2.1.1
         version: 2.1.1
+      peek-readable:
+        specifier: 7.0.0
+        version: 7.0.0
       pino:
         specifier: ^9
         version: 9.14.0
@@ -243,6 +252,12 @@ importers:
       socket.io:
         specifier: ^4.8.3
         version: 4.8.3
+      strtok3:
+        specifier: 10.3.5
+        version: 10.3.5
+      token-types:
+        specifier: 6.1.2
+        version: 6.1.2
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -3956,6 +3971,10 @@ packages:
   pdfjs-dist@5.4.296:
     resolution: {integrity: sha512-DlOzet0HO7OEnmUmB6wWGJrrdvbyJKftI1bhMitK7O2N8W2gc757yyYBbINy9IDafXAV9wmKr9t7xsTaNKRG5Q==}
     engines: {node: '>=20.16.0 || >=22.3.0'}
+
+  peek-readable@7.0.0:
+    resolution: {integrity: sha512-nri2TO5JE3/mRryik9LlHFT53cgHfRK0Lt0BAZQXku/AW3E6XLt2GaY8siWi7dvW/m1z0ecn+J+bpDa9ZN3IsQ==}
+    engines: {node: '>=18'}
 
   performance-now@2.1.0:
     resolution: {integrity: sha512-7EAHlyLHI56VEIdK57uwHdHKIaAGbnXPiw0yWbarQZOKaKpvUIgW0jWRVLiatnM+XXlSwsanIBH/hzGMJulMow==}
@@ -8974,6 +8993,8 @@ snapshots:
   pdfjs-dist@5.4.296:
     optionalDependencies:
       '@napi-rs/canvas': 0.1.100
+
+  peek-readable@7.0.0: {}
 
   performance-now@2.1.0:
     optional: true

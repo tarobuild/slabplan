@@ -110,6 +110,24 @@ async function buildAll() {
       // under our esbuild config. Externalize so node loads it normally.
       "@modelcontextprotocol/sdk",
       "@modelcontextprotocol/sdk/*",
+      // file-type@22 (and its transitive strtok3 / token-types /
+      // @tokenizer/inflate / peek-readable graph) uses dynamic ESM
+      // imports that esbuild can't statically follow. Bundling silently
+      // drops the inner modules, then production crashes at runtime
+      // with `Cannot find package 'strtok3'`. The same risk applies to
+      // mammoth, xlsx and fflate (route-level dynamic import()s with
+      // sub-deps that won't be reachable from the bundle). Keep all of
+      // them external so node resolves them from node_modules normally.
+      "file-type",
+      "strtok3",
+      "strtok3/*",
+      "peek-readable",
+      "token-types",
+      "@tokenizer/inflate",
+      "@tokenizer/token",
+      "mammoth",
+      "xlsx",
+      "fflate",
     ],
     sourcemap: "linked",
     plugins: [

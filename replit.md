@@ -39,6 +39,11 @@ The project is structured as a pnpm monorepo using Node.js 24 and TypeScript 5.9
 - Implements per-user monthly token caps and an organization-wide monthly token budget. Includes per-user in-flight and rate limits.
 - Supports abort handling for ongoing operations and extracts citations from tool results.
 
+**Production deploy smoke check (api-server):**
+After every deploy, verify the bundled server can sniff binary uploads (regression guard for `file-type` ESM dynamic-import bundling):
+1. `curl -fsS https://<deploy-host>/api/healthz` — expect `200`.
+2. As an admin, upload a small PDF and DOCX to a folder via `POST /api/folders/:id/files` (multipart, with `X-Requested-With: XMLHttpRequest`). Expect `201` for both. A `415` with "Unsupported file type" on a real PDF/DOCX indicates `file-type`'s dynamic deps (`strtok3`, `token-types`, `@tokenizer/inflate`) were not shipped — re-check `artifacts/api-server/build.mjs` externals and `package.json` dependencies, and that `node_modules` is deployed alongside `dist/`.
+
 **Database (`lib/db`):**
 - PostgreSQL with Drizzle ORM, comprising 16 tables.
 - Schema changes are managed via `drizzle-kit push --force` and custom SQL migration files.

@@ -128,7 +128,12 @@ test.describe("schedule week-view touch long-press drag", () => {
     context,
     request,
   }) => {
-    test.skip(!jobId || !itemId, "Setup did not produce a job/item")
+    if (!jobId || !itemId) {
+      throw new Error(
+        `touch-drag setup did not produce a job/item ` +
+          `(jobId=${jobId}, itemId=${itemId})`,
+      )
+    }
 
     await page.goto(`/jobs/${jobId}/schedule`)
     await setSchedulePage(page, mondayKey)
@@ -255,7 +260,12 @@ test.describe("schedule week-view touch long-press drag", () => {
   test("a quick tap (no long-press) opens the block editor", async ({
     page,
   }) => {
-    test.skip(!jobId || !itemId, "Setup did not produce a job/item")
+    if (!jobId || !itemId) {
+      throw new Error(
+        `touch-drag setup did not produce a job/item ` +
+          `(jobId=${jobId}, itemId=${itemId})`,
+      )
+    }
 
     await page.goto(`/jobs/${jobId}/schedule`)
     await setSchedulePage(page, mondayKey)
@@ -281,7 +291,12 @@ test.describe("schedule week-view touch long-press drag", () => {
     page,
     context,
   }) => {
-    test.skip(!jobId || !itemId, "Setup did not produce a job/item")
+    if (!jobId || !itemId) {
+      throw new Error(
+        `touch-drag setup did not produce a job/item ` +
+          `(jobId=${jobId}, itemId=${itemId})`,
+      )
+    }
 
     await page.goto(`/jobs/${jobId}/schedule`)
     await setSchedulePage(page, mondayKey)

@@ -104,7 +104,16 @@ test.describe("schedule week-view cross-day drag", () => {
     page,
     request,
   }) => {
-    test.skip(!jobId || !itemId, "Setup did not produce a job/item")
+    // beforeAll asserts itemId via expect(...).toBeTruthy(), so by the
+    // time we run the test body both ids are present. If the assertion
+    // ever silently relaxes, fail loudly here instead of test.skip()ing
+    // (which was the prior pattern that hid a regression).
+    if (!jobId || !itemId) {
+      throw new Error(
+        `schedule-week-drag setup did not produce a job/item ` +
+          `(jobId=${jobId}, itemId=${itemId})`,
+      )
+    }
 
     await page.goto(`/jobs/${jobId}/schedule`)
 

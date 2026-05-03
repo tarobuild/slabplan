@@ -29,7 +29,18 @@ test.describe("auth", () => {
     const refresh = state.cookies?.find(
       (c) => c.name === "cadstone_refresh_token",
     )
-    test.skip(!refresh, "auth.setup must run before auth.spec")
+    // The Playwright `chromium` project depends on the `setup` project
+    // (see playwright.config.ts), which provisions cesar.json before any
+    // spec runs. If the cookie is missing here, setup either didn't run
+    // or its login was rejected — that's a real regression worth failing
+    // on, not a silent skip.
+    if (!refresh) {
+      throw new Error(
+        `Missing ${"cadstone_refresh_token"} in ${CESAR_STATE}. ` +
+          `auth.setup.ts is wired as a project dependency; if this fires, ` +
+          `the setup project failed (check seed passwords / API server).`,
+      )
+    }
 
     // Playwright's addCookies requires either `url` or `domain`+`path`.
     // The saved state gives us a domain (e.g. "localhost"), so use that

@@ -48,6 +48,12 @@ test.describe("personal-todo isolation", () => {
     ).toBeTruthy()
     const body = await createRes.json()
     todoId = body.item?.id ?? body.id ?? null
+    // Hard-fail if the API contract changes shape (was previously a
+    // silent test.skip downstream — masking a real regression).
+    expect(
+      todoId,
+      `personal-todo create did not return an id; body=${JSON.stringify(body)}`,
+    ).toBeTruthy()
   })
 
   test.afterAll(async ({ request }) => {
@@ -74,7 +80,6 @@ test.describe("personal-todo isolation", () => {
   test("API: direct GET /schedule-items/:id as Anwar must be forbidden", async ({
     request,
   }) => {
-    test.skip(!todoId, "No todo id recorded")
     const res = await request.get(`/api/schedule-items/${todoId}`, {
       headers: authHeaders(anwarToken),
     })

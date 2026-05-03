@@ -43,6 +43,11 @@ const EXTENSION_TO_SAFE_CONTENT_TYPE: Record<string, string> = {
   ".png": "image/png",
   ".gif": "image/gif",
   ".webp": "image/webp",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+  ".bmp": "image/bmp",
   ".mp4": "video/mp4",
   ".m4v": "video/mp4",
   ".webm": "video/webm",
@@ -56,8 +61,19 @@ const EXTENSION_TO_SAFE_CONTENT_TYPE: Record<string, string> = {
   ".ppt": "application/vnd.ms-powerpoint",
   ".pptx":
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".odt": "application/vnd.oasis.opendocument.text",
+  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
   ".txt": "text/plain; charset=utf-8",
+  ".md": "text/plain; charset=utf-8",
+  ".rtf": "application/rtf",
   ".csv": "text/csv; charset=utf-8",
+  ".tsv": "text/tab-separated-values; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  // SVG is intentionally NOT in this map: even though we sniff and
+  // sanitize at upload time (rejecting <script>/event handlers), serving
+  // it as image/svg+xml would still let a browser render the SVG inline
+  // with its embedded CSS. We force `application/octet-stream` +
+  // `attachment` here so SVGs always download instead of rendering.
   ".zip": "application/zip",
 };
 
@@ -67,6 +83,10 @@ const SAFE_INLINE_CONTENT_TYPES = new Set<string>([
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "image/heic",
+  "image/heif",
+  "image/tiff",
+  "image/bmp",
   "video/mp4",
   "video/webm",
   "video/quicktime",

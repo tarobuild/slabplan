@@ -41,10 +41,28 @@ export const documentExtensions = [
   ".xlsx",
   ".ppt",
   ".pptx",
+  ".odt",
+  ".ods",
   ".txt",
   ".csv",
+  ".tsv",
+  ".md",
+  ".rtf",
+  ".json",
 ];
-export const photoExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+export const photoExtensions = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".heic",
+  ".heif",
+  ".tif",
+  ".tiff",
+  ".bmp",
+  ".svg",
+];
 export const videoExtensions = [".mp4", ".mov", ".avi", ".webm", ".m4v"];
 
 const GLOBAL_SYSTEM_FOLDERS = [
@@ -145,9 +163,22 @@ const JOB_TEMPLATE_FOLDERS: Array<{
 
 const allowedPhotoMimeTypes = new Set([
   "image/jpeg",
+  "image/jpg",
+  "image/pjpeg",
   "image/png",
   "image/gif",
   "image/webp",
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
+  "image/heif-sequence",
+  "image/tiff",
+  "image/x-tiff",
+  "image/bmp",
+  "image/x-bmp",
+  "image/x-ms-bmp",
+  "image/svg+xml",
+  "image/svg",
 ]);
 
 const allowedVideoMimeTypes = new Set([
@@ -163,8 +194,16 @@ const allowedDocumentMimeTypes = new Set([
   "application/msword",
   "application/vnd.ms-excel",
   "application/vnd.ms-powerpoint",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/rtf",
+  "text/rtf",
+  "application/json",
   "text/plain",
   "text/csv",
+  "text/tab-separated-values",
+  "text/markdown",
+  "text/x-markdown",
 ]);
 
 function lowerExtension(fileName: string) {
@@ -194,12 +233,22 @@ export function validateUploadForMediaType(
   const mimeType = file.mimetype?.toLowerCase() ?? "";
 
   if (mediaType === "photo") {
+    // Image MIMEs are sometimes blank or `application/octet-stream` from
+    // older mobile cameras (HEIC/HEIF in particular). The magic-byte
+    // sniffer that runs ahead of this check is the authoritative test
+    // for image content; if the extension is one we accept, allow a
+    // generic MIME through rather than dead-ending users with iPhone
+    // photos.
     validateAllowedUpload(
       extension,
       mimeType,
       photoExtensions,
-      (value) => allowedPhotoMimeTypes.has(value),
-      "Photos must be image files (.jpg, .png, .gif, .webp).",
+      (value) =>
+        allowedPhotoMimeTypes.has(value) ||
+        value.startsWith("image/") ||
+        value === "" ||
+        value === "application/octet-stream",
+      "Photos must be image files (.jpg, .png, .gif, .webp, .heic, .tiff, .bmp, .svg).",
     );
     return;
   }
@@ -231,6 +280,10 @@ export function validateUploadForMediaType(
       (value) =>
         allowedDocumentMimeTypes.has(value) ||
         value.startsWith("application/vnd.openxmlformats-officedocument.") ||
+        value.startsWith("application/vnd.oasis.opendocument.") ||
+        value.startsWith("text/") ||
+        value === "application/zip" ||
+        value === "application/x-zip-compressed" ||
         value === "" ||
         value === "application/octet-stream",
       "Documents must be supported office, text, or PDF files.",

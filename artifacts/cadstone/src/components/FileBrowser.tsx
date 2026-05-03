@@ -56,7 +56,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
-import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
+import { uploadAcceptForMediaType, uploadWithProgress, validateSelectedFiles } from "@/lib/uploads"
 import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
@@ -240,6 +240,7 @@ export default function FileBrowser({
   const [jobProjectManagerId, setJobProjectManagerId] = useState<string | null>(null)
 
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([])
@@ -476,15 +477,18 @@ export default function FileBrowser({
     }
     setUploading(true)
     try {
-      await api.post(
-        isResourceScope
+      await uploadWithProgress({
+        url: isResourceScope
           ? `/resources/folders/${currentFolderId}/upload`
           : `/folders/${currentFolderId}/files`,
         formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
+        onProgress: (p) => setUploadProgress(p.percent),
+        onRetry: (attempt, reason) => {
+          toast.info(`Retrying upload (attempt ${attempt})…`, {
+            description: reason,
+          })
         },
-      )
+      })
       toast.success(`${selectedUploadFiles.length} file(s) uploaded`)
       setUploadDialogOpen(false)
       setSelectedUploadFiles([])
@@ -494,6 +498,7 @@ export default function FileBrowser({
       toastApiError(err, "Upload failed")
     } finally {
       setUploading(false)
+      setUploadProgress(null)
       if (fileInputRef.current) fileInputRef.current.value = ""
     }
   }
@@ -668,19 +673,25 @@ export default function FileBrowser({
     setUploading(true)
     setUploadError(null)
     try {
-      await api.post(
-        isResourceScope
+      await uploadWithProgress({
+        url: isResourceScope
           ? `/resources/folders/${currentFolderId}/upload`
           : `/folders/${currentFolderId}/files`,
         formData,
-        { headers: { "Content-Type": "multipart/form-data" } },
-      )
+        onProgress: (p) => setUploadProgress(p.percent),
+        onRetry: (attempt, reason) => {
+          toast.info(`Retrying upload (attempt ${attempt})…`, {
+            description: reason,
+          })
+        },
+      })
       toast.success(`${files.length} file(s) uploaded`)
       loadFiles(currentFolderId)
     } catch (err: unknown) {
       toastApiError(err, "Upload failed")
     } finally {
       setUploading(false)
+      setUploadProgress(null)
     }
   }
 

@@ -50,7 +50,12 @@ function readJwtSecret(envName: JwtSecretEnvName) {
     return value;
   }
 
-  if (process.env.NODE_ENV === "production") {
+  // JWT_UPLOAD_SECRET is now advisory — it only protects the legacy
+  // `cadstone_upload_token` cookie used as a fallback for unauthenticated
+  // `<img>`/`<iframe>` access to /uploads/*. Standard upload routes use
+  // the access-token Bearer auth like every other API endpoint, so a
+  // missing upload secret no longer blocks uploads or views.
+  if (envName !== "JWT_UPLOAD_SECRET" && process.env.NODE_ENV === "production") {
     throw new Error(`${envName} must be configured in production.`);
   }
 
@@ -65,16 +70,11 @@ function readJwtSecret(envName: JwtSecretEnvName) {
 }
 
 function readUploadSecret(_fallbackSecret: string) {
-  const value = process.env.JWT_UPLOAD_SECRET?.trim();
-
-  if (value) {
-    return value;
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("JWT_UPLOAD_SECRET must be configured in production.");
-  }
-
+  // Advisory: an unset JWT_UPLOAD_SECRET in production is no longer
+  // fatal. We fall back to an ephemeral process-local secret so the
+  // legacy upload-token cookie continues to validate within a single
+  // process lifetime, but missing the env var doesn't block startup
+  // or any upload/view path.
   return readJwtSecret("JWT_UPLOAD_SECRET");
 }
 
@@ -175,25 +175,15 @@ function decodeVerifiedToken<TType extends TokenType>(
   };
 }
 
-const usedFileViewJtis = new Map<string, number>();
-
-function pruneUsedJtis(now: number) {
-  if (usedFileViewJtis.size < 1000) return;
-  for (const [jti, expiresAt] of usedFileViewJtis) {
-    if (expiresAt <= now) {
-      usedFileViewJtis.delete(jti);
-    }
-  }
-}
-
-export function consumeFileViewJti(jti: string): boolean {
-  const now = Date.now();
-  pruneUsedJtis(now);
-  const existing = usedFileViewJtis.get(jti);
-  if (existing && existing > now) {
-    return false;
-  }
-  usedFileViewJtis.set(jti, now + (FILE_VIEW_TOKEN_TTL_SECONDS + 60) * 1000);
+// Signed file-view tokens used to be single-use (JTI consumed on first
+// view). That broke under React strict-mode double rendering, image src
+// re-attachment, and fast tab switches — the second render saw an
+// "already used" 401 even though the user was still authorized. We now
+// rely on the short TTL + per-request authorization re-check at the
+// signed-view route. Kept exported so any historical test or call site
+// that imported the helper continues to compile; it's now a no-op that
+// always reports success.
+export function consumeFileViewJti(_jti: string): boolean {
   return true;
 }
 

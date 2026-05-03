@@ -36,7 +36,11 @@ test("upload tokens use the dedicated upload secret when configured", async () =
   }
 });
 
-test("production throws on missing JWT_UPLOAD_SECRET", async () => {
+test("production no longer throws on missing JWT_UPLOAD_SECRET (advisory only)", async () => {
+  // The upload secret is now advisory: file uploads use Bearer auth and
+  // signed file-view tokens have their own TTL guard, so a missing
+  // upload secret should not block boot or upload — only access/refresh
+  // secrets are still strictly required for production startup.
   const originalNodeEnv = process.env.NODE_ENV;
   const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
   const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
@@ -48,10 +52,13 @@ test("production throws on missing JWT_UPLOAD_SECRET", async () => {
   delete process.env.JWT_UPLOAD_SECRET;
 
   try {
-    await assert.rejects(
-      () => import(`../src/lib/auth.ts?test=fallback-${Date.now()}`),
-      /JWT_UPLOAD_SECRET must be configured in production/,
+    const authModule = await import(
+      `../src/lib/auth.ts?test=fallback-${Date.now()}`
     );
+    // Module loads cleanly; upload signing still works using the
+    // randomly generated fallback secret.
+    const token = authModule.signUploadToken(fixtureUser);
+    assert.equal(authModule.verifyUploadToken(token).userId, fixtureUser.id);
   } finally {
     restoreEnv("NODE_ENV", originalNodeEnv);
     restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);

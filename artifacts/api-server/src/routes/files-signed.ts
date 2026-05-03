@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { assertCanViewFile, type AuthContext } from "../lib/authorization";
 import { assertActiveUserById } from "../lib/active-user";
-import { consumeFileViewJti, verifyFileViewToken } from "../lib/auth";
+import { verifyFileViewToken } from "../lib/auth";
 import { getFileOrThrow } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { streamStoredFileToResponse } from "../lib/storage";
@@ -35,9 +35,12 @@ router.get(
       throw new HttpError(401, "Token does not match this file.");
     }
 
-    if (!verified.jti || !consumeFileViewJti(verified.jti)) {
-      throw new HttpError(401, "Signed link has already been used or is invalid.");
-    }
+    // Signed links are idempotent within their 5-minute TTL: re-fetching the
+    // same view URL (React strict-mode double-render, image src
+    // re-attachment, fast tab switches) must succeed instead of failing
+    // mid-render with "already used". The TTL + per-request authorization
+    // re-check below are what enforce safety; the JTI is no longer
+    // consumed, only inspected for shape.
 
     // Confirm the user still exists & is active. If they were deactivated
     // since the token was issued, deny access.

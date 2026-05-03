@@ -26,6 +26,7 @@
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",
+    "fflate": "0.8.2",
     "file-type": "22.0.1",
     "google-auth-library": "^10.6.2",
     "helmet": "^8.1.0",

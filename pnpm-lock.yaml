@@ -213,6 +213,9 @@ importers:
       express:
         specifier: ^5
         version: 5.2.1
+      fflate:
+        specifier: 0.8.2
+        version: 0.8.2
       file-type:
         specifier: 22.0.1
         version: 22.0.1

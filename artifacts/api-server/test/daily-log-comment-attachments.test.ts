@@ -252,7 +252,8 @@ test("POST /daily-logs/:id/comment-attachments rejects oversize uploads with 413
     status: number;
     errors?: { code?: string };
   };
-  assert.equal(body.errors?.code, "LIMIT_FILE_SIZE");
+  assert.equal(body.errors?.code, "UPLOAD_TOO_LARGE");
+  assert.equal(body.errors?.multerCode, "LIMIT_FILE_SIZE");
 });
 
 test("POST /daily-logs/:id/comment-attachments rejects too-many-files with a 4xx", async () => {
@@ -284,7 +285,7 @@ test("POST /daily-logs/:id/comment-attachments rejects too-many-files with a 4xx
   };
   assert.ok(
     body.errors?.code === "LIMIT_UNEXPECTED_FILE" ||
-      body.errors?.code === "LIMIT_FILE_COUNT",
+      body.errors?.code === "UPLOAD_TOO_MANY_FILES",
     `expected LIMIT_UNEXPECTED_FILE or LIMIT_FILE_COUNT, got ${body.errors?.code}`,
   );
 });

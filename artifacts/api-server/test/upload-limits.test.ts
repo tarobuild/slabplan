@@ -103,7 +103,7 @@ test("backend and shared upload limits stay in sync", () => {
 });
 
 test("formatUploadSize renders bytes / KB / MB without rounding to 0 MB", () => {
-  assert.equal(formatUploadSize(MAX_UPLOAD_FILE_BYTES), "100 MB");
+  assert.equal(formatUploadSize(MAX_UPLOAD_FILE_BYTES), "500 MB");
   assert.equal(formatUploadSize(2048), "2 KB");
   assert.equal(formatUploadSize(100), "100 B");
   assert.equal(formatUploadSize(0), "0 B");
@@ -158,7 +158,8 @@ test("oversize file returns 413 problem+json with limit named", async () => {
   assert.equal(body.title, "Payload Too Large");
   assert.equal(body.type, `${PROBLEM_TYPE_BASE}/payload-too-large`);
   assert.equal(body.errors?.limit, 100);
-  assert.equal(body.errors?.code, "LIMIT_FILE_SIZE");
+  assert.equal(body.errors?.code, "UPLOAD_TOO_LARGE");
+  assert.equal(body.errors?.multerCode, "LIMIT_FILE_SIZE");
   // The detail must name the actual byte limit so users see the real cap,
   // not a stale value baked into the client. formatUploadSize is the same
   // helper the frontend picker uses, so messages stay aligned.
@@ -199,7 +200,8 @@ test("too many files returns 413 problem+json", async () => {
 
   assert.equal(body.status, 413);
   assert.equal(body.type, `${PROBLEM_TYPE_BASE}/payload-too-large`);
-  assert.equal(body.errors?.code, "LIMIT_FILE_COUNT");
+  assert.equal(body.errors?.code, "UPLOAD_TOO_MANY_FILES");
+  assert.equal(body.errors?.multerCode, "LIMIT_FILE_COUNT");
   // The effective cap is min(maxCount=10, options.files=2) = 2, so the
   // 413 must name 2, not 10. This guards against the previous bug where
   // the error mapper reported the looser per-field maxCount.

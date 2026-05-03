@@ -14,14 +14,17 @@ test("document uploads reject executable html", () => {
   );
 });
 
-test("photo uploads reject svg", () => {
-  assert.throws(
-    () =>
-      validateUploadForMediaType("photo", {
-        originalname: "payload.svg",
-        mimetype: "image/svg+xml",
-      }),
-    (error) => error instanceof HttpError && error.statusCode === 400,
+test("photo uploads accept svg at the allowlist layer (content safety enforced by magic-byte sniffer)", () => {
+  // We now accept SVG by extension/MIME because the magic-byte sniffer
+  // is the authoritative content gate (it rejects SVGs containing
+  // <script>, on*= handlers, or javascript: URLs). Blocking SVG here
+  // would have prevented users from uploading legitimate vector logos
+  // and diagrams.
+  assert.doesNotThrow(() =>
+    validateUploadForMediaType("photo", {
+      originalname: "logo.svg",
+      mimetype: "image/svg+xml",
+    }),
   );
 });
 

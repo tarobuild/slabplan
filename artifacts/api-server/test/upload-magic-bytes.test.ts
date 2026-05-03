@@ -137,6 +137,103 @@ const CORRUPT_BYTES = Buffer.from([
   0xfa, 0xce, 0xfe, 0xed, 0x12, 0x34, 0x56, 0x78,
 ]);
 
+// BMP: BITMAPFILEHEADER (BM + size + reserved + offset) is enough for
+// file-type to confidently report image/bmp.
+const BMP_BYTES = Buffer.concat([
+  Buffer.from([0x42, 0x4d]),
+  Buffer.from([0x46, 0x00, 0x00, 0x00]),
+  Buffer.from([0x00, 0x00, 0x00, 0x00]),
+  Buffer.from([0x36, 0x00, 0x00, 0x00]),
+  Buffer.alloc(40, 0),
+  Buffer.alloc(16, 0xff),
+]);
+
+// TIFF: little-endian II*\0 + minimal IFD pointer. file-type only inspects
+// the leading 4 bytes for TIFF identification.
+const TIFF_BYTES = Buffer.concat([
+  Buffer.from([0x49, 0x49, 0x2a, 0x00]),
+  Buffer.from([0x08, 0x00, 0x00, 0x00]),
+  Buffer.alloc(32, 0),
+]);
+
+// DOCX / ZIP fixtures use fflate's zipSync so they have valid CRCs and
+// central directories — i.e. they survive a real unzip. The OOXML
+// validator parses these archives in full, so anything less would fail
+// for the wrong reason.
+import { zipSync, strToU8 } from "fflate";
+
+const DOCX_BYTES = Buffer.from(
+  zipSync({
+    "[Content_Types].xml": strToU8(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Override PartName="/word/document.xml" ' +
+        'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+        "</Types>",
+    ),
+    "_rels/.rels": strToU8(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="R1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+        "</Relationships>",
+    ),
+    "word/document.xml": strToU8(
+      '<?xml version="1.0"?><document xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+    ),
+  }),
+);
+
+const BARE_ZIP_BYTES = Buffer.from(
+  zipSync({ "hello.txt": strToU8("hi") }),
+);
+
+// A zip whose [Content_Types].xml carries ONLY the generic OPC
+// content-types namespace (no per-part Override naming
+// wordprocessingml/spreadsheetml/presentationml). Every well-formed
+// OPC package — ODF, EPUB, oTherwise — can carry this namespace, so
+// matching on it alone would let any well-formed OPC zip pose as a
+// .docx. The validator must reject this.
+const OPC_ONLY_ZIP_BYTES = Buffer.from(
+  zipSync({
+    "[Content_Types].xml": strToU8(
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        "</Types>",
+    ),
+    "payload.xml": strToU8("<x/>"),
+  }),
+);
+
+const ODT_BYTES = Buffer.from(
+  zipSync({
+    // ODF spec: `mimetype` must be the first entry, stored
+    // (uncompressed). fflate auto-stores this entry because we mark it
+    // with level: 0.
+    mimetype: [
+      strToU8("application/vnd.oasis.opendocument.text"),
+      { level: 0 },
+    ] as unknown as Uint8Array,
+    "content.xml": strToU8('<?xml version="1.0"?><document/>'),
+  }),
+);
+
+// OLE2 compound document magic — enough for our header check to pass.
+const OLE2_BYTES = Buffer.concat([
+  Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+  Buffer.alloc(64, 0),
+]);
+
+// SVG with an inline <script> — must be rejected even though it has a
+// well-formed <svg> root element.
+const SVG_UNSAFE_BYTES = Buffer.from(
+  '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+);
+
+const SVG_SAFE_BYTES = Buffer.from(
+  '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
+);
+
 before(async () => {
   process.env.NODE_ENV = "test";
   process.env.LOG_LEVEL = "silent";
@@ -248,7 +345,7 @@ test("encrypted PDF returns an actionable 415 about removing the password", asyn
   );
   assert.equal(response.status, 415);
   const body = await readJson(response);
-  assert.equal(body.errors?.code, "MAGIC_BYTE_MISMATCH");
+  assert.equal(body.errors?.code, "UPLOAD_PDF_ENCRYPTED");
   assert.match(body.detail, /password/i);
 });
 
@@ -361,6 +458,108 @@ test("extension claims a sniffable type even when MIME is octet-stream — sniff
   assert.equal(body.errors?.code, "MAGIC_BYTE_MISMATCH");
 });
 
+test("legitimate BMP upload passes magic-byte validation", async () => {
+  const response = await uploadFile("photo.bmp", "image/bmp", BMP_BYTES);
+  assert.equal(response.status, 200);
+});
+
+test("legitimate TIFF upload passes magic-byte validation", async () => {
+  const response = await uploadFile("scan.tiff", "image/tiff", TIFF_BYTES);
+  assert.equal(response.status, 200);
+});
+
+test("legitimate DOCX upload passes magic-byte validation", async () => {
+  const response = await uploadFile(
+    "estimate.docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    DOCX_BYTES,
+  );
+  assert.equal(response.status, 200);
+});
+
+test("legitimate ODT upload passes magic-byte validation", async () => {
+  const response = await uploadFile(
+    "estimate.odt",
+    "application/vnd.oasis.opendocument.text",
+    ODT_BYTES,
+  );
+  assert.equal(response.status, 200);
+});
+
+test("bare .zip masquerading as ODT is rejected as not-an-OpenDocument-file", async () => {
+  const response = await uploadFile(
+    "fake.odt",
+    "application/vnd.oasis.opendocument.text",
+    BARE_ZIP_BYTES,
+  );
+  assert.equal(response.status, 415);
+  const body = await readJson(response);
+  assert.equal(body.errors?.code, "UPLOAD_TYPE_NOT_ALLOWED");
+});
+
+test("legitimate legacy DOC (OLE2) upload passes magic-byte validation", async () => {
+  const response = await uploadFile("legacy.doc", "application/msword", OLE2_BYTES);
+  assert.equal(response.status, 200);
+});
+
+test("bare .zip masquerading as DOCX is rejected as not-an-Office-document", async () => {
+  const response = await uploadFile(
+    "fake.docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    BARE_ZIP_BYTES,
+  );
+  assert.equal(response.status, 415);
+  const body = await readJson(response);
+  assert.equal(body.errors?.code, "UPLOAD_TYPE_NOT_ALLOWED");
+  assert.match(body.detail, /Office|archive/i);
+});
+
+test("OPC-only zip (no Office part Override) is rejected as not-an-Office-document", async () => {
+  // Regression: an earlier version matched on the generic OPC
+  // content-types namespace alone, which would have let any OPC
+  // package (ODF, EPUB, etc.) pose as a .docx.
+  const response = await uploadFile(
+    "fake.docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    OPC_ONLY_ZIP_BYTES,
+  );
+  assert.equal(response.status, 415);
+  const body = await readJson(response);
+  assert.equal(body.errors?.code, "UPLOAD_TYPE_NOT_ALLOWED");
+});
+
+test("DOCX bytes uploaded as .xlsx are rejected with UPLOAD_TYPE_MISMATCH", async () => {
+  const response = await uploadFile(
+    "wrong.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    DOCX_BYTES,
+  );
+  assert.equal(response.status, 415);
+  const body = await readJson(response);
+  assert.equal(body.errors?.code, "UPLOAD_TYPE_MISMATCH");
+});
+
+test("SVG with inline <script> is rejected with UPLOAD_SVG_UNSAFE", async () => {
+  const response = await uploadFile("logo.svg", "image/svg+xml", SVG_UNSAFE_BYTES);
+  assert.equal(response.status, 415);
+  const body = await readJson(response);
+  assert.equal(body.errors?.code, "UPLOAD_SVG_UNSAFE");
+});
+
+test("safe SVG passes magic-byte validation", async () => {
+  const response = await uploadFile("logo.svg", "image/svg+xml", SVG_SAFE_BYTES);
+  assert.equal(response.status, 200);
+});
+
+test("PDF with header at byte 4096 (within 8 KB scan window) is accepted", async () => {
+  // The 1 KB scan window used to reject this; the 8 KB scan window
+  // tolerates real-world PDFs with a long preamble (mail header
+  // remnants, scanner postamble, etc.).
+  const padded = Buffer.concat([Buffer.alloc(4096, 0x20), PDF_BYTES]);
+  const response = await uploadFile("padded-far.pdf", "application/pdf", padded);
+  assert.equal(response.status, 200);
+});
+
 test("non-sniffable types (csv/txt/docx) are not blocked by magic-byte sniff", async () => {
   // .csv has no reliable magic bytes; the magic-byte layer must let it
   // through so the existing extension+MIME validator can decide. The
@@ -449,6 +648,33 @@ test("validateMagicBytesForFile skips non-sniffable types (unit)", async () => {
         size: 11,
       }),
     ),
+  );
+});
+
+test("validateMagicBytesForFile rejects a binary payload renamed to .txt (unit)", async () => {
+  // A real ELF/PE-like binary blob (NUL bytes + control bytes throughout)
+  // renamed to a .txt extension must be rejected with UPLOAD_BINARY_AS_TEXT,
+  // even though .txt is not in any sniffable category. Without this
+  // check, the route-level allowlist would accept the file when MIME is
+  // empty / `application/octet-stream`.
+  const binary = Buffer.alloc(2048);
+  for (let i = 0; i < binary.length; i++) binary[i] = i % 256;
+  const filePath = await writeTemp("payload.txt", binary);
+  await assert.rejects(
+    () =>
+      validateMagicBytesForFile(
+        fakeMulterFile({
+          originalname: "payload.txt",
+          mimetype: "text/plain",
+          filePath,
+          size: binary.length,
+        }),
+      ),
+    (err: unknown) =>
+      err instanceof HttpError &&
+      err.statusCode === 415 &&
+      (err.details as { code?: string } | undefined)?.code ===
+        "UPLOAD_BINARY_AS_TEXT",
   );
 });
 

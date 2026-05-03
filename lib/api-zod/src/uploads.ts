@@ -8,7 +8,7 @@
  * Out of scope here: changing the actual ceiling. If the limit needs to
  * grow, change the value once below.
  */
-export const MAX_UPLOAD_FILE_BYTES = 1024 * 1024 * 100;
+export const MAX_UPLOAD_FILE_BYTES = 1024 * 1024 * 500;
 
 /** Maximum number of files allowed in a single multipart request. */
 export const MAX_UPLOAD_FILE_COUNT = 20;

@@ -471,14 +471,19 @@ function multerErrorToHttpError(
       return new HttpError(
         413,
         `File exceeds the ${formatUploadSize(limits.fileSize)} upload size limit.`,
-        { limit: limits.fileSize, code: err.code, field: err.field },
+        {
+          limit: limits.fileSize,
+          code: "UPLOAD_TOO_LARGE",
+          multerCode: err.code,
+          field: err.field,
+        },
         "payload-too-large",
       );
     case "LIMIT_FILE_COUNT":
       return new HttpError(
         413,
         `Too many files in one request (limit is ${limits.files}).`,
-        { limit: limits.files, code: err.code },
+        { limit: limits.files, code: "UPLOAD_TOO_MANY_FILES", multerCode: err.code },
         "payload-too-large",
       );
     case "LIMIT_PART_COUNT":
@@ -519,19 +524,94 @@ function getMultipartIdempotency(): RequestHandler {
   return cachedMultipartIdempotency;
 }
 
+// Large uploads (multi-hundred-MB office files, dailylog photo bursts on
+// slow construction-site LTE) routinely take longer than Express's
+// default socket timeout. We bump both the request socket and the
+// response socket to 10 minutes for any handler wrapped by wrapMulter.
+const UPLOAD_ROUTE_TIMEOUT_MS = 10 * 60 * 1000;
+
+function applyUploadRouteTimeouts(req: Request, res: Response): void {
+  // setTimeout on the underlying socket — Express 5 doesn't expose a
+  // first-class API for per-route timeouts, but Node's http does. Set
+  // both directions so a slow client upload AND a slow streamed
+  // response both stay alive.
+  req.setTimeout?.(UPLOAD_ROUTE_TIMEOUT_MS);
+  res.setTimeout?.(UPLOAD_ROUTE_TIMEOUT_MS);
+  if (req.socket && typeof req.socket.setTimeout === "function") {
+    req.socket.setTimeout(UPLOAD_ROUTE_TIMEOUT_MS);
+  }
+}
+
+function logUploadStart(req: Request): void {
+  logger.info(
+    {
+      event: "upload.start",
+      route: req.path,
+      method: req.method,
+      contentLength: req.get("content-length") ?? null,
+      requestId: (req as Request & { id?: string }).id ?? null,
+    },
+    "upload.start",
+  );
+}
+
+function logUploadOutcome(req: Request, files: Express.Multer.File[], err: unknown): void {
+  const fileSummaries = files.map((f) => ({
+    field: f.fieldname,
+    name: f.originalname,
+    size: f.size,
+    mime: f.mimetype,
+  }));
+  if (err) {
+    const code =
+      err instanceof HttpError
+        ? typeof err.details === "object" && err.details !== null
+          ? ((err.details as Record<string, unknown>).code as string | undefined) ?? null
+          : null
+        : null;
+    logger.warn(
+      {
+        event: "upload.fail",
+        route: req.path,
+        method: req.method,
+        files: fileSummaries,
+        statusCode: err instanceof HttpError ? err.statusCode : 500,
+        code,
+        message: err instanceof Error ? err.message : String(err),
+        requestId: (req as Request & { id?: string }).id ?? null,
+      },
+      "upload.fail",
+    );
+    return;
+  }
+  logger.info(
+    {
+      event: "upload.success",
+      route: req.path,
+      method: req.method,
+      files: fileSummaries,
+      totalBytes: fileSummaries.reduce((sum, f) => sum + (f.size ?? 0), 0),
+      requestId: (req as Request & { id?: string }).id ?? null,
+    },
+    "upload.success",
+  );
+}
+
 function wrapMulter(
   handler: RequestHandler,
   limits: { fileSize: number; files: number },
 ): RequestHandler {
   return function uploadAndCleanup(req, res, next) {
+    applyUploadRouteTimeouts(req, res);
+    logUploadStart(req);
     handler(req, res, async (err: unknown) => {
       if (err) {
-        await cleanupTempUploads(collectRequestUploads(req)).catch(() => {});
-        if (err instanceof MulterError) {
-          next(multerErrorToHttpError(err, limits));
-          return;
-        }
-        next(err);
+        const collected = collectRequestUploads(req);
+        await cleanupTempUploads(collected).catch(() => {});
+        const mapped =
+          err instanceof MulterError ? multerErrorToHttpError(err, limits) : err;
+        logUploadOutcome(req, collected, mapped);
+        next(mapped);
         return;
       }
       attachResponseCleanup(req, res);
@@ -545,9 +625,15 @@ function wrapMulter(
       try {
         await validateMagicBytesForFiles(collectRequestUploads(req));
       } catch (validationErr) {
+        logUploadOutcome(req, collectRequestUploads(req), validationErr);
         next(validationErr);
         return;
       }
+
+      // Log a successful pre-handoff outcome (the route handler still
+      // runs after this; downstream DB / storage failures will surface
+      // their own errors via the global handler).
+      logUploadOutcome(req, collectRequestUploads(req), null);
 
       // Run the multipart-aware idempotency check now that multer has
       // parsed the form fields and populated `contentHash` on every

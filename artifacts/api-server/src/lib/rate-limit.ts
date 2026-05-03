@@ -1,10 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
+import { pool } from "@workspace/db";
 import { HttpError } from "./http";
-
-type RateLimitBucket = {
-  count: number;
-  resetAt: number;
-};
+import { logger } from "./logger";
 
 type RateLimitOptions = {
   keyPrefix: string;
@@ -14,21 +11,102 @@ type RateLimitOptions = {
   resolveKey: (req: Request) => string | null;
 };
 
-// This in-memory bucket map is per-instance. The production deploy is a single
-// Reserved VM (see `replit.md` → "Deployment target — Reserved VM, not autoscale"),
-// so a single in-process map is the source of truth. If anyone ever switches the
-// deployment type to autoscale, this must be moved to a shared store (Postgres or
-// Redis) — otherwise each instance enforces its own counters and the effective
-// rate limit becomes `instances × configured_max`.
-const buckets = new Map<string, RateLimitBucket>();
-const MAX_BUCKETS = 5000;
+// Counters live in Postgres (`rate_limit_buckets` table — see
+// `lib/db/migrations/0014_rate_limit_buckets.sql`) so every API instance
+// behind a load balancer shares the same buckets. With the previous
+// per-process in-memory map, an attacker could multiply their allowed
+// budget by the number of running instances.
+//
+// Atomicity: every accept/reject decision is a single SQL statement
+// (`INSERT ... ON CONFLICT ... RETURNING`). Two concurrent requests for
+// the same bucket race on the same row, so the post-image `count` is
+// correct even with N application instances and connection-pool
+// concurrency. Postgres `now()` is the source of truth for the window
+// clock, so app-server clock skew can never widen or shrink a window.
+//
+// Window resets: when a request comes in after `reset_at`, the same
+// statement atomically replaces the row with a fresh window
+// (`count = 1`, `reset_at = now() + windowMs`). No separate "expire"
+// path is required.
+//
+// Cleanup: `cleanupExpiredBuckets()` opportunistically deletes rows
+// whose window ended a while ago, so one-shot keys (e.g. a single
+// failed login from an IP that never returns) do not accumulate.
 
-function pruneExpiredBuckets(now: number) {
-  for (const [key, bucket] of buckets) {
-    if (bucket.resetAt <= now) {
-      buckets.delete(key);
+// Periodic cleanup configuration. The limiter checks how long it has
+// been since the last cleanup on every consume() call and only fires
+// the DELETE when enough time has elapsed — bounded I/O even under
+// load. Tunable for tests.
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+// Keep expired rows around briefly so two requests racing across the
+// reset boundary don't both create fresh windows; the second one will
+// hit the just-rolled bucket instead.
+const CLEANUP_EXPIRED_GRACE_MS = 60 * 1000;
+
+let lastCleanupAt = 0;
+let cleanupInflight: Promise<void> | null = null;
+
+async function cleanupExpiredBuckets(now: number): Promise<void> {
+  if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) return;
+  if (cleanupInflight) return;
+
+  lastCleanupAt = now;
+  cleanupInflight = (async () => {
+    try {
+      await pool.query(
+        `DELETE FROM rate_limit_buckets
+          WHERE reset_at < (now() - ($1::int || ' milliseconds')::interval)`,
+        [CLEANUP_EXPIRED_GRACE_MS],
+      );
+    } catch (error) {
+      // Cleanup is best-effort; never let it fail a request path.
+      logger.warn({ err: error }, "rate-limit cleanup failed");
+    } finally {
+      cleanupInflight = null;
     }
-  }
+  })();
+}
+
+type ConsumeResult = {
+  count: number;
+  resetAt: Date;
+  max: number;
+};
+
+async function consumeBucket(
+  bucketKey: string,
+  max: number,
+  windowMs: number,
+): Promise<ConsumeResult> {
+  // Single-statement upsert. The CASE expressions on `count` and
+  // `reset_at` collapse two semantics into one atomic write:
+  //   - if the existing row's window has already expired (reset_at
+  //     <= now()), start a fresh window: count = 1, reset_at = now() + window
+  //   - otherwise increment count and keep the existing reset_at
+  // The RETURNING gives us the post-image so the caller can decide
+  // 200 vs 429 from a single round-trip.
+  const result = await pool.query<{
+    count: number;
+    reset_at: Date;
+  }>(
+    `INSERT INTO rate_limit_buckets (bucket_key, count, reset_at)
+     VALUES ($1, 1, now() + ($2::int || ' milliseconds')::interval)
+     ON CONFLICT (bucket_key) DO UPDATE SET
+       count = CASE
+         WHEN rate_limit_buckets.reset_at <= now() THEN 1
+         ELSE rate_limit_buckets.count + 1
+       END,
+       reset_at = CASE
+         WHEN rate_limit_buckets.reset_at <= now()
+           THEN now() + ($2::int || ' milliseconds')::interval
+         ELSE rate_limit_buckets.reset_at
+       END
+     RETURNING count, reset_at`,
+    [bucketKey, windowMs],
+  );
+
+  const row = result.rows[0];
+  return { count: row.count, resetAt: row.reset_at, max };
 }
 
 // Multiple limiters can run on the same request (e.g. global IP limiter before
@@ -202,9 +280,25 @@ export function createUploadPerUserRateLimit(): RequestHandler {
  * `keyPrefix` and `key` must match the values passed to
  * `createRateLimit`/`resolveKey` exactly; the same `${keyPrefix}:${key}`
  * composition is used.
+ *
+ * Async because the buckets live in Postgres now (Task #296). Callers
+ * may safely fire-and-forget — failure to clear is non-fatal (the user
+ * can still log in; they will just exhaust their budget faster on the
+ * next mistake), so we swallow errors to a log rather than failing the
+ * surrounding request.
  */
-export function clearRateLimitBucket(keyPrefix: string, key: string): void {
-  buckets.delete(`${keyPrefix}:${key}`);
+export async function clearRateLimitBucket(
+  keyPrefix: string,
+  key: string,
+): Promise<void> {
+  try {
+    await pool.query(
+      `DELETE FROM rate_limit_buckets WHERE bucket_key = $1`,
+      [`${keyPrefix}:${key}`],
+    );
+  } catch (error) {
+    logger.warn({ err: error, keyPrefix }, "clearRateLimitBucket failed");
+  }
 }
 
 export function createRateLimit(options: RateLimitOptions): RequestHandler {
@@ -216,36 +310,55 @@ export function createRateLimit(options: RateLimitOptions): RequestHandler {
       return;
     }
 
-    const now = Date.now();
-
-    if (buckets.size >= MAX_BUCKETS) {
-      pruneExpiredBuckets(now);
-    }
-
     const bucketKey = `${options.keyPrefix}:${key}`;
-    const existing = buckets.get(bucketKey);
 
-    if (!existing || existing.resetAt <= now) {
-      const resetAt = now + options.windowMs;
-      buckets.set(bucketKey, {
-        count: 1,
-        resetAt,
-      });
-      setBindingRateLimitHeaders(res, options.max, options.max - 1, resetAt);
-      next();
-      return;
-    }
+    // Fire opportunistic cleanup; do not await — never block a request
+    // on housekeeping I/O.
+    void cleanupExpiredBuckets(Date.now());
 
-    if (existing.count >= options.max) {
-      const retryAfter = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
-      res.setHeader("Retry-After", String(retryAfter));
-      setBindingRateLimitHeaders(res, options.max, 0, existing.resetAt);
-      next(new HttpError(429, options.message, { retryAfter }, "rate-limited"));
-      return;
-    }
+    consumeBucket(bucketKey, options.max, options.windowMs).then(
+      ({ count, resetAt }) => {
+        const resetAtMs = resetAt.getTime();
 
-    existing.count += 1;
-    setBindingRateLimitHeaders(res, options.max, options.max - existing.count, existing.resetAt);
-    next();
+        if (count > options.max) {
+          const retryAfter = Math.max(
+            1,
+            Math.ceil((resetAtMs - Date.now()) / 1000),
+          );
+          res.setHeader("Retry-After", String(retryAfter));
+          setBindingRateLimitHeaders(res, options.max, 0, resetAtMs);
+          next(
+            new HttpError(429, options.message, { retryAfter }, "rate-limited"),
+          );
+          return;
+        }
+
+        setBindingRateLimitHeaders(
+          res,
+          options.max,
+          options.max - count,
+          resetAtMs,
+        );
+        next();
+      },
+      (error) => {
+        // Fail open: a database hiccup must not lock every user out of
+        // the API. Log loudly so the on-call notices, but let the
+        // request through without rate-limit headers (the next limiter
+        // in the chain will still try its own consume()).
+        logger.error(
+          { err: error, keyPrefix: options.keyPrefix },
+          "rate-limit consume failed; failing open",
+        );
+        next();
+      },
+    );
   };
+}
+
+// Test-only helper: reset internal cleanup throttling so each test
+// starts with a clean slate. Not exported through any production path.
+export function _resetRateLimitCleanupForTests(): void {
+  lastCleanupAt = 0;
+  cleanupInflight = null;
 }

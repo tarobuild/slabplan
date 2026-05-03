@@ -127,6 +127,13 @@ before(async () => {
 
   await prepareApp();
 
+  // Rate-limit buckets now live in Postgres (Task #296), shared across
+  // every test process and run. Wipe any rows leftover from earlier
+  // suites/runs so the login burst + reset-on-success tests below
+  // start from a clean per-IP / per-email window.
+  const { pool } = await import("@workspace/db");
+  await pool.query("delete from rate_limit_buckets");
+
   // Real bcrypt hash for the admin so the login + reset-on-success test
   // below can perform an actual `/api/auth/login` round-trip. Cost 4 is
   // intentional — secure enough for a throwaway test fixture, fast

@@ -1123,3 +1123,22 @@ export type TrackerInvoice = typeof trackerInvoices.$inferSelect;
 export type NewTrackerInvoice = typeof trackerInvoices.$inferInsert;
 export type InvoiceLinePayment = typeof invoiceLinePayments.$inferSelect;
 export type NewInvoiceLinePayment = typeof invoiceLinePayments.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Rate-limit buckets (Task #296) — shared across API instances
+// ---------------------------------------------------------------------------
+//
+// Backing store for `artifacts/api-server/src/lib/rate-limit.ts`. Each row
+// is one token bucket. `bucketKey` is the composite `${keyPrefix}:${key}`
+// the limiter already builds, so a single table covers every limiter
+// (login-by-IP, login-by-email, global IP, per-user, AI parse, uploads).
+export const rateLimitBuckets = pgTable("rate_limit_buckets", {
+  bucketKey: text("bucket_key").primaryKey(),
+  count: integer("count").notNull(),
+  resetAt: timestampTz("reset_at").notNull(),
+}, (table) => [
+  index("rate_limit_buckets_reset_at_idx").on(table.resetAt),
+]);
+
+export type RateLimitBucket = typeof rateLimitBuckets.$inferSelect;
+export type NewRateLimitBucket = typeof rateLimitBuckets.$inferInsert;

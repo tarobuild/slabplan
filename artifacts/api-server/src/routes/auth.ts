@@ -72,17 +72,22 @@ const loginRateLimitByEmail = createRateLimit({
   resolveKey: (req) => normalizeEmailForRateLimit(req.body?.email),
 });
 
-function clearLoginRateLimitForRequest(req: {
+async function clearLoginRateLimitForRequest(req: {
   ip?: string;
   body?: { email?: unknown };
-}): void {
+}): Promise<void> {
+  // Buckets live in Postgres (Task #296). `clearRateLimitBucket` already
+  // swallows DB errors to a log so a transient hiccup here cannot fail
+  // an otherwise-successful login.
+  const work: Promise<void>[] = [];
   if (req.ip) {
-    clearRateLimitBucket(LOGIN_IP_KEY_PREFIX, req.ip);
+    work.push(clearRateLimitBucket(LOGIN_IP_KEY_PREFIX, req.ip));
   }
   const email = normalizeEmailForRateLimit(req.body?.email);
   if (email) {
-    clearRateLimitBucket(LOGIN_EMAIL_KEY_PREFIX, email);
+    work.push(clearRateLimitBucket(LOGIN_EMAIL_KEY_PREFIX, email));
   }
+  await Promise.all(work);
 }
 
 function normalizeEmail(value: unknown): string {
@@ -220,7 +225,7 @@ router.post(
     // Reset both login limiter buckets for this IP and this email so the
     // 5-attempt budget is refreshed for legitimate users on every
     // successful sign-in.
-    clearLoginRateLimitForRequest(req);
+    await clearLoginRateLimitForRequest(req);
 
     sendAuthResponse(res, user);
   }),

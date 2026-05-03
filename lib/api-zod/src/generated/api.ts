@@ -1164,8 +1164,10 @@ export const jobsGetJobsResponseJobsItemActualCompletionRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
 export const jobsGetJobsResponseJobsItemContractValueCentsMin = 0;
+export const jobsGetJobsResponseJobsItemContractValueCentsMax = 9007199254740991;
 
 export const jobsGetJobsResponseJobsItemAmountPaidCentsMin = 0;
+export const jobsGetJobsResponseJobsItemAmountPaidCentsMax = 9007199254740991;
 
 export const jobsGetJobsResponsePaginationTotalItemsMin = 0;
 
@@ -1206,11 +1208,19 @@ export const JobsGetJobsResponse = zod.object({
       contractValueCents: zod
         .number()
         .min(jobsGetJobsResponseJobsItemContractValueCentsMin)
-        .nullish(),
+        .max(jobsGetJobsResponseJobsItemContractValueCentsMax)
+        .nullish()
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+        ),
       amountPaidCents: zod
         .number()
         .min(jobsGetJobsResponseJobsItemAmountPaidCentsMin)
-        .nullish(),
+        .max(jobsGetJobsResponseJobsItemAmountPaidCentsMax)
+        .nullish()
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+        ),
       projectManagerId: zod.string().uuid().nullish(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
@@ -1244,27 +1254,41 @@ export const JobsPostJobsHeader = zod.object({
     ),
 });
 
-export const jobsPostJobsBodyTitleMax = 255;
+export const jobsPostJobsBodyOneTitleMax = 255;
 
-export const jobsPostJobsBodyStatusDefault = `open`;
-export const jobsPostJobsBodyStateMax = 2;
+export const jobsPostJobsBodyOneStatusDefault = `open`;
+export const jobsPostJobsBodyOneStateMax = 2;
 
-export const jobsPostJobsBodyWorkDaysDefault = null;
-export const jobsPostJobsBodyContractValueCentsMin = 0;
+export const jobsPostJobsBodyOneWorkDaysDefault = null;
+export const jobsPostJobsBodyOneProjectedStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPostJobsBodyOneProjectedCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPostJobsBodyOneActualStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPostJobsBodyOneActualCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPostJobsBodyOneContractValueCentsMin = 0;
+export const jobsPostJobsBodyOneContractValueCentsMax = 9007199254740991;
 
-export const jobsPostJobsBodyAmountPaidCentsMin = 0;
+export const jobsPostJobsBodyOneAmountPaidCentsMin = 0;
+export const jobsPostJobsBodyOneAmountPaidCentsMax = 9007199254740991;
 
-export const jobsPostJobsBodyAssigneeIdsDefault = [];
+export const jobsPostJobsBodyTwoAssigneeIdsDefault = [];
 
 export const JobsPostJobsBody = zod
   .object({
-    title: zod.string().min(1).max(jobsPostJobsBodyTitleMax),
+    title: zod.string().min(1).max(jobsPostJobsBodyOneTitleMax),
     status: zod
       .enum(["open", "closed", "archived"])
-      .default(jobsPostJobsBodyStatusDefault),
+      .default(jobsPostJobsBodyOneStatusDefault),
     streetAddress: zod.string().nullish(),
     city: zod.string().nullish(),
-    state: zod.string().max(jobsPostJobsBodyStateMax).nullish(),
+    state: zod.string().max(jobsPostJobsBodyOneStateMax).nullish(),
     zipCode: zod.string().nullish(),
     contractPrice: zod
       .union([
@@ -1284,11 +1308,35 @@ export const JobsPostJobsBody = zod
     workDays: zod
       .array(zod.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
       .nullish()
-      .default(jobsPostJobsBodyWorkDaysDefault),
-    projectedStart: zod.coerce.date().nullish(),
-    projectedCompletion: zod.coerce.date().nullish(),
-    actualStart: zod.coerce.date().nullish(),
-    actualCompletion: zod.coerce.date().nullish(),
+      .default(jobsPostJobsBodyOneWorkDaysDefault),
+    projectedStart: zod
+      .string()
+      .regex(jobsPostJobsBodyOneProjectedStartRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — \*\*not\*\* an ISO timestamp and \*\*not\*\* coerced to a `Date` (the handler rejects any other form, including timezone offsets). `format: date` is intentionally omitted so generated clients keep this as a `string`, matching the handler's `optionalDate` zod transform.",
+      ),
+    projectedCompletion: zod
+      .string()
+      .regex(jobsPostJobsBodyOneProjectedCompletionRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted.",
+      ),
+    actualStart: zod
+      .string()
+      .regex(jobsPostJobsBodyOneActualStartRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted.",
+      ),
+    actualCompletion: zod
+      .string()
+      .regex(jobsPostJobsBodyOneActualCompletionRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted.",
+      ),
     contractType: zod
       .union([
         zod.literal("fixed_price"),
@@ -1319,31 +1367,46 @@ export const JobsPostJobsBody = zod
       .uuid()
       .nullish()
       .describe(
-        'Required on `POST \/jobs`. Optional on `PUT \/jobs\/{id}`. The DB column is nullable to support legacy rows backfilled to the system \"Unknown client\" placeholder.',
+        'Optional on `PUT \/jobs\/{id}`. \*\*Required on `POST \/jobs`\*\* — see `jobs_jobCreatePayloadSchema`. The DB column is nullable to support legacy rows backfilled to the system \"Unknown client\" placeholder, but new jobs must always be attached to a chosen client.',
       ),
     contractValueCents: zod
       .number()
-      .min(jobsPostJobsBodyContractValueCentsMin)
+      .min(jobsPostJobsBodyOneContractValueCentsMin)
+      .max(jobsPostJobsBodyOneContractValueCentsMax)
       .nullish()
       .describe(
-        "Total contract value in whole cents (USD). Optional. Server enforces `amountPaidCents <= contractValueCents` when both are set.",
+        "Total contract value in whole cents (USD). Optional. Bounded by JS `Number.MAX_SAFE_INTEGER` so the value round-trips through JSON without precision loss; \*\*never\*\* `bigint`. Server enforces `amountPaidCents <= contractValueCents` when both are set.",
       ),
     amountPaidCents: zod
       .number()
-      .min(jobsPostJobsBodyAmountPaidCentsMin)
+      .min(jobsPostJobsBodyOneAmountPaidCentsMin)
+      .max(jobsPostJobsBodyOneAmountPaidCentsMax)
       .nullish()
       .describe(
-        "Total amount paid against the contract in whole cents (USD). Optional.",
-      ),
-    assigneeIds: zod
-      .array(zod.string().uuid())
-      .default(jobsPostJobsBodyAssigneeIdsDefault)
-      .describe(
-        "Initial assignees. Only honored on `POST \/jobs` and only by admin callers; non-admins must omit this field.",
+        "Total amount paid against the contract in whole cents (USD). Optional. Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
       ),
   })
   .describe(
     "Request body for creating or updating a job. `POST \/jobs` additionally accepts `assigneeIds`. Money fields (`contractPrice`, `squareFeet`) are accepted as either string or number and serialized as decimal strings.",
+  )
+  .and(
+    zod.object({
+      clientId: zod
+        .string()
+        .uuid()
+        .describe(
+          "Identifier of the client this job belongs to. Required on create.",
+        ),
+      assigneeIds: zod
+        .array(zod.string().uuid())
+        .default(jobsPostJobsBodyTwoAssigneeIdsDefault)
+        .describe(
+          "Initial assignees. Only honored by admin callers; non-admins must omit this field.",
+        ),
+    }),
+  )
+  .describe(
+    'Request body for `POST \/jobs`. Extends `jobs_jobPayloadSchema` with `assigneeIds` (admin-only) and an additional \*\*required `clientId`\*\*. The handler rejects POSTs without a `clientId` with `400 \"clientId is required when creating a job.\"`.',
   );
 
 /**
@@ -1371,8 +1434,10 @@ export const jobsGetJobsIdResponseJobActualCompletionRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
 export const jobsGetJobsIdResponseJobContractValueCentsMin = 0;
+export const jobsGetJobsIdResponseJobContractValueCentsMax = 9007199254740991;
 
 export const jobsGetJobsIdResponseJobAmountPaidCentsMin = 0;
+export const jobsGetJobsIdResponseJobAmountPaidCentsMax = 9007199254740991;
 
 export const JobsGetJobsIdResponse = zod.object({
   job: zod
@@ -1415,11 +1480,19 @@ export const JobsGetJobsIdResponse = zod.object({
       contractValueCents: zod
         .number()
         .min(jobsGetJobsIdResponseJobContractValueCentsMin)
-        .nullish(),
+        .max(jobsGetJobsIdResponseJobContractValueCentsMax)
+        .nullish()
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`. The DB column is `integer` (32-bit signed), so realistic contract sizes always fit; the safe-integer ceiling exists so generated client types stay `number`.",
+        ),
       amountPaidCents: zod
         .number()
         .min(jobsGetJobsIdResponseJobAmountPaidCentsMin)
-        .nullish(),
+        .max(jobsGetJobsIdResponseJobAmountPaidCentsMax)
+        .nullish()
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+        ),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
       createdById: zod.string().uuid().nullish(),
@@ -1471,11 +1544,23 @@ export const jobsPutJobsIdBodyStatusDefault = `open`;
 export const jobsPutJobsIdBodyStateMax = 2;
 
 export const jobsPutJobsIdBodyWorkDaysDefault = null;
+export const jobsPutJobsIdBodyProjectedStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPutJobsIdBodyProjectedCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPutJobsIdBodyActualStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const jobsPutJobsIdBodyActualCompletionRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
 export const jobsPutJobsIdBodyContractValueCentsMin = 0;
+export const jobsPutJobsIdBodyContractValueCentsMax = 9007199254740991;
 
 export const jobsPutJobsIdBodyAmountPaidCentsMin = 0;
-
-export const jobsPutJobsIdBodyAssigneeIdsDefault = [];
+export const jobsPutJobsIdBodyAmountPaidCentsMax = 9007199254740991;
 
 export const JobsPutJobsIdBody = zod
   .object({
@@ -1506,10 +1591,34 @@ export const JobsPutJobsIdBody = zod
       .array(zod.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
       .nullish()
       .default(jobsPutJobsIdBodyWorkDaysDefault),
-    projectedStart: zod.coerce.date().nullish(),
-    projectedCompletion: zod.coerce.date().nullish(),
-    actualStart: zod.coerce.date().nullish(),
-    actualCompletion: zod.coerce.date().nullish(),
+    projectedStart: zod
+      .string()
+      .regex(jobsPutJobsIdBodyProjectedStartRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — \*\*not\*\* an ISO timestamp and \*\*not\*\* coerced to a `Date` (the handler rejects any other form, including timezone offsets). `format: date` is intentionally omitted so generated clients keep this as a `string`, matching the handler's `optionalDate` zod transform.",
+      ),
+    projectedCompletion: zod
+      .string()
+      .regex(jobsPutJobsIdBodyProjectedCompletionRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted.",
+      ),
+    actualStart: zod
+      .string()
+      .regex(jobsPutJobsIdBodyActualStartRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted.",
+      ),
+    actualCompletion: zod
+      .string()
+      .regex(jobsPutJobsIdBodyActualCompletionRegExp)
+      .nullish()
+      .describe(
+        "Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted.",
+      ),
     contractType: zod
       .union([
         zod.literal("fixed_price"),
@@ -1540,27 +1649,23 @@ export const JobsPutJobsIdBody = zod
       .uuid()
       .nullish()
       .describe(
-        'Required on `POST \/jobs`. Optional on `PUT \/jobs\/{id}`. The DB column is nullable to support legacy rows backfilled to the system \"Unknown client\" placeholder.',
+        'Optional on `PUT \/jobs\/{id}`. \*\*Required on `POST \/jobs`\*\* — see `jobs_jobCreatePayloadSchema`. The DB column is nullable to support legacy rows backfilled to the system \"Unknown client\" placeholder, but new jobs must always be attached to a chosen client.',
       ),
     contractValueCents: zod
       .number()
       .min(jobsPutJobsIdBodyContractValueCentsMin)
+      .max(jobsPutJobsIdBodyContractValueCentsMax)
       .nullish()
       .describe(
-        "Total contract value in whole cents (USD). Optional. Server enforces `amountPaidCents <= contractValueCents` when both are set.",
+        "Total contract value in whole cents (USD). Optional. Bounded by JS `Number.MAX_SAFE_INTEGER` so the value round-trips through JSON without precision loss; \*\*never\*\* `bigint`. Server enforces `amountPaidCents <= contractValueCents` when both are set.",
       ),
     amountPaidCents: zod
       .number()
       .min(jobsPutJobsIdBodyAmountPaidCentsMin)
+      .max(jobsPutJobsIdBodyAmountPaidCentsMax)
       .nullish()
       .describe(
-        "Total amount paid against the contract in whole cents (USD). Optional.",
-      ),
-    assigneeIds: zod
-      .array(zod.string().uuid())
-      .default(jobsPutJobsIdBodyAssigneeIdsDefault)
-      .describe(
-        "Initial assignees. Only honored on `POST \/jobs` and only by admin callers; non-admins must omit this field.",
+        "Total amount paid against the contract in whole cents (USD). Optional. Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
       ),
   })
   .describe(
@@ -1580,8 +1685,10 @@ export const jobsPutJobsIdResponseJobActualCompletionRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
 export const jobsPutJobsIdResponseJobContractValueCentsMin = 0;
+export const jobsPutJobsIdResponseJobContractValueCentsMax = 9007199254740991;
 
 export const jobsPutJobsIdResponseJobAmountPaidCentsMin = 0;
+export const jobsPutJobsIdResponseJobAmountPaidCentsMax = 9007199254740991;
 
 export const JobsPutJobsIdResponse = zod.object({
   job: zod
@@ -1624,11 +1731,19 @@ export const JobsPutJobsIdResponse = zod.object({
       contractValueCents: zod
         .number()
         .min(jobsPutJobsIdResponseJobContractValueCentsMin)
-        .nullish(),
+        .max(jobsPutJobsIdResponseJobContractValueCentsMax)
+        .nullish()
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`. The DB column is `integer` (32-bit signed), so realistic contract sizes always fit; the safe-integer ceiling exists so generated client types stay `number`.",
+        ),
       amountPaidCents: zod
         .number()
         .min(jobsPutJobsIdResponseJobAmountPaidCentsMin)
-        .nullish(),
+        .max(jobsPutJobsIdResponseJobAmountPaidCentsMax)
+        .nullish()
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+        ),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
       createdById: zod.string().uuid().nullish(),

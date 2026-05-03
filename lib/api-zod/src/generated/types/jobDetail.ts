@@ -38,10 +38,18 @@ export interface JobDetail {
   projectManagerName?: string | null;
   clientId?: string | null;
   clientName?: string | null;
-  /** @minimum 0 */
-  contractValueCents?: bigint | null;
-  /** @minimum 0 */
-  amountPaidCents?: bigint | null;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`. The DB column is `integer` (32-bit signed), so realistic contract sizes always fit; the safe-integer ceiling exists so generated client types stay `number`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
+  contractValueCents?: number | null;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
+  amountPaidCents?: number | null;
   createdAt: Date;
   updatedAt: Date;
   createdById?: string | null;

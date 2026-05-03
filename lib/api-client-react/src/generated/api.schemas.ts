@@ -182,9 +182,25 @@ export interface JobsJobPayloadSchema {
   contractPrice?: string | number | null;
   jobType?: string | null;
   workDays?: JobsJobPayloadSchemaWorkDaysItem[] | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — **not** an ISO timestamp and **not** coerced to a `Date` (the handler rejects any other form, including timezone offsets). `format: date` is intentionally omitted so generated clients keep this as a `string`, matching the handler's `optionalDate` zod transform.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   projectedStart?: string | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   projectedCompletion?: string | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   actualStart?: string | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   actualCompletion?: string | null;
   contractType?: JobsJobPayloadSchemaContractType;
   internalNotes?: string | null;
@@ -196,21 +212,31 @@ export interface JobsJobPayloadSchema {
   squareFeet?: string | number | null;
   permitNumber?: string | null;
   projectManagerId?: string | null;
-  /** Required on `POST /jobs`. Optional on `PUT /jobs/{id}`. The DB column is nullable to support legacy rows backfilled to the system "Unknown client" placeholder. */
+  /** Optional on `PUT /jobs/{id}`. **Required on `POST /jobs`** — see `jobs_jobCreatePayloadSchema`. The DB column is nullable to support legacy rows backfilled to the system "Unknown client" placeholder, but new jobs must always be attached to a chosen client. */
   clientId?: string | null;
   /**
-   * Total contract value in whole cents (USD). Optional. Server enforces `amountPaidCents <= contractValueCents` when both are set.
+   * Total contract value in whole cents (USD). Optional. Bounded by JS `Number.MAX_SAFE_INTEGER` so the value round-trips through JSON without precision loss; **never** `bigint`. Server enforces `amountPaidCents <= contractValueCents` when both are set.
    * @minimum 0
+   * @maximum 9007199254740991
    */
   contractValueCents?: number | null;
   /**
-   * Total amount paid against the contract in whole cents (USD). Optional.
+   * Total amount paid against the contract in whole cents (USD). Optional. Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
    * @minimum 0
+   * @maximum 9007199254740991
    */
   amountPaidCents?: number | null;
-  /** Initial assignees. Only honored on `POST /jobs` and only by admin callers; non-admins must omit this field. */
-  assigneeIds?: string[];
 }
+
+/**
+ * Request body for `POST /jobs`. Extends `jobs_jobPayloadSchema` with `assigneeIds` (admin-only) and an additional **required `clientId`**. The handler rejects POSTs without a `clientId` with `400 "clientId is required when creating a job."`.
+ */
+export type JobsJobCreatePayloadSchema = JobsJobPayloadSchema & {
+  /** Identifier of the client this job belongs to. Required on create. */
+  clientId: string;
+  /** Initial assignees. Only honored by admin callers; non-admins must omit this field. */
+  assigneeIds?: string[];
+};
 
 export type LeadsLeadPayloadSchemaStatus =
   (typeof LeadsLeadPayloadSchemaStatus)[keyof typeof LeadsLeadPayloadSchemaStatus];
@@ -1076,9 +1102,17 @@ export interface JobListItem {
   permitNumber?: string | null;
   clientId?: string | null;
   clientName?: string | null;
-  /** @minimum 0 */
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   contractValueCents?: number | null;
-  /** @minimum 0 */
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   amountPaidCents?: number | null;
   projectManagerId?: string | null;
   createdAt: string;
@@ -1116,9 +1150,17 @@ export interface JobDetail {
   projectManagerName?: string | null;
   clientId?: string | null;
   clientName?: string | null;
-  /** @minimum 0 */
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`. The DB column is `integer` (32-bit signed), so realistic contract sizes always fit; the safe-integer ceiling exists so generated client types stay `number`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   contractValueCents?: number | null;
-  /** @minimum 0 */
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   amountPaidCents?: number | null;
   createdAt: string;
   updatedAt: string;

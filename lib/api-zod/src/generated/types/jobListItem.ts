@@ -30,10 +30,18 @@ export interface JobListItem {
   permitNumber?: string | null;
   clientId?: string | null;
   clientName?: string | null;
-  /** @minimum 0 */
-  contractValueCents?: bigint | null;
-  /** @minimum 0 */
-  amountPaidCents?: bigint | null;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
+  contractValueCents?: number | null;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
+  amountPaidCents?: number | null;
   projectManagerId?: string | null;
   createdAt: Date;
   updatedAt: Date;

@@ -56,6 +56,7 @@ import type {
   JobListResponse,
   JobsAssigneePayloadSchema,
   JobsGetJobsParams,
+  JobsJobCreatePayloadSchema,
   JobsJobPayloadSchema,
   LeadAttachmentsCreatedResponse,
   LeadContactResponse,
@@ -2196,14 +2197,14 @@ export const getJobsPostJobsUrl = () => {
 };
 
 export const jobsPostJobs = async (
-  jobsJobPayloadSchema: JobsJobPayloadSchema,
+  jobsJobCreatePayloadSchema: JobsJobCreatePayloadSchema,
   options?: RequestInit,
 ): Promise<JobDetailResponse> => {
   return customFetch<JobDetailResponse>(getJobsPostJobsUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(jobsJobPayloadSchema),
+    body: JSON.stringify(jobsJobCreatePayloadSchema),
   });
 };
 
@@ -2214,14 +2215,14 @@ export const getJobsPostJobsMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof jobsPostJobs>>,
     TError,
-    { data: BodyType<JobsJobPayloadSchema> },
+    { data: BodyType<JobsJobCreatePayloadSchema> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof jobsPostJobs>>,
   TError,
-  { data: BodyType<JobsJobPayloadSchema> },
+  { data: BodyType<JobsJobCreatePayloadSchema> },
   TContext
 > => {
   const mutationKey = ["jobsPostJobs"];
@@ -2235,7 +2236,7 @@ export const getJobsPostJobsMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof jobsPostJobs>>,
-    { data: BodyType<JobsJobPayloadSchema> }
+    { data: BodyType<JobsJobCreatePayloadSchema> }
   > = (props) => {
     const { data } = props ?? {};
 
@@ -2248,7 +2249,7 @@ export const getJobsPostJobsMutationOptions = <
 export type JobsPostJobsMutationResult = NonNullable<
   Awaited<ReturnType<typeof jobsPostJobs>>
 >;
-export type JobsPostJobsMutationBody = BodyType<JobsJobPayloadSchema>;
+export type JobsPostJobsMutationBody = BodyType<JobsJobCreatePayloadSchema>;
 export type JobsPostJobsMutationError = ErrorType<Problem>;
 
 /**
@@ -2261,14 +2262,14 @@ export const useJobsPostJobs = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof jobsPostJobs>>,
     TError,
-    { data: BodyType<JobsJobPayloadSchema> },
+    { data: BodyType<JobsJobCreatePayloadSchema> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof jobsPostJobs>>,
   TError,
-  { data: BodyType<JobsJobPayloadSchema> },
+  { data: BodyType<JobsJobCreatePayloadSchema> },
   TContext
 > => {
   return useMutation(getJobsPostJobsMutationOptions(options));

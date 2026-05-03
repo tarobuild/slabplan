@@ -1966,7 +1966,7 @@ paths:
             X-RateLimit-Reset:
               $ref: "#/components/headers/X-RateLimit-Reset"
       x-source-file: artifacts/api-server/src/routes/jobs.ts
-      x-zod-body-schema: jobPayloadSchema
+      x-zod-body-schema: createJobPayloadSchema
       security:
         - bearerAuth: []
       requestBody:
@@ -1974,7 +1974,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/jobs_jobPayloadSchema"
+              $ref: "#/components/schemas/jobs_jobCreatePayloadSchema"
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
   /jobs/{id}:
@@ -11159,20 +11159,24 @@ components:
           default: null
         projectedStart:
           type: string
-          format: date
           nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — **not** an ISO timestamp and **not** coerced to a `Date` (the handler rejects any other form, including timezone offsets). `format: date` is intentionally omitted so generated clients keep this as a `string`, matching the handler's `optionalDate` zod transform."
         projectedCompletion:
           type: string
-          format: date
           nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: "Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted."
         actualStart:
           type: string
-          format: date
           nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: "Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted."
         actualCompletion:
           type: string
-          format: date
           nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: "Calendar date in `YYYY-MM-DD` format. See `projectedStart` for why `format: date` is intentionally omitted."
         contractType:
           type: string
           nullable: true
@@ -11203,28 +11207,41 @@ components:
           type: string
           format: uuid
           nullable: true
-          description: Required on `POST /jobs`. Optional on `PUT /jobs/{id}`. The DB column is nullable to support legacy rows backfilled to the system "Unknown client" placeholder.
+          description: Optional on `PUT /jobs/{id}`. **Required on `POST /jobs`** — see `jobs_jobCreatePayloadSchema`. The DB column is nullable to support legacy rows backfilled to the system "Unknown client" placeholder, but new jobs must always be attached to a chosen client.
         contractValueCents:
           type: integer
-          format: int64
           nullable: true
           minimum: 0
-          description: Total contract value in whole cents (USD). Optional. Server enforces `amountPaidCents <= contractValueCents` when both are set.
+          maximum: 9007199254740991
+          description: Total contract value in whole cents (USD). Optional. Bounded by JS `Number.MAX_SAFE_INTEGER` so the value round-trips through JSON without precision loss; **never** `bigint`. Server enforces `amountPaidCents <= contractValueCents` when both are set.
         amountPaidCents:
           type: integer
-          format: int64
           nullable: true
           minimum: 0
-          description: Total amount paid against the contract in whole cents (USD). Optional.
-        assigneeIds:
-          type: array
-          items:
-            type: string
-            format: uuid
-          default: []
-          description: Initial assignees. Only honored on `POST /jobs` and only by admin callers; non-admins must omit this field.
+          maximum: 9007199254740991
+          description: Total amount paid against the contract in whole cents (USD). Optional. Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
       required:
         - title
+    jobs_jobCreatePayloadSchema:
+      type: object
+      description: Request body for `POST /jobs`. Extends `jobs_jobPayloadSchema` with `assigneeIds` (admin-only) and an additional **required `clientId`**. The handler rejects POSTs without a `clientId` with `400 "clientId is required when creating a job."`.
+      allOf:
+        - $ref: "#/components/schemas/jobs_jobPayloadSchema"
+        - type: object
+          properties:
+            clientId:
+              type: string
+              format: uuid
+              description: Identifier of the client this job belongs to. Required on create.
+            assigneeIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+              default: []
+              description: Initial assignees. Only honored by admin callers; non-admins must omit this field.
+          required:
+            - clientId
     leads_leadPayloadSchema:
       type: object
       description: Request body for creating or updating a lead (`POST /leads`, `PUT /leads/{id}`).
@@ -12754,14 +12771,16 @@ components:
           nullable: true
         contractValueCents:
           type: integer
-          format: int64
           nullable: true
           minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
         amountPaidCents:
           type: integer
-          format: int64
           nullable: true
           minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
         projectManagerId:
           type: string
           format: uuid
@@ -12859,14 +12878,16 @@ components:
           nullable: true
         contractValueCents:
           type: integer
-          format: int64
           nullable: true
           minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`. The DB column is `integer` (32-bit signed), so realistic contract sizes always fit; the safe-integer ceiling exists so generated client types stay `number`.
         amountPaidCents:
           type: integer
-          format: int64
           nullable: true
           minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
         createdAt:
           type: string
           format: date-time

@@ -28,6 +28,27 @@ export type AgentToolCall = {
   citations?: AgentCitation[]
 }
 
+// Mirror of `agentMessageStoppedReasons` in `lib/db/src/schema/agent.ts`.
+// Kept in sync manually because the Vite client can't import from the
+// server's @workspace/db package without dragging the drizzle/pg deps into
+// the browser bundle. If you add a value server-side, add it here too.
+export const agentMessageStoppedReasons = [
+  "end_turn",
+  "max_tokens",
+  "stop_sequence",
+  "tool_use",
+  "pause_turn",
+  "refusal",
+  "aborted",
+  "api_error",
+  "max_iterations",
+  "length",
+  "content_filter",
+  "tool_calls",
+  "error",
+] as const
+export type AgentMessageStoppedReason = (typeof agentMessageStoppedReasons)[number]
+
 export type AgentMessage = {
   id: string
   conversationId: string
@@ -37,7 +58,7 @@ export type AgentMessage = {
   citations: AgentCitation[] | null
   inputTokens: number | null
   outputTokens: number | null
-  stoppedReason: string | null
+  stoppedReason: AgentMessageStoppedReason | null
   createdAt: string
 }
 
@@ -120,7 +141,7 @@ export type StreamEvent =
   | {
       type: "done"
       messageId: string
-      stoppedReason?: string
+      stoppedReason?: AgentMessageStoppedReason
       usage: { inputTokens: number; outputTokens: number }
       citations: AgentCitation[]
     }

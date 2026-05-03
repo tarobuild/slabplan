@@ -46,6 +46,9 @@ export const agentMessageStoppedReasons = [
   "error",
 ] as const;
 
+export type AgentMessageRole = (typeof agentMessageRoles)[number];
+export type AgentMessageStoppedReason = (typeof agentMessageStoppedReasons)[number];
+
 export const agentConversations = pgTable(
   "agent_conversations",
   {

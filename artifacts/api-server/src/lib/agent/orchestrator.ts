@@ -3,10 +3,12 @@ import { anthropic } from "@workspace/integrations-anthropic-ai";
 import type {
   AgentCitation,
   AgentMessage,
+  AgentMessageStoppedReason,
   AgentToolCall,
 } from "@workspace/db/schema";
 import { ApiClient, ApiError } from "@workspace/mcp-server";
 import { extractCitations, summarizeToolResult } from "./citations";
+import { normalizeStoppedReason } from "./stopped-reason";
 import { buildAnthropicTools, findAgentTool } from "./tools";
 import { recordUsage } from "./usage";
 import { logger } from "../logger";
@@ -64,7 +66,7 @@ export type AgentOrchestratorEvent =
   | {
       type: "done";
       messageId: string;
-      stoppedReason?: string;
+      stoppedReason?: AgentMessageStoppedReason;
       usage: { inputTokens: number; outputTokens: number };
       citations: AgentCitation[];
     }
@@ -83,7 +85,7 @@ export type AgentOrchestratorOptions = {
     citations: AgentCitation[];
     inputTokens: number;
     outputTokens: number;
-    stoppedReason?: string;
+    stoppedReason?: AgentMessageStoppedReason;
   }) => Promise<{ id: string }>;
   /**
    * Aborted when the SSE consumer drops the connection. Plumbed all the way
@@ -136,7 +138,7 @@ export async function runAgentTurn(
   const citations: AgentCitation[] = [];
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
-  let stoppedReason: string | undefined;
+  let stoppedReason: AgentMessageStoppedReason | undefined;
   const isAborted = () => signal?.aborted === true;
 
   function pushCitations(more: AgentCitation[]) {
@@ -349,7 +351,10 @@ export async function runAgentTurn(
     }
 
     if (response.stop_reason !== "tool_use") {
-      stoppedReason = response.stop_reason ?? undefined;
+      // Coerce any value the SDK returns (including ones we haven't added
+      // to the allow-list yet) to a sentinel the DB CHECK accepts; see
+      // `./stopped-reason.ts`.
+      stoppedReason = normalizeStoppedReason(response.stop_reason ?? undefined);
       break;
     }
 

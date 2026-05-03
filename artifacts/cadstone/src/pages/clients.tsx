@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link, useSearchParams } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import {
   Building2,
   Loader2,
@@ -161,12 +161,25 @@ function fmtCurrency(v: string | null) {
   if (!v) return "—"
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v))
 }
+function fmtMoneyCents(v: number | null | undefined) {
+  if (v == null) return "—"
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v / 100)
+}
+
+type ClientStatus = "active" | "archived" | "all"
+const STATUS_TABS: { value: ClientStatus; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "archived", label: "Archived" },
+  { value: "all", label: "All" },
+]
 
 export default function ClientsPage() {
   useDocumentTitle("Clients")
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const pageSize = 20
+  const [statusFilter, setStatusFilter] = useState<ClientStatus>("active")
   const [search, setSearch] = useState("")
   // `debouncedSearch` is what actually drives the typed list query — the
   // input updates `search` immediately for snappy UI, but we wait until the
@@ -204,9 +217,10 @@ export default function ClientsPage() {
     () => ({
       page,
       pageSize,
+      status: statusFilter,
       ...(debouncedSearch ? { search: debouncedSearch } : {}),
     }),
-    [page, pageSize, debouncedSearch],
+    [page, pageSize, statusFilter, debouncedSearch],
   )
 
   // `placeholderData: previous` keeps the prior page visible while refetching
@@ -455,14 +469,33 @@ export default function ClientsPage() {
         </Button>
       </div>
 
-      <div className="relative max-w-xs">
-        <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
-        <Input
-          value={search}
-          onChange={e => handleSearch(e.target.value)}
-          placeholder="Search clients…"
-          className="pl-8 h-9"
-        />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative max-w-xs flex-1 min-w-[200px]">
+          <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
+          <Input
+            value={search}
+            onChange={e => handleSearch(e.target.value)}
+            placeholder="Search clients…"
+            className="pl-8 h-9"
+          />
+        </div>
+        <div className="inline-flex rounded-md border border-[#E5E7EB] bg-white p-0.5">
+          {STATUS_TABS.map(t => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => { setStatusFilter(t.value); setPage(1) }}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded transition-colors",
+                statusFilter === t.value
+                  ? "bg-orange-600 text-white"
+                  : "text-slate-600 hover:bg-slate-100",
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Desktop table */}
@@ -474,7 +507,9 @@ export default function ClientsPage() {
               <TableHead className="font-semibold text-slate-600">Primary Contact</TableHead>
               <TableHead className="font-semibold text-slate-600">Phone</TableHead>
               <TableHead className="font-semibold text-slate-600">Email</TableHead>
-              <TableHead className="font-semibold text-slate-600 text-center">Open Jobs</TableHead>
+              <TableHead className="font-semibold text-slate-600 text-center">Active Jobs</TableHead>
+              <TableHead className="font-semibold text-slate-600 text-right">Contract</TableHead>
+              <TableHead className="font-semibold text-slate-600 text-right">Outstanding</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -482,14 +517,14 @@ export default function ClientsPage() {
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 6 }).map((_, j) => (
+                  {Array.from({ length: 8 }).map((_, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : clients.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-slate-400 text-sm">
+                <TableCell colSpan={8} className="text-center py-12 text-slate-400 text-sm">
                   No clients found.{" "}
                   <button
                     onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}
@@ -500,11 +535,15 @@ export default function ClientsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              clients.map(client => (
+              clients.map(client => {
+                const contract = client.contractValueCents
+                const outstanding = client.outstandingCents
+                const archived = client.archived
+                return (
                 <TableRow
                   key={client.id}
                   className="hover:bg-slate-50 cursor-pointer"
-                  onClick={() => openDetail(client.id)}
+                  onClick={() => navigate(`/clients/${client.id}`)}
                 >
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -512,7 +551,14 @@ export default function ClientsPage() {
                         <Building2 className="size-3.5" />
                       </div>
                       <div>
-                        <p className="font-medium text-slate-900 text-sm">{client.companyName}</p>
+                        <p className="font-medium text-slate-900 text-sm">
+                          {client.companyName}
+                          {archived && (
+                            <Badge variant="outline" className="ml-1.5 bg-slate-50 text-slate-500 border-slate-200 text-[10px]">
+                              Archived
+                            </Badge>
+                          )}
+                        </p>
                         {(client.city || client.state) && (
                           <p className="text-xs text-slate-400">{[client.city, client.state].filter(Boolean).join(", ")}</p>
                         )}
@@ -539,6 +585,12 @@ export default function ClientsPage() {
                       <span className="text-slate-400 text-xs">—</span>
                     )}
                   </TableCell>
+                  <TableCell className="text-right text-sm text-slate-700">
+                    {fmtMoneyCents(contract)}
+                  </TableCell>
+                  <TableCell className={cn("text-right text-sm font-medium", outstanding && outstanding > 0 ? "text-orange-700" : "text-slate-400")}>
+                    {fmtMoneyCents(outstanding)}
+                  </TableCell>
                   <TableCell onClick={e => e.stopPropagation()}>
                     <button
                       onClick={() => setDeleteClientId(client.id)}
@@ -548,7 +600,8 @@ export default function ClientsPage() {
                     </button>
                   </TableCell>
                 </TableRow>
-              ))
+                )
+              })
             )}
           </TableBody>
         </Table>
@@ -578,7 +631,7 @@ export default function ClientsPage() {
             <div
               key={client.id}
               className="rounded-lg border border-[#E5E7EB] bg-white p-4 cursor-pointer active:bg-slate-50"
-              onClick={() => openDetail(client.id)}
+              onClick={() => navigate(`/clients/${client.id}`)}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-3 min-w-0 flex-1">

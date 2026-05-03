@@ -196,7 +196,18 @@ export interface JobsJobPayloadSchema {
   squareFeet?: string | number | null;
   permitNumber?: string | null;
   projectManagerId?: string | null;
+  /** Required on `POST /jobs`. Optional on `PUT /jobs/{id}`. The DB column is nullable to support legacy rows backfilled to the system "Unknown client" placeholder. */
   clientId?: string | null;
+  /**
+   * Total contract value in whole cents (USD). Optional. Server enforces `amountPaidCents <= contractValueCents` when both are set.
+   * @minimum 0
+   */
+  contractValueCents?: number | null;
+  /**
+   * Total amount paid against the contract in whole cents (USD). Optional.
+   * @minimum 0
+   */
+  amountPaidCents?: number | null;
   /** Initial assignees. Only honored on `POST /jobs` and only by admin callers; non-admins must omit this field. */
   assigneeIds?: string[];
 }
@@ -559,8 +570,13 @@ export interface JobSummary {
   jobType?: string | null;
   /** Decimal price serialized as string. */
   contractPrice?: string | null;
+  /** @minimum 0 */
+  contractValueCents?: number | null;
+  /** @minimum 0 */
+  amountPaidCents?: number | null;
   projectedStart?: string | null;
   projectedCompletion?: string | null;
+  updatedAt?: string | null;
   createdAt: string;
 }
 
@@ -611,15 +627,46 @@ export interface ClientListItem {
   /** @minimum 0 */
   contactCount: number;
   /**
-   * Number of jobs for this client visible to the caller.
+   * Number of jobs for this client visible to the caller. Equivalent to `totalJobCount`; preserved for backward compatibility.
    * @minimum 0
    */
   jobCount: number;
   /**
-   * Number of open jobs for this client visible to the caller.
+   * Number of jobs for this client that are not closed/archived. Equivalent to `activeJobCount`; preserved for backward compatibility.
    * @minimum 0
    */
   openJobCount: number;
+  /**
+   * Number of jobs for this client whose status is neither `closed` nor `archived`. Visible to the caller.
+   * @minimum 0
+   */
+  activeJobCount: number;
+  /**
+   * Total number of jobs for this client visible to the caller (regardless of status).
+   * @minimum 0
+   */
+  totalJobCount: number;
+  /**
+   * Sum of `contractValueCents` across all caller-visible jobs for this client. Cents.
+   * @minimum 0
+   */
+  contractValueCents: number;
+  /**
+   * Sum of `amountPaidCents` across all caller-visible jobs for this client. Cents.
+   * @minimum 0
+   */
+  amountPaidCents: number;
+  /**
+   * AR rollup: `max(0, contractValueCents - amountPaidCents)`. Cents.
+   * @minimum 0
+   */
+  outstandingCents: number;
+  /** Most recent `jobs.updated_at` across the caller-visible jobs for this client. */
+  lastActivityAt?: string | null;
+  /** Soft-delete timestamp for the client itself. */
+  deletedAt?: string | null;
+  /** True when the client itself is soft-deleted (`deletedAt is not null`). */
+  archived: boolean;
 }
 
 /**
@@ -629,6 +676,23 @@ export interface ClientListResponse {
   clients: ClientListItem[];
   pagination: Pagination;
 }
+
+/**
+ * AR rollups computed across the caller-visible jobs for this client.
+ */
+export type ClientDetailRollups = {
+  /** @minimum 0 */
+  contractValueCents: number;
+  /** @minimum 0 */
+  amountPaidCents: number;
+  /** @minimum 0 */
+  outstandingCents: number;
+  /** @minimum 0 */
+  activeJobCount: number;
+  /** @minimum 0 */
+  totalJobCount: number;
+  lastActivityAt?: string | null;
+};
 
 /**
  * Full client record with embedded contacts and the caller-visible jobs list.
@@ -650,6 +714,10 @@ export interface ClientDetail {
   contacts: ClientContact[];
   /** Jobs for this client filtered to those the caller can access (admins see all). */
   jobs: JobSummary[];
+  /** True when the client itself is soft-deleted. */
+  archived: boolean;
+  /** AR rollups computed across the caller-visible jobs for this client. */
+  rollups: ClientDetailRollups;
 }
 
 /**
@@ -1008,6 +1076,10 @@ export interface JobListItem {
   permitNumber?: string | null;
   clientId?: string | null;
   clientName?: string | null;
+  /** @minimum 0 */
+  contractValueCents?: number | null;
+  /** @minimum 0 */
+  amountPaidCents?: number | null;
   projectManagerId?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -1044,6 +1116,10 @@ export interface JobDetail {
   projectManagerName?: string | null;
   clientId?: string | null;
   clientName?: string | null;
+  /** @minimum 0 */
+  contractValueCents?: number | null;
+  /** @minimum 0 */
+  amountPaidCents?: number | null;
   createdAt: string;
   updatedAt: string;
   createdById?: string | null;
@@ -1709,21 +1785,34 @@ export type UsersGetUsersParams = {
 
 export type ClientsGetClientsParams = {
   /**
-   * 1-indexed page number. Defaults to 1.
+   * Page number (1-based) for offset pagination.
    * @minimum 1
    */
   page?: number;
   /**
-   * Items per page. Defaults to 20, max 100.
+   * Page size for offset pagination.
    * @minimum 1
    * @maximum 100
    */
   pageSize?: number;
   /**
-   * Case-insensitive substring filter applied across company name, email, and city.
+   * Optional free-text filter across company name, email, and city.
    */
   search?: string;
+  /**
+   * Status filter: active (default, not soft-deleted), archived (soft-deleted), or all.
+   */
+  status?: ClientsGetClientsStatus;
 };
+
+export type ClientsGetClientsStatus =
+  (typeof ClientsGetClientsStatus)[keyof typeof ClientsGetClientsStatus];
+
+export const ClientsGetClientsStatus = {
+  active: "active",
+  archived: "archived",
+  all: "all",
+} as const;
 
 export type ClientsPostClientsIdContacts201 = {
   contact: ClientContact;
@@ -1753,6 +1842,10 @@ export type JobsGetJobsParams = {
    * Optional status filter.
    */
   status?: string;
+  /**
+   * Optional client filter; restricts results to jobs for the given client.
+   */
+  clientId?: string;
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no

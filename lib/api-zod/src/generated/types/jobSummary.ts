@@ -18,7 +18,12 @@ export interface JobSummary {
   jobType?: string | null;
   /** Decimal price serialized as string. */
   contractPrice?: string | null;
+  /** @minimum 0 */
+  contractValueCents?: bigint | null;
+  /** @minimum 0 */
+  amountPaidCents?: bigint | null;
   projectedStart?: Date | null;
   projectedCompletion?: Date | null;
+  updatedAt?: Date | null;
   createdAt: Date;
 }

@@ -29,6 +29,10 @@ export type JobsGetJobsParams = {
    */
   status?: string;
   /**
+   * Optional client filter; restricts results to jobs for the given client.
+   */
+  clientId?: string;
+  /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
 value) or simply `?limit=N` with no `page`/`pageSize` — the server

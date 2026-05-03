@@ -326,28 +326,32 @@ export const UsersPostUsersMePasswordResponse = zod.unknown();
  * List clients the caller can access, paginated and optionally filtered by search term. Each row includes a primary contact summary and the per-client `jobCount` / `openJobCount`, which are computed only over jobs the caller can access (admins see every job). Requires manager role or above.
  * @summary GET /clients
  */
-export const clientsGetClientsQueryPageDefault = 1;
 
-export const clientsGetClientsQueryPageSizeDefault = 20;
 export const clientsGetClientsQueryPageSizeMax = 100;
 
 export const ClientsGetClientsQueryParams = zod.object({
   page: zod.coerce
     .number()
     .min(1)
-    .default(clientsGetClientsQueryPageDefault)
-    .describe("1-indexed page number. Defaults to 1."),
+    .optional()
+    .describe("Page number (1-based) for offset pagination."),
   pageSize: zod.coerce
     .number()
     .min(1)
     .max(clientsGetClientsQueryPageSizeMax)
-    .default(clientsGetClientsQueryPageSizeDefault)
-    .describe("Items per page. Defaults to 20, max 100."),
+    .optional()
+    .describe("Page size for offset pagination."),
   search: zod.coerce
     .string()
     .optional()
     .describe(
-      "Case-insensitive substring filter applied across company name, email, and city.",
+      "Optional free-text filter across company name, email, and city.",
+    ),
+  status: zod
+    .enum(["active", "archived", "all"])
+    .optional()
+    .describe(
+      "Status filter: active (default, not soft-deleted), archived (soft-deleted), or all.",
     ),
 });
 
@@ -356,6 +360,16 @@ export const clientsGetClientsResponseClientsItemContactCountMin = 0;
 export const clientsGetClientsResponseClientsItemJobCountMin = 0;
 
 export const clientsGetClientsResponseClientsItemOpenJobCountMin = 0;
+
+export const clientsGetClientsResponseClientsItemActiveJobCountMin = 0;
+
+export const clientsGetClientsResponseClientsItemTotalJobCountMin = 0;
+
+export const clientsGetClientsResponseClientsItemContractValueCentsMin = 0;
+
+export const clientsGetClientsResponseClientsItemAmountPaidCentsMin = 0;
+
+export const clientsGetClientsResponseClientsItemOutstandingCentsMin = 0;
 
 export const clientsGetClientsResponsePaginationTotalItemsMin = 0;
 
@@ -397,12 +411,59 @@ export const ClientsGetClientsResponse = zod
           jobCount: zod
             .number()
             .min(clientsGetClientsResponseClientsItemJobCountMin)
-            .describe("Number of jobs for this client visible to the caller."),
+            .describe(
+              "Number of jobs for this client visible to the caller. Equivalent to `totalJobCount`; preserved for backward compatibility.",
+            ),
           openJobCount: zod
             .number()
             .min(clientsGetClientsResponseClientsItemOpenJobCountMin)
             .describe(
-              "Number of open jobs for this client visible to the caller.",
+              "Number of jobs for this client that are not closed\/archived. Equivalent to `activeJobCount`; preserved for backward compatibility.",
+            ),
+          activeJobCount: zod
+            .number()
+            .min(clientsGetClientsResponseClientsItemActiveJobCountMin)
+            .describe(
+              "Number of jobs for this client whose status is neither `closed` nor `archived`. Visible to the caller.",
+            ),
+          totalJobCount: zod
+            .number()
+            .min(clientsGetClientsResponseClientsItemTotalJobCountMin)
+            .describe(
+              "Total number of jobs for this client visible to the caller (regardless of status).",
+            ),
+          contractValueCents: zod
+            .number()
+            .min(clientsGetClientsResponseClientsItemContractValueCentsMin)
+            .describe(
+              "Sum of `contractValueCents` across all caller-visible jobs for this client. Cents.",
+            ),
+          amountPaidCents: zod
+            .number()
+            .min(clientsGetClientsResponseClientsItemAmountPaidCentsMin)
+            .describe(
+              "Sum of `amountPaidCents` across all caller-visible jobs for this client. Cents.",
+            ),
+          outstandingCents: zod
+            .number()
+            .min(clientsGetClientsResponseClientsItemOutstandingCentsMin)
+            .describe(
+              "AR rollup: `max(0, contractValueCents - amountPaidCents)`. Cents.",
+            ),
+          lastActivityAt: zod.coerce
+            .date()
+            .nullish()
+            .describe(
+              "Most recent `jobs.updated_at` across the caller-visible jobs for this client.",
+            ),
+          deletedAt: zod.coerce
+            .date()
+            .nullish()
+            .describe("Soft-delete timestamp for the client itself."),
+          archived: zod
+            .boolean()
+            .describe(
+              "True when the client itself is soft-deleted (`deletedAt is not null`).",
             ),
         })
         .describe(
@@ -473,6 +534,20 @@ export const ClientsGetClientsIdParams = zod.object({
   id: zod.coerce.string().uuid().regex(clientsGetClientsIdPathIdRegExp),
 });
 
+export const clientsGetClientsIdResponseClientJobsItemContractValueCentsMin = 0;
+
+export const clientsGetClientsIdResponseClientJobsItemAmountPaidCentsMin = 0;
+
+export const clientsGetClientsIdResponseClientRollupsContractValueCentsMin = 0;
+
+export const clientsGetClientsIdResponseClientRollupsAmountPaidCentsMin = 0;
+
+export const clientsGetClientsIdResponseClientRollupsOutstandingCentsMin = 0;
+
+export const clientsGetClientsIdResponseClientRollupsActiveJobCountMin = 0;
+
+export const clientsGetClientsIdResponseClientRollupsTotalJobCountMin = 0;
+
 export const ClientsGetClientsIdResponse = zod
   .object({
     client: zod
@@ -524,8 +599,21 @@ export const ClientsGetClientsIdResponse = zod
                   .string()
                   .nullish()
                   .describe("Decimal price serialized as string."),
+                contractValueCents: zod
+                  .number()
+                  .min(
+                    clientsGetClientsIdResponseClientJobsItemContractValueCentsMin,
+                  )
+                  .nullish(),
+                amountPaidCents: zod
+                  .number()
+                  .min(
+                    clientsGetClientsIdResponseClientJobsItemAmountPaidCentsMin,
+                  )
+                  .nullish(),
                 projectedStart: zod.coerce.date().nullish(),
                 projectedCompletion: zod.coerce.date().nullish(),
+                updatedAt: zod.coerce.date().nullish(),
                 createdAt: zod.coerce.date(),
               })
               .describe(
@@ -534,6 +622,33 @@ export const ClientsGetClientsIdResponse = zod
           )
           .describe(
             "Jobs for this client filtered to those the caller can access (admins see all).",
+          ),
+        archived: zod
+          .boolean()
+          .describe("True when the client itself is soft-deleted."),
+        rollups: zod
+          .object({
+            contractValueCents: zod
+              .number()
+              .min(
+                clientsGetClientsIdResponseClientRollupsContractValueCentsMin,
+              ),
+            amountPaidCents: zod
+              .number()
+              .min(clientsGetClientsIdResponseClientRollupsAmountPaidCentsMin),
+            outstandingCents: zod
+              .number()
+              .min(clientsGetClientsIdResponseClientRollupsOutstandingCentsMin),
+            activeJobCount: zod
+              .number()
+              .min(clientsGetClientsIdResponseClientRollupsActiveJobCountMin),
+            totalJobCount: zod
+              .number()
+              .min(clientsGetClientsIdResponseClientRollupsTotalJobCountMin),
+            lastActivityAt: zod.coerce.date().nullish(),
+          })
+          .describe(
+            "AR rollups computed across the caller-visible jobs for this client.",
           ),
       })
       .describe(
@@ -589,6 +704,20 @@ export const ClientsPutClientsIdBody = zod
     "Request body for creating or updating a client (`POST \/clients`, `PUT \/clients\/{id}`). Optional string fields accept null and empty strings (which are normalized to null). `state` must be a 2-character abbreviation when provided.",
   );
 
+export const clientsPutClientsIdResponseClientJobsItemContractValueCentsMin = 0;
+
+export const clientsPutClientsIdResponseClientJobsItemAmountPaidCentsMin = 0;
+
+export const clientsPutClientsIdResponseClientRollupsContractValueCentsMin = 0;
+
+export const clientsPutClientsIdResponseClientRollupsAmountPaidCentsMin = 0;
+
+export const clientsPutClientsIdResponseClientRollupsOutstandingCentsMin = 0;
+
+export const clientsPutClientsIdResponseClientRollupsActiveJobCountMin = 0;
+
+export const clientsPutClientsIdResponseClientRollupsTotalJobCountMin = 0;
+
 export const ClientsPutClientsIdResponse = zod
   .object({
     client: zod
@@ -640,8 +769,21 @@ export const ClientsPutClientsIdResponse = zod
                   .string()
                   .nullish()
                   .describe("Decimal price serialized as string."),
+                contractValueCents: zod
+                  .number()
+                  .min(
+                    clientsPutClientsIdResponseClientJobsItemContractValueCentsMin,
+                  )
+                  .nullish(),
+                amountPaidCents: zod
+                  .number()
+                  .min(
+                    clientsPutClientsIdResponseClientJobsItemAmountPaidCentsMin,
+                  )
+                  .nullish(),
                 projectedStart: zod.coerce.date().nullish(),
                 projectedCompletion: zod.coerce.date().nullish(),
+                updatedAt: zod.coerce.date().nullish(),
                 createdAt: zod.coerce.date(),
               })
               .describe(
@@ -650,6 +792,33 @@ export const ClientsPutClientsIdResponse = zod
           )
           .describe(
             "Jobs for this client filtered to those the caller can access (admins see all).",
+          ),
+        archived: zod
+          .boolean()
+          .describe("True when the client itself is soft-deleted."),
+        rollups: zod
+          .object({
+            contractValueCents: zod
+              .number()
+              .min(
+                clientsPutClientsIdResponseClientRollupsContractValueCentsMin,
+              ),
+            amountPaidCents: zod
+              .number()
+              .min(clientsPutClientsIdResponseClientRollupsAmountPaidCentsMin),
+            outstandingCents: zod
+              .number()
+              .min(clientsPutClientsIdResponseClientRollupsOutstandingCentsMin),
+            activeJobCount: zod
+              .number()
+              .min(clientsPutClientsIdResponseClientRollupsActiveJobCountMin),
+            totalJobCount: zod
+              .number()
+              .min(clientsPutClientsIdResponseClientRollupsTotalJobCountMin),
+            lastActivityAt: zod.coerce.date().nullish(),
+          })
+          .describe(
+            "AR rollups computed across the caller-visible jobs for this client.",
           ),
       })
       .describe(
@@ -767,6 +936,10 @@ export const ClientsGetClientsIdJobsParams = zod.object({
   id: zod.coerce.string().uuid().regex(clientsGetClientsIdJobsPathIdRegExp),
 });
 
+export const clientsGetClientsIdJobsResponseJobsItemContractValueCentsMin = 0;
+
+export const clientsGetClientsIdJobsResponseJobsItemAmountPaidCentsMin = 0;
+
 export const ClientsGetClientsIdJobsResponse = zod
   .object({
     jobs: zod.array(
@@ -782,8 +955,17 @@ export const ClientsGetClientsIdJobsResponse = zod
             .string()
             .nullish()
             .describe("Decimal price serialized as string."),
+          contractValueCents: zod
+            .number()
+            .min(clientsGetClientsIdJobsResponseJobsItemContractValueCentsMin)
+            .nullish(),
+          amountPaidCents: zod
+            .number()
+            .min(clientsGetClientsIdJobsResponseJobsItemAmountPaidCentsMin)
+            .nullish(),
           projectedStart: zod.coerce.date().nullish(),
           projectedCompletion: zod.coerce.date().nullish(),
+          updatedAt: zod.coerce.date().nullish(),
           createdAt: zod.coerce.date(),
         })
         .describe(
@@ -946,6 +1128,13 @@ export const JobsGetJobsQueryParams = zod.object({
     .optional()
     .describe("Optional free-text filter (job name, address, etc.)."),
   status: zod.coerce.string().optional().describe("Optional status filter."),
+  clientId: zod.coerce
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Optional client filter; restricts results to jobs for the given client.",
+    ),
   cursor: zod.coerce
     .string()
     .optional()
@@ -974,6 +1163,9 @@ export const jobsGetJobsResponseJobsItemActualStartRegExp = new RegExp(
 export const jobsGetJobsResponseJobsItemActualCompletionRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
+export const jobsGetJobsResponseJobsItemContractValueCentsMin = 0;
+
+export const jobsGetJobsResponseJobsItemAmountPaidCentsMin = 0;
 
 export const jobsGetJobsResponsePaginationTotalItemsMin = 0;
 
@@ -1011,6 +1203,14 @@ export const JobsGetJobsResponse = zod.object({
       permitNumber: zod.string().nullish(),
       clientId: zod.string().uuid().nullish(),
       clientName: zod.string().nullish(),
+      contractValueCents: zod
+        .number()
+        .min(jobsGetJobsResponseJobsItemContractValueCentsMin)
+        .nullish(),
+      amountPaidCents: zod
+        .number()
+        .min(jobsGetJobsResponseJobsItemAmountPaidCentsMin)
+        .nullish(),
       projectManagerId: zod.string().uuid().nullish(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
@@ -1050,6 +1250,10 @@ export const jobsPostJobsBodyStatusDefault = `open`;
 export const jobsPostJobsBodyStateMax = 2;
 
 export const jobsPostJobsBodyWorkDaysDefault = null;
+export const jobsPostJobsBodyContractValueCentsMin = 0;
+
+export const jobsPostJobsBodyAmountPaidCentsMin = 0;
+
 export const jobsPostJobsBodyAssigneeIdsDefault = [];
 
 export const JobsPostJobsBody = zod
@@ -1110,7 +1314,27 @@ export const JobsPostJobsBody = zod
       .nullish(),
     permitNumber: zod.string().nullish(),
     projectManagerId: zod.string().uuid().nullish(),
-    clientId: zod.string().uuid().nullish(),
+    clientId: zod
+      .string()
+      .uuid()
+      .nullish()
+      .describe(
+        'Required on `POST \/jobs`. Optional on `PUT \/jobs\/{id}`. The DB column is nullable to support legacy rows backfilled to the system \"Unknown client\" placeholder.',
+      ),
+    contractValueCents: zod
+      .number()
+      .min(jobsPostJobsBodyContractValueCentsMin)
+      .nullish()
+      .describe(
+        "Total contract value in whole cents (USD). Optional. Server enforces `amountPaidCents <= contractValueCents` when both are set.",
+      ),
+    amountPaidCents: zod
+      .number()
+      .min(jobsPostJobsBodyAmountPaidCentsMin)
+      .nullish()
+      .describe(
+        "Total amount paid against the contract in whole cents (USD). Optional.",
+      ),
     assigneeIds: zod
       .array(zod.string().uuid())
       .default(jobsPostJobsBodyAssigneeIdsDefault)
@@ -1146,6 +1370,9 @@ export const jobsGetJobsIdResponseJobActualStartRegExp = new RegExp(
 export const jobsGetJobsIdResponseJobActualCompletionRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
+export const jobsGetJobsIdResponseJobContractValueCentsMin = 0;
+
+export const jobsGetJobsIdResponseJobAmountPaidCentsMin = 0;
 
 export const JobsGetJobsIdResponse = zod.object({
   job: zod
@@ -1185,6 +1412,14 @@ export const JobsGetJobsIdResponse = zod.object({
       projectManagerName: zod.string().nullish(),
       clientId: zod.string().uuid().nullish(),
       clientName: zod.string().nullish(),
+      contractValueCents: zod
+        .number()
+        .min(jobsGetJobsIdResponseJobContractValueCentsMin)
+        .nullish(),
+      amountPaidCents: zod
+        .number()
+        .min(jobsGetJobsIdResponseJobAmountPaidCentsMin)
+        .nullish(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
       createdById: zod.string().uuid().nullish(),
@@ -1236,6 +1471,10 @@ export const jobsPutJobsIdBodyStatusDefault = `open`;
 export const jobsPutJobsIdBodyStateMax = 2;
 
 export const jobsPutJobsIdBodyWorkDaysDefault = null;
+export const jobsPutJobsIdBodyContractValueCentsMin = 0;
+
+export const jobsPutJobsIdBodyAmountPaidCentsMin = 0;
+
 export const jobsPutJobsIdBodyAssigneeIdsDefault = [];
 
 export const JobsPutJobsIdBody = zod
@@ -1296,7 +1535,27 @@ export const JobsPutJobsIdBody = zod
       .nullish(),
     permitNumber: zod.string().nullish(),
     projectManagerId: zod.string().uuid().nullish(),
-    clientId: zod.string().uuid().nullish(),
+    clientId: zod
+      .string()
+      .uuid()
+      .nullish()
+      .describe(
+        'Required on `POST \/jobs`. Optional on `PUT \/jobs\/{id}`. The DB column is nullable to support legacy rows backfilled to the system \"Unknown client\" placeholder.',
+      ),
+    contractValueCents: zod
+      .number()
+      .min(jobsPutJobsIdBodyContractValueCentsMin)
+      .nullish()
+      .describe(
+        "Total contract value in whole cents (USD). Optional. Server enforces `amountPaidCents <= contractValueCents` when both are set.",
+      ),
+    amountPaidCents: zod
+      .number()
+      .min(jobsPutJobsIdBodyAmountPaidCentsMin)
+      .nullish()
+      .describe(
+        "Total amount paid against the contract in whole cents (USD). Optional.",
+      ),
     assigneeIds: zod
       .array(zod.string().uuid())
       .default(jobsPutJobsIdBodyAssigneeIdsDefault)
@@ -1320,6 +1579,9 @@ export const jobsPutJobsIdResponseJobActualStartRegExp = new RegExp(
 export const jobsPutJobsIdResponseJobActualCompletionRegExp = new RegExp(
   "^\\d{4}-\\d{2}-\\d{2}$",
 );
+export const jobsPutJobsIdResponseJobContractValueCentsMin = 0;
+
+export const jobsPutJobsIdResponseJobAmountPaidCentsMin = 0;
 
 export const JobsPutJobsIdResponse = zod.object({
   job: zod
@@ -1359,6 +1621,14 @@ export const JobsPutJobsIdResponse = zod.object({
       projectManagerName: zod.string().nullish(),
       clientId: zod.string().uuid().nullish(),
       clientName: zod.string().nullish(),
+      contractValueCents: zod
+        .number()
+        .min(jobsPutJobsIdResponseJobContractValueCentsMin)
+        .nullish(),
+      amountPaidCents: zod
+        .number()
+        .min(jobsPutJobsIdResponseJobAmountPaidCentsMin)
+        .nullish(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
       createdById: zod.string().uuid().nullish(),

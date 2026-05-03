@@ -7,6 +7,9 @@ export type AppRole = "admin" | "project_manager" | "crew_member"
 export const ROLE_GATES = {
   sales: ["admin", "project_manager"] as const,
   clients: ["admin", "project_manager"] as const,
+  // The top-level "Jobs" link is hidden for admin/PM (they reach jobs
+  // through Clients). Crew members still need a "My Jobs" entry point.
+  myJobs: ["crew_member"] as const,
 } satisfies Record<string, ReadonlyArray<AppRole>>
 
 export function hasRoleAccess(

@@ -45,7 +45,18 @@ export interface JobsJobPayloadSchema {
   squareFeet?: string | number | null;
   permitNumber?: string | null;
   projectManagerId?: string | null;
+  /** Required on `POST /jobs`. Optional on `PUT /jobs/{id}`. The DB column is nullable to support legacy rows backfilled to the system "Unknown client" placeholder. */
   clientId?: string | null;
+  /**
+   * Total contract value in whole cents (USD). Optional. Server enforces `amountPaidCents <= contractValueCents` when both are set.
+   * @minimum 0
+   */
+  contractValueCents?: bigint | null;
+  /**
+   * Total amount paid against the contract in whole cents (USD). Optional.
+   * @minimum 0
+   */
+  amountPaidCents?: bigint | null;
   /** Initial assignees. Only honored on `POST /jobs` and only by admin callers; non-admins must omit this field. */
   assigneeIds?: string[];
 }

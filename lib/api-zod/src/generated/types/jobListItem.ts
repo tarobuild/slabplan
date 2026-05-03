@@ -30,6 +30,10 @@ export interface JobListItem {
   permitNumber?: string | null;
   clientId?: string | null;
   clientName?: string | null;
+  /** @minimum 0 */
+  contractValueCents?: bigint | null;
+  /** @minimum 0 */
+  amountPaidCents?: bigint | null;
   projectManagerId?: string | null;
   createdAt: Date;
   updatedAt: Date;

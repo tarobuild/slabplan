@@ -28,6 +28,7 @@ configureApiClient()
 const queryClient = getQueryClient()
 
 const ClientsPage = lazy(() => import("@/pages/clients"))
+const ClientDetailPage = lazy(() => import("@/pages/client-detail"))
 const DashboardPage = lazy(() => import("@/pages/dashboard"))
 const FilesDocumentsPage = lazy(() => import("@/pages/files-documents"))
 const FilesPhotosPage = lazy(() => import("@/pages/files-photos"))
@@ -154,6 +155,7 @@ function buildRouter(ready: boolean, basename: string | undefined) {
             </Route>
             <Route element={<RoleGate allow={ROLE_GATES.clients} />}>
               <Route path="/clients" element={<ClientsPage />} />
+              <Route path="/clients/:clientId" element={<ClientDetailPage />} />
             </Route>
             <Route path="/settings" element={<SettingsPage />} />
             <Route element={<AdminRoute />}>

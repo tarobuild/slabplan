@@ -986,26 +986,34 @@ paths:
         - name: page
           in: query
           required: false
-          description: 1-indexed page number. Defaults to 1.
+          description: Page number (1-based) for offset pagination.
           schema:
             type: integer
             minimum: 1
-            default: 1
         - name: pageSize
           in: query
           required: false
-          description: Items per page. Defaults to 20, max 100.
+          description: Page size for offset pagination.
           schema:
             type: integer
             minimum: 1
             maximum: 100
-            default: 20
         - name: search
           in: query
           required: false
-          description: Case-insensitive substring filter applied across company name, email, and city.
+          description: Optional free-text filter across company name, email, and city.
           schema:
             type: string
+        - name: status
+          in: query
+          required: false
+          description: "Status filter: active (default, not soft-deleted), archived (soft-deleted), or all."
+          schema:
+            type: string
+            enum:
+              - active
+              - archived
+              - all
       security:
         - bearerAuth: []
     post:
@@ -1889,6 +1897,13 @@ paths:
           description: Optional status filter.
           schema:
             type: string
+        - name: clientId
+          in: query
+          required: false
+          description: Optional client filter; restricts results to jobs for the given client.
+          schema:
+            type: string
+            format: uuid
         - $ref: "#/components/parameters/CursorParam"
         - $ref: "#/components/parameters/CursorLimitParam"
     post:
@@ -11166,6 +11181,19 @@ components:
           type: string
           format: uuid
           nullable: true
+          description: Required on `POST /jobs`. Optional on `PUT /jobs/{id}`. The DB column is nullable to support legacy rows backfilled to the system "Unknown client" placeholder.
+        contractValueCents:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+          description: Total contract value in whole cents (USD). Optional. Server enforces `amountPaidCents <= contractValueCents` when both are set.
+        amountPaidCents:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+          description: Total amount paid against the contract in whole cents (USD). Optional.
         assigneeIds:
           type: array
           items:
@@ -11702,6 +11730,16 @@ components:
           type: string
           nullable: true
           description: Decimal price serialized as string.
+        contractValueCents:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+        amountPaidCents:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
         projectedStart:
           type: string
           format: date
@@ -11709,6 +11747,10 @@ components:
         projectedCompletion:
           type: string
           format: date
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
           nullable: true
         createdAt:
           type: string
@@ -11825,11 +11867,47 @@ components:
         jobCount:
           type: integer
           minimum: 0
-          description: Number of jobs for this client visible to the caller.
+          description: Number of jobs for this client visible to the caller. Equivalent to `totalJobCount`; preserved for backward compatibility.
         openJobCount:
           type: integer
           minimum: 0
-          description: Number of open jobs for this client visible to the caller.
+          description: Number of jobs for this client that are not closed/archived. Equivalent to `activeJobCount`; preserved for backward compatibility.
+        activeJobCount:
+          type: integer
+          minimum: 0
+          description: Number of jobs for this client whose status is neither `closed` nor `archived`. Visible to the caller.
+        totalJobCount:
+          type: integer
+          minimum: 0
+          description: Total number of jobs for this client visible to the caller (regardless of status).
+        contractValueCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of `contractValueCents` across all caller-visible jobs for this client. Cents.
+        amountPaidCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of `amountPaidCents` across all caller-visible jobs for this client. Cents.
+        outstandingCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: "AR rollup: `max(0, contractValueCents - amountPaidCents)`. Cents."
+        lastActivityAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Most recent `jobs.updated_at` across the caller-visible jobs for this client.
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Soft-delete timestamp for the client itself.
+        archived:
+          type: boolean
+          description: True when the client itself is soft-deleted (`deletedAt is not null`).
       required:
         - id
         - companyName
@@ -11838,6 +11916,12 @@ components:
         - contactCount
         - jobCount
         - openJobCount
+        - activeJobCount
+        - totalJobCount
+        - contractValueCents
+        - amountPaidCents
+        - outstandingCents
+        - archived
     ClientListResponse:
       type: object
       description: Response for `GET /clients`. The `clients` array is restricted to clients the caller can access.
@@ -11905,12 +11989,49 @@ components:
           description: Jobs for this client filtered to those the caller can access (admins see all).
           items:
             $ref: "#/components/schemas/JobSummary"
+        archived:
+          type: boolean
+          description: True when the client itself is soft-deleted.
+        rollups:
+          type: object
+          description: AR rollups computed across the caller-visible jobs for this client.
+          properties:
+            contractValueCents:
+              type: integer
+              format: int64
+              minimum: 0
+            amountPaidCents:
+              type: integer
+              format: int64
+              minimum: 0
+            outstandingCents:
+              type: integer
+              format: int64
+              minimum: 0
+            activeJobCount:
+              type: integer
+              minimum: 0
+            totalJobCount:
+              type: integer
+              minimum: 0
+            lastActivityAt:
+              type: string
+              format: date-time
+              nullable: true
+          required:
+            - contractValueCents
+            - amountPaidCents
+            - outstandingCents
+            - activeJobCount
+            - totalJobCount
       required:
         - id
         - companyName
         - createdAt
         - contacts
         - jobs
+        - rollups
+        - archived
     ClientDetailResponse:
       type: object
       description: Response for `GET /clients/{id}`. The embedded `client.jobs` list is filtered to jobs the caller can access.
@@ -12609,6 +12730,16 @@ components:
         clientName:
           type: string
           nullable: true
+        contractValueCents:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+        amountPaidCents:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
         projectManagerId:
           type: string
           format: uuid
@@ -12704,6 +12835,16 @@ components:
         clientName:
           type: string
           nullable: true
+        contractValueCents:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+        amountPaidCents:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
         createdAt:
           type: string
           format: date-time

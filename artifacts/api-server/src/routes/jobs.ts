@@ -25,9 +25,22 @@ const jobQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
   search: z.string().trim().optional(),
   status: z.enum(["open", "closed", "archived"]).optional(),
+  clientId: z.string().uuid().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
 });
+
+const optionalCents = z
+  .union([z.string(), z.number(), z.null(), z.undefined()])
+  .transform((value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const n = typeof value === "number" ? value : Number(String(value).trim());
+    if (!Number.isFinite(n)) return Number.NaN; // invalid sentinel; refine catches it
+    return Math.trunc(n);
+  })
+  .refine((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= Number.MAX_SAFE_INTEGER), {
+    message: "Money fields must be a non-negative integer number of cents.",
+  });
 
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
@@ -68,7 +81,7 @@ const optionalMoney = z
     message: "Contract price must be a valid number.",
   });
 
-const jobPayloadSchema = z.object({
+const jobPayloadBaseSchema = z.object({
   title: z.string().trim().min(1).max(255),
   status: z.enum(["open", "closed", "archived"]).optional().default("open"),
   streetAddress: optionalString,
@@ -104,11 +117,50 @@ const jobPayloadSchema = z.object({
   permitNumber: optionalString,
   projectManagerId: z.string().uuid().nullable().optional().default(null),
   clientId: z.string().uuid().nullable().optional().default(null),
+  contractValueCents: optionalCents.optional().default(null),
+  amountPaidCents: optionalCents.optional().default(null),
 });
 
-const createJobPayloadSchema = jobPayloadSchema.extend({
-  assigneeIds: z.array(z.string().uuid()).optional().default([]),
-});
+function checkPaidNotOverContract(
+  data: { contractValueCents?: number | null; amountPaidCents?: number | null },
+  ctx: z.RefinementCtx,
+) {
+  const paid = data.amountPaidCents;
+  const contract = data.contractValueCents;
+  if (
+    paid !== null &&
+    paid !== undefined &&
+    contract !== null &&
+    contract !== undefined &&
+    paid > contract
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["amountPaidCents"],
+      message: "Amount paid cannot exceed contract value.",
+    });
+  }
+}
+
+const jobPayloadSchema = jobPayloadBaseSchema.superRefine(checkPaidNotOverContract);
+
+const createJobPayloadSchema = jobPayloadBaseSchema
+  .extend({
+    assigneeIds: z.array(z.string().uuid()).optional().default([]),
+  })
+  .superRefine(checkPaidNotOverContract)
+  .superRefine((data, ctx) => {
+    // POST /jobs requires a real clientId. The DB column stays nullable
+    // only so the "Unknown client" placeholder can absorb legacy and
+    // orphaned rows; new jobs must always be attached to a chosen client.
+    if (!data.clientId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["clientId"],
+        message: "clientId is required when creating a job.",
+      });
+    }
+  });
 
 function getParam(value: string | string[] | undefined, label: string) {
   const normalized = Array.isArray(value) ? value[0] : value;
@@ -120,7 +172,7 @@ function getParam(value: string | string[] | undefined, label: string) {
   return normalized;
 }
 
-function toJobInsert(data: z.infer<typeof jobPayloadSchema>, createdBy: string): NewJob {
+function toJobInsert(data: z.infer<typeof jobPayloadBaseSchema>, createdBy: string): NewJob {
   return {
     title: data.title,
     status: data.status,
@@ -142,6 +194,8 @@ function toJobInsert(data: z.infer<typeof jobPayloadSchema>, createdBy: string):
     permitNumber: data.permitNumber ?? null,
     projectManagerId: data.projectManagerId ?? null,
     clientId: data.clientId ?? null,
+    contractValueCents: data.contractValueCents ?? null,
+    amountPaidCents: data.amountPaidCents ?? null,
     createdBy,
   };
 }
@@ -242,6 +296,8 @@ async function findJobById(id: string) {
       projectManagerName: projectManagers.fullName,
       clientId: jobs.clientId,
       clientName: clients.companyName,
+      contractValueCents: jobs.contractValueCents,
+      amountPaidCents: jobs.amountPaidCents,
       createdAt: jobs.createdAt,
       updatedAt: jobs.updatedAt,
       createdById: users.id,
@@ -310,6 +366,10 @@ router.get(
       conditions.push(eq(jobs.status, query.data.status));
     }
 
+    if (query.data.clientId) {
+      conditions.push(eq(jobs.clientId, query.data.clientId));
+    }
+
     if (query.data.search) {
       const search = buildContainsLikePattern(query.data.search);
       conditions.push(
@@ -364,6 +424,8 @@ router.get(
         permitNumber: jobs.permitNumber,
         clientId: jobs.clientId,
         clientName: clients.companyName,
+        contractValueCents: jobs.contractValueCents,
+        amountPaidCents: jobs.amountPaidCents,
         projectManagerId: jobs.projectManagerId,
         createdAt: jobs.createdAt,
         updatedAt: jobs.updatedAt,

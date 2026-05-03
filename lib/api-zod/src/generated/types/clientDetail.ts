@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ClientContact } from "./clientContact";
+import type { ClientDetailRollups } from "./clientDetailRollups";
 import type { JobSummary } from "./jobSummary";
 
 /**
@@ -28,4 +29,8 @@ export interface ClientDetail {
   contacts: ClientContact[];
   /** Jobs for this client filtered to those the caller can access (admins see all). */
   jobs: JobSummary[];
+  /** True when the client itself is soft-deleted. */
+  archived: boolean;
+  /** AR rollups computed across the caller-visible jobs for this client. */
+  rollups: ClientDetailRollups;
 }

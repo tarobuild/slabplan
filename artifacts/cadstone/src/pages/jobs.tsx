@@ -533,6 +533,11 @@ export default function JobsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!form.clientId) {
+      toast.error("Pick a client before creating the job.")
+      setStep(1)
+      return
+    }
     const payload = validatePayload(JobsPostJobsBody, {
       title: form.title,
       status: form.status,
@@ -1345,7 +1350,7 @@ export default function JobsPage() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={saving}
+                    disabled={saving || !form.clientId}
                     style={{ backgroundColor: "#E85D04", color: "#fff" }}
                     className="hover:opacity-90 transition-opacity"
                   >

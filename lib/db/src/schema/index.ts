@@ -169,6 +169,8 @@ export const jobs = pgTable(
     permitNumber: varchar("permit_number", { length: 100 }),
     projectManagerId: uuid("project_manager_id").references(() => users.id, { onDelete: "set null" }),
     clientId: uuid("client_id").references(() => clients.id),
+    contractValueCents: bigint("contract_value_cents", { mode: "number" }),
+    amountPaidCents: bigint("amount_paid_cents", { mode: "number" }),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     ...baseTimestamps,
     ...softDeleteTimestamp,
@@ -178,6 +180,10 @@ export const jobs = pgTable(
     index("jobs_created_by_idx").on(table.createdBy),
     index("jobs_project_manager_id_idx").on(table.projectManagerId),
     check("jobs_status_check", sql`${table.status} in ('open', 'closed', 'archived')`),
+    check(
+      "jobs_amount_paid_lte_contract_check",
+      sql`${table.amountPaidCents} is null or ${table.contractValueCents} is null or ${table.amountPaidCents} <= ${table.contractValueCents}`,
+    ),
   ],
 );
 

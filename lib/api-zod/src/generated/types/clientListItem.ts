@@ -23,13 +23,44 @@ export interface ClientListItem {
   /** @minimum 0 */
   contactCount: number;
   /**
-   * Number of jobs for this client visible to the caller.
+   * Number of jobs for this client visible to the caller. Equivalent to `totalJobCount`; preserved for backward compatibility.
    * @minimum 0
    */
   jobCount: number;
   /**
-   * Number of open jobs for this client visible to the caller.
+   * Number of jobs for this client that are not closed/archived. Equivalent to `activeJobCount`; preserved for backward compatibility.
    * @minimum 0
    */
   openJobCount: number;
+  /**
+   * Number of jobs for this client whose status is neither `closed` nor `archived`. Visible to the caller.
+   * @minimum 0
+   */
+  activeJobCount: number;
+  /**
+   * Total number of jobs for this client visible to the caller (regardless of status).
+   * @minimum 0
+   */
+  totalJobCount: number;
+  /**
+   * Sum of `contractValueCents` across all caller-visible jobs for this client. Cents.
+   * @minimum 0
+   */
+  contractValueCents: bigint;
+  /**
+   * Sum of `amountPaidCents` across all caller-visible jobs for this client. Cents.
+   * @minimum 0
+   */
+  amountPaidCents: bigint;
+  /**
+   * AR rollup: `max(0, contractValueCents - amountPaidCents)`. Cents.
+   * @minimum 0
+   */
+  outstandingCents: bigint;
+  /** Most recent `jobs.updated_at` across the caller-visible jobs for this client. */
+  lastActivityAt?: Date | null;
+  /** Soft-delete timestamp for the client itself. */
+  deletedAt?: Date | null;
+  /** True when the client itself is soft-deleted (`deletedAt is not null`). */
+  archived: boolean;
 }

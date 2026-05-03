@@ -52,10 +52,10 @@ type DrawerNavItem = {
 
 const DRAWER_NAV: DrawerNavItem[] = [
   { label: "Dashboard", to: "/dashboard" },
-  { label: "Jobs", to: "/jobs" },
+  { label: "My Jobs", to: "/jobs", allow: ROLE_GATES.myJobs },
+  { label: "Clients", to: "/clients", allow: ROLE_GATES.clients },
   { label: "Resources", to: "/resources" },
   { label: "Sales", to: "/sales", allow: ROLE_GATES.sales },
-  { label: "Clients", to: "/clients", allow: ROLE_GATES.clients },
   { label: "My Daily Logs", to: "/daily-logs/mine" },
   { label: "Settings", to: "/settings" },
 ]
@@ -71,6 +71,7 @@ export default function TopNav() {
   const role = user?.role
   const canSeeSales = hasRoleAccess(role, ROLE_GATES.sales)
   const canSeeClients = hasRoleAccess(role, ROLE_GATES.clients)
+  const canSeeMyJobs = hasRoleAccess(role, ROLE_GATES.myJobs)
   const drawerNav = DRAWER_NAV.filter(
     (item) => !item.allow || hasRoleAccess(role, item.allow),
   )
@@ -133,19 +134,37 @@ export default function TopNav() {
 
         {/* Primary nav — desktop only */}
         <nav className="hidden lg:flex items-center gap-0.5">
-          <NavLink
-            to="/jobs"
-            className={({ isActive }) =>
-              cn(
-                "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
-                isActive
-                  ? "text-[#E85D04] bg-white/10"
-                  : "text-white/70 hover:text-white hover:bg-white/10",
-              )
-            }
-          >
-            Jobs
-          </NavLink>
+          {canSeeClients && (
+            <NavLink
+              to="/clients"
+              className={({ isActive }) =>
+                cn(
+                  "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
+                  isActive
+                    ? "text-[#E85D04] bg-white/10"
+                    : "text-white/70 hover:text-white hover:bg-white/10",
+                )
+              }
+            >
+              Clients
+            </NavLink>
+          )}
+
+          {canSeeMyJobs && (
+            <NavLink
+              to="/jobs"
+              className={({ isActive }) =>
+                cn(
+                  "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
+                  isActive
+                    ? "text-[#E85D04] bg-white/10"
+                    : "text-white/70 hover:text-white hover:bg-white/10",
+                )
+              }
+            >
+              My Jobs
+            </NavLink>
+          )}
 
           <NavLink
             to="/resources"
@@ -206,22 +225,6 @@ export default function TopNav() {
               }
             >
               Sales
-            </NavLink>
-          )}
-
-          {canSeeClients && (
-            <NavLink
-              to="/clients"
-              className={({ isActive }) =>
-                cn(
-                  "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
-                  isActive
-                    ? "text-[#E85D04] bg-white/10"
-                    : "text-white/70 hover:text-white hover:bg-white/10",
-                )
-              }
-            >
-              Clients
             </NavLink>
           )}
         </nav>

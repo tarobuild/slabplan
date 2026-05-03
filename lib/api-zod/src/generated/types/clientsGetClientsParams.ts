@@ -5,21 +5,26 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ClientsGetClientsStatus } from "./clientsGetClientsStatus";
 
 export type ClientsGetClientsParams = {
   /**
-   * 1-indexed page number. Defaults to 1.
+   * Page number (1-based) for offset pagination.
    * @minimum 1
    */
   page?: number;
   /**
-   * Items per page. Defaults to 20, max 100.
+   * Page size for offset pagination.
    * @minimum 1
    * @maximum 100
    */
   pageSize?: number;
   /**
-   * Case-insensitive substring filter applied across company name, email, and city.
+   * Optional free-text filter across company name, email, and city.
    */
   search?: string;
+  /**
+   * Status filter: active (default, not soft-deleted), archived (soft-deleted), or all.
+   */
+  status?: ClientsGetClientsStatus;
 };

@@ -8,11 +8,13 @@ import {
   inArray,
   isNull,
   or,
+  sql,
+  type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { clientContacts, clients, jobs, users } from "@workspace/db/schema";
+import { clientContacts, clients, jobs } from "@workspace/db/schema";
 import {
   assertCanAccessClient,
   assertCanManageClient,
@@ -27,6 +29,28 @@ const router: IRouter = Router();
 
 router.use(requireManagerOrAbove);
 
+// Deterministic UUID for the "Unknown client" placeholder created by
+// migration 0010. Jobs without a real client (legacy NULL rows or rows
+// orphaned by a client deletion) are assigned to this client so the
+// clients-first navigation always has somewhere to land.
+const UNKNOWN_CLIENT_ID = "8bdd2d52-7563-5843-95f8-aea786f0b386";
+
+// SQL fragment for "this client has activity that makes it active":
+// any non-cancelled (i.e. not archived) job updated within the last
+// 12 months, OR any job with an outstanding balance > $0. Recently
+// completed (`closed`) jobs still count as activity per spec.
+const clientHasActivitySql = sql`exists (
+  select 1 from ${jobs}
+  where ${jobs.clientId} = ${clients.id}
+    and ${jobs.deletedAt} is null
+    and (
+      (${jobs.status} <> 'archived'
+        and ${jobs.updatedAt} > now() - interval '12 months')
+      or (coalesce(${jobs.contractValueCents}, 0)
+            - coalesce(${jobs.amountPaidCents}, 0) > 0)
+    )
+)`;
+
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
   .transform((value) => {
@@ -39,6 +63,7 @@ const clientListQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(20),
   search: z.string().trim().optional(),
+  status: z.enum(["active", "archived", "all"]).optional().default("active"),
 });
 
 const clientPayloadSchema = z.object({
@@ -80,13 +105,25 @@ async function getClientOrThrow(id: string) {
   return client;
 }
 
+// Detail variant that allows opening archived (soft-deleted) clients so
+// the Archived/All chips can navigate into the same Client Detail page.
+async function getClientForDetail(id: string) {
+  const [client] = await db
+    .select()
+    .from(clients)
+    .where(eq(clients.id, id))
+    .limit(1);
+  if (!client) throw new HttpError(404, "Client not found.");
+  return client;
+}
+
 router.get(
   "/",
   asyncHandler(async (req, res) => {
     const query = clientListQuerySchema.safeParse(req.query);
     if (!query.success) throw new HttpError(400, "Invalid query.", query.error.flatten());
 
-    const { page, pageSize, search } = query.data;
+    const { page, pageSize, search, status } = query.data;
     const offset = (page - 1) * pageSize;
     const [accessibleClientIds, accessibleJobIds] = await Promise.all([
       listAccessibleClientIds(req.auth!),
@@ -106,7 +143,22 @@ router.get(
       return;
     }
 
-    const conditions = [isNull(clients.deletedAt)];
+    // Status filter:
+    //   active   → not soft-deleted AND (recent non-closed activity OR outstanding > 0)
+    //   archived → soft-deleted (explicitly archived by deletion)
+    //   all      → no status filter
+    const conditions: SQL[] = [];
+    if (status === "active") {
+      conditions.push(isNull(clients.deletedAt));
+      conditions.push(clientHasActivitySql);
+    } else if (status === "archived") {
+      // Archived = soft-deleted OR inactive (no recent non-closed activity
+      // AND no outstanding balance). This keeps every non-Active client
+      // reachable under the Archived chip rather than only under "All".
+      conditions.push(
+        sql`(${clients.deletedAt} is not null or not ${clientHasActivitySql})`,
+      );
+    }
     if (accessibleClientIds) {
       conditions.push(inArray(clients.id, accessibleClientIds));
     }
@@ -137,6 +189,7 @@ router.get(
         city: clients.city,
         state: clients.state,
         createdAt: clients.createdAt,
+        deletedAt: clients.deletedAt,
       })
       .from(clients)
       .where(whereClause)
@@ -155,7 +208,14 @@ router.get(
       phone: string | null;
       isPrimary: boolean | null;
     };
-    type JobCountRow = { clientId: string | null; id: string; status: string | null };
+    type JobCountRow = {
+      clientId: string | null;
+      id: string;
+      status: string | null;
+      contractValueCents: number | null;
+      amountPaidCents: number | null;
+      updatedAt: Date | null;
+    };
 
     let contactRows: ContactRow[] = [];
     let jobRows: JobCountRow[] = [];
@@ -169,6 +229,9 @@ router.get(
                 clientId: jobs.clientId,
                 id: jobs.id,
                 status: jobs.status,
+                contractValueCents: jobs.contractValueCents,
+                amountPaidCents: jobs.amountPaidCents,
+                updatedAt: jobs.updatedAt,
               })
               .from(jobs)
               .where(
@@ -204,25 +267,51 @@ router.get(
       contactsByClient[c.clientId].push(c);
     }
 
-    const jobCountByClient: Record<string, number> = {};
-    const openJobCountByClient: Record<string, number> = {};
+    type Rollup = {
+      total: number;
+      active: number;
+      contract: number;
+      paid: number;
+      lastActivityAt: Date | null;
+    };
+    const rollupByClient: Record<string, Rollup> = {};
     for (const j of jobRows) {
       if (!j.clientId) continue;
-      jobCountByClient[j.clientId] = (jobCountByClient[j.clientId] ?? 0) + 1;
-      if (j.status === "open") {
-        openJobCountByClient[j.clientId] = (openJobCountByClient[j.clientId] ?? 0) + 1;
+      const r = (rollupByClient[j.clientId] ??= {
+        total: 0,
+        active: 0,
+        contract: 0,
+        paid: 0,
+        lastActivityAt: null,
+      });
+      r.total += 1;
+      if (j.status !== "archived" && j.status !== "closed") r.active += 1;
+      if (typeof j.contractValueCents === "number") r.contract += j.contractValueCents;
+      if (typeof j.amountPaidCents === "number") r.paid += j.amountPaidCents;
+      if (j.updatedAt && (!r.lastActivityAt || j.updatedAt > r.lastActivityAt)) {
+        r.lastActivityAt = j.updatedAt;
       }
     }
 
     const enriched = rows.map((r) => {
       const contacts = contactsByClient[r.id] ?? [];
       const primary = contacts.find((c) => c.isPrimary) ?? contacts[0] ?? null;
+      const roll = rollupByClient[r.id];
+      const contract = roll?.contract ?? 0;
+      const paid = roll?.paid ?? 0;
       return {
         ...r,
         primaryContact: primary,
         contactCount: contacts.length,
-        jobCount: jobCountByClient[r.id] ?? 0,
-        openJobCount: openJobCountByClient[r.id] ?? 0,
+        jobCount: roll?.total ?? 0,
+        openJobCount: roll?.active ?? 0,
+        activeJobCount: roll?.active ?? 0,
+        totalJobCount: roll?.total ?? 0,
+        contractValueCents: contract,
+        amountPaidCents: paid,
+        outstandingCents: Math.max(0, contract - paid),
+        lastActivityAt: roll?.lastActivityAt ?? null,
+        archived: r.deletedAt !== null,
       };
     });
 
@@ -270,7 +359,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     await assertCanAccessClient(req.auth!, clientId);
-    const client = await getClientOrThrow(clientId);
+    const client = await getClientForDetail(clientId);
     const accessibleJobIds = await listAccessibleJobIds(req.auth!);
 
     const [contacts, jobList] = await Promise.all([
@@ -290,8 +379,11 @@ router.get(
               state: jobs.state,
               jobType: jobs.jobType,
               contractPrice: jobs.contractPrice,
+              contractValueCents: jobs.contractValueCents,
+              amountPaidCents: jobs.amountPaidCents,
               projectedStart: jobs.projectedStart,
               projectedCompletion: jobs.projectedCompletion,
+              updatedAt: jobs.updatedAt,
               createdAt: jobs.createdAt,
             })
             .from(jobs)
@@ -305,7 +397,36 @@ router.get(
             .orderBy(desc(jobs.createdAt)),
     ]);
 
-    res.json({ client: { ...client, contacts, jobs: jobList } });
+    let contractTotal = 0;
+    let paidTotal = 0;
+    let activeJobCount = 0;
+    let lastActivityAt: Date | null = null;
+    for (const j of jobList) {
+      if (j.status !== "archived" && j.status !== "closed") activeJobCount += 1;
+      if (typeof j.contractValueCents === "number") contractTotal += j.contractValueCents;
+      if (typeof j.amountPaidCents === "number") paidTotal += j.amountPaidCents;
+      if (j.updatedAt && (!lastActivityAt || j.updatedAt > lastActivityAt)) {
+        lastActivityAt = j.updatedAt;
+      }
+    }
+    const rollups = {
+      contractValueCents: contractTotal,
+      amountPaidCents: paidTotal,
+      outstandingCents: Math.max(0, contractTotal - paidTotal),
+      activeJobCount,
+      totalJobCount: jobList.length,
+      lastActivityAt,
+    };
+
+    res.json({
+      client: {
+        ...client,
+        archived: client.deletedAt !== null,
+        contacts,
+        jobs: jobList,
+        rollups,
+      },
+    });
   }),
 );
 
@@ -349,11 +470,18 @@ router.delete(
 
     const now = new Date();
 
+    if (clientId === UNKNOWN_CLIENT_ID) {
+      throw new HttpError(400, "The Unknown client placeholder cannot be deleted.");
+    }
+
     await db.transaction(async (tx) => {
+      // Reassign live jobs to the Unknown client placeholder so they
+      // remain reachable through the clients-first navigation instead
+      // of being orphaned with a NULL client_id.
       await tx
         .update(jobs)
-        .set({ clientId: null, updatedAt: now })
-        .where(eq(jobs.clientId, clientId));
+        .set({ clientId: UNKNOWN_CLIENT_ID, updatedAt: now })
+        .where(and(eq(jobs.clientId, clientId), isNull(jobs.deletedAt)));
 
       await tx
         .update(clientContacts)
@@ -405,13 +533,28 @@ router.get(
               status: jobs.status,
               city: jobs.city,
               state: jobs.state,
+              streetAddress: jobs.streetAddress,
+              zipCode: jobs.zipCode,
               jobType: jobs.jobType,
+              contractType: jobs.contractType,
               contractPrice: jobs.contractPrice,
+              contractValueCents: jobs.contractValueCents,
+              amountPaidCents: jobs.amountPaidCents,
               projectedStart: jobs.projectedStart,
               projectedCompletion: jobs.projectedCompletion,
+              actualStart: jobs.actualStart,
+              actualCompletion: jobs.actualCompletion,
+              workDays: jobs.workDays,
+              squareFeet: jobs.squareFeet,
+              permitNumber: jobs.permitNumber,
+              clientId: jobs.clientId,
+              clientName: clients.companyName,
+              projectManagerId: jobs.projectManagerId,
+              updatedAt: jobs.updatedAt,
               createdAt: jobs.createdAt,
             })
             .from(jobs)
+            .leftJoin(clients, eq(jobs.clientId, clients.id))
             .where(
               and(
                 eq(jobs.clientId, clientId),

@@ -38,6 +38,10 @@ export interface JobDetail {
   projectManagerName?: string | null;
   clientId?: string | null;
   clientName?: string | null;
+  /** @minimum 0 */
+  contractValueCents?: bigint | null;
+  /** @minimum 0 */
+  amountPaidCents?: bigint | null;
   createdAt: Date;
   updatedAt: Date;
   createdById?: string | null;

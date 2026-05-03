@@ -18,7 +18,7 @@ import {
   getFoldersGetJobsJobIdFoldersUrl,
   jobsDeleteJobsId,
   jobsGetJobsId,
-  jobsPutJobsId,
+  useJobsPutJobsId,
   type JobsJobPayloadSchema,
 } from "@workspace/api-client-react"
 import { JobsPutJobsIdBody } from "@workspace/api-zod"
@@ -103,6 +103,7 @@ export default function JobDetailPage() {
   const [deletingJob, setDeletingJob] = useState(false)
   const stickySentinelRef = useRef<HTMLDivElement | null>(null)
   const [isStickyDocked, setIsStickyDocked] = useState(false)
+  const updateJobMutation = useJobsPutJobsId()
 
   // Toggle a subtle shadow under the sticky job header when the user
   // has scrolled it into its docked position. We watch a 1px sentinel
@@ -249,7 +250,7 @@ export default function JobDetailPage() {
       // issues (matches the pattern used by clients/jobs/leads pages).
       const validated = validatePayload(JobsPutJobsIdBody, payload)
       if (!validated) return
-      const res = await jobsPutJobsId(jobId, validated)
+      const res = await updateJobMutation.mutateAsync({ id: jobId, data: validated })
       const updatedJob = res.job as unknown as Job
       setJob((prev) =>
         prev

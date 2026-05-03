@@ -3,10 +3,15 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import { Briefcase, Calendar, Check, ChevronDown, Loader2, Search, User } from "lucide-react"
 import {
   getJobsGetJobsQueryKey,
+  jobsGetJobsId,
   useJobsGetJobs,
+  useJobsPostJobs,
+  useJobsPutJobsId,
   type JobListItem as JobListItemDto,
   type JobsGetJobsParams,
   type JobsGetJobsQueryResult,
+  type JobsJobCreatePayloadSchema,
+  type JobsJobPayloadSchema,
 } from "@workspace/api-client-react"
 import { ClientsPostClientsBody, JobsPostJobsBody } from "@workspace/api-zod"
 import { useQueryClient } from "@tanstack/react-query"
@@ -530,6 +535,9 @@ export default function JobsPage() {
   const total = jobsQuery.data?.pagination?.totalItems ?? 0
   const loading = jobsQuery.isPending
 
+  const createJobMutation = useJobsPostJobs()
+  const updateJobMutation = useJobsPutJobsId()
+
   const invalidateJobsList = () => {
     void queryClient.invalidateQueries({ queryKey: getJobsGetJobsQueryKey() })
   }
@@ -583,11 +591,11 @@ export default function JobsPage() {
       setStep(1)
       return
     }
-    const payload = validatePayload(JobsPostJobsBody, {
+    const payload: JobsJobCreatePayloadSchema = {
       title: form.title,
-      status: form.status,
+      status: form.status as JobsJobPayloadSchema["status"],
       jobType: form.jobType || null,
-      contractType: form.contractType || null,
+      contractType: (form.contractType || null) as JobsJobPayloadSchema["contractType"],
       streetAddress: form.streetAddress || null,
       city: form.city || null,
       state: form.state || null,
@@ -595,15 +603,16 @@ export default function JobsPage() {
       contractPrice: form.contractPrice || null,
       projectedStart: form.projectedStart || null,
       projectedCompletion: form.projectedCompletion || null,
-      clientId: form.clientId || null,
+      clientId: form.clientId,
       assigneeIds: isAdmin ? form.assigneeIds : [],
-    })
-    if (!payload) return
+    }
+    const validated = validatePayload(JobsPostJobsBody, payload)
+    if (!validated) return
     setSaving(true)
     const hadStartDate = Boolean(form.projectedStart)
     try {
-      const res = await api.post<{ id?: string }>("/jobs", payload)
-      const newJobId = res?.data?.id
+      const res = await createJobMutation.mutateAsync({ data: validated })
+      const newJobId = res?.job?.id
       const openNewJob = () => {
         if (newJobId) navigate(`/jobs/${newJobId}`)
       }
@@ -758,8 +767,8 @@ export default function JobsPage() {
   ) => {
     const snapshots = applyOptimisticPatch(job.id, patch)
     try {
-      const detail = await api.get(`/jobs/${job.id}`)
-      const current = detail.data?.job
+      const detail = await jobsGetJobsId(job.id)
+      const current = detail?.job as unknown as Record<string, unknown> | undefined
       if (!current) throw new Error("Job not found")
 
       const payload = {
@@ -782,8 +791,8 @@ export default function JobsPage() {
         clientId: current.clientId ?? null,
         projectManagerId: current.projectManagerId ?? null,
         ...payloadOverride,
-      }
-      await api.put(`/jobs/${job.id}`, payload)
+      } as JobsJobPayloadSchema
+      await updateJobMutation.mutateAsync({ id: job.id, data: payload })
       toast.success(successMessage)
       invalidateJobsList()
       invalidateAppData(["jobs"])

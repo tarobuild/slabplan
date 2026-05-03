@@ -9,7 +9,7 @@ import {
   jobsGetJobsId,
   jobsGetJobsIdAssignees,
   jobsPostJobsIdAssignees,
-  jobsPutJobsId,
+  useJobsPutJobsId,
   type JobsAssigneePayloadSchema,
   type JobsJobPayloadSchema,
 } from "@workspace/api-client-react"
@@ -166,6 +166,7 @@ export default function JobSummaryPage() {
   const hasUnsavedChanges = !!job && !!savedJob && serializeJob(job) !== serializeJob(savedJob)
   const unsavedChanges = useUnsavedChangesGuard(hasUnsavedChanges && !saving)
   const projectManagerOptions = workerOptions.filter((option) => option.role === "project_manager")
+  const updateJobMutation = useJobsPutJobsId()
 
   useEffect(() => {
     // The OpenAPI spec for `/users` doesn't yet include the `roles`/`limit`
@@ -249,7 +250,7 @@ export default function JobSummaryPage() {
       }
       const validated = validatePayload(JobsPutJobsIdBody, payload)
       if (!validated) return
-      const res = await jobsPutJobsId(jobId, validated)
+      const res = await updateJobMutation.mutateAsync({ id: jobId, data: validated })
       const updatedJob = res.job as unknown as Job
       setJob(updatedJob)
       setSavedJob(updatedJob)

@@ -77,6 +77,13 @@ The api-server uses `exceljs` (not `xlsx` / SheetJS Community) to read uploaded 
   - `client_contacts` requires at least one of `first_name` / `last_name`
     to be non-null.
 
+**API Rate Limits (`artifacts/api-server/src/lib/rate-limit.ts`):**
+- All limiters are in-memory token buckets keyed by IP, email, or authenticated user; defaults are tunable via env vars and the limiter responds with `application/problem+json` (`type=…/rate-limited`, `status=429`) plus a `Retry-After` header.
+- **Login (`POST /api/auth/login`):** 5 failed attempts per IP per 15 min (`LOGIN_IP_MAX`, `LOGIN_IP_WINDOW_MS`) plus a defense-in-depth 5 attempts per email per 15 min (`LOGIN_EMAIL_MAX`, `LOGIN_EMAIL_WINDOW_MS`). A successful login clears BOTH buckets so a legitimate user who mistypes their password a few times is not locked out for the rest of the window.
+- **AI parse endpoints (`POST /api/jobs/:jobId/financials/estimate`, `POST /api/jobs/:jobId/financials/invoices`):** 20 req / hour per authenticated user (`AI_PARSE_PER_USER_MAX`, `AI_PARSE_PER_USER_WINDOW_MS`). Caps spend on the upstream LLM provider.
+- **Upload endpoints (file/attachment routes under `/api/folders/:id/files`, `/api/daily-logs/*/attachments`, `/api/leads/:id/attachments`, `/api/schedule-items/:id/attachments`, `/api/resources/folders/:id/upload`):** 100 req / hour per authenticated user (`UPLOAD_PER_USER_MAX`, `UPLOAD_PER_USER_WINDOW_MS`). Protects object storage from runaway clients.
+- Coverage tests live in `artifacts/api-server/test/audit-fixes.test.ts` (login burst + 429 envelope, daily-log/job-assignee/lead-convert authz gates).
+
 **Model Context Protocol (MCP) Server (`lib/mcp-server`):**
 - Wraps the REST API for external agents, authenticating via PATs.
 - Supports HTTP/streamable and Stdio transports.

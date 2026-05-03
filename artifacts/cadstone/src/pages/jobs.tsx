@@ -594,7 +594,7 @@ export default function JobsPage() {
     const payload: JobsJobCreatePayloadSchema = {
       title: form.title,
       status: form.status as JobsJobPayloadSchema["status"],
-      jobType: form.jobType || null,
+      jobType: (form.jobType || null) as JobsJobPayloadSchema["jobType"],
       contractType: (form.contractType || null) as JobsJobPayloadSchema["contractType"],
       streetAddress: form.streetAddress || null,
       city: form.city || null,

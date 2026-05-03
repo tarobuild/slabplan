@@ -49,6 +49,9 @@ import {
   persistWithStorageRollback,
   uploadArray,
 } from "../lib/uploads";
+import { createUploadPerUserRateLimit } from "../lib/rate-limit";
+
+const uploadRateLimit = createUploadPerUserRateLimit();
 
 const router: IRouter = Router();
 router.use(requireManagerOrAbove);
@@ -1059,6 +1062,7 @@ router.delete(
 
 router.post(
   "/:id/attachments",
+  uploadRateLimit,
   uploadArray("files", 20),
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");

@@ -139,6 +139,74 @@ export function createPerUserApiRateLimit(): RequestHandler {
   });
 }
 
+// Per-user/PAT bucket key. Reused by the AI-parse and upload limiters
+// below so they all key on the same identity dimension as the global
+// per-user limiter — that way "PAT vs interactive session" stays a
+// separate bucket everywhere, and a misbehaving script can be throttled
+// without affecting the user's browser tabs.
+function perUserBucketKey(req: Request) {
+  const userId = req.auth?.userId;
+  if (!userId) return null;
+  const patId = req.auth?.patId;
+  return patId ? `u:${userId}:pat:${patId}` : `u:${userId}:session`;
+}
+
+// Per-user limiter for the AI-backed financials parse endpoints. The AI
+// provider charges real money per call, so the budget is intentionally
+// tight — `AI_PARSE_PER_USER_MAX` (default 20) parses per
+// `AI_PARSE_PER_USER_WINDOW_MS` (default 1 hour). Override via env when
+// load-testing or for one-off bulk imports.
+const AI_PARSE_PER_USER_MAX = Number(process.env.AI_PARSE_PER_USER_MAX ?? 20);
+const AI_PARSE_PER_USER_WINDOW_MS = Number(
+  process.env.AI_PARSE_PER_USER_WINDOW_MS ?? 60 * 60 * 1000,
+);
+
+export function createAiParsePerUserRateLimit(): RequestHandler {
+  return createRateLimit({
+    keyPrefix: "perUser:ai-parse",
+    max: AI_PARSE_PER_USER_MAX,
+    windowMs: AI_PARSE_PER_USER_WINDOW_MS,
+    message:
+      "Too many AI-parse requests for this account. Please slow down or try again later.",
+    resolveKey: perUserBucketKey,
+  });
+}
+
+// Per-user limiter for upload endpoints (folders, daily-logs, leads,
+// schedule, resources, etc.). Defaults to 100 uploads per hour per
+// identity — enough headroom for a normal day on site, low enough that
+// a stuck client loop can't fill object storage. Override via env.
+const UPLOAD_PER_USER_MAX = Number(process.env.UPLOAD_PER_USER_MAX ?? 100);
+const UPLOAD_PER_USER_WINDOW_MS = Number(
+  process.env.UPLOAD_PER_USER_WINDOW_MS ?? 60 * 60 * 1000,
+);
+
+export function createUploadPerUserRateLimit(): RequestHandler {
+  return createRateLimit({
+    keyPrefix: "perUser:uploads",
+    max: UPLOAD_PER_USER_MAX,
+    windowMs: UPLOAD_PER_USER_WINDOW_MS,
+    message:
+      "Too many uploads for this account. Please slow down or try again later.",
+    resolveKey: perUserBucketKey,
+  });
+}
+
+/**
+ * Imperatively clear a single rate-limit bucket. Used by routes that want
+ * a "reset on success" semantic — e.g. the login limiter, where a
+ * successful authentication should wipe the failure counter for that IP
+ * so a legitimate user who fat-fingered their password a few times is
+ * not locked out for the rest of the window.
+ *
+ * `keyPrefix` and `key` must match the values passed to
+ * `createRateLimit`/`resolveKey` exactly; the same `${keyPrefix}:${key}`
+ * composition is used.
+ */
+export function clearRateLimitBucket(keyPrefix: string, key: string): void {
+  buckets.delete(`${keyPrefix}:${key}`);
+}
+
 export function createRateLimit(options: RateLimitOptions): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     const key = options.resolveKey(req);

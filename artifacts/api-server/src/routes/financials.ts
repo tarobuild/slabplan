@@ -21,6 +21,12 @@ import {
 } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
 import { uploadSingle } from "../lib/uploads";
+import { createAiParsePerUserRateLimit } from "../lib/rate-limit";
+
+// Per-user rate limiter for AI-backed parses. Mounted on the two
+// endpoints that actually call Anthropic (estimate + invoice). Keep the
+// reference module-scoped so all calls share one bucket map.
+const aiParseRateLimit = createAiParsePerUserRateLimit();
 import { openStoredFileReadStream } from "../lib/storage";
 import {
   ensureSystemFolders,
@@ -549,6 +555,7 @@ async function buildAnthropicContent(
 
 router.post(
   "/:jobId/financials/estimate",
+  aiParseRateLimit,
   uploadSingle("file"),
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
@@ -1265,6 +1272,7 @@ async function assertLineItemsInJob(lineItemIds: string[], jobId: string) {
 
 router.post(
   "/:jobId/financials/invoices",
+  aiParseRateLimit,
   uploadSingle("file"),
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");

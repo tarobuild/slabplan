@@ -51,6 +51,9 @@ import {
   persistWithStorageRollback,
   uploadArray,
 } from "../lib/uploads";
+import { createUploadPerUserRateLimit } from "../lib/rate-limit";
+
+const uploadRateLimit = createUploadPerUserRateLimit();
 
 const router: IRouter = Router();
 
@@ -1932,6 +1935,7 @@ router.post(
 router.post(
   "/daily-logs/:id/comment-attachments",
   requireDailyLogViewAccess,
+  uploadRateLimit,
   // Comment-attachment uploads are gated by view access (the same level the
   // /comments POST runs under) so anyone allowed to comment can attach. The
   // per-file size cap is tighter than the daily-log attachment cap because
@@ -2033,6 +2037,7 @@ router.post(
 router.post(
   "/daily-logs/:id/attachments",
   requireDailyLogEditAccess,
+  uploadRateLimit,
   uploadArray("files", 20),
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");

@@ -13,7 +13,7 @@ import {
   verifyRefreshToken,
 } from "../lib/auth";
 import { HttpError, asyncHandler } from "../lib/http";
-import { createRateLimit } from "../lib/rate-limit";
+import { clearRateLimitBucket, createRateLimit } from "../lib/rate-limit";
 import { requireAdmin, requireAuth } from "../middleware/require-auth";
 
 // NOTE: There is intentionally no `/forgot-password` or `/reset-password` route.
@@ -33,21 +33,57 @@ function normalizeEmailForRateLimit(value: unknown) {
   return emailPattern.test(normalized) ? normalized : null;
 }
 
+// Per-IP login limiter — 5 failed attempts per 15-minute window by
+// default, tunable via env. The bucket is cleared by the login handler
+// on a successful authentication (see `clearLoginRateLimitForIp`
+// below), so a legitimate user who fat-fingers their password a few
+// times before getting it right is not locked out for the rest of the
+// window. Failed attempts continue to accrue until they either succeed
+// or the window rolls over.
+const LOGIN_IP_KEY_PREFIX = "auth:login:ip";
+const LOGIN_IP_MAX = Number(process.env.LOGIN_IP_MAX ?? 5);
+const LOGIN_IP_WINDOW_MS = Number(
+  process.env.LOGIN_IP_WINDOW_MS ?? 15 * 60 * 1000,
+);
+
 const loginRateLimitByIp = createRateLimit({
-  keyPrefix: "auth:login:ip",
-  max: 10,
-  windowMs: 10 * 60 * 1000,
+  keyPrefix: LOGIN_IP_KEY_PREFIX,
+  max: LOGIN_IP_MAX,
+  windowMs: LOGIN_IP_WINDOW_MS,
   message: "Too many login attempts. Try again later.",
   resolveKey: (req) => req.ip || null,
 });
 
+// Defense-in-depth: also bucket per email so credential-stuffing across
+// many distinct IPs against a single victim account still trips a
+// limit. Tighter window than the IP limiter; the same `clear-on-success`
+// hook below resets this bucket on a valid login.
+const LOGIN_EMAIL_KEY_PREFIX = "auth:login:email";
+const LOGIN_EMAIL_MAX = Number(process.env.LOGIN_EMAIL_MAX ?? 5);
+const LOGIN_EMAIL_WINDOW_MS = Number(
+  process.env.LOGIN_EMAIL_WINDOW_MS ?? 15 * 60 * 1000,
+);
+
 const loginRateLimitByEmail = createRateLimit({
-  keyPrefix: "auth:login:email",
-  max: 5,
-  windowMs: 10 * 60 * 1000,
+  keyPrefix: LOGIN_EMAIL_KEY_PREFIX,
+  max: LOGIN_EMAIL_MAX,
+  windowMs: LOGIN_EMAIL_WINDOW_MS,
   message: "Too many login attempts. Try again later.",
   resolveKey: (req) => normalizeEmailForRateLimit(req.body?.email),
 });
+
+function clearLoginRateLimitForRequest(req: {
+  ip?: string;
+  body?: { email?: unknown };
+}): void {
+  if (req.ip) {
+    clearRateLimitBucket(LOGIN_IP_KEY_PREFIX, req.ip);
+  }
+  const email = normalizeEmailForRateLimit(req.body?.email);
+  if (email) {
+    clearRateLimitBucket(LOGIN_EMAIL_KEY_PREFIX, email);
+  }
+}
 
 function normalizeEmail(value: unknown): string {
   if (typeof value !== "string") {
@@ -180,6 +216,11 @@ router.post(
     if (!isValidPassword) {
       throw new HttpError(401, "Invalid email or password.");
     }
+
+    // Reset both login limiter buckets for this IP and this email so the
+    // 5-attempt budget is refreshed for legitimate users on every
+    // successful sign-in.
+    clearLoginRateLimitForRequest(req);
 
     sendAuthResponse(res, user);
   }),

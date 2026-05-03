@@ -34,10 +34,15 @@ let server: Server;
 let baseUrl: string;
 let adminToken: string;
 let pmToken: string;
+let crewToken: string;
 
 const adminUserId = crypto.randomUUID();
 const pmUserId = crypto.randomUUID();
 const otherPmUserId = crypto.randomUUID();
+const crewUserId = crypto.randomUUID();
+const foreignJobId = crypto.randomUUID();
+const ownedDailyLogId = crypto.randomUUID();
+const foreignDailyLogId = crypto.randomUUID();
 const clientId = crypto.randomUUID();
 const otherClientId = crypto.randomUUID();
 const jobId = crypto.randomUUID();
@@ -65,6 +70,8 @@ const conversationIds: string[] = Array.from({ length: conversationCount }, () =
 const adminEmail = `admin-${adminUserId}@audit-fixes-test.local`;
 const pmEmail = `pm-${pmUserId}@audit-fixes-test.local`;
 const otherPmEmail = `pm2-${otherPmUserId}@audit-fixes-test.local`;
+const crewEmail = `crew-${crewUserId}@audit-fixes-test.local`;
+const adminPassword = "AuditFixes!Pass1";
 
 function makePublicUser(
   id: string,
@@ -115,15 +122,23 @@ before(async () => {
     sovLineItems,
     trackerInvoices,
     agentConversations,
+    dailyLogs,
   } = await import("@workspace/db/schema");
 
   await prepareApp();
+
+  // Real bcrypt hash for the admin so the login + reset-on-success test
+  // below can perform an actual `/api/auth/login` round-trip. Cost 4 is
+  // intentional — secure enough for a throwaway test fixture, fast
+  // enough not to add seconds to the suite.
+  const bcrypt = (await import("bcrypt")).default;
+  const adminPasswordHash = await bcrypt.hash(adminPassword, 4);
 
   await db.insert(users).values([
     {
       id: adminUserId,
       email: adminEmail,
-      passwordHash: "test-not-a-real-hash",
+      passwordHash: adminPasswordHash,
       fullName: "ZZZ Audit Fixes Admin",
       role: "admin",
     },
@@ -140,6 +155,13 @@ before(async () => {
       passwordHash: "test-not-a-real-hash",
       fullName: "ZZZ Audit Fixes Other PM",
       role: "project_manager",
+    },
+    {
+      id: crewUserId,
+      email: crewEmail,
+      passwordHash: "test-not-a-real-hash",
+      fullName: "ZZZ Audit Fixes Crew",
+      role: "crew_member",
     },
   ]);
 
@@ -170,6 +192,16 @@ before(async () => {
       clientId,
       createdBy: adminUserId,
       projectManagerId: pmUserId,
+    },
+    {
+      // A job NOT managed by `pmUserId` so we can test daily-log
+      // edit/delete from a non-owner non-PM perspective without the
+      // canManageJob carve-out kicking in.
+      id: foreignJobId,
+      title: "ZZZ Audit Fixes Foreign Job",
+      clientId,
+      createdBy: adminUserId,
+      projectManagerId: otherPmUserId,
     },
   ]);
 
@@ -231,6 +263,33 @@ before(async () => {
     createdBy: adminUserId,
   });
 
+  // Daily-log seed — both logs are created by `pmUserId` (NOT admin)
+  // so the admin override PUT/DELETE tests below genuinely exercise the
+  // non-owner bypass path (admin is neither creator nor PM-of-job for
+  // `foreignDailyLogId`, and not the creator of `ownedDailyLogId`
+  // either). The crew_member 403 tests target `foreignDailyLogId`,
+  // where crew is not the creator, not admin, and not the PM
+  // (`otherPmUserId` is) — so the only path that could let crew through
+  // is the admin override they don't have.
+  await db.insert(dailyLogs).values([
+    {
+      id: ownedDailyLogId,
+      jobId,
+      logDate: "2026-05-01",
+      title: "ZZZ Audit Owned Log",
+      notes: "",
+      createdBy: pmUserId,
+    },
+    {
+      id: foreignDailyLogId,
+      jobId: foreignJobId,
+      logDate: "2026-05-02",
+      title: "ZZZ Audit Foreign Log",
+      notes: "",
+      createdBy: pmUserId,
+    },
+  ]);
+
   // Agent conversations seed — half pinned, all owned by `pmUserId`.
   // lastMessageAt strictly decreasing so the (pinned, lastMessageAt, id)
   // walk is fully deterministic. Pinned rows sort to page 1 first.
@@ -258,6 +317,9 @@ before(async () => {
       "ZZZ Audit Fixes PM",
     ),
   );
+  crewToken = auth.signAccessToken(
+    makePublicUser(crewUserId, "crew_member", crewEmail, "ZZZ Audit Fixes Crew"),
+  );
 
   server = app.listen(0);
   await new Promise<void>((resolve) =>
@@ -278,13 +340,17 @@ after(async () => {
       .where(inArray(agentConversations.id, conversationIds));
     await db
       .delete(jobs)
-      .where(inArray(jobs.id, [jobId, otherJobId, checkConstraintJobId]));
+      .where(
+        inArray(jobs.id, [jobId, otherJobId, foreignJobId, checkConstraintJobId]),
+      );
     await db
       .delete(clients)
       .where(inArray(clients.id, [clientId, otherClientId]));
     await db
       .delete(users)
-      .where(inArray(users.id, [adminUserId, pmUserId, otherPmUserId]));
+      .where(
+        inArray(users.id, [adminUserId, pmUserId, otherPmUserId, crewUserId]),
+      );
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => {
@@ -640,3 +706,253 @@ test(
     assert.equal(res.status, 400);
   },
 );
+
+// -- 7. POST /jobs/:id/assignees role gate (Task #288) ---------------------
+//
+// `requireAdmin` must reject PM and crew before the handler runs.
+
+test("POST /jobs/:id/assignees — PM is rejected 403", async () => {
+  const res = await fetch(`${baseUrl}/api/jobs/${jobId}/assignees`, {
+    method: "POST",
+    headers: jsonHeaders(pmToken),
+    body: JSON.stringify({ userId: crewUserId }),
+  });
+  assert.equal(res.status, 403);
+});
+
+test("POST /jobs/:id/assignees — crew is rejected 403", async () => {
+  const res = await fetch(`${baseUrl}/api/jobs/${jobId}/assignees`, {
+    method: "POST",
+    headers: jsonHeaders(crewToken),
+    body: JSON.stringify({ userId: crewUserId }),
+  });
+  assert.equal(res.status, 403);
+});
+
+test("POST /jobs/:id/assignees — admin can assign (200)", async () => {
+  const res = await fetch(`${baseUrl}/api/jobs/${jobId}/assignees`, {
+    method: "POST",
+    headers: jsonHeaders(adminToken),
+    body: JSON.stringify({ userId: crewUserId }),
+  });
+  assert.equal(res.status, 201);
+  const body = (await res.json()) as { assignees: Array<{ id: string }> };
+  assert.ok(
+    body.assignees.some((a) => a.id === crewUserId),
+    "expected crew user to appear in returned assignee list",
+  );
+  // Cleanup: remove the assignee row so it doesn't leak across runs.
+  const { db } = await import("@workspace/db");
+  const { jobAssignees } = await import("@workspace/db/schema");
+  const { and: andOp, eq } = await import("drizzle-orm");
+  await db
+    .delete(jobAssignees)
+    .where(
+      andOp(eq(jobAssignees.jobId, jobId), eq(jobAssignees.userId, crewUserId)),
+    );
+});
+
+// -- 8. POST /leads/:id/convert-to-job admin happy-path -------------------
+
+test("POST /leads/:id/convert-to-job — admin succeeds (201)", async () => {
+  const { db } = await import("@workspace/db");
+  const { leads, jobs } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const [lead] = await db
+    .insert(leads)
+    .values({
+      title: "ZZZ Audit Lead for admin convert",
+      status: "in_negotiation",
+      createdBy: adminUserId,
+    })
+    .returning();
+  let createdJobId: string | null = null;
+  try {
+    const res = await fetch(
+      `${baseUrl}/api/leads/${lead.id}/convert-to-job`,
+      { method: "POST", headers: jsonHeaders(adminToken), body: "{}" },
+    );
+    assert.equal(res.status, 201);
+    const body = (await res.json()) as {
+      job: { id: string; title: string; status: string };
+    };
+    createdJobId = body.job.id;
+    assert.equal(body.job.title, "ZZZ Audit Lead for admin convert");
+    // Lead must be marked won.
+    const refreshed = await db.select().from(leads).where(eq(leads.id, lead.id));
+    assert.equal(refreshed[0]?.status, "won");
+  } finally {
+    if (createdJobId) {
+      await db.delete(jobs).where(eq(jobs.id, createdJobId));
+    }
+    await db.delete(leads).where(eq(leads.id, lead.id));
+  }
+});
+
+// -- 9. PUT/DELETE /daily-logs/:id ownership gate (Task #288) -------------
+//
+// `assertCanEditDailyLog` must reject non-owner non-admin non-PM users.
+// Admin override must succeed.
+
+test("PUT /daily-logs/:id — crew (non-owner, non-PM) is rejected 403", async () => {
+  const res = await fetch(`${baseUrl}/api/daily-logs/${foreignDailyLogId}`, {
+    method: "PUT",
+    headers: jsonHeaders(crewToken),
+    body: JSON.stringify({
+      logDate: "2026-05-02",
+      title: "crew edit attempt",
+      notes: "",
+    }),
+  });
+  assert.equal(res.status, 403);
+});
+
+test("DELETE /daily-logs/:id — crew (non-owner, non-PM) is rejected 403", async () => {
+  const res = await fetch(`${baseUrl}/api/daily-logs/${foreignDailyLogId}`, {
+    method: "DELETE",
+    headers: jsonHeaders(crewToken),
+  });
+  assert.equal(res.status, 403);
+  // Sanity: the log is still alive.
+  const { db } = await import("@workspace/db");
+  const { dailyLogs } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const rows = await db
+    .select()
+    .from(dailyLogs)
+    .where(eq(dailyLogs.id, foreignDailyLogId));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].deletedAt, null);
+});
+
+test("PUT /daily-logs/:id — admin override succeeds (200)", async () => {
+  const res = await fetch(`${baseUrl}/api/daily-logs/${ownedDailyLogId}`, {
+    method: "PUT",
+    headers: jsonHeaders(adminToken),
+    body: JSON.stringify({
+      logDate: "2026-05-01",
+      title: "ZZZ Audit Owned Log (admin edit)",
+      notes: "edited by admin override",
+    }),
+  });
+  assert.equal(res.status, 200);
+  const { db } = await import("@workspace/db");
+  const { dailyLogs } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const rows = await db
+    .select()
+    .from(dailyLogs)
+    .where(eq(dailyLogs.id, ownedDailyLogId));
+  assert.equal(rows[0].title, "ZZZ Audit Owned Log (admin edit)");
+});
+
+test("DELETE /daily-logs/:id — admin override succeeds (200, soft-delete)", async () => {
+  const res = await fetch(`${baseUrl}/api/daily-logs/${foreignDailyLogId}`, {
+    method: "DELETE",
+    headers: jsonHeaders(adminToken),
+  });
+  assert.equal(res.status, 200);
+  const { db } = await import("@workspace/db");
+  const { dailyLogs } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const rows = await db
+    .select()
+    .from(dailyLogs)
+    .where(eq(dailyLogs.id, foreignDailyLogId));
+  assert.notEqual(rows[0].deletedAt, null);
+});
+
+// -- 10. Login rate-limit reset-on-success + burst (Task #288) ------------
+//
+// The login limiter is 5 attempts per 15 min keyed BOTH per IP and per
+// email. A successful login MUST clear both buckets so a legitimate
+// user who fat-fingered their password a few times is not locked out.
+// Order matters here: this test runs first, ends by clearing both
+// buckets via a successful login, so the burst test below starts from
+// a clean IP bucket.
+
+test(
+  "POST /api/auth/login — successful login resets the failure counter",
+  async () => {
+    const headers = {
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+    } as const;
+
+    // Four wrong-password attempts — well inside the 5-per-15-min budget.
+    for (let i = 0; i < 4; i++) {
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ email: adminEmail, password: "wrongwrong" }),
+      });
+      assert.equal(
+        res.status,
+        401,
+        `attempt ${i + 1} should be 401 (invalid creds), not throttled`,
+      );
+    }
+
+    // Correct password — must succeed AND clear both the per-IP and
+    // per-email buckets.
+    const success = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    assert.equal(success.status, 200);
+
+    // After the reset, a fresh wrong-password attempt for the SAME
+    // email + IP must return 401 again (proving bucket cleared) — not
+    // 429 (which would mean the previous failures still counted).
+    const after = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ email: adminEmail, password: "wrongwrong" }),
+    });
+    assert.equal(
+      after.status,
+      401,
+      "post-success failed attempt should be 401, not 429 — buckets must be cleared on success",
+    );
+  },
+);
+
+test("POST /api/auth/login — burst past the limiter yields 429 + Retry-After", async () => {
+  const burstEmail = `ratelimit-${crypto.randomUUID()}@audit-fixes-test.local`;
+  const headers = {
+    "content-type": "application/json",
+    "x-requested-with": "XMLHttpRequest",
+  } as const;
+  const body = JSON.stringify({ email: burstEmail, password: "wrongwrong" });
+
+  // First five attempts fail 401 (invalid credentials) but consume the
+  // bucket. The sixth must be 429.
+  let lastStatus = 0;
+  let lastHeaders: Headers | null = null;
+  let lastBody: unknown = null;
+  for (let i = 0; i < 6; i++) {
+    const res = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers,
+      body,
+    });
+    lastStatus = res.status;
+    lastHeaders = res.headers;
+    lastBody = await res.json().catch(() => null);
+  }
+  assert.equal(lastStatus, 429, "expected 429 on the 6th attempt");
+  const retryAfter = lastHeaders?.get("retry-after");
+  assert.ok(retryAfter && Number(retryAfter) >= 1, "Retry-After header must be set");
+  // problem+json envelope (RFC 7807 + legacy `message` alias used by
+  // the SPA): verify the body carries the rate-limit type slug AND a
+  // human-readable message so clients render it consistently.
+  const parsed = lastBody as {
+    type?: string;
+    status?: number;
+    message?: string;
+  };
+  assert.equal(parsed?.status, 429);
+  assert.match(parsed?.type ?? "", /rate-limited/);
+  assert.match(parsed?.message ?? "", /too many login/i);
+});

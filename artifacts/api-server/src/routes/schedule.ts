@@ -60,6 +60,9 @@ import {
   deletePhysicalFileBestEffort,
   uploadArray,
 } from "../lib/uploads";
+import { createUploadPerUserRateLimit } from "../lib/rate-limit";
+
+const uploadRateLimit = createUploadPerUserRateLimit();
 
 const router: IRouter = Router();
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete" | "execute">;
@@ -3874,6 +3877,7 @@ router.post(
 router.post(
   "/schedule-items/:id/attachments",
   requireScheduleItemRouteAccess,
+  uploadRateLimit,
   uploadArray("files", 20),
   asyncHandler(async (req, res) => {
     const itemId = getParam(req.params.id, "schedule item id");

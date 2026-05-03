@@ -30,7 +30,10 @@ import { withFileViewLogging } from "../lib/file-view-log";
 import { HttpError, asyncHandler } from "../lib/http";
 import { streamStoredFileToResponse } from "../lib/storage";
 import { uploadArray } from "../lib/uploads";
+import { createUploadPerUserRateLimit } from "../lib/rate-limit";
 import { assertActiveUserById } from "../lib/active-user";
+
+const uploadRateLimit = createUploadPerUserRateLimit();
 
 const router: IRouter = Router();
 
@@ -125,6 +128,7 @@ router.get(
 
 router.post(
   "/folders/:id/files",
+  uploadRateLimit,
   uploadArray("files", 20),
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");

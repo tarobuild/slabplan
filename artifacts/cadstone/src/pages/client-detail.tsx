@@ -13,6 +13,7 @@ import { api } from "@/lib/api"
 import { toastApiError } from "@/lib/api-errors"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { useAuthStore } from "@/store/auth"
+import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -383,6 +384,11 @@ export default function ClientDetailPage() {
       active = false
     }
   }, [clientId])
+
+  // Re-fetch the client header (incl. AR rollup) whenever a downstream
+  // page invalidates the "clients" resource — for example, after an
+  // edit on the Job Financials tab.
+  useEffect(() => subscribeToDataRefresh("clients", () => void refetch()), [refetch])
 
   async function saveJobFields(
     jobId: string,

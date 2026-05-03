@@ -2,7 +2,11 @@ import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query"
 import { ApiError, setAuthTokenGetter } from "@workspace/api-client-react"
 import { useAuthStore } from "@/store/auth"
 import { refreshSession } from "@/lib/api"
-import { subscribeToDataRefresh, type AppDataResource } from "@/lib/data-refresh"
+import {
+  invalidateAppData,
+  subscribeToDataRefresh,
+  type AppDataResource,
+} from "@/lib/data-refresh"
 
 let initialized = false
 
@@ -103,6 +107,34 @@ function bridgeDataRefreshToReactQuery(): void {
 
 export function getQueryClient(): QueryClient {
   return queryClient
+}
+
+/**
+ * Invalidate every cache surface that may show financials rollups
+ * (Client Detail AR card, Clients list "Outstanding" column, Jobs
+ * list contract numbers, Dashboard agendas). Call after every
+ * tracker mutation (estimate parse, line-item PATCH, area CRUD,
+ * CO create, invoice upload/delete, matches PATCH).
+ */
+export function invalidateFinancialsRollups(
+  qc: QueryClient,
+  opts?: { clientId?: string | null; jobId?: string | null },
+): void {
+  // Bridge fires URL-prefix invalidations for any react-query that
+  // keys off /api/clients, /api/jobs, /api/dashboard. Also notifies
+  // pages that subscribe to the data-refresh event bus directly
+  // (Client Detail header, Sidebar, Dashboard cal/sidebar).
+  invalidateAppData(["clients", "jobs", "dashboard"])
+
+  // Best-effort literal-key invalidations for callers that key by id.
+  if (opts?.clientId) {
+    void qc.invalidateQueries({ queryKey: ["clients", opts.clientId] })
+  }
+  if (opts?.jobId) {
+    void qc.invalidateQueries({ queryKey: ["jobs", opts.jobId] })
+  }
+  void qc.invalidateQueries({ queryKey: ["dashboard", "agenda"] })
+  void qc.invalidateQueries({ queryKey: ["dashboard", "schedule"] })
 }
 
 export function configureApiClient(): void {

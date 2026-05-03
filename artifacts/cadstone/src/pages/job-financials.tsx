@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
   AlertTriangle,
@@ -19,8 +20,13 @@ import {
   X,
 } from "lucide-react"
 import { api } from "@/lib/api"
-import { toastApiError } from "@/lib/api-errors"
+import { ApiError } from "@workspace/api-client-react"
+import { isAxiosError } from "axios"
+import { apiErrorDetailCode, toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
+import { invalidateFinancialsRollups } from "@/lib/query-client"
+import { formatCurrencyCents } from "@/lib/format"
+import { describePercentLowering } from "@/lib/percent-confirm"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -90,6 +96,10 @@ type TrackerData = {
     currency: string
     estimateFileId: string | null
   }
+  // Parent client of this job; surfaced by the API so cache
+  // invalidation can refresh the Client Detail AR card without
+  // an extra round-trip (#275 follow-up).
+  clientId: string | null
   areas: Area[]
   changeOrders: ChangeOrder[]
   invoices: Invoice[]
@@ -103,13 +113,16 @@ type TrackerData = {
   }
 }
 
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format((cents ?? 0) / 100)
+// Use the shared cents-aware formatter so SOV totals match the way
+// money is displayed elsewhere (Clients / Jobs / Client Detail). Cents
+// are always shown — invoice + SOV math is too sensitive to round to
+// whole dollars (#275).
+const formatCurrency = formatCurrencyCents
+
+export type AiParseError = {
+  file: File
+  code: string
+  message: string
 }
 
 function statusForPct(pct: number): { label: string; cls: string } {
@@ -137,10 +150,370 @@ function downloadCsv(filename: string, rows: (string | number | null | undefined
   URL.revokeObjectURL(url)
 }
 
+// ─── Memoized SOV row components (#275 follow-up) ─────────────────
+//
+// The SOV table is the most expensive surface on this page: every
+// PATCH triggers a full reload(), which re-builds the whole tree.
+// Hoisting line-item and area rows to module scope and wrapping in
+// React.memo means rows whose props are reference-equal (the same
+// `li`, the same handler identities) skip re-rendering. The parent
+// owns the data and passes stable useCallback handlers down.
+//
+// Inputs use `defaultValue` (uncontrolled) so typing inside one row
+// never re-renders siblings.
+
+type LineItemPatch = Partial<{
+  description: string
+  qty: number
+  rateCents: number
+  scheduledValueCents: number
+  percentComplete: number
+}>
+
+type SovLineItemRowProps = {
+  li: LineItem
+  invoices: Invoice[]
+  onUpdate: (id: string, patch: LineItemPatch) => void
+  onDelete: (id: string) => void
+}
+
+const SovLineItemRow = memo(function SovLineItemRow({
+  li,
+  invoices,
+  onUpdate,
+  onDelete,
+}: SovLineItemRowProps) {
+  const paymentByInv = useMemo(
+    () => new Map(li.payments.map((p) => [p.invoiceId, p.amountCents])),
+    [li.payments],
+  )
+  const liPct = Math.round(Number(li.percentComplete) || 0)
+  const liStatus = statusForPct(liPct)
+  return (
+    <tr className="border-t">
+      <td className="px-3 py-2">
+        <Badge variant="outline" className={liStatus.cls}>
+          {liStatus.label}
+        </Badge>
+      </td>
+      <td className="px-3 py-2">
+        <Input
+          defaultValue={li.description}
+          onBlur={(e) => {
+            if (e.target.value !== li.description) {
+              onUpdate(li.id, { description: e.target.value })
+            }
+          }}
+          className="h-8"
+        />
+      </td>
+      <td className="px-3 py-2 text-right">
+        <Input
+          type="number"
+          defaultValue={String(Number(li.qty))}
+          onBlur={(e) => {
+            const v = Number(e.target.value)
+            if (!Number.isNaN(v) && v !== Number(li.qty)) {
+              onUpdate(li.id, { qty: v })
+            }
+          }}
+          className="h-8 w-20 text-right"
+        />
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        <Input
+          type="number"
+          step="0.01"
+          defaultValue={(li.rateCents / 100).toFixed(2)}
+          onBlur={(e) => {
+            const v = Number(e.target.value)
+            const cents = Math.round(v * 100)
+            if (!Number.isNaN(v) && cents !== Number(li.rateCents)) {
+              onUpdate(li.id, { rateCents: cents })
+            }
+          }}
+          className="h-8 w-24 text-right"
+        />
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        <Input
+          type="number"
+          step="0.01"
+          defaultValue={(li.scheduledValueCents / 100).toFixed(2)}
+          onBlur={(e) => {
+            const v = Number(e.target.value)
+            const cents = Math.round(v * 100)
+            if (Number.isNaN(v) || cents === Number(li.scheduledValueCents)) {
+              return
+            }
+            // Lowering scheduled below the current billed will cap
+            // billed down to the new scheduled → confirm.
+            const currentBilled = Number(li.billedCents)
+            const projectedBilled = Math.min(currentBilled, cents)
+            if (projectedBilled < currentBilled) {
+              const ok = window.confirm(
+                `Lowering scheduled value will reduce billed from ${formatCurrency(currentBilled)} to ${formatCurrency(projectedBilled)}. Continue?`,
+              )
+              if (!ok) {
+                e.target.value = (li.scheduledValueCents / 100).toFixed(2)
+                return
+              }
+            }
+            onUpdate(li.id, { scheduledValueCents: cents })
+          }}
+          className="h-8 w-28 text-right"
+        />
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        {formatCurrency(li.billedCents)}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        {formatCurrency(
+          Math.max(
+            0,
+            Number(li.scheduledValueCents) - Number(li.billedCents),
+          ),
+        )}
+      </td>
+      <td className="px-3 py-2 text-right">
+        <Input
+          type="number"
+          min={0}
+          max={100}
+          step="1"
+          defaultValue={Number(li.percentComplete).toFixed(0)}
+          aria-label={`Percent complete for ${li.description}`}
+          onBlur={(e) => {
+            const v = Number(e.target.value)
+            if (
+              Number.isNaN(v) ||
+              v.toFixed(2) === Number(li.percentComplete).toFixed(2)
+            ) {
+              return
+            }
+            // Safety check: dropping % below already-applied invoice
+            // payments would silently shrink billed under the matched
+            // amount. Predicate lives in lib/percent-confirm.ts so it
+            // can be unit-tested apart from React.
+            const conflict = describePercentLowering({
+              scheduledValueCents: Number(li.scheduledValueCents) || 0,
+              newPercent: v,
+              payments: li.payments,
+            })
+            if (conflict.needsConfirm) {
+              const invNos = li.payments
+                .map((p) => {
+                  const inv = invoices.find((x) => x.id === p.invoiceId)
+                  return inv?.invoiceNumber ?? inv?.id.slice(0, 6) ?? "?"
+                })
+                .join(", ")
+              const ok = window.confirm(
+                `This line already has ${formatCurrency(conflict.appliedCents)} applied from invoice(s) ${invNos}. ` +
+                  `Setting % complete to ${v}% would lower billed to ${formatCurrency(conflict.proposedBilledCents)}, which is below the matched amount.\n\n` +
+                  `Continue anyway?`,
+              )
+              if (!ok) {
+                e.target.value = Number(li.percentComplete).toFixed(0)
+                return
+              }
+            }
+            onUpdate(li.id, { percentComplete: v })
+          }}
+          className="h-8 w-16 text-right"
+        />
+      </td>
+      {invoices.map((inv) => {
+        const amt = paymentByInv.get(inv.id) ?? 0
+        return (
+          <td key={inv.id} className="px-3 py-2 text-right tabular-nums">
+            {amt > 0 ? (
+              formatCurrency(amt)
+            ) : (
+              <span className="text-slate-300">—</span>
+            )}
+          </td>
+        )
+      })}
+      <td className="px-3 py-2 text-right">
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label={`Delete line item: ${li.description}`}
+          onClick={() => onDelete(li.id)}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </td>
+    </tr>
+  )
+})
+
+type SovAreaRowProps = {
+  area: Area
+  invoices: Invoice[]
+  collapsed: boolean
+  onToggle: (id: string) => void
+  onAddLineItem: (id: string) => void
+  onRenameArea: (id: string, name: string) => void
+  onDeleteArea: (id: string, name: string) => void
+  onUpdateLineItem: (id: string, patch: LineItemPatch) => void
+  onDeleteLineItem: (id: string) => void
+}
+
+const SovAreaRow = memo(function SovAreaRow({
+  area,
+  invoices,
+  collapsed,
+  onToggle,
+  onAddLineItem,
+  onRenameArea,
+  onDeleteArea,
+  onUpdateLineItem,
+  onDeleteLineItem,
+}: SovAreaRowProps) {
+  const sched = area.lineItems.reduce(
+    (s, li) => s + Number(li.scheduledValueCents),
+    0,
+  )
+  const billed = area.lineItems.reduce(
+    (s, li) => s + Number(li.billedCents),
+    0,
+  )
+  const pct = sched > 0 ? Math.round((billed / sched) * 100) : 0
+  const status = statusForPct(pct)
+  const isCO = area.isChangeOrderGroup
+  return (
+    <div
+      className={`rounded-lg border ${isCO ? "border-violet-300 bg-violet-50/30" : ""}`}
+    >
+      <div
+        className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2 ${isCO ? "bg-violet-100/60" : "bg-muted/40"}`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onToggle(area.id)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label={collapsed ? "Expand area" : "Collapse area"}
+            >
+              {collapsed ? (
+                <ChevronRight className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+            </button>
+            <div className="text-sm font-semibold">{area.name}</div>
+            {isCO ? (
+              <Badge className="border-violet-300 bg-violet-100 text-violet-800 hover:bg-violet-100">
+                Change Order
+              </Badge>
+            ) : null}
+            <Badge variant="outline" className={status.cls}>
+              {status.label}
+            </Badge>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {formatCurrency(billed)} / {formatCurrency(sched)} ({pct}%)
+            </span>
+          </div>
+          {area.floor ? (
+            <div className="text-xs text-muted-foreground">{area.floor}</div>
+          ) : null}
+          <div className="mt-2 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-slate-200">
+            <div
+              className="h-full bg-orange-500 transition-all"
+              style={{ width: `${Math.min(100, pct)}%` }}
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onAddLineItem(area.id)}
+          >
+            <Plus className="mr-1 h-4 w-4" /> Line item
+          </Button>
+          {isCO ? null : (
+            <>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Rename area"
+                onClick={() => onRenameArea(area.id, area.name)}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Delete area"
+                onClick={() => onDeleteArea(area.id, area.name)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+      {collapsed ? null : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left">Status</th>
+                <th className="px-3 py-2 text-left">Description</th>
+                <th className="px-3 py-2 text-right">Qty</th>
+                <th className="px-3 py-2 text-right">Rate</th>
+                <th className="px-3 py-2 text-right">Scheduled</th>
+                <th className="px-3 py-2 text-right">Billed</th>
+                <th className="px-3 py-2 text-right">Balance</th>
+                <th className="px-3 py-2 text-right">% Done</th>
+                {invoices.map((inv) => (
+                  <th
+                    key={inv.id}
+                    className="px-3 py-2 text-right whitespace-nowrap"
+                    title={inv.invoiceDate ?? ""}
+                  >
+                    Inv {inv.invoiceNumber ?? inv.id.slice(0, 6)}
+                  </th>
+                ))}
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {area.lineItems.map((li) => (
+                <SovLineItemRow
+                  key={li.id}
+                  li={li}
+                  invoices={invoices}
+                  onUpdate={onUpdateLineItem}
+                  onDelete={onDeleteLineItem}
+                />
+              ))}
+              {area.lineItems.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={9 + invoices.length}
+                    className="px-3 py-4 text-center text-xs text-muted-foreground"
+                  >
+                    No line items
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+})
+
 export default function JobFinancialsPage() {
   const { jobId } = useParams<{ jobId: string }>()
   const user = useAuthStore((s) => s.user)
   const canManage = user?.role === "admin" || user?.role === "project_manager"
+  const queryClient = useQueryClient()
   const [data, setData] = useState<TrackerData | null>(null)
   const [loading, setLoading] = useState(true)
   const [estimateUploading, setEstimateUploading] = useState(false)
@@ -152,10 +525,72 @@ export default function JobFinancialsPage() {
   const [matchDraft, setMatchDraft] = useState<Record<string, string>>({})
   const [savingMatches, setSavingMatches] = useState(false)
   const [collapsedAreas, setCollapsedAreas] = useState<Record<string, boolean>>({})
-  const toggleArea = (areaId: string) =>
-    setCollapsedAreas((m) => ({ ...m, [areaId]: !m[areaId] }))
+  // Holds the last-failed AI parse so the user can hit "Try again"
+  // without re-picking the file. Cleared on success or explicit
+  // dismiss. Drift item from #269 / #275.
+  const [estimateError, setEstimateError] = useState<AiParseError | null>(null)
+  const [invoiceError, setInvoiceError] = useState<AiParseError | null>(null)
+  const toggleArea = useCallback(
+    (areaId: string) =>
+      setCollapsedAreas((m) => ({ ...m, [areaId]: !m[areaId] })),
+    [],
+  )
   const estimateInputRef = useRef<HTMLInputElement>(null)
   const invoiceInputRef = useRef<HTMLInputElement>(null)
+
+  // We re-read clientId from the latest data on each call rather
+  // than capturing it in the dep array — invalidate() is passed to
+  // many useCallback'd handlers and we don't want to invalidate
+  // their identity every time the tracker reloads.
+  const dataRef = useRef<TrackerData | null>(null)
+  dataRef.current = data
+  const invalidate = useCallback(() => {
+    invalidateFinancialsRollups(queryClient, {
+      jobId: jobId ?? null,
+      clientId: dataRef.current?.clientId ?? null,
+    })
+  }, [queryClient, jobId])
+
+  // Pull a stable error code + human message out of an axios/ApiError
+  // response so the AI retry block can surface what actually went wrong.
+  // Estimate/invoice uploads go through the Axios `api` instance, not
+  // the ApiError-throwing fetch client, so we try Axios first and fall
+  // back to ApiError + generic Error.
+  const toAiError = useCallback(
+    (err: unknown, file: File, fallback: string): AiParseError => {
+      if (isAxiosError(err)) {
+        // Prefer the structured `errors.code` the API surfaces inside
+        // problem+json bodies (e.g. AI_PARSE_FAILED, LIMIT_FILE_SIZE).
+        // Fall back to HTTP_<status> so the retry block always shows
+        // something machine-readable.
+        const detailCode = apiErrorDetailCode(err)
+        const status = err.response?.status
+        const data = err.response?.data as
+          | { message?: string; error?: string }
+          | undefined
+        return {
+          file,
+          code: detailCode ?? (status ? `HTTP_${status}` : err.code ?? "UNKNOWN"),
+          message:
+            data?.message ?? data?.error ?? err.message ?? fallback,
+        }
+      }
+      if (err instanceof ApiError) {
+        const data = err.data as { message?: string; error?: string } | undefined
+        return {
+          file,
+          code: `HTTP_${err.status}`,
+          message: data?.message ?? data?.error ?? err.message ?? fallback,
+        }
+      }
+      return {
+        file,
+        code: "UNKNOWN",
+        message: err instanceof Error ? err.message : fallback,
+      }
+    },
+    [],
+  )
 
   const load = useCallback(async () => {
     if (!jobId) return
@@ -183,8 +618,13 @@ export default function JobFinancialsPage() {
         headers: { "Content-Type": "multipart/form-data" },
       })
       setData(res.data)
+      setEstimateError(null)
+      invalidate()
       toast.success("Estimate parsed")
     } catch (err) {
+      // Hold the file in state so "Try again" can re-run the parse
+      // without forcing the user to re-pick the document.
+      setEstimateError(toAiError(err, file, "Failed to parse estimate"))
       toastApiError(err, "Failed to parse estimate")
     } finally {
       setEstimateUploading(false)
@@ -206,7 +646,7 @@ export default function JobFinancialsPage() {
     if (f) await performEstimateUpload(f)
   }
 
-  const onInvoicePicked = async (file: File) => {
+  const performInvoiceUpload = async (file: File) => {
     if (!jobId) return
     setInvoiceUploading(true)
     try {
@@ -218,8 +658,11 @@ export default function JobFinancialsPage() {
         { headers: { "Content-Type": "multipart/form-data" } },
       )
       setData(res.data)
+      setInvoiceError(null)
+      invalidate()
       toast.success("Invoice matched and applied")
     } catch (err) {
+      setInvoiceError(toAiError(err, file, "Failed to ingest invoice"))
       toastApiError(err, "Failed to ingest invoice")
     } finally {
       setInvoiceUploading(false)
@@ -227,35 +670,47 @@ export default function JobFinancialsPage() {
     }
   }
 
-  const updateLineItem = async (
-    lineItemId: string,
-    patch: Partial<{
-      description: string
-      qty: number
-      rateCents: number
-      scheduledValueCents: number
-      percentComplete: number
-    }>,
-  ) => {
-    if (!jobId) return
-    try {
-      await api.patch(`/jobs/${jobId}/financials/line-items/${lineItemId}`, patch)
-      await load()
-    } catch (err) {
-      toastApiError(err, "Failed to update line item")
-    }
+  const onInvoicePicked = (file: File) => {
+    void performInvoiceUpload(file)
   }
 
-  const deleteLineItem = async (lineItemId: string) => {
-    if (!jobId) return
-    if (!window.confirm("Delete this line item?")) return
-    try {
-      await api.delete(`/jobs/${jobId}/financials/line-items/${lineItemId}`)
-      await load()
-    } catch (err) {
-      toastApiError(err, "Failed to delete line item")
-    }
-  }
+  const updateLineItem = useCallback(
+    async (
+      lineItemId: string,
+      patch: Partial<{
+        description: string
+        qty: number
+        rateCents: number
+        scheduledValueCents: number
+        percentComplete: number
+      }>,
+    ) => {
+      if (!jobId) return
+      try {
+        await api.patch(`/jobs/${jobId}/financials/line-items/${lineItemId}`, patch)
+        await load()
+        invalidate()
+      } catch (err) {
+        toastApiError(err, "Failed to update line item")
+      }
+    },
+    [jobId, load, invalidate],
+  )
+
+  const deleteLineItem = useCallback(
+    async (lineItemId: string) => {
+      if (!jobId) return
+      if (!window.confirm("Delete this line item?")) return
+      try {
+        await api.delete(`/jobs/${jobId}/financials/line-items/${lineItemId}`)
+        await load()
+        invalidate()
+      } catch (err) {
+        toastApiError(err, "Failed to delete line item")
+      }
+    },
+    [jobId, load, invalidate],
+  )
 
   const addArea = async () => {
     if (!jobId) return
@@ -264,39 +719,48 @@ export default function JobFinancialsPage() {
     try {
       await api.post(`/jobs/${jobId}/financials/areas`, { name })
       await load()
+      invalidate()
     } catch (err) {
       toastApiError(err, "Failed to add area")
     }
   }
 
-  const renameArea = async (areaId: string, currentName: string) => {
-    if (!jobId) return
-    const next = window.prompt("Rename area", currentName)?.trim()
-    if (!next || next === currentName) return
-    try {
-      await api.patch(`/jobs/${jobId}/financials/areas/${areaId}`, { name: next })
-      await load()
-    } catch (err) {
-      toastApiError(err, "Failed to rename area")
-    }
-  }
+  const renameArea = useCallback(
+    async (areaId: string, currentName: string) => {
+      if (!jobId) return
+      const next = window.prompt("Rename area", currentName)?.trim()
+      if (!next || next === currentName) return
+      try {
+        await api.patch(`/jobs/${jobId}/financials/areas/${areaId}`, { name: next })
+        await load()
+        invalidate()
+      } catch (err) {
+        toastApiError(err, "Failed to rename area")
+      }
+    },
+    [jobId, load, invalidate],
+  )
 
-  const deleteArea = async (areaId: string, name: string) => {
-    if (!jobId) return
-    if (
-      !window.confirm(
-        `Delete area "${name}" and all of its line items? Invoice payments tied to this area will also be reversed.`,
-      )
-    ) {
-      return
-    }
-    try {
-      await api.delete(`/jobs/${jobId}/financials/areas/${areaId}`)
-      await load()
-    } catch (err) {
-      toastApiError(err, "Failed to delete area")
-    }
-  }
+  const deleteArea = useCallback(
+    async (areaId: string, name: string) => {
+      if (!jobId) return
+      if (
+        !window.confirm(
+          `Delete area "${name}" and all of its line items? Invoice payments tied to this area will also be reversed.`,
+        )
+      ) {
+        return
+      }
+      try {
+        await api.delete(`/jobs/${jobId}/financials/areas/${areaId}`)
+        await load()
+        invalidate()
+      } catch (err) {
+        toastApiError(err, "Failed to delete area")
+      }
+    },
+    [jobId, load, invalidate],
+  )
 
   const openInvoiceFile = async (fileId: string) => {
     try {
@@ -307,20 +771,24 @@ export default function JobFinancialsPage() {
     }
   }
 
-  const addLineItem = async (areaId: string) => {
-    if (!jobId) return
-    const description = window.prompt("Line item description")?.trim()
-    if (!description) return
-    try {
-      await api.post(`/jobs/${jobId}/financials/line-items`, {
-        areaId,
-        description,
-      })
-      await load()
-    } catch (err) {
-      toastApiError(err, "Failed to add line item")
-    }
-  }
+  const addLineItem = useCallback(
+    async (areaId: string) => {
+      if (!jobId) return
+      const description = window.prompt("Line item description")?.trim()
+      if (!description) return
+      try {
+        await api.post(`/jobs/${jobId}/financials/line-items`, {
+          areaId,
+          description,
+        })
+        await load()
+        invalidate()
+      } catch (err) {
+        toastApiError(err, "Failed to add line item")
+      }
+    },
+    [jobId, load, invalidate],
+  )
 
   const addChangeOrder = async () => {
     if (!jobId) return
@@ -350,6 +818,7 @@ export default function JobFinancialsPage() {
         areaId,
       })
       await load()
+      invalidate()
     } catch (err) {
       toastApiError(err, "Failed to add change order")
     }
@@ -363,6 +832,7 @@ export default function JobFinancialsPage() {
     try {
       await api.patch(`/jobs/${jobId}/financials/change-orders/${coId}`, { status })
       await load()
+      invalidate()
     } catch (err) {
       toastApiError(err, "Failed to update change order")
     }
@@ -374,6 +844,7 @@ export default function JobFinancialsPage() {
     try {
       await api.delete(`/jobs/${jobId}/financials/invoices/${invoiceId}`)
       await load()
+      invalidate()
     } catch (err) {
       toastApiError(err, "Failed to delete invoice")
     }
@@ -388,6 +859,7 @@ export default function JobFinancialsPage() {
       })
       setEditingProject(false)
       await load()
+      invalidate()
     } catch (err) {
       toastApiError(err, "Failed to update tracker")
     }
@@ -419,6 +891,7 @@ export default function JobFinancialsPage() {
       )
       setData(res.data)
       setMatchesInvoice(null)
+      invalidate()
       toast.success("Matches saved")
     } catch (err) {
       toastApiError(err, "Failed to save matches")
@@ -607,6 +1080,49 @@ export default function JobFinancialsPage() {
             </Button>
           </div>
         </CardHeader>
+        {estimateError ? (
+          <div
+            role="alert"
+            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900"
+          >
+            <div className="min-w-0">
+              <div className="font-medium">
+                Couldn’t parse {estimateError.file.name}
+              </div>
+              <div className="truncate text-xs text-orange-800">
+                <span className="font-mono">{estimateError.code}</span>
+                {": "}
+                {estimateError.message}
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={estimateUploading}
+                onClick={() => {
+                  const f = estimateError.file
+                  void performEstimateUpload(f)
+                }}
+              >
+                {estimateUploading ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1 h-4 w-4" />
+                )}
+                Try again
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Dismiss estimate parse error"
+                onClick={() => setEstimateError(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <CardContent>
           {editingProject ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -701,288 +1217,20 @@ export default function JobFinancialsPage() {
               No areas yet. Parse an estimate PDF or add an area manually.
             </div>
           ) : (
-            data.areas.map((area) => {
-              const sched = area.lineItems.reduce(
-                (s, li) => s + Number(li.scheduledValueCents),
-                0,
-              )
-              const billed = area.lineItems.reduce(
-                (s, li) => s + Number(li.billedCents),
-                0,
-              )
-              const pct = sched > 0 ? Math.round((billed / sched) * 100) : 0
-              const status = statusForPct(pct)
-              const isCO = area.isChangeOrderGroup
-              return (
-                <div
-                  key={area.id}
-                  className={`rounded-lg border ${isCO ? "border-violet-300 bg-violet-50/30" : ""}`}
-                >
-                  <div
-                    className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2 ${isCO ? "bg-violet-100/60" : "bg-muted/40"}`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleArea(area.id)}
-                          className="text-muted-foreground hover:text-foreground"
-                          aria-label={
-                            collapsedAreas[area.id] ? "Expand area" : "Collapse area"
-                          }
-                        >
-                          {collapsedAreas[area.id] ? (
-                            <ChevronRight className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                        </button>
-                        <div className="text-sm font-semibold">{area.name}</div>
-                        {isCO ? (
-                          <Badge className="border-violet-300 bg-violet-100 text-violet-800 hover:bg-violet-100">
-                            Change Order
-                          </Badge>
-                        ) : null}
-                        <Badge variant="outline" className={status.cls}>
-                          {status.label}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {formatCurrency(billed)} / {formatCurrency(sched)} ({pct}%)
-                        </span>
-                      </div>
-                      {area.floor ? (
-                        <div className="text-xs text-muted-foreground">{area.floor}</div>
-                      ) : null}
-                      <div className="mt-2 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className="h-full bg-orange-500 transition-all"
-                          style={{ width: `${Math.min(100, pct)}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void addLineItem(area.id)}
-                      >
-                        <Plus className="mr-1 h-4 w-4" /> Line item
-                      </Button>
-                      {isCO ? null : (
-                        <>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label="Rename area"
-                            onClick={() => void renameArea(area.id, area.name)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label="Delete area"
-                            onClick={() => void deleteArea(area.id, area.name)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  {collapsedAreas[area.id] ? null : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-xs text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2 text-left">Status</th>
-                          <th className="px-3 py-2 text-left">Description</th>
-                          <th className="px-3 py-2 text-right">Qty</th>
-                          <th className="px-3 py-2 text-right">Rate</th>
-                          <th className="px-3 py-2 text-right">Scheduled</th>
-                          <th className="px-3 py-2 text-right">Billed</th>
-                          <th className="px-3 py-2 text-right">Balance</th>
-                          <th className="px-3 py-2 text-right">% Done</th>
-                          {data.invoices.map((inv) => (
-                            <th
-                              key={inv.id}
-                              className="px-3 py-2 text-right whitespace-nowrap"
-                              title={inv.invoiceDate ?? ""}
-                            >
-                              Inv {inv.invoiceNumber ?? inv.id.slice(0, 6)}
-                            </th>
-                          ))}
-                          <th className="px-3 py-2"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {area.lineItems.map((li) => {
-                          const paymentByInv = new Map(
-                            li.payments.map((p) => [p.invoiceId, p.amountCents]),
-                          )
-                          const liPct = Math.round(Number(li.percentComplete) || 0)
-                          const liStatus = statusForPct(liPct)
-                          return (
-                            <tr key={li.id} className="border-t">
-                              <td className="px-3 py-2">
-                                <Badge variant="outline" className={liStatus.cls}>
-                                  {liStatus.label}
-                                </Badge>
-                              </td>
-                              <td className="px-3 py-2">
-                                <Input
-                                  defaultValue={li.description}
-                                  onBlur={(e) => {
-                                    if (e.target.value !== li.description) {
-                                      void updateLineItem(li.id, {
-                                        description: e.target.value,
-                                      })
-                                    }
-                                  }}
-                                  className="h-8"
-                                />
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                <Input
-                                  type="number"
-                                  defaultValue={String(Number(li.qty))}
-                                  onBlur={(e) => {
-                                    const v = Number(e.target.value)
-                                    if (!Number.isNaN(v) && v !== Number(li.qty)) {
-                                      void updateLineItem(li.id, { qty: v })
-                                    }
-                                  }}
-                                  className="h-8 w-20 text-right"
-                                />
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums">
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  defaultValue={(li.rateCents / 100).toFixed(2)}
-                                  onBlur={(e) => {
-                                    const v = Number(e.target.value)
-                                    const cents = Math.round(v * 100)
-                                    if (
-                                      !Number.isNaN(v) &&
-                                      cents !== Number(li.rateCents)
-                                    ) {
-                                      void updateLineItem(li.id, { rateCents: cents })
-                                    }
-                                  }}
-                                  className="h-8 w-24 text-right"
-                                />
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums">
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  defaultValue={(li.scheduledValueCents / 100).toFixed(2)}
-                                  onBlur={(e) => {
-                                    const v = Number(e.target.value)
-                                    const cents = Math.round(v * 100)
-                                    if (
-                                      Number.isNaN(v) ||
-                                      cents === Number(li.scheduledValueCents)
-                                    ) {
-                                      return
-                                    }
-                                    // Lowering scheduled below the current
-                                    // billed will cap billed down to the new
-                                    // scheduled → confirm.
-                                    const currentBilled = Number(li.billedCents)
-                                    const projectedBilled = Math.min(currentBilled, cents)
-                                    if (projectedBilled < currentBilled) {
-                                      const ok = window.confirm(
-                                        `Lowering scheduled value will reduce billed from ${formatCurrency(currentBilled)} to ${formatCurrency(projectedBilled)}. Continue?`,
-                                      )
-                                      if (!ok) {
-                                        e.target.value = (li.scheduledValueCents / 100).toFixed(2)
-                                        return
-                                      }
-                                    }
-                                    void updateLineItem(li.id, {
-                                      scheduledValueCents: cents,
-                                    })
-                                  }}
-                                  className="h-8 w-28 text-right"
-                                />
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums">
-                                {formatCurrency(li.billedCents)}
-                              </td>
-                              <td className="px-3 py-2 text-right tabular-nums">
-                                {formatCurrency(
-                                  Math.max(
-                                    0,
-                                    Number(li.scheduledValueCents) -
-                                      Number(li.billedCents),
-                                  ),
-                                )}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  step="1"
-                                  defaultValue={Number(li.percentComplete).toFixed(0)}
-                                  onBlur={(e) => {
-                                    const v = Number(e.target.value)
-                                    if (
-                                      !Number.isNaN(v) &&
-                                      v.toFixed(2) !== Number(li.percentComplete).toFixed(2)
-                                    ) {
-                                      void updateLineItem(li.id, { percentComplete: v })
-                                    }
-                                  }}
-                                  className="h-8 w-16 text-right"
-                                />
-                              </td>
-                              {data.invoices.map((inv) => {
-                                const amt = paymentByInv.get(inv.id) ?? 0
-                                return (
-                                  <td
-                                    key={inv.id}
-                                    className="px-3 py-2 text-right tabular-nums"
-                                  >
-                                    {amt > 0 ? (
-                                      formatCurrency(amt)
-                                    ) : (
-                                      <span className="text-slate-300">—</span>
-                                    )}
-                                  </td>
-                                )
-                              })}
-                              <td className="px-3 py-2 text-right">
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => void deleteLineItem(li.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                        {area.lineItems.length === 0 ? (
-                          <tr>
-                            <td
-                              colSpan={9 + data.invoices.length}
-                              className="px-3 py-4 text-center text-xs text-muted-foreground"
-                            >
-                              No line items
-                            </td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
-                  </div>
-                  )}
-                </div>
-              )
-            })
+            data.areas.map((area) => (
+              <SovAreaRow
+                key={area.id}
+                area={area}
+                invoices={data.invoices}
+                collapsed={!!collapsedAreas[area.id]}
+                onToggle={toggleArea}
+                onAddLineItem={addLineItem}
+                onRenameArea={renameArea}
+                onDeleteArea={deleteArea}
+                onUpdateLineItem={updateLineItem}
+                onDeleteLineItem={deleteLineItem}
+              />
+            ))
           )}
 
           {/* Change-order group rendered inline within the SOV */}
@@ -1139,6 +1387,49 @@ export default function JobFinancialsPage() {
             </Button>
           </div>
         </CardHeader>
+        {invoiceError ? (
+          <div
+            role="alert"
+            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900"
+          >
+            <div className="min-w-0">
+              <div className="font-medium">
+                Couldn’t parse {invoiceError.file.name}
+              </div>
+              <div className="truncate text-xs text-orange-800">
+                <span className="font-mono">{invoiceError.code}</span>
+                {": "}
+                {invoiceError.message}
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={invoiceUploading}
+                onClick={() => {
+                  const f = invoiceError.file
+                  void performInvoiceUpload(f)
+                }}
+              >
+                {invoiceUploading ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1 h-4 w-4" />
+                )}
+                Try again
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Dismiss invoice parse error"
+                onClick={() => setInvoiceError(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <CardContent>
           {data.invoices.length === 0 ? (
             <div className="text-sm text-muted-foreground">No invoices yet.</div>
@@ -1237,7 +1528,13 @@ export default function JobFinancialsPage() {
             Approved change orders are never touched.
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setPendingEstimateFile(null)}>
+            {/* Default focus on Cancel so an accidental Enter does not
+                wipe the SOV — replacing the estimate is destructive. */}
+            <Button
+              variant="ghost"
+              autoFocus
+              onClick={() => setPendingEstimateFile(null)}
+            >
               Cancel
             </Button>
             <Button onClick={() => void confirmReupload()}>Re-parse</Button>
@@ -1296,6 +1593,7 @@ export default function JobFinancialsPage() {
                         <Button
                           size="icon"
                           variant="ghost"
+                          aria-label={`Clear match for ${li.description}`}
                           onClick={() =>
                             setMatchDraft((d) => {
                               const n = { ...d }

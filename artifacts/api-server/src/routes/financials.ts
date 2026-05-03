@@ -9,6 +9,7 @@ import {
   financialTrackers,
   folders,
   invoiceLinePayments,
+  jobs,
   sovAreas,
   sovLineItems,
   trackerInvoices,
@@ -28,8 +29,76 @@ import {
   writeActivity,
 } from "../lib/file-manager";
 import { requireManagerOrAbove } from "../middleware/require-auth";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router({ mergeParams: true });
+
+type AnthropicCreateArgs = Parameters<typeof anthropic.messages.create>[0];
+// The route never enables streaming, so the response is always a
+// non-stream Message — narrow the union here so callers can read
+// `.content` without re-casting at every site.
+type AnthropicMessageResponse = Extract<
+  Awaited<ReturnType<typeof anthropic.messages.create>>,
+  { content: unknown }
+>;
+
+/**
+ * Wrap every Anthropic call from this route file with structured
+ * observability so we can answer "what's AI costing per feature?" and
+ * "which prompt class is failing right now?" from logs alone.
+ *
+ * On success: logs `{ event, jobId, model, promptTokens, completionTokens,
+ * totalTokens, durationMs }`.
+ * On failure: logs `errorCode: "AI_PARSE_FAILED"` plus a sanitized,
+ * length-capped excerpt of the error message — never the prompt body
+ * or PII.
+ */
+async function callAnthropicWithLogging(args: {
+  event: "ai.estimate.parse" | "ai.invoice.parse";
+  jobId: string;
+  request: AnthropicCreateArgs;
+}): Promise<AnthropicMessageResponse> {
+  const startedAt = Date.now();
+  try {
+    const response = (await anthropic.messages.create(
+      args.request,
+    )) as AnthropicMessageResponse;
+    const usage = (response as { usage?: { input_tokens?: number; output_tokens?: number } })
+      .usage ?? {};
+    const promptTokens = Number(usage.input_tokens ?? 0);
+    const completionTokens = Number(usage.output_tokens ?? 0);
+    logger.info(
+      {
+        event: args.event,
+        jobId: args.jobId,
+        model: (args.request as { model?: string }).model ?? null,
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+        durationMs: Date.now() - startedAt,
+      },
+      "anthropic call",
+    );
+    return response;
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    // Strip newlines + cap length so we never blow up a log line and
+    // never accidentally surface a multi-line stack with PII.
+    const excerpt = raw.replace(/\s+/g, " ").trim().slice(0, 200);
+    logger.warn(
+      {
+        event: args.event,
+        jobId: args.jobId,
+        model: (args.request as { model?: string }).model ?? null,
+        durationMs: Date.now() - startedAt,
+        errorCode: "AI_PARSE_FAILED",
+        errorExcerpt: excerpt,
+      },
+      "anthropic call failed",
+    );
+    throw err;
+  }
+}
 
 // Whole financials surface is admin/PM only — crew_member cannot read it.
 router.use(requireManagerOrAbove);
@@ -113,6 +182,17 @@ async function loadTrackerWithChildren(trackerId: string) {
     .where(eq(financialTrackers.id, trackerId))
     .limit(1);
   if (!tracker) throw new HttpError(404, "Tracker not found.");
+
+  // The frontend needs the parent clientId on every financials
+  // response so cache invalidation can refresh the Client Detail AR
+  // card by its literal queryKey (#275 follow-up). One small lookup
+  // here keeps all 5 mutation routes from having to do it.
+  const [jobRow] = await db
+    .select({ clientId: jobs.clientId })
+    .from(jobs)
+    .where(eq(jobs.id, tracker.jobId))
+    .limit(1);
+  const clientId = jobRow?.clientId ?? null;
 
   const [areas, lineItems, cos, invoices, payments] = await Promise.all([
     db
@@ -217,6 +297,7 @@ async function loadTrackerWithChildren(trackerId: string) {
 
   return {
     tracker,
+    clientId,
     areas: areas.map((a) => ({
       ...a,
       lineItems: (itemsByArea[a.id] ?? []).map((li) => ({
@@ -515,11 +596,15 @@ router.post(
       text: "Parse this estimate and return the JSON described above.",
     });
 
-    const aiResp = await anthropic.messages.create({
-      model: ANTHROPIC_MODEL,
-      max_tokens: ANTHROPIC_MAX_TOKENS,
-      system: ESTIMATE_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userContent }],
+    const aiResp = await callAnthropicWithLogging({
+      event: "ai.estimate.parse",
+      jobId,
+      request: {
+        model: ANTHROPIC_MODEL,
+        max_tokens: ANTHROPIC_MAX_TOKENS,
+        system: ESTIMATE_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userContent }],
+      },
     });
 
     const textBlock = aiResp.content.find(
@@ -1248,11 +1333,15 @@ router.post(
       text: `Schedule of Values:\n${JSON.stringify(sovSummary, null, 2)}\n\nReturn the JSON described above.`,
     });
 
-    const aiResp = await anthropic.messages.create({
-      model: ANTHROPIC_MODEL,
-      max_tokens: ANTHROPIC_MAX_TOKENS,
-      system: INVOICE_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: invoiceContent }],
+    const aiResp = await callAnthropicWithLogging({
+      event: "ai.invoice.parse",
+      jobId,
+      request: {
+        model: ANTHROPIC_MODEL,
+        max_tokens: ANTHROPIC_MAX_TOKENS,
+        system: INVOICE_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: invoiceContent }],
+      },
     });
 
     const textBlock = aiResp.content.find(

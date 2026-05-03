@@ -32,6 +32,17 @@ type AnthropicMessages = {
 let nextEstimateJson: unknown = null;
 let nextInvoiceJson: unknown = null;
 let lastInvoiceCallSov: Array<{ id: string }> | null = null;
+// When set, the very next anthropic.messages.create call throws this
+// error and resets to null. Used by the AI failure-path log test
+// below to drive callAnthropicWithLogging into its catch branch.
+let nextAnthropicError: Error | null = null;
+
+// Captures every structured log entry the route's AI wrapper emits via
+// `logger.info({ event: "ai.estimate.parse" | "ai.invoice.parse", ... })`.
+// Assertions in the test bodies below verify token + duration + jobId
+// are present so we can answer "what's AI costing per feature?" and
+// "which prompt class is failing right now?" from production logs.
+const capturedAiLogs: Array<Record<string, unknown>> = [];
 
 before(async () => {
   process.env.NODE_ENV = "test";
@@ -46,6 +57,11 @@ before(async () => {
   const anthropicMod = await import("@workspace/integrations-anthropic-ai");
   const stub: AnthropicMessages = {
     create: async (args: unknown) => {
+      if (nextAnthropicError) {
+        const e = nextAnthropicError;
+        nextAnthropicError = null;
+        throw e;
+      }
       const body = args as {
         messages?: Array<{ content?: Array<{ type: string; text?: string }> }>;
       };
@@ -74,6 +90,34 @@ before(async () => {
   };
   // anthropic.messages is the real surface area used by the route.
   (anthropicMod.anthropic as unknown as { messages: AnthropicMessages }).messages = stub;
+
+  // Patch the logger so the AI observability wrapper's structured log
+  // entries can be asserted on. We only intercept entries tagged with
+  // `event: "ai.*"`; everything else is dropped (LOG_LEVEL=silent).
+  const loggerMod = await import("../src/lib/logger.ts");
+  const realInfo = loggerMod.logger.info.bind(loggerMod.logger);
+  const realWarn = loggerMod.logger.warn.bind(loggerMod.logger);
+  const captureAiLog = (obj: unknown) => {
+    if (obj && typeof obj === "object" && typeof (obj as Record<string, unknown>).event === "string") {
+      const ev = (obj as Record<string, unknown>).event as string;
+      if (ev.startsWith("ai.")) capturedAiLogs.push(obj as Record<string, unknown>);
+    }
+  };
+  (loggerMod.logger as unknown as { info: (...a: unknown[]) => void }).info = (
+    ...args: unknown[]
+  ) => {
+    captureAiLog(args[0]);
+    return realInfo(...(args as Parameters<typeof realInfo>));
+  };
+  // The AI observability wrapper logs failures via warn with
+  // errorCode "AI_PARSE_FAILED" — mirror the same capture so the
+  // failure-path test below can assert on the structured shape.
+  (loggerMod.logger as unknown as { warn: (...a: unknown[]) => void }).warn = (
+    ...args: unknown[]
+  ) => {
+    captureAiLog(args[0]);
+    return realWarn(...(args as Parameters<typeof realWarn>));
+  };
 
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
@@ -219,6 +263,18 @@ test("POST /financials/estimate parses AI response into SOV areas", async () => 
   lineItemA = body.areas[0].lineItems[0].id;
   lineItemB = body.areas[0].lineItems[1].id;
   assert.ok(areaId && lineItemA && lineItemB);
+
+  // The AI observability wrapper must record one structured log entry
+  // for the estimate parse with the exact field shape ops dashboards
+  // are expected to consume.
+  const estimateLog = capturedAiLogs.find((l) => l.event === "ai.estimate.parse");
+  assert.ok(estimateLog, "expected an ai.estimate.parse log entry");
+  assert.equal(estimateLog!.jobId, jobId);
+  assert.equal(typeof estimateLog!.model, "string");
+  assert.equal(typeof estimateLog!.promptTokens, "number");
+  assert.equal(typeof estimateLog!.completionTokens, "number");
+  assert.equal(typeof estimateLog!.totalTokens, "number");
+  assert.equal(typeof estimateLog!.durationMs, "number");
 });
 
 test("POST /financials/invoices applies AI matches to line items", async () => {
@@ -256,6 +312,56 @@ test("POST /financials/invoices applies AI matches to line items", async () => {
   // Stub captured the SOV list passed to the AI prompt:
   assert.ok(lastInvoiceCallSov, "stub should have captured the SOV from the prompt");
   assert.ok(lastInvoiceCallSov!.some((s) => s.id === lineItemA));
+
+  // Same observability contract for invoice parses.
+  const invoiceLog = capturedAiLogs.find((l) => l.event === "ai.invoice.parse");
+  assert.ok(invoiceLog, "expected an ai.invoice.parse log entry");
+  assert.equal(invoiceLog!.jobId, jobId);
+  assert.equal(typeof invoiceLog!.model, "string");
+  assert.equal(typeof invoiceLog!.promptTokens, "number");
+  assert.equal(typeof invoiceLog!.completionTokens, "number");
+  assert.equal(typeof invoiceLog!.totalTokens, "number");
+  assert.equal(typeof invoiceLog!.durationMs, "number");
+});
+
+test("AI failure path logs structured warn entry with errorCode AI_PARSE_FAILED", async () => {
+  // Force the next anthropic.messages.create call to throw. The
+  // route's callAnthropicWithLogging wrapper should catch, emit a
+  // structured warn log with the exact failure shape ops dashboards
+  // alert on, then re-throw so the request returns 4xx/5xx.
+  nextAnthropicError = new Error("upstream timed out reading PDF body");
+  const before = capturedAiLogs.length;
+  const m = pdfMultipart("estimate-fail.pdf");
+  const res = await fetch(`${baseUrl}/api/jobs/${jobId}/financials/estimate`, {
+    method: "POST",
+    headers: authedHeaders(m.headers),
+    body: m.body,
+  });
+  // The wrapper re-throws, so the route returns a non-2xx. We don't
+  // pin the exact status — just assert the failure surfaced and the
+  // log went out.
+  assert.ok(res.status >= 400, `expected error status, got ${res.status}`);
+
+  const failureLog = capturedAiLogs
+    .slice(before)
+    .find(
+      (l) =>
+        l.event === "ai.estimate.parse" && l.errorCode === "AI_PARSE_FAILED",
+    );
+  assert.ok(
+    failureLog,
+    "expected an ai.estimate.parse warn log with errorCode AI_PARSE_FAILED",
+  );
+  assert.equal(failureLog!.jobId, jobId);
+  assert.equal(typeof failureLog!.model, "string");
+  assert.equal(typeof failureLog!.durationMs, "number");
+  assert.equal(typeof failureLog!.errorExcerpt, "string");
+  // Sanitized excerpt is single-line and length-capped at 200.
+  assert.ok(!String(failureLog!.errorExcerpt).includes("\n"));
+  assert.ok(String(failureLog!.errorExcerpt).length <= 200);
+  // The sanitized excerpt should preserve enough of the original
+  // message to be diagnostic.
+  assert.ok(String(failureLog!.errorExcerpt).includes("upstream timed out"));
 });
 
 test("DELETE /financials/invoices/:id reverses payments", async () => {

@@ -19,7 +19,6 @@ import {
 import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
 import { classifyApiError } from "@/lib/api-errors"
-import { useAuthStore } from "@/store/auth"
 
 type Job = {
   id: string

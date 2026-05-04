@@ -1,4 +1,4 @@
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import path from "path"
@@ -80,11 +80,83 @@ function buildChunkName(id: string) {
     : "vendor"
 }
 
+// Build-time guard for Task #302 / #315: assert that pdfjs-dist and react-pdf
+// never re-enter the dashboard's eager bundle. PdfViewer is loaded via
+// React.lazy() from FilePreview.tsx, so the only way these libraries can ship
+// in the eager graph is if someone introduces a static `import` of them from
+// a module reachable from the entry without crossing a dynamic-import
+// boundary. This plugin walks the static-import closure of each entry chunk
+// and fails the build if any chunk in that closure includes modules from
+// `pdfjs-dist` or `react-pdf`.
+function assertNoEagerPdfBundles(): Plugin {
+  const FORBIDDEN_PATTERNS = [
+    { label: "pdfjs-dist", regex: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?pdfjs-dist[\\/]/ },
+    { label: "react-pdf", regex: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?react-pdf[\\/]/ },
+  ]
+
+  return {
+    name: "assert-no-eager-pdf-bundles",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const chunks = new Map<string, { imports: string[]; modules: string[] }>()
+      const entries: string[] = []
+
+      for (const [fileName, asset] of Object.entries(bundle)) {
+        if (asset.type !== "chunk") continue
+        chunks.set(fileName, {
+          imports: asset.imports,
+          modules: Object.keys(asset.modules ?? {}),
+        })
+        if (asset.isEntry) entries.push(fileName)
+      }
+
+      const eager = new Set<string>()
+      const queue = [...entries]
+      while (queue.length > 0) {
+        const next = queue.shift()!
+        if (eager.has(next)) continue
+        eager.add(next)
+        const chunk = chunks.get(next)
+        if (!chunk) continue
+        for (const imp of chunk.imports) queue.push(imp)
+      }
+
+      const violations: string[] = []
+      for (const fileName of eager) {
+        const chunk = chunks.get(fileName)
+        if (!chunk) continue
+        for (const moduleId of chunk.modules) {
+          for (const { label, regex } of FORBIDDEN_PATTERNS) {
+            if (regex.test(moduleId)) {
+              violations.push(`  - ${label} module "${moduleId}" landed in eager chunk "${fileName}"`)
+            }
+          }
+        }
+      }
+
+      if (violations.length > 0) {
+        const message = [
+          "Eager-bundle regression detected: pdfjs-dist / react-pdf must stay behind a dynamic import().",
+          "",
+          ...violations,
+          "",
+          "PdfViewer is loaded via React.lazy() from FilePreview.tsx. If you need a PDF",
+          "feature elsewhere, route it through that lazy boundary instead of importing",
+          "react-pdf or pdfjs-dist statically. See the comment in vite.config.ts and",
+          "the original baseline established in Task #302.",
+        ].join("\n")
+        this.error(message)
+      }
+    },
+  }
+}
+
 export default defineConfig(async ({ mode }) => ({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
+    assertNoEagerPdfBundles(),
     ...(mode === "development" ? [runtimeErrorOverlay()] : []),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
@@ -118,6 +190,11 @@ export default defineConfig(async ({ mode }) => ({
     //   import of `react-pdf` or `pdfjs-dist` from any module in the
     //   eager graph, the dashboard's first paint will regress by the
     //   same ~500 KB — keep PDF code behind dynamic `import()`.
+    //
+    //   This invariant is enforced automatically by the
+    //   `assertNoEagerPdfBundles()` plugin above, which fails the build
+    //   (and the `check-eager-bundle` validation workflow) the moment a
+    //   regression lands. See Task #315.
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 500,

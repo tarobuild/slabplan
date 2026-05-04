@@ -451,10 +451,13 @@ router.post(
 
 // Admin: invite a new worker. We create the user with a random unguessable
 // placeholder password and a single-use setup token. The raw token is
-// returned exactly once in the response (and never persisted server-side —
-// only its sha256 hash lives in the database). The admin hands the
-// `invitePath` to the new worker out of band; the worker exchanges it for
-// a real password via POST /auth/accept-invite.
+// returned in the response and also retained server-side (alongside its
+// sha256 hash) until the worker accepts the invite, so admins can re-send
+// the existing email via POST /users/:id/invite/resend without
+// invalidating any link already in flight. Both columns are cleared on
+// POST /auth/accept-invite. The admin hands the `invitePath` to the new
+// worker; the worker exchanges it for a real password via
+// POST /auth/accept-invite.
 router.post(
   "/",
   requireAdmin,
@@ -489,6 +492,7 @@ router.post(
         passwordHash: placeholderHash,
         isActive: true,
         inviteTokenHash: invite.tokenHash,
+        inviteToken: invite.token,
         inviteTokenExpiresAt: invite.expiresAt,
         passwordSetAt: null,
       })
@@ -571,6 +575,7 @@ router.post(
       .update(users)
       .set({
         inviteTokenHash: invite.tokenHash,
+        inviteToken: invite.token,
         inviteTokenExpiresAt: invite.expiresAt,
         updatedAt: new Date(),
       })
@@ -612,6 +617,106 @@ router.post(
       invitePath: buildInvitePath(invite.token),
       inviteUrl: buildInviteUrl(invite.token),
       inviteTokenExpiresAt: invite.expiresAt.toISOString(),
+      emailDelivery: {
+        emailed: delivery.emailed,
+        emailError: delivery.emailError,
+        lastInviteEmailSentAt: delivery.lastInviteEmailSentAt,
+      },
+    });
+  }),
+);
+
+// Admin: re-send the existing invite email WITHOUT minting a new token.
+// Useful when the invitee lost the email or it bounced — the original
+// link is still valid, so cycling the token (which would invalidate any
+// link already in flight) is overkill. We refuse to resend if the user
+// has already completed setup, has no pending invite, or the existing
+// token has expired — in those cases the admin must use the regular
+// reissue endpoint to mint a fresh one.
+router.post(
+  "/:id/invite/resend",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const id = z.string().uuid().safeParse(req.params.id);
+
+    if (!id.success) {
+      throw new HttpError(400, "Invalid user id.");
+    }
+
+    const [target] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, id.data), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!target) {
+      throw new HttpError(404, "User not found.");
+    }
+
+    if (target.passwordSetAt !== null) {
+      throw new HttpError(
+        400,
+        "This user has already completed setup. Use reissue to send a new password reset link.",
+      );
+    }
+
+    if (
+      !target.inviteToken ||
+      !target.inviteTokenHash ||
+      !target.inviteTokenExpiresAt
+    ) {
+      throw new HttpError(
+        400,
+        "There is no pending invite to resend. Use reissue to generate a new setup link.",
+      );
+    }
+
+    if (target.inviteTokenExpiresAt.getTime() < Date.now()) {
+      throw new HttpError(
+        400,
+        "The invite link has expired. Use reissue to generate a new one.",
+      );
+    }
+
+    await writeActivity({
+      entityType: "user",
+      entityId: target.id,
+      action: "user.invite_resent",
+      userId: req.auth!.userId,
+      jobId: null,
+      description: `Resent setup email for ${target.fullName} (${target.email})`,
+    }).catch((error) => {
+      console.warn("[users] failed to record invite resend activity:", error);
+    });
+
+    const inviterName = await resolveInviterName(req.auth!.userId);
+    // Reuse the existing raw token — DB row is untouched aside from the
+    // delivery timestamp/error fields managed by deliverInviteEmail itself.
+    const delivery = await deliverInviteEmail({
+      userId: target.id,
+      to: target.email,
+      fullName: target.fullName,
+      inviterName,
+      inviteToken: target.inviteToken,
+      isPasswordReset: false,
+    });
+
+    const [refreshed] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, target.id))
+      .limit(1);
+
+    res.json({
+      user: {
+        ...publicUserWithStatus(refreshed!),
+        lastInviteEmailSentAt: delivery.lastInviteEmailSentAt,
+        lastInviteEmailError: delivery.emailError,
+      },
+      inviteToken: target.inviteToken,
+      invitePath: buildInvitePath(target.inviteToken),
+      inviteUrl: buildInviteUrl(target.inviteToken),
+      inviteTokenExpiresAt: target.inviteTokenExpiresAt.toISOString(),
       emailDelivery: {
         emailed: delivery.emailed,
         emailError: delivery.emailError,

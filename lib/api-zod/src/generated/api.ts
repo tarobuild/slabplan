@@ -250,6 +250,35 @@ export const UsersPatchUsersIdBody = zod
 export const UsersPatchUsersIdResponse = zod.unknown();
 
 /**
+ * Admin-only. Re-send the existing invite email for a user whose setup is still pending, WITHOUT minting a new token. Use this when the invitee lost the email or it bounced — any link already in flight remains valid.
+
+Returns the same shape as `POST /users/{id}/invite` (a `user`, `inviteToken`, `invitePath`, `inviteUrl`, `inviteTokenExpiresAt`, and `emailDelivery`), but the token is the *current* one rather than a freshly-minted replacement.
+
+Returns `400` if the user has already completed setup, has no pending invite, or the existing token has expired. In those cases the admin should use the regular `POST /users/{id}/invite` endpoint to issue a fresh one.
+
+ * @summary POST /users/{id}/invite/resend
+ */
+export const UsersPostUsersIdInviteResendParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const usersPostUsersIdInviteResendHeaderIdempotencyKeyMin = 8;
+export const usersPostUsersIdInviteResendHeaderIdempotencyKeyMax = 255;
+
+export const UsersPostUsersIdInviteResendHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(usersPostUsersIdInviteResendHeaderIdempotencyKeyMin)
+    .max(usersPostUsersIdInviteResendHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const UsersPostUsersIdInviteResendResponse = zod.unknown();
+
+/**
  * Admin-only. Reissue a one-time setup token for an existing user (e.g. their original setup link expired or they need a forced password reset).
 
 Same response shape as `POST /users` — see that endpoint for the `emailDelivery`, `inviteUrl`, `inviteToken`, and updated `user` fields. The server emails the new setup link automatically; if delivery fails, the token is still returned so the admin can share it manually.

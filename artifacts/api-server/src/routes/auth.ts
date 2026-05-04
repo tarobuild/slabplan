@@ -290,6 +290,7 @@ router.post(
         passwordHash,
         passwordSetAt: now,
         inviteTokenHash: null,
+        inviteToken: null,
         inviteTokenExpiresAt: null,
         updatedAt: now,
       })

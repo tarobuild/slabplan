@@ -826,6 +826,96 @@ export const useUsersPatchUsersId = <
 };
 
 /**
+ * Admin-only. Re-send the existing invite email for a user whose setup is still pending, WITHOUT minting a new token. Use this when the invitee lost the email or it bounced — any link already in flight remains valid.
+
+Returns the same shape as `POST /users/{id}/invite` (a `user`, `inviteToken`, `invitePath`, `inviteUrl`, `inviteTokenExpiresAt`, and `emailDelivery`), but the token is the *current* one rather than a freshly-minted replacement.
+
+Returns `400` if the user has already completed setup, has no pending invite, or the existing token has expired. In those cases the admin should use the regular `POST /users/{id}/invite` endpoint to issue a fresh one.
+
+ * @summary POST /users/{id}/invite/resend
+ */
+export const getUsersPostUsersIdInviteResendUrl = (id: string) => {
+  return `/api/users/${id}/invite/resend`;
+};
+
+export const usersPostUsersIdInviteResend = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getUsersPostUsersIdInviteResendUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUsersPostUsersIdInviteResendMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPostUsersIdInviteResend>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersPostUsersIdInviteResend>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["usersPostUsersIdInviteResend"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersPostUsersIdInviteResend>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return usersPostUsersIdInviteResend(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersPostUsersIdInviteResendMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersPostUsersIdInviteResend>>
+>;
+
+export type UsersPostUsersIdInviteResendMutationError = ErrorType<Problem>;
+
+/**
+ * @summary POST /users/{id}/invite/resend
+ */
+export const useUsersPostUsersIdInviteResend = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPostUsersIdInviteResend>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof usersPostUsersIdInviteResend>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUsersPostUsersIdInviteResendMutationOptions(options));
+};
+
+/**
  * Admin-only. Reissue a one-time setup token for an existing user (e.g. their original setup link expired or they need a forced password reset).
 
 Same response shape as `POST /users` — see that endpoint for the `emailDelivery`, `inviteUrl`, `inviteToken`, and updated `user` fields. The server emails the new setup link automatically; if delivery fails, the token is still returned so the admin can share it manually.

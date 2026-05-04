@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Copy, Loader2, Mail, Plus, RotateCw, UserPlus } from "lucide-react"
+import { Copy, Loader2, Mail, Plus, RotateCw, Send, UserPlus } from "lucide-react"
 import { toast } from "sonner"
 import {
   getUsersGetUsersQueryKey,
@@ -8,6 +8,7 @@ import {
   usersPatchUsersId,
   usersPostUsers,
   usersPostUsersIdInvite,
+  usersPostUsersIdInviteResend,
   type UsersInviteUserSchema,
   type UsersUpdateUserSchema,
 } from "@workspace/api-client-react"
@@ -150,6 +151,7 @@ export default function UsersPage() {
 
   const [pendingPatchId, setPendingPatchId] = useState<string | null>(null)
   const [reissuingId, setReissuingId] = useState<string | null>(null)
+  const [resendingId, setResendingId] = useState<string | null>(null)
 
   const refreshList = () =>
     queryClient.invalidateQueries({
@@ -237,6 +239,30 @@ export default function UsersPage() {
       { isActive: nextActive },
       nextActive ? "reactivated" : "deactivated",
     )
+  }
+
+  const handleResend = async (user: AdminUser) => {
+    setResendingId(user.id)
+    try {
+      const response = (await usersPostUsersIdInviteResend(
+        user.id,
+      )) as InviteResponse
+      if (response.emailDelivery?.emailed) {
+        toast.success(`Setup email re-sent to ${user.email}`)
+      } else if (response.emailDelivery?.emailError) {
+        toast.error(
+          `Resend failed — copy the existing setup link and share it manually.`,
+        )
+        setLatestInvite(response)
+      } else {
+        toast.success(`Setup email re-sent to ${user.fullName}`)
+      }
+      await refreshList()
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to resend invite email")
+    } finally {
+      setResendingId(null)
+    }
   }
 
   const handleReissue = async (user: AdminUser) => {
@@ -331,8 +357,10 @@ export default function UsersPage() {
             </Button>
           </div>
           <p className="text-xs text-amber-800">
-            We don't store this link — once dismissed it cannot be retrieved.
-            If lost, click "Reissue link" on the user row to generate a new one.
+            Once dismissed, this banner won't be shown again. If the invitee
+            says they never received the email, click "Resend email" on their
+            row to send the same link again. Use "Reissue link" only if you
+            need to invalidate the existing link and start fresh.
           </p>
         </div>
       ) : null}
@@ -453,6 +481,25 @@ export default function UsersPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {inviteOutstanding && !inviteExpired ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleResend(user)}
+                            disabled={resendingId === user.id || !active}
+                            title="Re-send the existing setup email without invalidating the current link"
+                          >
+                            {resendingId === user.id ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <Send className="size-3.5" />
+                            )}
+                            <span className="ml-1.5 hidden sm:inline">
+                              Resend email
+                            </span>
+                          </Button>
+                        ) : null}
                         <Button
                           type="button"
                           variant="outline"

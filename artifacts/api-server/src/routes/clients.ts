@@ -30,11 +30,17 @@ const router: IRouter = Router();
 
 router.use(requireManagerOrAbove);
 
-// Deterministic UUID for the "Unknown client" placeholder created by
-// migration 0010. Jobs without a real client (legacy NULL rows or rows
-// orphaned by a client deletion) are assigned to this client so the
-// clients-first navigation always has somewhere to land.
-const UNKNOWN_CLIENT_ID = "8bdd2d52-7563-5843-95f8-aea786f0b386";
+// Deterministic UUIDv5 sentinel (derived from `cadstone:unknown-client`
+// in the DNS namespace) for the "Unknown client" placeholder created
+// by migration 0010. Jobs without a real client (legacy NULL rows or
+// rows orphaned by a client deletion) are assigned to this client so
+// the clients-first navigation always has somewhere to land. Must stay
+// identical across every environment so migration 0010 and the runtime
+// reference the same row. SAST scanners flag the high-entropy hex
+// string as a "Generic API Key"; it is a row id, not a credential.
+// hounddog-ignore: hardcoded-secret
+// nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
+const UNKNOWN_CLIENT_ID = "8bdd2d52-7563-5843-95f8-aea786f0b386"; // nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
 
 // SQL fragment for "this client has activity that makes it active":
 // any non-cancelled (i.e. not archived) job updated within the last

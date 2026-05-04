@@ -39,9 +39,14 @@ END$$;
 -- 2. "Unknown client" placeholder ------------------------------------------
 -- Deterministic UUIDv5 derived from `cadstone:unknown-client` in the standard
 -- DNS namespace, so every environment ends up with the exact same id and
--- subsequent migrations can reference it without lookup juggling.
+-- subsequent migrations can reference it without lookup juggling. SAST
+-- scanners flag it as a "Generic API Key" because of the entropy of the
+-- hex string; it is a row id, not a credential. Suppressed below.
+-- hounddog-ignore: hardcoded-secret
+-- nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
 INSERT INTO "clients" ("id", "company_name", "notes", "created_at", "updated_at")
 VALUES (
+  -- nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
   '8bdd2d52-7563-5843-95f8-aea786f0b386',
   'Unknown client',
   'System placeholder created during the Clients-first migration (Task #268). Re-assign legacy jobs to their real client when known.',
@@ -52,7 +57,11 @@ ON CONFLICT ("id") DO NOTHING;
 --> statement-breakpoint
 
 -- 3. Backfill orphan jobs --------------------------------------------------
+-- Same UNKNOWN_CLIENT_ID sentinel as the INSERT above; not a secret.
+-- hounddog-ignore: hardcoded-secret
+-- nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
 UPDATE "jobs"
+   -- nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
    SET "client_id" = '8bdd2d52-7563-5843-95f8-aea786f0b386',
        "updated_at" = now()
  WHERE "client_id" IS NULL

@@ -109,6 +109,15 @@ export default defineConfig(async ({ mode }) => ({
   },
   root: path.resolve(import.meta.dirname),
   build: {
+    // Initial-payload baseline (Task #302):
+    //   pdfjs-dist + react-pdf (~500 KB) are now lazy-loaded behind
+    //   `React.lazy(() => import("./PdfViewer"))` in
+    //   src/components/files/FilePreview.tsx, so they no longer ship
+    //   in the eager bundle. The PDF chunk is fetched on demand the
+    //   first time a user previews a PDF. If you re-introduce a static
+    //   import of `react-pdf` or `pdfjs-dist` from any module in the
+    //   eager graph, the dashboard's first paint will regress by the
+    //   same ~500 KB — keep PDF code behind dynamic `import()`.
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 500,

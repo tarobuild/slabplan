@@ -739,6 +739,132 @@ test("GET /jobs/:jobId/schedule/baseline does NOT issue any UPDATE/INSERT/DELETE
   );
 });
 
+// Sibling to the line-234 concurrent-GET test, but for the baseline read
+// path. The baseline endpoint used to harbor two hidden writes (cascade
+// + ensureJobExists lazy-init) that the previous test proves are gone
+// in the single-request case; this test proves the read stays
+// write-free even when several viewers hit it at once. It also
+// guards against a future regression that re-introduces a per-request
+// "fix dates" UPDATE on the read path — eight concurrent viewers would
+// trip the write interceptor.
+test("concurrent GET /jobs/:jobId/schedule/baseline requests do not race or write", async () => {
+  const { db, pool } = await import("@workspace/db");
+  const { scheduleItems, scheduleItemPredecessors, scheduleBaselines } =
+    await import("@workspace/db/schema");
+  const { eq, inArray } = await import("drizzle-orm");
+
+  // Use a fresh chain on the existing baselineReadOnlyJob — the prior
+  // test already proved that job has no settings/phases lazy-init.
+  // Different ids so this test stands alone and the write-interceptor
+  // assertion is unambiguous.
+  const itemAId = crypto.randomUUID();
+  const itemBId = crypto.randomUUID();
+  await db.insert(scheduleItems).values([
+    {
+      id: itemAId,
+      jobId: baselineReadOnlyJobId,
+      title: "ZZZ baseline concurrent A",
+      startDate: "2025-06-02",
+      workDays: 5,
+      endDate: "2025-06-15",
+      createdBy: adminUserId,
+    },
+    {
+      id: itemBId,
+      jobId: baselineReadOnlyJobId,
+      title: "ZZZ baseline concurrent B",
+      startDate: "2025-06-03",
+      workDays: 3,
+      endDate: "2025-06-05",
+      createdBy: adminUserId,
+    },
+  ]);
+  await db.insert(scheduleItemPredecessors).values({
+    scheduleItemId: itemBId,
+    predecessorId: itemAId,
+    dependencyType: "finish_to_start",
+    lagDays: 0,
+  });
+  const baselineId = crypto.randomUUID();
+  await db.insert(scheduleBaselines).values({
+    id: baselineId,
+    jobId: baselineReadOnlyJobId,
+    capturedAt: new Date(),
+    capturedBy: adminUserId,
+    itemsSnapshot: [
+      {
+        scheduleItemId: itemAId,
+        title: "ZZZ baseline concurrent A",
+        baselineStartDate: "2025-06-02",
+        baselineEndDate: "2025-06-15",
+      },
+      {
+        scheduleItemId: itemBId,
+        title: "ZZZ baseline concurrent B",
+        baselineStartDate: "2025-06-03",
+        baselineEndDate: "2025-06-05",
+      },
+    ],
+  });
+
+  const interceptor = installWriteInterceptor(pool);
+  let bodies: Array<{
+    baseline: {
+      items: Array<{
+        scheduleItemId: string;
+        currentStartDate: string | null;
+        currentEndDate: string | null;
+      }>;
+    };
+  }>;
+  try {
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        authedGet(`/api/jobs/${baselineReadOnlyJobId}/schedule/baseline`),
+      ),
+    );
+    for (const res of responses) {
+      assert.equal(
+        res.status,
+        200,
+        `concurrent baseline GET must return 200, got ${res.status}`,
+      );
+    }
+    bodies = await Promise.all(
+      responses.map((r) => r.json() as Promise<typeof bodies[number]>),
+    );
+  } finally {
+    interceptor.restore();
+  }
+
+  assert.deepEqual(
+    interceptor.writes,
+    [],
+    `concurrent baseline GETs must not issue any UPDATE/INSERT/DELETE; observed: ${JSON.stringify(interceptor.writes, null, 2)}`,
+  );
+
+  // Every response must agree on cascade-resolved values for the new
+  // chain (no race produced a divergent view). A: 5 workdays from
+  // Mon 2025-06-02 -> Fri 2025-06-06. B: FS-after-A starts the next
+  // workday Mon 2025-06-09 and runs 3 workdays -> Wed 2025-06-11.
+  for (const body of bodies) {
+    const a = body.baseline.items.find((i) => i.scheduleItemId === itemAId);
+    const b = body.baseline.items.find((i) => i.scheduleItemId === itemBId);
+    assert.ok(a && b, "both items must appear in every concurrent baseline response");
+    assert.equal(a!.currentStartDate, "2025-06-02");
+    assert.equal(a!.currentEndDate, "2025-06-06", "A.currentEndDate must be cascade-resolved");
+    assert.equal(b!.currentStartDate, "2025-06-09", "B must be cascaded after A in every response");
+    assert.equal(b!.currentEndDate, "2025-06-11");
+  }
+
+  // Cleanup so the baselineReadOnlyJob's per-test setup remains pristine
+  // for any later tests that run against the same job.
+  await db.delete(scheduleBaselines).where(eq(scheduleBaselines.id, baselineId));
+  await db
+    .delete(scheduleItems)
+    .where(inArray(scheduleItems.id, [itemAId, itemBId]));
+});
+
 test("GET baseline applies schedule visibility rules per viewer", async () => {
   const { db } = await import("@workspace/db");
   const { scheduleBaselines, scheduleItems } = await import("@workspace/db/schema");

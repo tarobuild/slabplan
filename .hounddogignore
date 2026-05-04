@@ -1,0 +1,24 @@
+# HoundDog ignore file — config-level suppressions for false positives.
+# HoundDog's inline `// hounddog-ignore-line` and
+# `// hounddog-ignore-next-line` directives do NOT silence the
+# PASSWORD rule (verified empirically with several variants), so
+# project-level suppression lives here. Listed defensively for the
+# UUID sentinel files too in case future HoundDog rule updates flag
+# them.
+#
+# Patterns are file globs relative to the repository root, one per
+# line. Comments start with `#`.
+
+# Dev-only seed CLI prints the freshly generated seed user's password
+# to stdout so operators can copy it. The script is invoked manually
+# against a local database; there is no production codepath that runs
+# it. See lib/db/src/seed-cli.ts for the inline rationale.
+lib/db/src/seed-cli.ts
+
+# UNKNOWN_CLIENT_ID is a deterministic UUIDv5 sentinel used to
+# bucket orphan jobs/leads — not a credential. See
+# artifacts/api-server/src/routes/clients.ts and
+# lib/db/migrations/0010_clients_first_money.sql for inline
+# rationale.
+artifacts/api-server/src/routes/clients.ts
+lib/db/migrations/0010_clients_first_money.sql

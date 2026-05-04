@@ -1,10 +1,12 @@
 # HoundDog ignore file — config-level suppressions for false positives.
-# HoundDog's inline `// hounddog-ignore-line` and
-# `// hounddog-ignore-next-line` directives do NOT silence the
-# PASSWORD rule (verified empirically with several variants), so
-# project-level suppression lives here. Listed defensively for the
-# UUID sentinel files too in case future HoundDog rule updates flag
-# them.
+# HoundDog 3.1.1 has NO inline source-code suppression syntax — every
+# `// hounddog-ignore…`, `// hounddog:ignore`, `// hd-ignore…`,
+# `// noqa: hounddog`, etc. variant has been tested and is silently
+# ignored by the scanner. See
+# .local/skills/security_scan/SKILL.md ("HoundDog suppressions") for
+# the full list and rationale. File-glob suppression (this file) is
+# the only mechanism that works. Listed defensively for the UUID
+# sentinel files too in case future HoundDog rule updates flag them.
 #
 # Patterns are file globs relative to the repository root, one per
 # line. Comments start with `#`.

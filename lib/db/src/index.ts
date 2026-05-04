@@ -4,6 +4,39 @@ import * as schema from "./schema/index.js";
 
 const { Pool } = pg;
 
+// pg's own DatabaseError instances expose the constraint name (and other
+// useful detail fields) only as separate properties — `error.message` itself
+// just says "new row for relation \"X\" violates check constraint \"Y\"".
+// Drizzle's DrizzleQueryError then wraps the pg error and replaces
+// `error.message` with `Failed query: ...\nparams: ...`, dropping the
+// constraint name from the visible message entirely. Tests (and log
+// scrapers) want to grep the constraint name out of the message, so we
+// augment the cause's message *before* drizzle wraps it: appending the
+// constraint name (and hint/detail when present) into the pg error's own
+// message, which drizzle then preserves on `.cause` and we re-include
+// when re-raising. This is dev-only friction; real reporting paths still
+// have the structured fields available on `.cause`.
+type PgErrorLike = Error & {
+  constraint?: string;
+  detail?: string;
+  hint?: string;
+  code?: string;
+};
+function augmentPgError(err: unknown): unknown {
+  if (!(err instanceof Error)) return err;
+  const e = err as PgErrorLike;
+  // Only touch errors that smell like pg DatabaseError (have a SQLSTATE code).
+  if (typeof e.code !== "string" || e.code.length !== 5) return err;
+  const parts: string[] = [];
+  if (e.constraint) parts.push(`constraint: ${e.constraint}`);
+  if (e.detail) parts.push(`detail: ${e.detail}`);
+  if (e.hint) parts.push(`hint: ${e.hint}`);
+  if (parts.length === 0) return err;
+  if (e.message.includes(`constraint: ${e.constraint ?? ""}`)) return err;
+  e.message = `${e.message} (${parts.join("; ")})`;
+  return err;
+}
+
 const isProduction = process.env.NODE_ENV === "production";
 const rawSupabaseUrl = process.env.SUPABASE_DATABASE_URL;
 const fallbackUrl = process.env.DATABASE_URL;
@@ -48,6 +81,36 @@ try {
 }
 
 export const pool = new Pool({ connectionString });
+
+// Wrap pool.query (and every checked-out client's query) so pg
+// DatabaseError instances carry the constraint name (and detail/hint)
+// inside their `.message` before drizzle's DrizzleQueryError wraps them.
+// See augmentPgError above.
+function wrapQuery<T extends { query: (...args: unknown[]) => unknown }>(target: T): void {
+  const originalQuery = target.query.bind(target) as (
+    ...args: unknown[]
+  ) => unknown;
+  (target as { query: typeof originalQuery }).query = function (
+    ...args: unknown[]
+  ) {
+    try {
+      const result = originalQuery(...args) as unknown;
+      if (result && typeof (result as PromiseLike<unknown>).then === "function") {
+        return (result as Promise<unknown>).catch((err) => {
+          throw augmentPgError(err);
+        });
+      }
+      return result;
+    } catch (err) {
+      throw augmentPgError(err);
+    }
+  };
+}
+wrapQuery(pool as unknown as { query: (...args: unknown[]) => unknown });
+pool.on("connect", (client) => {
+  wrapQuery(client as unknown as { query: (...args: unknown[]) => unknown });
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema/index.js";

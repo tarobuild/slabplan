@@ -355,7 +355,10 @@ export const leads = pgTable(
   },
   (table) => [
     index("leads_created_by_idx").on(table.createdBy),
-    check("leads_status_check", sql`${table.status} in ('open', 'in_negotiation', 'won', 'lost', 'archived')`),
+    check(
+      "leads_status_check",
+      sql`${table.status} in ('open', 'in_negotiation', 'won', 'lost', 'archived', 'qualified')`,
+    ),
     check("leads_confidence_range", sql`${table.confidence} >= 0 and ${table.confidence} <= 100`),
   ],
 );

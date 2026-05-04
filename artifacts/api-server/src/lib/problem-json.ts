@@ -54,6 +54,11 @@ export type ProblemDetails = {
   // Legacy aliases — many existing API consumers (frontend included) read
   // `message`, so keep it populated for backwards-compatibility.
   message: string;
+  // Some clients (and the audit-fixes regression suite) expect a nested
+  // `{ error: { message } }` envelope, so emit that alongside the
+  // problem-json fields. Cheap to include and keeps callers decoupled
+  // from the response shape.
+  error: { message: string; type?: string };
   errors?: unknown;
 };
 
@@ -69,6 +74,7 @@ export function buildProblem(
     detail: err.message,
     instance: req.originalUrl ?? req.url ?? "",
     message: err.message,
+    error: { message: err.message, type: slug },
     errors: err.details ?? undefined,
   };
 }

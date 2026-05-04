@@ -20,6 +20,31 @@ need it.
 >
 > The script is idempotent per UTC day, so running both schedulers is
 > harmless if you want belt-and-braces.
+>
+> **Alerting.** Both the backup script (`db-backup.mjs`) and a separate
+> nightly verifier (`db-backup-check.mjs`, run via
+> `pnpm --filter @workspace/api-server run backup:check`) page on-call
+> via the helper at `artifacts/api-server/scripts/lib/backup-alerts.mjs`.
+> Two transports, both optional and independently configured:
+> - **Email (Resend):** set `RESEND_API_KEY`, `EMAIL_FROM`, and
+>   `BACKUP_ALERT_EMAIL` (comma-separated list of recipients) on the
+>   deployment that runs the script. Reuses the same Resend account
+>   the api-server uses for invites/password resets.
+> - **Webhook (Slack-compatible):** set `BACKUP_ALERT_WEBHOOK_URL` to
+>   any incoming-webhook URL. The payload is `{text, subject, message,
+>   context}` so a Slack incoming webhook renders the `text` field and
+>   richer consumers can inspect `context`.
+> If neither is configured the scripts log a warning (`event:
+> alert_no_channels_configured`) but the underlying failure exit code
+> is preserved so a job-status monitor still sees the red run.
+>
+> `db-backup.mjs` alerts on any failed run and includes the most recent
+> successful backup timestamp/size in the alert body. `db-backup-check.mjs`
+> alerts when today's `backups/db/YYYY-MM-DD.sql.gz` is missing or when
+> its size is outside ±50 % of the trailing 7-day median (tunable via
+> `BACKUP_SIZE_TOLERANCE_PCT` and `BACKUP_HISTORY_WINDOW_DAYS`). Schedule
+> the check a few hours after the backup itself — e.g. backup at
+> `0 9 * * *`, check at `0 12 * * *`.
 
 It is the database analogue of the object-storage drill described in
 `artifacts/api-server/scripts/storage-restore-drill.mjs`.

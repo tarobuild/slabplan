@@ -12,7 +12,8 @@
     "test": "DATABASE_URL=\"${TEST_DATABASE_URL:-${CADSTONE_TEST_DATABASE_URL:-postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test}}\" tsx --test ./test/**/*.test.ts",
     "typecheck": "tsc --build ../../lib/db ../../lib/api-zod && tsc -p tsconfig.json --noEmit",
     "backfill-comment-attachments": "tsx ./src/scripts/backfill-comment-attachments.ts",
-    "backup:db": "node ./scripts/db-backup.mjs"
+    "backup:db": "node ./scripts/db-backup.mjs",
+    "backup:check": "node ./scripts/db-backup-check.mjs"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",

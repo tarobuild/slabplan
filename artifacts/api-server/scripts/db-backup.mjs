@@ -33,6 +33,7 @@ import { createGzip } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import { Storage } from "@google-cloud/storage";
 import pino from "pino";
+import { sendBackupAlert } from "./lib/backup-alerts.mjs";
 
 // Use the same pino logger family as the api-server (`src/lib/logger.ts`).
 // Same line shape (level, time, msg, plus our `event` / `component`
@@ -60,6 +61,41 @@ function log(level, event, extra = {}) {
 function fail(event, extra) {
   log("error", event, extra);
   process.exit(1);
+}
+
+/**
+ * Find the most recent successful backup object whose ISO date is
+ * strictly before `excludeIsoDate`. Returns `null` if no prior backup
+ * exists (e.g. very first run) or if listing fails. Used to enrich
+ * failure alerts so on-call sees how stale the latest good backup is.
+ */
+async function findMostRecentSuccessfulBackup(excludeIsoDate) {
+  try {
+    const [files] = await bucket.getFiles({ prefix: `${backupPrefix}/` });
+    let best = null;
+    for (const f of files) {
+      const m = /\/(\d{4}-\d{2}-\d{2})\.sql\.gz$/.exec(f.name);
+      if (!m) continue;
+      const dateStr = m[1];
+      if (dateStr >= excludeIsoDate) continue;
+      const sizeBytes = Number(f.metadata?.size ?? 0);
+      if (!sizeBytes) continue;
+      if (!best || dateStr > best.dateStr) {
+        best = {
+          dateStr,
+          objectName: f.name,
+          sizeBytes,
+          updated: f.metadata?.updated ?? null,
+        };
+      }
+    }
+    return best;
+  } catch (err) {
+    log("warn", "find_last_successful_failed", {
+      err: err?.message ?? String(err),
+    });
+    return null;
+  }
 }
 
 if (!bucketId) {
@@ -243,11 +279,42 @@ async function pruneOldBackups() {
 }
 
 (async () => {
+  const { iso: todayIso } = todayUtc();
   try {
     const result = await runBackup();
     await pruneOldBackups();
     log("info", "backup_done", { objectName: result.objectName, sizeBytes: result.sizeBytes });
   } catch (err) {
-    fail("backup_failed", { err: err?.message ?? String(err), stack: err?.stack });
+    const errMsg = err?.message ?? String(err);
+    log("error", "backup_failed", { err: errMsg, stack: err?.stack });
+
+    // Best-effort: enrich the alert with the most recent successful
+    // backup so on-call knows how far behind we are.
+    const lastGood = await findMostRecentSuccessfulBackup(todayIso);
+
+    await sendBackupAlert({
+      subject: `[CAD Stone] Daily DB backup FAILED for ${todayIso}`,
+      message: [
+        `The scheduled Postgres backup for ${todayIso} did not complete.`,
+        "",
+        `Error: ${errMsg}`,
+        "",
+        lastGood
+          ? `Most recent successful backup: ${lastGood.objectName} (${lastGood.sizeBytes} bytes, uploaded ${lastGood.updated ?? "unknown"}).`
+          : "No prior successful backup found in the bucket — this may be the first run, or listing the bucket also failed.",
+        "",
+        "Investigate immediately: check deployment logs for `event: backup_failed`, then re-run `pnpm --filter @workspace/api-server run backup:db` once the underlying issue is fixed.",
+      ].join("\n"),
+      context: {
+        date: todayIso,
+        bucketId,
+        backupPrefix,
+        error: errMsg,
+        lastSuccessful: lastGood,
+      },
+      log,
+    });
+
+    process.exit(1);
   }
 })();

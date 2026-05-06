@@ -2088,6 +2088,12 @@ export const LeadsGetLeadsQueryParams = zod.object({
     .describe(
       'When `true`, leads that have already been converted to a job are filtered out. The cadstone UI sends this by default and clears it when the \"Show converted\" toggle is enabled.',
     ),
+  onlyConverted: zod
+    .enum(["true", "false"])
+    .optional()
+    .describe(
+      'When `true`, only leads that have been converted to a job are returned. Used by the cadstone Leads list when the user picks the \"Converted\" status filter.',
+    ),
   cursor: zod.coerce
     .string()
     .optional()

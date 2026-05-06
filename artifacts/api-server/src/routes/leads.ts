@@ -173,6 +173,14 @@ const leadListQuerySchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
+  // When true, the result is restricted to leads that have been converted
+  // to a job. Used by the cadstone Leads list when the user picks the
+  // "Converted" entry in the status filter dropdown. Takes precedence over
+  // `excludeConverted` if both are sent.
+  onlyConverted: z
+    .union([z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((v) => v === "true"),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
 });
@@ -787,7 +795,42 @@ router.get(
       )})`);
     }
 
-    if (query.data.excludeConverted) {
+    if (query.data.onlyConverted) {
+      // "Converted" filter — restrict to leads that have a live
+      // converted_to_job activity. If there are none, short-circuit to
+      // an empty result so we don't need to round-trip the main query.
+      const convertedIds = await listConvertedLeadIds(accessibleLeadIds);
+      if (convertedIds.size === 0) {
+        // Mirror the cursor/offset envelope used by the empty
+        // `accessibleLeadIds` short-circuit above so the response shape
+        // stays consistent across pagination modes.
+        if (isCursorMode) {
+          res.json({
+            leads: [],
+            pagination: { limit: effectiveLimit, hasMore: false, nextCursor: null },
+            summary: { estimatedRevenueMinTotal: "0", estimatedRevenueMaxTotal: "0" },
+          });
+          return;
+        }
+        res.json({
+          leads: [],
+          pagination: {
+            page,
+            pageSize,
+            totalItems: 0,
+            totalPages: 1,
+          },
+          summary: {
+            estimatedRevenueMinTotal: "0",
+            estimatedRevenueMaxTotal: "0",
+          },
+        });
+        return;
+      }
+      conditions.push(
+        inArray(leads.id, Array.from(convertedIds)),
+      );
+    } else if (query.data.excludeConverted) {
       const convertedIds = await listConvertedLeadIds(accessibleLeadIds);
       if (convertedIds.size > 0) {
         conditions.push(

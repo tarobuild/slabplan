@@ -2766,6 +2766,13 @@ paths:
           schema:
             type: string
             enum: ["true", "false"]
+        - name: onlyConverted
+          in: query
+          required: false
+          description: When `true`, only leads that have been converted to a job are returned. Used by the cadstone Leads list when the user picks the "Converted" status filter.
+          schema:
+            type: string
+            enum: ["true", "false"]
         - $ref: "#/components/parameters/CursorParam"
         - $ref: "#/components/parameters/CursorLimitParam"
       security:

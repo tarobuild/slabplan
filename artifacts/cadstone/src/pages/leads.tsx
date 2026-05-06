@@ -447,9 +447,18 @@ export default function LeadsPage() {
   const listParams = useMemo<LeadsGetLeadsParams>(() => {
     const params: LeadsGetLeadsParams = { page, pageSize }
     if (debouncedSearch) params.search = debouncedSearch
-    if (status !== "all") params.status = status as LeadsGetLeadsParams["status"]
-    if (!showConverted) {
-      ;(params as { excludeConverted?: string }).excludeConverted = "true"
+    if (status === "converted") {
+      // The "Converted" filter is a UI-only status — converted leads
+      // live under the `won` enum value. We force the API to return
+      // only converted leads via onlyConverted=true and don't pass a
+      // status enum.
+      params.onlyConverted = "true"
+    } else {
+      if (status !== "all")
+        params.status = status as LeadsGetLeadsParams["status"]
+      if (!showConverted) {
+        params.excludeConverted = "true"
+      }
     }
     return params
   }, [page, pageSize, debouncedSearch, status, showConverted])
@@ -990,6 +999,7 @@ export default function LeadsPage() {
             <SelectItem value="qualified">Qualified</SelectItem>
             <SelectItem value="in_negotiation">In Negotiation</SelectItem>
             <SelectItem value="won">Won</SelectItem>
+            <SelectItem value="converted">Converted</SelectItem>
             <SelectItem value="lost">Lost</SelectItem>
             <SelectItem value="archived">Archived</SelectItem>
           </SelectContent>
@@ -997,19 +1007,24 @@ export default function LeadsPage() {
         {/* The toggle stays visible for every status filter (including
             `won`) so converted leads can always be revealed — without
             it, switching the status dropdown to `won` while the toggle
-            was off would silently keep converted leads hidden. */}
-        <label className="flex items-center gap-2 text-xs text-slate-600 self-center">
-          <input
-            type="checkbox"
-            checked={showConverted}
-            onChange={(e) => {
-              setShowConverted(e.target.checked)
-              setPage(1)
-            }}
-            data-testid="show-converted-toggle"
-          />
-          Show converted
-        </label>
+            was off would silently keep converted leads hidden. The
+            toggle is hidden when the dedicated "Converted" filter is
+            active because the list is already restricted to converted
+            leads in that case. */}
+        {status !== "converted" && (
+          <label className="flex items-center gap-2 text-xs text-slate-600 self-center">
+            <input
+              type="checkbox"
+              checked={showConverted}
+              onChange={(e) => {
+                setShowConverted(e.target.checked)
+                setPage(1)
+              }}
+              data-testid="show-converted-toggle"
+            />
+            Show converted
+          </label>
+        )}
       </div>
 
       {/* Desktop table */}

@@ -121,6 +121,7 @@ export * from "./leadsContactCreateSchema";
 export * from "./leadsContactUpdateSchema";
 export * from "./leadsGetLeadsContactsParams";
 export * from "./leadsGetLeadsExcludeConverted";
+export * from "./leadsGetLeadsOnlyConverted";
 export * from "./leadsGetLeadsParams";
 export * from "./leadsLeadPayloadSchema";
 export * from "./leadsLeadPayloadSchemaStatus";

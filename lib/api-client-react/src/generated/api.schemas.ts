@@ -2124,6 +2124,10 @@ export type LeadsGetLeadsParams = {
    */
   excludeConverted?: LeadsGetLeadsExcludeConverted;
   /**
+   * When `true`, only leads that have been converted to a job are returned. Used by the cadstone Leads list when the user picks the "Converted" status filter.
+   */
+  onlyConverted?: LeadsGetLeadsOnlyConverted;
+  /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
 value) or simply `?limit=N` with no `page`/`pageSize` — the server
@@ -2146,6 +2150,14 @@ export type LeadsGetLeadsExcludeConverted =
   (typeof LeadsGetLeadsExcludeConverted)[keyof typeof LeadsGetLeadsExcludeConverted];
 
 export const LeadsGetLeadsExcludeConverted = {
+  true: "true",
+  false: "false",
+} as const;
+
+export type LeadsGetLeadsOnlyConverted =
+  (typeof LeadsGetLeadsOnlyConverted)[keyof typeof LeadsGetLeadsOnlyConverted];
+
+export const LeadsGetLeadsOnlyConverted = {
   true: "true",
   false: "false",
 } as const;

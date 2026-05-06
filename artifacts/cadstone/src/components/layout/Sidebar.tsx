@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
   ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
   Plus,
   Search,
   SlidersHorizontal,
@@ -46,15 +48,18 @@ const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
 ]
 
 const EMPTY_COPY: Record<StatusFilter, string> = {
-  open: "No open jobs",
+  open: "No open jobs yet",
   closed: "No closed jobs",
   archived: "No archived jobs",
-  all: "No jobs",
+  all: "No jobs yet",
 }
 
 const STATUS_FILTER_STORAGE_KEY = "cadstone:sidebar:statusFilter"
 const SEARCH_STORAGE_KEY = "cadstone:sidebar:search"
 const SORT_ASC_STORAGE_KEY = "cadstone:sidebar:sortAsc"
+const COLLAPSED_CLIENTS_STORAGE_KEY = "cadstone:sidebar:collapsedClients"
+
+const UNASSIGNED_KEY = "__unassigned__"
 
 function isStatusFilter(value: unknown): value is StatusFilter {
   return (
@@ -96,8 +101,30 @@ function readStoredSortAsc(): boolean {
   }
 }
 
+function readStoredCollapsedClients(): Set<string> {
+  if (typeof window === "undefined") return new Set()
+  try {
+    const stored = window.localStorage.getItem(COLLAPSED_CLIENTS_STORAGE_KEY)
+    if (!stored) return new Set()
+    const parsed = JSON.parse(stored)
+    return Array.isArray(parsed) ? new Set(parsed.filter((v) => typeof v === "string")) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+type ClientGroup = {
+  key: string
+  clientId: string | null
+  clientName: string
+  jobs: Job[]
+}
+
 export default function Sidebar() {
-  const { jobId } = useParams<{ jobId?: string }>()
+  const { jobId, clientId: routeClientId } = useParams<{
+    jobId?: string
+    clientId?: string
+  }>()
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === "admin"
@@ -111,19 +138,19 @@ export default function Sidebar() {
   const [filterOpen, setFilterOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [activeJob, setActiveJob] = useState<Job | null>(null)
+  const [collapsedClients, setCollapsedClients] = useState<Set<string>>(
+    readStoredCollapsedClients,
+  )
   const activeRef = useRef<HTMLButtonElement | null>(null)
 
   const loadJobs = () => {
     setErrorMessage(null)
 
     api
-      .get("/jobs?pageSize=100")
+      .get("/jobs?pageSize=200")
       .then((r) => setJobs(r.data.jobs ?? r.data ?? []))
       .catch((err: unknown) => {
         const classified = classifyApiError(err, "Couldn't refresh jobs right now.")
-        // The global axios interceptor already toasts (and, for 403, redirects)
-        // for forbidden / session-expired responses. Mirror that here with an
-        // inline note that matches what the toast just said.
         let message: string
         if (classified.kind === "toast") {
           message = classified.message
@@ -170,27 +197,93 @@ export default function Sidebar() {
   }, [sortAsc])
 
   useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(
+        COLLAPSED_CLIENTS_STORAGE_KEY,
+        JSON.stringify(Array.from(collapsedClients)),
+      )
+    } catch {
+      // Ignore storage failures (e.g. private mode quota errors).
+    }
+  }, [collapsedClients])
+
+  useEffect(() => {
     if (activeRef.current) {
       activeRef.current.scrollIntoView({ block: "nearest" })
     }
   }, [jobId, jobs.length])
 
-  const statusFiltered = jobs.filter(
-    (j) => statusFilter === "all" || j.status === statusFilter,
+  const statusFiltered = useMemo(
+    () =>
+      jobs.filter(
+        (j) => statusFilter === "all" || j.status === statusFilter,
+      ),
+    [jobs, statusFilter],
   )
 
-  const filtered = statusFiltered
-    .filter((j) => j.title.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) =>
-      sortAsc ? a.title.localeCompare(b.title) : b.title.localeCompare(a.title),
-    )
+  const searchQuery = search.trim().toLowerCase()
+  const isSearching = searchQuery.length > 0
 
-  const filteredCount = statusFiltered.length
+  const searchFiltered = useMemo(
+    () =>
+      statusFiltered.filter((j) => {
+        if (!isSearching) return true
+        const inTitle = j.title.toLowerCase().includes(searchQuery)
+        // Crew members can't see clients, so don't expose them via search either.
+        const inClient =
+          canSeeClients &&
+          (j.clientName ?? "").toLowerCase().includes(searchQuery)
+        const inLocation = [j.city, j.state]
+          .filter(Boolean)
+          .join(", ")
+          .toLowerCase()
+          .includes(searchQuery)
+        return inTitle || inClient || inLocation
+      }),
+    [statusFiltered, isSearching, searchQuery, canSeeClients],
+  )
+
+  const groups: ClientGroup[] = useMemo(() => {
+    const map = new Map<string, ClientGroup>()
+    for (const job of searchFiltered) {
+      const key = job.clientId ?? UNASSIGNED_KEY
+      const name = job.clientId
+        ? job.clientName ?? "(Unnamed client)"
+        : "Unassigned"
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          clientId: job.clientId,
+          clientName: name,
+          jobs: [],
+        })
+      }
+      map.get(key)!.jobs.push(job)
+    }
+    const arr = Array.from(map.values())
+    // Sort jobs within each group
+    for (const g of arr) {
+      g.jobs.sort((a, b) =>
+        sortAsc
+          ? a.title.localeCompare(b.title)
+          : b.title.localeCompare(a.title),
+      )
+    }
+    // Sort groups: real clients alphabetically, then "Unassigned" last
+    arr.sort((a, b) => {
+      if (a.clientId === null && b.clientId !== null) return 1
+      if (b.clientId === null && a.clientId !== null) return -1
+      const cmp = a.clientName.localeCompare(b.clientName)
+      return sortAsc ? cmp : -cmp
+    })
+    return arr
+  }, [searchFiltered, sortAsc])
+
+  const totalJobsShown = searchFiltered.length
   const isFilterActive = statusFilter !== "open"
 
-  // Resolve the active job for the "Current Job" banner. The sidebar list may
-  // be filtered (or the active job may not be in the loaded slice), so fall
-  // back to a direct fetch by id when we can't find it locally.
+  // Resolve the active job for the "Current Job" banner.
   useEffect(() => {
     if (!jobId) {
       setActiveJob(null)
@@ -203,10 +296,6 @@ export default function Sidebar() {
       return
     }
 
-    // Clear any stale active job from a previous route before the fetch
-    // resolves, but keep the current one if it already matches `jobId` —
-    // otherwise a background `jobs` reload would flicker the banner to
-    // "Loading…" and back to the same title.
     setActiveJob((current) => (current?.id === jobId ? current : null))
 
     let cancelled = false
@@ -242,6 +331,36 @@ export default function Sidebar() {
     }
   }, [jobId, jobs])
 
+  // Auto-expand the client group that contains the active job or matches the
+  // current /clients/:clientId route, so users always see context. When the
+  // active job has no client, expand the synthetic "Unassigned" group.
+  useEffect(() => {
+    let focusKey: string | null = null
+    if (activeJob) {
+      focusKey = activeJob.clientId ?? UNASSIGNED_KEY
+    } else if (routeClientId) {
+      focusKey = routeClientId
+    }
+    if (!focusKey) return
+    setCollapsedClients((prev) => {
+      if (!prev.has(focusKey!)) return prev
+      const next = new Set(prev)
+      next.delete(focusKey!)
+      return next
+    })
+  }, [activeJob, routeClientId])
+
+  const toggleGroup = (key: string) => {
+    setCollapsedClients((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const navHeader = canSeeClients ? "Clients & Jobs" : "Jobs"
+
   return (
     <div className="flex h-full flex-col border-r border-[#E5E7EB] bg-white">
       {jobId && (
@@ -273,9 +392,20 @@ export default function Sidebar() {
         </div>
       )}
       {isAdmin ? (
-        <div className="border-b border-[#E5E7EB] p-2.5">
+        <div className="flex flex-col gap-1.5 border-b border-[#E5E7EB] p-2.5">
+          {canSeeClients ? (
+            <Button
+              variant="orange"
+              className="w-full"
+              size="sm"
+              onClick={() => navigate("/clients", { state: { openCreate: true } })}
+            >
+              <Plus className="size-4" />
+              New Client
+            </Button>
+          ) : null}
           <Button
-            variant="orange"
+            variant="outline"
             className="w-full"
             size="sm"
             onClick={() => navigate("/jobs", { state: { openCreate: true } })}
@@ -288,8 +418,8 @@ export default function Sidebar() {
 
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
-          <span>Jobs</span>
-          <span className="text-xs text-slate-400">({filteredCount})</span>
+          <span>{navHeader}</span>
+          <span className="text-xs text-slate-400">({totalJobsShown})</span>
         </div>
         <div className="flex items-center">
           <Popover open={filterOpen} onOpenChange={setFilterOpen}>
@@ -353,8 +483,8 @@ export default function Sidebar() {
             className="size-6 text-slate-400 hover:text-slate-600"
             aria-label={
               sortAsc
-                ? "Sort jobs A to Z (click to switch to Z to A)"
-                : "Sort jobs Z to A (click to switch to A to Z)"
+                ? "Sort A to Z (click to switch to Z to A)"
+                : "Sort Z to A (click to switch to A to Z)"
             }
             onClick={() => setSortAsc((v) => !v)}
           >
@@ -372,7 +502,9 @@ export default function Sidebar() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search jobs…"
+            placeholder={
+              canSeeClients ? "Search clients or jobs…" : "Search jobs…"
+            }
             className="h-7 border-[#E5E7EB] pl-8 text-xs shadow-none"
           />
         </div>
@@ -396,53 +528,179 @@ export default function Sidebar() {
       ) : null}
 
       <div className="flex-1 overflow-y-auto">
-        {filtered.length === 0 && (
-          <p className="px-3 py-6 text-center text-xs text-slate-400">
-            {search ? "No jobs match your search" : EMPTY_COPY[statusFilter]}
-          </p>
+        {totalJobsShown === 0 && (
+          <div className="px-3 py-6 text-center">
+            <p className="text-xs text-slate-400">
+              {isSearching
+                ? "Nothing matches your search"
+                : EMPTY_COPY[statusFilter]}
+            </p>
+            {isAdmin && !isSearching && canSeeClients ? (
+              <button
+                type="button"
+                onClick={() =>
+                  navigate("/clients", { state: { openCreate: true } })
+                }
+                className="mt-2 text-xs font-medium text-orange-700 hover:text-orange-800"
+              >
+                Add your first client →
+              </button>
+            ) : null}
+          </div>
         )}
-        {filtered.map((job) => {
-          const isActive = job.id === jobId
-          return (
-            <button
-              key={job.id}
-              ref={isActive ? activeRef : undefined}
-              onClick={() => navigate(`/jobs/${job.id}`)}
-              className={cn(
-                "flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-slate-50",
-                isActive && "bg-orange-50 hover:bg-orange-50",
-              )}
-            >
-              <span
-                className={cn(
-                  "mt-1 size-2 shrink-0 rounded-full",
-                  STATUS_DOT[job.status] ?? "bg-slate-400",
-                )}
-              />
-              <div className="min-w-0">
-                <p
+
+        {/* Crew members can't see clients — render a flat job list. */}
+        {totalJobsShown > 0 && !canSeeClients && (
+          <div>
+            {searchFiltered
+              .slice()
+              .sort((a, b) =>
+                sortAsc
+                  ? a.title.localeCompare(b.title)
+                  : b.title.localeCompare(a.title),
+              )
+              .map((job) => (
+                <JobRow
+                  key={job.id}
+                  job={job}
+                  active={job.id === jobId}
+                  activeRef={activeRef}
+                  onSelect={() => navigate(`/jobs/${job.id}`)}
+                  indented={false}
+                />
+              ))}
+          </div>
+        )}
+
+        {/* Admin/PM see jobs grouped under their client. */}
+        {totalJobsShown > 0 && canSeeClients &&
+          groups.map((group) => {
+            // When searching, always show jobs expanded so results are visible.
+            const isCollapsed =
+              !isSearching && collapsedClients.has(group.key)
+            const isActiveClient =
+              (activeJob?.clientId ?? routeClientId ?? null) === group.clientId &&
+              group.clientId !== null
+            const toggleLabel = isCollapsed
+              ? `Expand ${group.clientName}`
+              : `Collapse ${group.clientName}`
+
+            return (
+              <div key={group.key} className="border-b border-slate-100 last:border-b-0">
+                <div
                   className={cn(
-                    "truncate text-sm font-medium leading-snug",
-                    isActive ? "text-orange-700" : "text-slate-900",
+                    "flex items-center gap-1 px-2 py-1.5",
+                    isActiveClient && "bg-orange-50/40",
                   )}
                 >
-                  {job.title}
-                </p>
-                {(job.city || job.state) && (
-                  <p className="truncate text-xs text-slate-400">
-                    {[job.city, job.state].filter(Boolean).join(", ")}
-                  </p>
-                )}
-                {isActive && (
-                  <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-orange-500">
-                    Current
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.key)}
+                    aria-expanded={!isCollapsed}
+                    aria-label={toggleLabel}
+                    className="flex size-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    {isCollapsed ? (
+                      <ChevronRight className="size-3.5" />
+                    ) : (
+                      <ChevronDown className="size-3.5" />
+                    )}
+                  </button>
+                  {group.clientId ? (
+                    <Link
+                      to={`/clients/${group.clientId}`}
+                      className={cn(
+                        "min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide hover:text-orange-700",
+                        isActiveClient ? "text-orange-700" : "text-slate-600",
+                      )}
+                      title={group.clientName}
+                    >
+                      {group.clientName}
+                    </Link>
+                  ) : (
+                    <span
+                      className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      title={group.clientName}
+                    >
+                      {group.clientName}
+                    </span>
+                  )}
+                  <span className="shrink-0 text-[10px] text-slate-400">
+                    {group.jobs.length}
+                  </span>
+                </div>
+
+                {!isCollapsed && (
+                  <div className="pb-1">
+                    {group.jobs.map((job) => (
+                      <JobRow
+                        key={job.id}
+                        job={job}
+                        active={job.id === jobId}
+                        activeRef={activeRef}
+                        onSelect={() => navigate(`/jobs/${job.id}`)}
+                        indented
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-            </button>
-          )
-        })}
+            )
+          })}
       </div>
     </div>
+  )
+}
+
+function JobRow({
+  job,
+  active,
+  activeRef,
+  onSelect,
+  indented,
+}: {
+  job: Job
+  active: boolean
+  activeRef: React.Ref<HTMLButtonElement>
+  onSelect: () => void
+  indented: boolean
+}) {
+  return (
+    <button
+      ref={active ? activeRef : undefined}
+      onClick={onSelect}
+      className={cn(
+        "flex w-full items-start gap-2.5 pr-3 py-2 text-left transition-colors hover:bg-slate-50",
+        indented ? "pl-7" : "pl-3",
+        active && "bg-orange-50 hover:bg-orange-50",
+      )}
+    >
+      <span
+        className={cn(
+          "mt-1 size-2 shrink-0 rounded-full",
+          STATUS_DOT[job.status] ?? "bg-slate-400",
+        )}
+      />
+      <div className="min-w-0">
+        <p
+          className={cn(
+            "truncate text-sm font-medium leading-snug",
+            active ? "text-orange-700" : "text-slate-900",
+          )}
+        >
+          {job.title}
+        </p>
+        {(job.city || job.state) && (
+          <p className="truncate text-xs text-slate-400">
+            {[job.city, job.state].filter(Boolean).join(", ")}
+          </p>
+        )}
+        {active && (
+          <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-orange-500">
+            Current
+          </p>
+        )}
+      </div>
+    </button>
   )
 }

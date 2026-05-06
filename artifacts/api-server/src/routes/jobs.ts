@@ -23,7 +23,7 @@ type DbExecutor = Pick<typeof db, "insert" | "delete">;
 
 const jobQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
-  pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
+  pageSize: z.coerce.number().int().positive().max(200).optional().default(10),
   search: z.string().trim().optional(),
   status: z.enum(["open", "closed", "archived"]).optional(),
   clientId: z.string().uuid().optional(),

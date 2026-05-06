@@ -150,14 +150,18 @@ export default function Sidebar() {
       .get("/jobs?pageSize=200")
       .then((r) => setJobs(r.data.jobs ?? r.data ?? []))
       .catch((err: unknown) => {
-        const classified = classifyApiError(err, "Couldn't refresh jobs right now.")
+        // Nav widget intentionally swallows the raw server message
+        // (e.g. "Invalid jobs query.") because non-technical users
+        // don't benefit from validation jargon — only the auth/permission
+        // and session cases get specialised copy.
+        const classified = classifyApiError(err, "Couldn't load the jobs list.")
         let message: string
-        if (classified.kind === "toast") {
-          message = classified.message
-        } else if (classified.kind === "session-expired") {
+        if (classified.kind === "session-expired") {
           message = "Your session expired — please sign in again."
-        } else {
+        } else if (classified.kind === "forbidden") {
           message = "You don't have permission to view jobs."
+        } else {
+          message = "Couldn't load the jobs list."
         }
         setErrorMessage(message)
       })

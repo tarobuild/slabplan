@@ -96,10 +96,15 @@ router.get("/livez", (_req, res) => {
   res.json(data);
 });
 
-// Deep readiness probe. Exercises the primary DB and the upload bucket in
-// parallel with a hard 1.5s timeout per check. A single failing dependency
-// flips the response to 503 + status:"degraded" so a load balancer can stop
-// routing traffic to a broken instance.
+// Deep readiness probe. Exercises the primary DB (hard requirement) and
+// the upload bucket (soft — degraded but still 200) in parallel with a
+// hard 1.5s timeout per check. Only DB failures flip the response to 503
+// so the deployment platform's readiness probe stops routing traffic to
+// a truly broken instance. Object-storage permission gaps (e.g.
+// deployment service account missing storage.buckets.get) are surfaced
+// in the payload + warned in logs but do not gate readiness, because
+// the rest of the API can still serve requests without bucket head
+// access at boot.
 router.get("/healthz", async (_req, res, next) => {
   const startedAt = Date.now();
   try {
@@ -113,6 +118,7 @@ router.get("/healthz", async (_req, res, next) => {
     if (!storageResult.ok && storageResult.error) errors.push(storageResult.error);
 
     const allOk = dbResult.ok && storageResult.ok;
+    const readinessOk = dbResult.ok; // storage is a soft check
     const durationMs = Date.now() - startedAt;
     const payload = HealthGetHealthzResponse.parse({
       status: allOk ? "ok" : "degraded",
@@ -129,7 +135,7 @@ router.get("/healthz", async (_req, res, next) => {
       );
     }
 
-    res.status(allOk ? 200 : 503).json(payload);
+    res.status(readinessOk ? 200 : 503).json(payload);
   } catch (err) {
     next(err);
   }

@@ -42,22 +42,6 @@ router.use(requireManagerOrAbove);
 // nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
 const UNKNOWN_CLIENT_ID = "8bdd2d52-7563-5843-95f8-aea786f0b386"; // nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
 
-// SQL fragment for "this client has activity that makes it active":
-// any non-cancelled (i.e. not archived) job updated within the last
-// 12 months, OR any job with an outstanding balance > $0. Recently
-// completed (`closed`) jobs still count as activity per spec.
-const clientHasActivitySql = sql`exists (
-  select 1 from ${jobs}
-  where ${jobs.clientId} = ${clients.id}
-    and ${jobs.deletedAt} is null
-    and (
-      (${jobs.status} <> 'archived'
-        and ${jobs.updatedAt} > now() - interval '12 months')
-      or (coalesce(${jobs.contractValueCents}, 0)
-            - coalesce(${jobs.amountPaidCents}, 0) > 0)
-    )
-)`;
-
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
   .transform((value) => {
@@ -150,21 +134,16 @@ router.get(
       return;
     }
 
-    // Status filter:
-    //   active   → not soft-deleted AND (recent non-closed activity OR outstanding > 0)
-    //   archived → soft-deleted (explicitly archived by deletion)
+    // Status filter (simplified to match user mental model — a client is
+    // Active unless it has been explicitly archived/soft-deleted):
+    //   active   → not soft-deleted (includes brand-new clients with no jobs)
+    //   archived → soft-deleted only
     //   all      → no status filter
     const conditions: SQL[] = [];
     if (status === "active") {
       conditions.push(isNull(clients.deletedAt));
-      conditions.push(clientHasActivitySql);
     } else if (status === "archived") {
-      // Archived = soft-deleted OR inactive (no recent non-closed activity
-      // AND no outstanding balance). This keeps every non-Active client
-      // reachable under the Archived chip rather than only under "All".
-      conditions.push(
-        sql`(${clients.deletedAt} is not null or not ${clientHasActivitySql})`,
-      );
+      conditions.push(sql`${clients.deletedAt} is not null`);
     }
     if (accessibleClientIds) {
       conditions.push(inArray(clients.id, accessibleClientIds));

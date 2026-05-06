@@ -9,8 +9,23 @@ export type CrewHome = {
   today: string
   schedule: { items: CrewScheduleItem[] }
   todos: CrewTodo[]
+  forecast: CrewForecast | null
   weather: WeatherStrip | null
   latestLog: { id: string; logDate: string; jobId: string; jobTitle: string | null; title: string | null } | null
+}
+
+export type CrewForecast = {
+  jobId: string
+  jobTitle: string | null
+  address: string
+  condition: string
+  icon: string
+  temperatureHigh: number | null
+  temperatureLow: number | null
+  windMph: number | null
+  humidity: number | null
+  precipitation: number
+  fetchedAt: string
 }
 
 export type CrewScheduleItem = {

@@ -6294,7 +6294,12 @@ export const useDailyLogsPostDailyLogsIdPublish = <
 };
 
 /**
- * Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with weatherQuerySchema.
+ * Returns a single-day weather snapshot from Open-Meteo. Caller must
+provide either `address` or both `lat` and `lng`. `date` defaults to
+today; past dates fall through to the historical archive endpoint.
+Validated by `weatherQuerySchema` in
+artifacts/api-server/src/routes/daily-logs.ts.
+
  * @summary GET /weather
  */
 export const getDailyLogsGetWeatherUrl = () => {
@@ -11768,7 +11773,11 @@ export function useDashboardGetDashboardAgenda<
  * Role-aware Home page payload. Returns a discriminated union keyed by
 `role` (`crew` | `pm` | `admin`). The shape varies by role; see
 artifacts/api-server/src/routes/dashboard.ts for the authoritative
-builder functions.
+builder functions. The `crew` payload includes a `forecast` field with
+today's high/low and conditions for the user's primary job site, fetched
+via Open-Meteo and cached server-side for one hour. The field is `null`
+when no job address is available or the upstream forecast fails (the
+client falls back to device geolocation in that case).
 
  * @summary GET /dashboard/home
  */

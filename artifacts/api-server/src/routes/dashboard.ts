@@ -33,6 +33,7 @@ import {
 import { buildDailyLogVisibilityFilter } from "../lib/daily-log-visibility";
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildScheduleListVisibilityFilter } from "../lib/schedule-visibility";
+import { getCachedForecastForAddress, type WeatherSnapshot } from "../lib/weather";
 
 const router: IRouter = Router();
 
@@ -441,6 +442,68 @@ function startOfMonthIso(today: string): string {
   return `${today.slice(0, 7)}-01`;
 }
 
+type CrewScheduleRow = {
+  jobId: string;
+  jobTitle: string | null;
+  jobCity: string | null;
+  jobState: string | null;
+  jobAddress: string | null;
+};
+
+type CrewLatestLogRow = {
+  jobId: string;
+  jobTitle: string | null;
+} | null;
+
+type CrewForecastJob = {
+  jobId: string;
+  jobTitle: string | null;
+  address: string;
+} | null;
+
+function buildJobAddress(row: {
+  jobAddress?: string | null;
+  jobCity?: string | null;
+  jobState?: string | null;
+}): string {
+  return [row.jobAddress, row.jobCity, row.jobState]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter((part) => part.length > 0)
+    .join(", ");
+}
+
+function pickPrimaryJobForForecast(
+  schedule: CrewScheduleRow[],
+  latestLog: CrewLatestLogRow,
+): CrewForecastJob {
+  for (const row of schedule) {
+    const address = buildJobAddress(row);
+    if (address.length > 0) {
+      return { jobId: row.jobId, jobTitle: row.jobTitle, address };
+    }
+  }
+  if (latestLog) {
+    // We didn't query the latest log's address columns; fall back to the job
+    // title (which is often a city or site name) so the geocoder still has
+    // something to work with.
+    const fallback = (latestLog.jobTitle ?? "").trim();
+    if (fallback.length > 0) {
+      return { jobId: latestLog.jobId, jobTitle: latestLog.jobTitle, address: fallback };
+    }
+  }
+  return null;
+}
+
+async function fetchForecastForJob(job: CrewForecastJob): Promise<
+  | (WeatherSnapshot & { jobId: string; jobTitle: string | null; address: string })
+  | null
+> {
+  if (!job) return null;
+  const snap = await getCachedForecastForAddress(job.address);
+  if (!snap) return null;
+  return { ...snap, jobId: job.jobId, jobTitle: job.jobTitle, address: job.address };
+}
+
 async function buildCrewHome(auth: NonNullable<Express.Request["auth"]>) {
   const today = todayIso();
   const userId = auth.userId;
@@ -540,6 +603,13 @@ async function buildCrewHome(auth: NonNullable<Express.Request["auth"]>) {
 
   const latestLog = myLatestLogRows[0] ?? null;
 
+  // Pick today's primary job for the weather forecast: the first scheduled
+  // item assigned to this crew member, falling back to the most recent daily
+  // log's job. Forecasts are cached server-side for an hour, so this stays
+  // cheap even when many crew members hit /dashboard/home in the morning.
+  const primaryJob = pickPrimaryJobForForecast(myAssignedToday, latestLog);
+  const forecast = await fetchForecastForJob(primaryJob);
+
   return {
     role: "crew" as const,
     today,
@@ -554,6 +624,7 @@ async function buildCrewHome(auth: NonNullable<Express.Request["auth"]>) {
       ...row,
       isComplete: row.isComplete === true,
     })),
+    forecast,
     weather:
       latestLog && latestLog.includeWeather !== false
         ? {

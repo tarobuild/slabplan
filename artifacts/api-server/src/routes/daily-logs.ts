@@ -55,6 +55,12 @@ import {
   uploadArray,
 } from "../lib/uploads";
 import { createUploadPerUserRateLimit } from "../lib/rate-limit";
+import {
+  fetchWeatherForAddress,
+  fetchWeatherForCoords,
+  getCachedForecastForAddress,
+  getCachedForecastForCoords,
+} from "../lib/weather";
 
 const uploadRateLimit = createUploadPerUserRateLimit();
 
@@ -177,10 +183,19 @@ const dailyLogPayloadSchema = z.object({
   customFieldValues: customFieldValuesSchema,
 });
 
-const weatherQuerySchema = z.object({
-  address: z.string().trim().min(1).max(500),
-  date: optionalDate,
-});
+const weatherQuerySchema = z
+  .object({
+    address: z.string().trim().min(1).max(500).optional(),
+    lat: z.coerce.number().gte(-90).lte(90).optional(),
+    lng: z.coerce.number().gte(-180).lte(180).optional(),
+    date: optionalDate,
+  })
+  .refine(
+    (value) =>
+      typeof value.address === "string" ||
+      (typeof value.lat === "number" && typeof value.lng === "number"),
+    { message: "Provide either `address` or both `lat` and `lng`." },
+  );
 
 const weatherMetaKey = "__cadstoneMeta";
 
@@ -229,47 +244,6 @@ const requireDailyLogEditAccess = asyncHandler(async (req, _res, next) => {
   await assertCanEditDailyLog(req.auth!, logId);
   next();
 });
-
-function sanitizeWeatherIcon(value: string) {
-  const normalized = value.trim().toLowerCase();
-
-  if (normalized.includes("snow")) {
-    return "snow";
-  }
-
-  if (normalized.includes("storm") || normalized.includes("thunder")) {
-    return "storm";
-  }
-
-  if (
-    normalized.includes("rain") ||
-    normalized.includes("drizzle") ||
-    normalized.includes("shower")
-  ) {
-    return "rain";
-  }
-
-  if (normalized.includes("cloud") || normalized.includes("overcast") || normalized.includes("fog")) {
-    return "cloud";
-  }
-
-  return "sun";
-}
-
-function weatherCodeToCondition(code: number) {
-  if (code === 0) return "Sunny";
-  if (code === 1) return "Mainly clear";
-  if (code === 2) return "Partly cloudy";
-  if (code === 3) return "Overcast";
-  if (code >= 45 && code <= 48) return "Fog";
-  if (code >= 51 && code <= 57) return "Drizzle";
-  if (code >= 61 && code <= 67) return "Rain";
-  if (code >= 71 && code <= 77) return "Snow";
-  if (code >= 80 && code <= 82) return "Rain showers";
-  if (code >= 85 && code <= 86) return "Snow showers";
-  if (code >= 95 && code <= 99) return "Thunderstorm";
-  return "Unknown";
-}
 
 function encodeWeatherPayload(
   weatherData: Record<string, unknown> | null,
@@ -749,106 +723,6 @@ async function loadDailyLogTodos(dailyLogId: string) {
     .leftJoin(users, eq(dailyLogTodos.createdBy, users.id))
     .where(eq(dailyLogTodos.dailyLogId, dailyLogId))
     .orderBy(asc(dailyLogTodos.isComplete), asc(dailyLogTodos.createdAt));
-}
-
-async function fetchWeatherSnapshot(address: string, dateValue: string | null) {
-  const today = new Date().toISOString().slice(0, 10);
-  const targetDate = dateValue ?? today;
-  const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
-  geoUrl.searchParams.set("name", address);
-  geoUrl.searchParams.set("count", "1");
-  geoUrl.searchParams.set("language", "en");
-  geoUrl.searchParams.set("format", "json");
-
-  const geoResponse = await fetch(geoUrl);
-
-  if (!geoResponse.ok) {
-    throw new HttpError(502, "Weather geocoding failed.");
-  }
-
-  const geoPayload = (await geoResponse.json()) as {
-    results?: Array<{ latitude: number; longitude: number; name?: string }>;
-  };
-  const match = geoPayload.results?.[0];
-
-  if (!match) {
-    throw new HttpError(404, "Unable to locate that address for weather lookup.");
-  }
-
-  const isPast = targetDate < today;
-  const weatherUrl = new URL(
-    isPast
-      ? "https://archive-api.open-meteo.com/v1/archive"
-      : "https://api.open-meteo.com/v1/forecast",
-  );
-
-  weatherUrl.searchParams.set("latitude", String(match.latitude));
-  weatherUrl.searchParams.set("longitude", String(match.longitude));
-  weatherUrl.searchParams.set("temperature_unit", "fahrenheit");
-  weatherUrl.searchParams.set("wind_speed_unit", "mph");
-  weatherUrl.searchParams.set("precipitation_unit", "inch");
-  weatherUrl.searchParams.set("timezone", "auto");
-  weatherUrl.searchParams.set("start_date", targetDate);
-  weatherUrl.searchParams.set("end_date", targetDate);
-  weatherUrl.searchParams.set(
-    "daily",
-    "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum",
-  );
-  weatherUrl.searchParams.set("hourly", "relative_humidity_2m,wind_speed_10m");
-
-  const weatherResponse = await fetch(weatherUrl);
-
-  if (!weatherResponse.ok) {
-    throw new HttpError(502, "Weather lookup failed.");
-  }
-
-  const payload = (await weatherResponse.json()) as {
-    daily?: {
-      weather_code?: number[];
-      temperature_2m_max?: number[];
-      temperature_2m_min?: number[];
-      precipitation_sum?: number[];
-    };
-    hourly?: {
-      relative_humidity_2m?: number[];
-      wind_speed_10m?: number[];
-    };
-  };
-
-  if (!payload.daily) {
-    throw new HttpError(404, "Weather data is unavailable for that day.");
-  }
-
-  const code = payload.daily.weather_code?.[0] ?? 0;
-  const humidityValues = payload.hourly?.relative_humidity_2m ?? [];
-  const windValues = payload.hourly?.wind_speed_10m ?? [];
-  const humidityAverage =
-    humidityValues.length > 0
-      ? Math.round(humidityValues.reduce((sum, value) => sum + value, 0) / humidityValues.length)
-      : null;
-  const windMax =
-    windValues.length > 0 ? Math.round(Math.max(...windValues)) : null;
-  const condition = weatherCodeToCondition(code);
-
-  return {
-    condition,
-    icon: sanitizeWeatherIcon(condition),
-    temperatureHigh:
-      typeof payload.daily.temperature_2m_max?.[0] === "number"
-        ? Math.round(payload.daily.temperature_2m_max[0])
-        : null,
-    temperatureLow:
-      typeof payload.daily.temperature_2m_min?.[0] === "number"
-        ? Math.round(payload.daily.temperature_2m_min[0])
-        : null,
-    windMph: windMax,
-    humidity: humidityAverage,
-    precipitation:
-      typeof payload.daily.precipitation_sum?.[0] === "number"
-        ? Number(payload.daily.precipitation_sum[0].toFixed(2))
-        : 0,
-    fetchedAt: new Date().toISOString(),
-  };
 }
 
 async function hydrateDailyLog(id: string, currentUserId: string) {
@@ -1830,7 +1704,30 @@ router.get(
       throw new HttpError(400, "Invalid weather query.", query.error.flatten());
     }
 
-    const weather = await fetchWeatherSnapshot(query.data.address, query.data.date);
+    // For "today" lookups we go through the shared 1-hour cache so repeated
+    // calls (e.g. the crew Home device-geolocation fallback) don't spam
+    // Open-Meteo. Date-specific lookups (used by the daily log editor when
+    // backfilling weather for a past day) bypass the cache because they're
+    // bounded by the user explicitly picking a date.
+    const today = new Date().toISOString().slice(0, 10);
+    const isToday = !query.data.date || query.data.date === today;
+
+    let weather;
+    if (typeof query.data.address === "string") {
+      weather = isToday
+        ? (await getCachedForecastForAddress(query.data.address)) ??
+          (await fetchWeatherForAddress(query.data.address, query.data.date))
+        : await fetchWeatherForAddress(query.data.address, query.data.date);
+    } else {
+      const coords = {
+        latitude: query.data.lat as number,
+        longitude: query.data.lng as number,
+      };
+      weather = isToday
+        ? (await getCachedForecastForCoords(coords)) ??
+          (await fetchWeatherForCoords(coords, query.data.date))
+        : await fetchWeatherForCoords(coords, query.data.date);
+    }
     res.json({ weather });
   }),
 );

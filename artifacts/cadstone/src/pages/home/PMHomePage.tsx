@@ -63,6 +63,7 @@ export default function PMHomePage({ data }: { data: PmHome }) {
           <AtRiskTile
             label="Overdue items"
             count={atRisk.overdueScheduleItems}
+            to="/schedule?status=overdue&view=list"
             tooltip={atRisk.samples.overdue
               .map((i) => `${i.title} — ${i.jobTitle ?? "?"} (due ${i.endDate})`)
               .join("\n")}
@@ -71,12 +72,14 @@ export default function PMHomePage({ data }: { data: PmHome }) {
           <AtRiskTile
             label="Jobs missing logs (3+ working days)"
             count={atRisk.jobsMissingLogs}
+            to="/at-risk/missing-logs"
             tooltip={atRisk.samples.missingLogJobs.map((j) => j.title).join("\n")}
             data-testid="home-pm-at-risk-missing-logs"
           />
           <AtRiskTile
             label="Pending change orders"
             count={atRisk.pendingChangeOrders}
+            to="/at-risk/pending-change-orders"
             tooltip={atRisk.samples.pendingChangeOrders
               .map((c) => `#${c.number} — ${c.jobTitle ?? "?"}`)
               .join("\n")}
@@ -177,21 +180,22 @@ function AtRiskTile({
   label,
   count,
   tooltip,
+  to,
   ...rest
 }: {
   label: string
   count: number
   tooltip: string
+  to?: string
   "data-testid"?: string
 }) {
   const danger = count > 0
-  const tile = (
-    <div
-      {...rest}
-      className={`rounded-lg border p-4 transition ${
-        danger ? "border-amber-200 bg-amber-50" : "border-[#E5E7EB] bg-white"
-      }`}
-    >
+  const clickable = danger && Boolean(to)
+  const baseClass = `block rounded-lg border p-4 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 ${
+    danger ? "border-amber-200 bg-amber-50" : "border-[#E5E7EB] bg-white"
+  } ${clickable ? "cursor-pointer hover:border-amber-300 hover:bg-amber-100/60" : ""}`
+  const inner = (
+    <>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-600">{label}</p>
       <p
         className={`mt-1 text-2xl font-semibold ${
@@ -200,15 +204,25 @@ function AtRiskTile({
       >
         {count}
       </p>
+    </>
+  )
+  const ariaLabel = clickable
+    ? `${label}: ${count}. View details.`
+    : `${label}: ${count}`
+  const tile = clickable ? (
+    <Link {...rest} to={to!} aria-label={ariaLabel} className={baseClass}>
+      {inner}
+    </Link>
+  ) : (
+    <div {...rest} aria-label={ariaLabel} className={baseClass}>
+      {inner}
     </div>
   )
   if (!tooltip || count === 0) return tile
   return (
     <TooltipProvider delayDuration={250}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <div>{tile}</div>
-        </TooltipTrigger>
+        <TooltipTrigger asChild>{tile}</TooltipTrigger>
         <TooltipContent className="max-w-xs whitespace-pre-line text-xs">
           {tooltip}
         </TooltipContent>

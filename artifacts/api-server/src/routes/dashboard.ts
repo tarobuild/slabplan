@@ -402,7 +402,14 @@ const PM_AT_RISK_NO_LOG_WORKING_DAYS = 3;
 const ADMIN_TOP_CLIENTS_LIMIT = 5;
 const ADMIN_RECENT_LEADS_LIMIT = 5;
 const PM_TEAM_LOG_WINDOW_HOURS = 24;
-const PM_AT_RISK_DRILLDOWN_LIMIT = 25;
+// Cap on the per-cohort drill-down list returned in `samples`. Set high
+// enough that the PM Home at-risk tiles can drill into the full counted
+// set in any realistic workspace (a workspace carrying 500+ overdue
+// schedule items, jobs missing logs, or pending change orders has
+// bigger problems than this list cap). The drill-down pages render
+// these straight from /dashboard/home rather than hitting separate
+// list endpoints.
+const PM_AT_RISK_DRILLDOWN_LIMIT = 500;
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -822,7 +829,7 @@ async function buildPmHome(auth: NonNullable<Express.Request["auth"]>) {
       jobsMissingLogs: missingLogJobIds.length,
       pendingChangeOrders: pendingCoCount,
       samples: {
-        overdue: overdue.slice(0, 10).map((row) => ({
+        overdue: overdue.map((row) => ({
           id: row.id,
           title: row.title,
           endDate: row.endDate,
@@ -830,7 +837,7 @@ async function buildPmHome(auth: NonNullable<Express.Request["auth"]>) {
           jobTitle: row.jobTitle,
         })),
         missingLogJobs,
-        pendingChangeOrders: pendingCos.slice(0, 10).map((co) => ({
+        pendingChangeOrders: pendingCos.map((co) => ({
           id: co.id,
           number: co.number,
           amountCents: Number(co.amountCents ?? 0),

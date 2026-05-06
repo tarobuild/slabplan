@@ -32,6 +32,10 @@ const ClientsPage = lazy(() => import("@/pages/clients"))
 const ClientDetailPage = lazy(() => import("@/pages/client-detail"))
 const DashboardPage = lazy(() => import("@/pages/dashboard"))
 const HomePage = lazy(() => import("@/pages/home"))
+const MissingLogsAtRiskPage = lazy(() => import("@/pages/at-risk/MissingLogsPage"))
+const PendingChangeOrdersAtRiskPage = lazy(
+  () => import("@/pages/at-risk/PendingChangeOrdersPage"),
+)
 const ForbiddenPage = lazy(() => import("@/pages/forbidden"))
 const JobDailyLogsPage = lazy(() => import("@/pages/job-daily-logs"))
 const JobDetailPage = lazy(() => import("@/pages/job-detail"))
@@ -166,6 +170,16 @@ function buildRouter(ready: boolean, basename: string | undefined) {
             <Route path="/dashboard/legacy" element={<DashboardPage />} />
             <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
+            <Route element={<RoleGate allow={ROLE_GATES.companyViews} redirectTo="/403" />}>
+              <Route
+                path="/at-risk/missing-logs"
+                element={<MissingLogsAtRiskPage />}
+              />
+              <Route
+                path="/at-risk/pending-change-orders"
+                element={<PendingChangeOrdersAtRiskPage />}
+              />
+            </Route>
             <Route path="/resources" element={<ResourcesPage />} />
             {/*
               Top-level Files routes were removed in #318. Files are now

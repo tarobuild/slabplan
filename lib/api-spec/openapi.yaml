@@ -10585,6 +10585,60 @@ paths:
       x-source-file: artifacts/api-server/src/routes/dashboard.ts
       security:
         - bearerAuth: []
+  /dashboard/home:
+    get:
+      operationId: dashboard_get_dashboard_home
+      tags:
+        - dashboard
+      summary: GET /dashboard/home
+      description: |
+        Role-aware Home page payload. Returns a discriminated union keyed by
+        `role` (`crew` | `pm` | `admin`). The shape varies by role; see
+        artifacts/api-server/src/routes/dashboard.ts for the authoritative
+        builder functions.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+      x-source-file: artifacts/api-server/src/routes/dashboard.ts
+      security:
+        - bearerAuth: []
   /dashboard/schedule:
     get:
       operationId: dashboard_get_dashboard_schedule

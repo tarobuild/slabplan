@@ -11760,6 +11760,87 @@ export function useDashboardGetDashboardAgenda<
 }
 
 /**
+ * Role-aware Home page payload. Returns a discriminated union keyed by
+`role` (`crew` | `pm` | `admin`). The shape varies by role; see
+artifacts/api-server/src/routes/dashboard.ts for the authoritative
+builder functions.
+
+ * @summary GET /dashboard/home
+ */
+export const getDashboardGetDashboardHomeUrl = () => {
+  return `/api/dashboard/home`;
+};
+
+export const dashboardGetDashboardHome = async (
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getDashboardGetDashboardHomeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDashboardGetDashboardHomeQueryKey = () => {
+  return [`/api/dashboard/home`] as const;
+};
+
+export const getDashboardGetDashboardHomeQueryOptions = <
+  TData = Awaited<ReturnType<typeof dashboardGetDashboardHome>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardHome>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDashboardGetDashboardHomeQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dashboardGetDashboardHome>>
+  > = ({ signal }) => dashboardGetDashboardHome({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardHome>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DashboardGetDashboardHomeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dashboardGetDashboardHome>>
+>;
+export type DashboardGetDashboardHomeQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /dashboard/home
+ */
+
+export function useDashboardGetDashboardHome<
+  TData = Awaited<ReturnType<typeof dashboardGetDashboardHome>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dashboardGetDashboardHome>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDashboardGetDashboardHomeQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * Route defined in artifacts/api-server/src/routes/dashboard.ts. Validated query with dashboardScheduleQuerySchema.
  * @summary GET /dashboard/schedule
  */

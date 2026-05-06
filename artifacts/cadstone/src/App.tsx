@@ -31,6 +31,7 @@ const queryClient = getQueryClient()
 const ClientsPage = lazy(() => import("@/pages/clients"))
 const ClientDetailPage = lazy(() => import("@/pages/client-detail"))
 const DashboardPage = lazy(() => import("@/pages/dashboard"))
+const HomePage = lazy(() => import("@/pages/home"))
 const ForbiddenPage = lazy(() => import("@/pages/forbidden"))
 const JobDailyLogsPage = lazy(() => import("@/pages/job-daily-logs"))
 const JobDetailPage = lazy(() => import("@/pages/job-detail"))
@@ -152,8 +153,17 @@ function buildRouter(ready: boolean, basename: string | undefined) {
 
         <Route element={<ProtectedRoute ready={ready} />}>
           <Route element={<AppLayout />}>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
+            {/*
+              Home is role-aware (Task #321): crew gets "My Day", PM gets
+              "This Week", admin gets "Business Pulse". Both `/` and
+              `/dashboard` render it. The legacy combined dashboard is
+              still mounted at `/dashboard/legacy` for direct links and
+              backwards-compat — it can be removed once analytics confirm
+              no traffic.
+            */}
+            <Route path="/" element={<HomePage />} />
+            <Route path="/dashboard" element={<HomePage />} />
+            <Route path="/dashboard/legacy" element={<DashboardPage />} />
             <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/resources" element={<ResourcesPage />} />

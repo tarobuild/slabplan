@@ -7613,6 +7613,16 @@ export const DashboardGetDashboardStatsResponse = zod.unknown();
 export const DashboardGetDashboardAgendaResponse = zod.unknown();
 
 /**
+ * Role-aware Home page payload. Returns a discriminated union keyed by
+`role` (`crew` | `pm` | `admin`). The shape varies by role; see
+artifacts/api-server/src/routes/dashboard.ts for the authoritative
+builder functions.
+
+ * @summary GET /dashboard/home
+ */
+export const DashboardGetDashboardHomeResponse = zod.unknown();
+
+/**
  * Route defined in artifacts/api-server/src/routes/dashboard.ts. Validated query with dashboardScheduleQuerySchema.
  * @summary GET /dashboard/schedule
  */

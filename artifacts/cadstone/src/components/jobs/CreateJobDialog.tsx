@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -126,18 +126,21 @@ export default function CreateJobDialog({
 
   const createJobMutation = useJobsPostJobs()
 
-  // Reset form whenever the dialog is (re-)opened so a fresh client
-  // pre-fill takes effect and stale state from a prior session is
-  // wiped.
+  // Reset form ONLY on the open transition (false → true). Re-running
+  // the reset whenever `defaultClientId` changes mid-flow could wipe
+  // user-entered fields and the chosen clientId between steps.
+  const wasOpenRef = useRef(false)
   useEffect(() => {
-    if (!open) return
-    setForm({ ...emptyForm, clientId: defaultClientId ?? "" })
-    setStep(1)
-    setShowCreateClient(false)
-    setNewClientCompanyName("")
-    setNewClientContactName("")
-    setNewClientEmail("")
-    setNewClientPhone("")
+    if (open && !wasOpenRef.current) {
+      setForm({ ...emptyForm, clientId: defaultClientId ?? "" })
+      setStep(1)
+      setShowCreateClient(false)
+      setNewClientCompanyName("")
+      setNewClientContactName("")
+      setNewClientEmail("")
+      setNewClientPhone("")
+    }
+    wasOpenRef.current = open
   }, [open, defaultClientId])
 
   useEffect(() => {
@@ -218,7 +221,11 @@ export default function CreateJobDialog({
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault()
-    if (!form.clientId) {
+    // Belt-and-suspenders: when the parent locked the client (picker
+    // flow), defaultClientId is authoritative. Fall back to it if the
+    // local form state ever loses the value mid-flow.
+    const effectiveClientId = form.clientId || defaultClientId || ""
+    if (!effectiveClientId) {
       toast.error("Pick a client before creating the job.")
       setStep(1)
       return
@@ -235,7 +242,7 @@ export default function CreateJobDialog({
       contractPrice: form.contractPrice || null,
       projectedStart: form.projectedStart || null,
       projectedCompletion: form.projectedCompletion || null,
-      clientId: form.clientId,
+      clientId: effectiveClientId,
       assigneeIds: isAdmin ? form.assigneeIds : [],
     }
     const validated = validatePayload(JobsPostJobsBody, payload)
@@ -545,7 +552,7 @@ export default function CreateJobDialog({
                 </Button>
                 <Button
                   type="submit"
-                  disabled={saving || !form.clientId}
+                  disabled={saving}
                   style={{ backgroundColor: "#E85D04", color: "#fff" }}
                   className="hover:opacity-90 transition-opacity"
                 >

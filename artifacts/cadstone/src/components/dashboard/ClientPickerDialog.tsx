@@ -17,6 +17,7 @@ type PickableClient = {
   companyName: string
   city?: string | null
   state?: string | null
+  archived?: boolean
 }
 
 type ClientPickerDialogProps = {
@@ -42,12 +43,17 @@ export function ClientPickerDialog({
     if (!open) return
     let cancelled = false
     setLoading(true)
+    // Use status=all (not the default "active") so brand-new clients
+    // show up immediately. The default "active" filter requires at least
+    // one open job or an outstanding balance — which means a freshly
+    // created client would be invisible in this assign-a-job picker.
+    // Archived clients are filtered out below so they aren't selectable.
     api
-      .get("/clients?pageSize=100")
+      .get("/clients?pageSize=100&status=all")
       .then((response) => {
         if (cancelled) return
-        const list: PickableClient[] = response.data?.clients ?? []
-        setClients(list)
+        const raw: PickableClient[] = response.data?.clients ?? []
+        setClients(raw.filter((c) => !c.archived))
       })
       .catch((err: unknown) => {
         if (cancelled) return

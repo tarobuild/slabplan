@@ -11,6 +11,7 @@ export type LeadsLeadPayloadSchemaStatus =
 
 export const LeadsLeadPayloadSchemaStatus = {
   open: "open",
+  qualified: "qualified",
   in_negotiation: "in_negotiation",
   won: "won",
   lost: "lost",

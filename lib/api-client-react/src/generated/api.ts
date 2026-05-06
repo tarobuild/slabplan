@@ -62,6 +62,7 @@ import type {
   JobsJobPayloadSchema,
   LeadAttachmentsCreatedResponse,
   LeadContactResponse,
+  LeadConvertToJobBody,
   LeadConvertToJobResponse,
   LeadDetailResponse,
   LeadGlobalContactsListResponse,
@@ -3935,7 +3936,7 @@ export const useLeadsDeleteLeadsIdAttachmentsAttachmentId = <
 };
 
 /**
- * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with convertToJobSchema. Wraps client/job/assignee inserts in a transaction.
  * @summary POST /leads/{id}/convert-to-job
  */
 export const getLeadsPostLeadsIdConvertToJobUrl = (id: string) => {
@@ -3944,6 +3945,7 @@ export const getLeadsPostLeadsIdConvertToJobUrl = (id: string) => {
 
 export const leadsPostLeadsIdConvertToJob = async (
   id: string,
+  leadConvertToJobBody?: LeadConvertToJobBody,
   options?: RequestInit,
 ): Promise<LeadConvertToJobResponse> => {
   return customFetch<LeadConvertToJobResponse>(
@@ -3951,6 +3953,8 @@ export const leadsPostLeadsIdConvertToJob = async (
     {
       ...options,
       method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(leadConvertToJobBody),
     },
   );
 };
@@ -3962,14 +3966,14 @@ export const getLeadsPostLeadsIdConvertToJobMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
     TError,
-    { id: string },
+    { id: string; data: BodyType<LeadConvertToJobBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
   TError,
-  { id: string },
+  { id: string; data: BodyType<LeadConvertToJobBody> },
   TContext
 > => {
   const mutationKey = ["leadsPostLeadsIdConvertToJob"];
@@ -3983,11 +3987,11 @@ export const getLeadsPostLeadsIdConvertToJobMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
-    { id: string }
+    { id: string; data: BodyType<LeadConvertToJobBody> }
   > = (props) => {
-    const { id } = props ?? {};
+    const { id, data } = props ?? {};
 
-    return leadsPostLeadsIdConvertToJob(id, requestOptions);
+    return leadsPostLeadsIdConvertToJob(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -3996,7 +4000,8 @@ export const getLeadsPostLeadsIdConvertToJobMutationOptions = <
 export type LeadsPostLeadsIdConvertToJobMutationResult = NonNullable<
   Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>
 >;
-
+export type LeadsPostLeadsIdConvertToJobMutationBody =
+  BodyType<LeadConvertToJobBody>;
 export type LeadsPostLeadsIdConvertToJobMutationError = ErrorType<Problem>;
 
 /**
@@ -4009,14 +4014,14 @@ export const useLeadsPostLeadsIdConvertToJob = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
     TError,
-    { id: string },
+    { id: string; data: BodyType<LeadConvertToJobBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof leadsPostLeadsIdConvertToJob>>,
   TError,
-  { id: string },
+  { id: string; data: BodyType<LeadConvertToJobBody> },
   TContext
 > => {
   return useMutation(getLeadsPostLeadsIdConvertToJobMutationOptions(options));

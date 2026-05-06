@@ -40,7 +40,11 @@ import {
   type LeadsGetLeadsQueryResult,
   type LeadsPostLeadsMutationBody,
   type LeadsPutLeadsIdMutationBody,
+  type LeadConvertedJobRef,
 } from "@workspace/api-client-react"
+import { useAuthStore } from "@/store/auth"
+import { ConvertLeadDialog } from "./leads/ConvertLeadDialog"
+import { ArrowRightCircle, Briefcase } from "lucide-react"
 import {
   LeadsPostLeadsBody,
   LeadsPutLeadsIdBody,
@@ -133,6 +137,9 @@ type Lead = {
     email: string | null
     phone: string | null
   } | null
+  streetAddress?: string | null
+  zipCode?: string | null
+  convertedJob?: LeadConvertedJobRef | null
 }
 
 type LeadAttachment = {
@@ -171,6 +178,7 @@ type LeadDetail = {
   sources: string[]
   salespeople: { id: string; fullName: string }[]
   attachments: LeadAttachment[]
+  convertedJob?: LeadConvertedJobRef | null
 }
 
 type Pagination = {
@@ -182,18 +190,62 @@ type Pagination = {
 
 const STATUS_COLORS: Record<string, string> = {
   open: "bg-green-50 text-green-700 border-green-200",
+  qualified: "bg-sky-50 text-sky-700 border-sky-200",
   in_negotiation: "bg-yellow-50 text-yellow-700 border-yellow-200",
   won: "bg-emerald-100 text-emerald-800 border-emerald-300",
   lost: "bg-red-50 text-red-700 border-red-200",
   archived: "bg-slate-50 text-slate-500 border-slate-200",
 }
 
+// Distinct visual treatment for "Converted" — the lead has a linked
+// job. Rendered via getDisplayStatus() so the badge/label switches
+// from `Won` to `Converted` whenever convertedJob is populated.
+const CONVERTED_STATUS_COLOR =
+  "bg-violet-50 text-violet-700 border-violet-200"
+
 const STATUS_LABELS: Record<string, string> = {
   open: "Open",
+  qualified: "Qualified",
   in_negotiation: "In Negotiation",
   won: "Won",
   lost: "Lost",
   archived: "Archived",
+}
+
+// Lead → Job conversion eligibility. We do NOT allow conversion from
+// terminal states (`lost`, `archived`) or from leads that have already
+// been converted (caller checks `convertedJob` for the latter).
+const CONVERTIBLE_STATUSES = new Set([
+  "open",
+  "qualified",
+  "in_negotiation",
+  "won",
+])
+
+function isLeadConvertible(status: string): boolean {
+  return CONVERTIBLE_STATUSES.has(status)
+}
+
+// When a lead has a linked converted job, display "Converted" with
+// its own color regardless of the underlying DB status (typically
+// `won`). Returns the styling tuple for badges.
+function getDisplayStatus(
+  status: string,
+  convertedJob: { id: string } | null | undefined,
+): { label: string; color: string } {
+  if (convertedJob) {
+    return { label: "Converted", color: CONVERTED_STATUS_COLOR }
+  }
+  return {
+    label: STATUS_LABELS[status] ?? status,
+    color: STATUS_COLORS[status] ?? "",
+  }
+}
+
+function convertDisabledReason(status: string): string {
+  if (status === "lost") return "This lead is lost — reopen it before converting."
+  if (status === "archived") return "Archived leads can't be converted."
+  return "This lead can't be converted in its current state."
 }
 
 function fmtDate(d: string) {
@@ -345,6 +397,12 @@ export default function LeadsPage() {
   // `search` immediately so typing stays smooth.
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [status, setStatus] = useState("all")
+  // Converted leads (status="won" + a convertedJob) are hidden by default.
+  // The toggle flips off the excludeStatuses param so the user can see them.
+  const [showConverted, setShowConverted] = useState(false)
+  const [convertLead, setConvertLead] = useState<Lead | LeadDetail | null>(null)
+  const authUser = useAuthStore((s) => s.user)
+  const isAdmin = authUser?.role === "admin"
 
   const [createOpen, setCreateOpen] = useState(false)
   const [form, setForm] = useState<CreateForm>(emptyCreate)
@@ -390,8 +448,11 @@ export default function LeadsPage() {
     const params: LeadsGetLeadsParams = { page, pageSize }
     if (debouncedSearch) params.search = debouncedSearch
     if (status !== "all") params.status = status as LeadsGetLeadsParams["status"]
+    if (!showConverted) {
+      ;(params as { excludeConverted?: string }).excludeConverted = "true"
+    }
     return params
-  }, [page, pageSize, debouncedSearch, status])
+  }, [page, pageSize, debouncedSearch, status, showConverted])
 
   const leadsQuery = useLeadsGetLeads(listParams, {
     query: {
@@ -926,12 +987,29 @@ export default function LeadsPage() {
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="open">Open</SelectItem>
+            <SelectItem value="qualified">Qualified</SelectItem>
             <SelectItem value="in_negotiation">In Negotiation</SelectItem>
             <SelectItem value="won">Won</SelectItem>
             <SelectItem value="lost">Lost</SelectItem>
             <SelectItem value="archived">Archived</SelectItem>
           </SelectContent>
         </Select>
+        {/* The toggle stays visible for every status filter (including
+            `won`) so converted leads can always be revealed — without
+            it, switching the status dropdown to `won` while the toggle
+            was off would silently keep converted leads hidden. */}
+        <label className="flex items-center gap-2 text-xs text-slate-600 self-center">
+          <input
+            type="checkbox"
+            checked={showConverted}
+            onChange={(e) => {
+              setShowConverted(e.target.checked)
+              setPage(1)
+            }}
+            data-testid="show-converted-toggle"
+          />
+          Show converted
+        </label>
       </div>
 
       {/* Desktop table */}
@@ -986,9 +1064,9 @@ export default function LeadsPage() {
                   <TableCell>
                     <Badge
                       variant="outline"
-                      className={`text-xs ${STATUS_COLORS[lead.status] ?? ""}`}
+                      className={`text-xs ${getDisplayStatus(lead.status, lead.convertedJob).color}`}
                     >
-                      {STATUS_LABELS[lead.status] ?? lead.status}
+                      {getDisplayStatus(lead.status, lead.convertedJob).label}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-sm text-slate-500">
@@ -1007,15 +1085,51 @@ export default function LeadsPage() {
                     {fmtDate(lead.createdAt)}
                   </TableCell>
                   <TableCell>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setDeleteId(lead.id)
-                      }}
-                      className="text-slate-400 hover:text-red-500 transition-colors p-1"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      {lead.convertedJob ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            routerNavigate(`/jobs/${lead.convertedJob!.id}/summary`)
+                          }}
+                          className="text-orange-600 hover:text-orange-700 transition-colors p-1"
+                          data-testid={`view-job-${lead.id}`}
+                          title="View linked job"
+                        >
+                          <Briefcase className="size-3.5" />
+                        </button>
+                      ) : isAdmin && isLeadConvertible(lead.status) ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setConvertLead(lead)
+                          }}
+                          className="text-slate-400 hover:text-orange-600 transition-colors p-1"
+                          data-testid={`convert-lead-${lead.id}`}
+                          title="Convert to job"
+                        >
+                          <ArrowRightCircle className="size-3.5" />
+                        </button>
+                      ) : isAdmin ? (
+                        <button
+                          disabled
+                          className="text-slate-300 p-1 cursor-not-allowed"
+                          data-testid={`convert-lead-disabled-${lead.id}`}
+                          title={convertDisabledReason(lead.status)}
+                        >
+                          <ArrowRightCircle className="size-3.5" />
+                        </button>
+                      ) : null}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteId(lead.id)
+                        }}
+                        className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -1048,8 +1162,8 @@ export default function LeadsPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-slate-900">{lead.title}</p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" className={`text-xs capitalize ${STATUS_COLORS[lead.status] ?? ""}`}>
-                      {STATUS_LABELS[lead.status] ?? lead.status}
+                    <Badge variant="outline" className={`text-xs capitalize ${getDisplayStatus(lead.status, lead.convertedJob).color}`}>
+                      {getDisplayStatus(lead.status, lead.convertedJob).label}
                     </Badge>
                     {lead.projectType && <span className="text-xs capitalize text-slate-500">{lead.projectType}</span>}
                   </div>
@@ -1135,6 +1249,7 @@ export default function LeadsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="qualified">Qualified</SelectItem>
                     <SelectItem value="in_negotiation">In Negotiation</SelectItem>
                     <SelectItem value="won">Won</SelectItem>
                     <SelectItem value="lost">Lost</SelectItem>
@@ -1475,13 +1590,48 @@ export default function LeadsPage() {
               {leadDetail && (
                 <Badge
                   variant="outline"
-                  className={`w-fit text-xs mt-1 ${STATUS_COLORS[leadDetail.status] ?? ""}`}
+                  className={`w-fit text-xs mt-1 ${getDisplayStatus(leadDetail.status, leadDetail.convertedJob).color}`}
                 >
-                  {STATUS_LABELS[leadDetail.status] ?? leadDetail.status}
+                  {getDisplayStatus(leadDetail.status, leadDetail.convertedJob).label}
                 </Badge>
               )}
             </SheetHeader>
             <div className="flex items-center gap-2">
+              {!isEditing && leadDetail && leadDetail.convertedJob && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => routerNavigate(`/jobs/${leadDetail.convertedJob!.id}/summary`)}
+                  data-testid="detail-view-job"
+                >
+                  <Briefcase className="mr-1.5 size-3.5" />
+                  View Job
+                </Button>
+              )}
+              {!isEditing && leadDetail && !leadDetail.convertedJob && isAdmin && (
+                isLeadConvertible(leadDetail.status) ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConvertLead(leadDetail)}
+                    data-testid="detail-convert"
+                  >
+                    <ArrowRightCircle className="mr-1.5 size-3.5" />
+                    Convert to Job
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled
+                    title={convertDisabledReason(leadDetail.status)}
+                    data-testid="detail-convert-disabled"
+                  >
+                    <ArrowRightCircle className="mr-1.5 size-3.5" />
+                    Convert to Job
+                  </Button>
+                )
+              )}
               {!isEditing && leadDetail && (
                 <Button
                   size="sm"
@@ -1548,6 +1698,7 @@ export default function LeadsPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="open">Open</SelectItem>
+                            <SelectItem value="qualified">Qualified</SelectItem>
                             <SelectItem value="in_negotiation">In Negotiation</SelectItem>
                             <SelectItem value="won">Won</SelectItem>
                             <SelectItem value="lost">Lost</SelectItem>
@@ -2027,6 +2178,49 @@ export default function LeadsPage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      <ConvertLeadDialog
+        open={!!convertLead}
+        onOpenChange={(o) => {
+          if (!o) setConvertLead(null)
+        }}
+        lead={
+          convertLead
+            ? {
+                id: convertLead.id,
+                title: convertLead.title,
+                streetAddress:
+                  (convertLead as LeadDetail).streetAddress ?? null,
+                city: convertLead.city ?? null,
+                state: convertLead.state ?? null,
+                zipCode: (convertLead as LeadDetail).zipCode ?? null,
+                estimatedRevenueMin: convertLead.estimatedRevenueMin ?? null,
+                estimatedRevenueMax: convertLead.estimatedRevenueMax ?? null,
+                projectType: convertLead.projectType ?? null,
+                projectedSalesDate: convertLead.projectedSalesDate ?? null,
+                clientContact: convertLead.clientContact
+                  ? {
+                      displayName: convertLead.clientContact.displayName ?? null,
+                      email: convertLead.clientContact.email ?? null,
+                      phone: convertLead.clientContact.phone ?? null,
+                    }
+                  : null,
+              }
+            : null
+        }
+        onConverted={(jobId) => {
+          setConvertLead(null)
+          // Refresh leads list + detail so the View Job link appears.
+          queryClient.invalidateQueries({ queryKey: getLeadsGetLeadsQueryKey() })
+          if (sheetLeadId) {
+            queryClient.invalidateQueries({
+              queryKey: getLeadsGetLeadsIdQueryKey(sheetLeadId),
+            })
+          }
+          invalidateAppData(["leads", "jobs", "navigation"])
+          routerNavigate(`/jobs/${jobId}/summary`)
+        }}
+      />
 
       {/* Attachment Delete Confirmation */}
       <AlertDialog

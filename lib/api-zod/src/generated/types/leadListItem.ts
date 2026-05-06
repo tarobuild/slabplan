@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { LeadConvertedJobRef } from "./leadConvertedJobRef";
 import type { LeadListItemStatus } from "./leadListItemStatus";
 import type { LeadPrimaryContact } from "./leadPrimaryContact";
 
@@ -36,4 +37,6 @@ export interface LeadListItem {
   createdByName?: string | null;
   /** Primary client contact summary, or null when the lead has no client contact assigned. */
   clientContact: LeadPrimaryContact | null;
+  /** Job created from this lead, or null when the lead has not been converted. */
+  convertedJob: LeadConvertedJobRef | null;
 }

@@ -14,8 +14,11 @@ import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
+  activityLog,
+  clients,
   files,
   folders,
+  jobAssignees,
   jobs,
   leadAttachments,
   leadContacts,
@@ -26,11 +29,13 @@ import {
   users,
 } from "@workspace/db/schema";
 import {
+  assertCanAccessClient,
   assertCanAccessLead,
   assertCanManageLead,
   listAccessibleLeadIds,
 } from "../lib/authorization";
 import { ensureSystemFolders, validateUploadForMediaType, writeActivity } from "../lib/file-manager";
+import { getMcpContext } from "../middleware/mcp-context";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
@@ -109,11 +114,65 @@ const optionalEmail = z
     message: "A valid email address is required.",
   });
 
+// Compute the midpoint between two decimal-string money values for
+// pre-filling job.contractPrice on lead conversion. Returns the
+// midpoint when both bounds are present, the populated bound when
+// only one is set, or null when neither is set. Uses Number for the
+// arithmetic; fine for the 0–10M range we deal with in practice.
+function midpointMoney(
+  min: string | null | undefined,
+  max: string | null | undefined,
+): string | null {
+  const minN = min != null && min !== "" ? Number(min) : null;
+  const maxN = max != null && max !== "" ? Number(max) : null;
+  if (minN != null && maxN != null && Number.isFinite(minN) && Number.isFinite(maxN)) {
+    return ((minN + maxN) / 2).toFixed(2);
+  }
+  if (minN != null && Number.isFinite(minN)) return minN.toFixed(2);
+  if (maxN != null && Number.isFinite(maxN)) return maxN.toFixed(2);
+  return null;
+}
+
+const LEAD_STATUS_VALUES = [
+  "open",
+  "qualified",
+  "in_negotiation",
+  "won",
+  "lost",
+  "archived",
+] as const;
+
 const leadListQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
   search: z.string().trim().optional(),
-  status: z.enum(["open", "in_negotiation", "won", "lost", "archived"]).optional(),
+  status: z.enum(LEAD_STATUS_VALUES).optional(),
+  // Comma-separated list of statuses to exclude. Used by the cadstone
+  // Leads list to default-hide converted (`won`) leads while still
+  // allowing them to be revealed via the "Show converted" toggle. When
+  // a `status` is also provided, that wins (no implicit exclusion).
+  excludeStatuses: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => {
+      if (!v) return undefined;
+      const parts = v
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const valid = parts.filter((s): s is (typeof LEAD_STATUS_VALUES)[number] =>
+        (LEAD_STATUS_VALUES as readonly string[]).includes(s),
+      );
+      return valid.length > 0 ? valid : undefined;
+    }),
+  // Exclude leads that have a live converted_to_job activity. The
+  // cadstone Leads list passes `excludeConverted=true` by default and
+  // flips it off when the "Show converted" toggle is checked.
+  excludeConverted: z
+    .union([z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((v) => v === "true"),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
 });
@@ -131,7 +190,7 @@ const leadPayloadSchema = z.object({
   estimatedRevenueMin: optionalMoney,
   estimatedRevenueMax: optionalMoney,
   status: z
-    .enum(["open", "in_negotiation", "won", "lost", "archived"])
+    .enum(LEAD_STATUS_VALUES)
     .optional()
     .default("open"),
   projectType: optionalString,
@@ -382,6 +441,100 @@ async function syncLeadSources(leadId: string, leadSource: string | null, source
   }
 }
 
+// Look up the job a lead was converted to (if any) via the activity log.
+// Returns the most recent `converted_to_job` activity that still maps to a
+// non-deleted job. Used to show the "View job" link on a converted lead and
+// to enforce the 409 in the convert endpoint.
+type ConvertedJobRef = {
+  id: string;
+  title: string;
+  status: string;
+  convertedAt: string | null;
+};
+
+async function lookupConvertedJobsByLeadIds(
+  leadIds: string[],
+): Promise<Map<string, ConvertedJobRef>> {
+  const result = new Map<string, ConvertedJobRef>();
+  if (leadIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      leadId: activityLog.entityId,
+      jobId: jobs.id,
+      jobTitle: jobs.title,
+      jobStatus: jobs.status,
+      createdAt: activityLog.createdAt,
+    })
+    .from(activityLog)
+    .innerJoin(
+      jobs,
+      and(
+        eq(jobs.id, sql`(${activityLog.metadata}->>'convertedJobId')::uuid`),
+        isNull(jobs.deletedAt),
+      ),
+    )
+    .where(
+      and(
+        eq(activityLog.entityType, "lead"),
+        eq(activityLog.action, "converted_to_job"),
+        inArray(activityLog.entityId, leadIds),
+      ),
+    )
+    .orderBy(desc(activityLog.createdAt));
+
+  for (const row of rows) {
+    if (!result.has(row.leadId)) {
+      result.set(row.leadId, {
+        id: row.jobId,
+        title: row.jobTitle,
+        status: row.jobStatus,
+        convertedAt:
+          row.createdAt instanceof Date
+            ? row.createdAt.toISOString()
+            : row.createdAt
+              ? new Date(row.createdAt as unknown as string).toISOString()
+              : null,
+      });
+    }
+  }
+  return result;
+}
+
+// Set of leadIds that have already been converted to a (live) job. Used
+// by the list endpoint to default-exclude converted leads regardless of
+// their current `lead.status` (we reuse `won` for both manually-won and
+// converted, so a status filter alone is too coarse).
+async function listConvertedLeadIds(
+  accessibleLeadIds: string[] | null,
+): Promise<Set<string>> {
+  const result = new Set<string>();
+  const conditions = [
+    eq(activityLog.entityType, "lead"),
+    eq(activityLog.action, "converted_to_job"),
+  ];
+  if (accessibleLeadIds && accessibleLeadIds.length > 0) {
+    conditions.push(inArray(activityLog.entityId, accessibleLeadIds));
+  } else if (accessibleLeadIds && accessibleLeadIds.length === 0) {
+    return result;
+  }
+  const rows = await db
+    .selectDistinct({ leadId: activityLog.entityId })
+    .from(activityLog)
+    .innerJoin(
+      jobs,
+      and(
+        eq(jobs.id, sql`(${activityLog.metadata}->>'convertedJobId')::uuid`),
+        isNull(jobs.deletedAt),
+      ),
+    )
+    .where(and(...conditions));
+  for (const row of rows) {
+    if (row.leadId) result.add(row.leadId);
+  }
+  return result;
+}
+
 async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: string) {
   const accessibleLeadIds = await listAccessibleLeadIds(auth);
   const [lead] = await db
@@ -515,6 +668,8 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
         : ("missing" as const),
   }));
 
+  const convertedJobs = await lookupConvertedJobsByLeadIds([leadId]);
+
   return {
     lead: {
       ...lead,
@@ -525,6 +680,7 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
       sources: sources.map((source) => source.sourceName),
       attachments: annotatedAttachments,
       availableContacts,
+      convertedJob: convertedJobs.get(leadId) ?? null,
     },
   };
 }
@@ -624,6 +780,23 @@ router.get(
 
     if (query.data.status) {
       conditions.push(eq(leads.status, query.data.status));
+    } else if (query.data.excludeStatuses && query.data.excludeStatuses.length > 0) {
+      conditions.push(sql`${leads.status} not in (${sql.join(
+        query.data.excludeStatuses.map((s) => sql`${s}`),
+        sql`, `,
+      )})`);
+    }
+
+    if (query.data.excludeConverted) {
+      const convertedIds = await listConvertedLeadIds(accessibleLeadIds);
+      if (convertedIds.size > 0) {
+        conditions.push(
+          sql`${leads.id} not in (${sql.join(
+            Array.from(convertedIds).map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        );
+      }
     }
 
     if (query.data.search) {
@@ -727,6 +900,8 @@ router.get(
       primaryContactByLeadId.set(contact.leadId, contact);
     }
 
+    const convertedJobByLeadId = await lookupConvertedJobsByLeadIds(leadIds);
+
     if (isCursorMode) {
       const hasMore = rows.length > effectiveLimit;
       const trimmed = hasMore ? rows.slice(0, effectiveLimit) : rows;
@@ -738,6 +913,7 @@ router.get(
         leads: trimmed.map((lead) => ({
           ...lead,
           clientContact: primaryContactByLeadId.get(lead.id) ?? null,
+          convertedJob: convertedJobByLeadId.get(lead.id) ?? null,
         })),
         pagination: { limit: effectiveLimit, hasMore, nextCursor },
         summary: { estimatedRevenueMinTotal: "0", estimatedRevenueMaxTotal: "0" },
@@ -751,6 +927,7 @@ router.get(
       leads: rows.map((lead) => ({
         ...lead,
         clientContact: primaryContactByLeadId.get(lead.id) ?? null,
+        convertedJob: convertedJobByLeadId.get(lead.id) ?? null,
       })),
       pagination: {
         page: query.data.page,
@@ -1222,6 +1399,65 @@ router.delete(
   }),
 );
 
+// New-client payload mirrors the inline shape used by `POST /clients`
+// so the 2-step convert flow can create a client and a job in one
+// admin action.
+const convertNewClientSchema = z.object({
+  companyName: z.string().trim().min(1).max(255),
+  phone: optionalString,
+  email: optionalString,
+  streetAddress: optionalString,
+  city: optionalString,
+  state: optionalString.refine((v) => v === null || v.length <= 2, {
+    message: "State must be a 2-character abbreviation.",
+  }),
+  zipCode: optionalString,
+  notes: optionalString,
+});
+
+const JOB_TYPE_VALUES = [
+  "kitchen_countertops",
+  "bathrooms",
+  "flooring",
+  "backsplash",
+  "full_house_project",
+  "custom",
+] as const;
+
+const convertJobOverridesSchema = z.object({
+  title: z.string().trim().min(1).max(255).optional(),
+  streetAddress: optionalString.optional(),
+  city: optionalString.optional(),
+  state: optionalString
+    .refine((v) => v === null || v.length <= 2, {
+      message: "State must be a 2-character abbreviation.",
+    })
+    .optional(),
+  zipCode: optionalString.optional(),
+  contractPrice: optionalMoney.optional(),
+  projectedStart: optionalDate.optional(),
+  projectedCompletion: optionalDate.optional(),
+  jobType: z.enum(JOB_TYPE_VALUES).nullable().optional(),
+  projectManagerId: z.string().uuid().nullable().optional(),
+  assigneeIds: z.array(z.string().uuid()).optional(),
+});
+
+const convertToJobSchema = z
+  .object({
+    clientId: z.string().uuid().optional(),
+    newClient: convertNewClientSchema.optional(),
+    job: convertJobOverridesSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.clientId && value.newClient) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide either clientId or newClient, not both.",
+        path: ["clientId"],
+      });
+    }
+  });
+
 router.post(
   "/:id/convert-to-job",
   // Job creation is admin-only (post-#277 owner directive). The leads
@@ -1233,54 +1469,243 @@ router.post(
     await assertCanManageLead(req.auth!, leadId);
     const lead = await getLeadOrThrow(leadId);
 
-    const [job] = await db
-      .insert(jobs)
-      .values({
-        title: lead.title,
-        status: "open",
-        streetAddress: lead.streetAddress,
-        city: lead.city,
-        state: lead.state,
-        zipCode: lead.zipCode,
-        contractPrice: lead.estimatedRevenueMax ?? lead.estimatedRevenueMin,
-        jobType: lead.projectType,
-        projectedStart: lead.projectedSalesDate,
-        workDays: ["mon", "tue", "wed", "thu", "fri"],
-        createdBy: req.auth!.userId,
-      })
-      .returning();
+    // Body is optional for backwards compatibility (the original endpoint
+    // accepted an empty `{}` body and still does — see audit-fixes test).
+    const rawBody = req.body && typeof req.body === "object" ? req.body : {};
+    const parsed = convertToJobSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      throw new HttpError(
+        400,
+        "Invalid convert-to-job payload.",
+        parsed.error.flatten(),
+      );
+    }
+    const body = parsed.data;
 
-    await ensureSystemFolders(job.id, { includeJobTemplates: true });
-
-    await db
-      .update(leads)
-      .set({
-        status: "won",
-        updatedAt: new Date(),
-      })
-      .where(eq(leads.id, leadId));
-
-    if (lead.status !== "won") {
-      emitRealtimeEvent("lead:status-changed", {
-        id: leadId,
-        title: lead.title,
-        previousStatus: lead.status,
-        status: "won",
-      }, leadId);
+    // Pre-flight duplicate check (cheap fast-path before opening a tx).
+    // The authoritative race-safe check is repeated INSIDE the tx below
+    // while the lead row is locked, so two concurrent calls cannot both
+    // pass.
+    {
+      const existing = await lookupConvertedJobsByLeadIds([leadId]);
+      const alreadyConverted = existing.get(leadId);
+      if (alreadyConverted) {
+        throw new HttpError(
+          409,
+          "This lead has already been converted to a job.",
+          { convertedJob: alreadyConverted },
+        );
+      }
     }
 
-    await writeActivity({
-      entityType: "lead",
-      entityId: leadId,
-      action: "converted_to_job",
-      userId: req.auth!.userId,
-      jobId: job.id,
-      leadId,
-      description: `Converted lead ${lead.title} to job ${job.title}`,
-      extra: {
-        convertedJobId: job.id,
-      },
+    // If the caller passed an existing clientId, validate it is
+    // accessible (admins always pass; the helper still runs the
+    // lookup for defense-in-depth).
+    if (body.clientId) {
+      await assertCanAccessClient(req.auth!, body.clientId);
+    }
+
+    const overrides = body.job ?? {};
+    const assigneeIds = Array.from(new Set(overrides.assigneeIds ?? []));
+    const mcpCtx = getMcpContext();
+
+    const { job } = await db.transaction(async (tx) => {
+      // 0. Lock the lead row for the duration of the tx so two
+      // concurrent convert calls serialize. The second one will then
+      // observe the converted_to_job activity inserted by the first
+      // and 409-out below.
+      await tx.execute(
+        sql`SELECT id FROM leads WHERE id = ${leadId} FOR UPDATE`,
+      );
+
+      // 0b. Race-safe duplicate check: re-read the activity log under
+      // the row lock. If another request raced ahead, abort with 409
+      // and the rollback throws away any work this branch did.
+      const dupRows = await tx
+        .select({
+          jobId: jobs.id,
+          jobTitle: jobs.title,
+          jobStatus: jobs.status,
+          createdAt: activityLog.createdAt,
+        })
+        .from(activityLog)
+        .innerJoin(
+          jobs,
+          and(
+            eq(jobs.id, sql`(${activityLog.metadata}->>'convertedJobId')::uuid`),
+            isNull(jobs.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(activityLog.entityType, "lead"),
+            eq(activityLog.action, "converted_to_job"),
+            eq(activityLog.entityId, leadId),
+          ),
+        )
+        .orderBy(desc(activityLog.createdAt))
+        .limit(1);
+      if (dupRows.length > 0) {
+        const r = dupRows[0];
+        throw new HttpError(
+          409,
+          "This lead has already been converted to a job.",
+          {
+            convertedJob: {
+              id: r.jobId,
+              title: r.jobTitle,
+              status: r.jobStatus,
+              convertedAt:
+                r.createdAt instanceof Date
+                  ? r.createdAt.toISOString()
+                  : r.createdAt
+                    ? new Date(r.createdAt as unknown as string).toISOString()
+                    : null,
+            },
+          },
+        );
+      }
+
+      // 1. Resolve client: either use the passed-in id or create a new one.
+      let clientId: string | null = body.clientId ?? null;
+      if (!clientId && body.newClient) {
+        const [createdClient] = await tx
+          .insert(clients)
+          .values({
+            companyName: body.newClient.companyName,
+            phone: body.newClient.phone,
+            email: body.newClient.email,
+            streetAddress: body.newClient.streetAddress,
+            city: body.newClient.city,
+            state: body.newClient.state,
+            zipCode: body.newClient.zipCode,
+            notes: body.newClient.notes,
+            createdBy: req.auth!.userId,
+          })
+          .returning();
+        clientId = createdClient.id;
+      }
+
+      // 2. Insert the job, applying overrides on top of the lead's
+      // pre-fill values.
+      const jobValues = {
+        title: overrides.title ?? lead.title,
+        status: "open" as const,
+        streetAddress: overrides.streetAddress ?? lead.streetAddress,
+        city: overrides.city ?? lead.city,
+        state: overrides.state ?? lead.state,
+        zipCode: overrides.zipCode ?? lead.zipCode,
+        contractPrice:
+          overrides.contractPrice ??
+          midpointMoney(lead.estimatedRevenueMin, lead.estimatedRevenueMax),
+        jobType:
+          overrides.jobType !== undefined
+            ? overrides.jobType
+            : (JOB_TYPE_VALUES as readonly string[]).includes(
+                  lead.projectType ?? "",
+                )
+              ? (lead.projectType as (typeof JOB_TYPE_VALUES)[number])
+              : null,
+        projectedStart: overrides.projectedStart ?? lead.projectedSalesDate,
+        projectedCompletion: overrides.projectedCompletion ?? null,
+        projectManagerId:
+          overrides.projectManagerId !== undefined
+            ? overrides.projectManagerId
+            : null,
+        clientId,
+        workDays: ["mon", "tue", "wed", "thu", "fri"],
+        createdBy: req.auth!.userId,
+      };
+      const [createdJob] = await tx.insert(jobs).values(jobValues).returning();
+
+      // 3. Insert assignees (unique constraint protects against dupes).
+      if (assigneeIds.length > 0) {
+        await tx
+          .insert(jobAssignees)
+          .values(assigneeIds.map((userId) => ({ jobId: createdJob.id, userId })))
+          .onConflictDoNothing();
+      }
+
+      // 4. Mark the source lead as converted (uses the existing
+      // `won` status — see replit.md for why we don't introduce a new
+      // enum value).
+      await tx
+        .update(leads)
+        .set({
+          status: "won",
+          updatedAt: new Date(),
+        })
+        .where(eq(leads.id, leadId));
+
+      // 5. Insert the converted_to_job activity INSIDE the tx so the
+      // marker that drives dedupe / list filtering / link-back lives or
+      // dies with the rest of the conversion. This intentionally does
+      // not call writeActivity() because that helper uses the global
+      // db handle (not the tx) and would commit independently.
+      const mcpTag = mcpCtx
+        ? {
+            actor: `agent_via_mcp(${mcpCtx.userId}, ${mcpCtx.patId}, ${mcpCtx.toolName})` as const,
+            actorKind: "agent_via_mcp" as const,
+            toolName: mcpCtx.toolName,
+            patId: mcpCtx.patId,
+          }
+        : undefined;
+      const description = `Converted lead ${lead.title} to job ${createdJob.title}`;
+      const [activityRow] = await tx
+        .insert(activityLog)
+        .values({
+          entityType: "lead",
+          entityId: leadId,
+          action: "converted_to_job",
+          userId: req.auth!.userId,
+          metadata: {
+            description,
+            jobId: createdJob.id,
+            jobTitle: createdJob.title,
+            leadId,
+            mediaType: null,
+            folderId: null,
+            fileId: null,
+            convertedJobId: createdJob.id,
+            ...(mcpTag ?? {}),
+          },
+        })
+        .returning({
+          id: activityLog.id,
+          entityType: activityLog.entityType,
+          entityId: activityLog.entityId,
+          action: activityLog.action,
+          metadata: activityLog.metadata,
+          createdAt: activityLog.createdAt,
+        });
+
+      return { job: createdJob, activity: activityRow };
     });
+
+    // Best-effort post-commit side effects. Failures here MUST NOT
+    // unwind the conversion — the lead is already marked as converted
+    // and the user holds a job id. We log + continue.
+    try {
+      await ensureSystemFolders(job.id, { includeJobTemplates: true });
+    } catch (err) {
+      console.error("[convert-to-job] ensureSystemFolders failed", {
+        jobId: job.id,
+        err,
+      });
+    }
+
+    if (lead.status !== "won") {
+      emitRealtimeEvent(
+        "lead:status-changed",
+        {
+          id: leadId,
+          title: lead.title,
+          previousStatus: lead.status,
+          status: "won",
+        },
+        leadId,
+      );
+    }
 
     res.status(201).json({
       job: {

@@ -7,6 +7,7 @@
  */
 import type { CursorLimitParamParameter } from "./cursorLimitParamParameter";
 import type { CursorParamParameter } from "./cursorParamParameter";
+import type { LeadsGetLeadsExcludeConverted } from "./leadsGetLeadsExcludeConverted";
 
 export type LeadsGetLeadsParams = {
   /**
@@ -28,6 +29,14 @@ export type LeadsGetLeadsParams = {
    * Optional status filter.
    */
   status?: string;
+  /**
+   * Comma-separated list of statuses to exclude. Ignored when `status` is supplied.
+   */
+  excludeStatuses?: string;
+  /**
+   * When `true`, leads that have already been converted to a job are filtered out. The cadstone UI sends this by default and clears it when the "Show converted" toggle is enabled.
+   */
+  excludeConverted?: LeadsGetLeadsExcludeConverted;
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no

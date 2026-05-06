@@ -2076,6 +2076,18 @@ export const LeadsGetLeadsQueryParams = zod.object({
     ),
   search: zod.coerce.string().optional().describe("Optional free-text filter."),
   status: zod.coerce.string().optional().describe("Optional status filter."),
+  excludeStatuses: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated list of statuses to exclude. Ignored when `status` is supplied.",
+    ),
+  excludeConverted: zod
+    .enum(["true", "false"])
+    .optional()
+    .describe(
+      'When `true`, leads that have already been converted to a job are filtered out. The cadstone UI sends this by default and clears it when the \"Show converted\" toggle is enabled.',
+    ),
   cursor: zod.coerce
     .string()
     .optional()
@@ -2124,6 +2136,7 @@ export const LeadsGetLeadsResponse = zod
             .describe("Decimal serialized as string."),
           status: zod.enum([
             "open",
+            "qualified",
             "in_negotiation",
             "won",
             "lost",
@@ -2152,6 +2165,23 @@ export const LeadsGetLeadsResponse = zod
             ])
             .describe(
               "Primary client contact summary, or null when the lead has no client contact assigned.",
+            ),
+          convertedJob: zod
+            .union([
+              zod
+                .object({
+                  id: zod.string().uuid(),
+                  title: zod.string(),
+                  status: zod.string(),
+                  convertedAt: zod.union([zod.coerce.date(), zod.null()]),
+                })
+                .describe(
+                  "Lightweight reference to the job a lead was converted into.",
+                ),
+              zod.null(),
+            ])
+            .describe(
+              "Job created from this lead, or null when the lead has not been converted.",
             ),
         })
         .describe("A lead row returned by the paginated `GET \/leads` list."),
@@ -2269,7 +2299,7 @@ export const LeadsPostLeadsBody = zod
       ])
       .nullish(),
     status: zod
-      .enum(["open", "in_negotiation", "won", "lost", "archived"])
+      .enum(["open", "qualified", "in_negotiation", "won", "lost", "archived"])
       .default(leadsPostLeadsBodyStatusDefault),
     projectType: zod.string().nullish(),
     notes: zod.string().nullish(),
@@ -2321,7 +2351,14 @@ export const LeadsGetLeadsIdResponse = zod
         projectedSalesDate: zod.coerce.date().nullish(),
         estimatedRevenueMin: zod.string().nullish(),
         estimatedRevenueMax: zod.string().nullish(),
-        status: zod.enum(["open", "in_negotiation", "won", "lost", "archived"]),
+        status: zod.enum([
+          "open",
+          "qualified",
+          "in_negotiation",
+          "won",
+          "lost",
+          "archived",
+        ]),
         projectType: zod.string().nullish(),
         notes: zod.string().nullish(),
         leadSource: zod.string().nullish(),
@@ -2428,6 +2465,23 @@ export const LeadsGetLeadsIdResponse = zod
           )
           .describe(
             "Lead contacts from across the workspace, filtered to leads the caller can access (admins see all).",
+          ),
+        convertedJob: zod
+          .union([
+            zod
+              .object({
+                id: zod.string().uuid(),
+                title: zod.string(),
+                status: zod.string(),
+                convertedAt: zod.union([zod.coerce.date(), zod.null()]),
+              })
+              .describe(
+                "Lightweight reference to the job a lead was converted into.",
+              ),
+            zod.null(),
+          ])
+          .describe(
+            "Job created from this lead, or null when the lead has not been converted.",
           ),
       })
       .describe(
@@ -2532,7 +2586,7 @@ export const LeadsPutLeadsIdBody = zod
       ])
       .nullish(),
     status: zod
-      .enum(["open", "in_negotiation", "won", "lost", "archived"])
+      .enum(["open", "qualified", "in_negotiation", "won", "lost", "archived"])
       .default(leadsPutLeadsIdBodyStatusDefault),
     projectType: zod.string().nullish(),
     notes: zod.string().nullish(),
@@ -2572,7 +2626,14 @@ export const LeadsPutLeadsIdResponse = zod
         projectedSalesDate: zod.coerce.date().nullish(),
         estimatedRevenueMin: zod.string().nullish(),
         estimatedRevenueMax: zod.string().nullish(),
-        status: zod.enum(["open", "in_negotiation", "won", "lost", "archived"]),
+        status: zod.enum([
+          "open",
+          "qualified",
+          "in_negotiation",
+          "won",
+          "lost",
+          "archived",
+        ]),
         projectType: zod.string().nullish(),
         notes: zod.string().nullish(),
         leadSource: zod.string().nullish(),
@@ -2679,6 +2740,23 @@ export const LeadsPutLeadsIdResponse = zod
           )
           .describe(
             "Lead contacts from across the workspace, filtered to leads the caller can access (admins see all).",
+          ),
+        convertedJob: zod
+          .union([
+            zod
+              .object({
+                id: zod.string().uuid(),
+                title: zod.string(),
+                status: zod.string(),
+                convertedAt: zod.union([zod.coerce.date(), zod.null()]),
+              })
+              .describe(
+                "Lightweight reference to the job a lead was converted into.",
+              ),
+            zod.null(),
+          ])
+          .describe(
+            "Job created from this lead, or null when the lead has not been converted.",
           ),
       })
       .describe(
@@ -2974,7 +3052,7 @@ export const LeadsDeleteLeadsIdAttachmentsAttachmentIdResponse = zod
   );
 
 /**
- * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with convertToJobSchema. Wraps client/job/assignee inserts in a transaction.
  * @summary POST /leads/{id}/convert-to-job
  */
 export const leadsPostLeadsIdConvertToJobPathIdRegExp = new RegExp(
@@ -3001,6 +3079,85 @@ export const LeadsPostLeadsIdConvertToJobHeader = zod.object({
       "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
     ),
 });
+
+export const leadsPostLeadsIdConvertToJobBodyNewClientCompanyNameMax = 255;
+
+export const leadsPostLeadsIdConvertToJobBodyNewClientStateMax = 2;
+
+export const leadsPostLeadsIdConvertToJobBodyJobTitleMax = 255;
+
+export const leadsPostLeadsIdConvertToJobBodyJobStateMax = 2;
+
+export const LeadsPostLeadsIdConvertToJobBody = zod
+  .object({
+    clientId: zod
+      .string()
+      .uuid()
+      .optional()
+      .describe("Existing client to associate with the new job."),
+    newClient: zod
+      .object({
+        companyName: zod
+          .string()
+          .min(1)
+          .max(leadsPostLeadsIdConvertToJobBodyNewClientCompanyNameMax),
+        phone: zod.string().nullish(),
+        email: zod.string().nullish(),
+        streetAddress: zod.string().nullish(),
+        city: zod.string().nullish(),
+        state: zod
+          .string()
+          .max(leadsPostLeadsIdConvertToJobBodyNewClientStateMax)
+          .nullish(),
+        zipCode: zod.string().nullish(),
+        notes: zod.string().nullish(),
+      })
+      .optional()
+      .describe(
+        "Inline client to create as part of the conversion. Mutually exclusive with `clientId`.",
+      ),
+    job: zod
+      .object({
+        title: zod
+          .string()
+          .min(1)
+          .max(leadsPostLeadsIdConvertToJobBodyJobTitleMax)
+          .optional(),
+        streetAddress: zod.string().nullish(),
+        city: zod.string().nullish(),
+        state: zod
+          .string()
+          .max(leadsPostLeadsIdConvertToJobBodyJobStateMax)
+          .nullish(),
+        zipCode: zod.string().nullish(),
+        contractPrice: zod
+          .string()
+          .nullish()
+          .describe("Decimal serialized as string."),
+        projectedStart: zod.coerce.date().nullish(),
+        projectedCompletion: zod.coerce.date().nullish(),
+        jobType: zod
+          .union([
+            zod.literal("kitchen_countertops"),
+            zod.literal("bathrooms"),
+            zod.literal("flooring"),
+            zod.literal("backsplash"),
+            zod.literal("full_house_project"),
+            zod.literal("custom"),
+            zod.literal(null),
+          ])
+          .nullish(),
+        projectManagerId: zod.string().uuid().nullish(),
+        assigneeIds: zod.array(zod.string().uuid()).optional(),
+      })
+      .optional()
+      .describe(
+        "Overrides for the job that will be created. Anything omitted falls back to the lead's value.",
+      ),
+  })
+  .describe(
+    "Optional payload for `POST \/leads\/{id}\/convert-to-job`. Provide either `clientId` to attach the new job to an existing client, or `newClient` to create a client inline. `job` carries optional overrides applied on top of the lead's pre-fill values.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with activityCreateSchema.

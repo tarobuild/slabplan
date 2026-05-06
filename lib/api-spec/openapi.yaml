@@ -2753,6 +2753,19 @@ paths:
           description: Optional status filter.
           schema:
             type: string
+        - name: excludeStatuses
+          in: query
+          required: false
+          description: Comma-separated list of statuses to exclude. Ignored when `status` is supplied.
+          schema:
+            type: string
+        - name: excludeConverted
+          in: query
+          required: false
+          description: When `true`, leads that have already been converted to a job are filtered out. The cadstone UI sends this by default and clears it when the "Show converted" toggle is enabled.
+          schema:
+            type: string
+            enum: ["true", "false"]
         - $ref: "#/components/parameters/CursorParam"
         - $ref: "#/components/parameters/CursorLimitParam"
       security:
@@ -3552,7 +3565,13 @@ paths:
       tags:
         - leads
       summary: POST /leads/{id}/convert-to-job
-      description: Route defined in artifacts/api-server/src/routes/leads.ts.
+      description: Route defined in artifacts/api-server/src/routes/leads.ts. Validated request body with convertToJobSchema. Wraps client/job/assignee inserts in a transaction.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeadConvertToJobBody"
       responses:
         "201":
           description: Created
@@ -3560,6 +3579,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LeadConvertToJobResponse"
+        "409":
+          description: Lead has already been converted to a job
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -11652,6 +11677,7 @@ components:
           type: string
           enum:
             - open
+            - qualified
             - in_negotiation
             - won
             - lost
@@ -12671,6 +12697,7 @@ components:
           type: string
           enum:
             - open
+            - qualified
             - in_negotiation
             - won
             - lost
@@ -12696,12 +12723,39 @@ components:
           oneOf:
             - $ref: "#/components/schemas/LeadPrimaryContact"
             - type: "null"
+        convertedJob:
+          description: Job created from this lead, or null when the lead has not been converted.
+          oneOf:
+            - $ref: "#/components/schemas/LeadConvertedJobRef"
+            - type: "null"
       required:
         - id
         - title
         - status
         - createdAt
         - clientContact
+        - convertedJob
+    LeadConvertedJobRef:
+      type: object
+      description: Lightweight reference to the job a lead was converted into.
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+        convertedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+      required:
+        - id
+        - title
+        - status
+        - convertedAt
     LeadListSummary:
       type: object
       description: Aggregate revenue totals across all leads matching the query (not just the current page).
@@ -12771,6 +12825,7 @@ components:
           type: string
           enum:
             - open
+            - qualified
             - in_negotiation
             - won
             - lost
@@ -12828,6 +12883,11 @@ components:
           description: Lead contacts from across the workspace, filtered to leads the caller can access (admins see all).
           items:
             $ref: "#/components/schemas/LeadAvailableContact"
+        convertedJob:
+          description: Job created from this lead, or null when the lead has not been converted.
+          oneOf:
+            - $ref: "#/components/schemas/LeadConvertedJobRef"
+            - type: "null"
       required:
         - id
         - title
@@ -12840,6 +12900,7 @@ components:
         - sources
         - attachments
         - availableContacts
+        - convertedJob
     LeadDetailResponse:
       type: object
       description: Response for `GET /leads/{id}`. The embedded `lead.availableContacts` collection is filtered to leads the caller can access.
@@ -13380,6 +13441,99 @@ components:
             $ref: "#/components/schemas/LeadAttachment"
       required:
         - attachments
+    LeadConvertToJobBody:
+      type: object
+      description: Optional payload for `POST /leads/{id}/convert-to-job`. Provide either `clientId` to attach the new job to an existing client, or `newClient` to create a client inline. `job` carries optional overrides applied on top of the lead's pre-fill values.
+      properties:
+        clientId:
+          type: string
+          format: uuid
+          description: Existing client to associate with the new job.
+        newClient:
+          type: object
+          description: Inline client to create as part of the conversion. Mutually exclusive with `clientId`.
+          properties:
+            companyName:
+              type: string
+              minLength: 1
+              maxLength: 255
+            phone:
+              type: string
+              nullable: true
+            email:
+              type: string
+              nullable: true
+            streetAddress:
+              type: string
+              nullable: true
+            city:
+              type: string
+              nullable: true
+            state:
+              type: string
+              nullable: true
+              maxLength: 2
+            zipCode:
+              type: string
+              nullable: true
+            notes:
+              type: string
+              nullable: true
+          required:
+            - companyName
+        job:
+          type: object
+          description: Overrides for the job that will be created. Anything omitted falls back to the lead's value.
+          properties:
+            title:
+              type: string
+              minLength: 1
+              maxLength: 255
+            streetAddress:
+              type: string
+              nullable: true
+            city:
+              type: string
+              nullable: true
+            state:
+              type: string
+              nullable: true
+              maxLength: 2
+            zipCode:
+              type: string
+              nullable: true
+            contractPrice:
+              type: string
+              nullable: true
+              description: Decimal serialized as string.
+            projectedStart:
+              type: string
+              format: date
+              nullable: true
+            projectedCompletion:
+              type: string
+              format: date
+              nullable: true
+            jobType:
+              type: string
+              nullable: true
+              enum:
+                - kitchen_countertops
+                - bathrooms
+                - flooring
+                - backsplash
+                - full_house_project
+                - custom
+                - null
+            projectManagerId:
+              type: string
+              format: uuid
+              nullable: true
+            assigneeIds:
+              type: array
+              items:
+                type: string
+                format: uuid
     LeadConvertToJobResponse:
       type: object
       properties:

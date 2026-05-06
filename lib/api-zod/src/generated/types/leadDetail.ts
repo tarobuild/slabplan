@@ -8,6 +8,7 @@
 import type { LeadAttachment } from "./leadAttachment";
 import type { LeadAvailableContact } from "./leadAvailableContact";
 import type { LeadContact } from "./leadContact";
+import type { LeadConvertedJobRef } from "./leadConvertedJobRef";
 import type { LeadDetailStatus } from "./leadDetailStatus";
 import type { LeadSalesperson } from "./leadSalesperson";
 import type { LeadSource } from "./leadSource";
@@ -48,4 +49,6 @@ export interface LeadDetail {
   attachments: LeadAttachment[];
   /** Lead contacts from across the workspace, filtered to leads the caller can access (admins see all). */
   availableContacts: LeadAvailableContact[];
+  /** Job created from this lead, or null when the lead has not been converted. */
+  convertedJob: LeadConvertedJobRef | null;
 }

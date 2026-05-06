@@ -963,3 +963,111 @@ test("POST /api/auth/login — burst past the limiter yields 429 + Retry-After",
   assert.match(parsed?.type ?? "", /rate-limited/);
   assert.match(parsed?.message ?? "", /too many login/i);
 });
+
+// -- Task #319: Lead → Job conversion flow ---------------------------------
+//
+// Verifies the extended POST /leads/:id/convert-to-job flow:
+//   * accepts a body with clientId + job overrides + assigneeIds
+//   * sets the new job's clientId from the body
+//   * inserts job_assignees rows
+//   * marks the lead status=won
+//   * a follow-up GET /leads/:id surfaces convertedJob with the new job id
+//   * a second convert call returns 409 with convertedJob.id
+
+test("POST /leads/:id/convert-to-job — body-driven conversion + convertedJob lookup + 409 on dupe", async () => {
+  const { db } = await import("@workspace/db");
+  const { leads, jobs, jobAssignees } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+
+  const [lead] = await db
+    .insert(leads)
+    .values({
+      title: `ZZZ Audit #319 lead ${crypto.randomUUID()}`,
+      status: "qualified",
+      streetAddress: "999 Lead St",
+      city: "Leadville",
+      state: "CA",
+      zipCode: "90210",
+      createdBy: adminUserId,
+    })
+    .returning();
+
+  const overrideTitle = `ZZZ Audit #319 job ${crypto.randomUUID()}`;
+  let createdJobId = "";
+  try {
+    // 1) Convert with body: clientId + job overrides + assigneeIds.
+    const convertRes = await fetch(
+      `${baseUrl}/api/leads/${lead.id}/convert-to-job`,
+      {
+        method: "POST",
+        headers: jsonHeaders(adminToken),
+        body: JSON.stringify({
+          clientId,
+          job: {
+            title: overrideTitle,
+            contractPrice: "12345.67",
+            jobType: "custom",
+            assigneeIds: [pmUserId, crewUserId, pmUserId],
+          },
+        }),
+      },
+    );
+    assert.equal(convertRes.status, 201);
+    const convertBody = (await convertRes.json()) as {
+      job: { id: string; title: string; status: string };
+    };
+    createdJobId = convertBody.job.id;
+    assert.equal(convertBody.job.title, overrideTitle);
+    assert.equal(convertBody.job.status, "open");
+
+    // Job row carries the body's clientId + override jobType.
+    const [createdJob] = await db
+      .select()
+      .from(jobs)
+      .where(eq(jobs.id, createdJobId));
+    assert.equal(createdJob.clientId, clientId);
+    assert.equal(createdJob.jobType, "custom");
+
+    // job_assignees deduped (pmUserId twice → one row) and crew row
+    // present.
+    const assigneeRows = await db
+      .select()
+      .from(jobAssignees)
+      .where(eq(jobAssignees.jobId, createdJobId));
+    const userIds = assigneeRows.map((r) => r.userId).sort();
+    assert.deepEqual(userIds, [crewUserId, pmUserId].sort());
+
+    // Source lead now `won`.
+    const [updated] = await db.select().from(leads).where(eq(leads.id, lead.id));
+    assert.equal(updated.status, "won");
+
+    // 2) GET /leads/:id surfaces convertedJob.{id,title,status}.
+    const detailRes = await fetch(
+      `${baseUrl}/api/leads/${lead.id}`,
+      { headers: authHeaders(adminToken) },
+    );
+    assert.equal(detailRes.status, 200);
+    const detailBody = (await detailRes.json()) as {
+      lead: { convertedJob: { id: string; title: string; status: string } | null };
+    };
+    assert.ok(detailBody.lead.convertedJob, "expected convertedJob to be populated");
+    assert.equal(detailBody.lead.convertedJob!.id, createdJobId);
+    assert.equal(detailBody.lead.convertedJob!.title, overrideTitle);
+
+    // 3) Second convert returns 409 + convertedJob.id in the problem body.
+    const dupeRes = await fetch(
+      `${baseUrl}/api/leads/${lead.id}/convert-to-job`,
+      { method: "POST", headers: jsonHeaders(adminToken), body: "{}" },
+    );
+    assert.equal(dupeRes.status, 409);
+    const dupeBody = (await dupeRes.json()) as {
+      errors?: { convertedJob?: { id: string } };
+    };
+    assert.equal(dupeBody.errors?.convertedJob?.id, createdJobId);
+  } finally {
+    if (createdJobId) {
+      await db.delete(jobs).where(eq(jobs.id, createdJobId));
+    }
+    await db.delete(leads).where(eq(leads.id, lead.id));
+  }
+});

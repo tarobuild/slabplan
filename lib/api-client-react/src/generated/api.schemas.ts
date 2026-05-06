@@ -292,6 +292,7 @@ export type LeadsLeadPayloadSchemaStatus =
 
 export const LeadsLeadPayloadSchemaStatus = {
   open: "open",
+  qualified: "qualified",
   in_negotiation: "in_negotiation",
   won: "won",
   lost: "lost",
@@ -913,11 +914,22 @@ export type LeadListItemStatus =
 
 export const LeadListItemStatus = {
   open: "open",
+  qualified: "qualified",
   in_negotiation: "in_negotiation",
   won: "won",
   lost: "lost",
   archived: "archived",
 } as const;
+
+/**
+ * Lightweight reference to the job a lead was converted into.
+ */
+export interface LeadConvertedJobRef {
+  id: string;
+  title: string;
+  status: string;
+  convertedAt: string | null;
+}
 
 /**
  * A lead row returned by the paginated `GET /leads` list.
@@ -947,6 +959,8 @@ export interface LeadListItem {
   createdByName?: string | null;
   /** Primary client contact summary, or null when the lead has no client contact assigned. */
   clientContact: LeadPrimaryContact | null;
+  /** Job created from this lead, or null when the lead has not been converted. */
+  convertedJob: LeadConvertedJobRef | null;
 }
 
 /**
@@ -973,6 +987,7 @@ export type LeadDetailStatus =
 
 export const LeadDetailStatus = {
   open: "open",
+  qualified: "qualified",
   in_negotiation: "in_negotiation",
   won: "won",
   lost: "lost",
@@ -1014,6 +1029,8 @@ export interface LeadDetail {
   attachments: LeadAttachment[];
   /** Lead contacts from across the workspace, filtered to leads the caller can access (admins see all). */
   availableContacts: LeadAvailableContact[];
+  /** Job created from this lead, or null when the lead has not been converted. */
+  convertedJob: LeadConvertedJobRef | null;
 }
 
 /**
@@ -1295,6 +1312,73 @@ export interface LeadContactResponse {
 
 export interface LeadAttachmentsCreatedResponse {
   attachments: LeadAttachment[];
+}
+
+/**
+ * Inline client to create as part of the conversion. Mutually exclusive with `clientId`.
+ */
+export type LeadConvertToJobBodyNewClient = {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  companyName: string;
+  phone?: string | null;
+  email?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  notes?: string | null;
+};
+
+export type LeadConvertToJobBodyJobJobType =
+  | (typeof LeadConvertToJobBodyJobJobType)[keyof typeof LeadConvertToJobBodyJobJobType]
+  | null;
+
+export const LeadConvertToJobBodyJobJobType = {
+  kitchen_countertops: "kitchen_countertops",
+  bathrooms: "bathrooms",
+  flooring: "flooring",
+  backsplash: "backsplash",
+  full_house_project: "full_house_project",
+  custom: "custom",
+} as const;
+
+/**
+ * Overrides for the job that will be created. Anything omitted falls back to the lead's value.
+ */
+export type LeadConvertToJobBodyJob = {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title?: string;
+  streetAddress?: string | null;
+  city?: string | null;
+  /** @maxLength 2 */
+  state?: string | null;
+  zipCode?: string | null;
+  /** Decimal serialized as string. */
+  contractPrice?: string | null;
+  projectedStart?: string | null;
+  projectedCompletion?: string | null;
+  jobType?: LeadConvertToJobBodyJobJobType;
+  projectManagerId?: string | null;
+  assigneeIds?: string[];
+};
+
+/**
+ * Optional payload for `POST /leads/{id}/convert-to-job`. Provide either `clientId` to attach the new job to an existing client, or `newClient` to create a client inline. `job` carries optional overrides applied on top of the lead's pre-fill values.
+ */
+export interface LeadConvertToJobBody {
+  /** Existing client to associate with the new job. */
+  clientId?: string;
+  /** Inline client to create as part of the conversion. Mutually exclusive with `clientId`. */
+  newClient?: LeadConvertToJobBodyNewClient;
+  /** Overrides for the job that will be created. Anything omitted falls back to the lead's value. */
+  job?: LeadConvertToJobBodyJob;
 }
 
 export type LeadConvertToJobResponseJob = {
@@ -2032,6 +2116,14 @@ export type LeadsGetLeadsParams = {
    */
   status?: string;
   /**
+   * Comma-separated list of statuses to exclude. Ignored when `status` is supplied.
+   */
+  excludeStatuses?: string;
+  /**
+   * When `true`, leads that have already been converted to a job are filtered out. The cadstone UI sends this by default and clears it when the "Show converted" toggle is enabled.
+   */
+  excludeConverted?: LeadsGetLeadsExcludeConverted;
+  /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
 value) or simply `?limit=N` with no `page`/`pageSize` — the server
@@ -2049,6 +2141,14 @@ ignored.
    */
   limit?: CursorLimitParamParameter;
 };
+
+export type LeadsGetLeadsExcludeConverted =
+  (typeof LeadsGetLeadsExcludeConverted)[keyof typeof LeadsGetLeadsExcludeConverted];
+
+export const LeadsGetLeadsExcludeConverted = {
+  true: "true",
+  false: "false",
+} as const;
 
 export type FilesGetFoldersIdFilesParams = {
   /**

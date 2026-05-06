@@ -2,7 +2,7 @@ import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } 
 
 import { DRAG_MOVE_THRESHOLD_MINUTES, minutesFromClientY, type DragSelection } from "../drag"
 
-export interface UseDragSelectionParams {
+interface UseDragSelectionParams {
   dragSelection: DragSelection | null
   dragSelectionRef: MutableRefObject<DragSelection | null>
   setDragSelection: Dispatch<SetStateAction<DragSelection | null>>

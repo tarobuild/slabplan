@@ -45,7 +45,7 @@ import { EmptyState, MultiSelectPopover } from "../components"
 import { defaultExceptionForm } from "../filters"
 import type { JobOption, WorkdayExceptionForm } from "../types"
 
-export interface ExceptionsTabProps {
+interface ExceptionsTabProps {
   jobId: string | undefined
   jobs: JobOption[]
   scheduleOffline: boolean

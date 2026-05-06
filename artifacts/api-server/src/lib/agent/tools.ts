@@ -28,7 +28,7 @@ export const READ_ONLY_AGENT_TOOL_NAMES = [
   "whoami",
 ] as const;
 
-export type AgentToolName = (typeof READ_ONLY_AGENT_TOOL_NAMES)[number];
+type AgentToolName = (typeof READ_ONLY_AGENT_TOOL_NAMES)[number];
 
 const READ_ONLY_SET = new Set<string>(READ_ONLY_AGENT_TOOL_NAMES);
 

@@ -14,7 +14,7 @@ export function parseDate(value: string) {
   return new Date(`${value}T12:00:00`)
 }
 
-export function cloneDate(date: Date) {
+function cloneDate(date: Date) {
   return new Date(date.getTime())
 }
 
@@ -30,17 +30,17 @@ export function addMonths(date: Date, amount: number) {
   return next
 }
 
-export function addYears(date: Date, amount: number) {
+function addYears(date: Date, amount: number) {
   const next = cloneDate(date)
   next.setFullYear(next.getFullYear() + amount)
   return next
 }
 
-export function startOfMonth(date: Date) {
+function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1)
 }
 
-export function endOfMonth(date: Date) {
+function endOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0)
 }
 
@@ -55,11 +55,11 @@ export function endOfWeek(date: Date) {
   return addDays(startOfWeek(date), 6)
 }
 
-export function startOfYear(date: Date) {
+function startOfYear(date: Date) {
   return new Date(date.getFullYear(), 0, 1)
 }
 
-export function endOfYear(date: Date) {
+function endOfYear(date: Date) {
   return new Date(date.getFullYear(), 11, 31)
 }
 
@@ -69,7 +69,7 @@ export function diffInDays(start: Date, end: Date) {
   return Math.round((right.getTime() - left.getTime()) / 86_400_000)
 }
 
-export function isWeekend(date: Date) {
+function isWeekend(date: Date) {
   const day = date.getDay()
   return day === 0 || day === 6
 }
@@ -112,7 +112,7 @@ export function formatLongDate(date: Date) {
   }).format(date)
 }
 
-export function formatCompactDay(date: Date) {
+function formatCompactDay(date: Date) {
   return new Intl.DateTimeFormat("en-US", {
     day: "numeric",
     weekday: "short",
@@ -121,7 +121,7 @@ export function formatCompactDay(date: Date) {
     .replace(",", "")
 }
 
-export function formatShortMonthDay(date: Date) {
+function formatShortMonthDay(date: Date) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
@@ -218,7 +218,7 @@ export function buildWeekSegments(week: string[], items: ScheduleItemRecord[]) {
     })
 }
 
-export function parseTimeToHour(value: string | null | undefined) {
+function parseTimeToHour(value: string | null | undefined) {
   if (!value) {
     return null
   }
@@ -232,7 +232,7 @@ export function parseTimeToHour(value: string | null | undefined) {
   return hours + minutes / 60
 }
 
-export function getDaySegmentBounds(item: ScheduleItemRecord, day: string) {
+function getDaySegmentBounds(item: ScheduleItemRecord, day: string) {
   const startHour = parseTimeToHour(item.startTime)
   const endHour = parseTimeToHour(item.endTime)
 

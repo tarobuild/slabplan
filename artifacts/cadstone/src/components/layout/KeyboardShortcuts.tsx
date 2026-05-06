@@ -9,7 +9,7 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { useAuthStore } from "@/store/auth"
 
-export const FOCUS_GLOBAL_SEARCH_EVENT = "cadstone:focus-global-search"
+const FOCUS_GLOBAL_SEARCH_EVENT = "cadstone:focus-global-search"
 
 type ShortcutDef = {
   keys: string[]
@@ -80,7 +80,7 @@ function isModalOpen(): boolean {
 // Sequence buffer timeout (ms) for two-key shortcuts like `g j`.
 const SEQUENCE_TIMEOUT_MS = 1200
 
-export function KeyboardShortcuts() {
+function KeyboardShortcuts() {
   const navigate = useNavigate()
   const isAdmin = useAuthStore((s) => s.user?.role === "admin")
   const shortcutGroups = useMemo(() => buildShortcutGroups(isAdmin), [isAdmin])

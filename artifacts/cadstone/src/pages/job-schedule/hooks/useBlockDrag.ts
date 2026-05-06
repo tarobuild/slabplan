@@ -17,7 +17,7 @@ import {
   type BlockDragMode,
 } from "../drag"
 
-export interface UseBlockDragParams {
+interface UseBlockDragParams {
   blockDragRef: MutableRefObject<BlockDrag | null>
   setBlockDrag: Dispatch<SetStateAction<BlockDrag | null>>
   blockClickSuppressRef: MutableRefObject<string | null>
@@ -26,7 +26,7 @@ export interface UseBlockDragParams {
   commitBlockDrag: (drag: BlockDrag) => Promise<void> | void
 }
 
-export interface UseBlockDragResult {
+interface UseBlockDragResult {
   handleBlockPointerDown: (
     event: ReactPointerEvent<HTMLElement>,
     item: ScheduleItemRecord,

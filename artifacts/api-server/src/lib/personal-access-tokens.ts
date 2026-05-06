@@ -133,7 +133,7 @@ export async function revokeToken(userId: string, tokenId: string): Promise<bool
   return result.length > 0;
 }
 
-export async function deleteExpiredOrRevokedOldTokens(): Promise<void> {
+async function deleteExpiredOrRevokedOldTokens(): Promise<void> {
   // Housekeeping: drop tokens that have been revoked or expired for >30 days.
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   await db

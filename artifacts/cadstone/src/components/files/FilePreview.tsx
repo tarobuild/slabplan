@@ -643,4 +643,3 @@ function UnsupportedView({ file }: { file: PreviewFile }) {
   )
 }
 
-export default FilePreview

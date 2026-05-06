@@ -62,6 +62,6 @@ export function getMcpContext(): McpContext | undefined {
   return storage.getStore();
 }
 
-export function runWithMcpContext<T>(ctx: McpContext, fn: () => T): T {
+function runWithMcpContext<T>(ctx: McpContext, fn: () => T): T {
   return storage.run(ctx, fn);
 }

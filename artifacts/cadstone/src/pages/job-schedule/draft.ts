@@ -74,7 +74,7 @@ export function schedulePayloadFromItem(item: ScheduleItemRecord): ScheduleItemP
   }
 }
 
-export function schedulePayloadSignature(item: ScheduleItemRecord) {
+function schedulePayloadSignature(item: ScheduleItemRecord) {
   return JSON.stringify(schedulePayloadFromItem(item))
 }
 
@@ -87,7 +87,7 @@ export function scheduleDraftSignature(item: ScheduleItemRecord) {
   })
 }
 
-export function resolveDraftPredecessorStartDate(
+function resolveDraftPredecessorStartDate(
   startDate: string,
   workDays: number,
   predecessors: ScheduleItemPayload["predecessors"],
@@ -138,7 +138,7 @@ export function resolveDraftPredecessorStartDate(
   return resolvedStartDate
 }
 
-export function draftConflictReasons(
+function draftConflictReasons(
   item: Pick<ScheduleItemRecord, "title" | "startDate" | "endDate" | "predecessors">,
   predecessorMap: Map<string, { title: string; startDate: string; endDate: string }>,
   workdayExceptions: ScheduleWorkdayException[],

@@ -2,7 +2,7 @@ import { useEffect, type MutableRefObject } from "react"
 
 import type { ScheduleItemRecord } from "@/lib/schedule"
 
-export interface UseDraftHistoryRefsParams {
+interface UseDraftHistoryRefsParams {
   draftItems: ScheduleItemRecord[]
   draftItemsRef: MutableRefObject<ScheduleItemRecord[]>
   draftPast: ScheduleItemRecord[][]

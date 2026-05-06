@@ -49,7 +49,7 @@ import {
 import { buildFilterPreset, titleCaseStatus } from "../filters"
 import type { CalendarPeriod, FilterState } from "../types"
 
-export interface CalendarViewProps {
+interface CalendarViewProps {
   loading: boolean
   jobId: string | undefined
   calendarPeriod: CalendarPeriod

@@ -26,7 +26,7 @@ import {
 
 import { EmptyState } from "../components"
 
-export interface BaselineTabProps {
+interface BaselineTabProps {
   baseline: ScheduleBaselineRecord | null
   scheduleOffline: boolean
   // Admin/PM may set/reset baseline; crew gets read-only.

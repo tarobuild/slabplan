@@ -79,7 +79,7 @@ function isReadOnlyExempt(_req: Request): boolean {
   return false;
 }
 
-export function requireRole(...roles: AppRole[]) {
+function requireRole(...roles: AppRole[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
     const auth = req.auth;
 

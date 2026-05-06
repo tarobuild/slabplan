@@ -34,7 +34,7 @@ import type {
   TimelineHeaderUnit,
 } from "../types"
 
-export interface GanttDependencyLine {
+interface GanttDependencyLine {
   key: string
   path: string
   isConflict: boolean
@@ -42,23 +42,23 @@ export interface GanttDependencyLine {
   endY: number
 }
 
-export interface GanttPreviewBounds {
+interface GanttPreviewBounds {
   left: number
   width: number
 }
 
-export interface GanttMonthGroup {
+interface GanttMonthGroup {
   key: string
   label: string
   width: number
 }
 
-export interface GanttRange {
+interface GanttRange {
   start: Date
   end: Date
 }
 
-export interface GanttViewProps {
+interface GanttViewProps {
   ganttFullscreen: boolean
   ganttScale: GanttScale
   ganttShowPhases: boolean

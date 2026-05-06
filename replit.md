@@ -9,7 +9,7 @@ Centralizes and streamlines construction management operations, offering job tra
 - **Typecheck:** `pnpm typecheck`
 - **Codegen (API):** `pnpm --filter @workspace/api-spec run codegen` (regenerates API client and Zod schemas)
 - **Codegen drift check:** `pnpm check-api-codegen`
-- **Unused-code sweep:** `pnpm knip` (config in `knip.json`)
+- **Unused-code sweep:** `pnpm knip` (config in `knip.json`; registered as a CI validation step — must exit clean)
 - **DB Push:** `drizzle-kit push --force` (for schema changes)
 - **Env Vars:**
     - `RESEND_API_KEY`, `EMAIL_FROM`, `APP_PUBLIC_URL` (transactional email)

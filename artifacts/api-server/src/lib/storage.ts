@@ -111,7 +111,7 @@ export async function headBucket(): Promise<void> {
  * Internal hook used by the test suite to swap the bucket head check with a
  * stub. Not part of the public API.
  */
-export const __headBucketTesting = {
+const __headBucketTesting = {
   setImpl(fn: HeadBucketImpl) {
     headBucketImpl = fn;
   },
@@ -576,7 +576,7 @@ export async function streamStoredFileToResponse(
   return { bytesStreamed, aborted };
 }
 
-export function resolveAbsolutePathFromFileUrl(_fileUrl: string): never {
+function resolveAbsolutePathFromFileUrl(_fileUrl: string): never {
   throw new Error(
     "resolveAbsolutePathFromFileUrl is no longer supported; use streamStoredFileToResponse or openStoredFileReadStream.",
   );

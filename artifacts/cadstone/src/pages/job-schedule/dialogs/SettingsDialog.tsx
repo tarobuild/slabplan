@@ -35,7 +35,7 @@ import {
 
 import type { ScheduleSettingsForm } from "../types"
 
-export interface SettingsDialogProps {
+interface SettingsDialogProps {
   open: boolean
   onOpenChange: Dispatch<SetStateAction<boolean>>
   settingsForm: ScheduleSettingsForm

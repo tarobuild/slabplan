@@ -26,7 +26,7 @@ type State = {
  * raised from lazy-loaded route chunks, and again per-route inside
  * AppLayout so the shell stays navigable when one page blows up.
  */
-export class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundary extends Component<Props, State> {
   state: State = {
     hasError: false,
   }

@@ -28,7 +28,7 @@ export type CrewForecast = {
   fetchedAt: string
 }
 
-export type CrewScheduleItem = {
+type CrewScheduleItem = {
   id: string
   title: string
   startDate: string
@@ -45,7 +45,7 @@ export type CrewScheduleItem = {
   jobAddress: string | null
 }
 
-export type CrewTodo = {
+type CrewTodo = {
   id: string
   title: string
   isComplete: boolean
@@ -55,7 +55,7 @@ export type CrewTodo = {
   jobTitle: string | null
 }
 
-export type WeatherStrip = {
+type WeatherStrip = {
   jobId: string
   jobTitle: string | null
   logDate: string
@@ -87,7 +87,7 @@ export type PmHome = {
   summary: { activeJobs: number; openLeads: number; openScheduleItems: number }
 }
 
-export type PmWeekItem = {
+type PmWeekItem = {
   id: string
   title: string
   startDate: string
@@ -99,7 +99,7 @@ export type PmWeekItem = {
   jobTitle: string | null
 }
 
-export type PmTeamLog = {
+type PmTeamLog = {
   id: string
   logDate: string
   title: string | null

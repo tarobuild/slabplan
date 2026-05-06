@@ -9,7 +9,7 @@ import {
 import { addDays, parseDate } from "../calendar-utils"
 import type { GanttDrag } from "../drag"
 
-export interface UseGanttDragParams {
+interface UseGanttDragParams {
   ganttDrag: GanttDrag | null
   ganttDragRef: MutableRefObject<GanttDrag | null>
   setGanttDrag: Dispatch<SetStateAction<GanttDrag | null>>

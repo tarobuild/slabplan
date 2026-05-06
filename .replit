@@ -36,6 +36,10 @@ args = "check-api-codegen"
 task = "workflow.run"
 args = "check-eager-bundle"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "knip"
+
 [[workflows.workflow]]
 name = "typecheck"
 author = "agent"
@@ -65,6 +69,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "pnpm --filter @workspace/cadstone run check-eager-bundle"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "knip"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm knip"
 
 [workflows.workflow.metadata]
 isValidation = true

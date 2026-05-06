@@ -211,6 +211,6 @@ export async function getCachedForecastForCoords(
   }
 }
 
-export function __resetWeatherCacheForTests() {
+function __resetWeatherCacheForTests() {
   forecastCache.clear();
 }

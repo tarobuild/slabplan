@@ -95,7 +95,7 @@ export async function listAnnotationsForFile(fileId: string): Promise<Serialized
   return rows.map((row) => serializeAnnotation(row.annotation, row.createdByName));
 }
 
-export async function listAnnotationsByIds(ids: string[]): Promise<SerializedAnnotation[]> {
+async function listAnnotationsByIds(ids: string[]): Promise<SerializedAnnotation[]> {
   if (ids.length === 0) return [];
   const rows = await db
     .select({

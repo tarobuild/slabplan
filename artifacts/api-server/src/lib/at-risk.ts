@@ -12,7 +12,7 @@ export type ScheduleItemAtRiskInput = {
   progress: number | null;
 };
 
-export type DailyLogActivityInput = {
+type DailyLogActivityInput = {
   jobId: string;
   logDate: string; // YYYY-MM-DD
 };

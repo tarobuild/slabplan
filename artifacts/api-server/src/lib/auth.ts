@@ -185,7 +185,7 @@ function decodeVerifiedToken<TType extends TokenType>(
 // signed-view route. Kept exported so any historical test or call site
 // that imported the helper continues to compile; it's now a no-op that
 // always reports success.
-export function consumeFileViewJti(_jti: string): boolean {
+function consumeFileViewJti(_jti: string): boolean {
   return true;
 }
 

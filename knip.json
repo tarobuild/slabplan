@@ -2,17 +2,116 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     "artifacts/cadstone": {
-      "project": ["src/**/*.{ts,tsx}"]
+      "entry": ["src/**/*.test.{ts,tsx}", "tests/**/*.spec.ts"],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignore": [
+        "src/components/ui/**",
+        "src/hooks/use-mobile.tsx",
+        "src/hooks/use-toast.ts",
+        "src/components/page-stub.tsx",
+        "src/pages/register.tsx"
+      ],
+      "ignoreDependencies": [
+        "@hookform/resolvers",
+        "@radix-ui/react-accordion",
+        "@radix-ui/react-aspect-ratio",
+        "@radix-ui/react-collapsible",
+        "@radix-ui/react-context-menu",
+        "@radix-ui/react-hover-card",
+        "@radix-ui/react-menubar",
+        "@radix-ui/react-navigation-menu",
+        "@radix-ui/react-toast",
+        "@radix-ui/react-toggle",
+        "@radix-ui/react-toggle-group",
+        "date-fns",
+        "embla-carousel-react",
+        "framer-motion",
+        "input-otp",
+        "next-themes",
+        "react-day-picker",
+        "react-hook-form",
+        "react-resizable-panels",
+        "vaul",
+        "@types/pg",
+        "pg",
+        "@tailwindcss/typography",
+        "tailwindcss",
+        "tw-animate-css"
+      ]
     },
     "artifacts/api-server": {
-      "project": ["src/**/*.ts"]
+      "entry": [
+        "src/index.ts",
+        "src/scripts/**/*.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": [
+        "@tokenizer/inflate",
+        "@tokenizer/token",
+        "google-auth-library",
+        "peek-readable",
+        "strtok3",
+        "token-types"
+      ]
     },
     "artifacts/mockup-sandbox": {
-      "project": ["src/**/*.{ts,tsx}"]
+      "entry": ["src/.generated/mockup-components.ts"],
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignore": [
+        "src/components/ui/**",
+        "src/hooks/use-mobile.tsx",
+        "src/hooks/use-toast.ts",
+        "src/pages.tsx"
+      ],
+      "ignoreDependencies": [
+        "@hookform/resolvers",
+        "@radix-ui/react-accordion",
+        "@radix-ui/react-aspect-ratio",
+        "@radix-ui/react-collapsible",
+        "@radix-ui/react-context-menu",
+        "@radix-ui/react-hover-card",
+        "@radix-ui/react-menubar",
+        "@radix-ui/react-navigation-menu",
+        "@radix-ui/react-popover",
+        "@radix-ui/react-radio-group",
+        "@radix-ui/react-separator",
+        "@radix-ui/react-toast",
+        "@radix-ui/react-toggle",
+        "@radix-ui/react-toggle-group",
+        "@radix-ui/react-tooltip",
+        "chokidar",
+        "cmdk",
+        "embla-carousel-react",
+        "fast-glob",
+        "framer-motion",
+        "input-otp",
+        "next-themes",
+        "react-day-picker",
+        "react-dropzone",
+        "react-resizable-panels",
+        "recharts",
+        "tailwindcss-animate",
+        "vaul",
+        "zod",
+        "tailwindcss",
+        "tw-animate-css"
+      ]
+    },
+    "lib/api-spec": {
+      "project": ["scripts/**/*.mjs"],
+      "ignore": [
+        "scripts/apply-api-foundation.mjs",
+        "scripts/post-codegen.mjs"
+      ],
+      "ignoreDependencies": ["orval", "yaml"]
+    },
+    "lib/db": {
+      "entry": ["src/scripts/**/*.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["drizzle-zod", "zod"]
     }
   },
-  "ignore": [
-    "lib/api-client-react/src/generated/**",
-    "lib/api-zod/src/generated/**"
-  ]
+  "ignoreDependencies": ["prettier"],
+  "ignoreExportsUsedInFile": true
 }

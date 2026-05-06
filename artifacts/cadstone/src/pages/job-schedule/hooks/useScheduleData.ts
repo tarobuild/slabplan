@@ -21,7 +21,7 @@ import type {
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>
 
-export interface UseScheduleDataOptions {
+interface UseScheduleDataOptions {
   jobId: string | undefined
   setViewMode: Setter<ViewMode>
   setCalendarPeriod: Setter<CalendarPeriod>

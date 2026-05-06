@@ -155,4 +155,3 @@ export function ClientPickerDialog({
   )
 }
 
-export default ClientPickerDialog

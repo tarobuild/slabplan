@@ -22,7 +22,7 @@ import {
 import type { AppUser } from "../types"
 import { useDraftHistoryRefs } from "./useDraftHistoryRefs"
 
-export interface UseScheduleDraftOptions {
+interface UseScheduleDraftOptions {
   jobId: string | undefined
   items: ScheduleItemRecord[]
   users: AppUser[]

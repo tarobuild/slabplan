@@ -27,7 +27,7 @@ import { useBlockDrag } from "./useBlockDrag"
 import { useDragSelection } from "./useDragSelection"
 import { useGanttDrag } from "./useGanttDrag"
 
-export interface UseScheduleDragHandlersOptions {
+interface UseScheduleDragHandlersOptions {
   jobId: string | undefined
   items: ScheduleItemRecord[]
   setItems: React.Dispatch<React.SetStateAction<ScheduleItemRecord[]>>

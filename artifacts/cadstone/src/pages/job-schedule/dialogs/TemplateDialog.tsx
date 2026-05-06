@@ -13,7 +13,7 @@ import {
 import { SCHEDULE_TEMPLATES } from "../constants"
 import type { ScheduleTemplate } from "../types"
 
-export interface TemplateDialogProps {
+interface TemplateDialogProps {
   open: boolean
   onOpenChange: Dispatch<SetStateAction<boolean>>
   templateApplyingId: string | null

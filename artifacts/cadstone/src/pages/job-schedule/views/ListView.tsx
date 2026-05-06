@@ -35,7 +35,7 @@ import type {
   SortKey,
 } from "../types"
 
-export interface ListViewProps {
+interface ListViewProps {
   itemsTotal: number
   loading: boolean
   isEmpty: boolean

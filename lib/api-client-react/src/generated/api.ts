@@ -7837,6 +7837,83 @@ export const useDailyLogAdminDeleteDailyLogsCustomFieldsFieldId = <
 };
 
 /**
+ * Company-wide daily log feed (admin/PM only). Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with companyDailyLogFeedQuerySchema. Supports both page and cursor pagination.
+ * @summary GET /daily-logs/feed
+ */
+export const getDailyLogsGetDailyLogsFeedUrl = () => {
+  return `/api/daily-logs/feed`;
+};
+
+export const dailyLogsGetDailyLogsFeed = async (
+  options?: RequestInit,
+): Promise<DailyLogListResponse> => {
+  return customFetch<DailyLogListResponse>(getDailyLogsGetDailyLogsFeedUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getDailyLogsGetDailyLogsFeedQueryKey = () => {
+  return [`/api/daily-logs/feed`] as const;
+};
+
+export const getDailyLogsGetDailyLogsFeedQueryOptions = <
+  TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getDailyLogsGetDailyLogsFeedQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>
+  > = ({ signal }) => dailyLogsGetDailyLogsFeed({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type DailyLogsGetDailyLogsFeedQueryResult = NonNullable<
+  Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>
+>;
+export type DailyLogsGetDailyLogsFeedQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /daily-logs/feed
+ */
+
+export function useDailyLogsGetDailyLogsFeed<
+  TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDailyLogsGetDailyLogsFeedQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts. Validated query with myDailyLogsQuerySchema.
  * @summary GET /daily-logs/mine
  */
@@ -10482,6 +10559,82 @@ export const useSchedulePostJobsJobIdSchedule = <
 > => {
   return useMutation(getSchedulePostJobsJobIdScheduleMutationOptions(options));
 };
+
+/**
+ * Company-wide schedule list (admin/PM only). Route defined in artifacts/api-server/src/routes/schedule.ts. Validated query with companyScheduleQuerySchema. Supports both page and cursor pagination.
+ * @summary GET /schedule
+ */
+export const getScheduleGetScheduleUrl = () => {
+  return `/api/schedule`;
+};
+
+export const scheduleGetSchedule = async (
+  options?: RequestInit,
+): Promise<ScheduleListResponse> => {
+  return customFetch<ScheduleListResponse>(getScheduleGetScheduleUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getScheduleGetScheduleQueryKey = () => {
+  return [`/api/schedule`] as const;
+};
+
+export const getScheduleGetScheduleQueryOptions = <
+  TData = Awaited<ReturnType<typeof scheduleGetSchedule>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof scheduleGetSchedule>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getScheduleGetScheduleQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof scheduleGetSchedule>>
+  > = ({ signal }) => scheduleGetSchedule({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof scheduleGetSchedule>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ScheduleGetScheduleQueryResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleGetSchedule>>
+>;
+export type ScheduleGetScheduleQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /schedule
+ */
+
+export function useScheduleGetSchedule<
+  TData = Awaited<ReturnType<typeof scheduleGetSchedule>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof scheduleGetSchedule>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getScheduleGetScheduleQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.

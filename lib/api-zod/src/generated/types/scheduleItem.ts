@@ -17,6 +17,9 @@ import type { ScheduleRelatedTodo } from "./scheduleRelatedTodo";
 export interface ScheduleItem {
   id: string;
   jobId?: string | null;
+  jobTitle?: string | null;
+  clientId?: string | null;
+  clientName?: string | null;
   schedulePhaseId?: string | null;
   phaseId?: string | null;
   phaseName?: string | null;

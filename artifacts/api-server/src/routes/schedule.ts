@@ -16,6 +16,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
+  clients,
   files,
   folders,
   jobs,
@@ -40,8 +41,10 @@ import {
   assertCanManageScheduleItem,
   assertCanViewScheduleItem,
   isAdmin,
+  listAccessibleJobIds,
   type AuthContext,
 } from "../lib/authorization";
+import { requireManagerOrAbove } from "../middleware/require-auth";
 import { decodeCursor, encodeCursor } from "../lib/cursor";
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
@@ -3239,6 +3242,225 @@ router.get(
     });
   }),
 );
+
+const companyScheduleQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional().default(1),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(SCHEDULE_LIST_MAX_LIMIT)
+    .optional()
+    .default(SCHEDULE_LIST_DEFAULT_LIMIT),
+  cursor: z.string().optional(),
+  clientId: z.string().uuid().optional(),
+  jobId: z.string().uuid().optional(),
+  assigneeId: z.string().uuid().optional(),
+  phaseId: z.string().uuid().optional(),
+  status: z.enum(["upcoming", "in_progress", "overdue", "complete"]).optional(),
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+
+router.get(
+  "/schedule",
+  requireManagerOrAbove,
+  asyncHandler(async (req, res) => {
+    const parsedQuery = companyScheduleQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      throw new HttpError(
+        400,
+        "Invalid schedule query.",
+        parsedQuery.error.flatten(),
+      );
+    }
+
+    const { page, limit, cursor: rawCursor, clientId, jobId, assigneeId, phaseId, status, from, to } = parsedQuery.data;
+    const isCursorMode = Object.prototype.hasOwnProperty.call(req.query, "cursor");
+    const cursorPayload = rawCursor ? decodeCursor(rawCursor) : null;
+    const auth = req.auth!;
+    const currentUserId = auth.userId;
+    const today = new Date().toISOString().split("T")[0];
+
+    const accessibleJobIds = await listAccessibleJobIds(auth);
+    if (accessibleJobIds && accessibleJobIds.length === 0) {
+      res.json({
+        data: [],
+        pagination: isCursorMode
+          ? { limit, hasMore: false, nextCursor: null }
+          : { page, limit, totalItems: 0, totalPages: 1 },
+      });
+      return;
+    }
+
+    const filters: SQL[] = [
+      isNull(scheduleItems.deletedAt),
+      isNull(jobs.deletedAt),
+    ];
+    const visibility = buildScheduleListVisibilityFilter(auth);
+    if (visibility) filters.push(visibility);
+    if (accessibleJobIds) filters.push(inArray(scheduleItems.jobId, accessibleJobIds));
+    if (clientId) filters.push(eq(jobs.clientId, clientId));
+    if (jobId) filters.push(eq(scheduleItems.jobId, jobId));
+    if (phaseId) filters.push(eq(scheduleItems.schedulePhaseId, phaseId));
+    if (from) filters.push(sql`${scheduleItems.endDate} >= ${from}`);
+    if (to) filters.push(sql`${scheduleItems.startDate} <= ${to}`);
+    if (status === "complete") {
+      filters.push(eq(scheduleItems.isComplete, true));
+    } else if (status === "overdue") {
+      filters.push(eq(scheduleItems.isComplete, false));
+      filters.push(sql`${scheduleItems.endDate} < ${today}`);
+    } else if (status === "in_progress") {
+      filters.push(eq(scheduleItems.isComplete, false));
+      filters.push(sql`${scheduleItems.startDate} <= ${today}`);
+      filters.push(sql`${scheduleItems.endDate} >= ${today}`);
+    } else if (status === "upcoming") {
+      filters.push(eq(scheduleItems.isComplete, false));
+      filters.push(sql`${scheduleItems.startDate} > ${today}`);
+    }
+    if (assigneeId) {
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${scheduleItemAssignees} WHERE ${scheduleItemAssignees.scheduleItemId} = ${scheduleItems.id} AND ${scheduleItemAssignees.userId} = ${assigneeId})`,
+      );
+    }
+    // Defense-in-depth: never expose another user's personal to-do row.
+    filters.push(
+      or(
+        eq(scheduleItems.isPersonalTodo, false),
+        isNull(scheduleItems.isPersonalTodo),
+        eq(scheduleItems.createdBy, currentUserId),
+      ) as SQL,
+    );
+
+    const baseWhere = and(...filters);
+
+    // Single SQL per page: fetch the candidate IDs ordered by (startDate, id)
+    // joined with jobs (for visibility/client filters). Hydration is batched.
+    const candidatesQuery = db
+      .select({
+        id: scheduleItems.id,
+        startDate: scheduleItems.startDate,
+        jobId: scheduleItems.jobId,
+        jobTitle: jobs.title,
+        clientId: jobs.clientId,
+      })
+      .from(scheduleItems)
+      .leftJoin(jobs, eq(scheduleItems.jobId, jobs.id))
+      .where(baseWhere)
+      .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id));
+
+    if (isCursorMode) {
+      if (cursorPayload) {
+        const cursorStartDate = String(cursorPayload.k[0] ?? "");
+        const cursorId = typeof cursorPayload.id === "string" ? cursorPayload.id : "";
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(cursorStartDate) || !uuidPattern.test(cursorId)) {
+          throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+        }
+        const cursorRows = await db
+          .select({
+            id: scheduleItems.id,
+            startDate: scheduleItems.startDate,
+            jobId: scheduleItems.jobId,
+            jobTitle: jobs.title,
+            clientId: jobs.clientId,
+          })
+          .from(scheduleItems)
+          .leftJoin(jobs, eq(scheduleItems.jobId, jobs.id))
+          .where(
+            and(
+              baseWhere,
+              sql`(${scheduleItems.startDate}, ${scheduleItems.id}) > (${cursorStartDate}::date, ${cursorId})`,
+            ),
+          )
+          .orderBy(asc(scheduleItems.startDate), asc(scheduleItems.id))
+          .limit(limit + 1);
+        const hasMore = cursorRows.length > limit;
+        const pageRows = hasMore ? cursorRows.slice(0, limit) : cursorRows;
+        const last = pageRows[pageRows.length - 1];
+        const nextCursor = hasMore && last
+          ? encodeCursor({ v: 1, k: [last.startDate], id: last.id })
+          : null;
+        const data = await hydrateAndAttachContext(pageRows, currentUserId);
+        res.json({
+          data,
+          pagination: { limit, hasMore, nextCursor },
+        });
+        return;
+      }
+      const initialRows = await candidatesQuery.limit(limit + 1);
+      const hasMore = initialRows.length > limit;
+      const pageRows = hasMore ? initialRows.slice(0, limit) : initialRows;
+      const last = pageRows[pageRows.length - 1];
+      const nextCursor = hasMore && last
+        ? encodeCursor({ v: 1, k: [last.startDate], id: last.id })
+        : null;
+      const data = await hydrateAndAttachContext(pageRows, currentUserId);
+      res.json({
+        data,
+        pagination: { limit, hasMore, nextCursor },
+      });
+      return;
+    }
+
+    const offset = (page - 1) * limit;
+    const [[totalRow], pageRows] = await Promise.all([
+      db
+        .select({ total: count() })
+        .from(scheduleItems)
+        .leftJoin(jobs, eq(scheduleItems.jobId, jobs.id))
+        .where(baseWhere),
+      candidatesQuery.limit(limit).offset(offset),
+    ]);
+    const totalItems = Number(totalRow?.total ?? 0);
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const data = await hydrateAndAttachContext(pageRows, currentUserId);
+    res.json({
+      data,
+      pagination: { page, limit, totalItems, totalPages },
+    });
+  }),
+);
+
+async function hydrateAndAttachContext(
+  pageRows: Array<{ id: string; jobId: string | null; jobTitle: string | null; clientId: string | null }>,
+  currentUserId: string,
+) {
+  if (pageRows.length === 0) return [];
+  const hydrated = await hydrateScheduleItems(
+    pageRows.map((row) => row.id),
+    currentUserId,
+  );
+  const contextById = new Map(pageRows.map((row) => [row.id, row]));
+  const clientIds = Array.from(
+    new Set(pageRows.map((row) => row.clientId).filter((id): id is string => !!id)),
+  );
+  const clientNameById = new Map<string, string>();
+  if (clientIds.length > 0) {
+    const clientRows = await db
+      .select({ id: clients.id, name: clients.companyName })
+      .from(clients)
+      .where(inArray(clients.id, clientIds));
+    for (const row of clientRows) {
+      clientNameById.set(row.id, row.name);
+    }
+  }
+  return hydrated.map((entry) => {
+    const ctx = contextById.get(entry.item.id);
+    return {
+      ...entry.item,
+      jobTitle: ctx?.jobTitle ?? null,
+      clientId: ctx?.clientId ?? null,
+      clientName: ctx?.clientId ? clientNameById.get(ctx.clientId) ?? null : null,
+    };
+  });
+}
 
 router.post(
   "/jobs/:jobId/schedule",

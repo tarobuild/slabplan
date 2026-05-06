@@ -3630,6 +3630,8 @@ export const DailyLogsGetJobsJobIdDailyLogsResponse = zod
           id: zod.string().uuid(),
           jobId: zod.string().uuid().nullish(),
           jobTitle: zod.string().nullish(),
+          clientId: zod.string().uuid().nullish(),
+          clientName: zod.string().nullish(),
           logDate: zod.string(),
           title: zod.string().nullish(),
           notes: zod.string(),
@@ -4930,6 +4932,110 @@ export const DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdResponse =
   zod.unknown();
 
 /**
+ * Company-wide daily log feed (admin/PM only). Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with companyDailyLogFeedQuerySchema. Supports both page and cursor pagination.
+ * @summary GET /daily-logs/feed
+ */
+
+export const dailyLogsGetDailyLogsFeedResponsePaginationOneTotalItemsMin = 0;
+
+export const DailyLogsGetDailyLogsFeedResponse = zod
+  .object({
+    logs: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          jobId: zod.string().uuid().nullish(),
+          jobTitle: zod.string().nullish(),
+          clientId: zod.string().uuid().nullish(),
+          clientName: zod.string().nullish(),
+          logDate: zod.string(),
+          title: zod.string().nullish(),
+          notes: zod.string(),
+          weatherData: zod
+            .object({
+              condition: zod.string(),
+              icon: zod.string(),
+              temperatureHigh: zod.number().nullish(),
+              temperatureLow: zod.number().nullish(),
+              windMph: zod.number().nullish(),
+              humidity: zod.number().nullish(),
+              precipitation: zod.number(),
+              fetchedAt: zod.coerce.date(),
+            })
+            .nullish()
+            .describe(
+              'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
+            ),
+          includeWeather: zod.boolean().optional(),
+          includeWeatherNotes: zod.boolean().optional(),
+          weatherNotes: zod.string().nullish(),
+          customFieldValues: zod
+            .record(
+              zod.string(),
+              zod.union([
+                zod.string(),
+                zod.number(),
+                zod.boolean(),
+                zod.null(),
+              ]),
+            )
+            .optional(),
+          shareInternalUsers: zod.boolean().optional(),
+          shareSubsVendors: zod.boolean().optional(),
+          shareClient: zod.boolean().optional(),
+          isPrivate: zod.boolean().optional(),
+          createdBy: zod.string().uuid().nullish(),
+          createdAt: zod.coerce.date(),
+          updatedAt: zod.coerce.date(),
+          publishedAt: zod.coerce.date().nullish(),
+          createdByName: zod.string().nullish(),
+          notifyUserIds: zod.array(zod.string().uuid()).optional(),
+          tags: zod.array(zod.string()),
+          attachmentCount: zod.number().optional(),
+          likesCount: zod.number().optional(),
+          commentsCount: zod.number().optional(),
+          likedByCurrentUser: zod.boolean().optional(),
+          visibilityLabel: zod.string().optional(),
+          todoCount: zod.number().optional(),
+          completedTodoCount: zod.number().optional(),
+          status: zod.enum(["draft", "published"]),
+        })
+        .describe(
+          "Daily log row returned in list endpoints. Subset of `DailyLog`; lacks the full attachments array (returns `attachmentCount` instead).",
+        ),
+    ),
+    pagination: zod.union([
+      zod
+        .object({
+          page: zod.number().min(1),
+          pageSize: zod.number().min(1),
+          totalItems: zod
+            .number()
+            .min(dailyLogsGetDailyLogsFeedResponsePaginationOneTotalItemsMin),
+          totalPages: zod.number().min(1),
+        })
+        .describe("Standard pagination metadata returned with list responses."),
+      zod
+        .object({
+          limit: zod.number(),
+          hasMore: zod.boolean(),
+          nextCursor: zod
+            .string()
+            .nullish()
+            .describe(
+              "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
+            ),
+        })
+        .describe(
+          "Pagination shape returned when the request supplied a `cursor` query parameter.",
+        ),
+    ]),
+  })
+  .describe(
+    "Paged daily-log list. The `pagination` field uses `Pagination` (page mode) or `CursorPagination` (cursor mode) depending on whether the request supplied `?cursor=` \/ `?limit=`.",
+  );
+
+/**
  * Route defined in artifacts/api-server/src/routes/daily-log-admin.ts. Validated query with myDailyLogsQuerySchema.
  * @summary GET /daily-logs/mine
  */
@@ -4989,6 +5095,8 @@ export const DailyLogAdminGetDailyLogsMineResponse = zod
           id: zod.string().uuid(),
           jobId: zod.string().uuid().nullish(),
           jobTitle: zod.string().nullish(),
+          clientId: zod.string().uuid().nullish(),
+          clientName: zod.string().nullish(),
           logDate: zod.string(),
           title: zod.string().nullish(),
           notes: zod.string(),
@@ -6160,6 +6268,9 @@ export const SchedulePostJobsJobIdScheduleTrackConflictsResponse = zod.object({
       .object({
         id: zod.string().uuid(),
         jobId: zod.string().uuid().nullish(),
+        jobTitle: zod.string().nullish(),
+        clientId: zod.string().uuid().nullish(),
+        clientName: zod.string().nullish(),
         schedulePhaseId: zod.string().uuid().nullish(),
         phaseId: zod.string().uuid().nullish(),
         phaseName: zod.string().nullish(),
@@ -6356,6 +6467,9 @@ export const ScheduleGetJobsJobIdScheduleResponse = zod.object({
       .object({
         id: zod.string().uuid(),
         jobId: zod.string().uuid().nullish(),
+        jobTitle: zod.string().nullish(),
+        clientId: zod.string().uuid().nullish(),
+        clientName: zod.string().nullish(),
         schedulePhaseId: zod.string().uuid().nullish(),
         phaseId: zod.string().uuid().nullish(),
         phaseName: zod.string().nullish(),
@@ -6636,6 +6750,132 @@ export const SchedulePostJobsJobIdScheduleBody = zod
   );
 
 /**
+ * Company-wide schedule list (admin/PM only). Route defined in artifacts/api-server/src/routes/schedule.ts. Validated query with companyScheduleQuerySchema. Supports both page and cursor pagination.
+ * @summary GET /schedule
+ */
+export const ScheduleGetScheduleResponse = zod.object({
+  data: zod.array(
+    zod
+      .object({
+        id: zod.string().uuid(),
+        jobId: zod.string().uuid().nullish(),
+        jobTitle: zod.string().nullish(),
+        clientId: zod.string().uuid().nullish(),
+        clientName: zod.string().nullish(),
+        schedulePhaseId: zod.string().uuid().nullish(),
+        phaseId: zod.string().uuid().nullish(),
+        phaseName: zod.string().nullish(),
+        phaseColor: zod.string().nullish(),
+        title: zod.string(),
+        displayColor: zod.string().optional(),
+        startDate: zod.string(),
+        endDate: zod.string(),
+        workDays: zod.number().optional(),
+        isHourly: zod.boolean().optional(),
+        startTime: zod.string().nullish(),
+        endTime: zod.string().nullish(),
+        progress: zod.number().optional(),
+        reminder: zod.string().optional(),
+        showOnGantt: zod.boolean().optional(),
+        visibleToEstimators: zod.boolean().optional(),
+        visibleToInstallers: zod.boolean().optional(),
+        visibleToOfficeStaff: zod.boolean().optional(),
+        isComplete: zod.boolean().optional(),
+        isPersonalTodo: zod.boolean().optional(),
+        notes: zod.string().nullish(),
+        tags: zod.array(zod.string()),
+        notifyUserIds: zod.array(zod.string().uuid()).optional(),
+        assigneeIds: zod.array(zod.string().uuid()),
+        assignees: zod.array(
+          zod
+            .object({
+              id: zod.string().uuid(),
+              fullName: zod.string().nullish(),
+              email: zod.string(),
+              role: zod.string(),
+              avatarUrl: zod.string().nullish(),
+            })
+            .describe(
+              "A user assigned to or notified about a job, schedule item, or daily log.",
+            ),
+        ),
+        predecessors: zod.array(
+          zod.object({
+            scheduleItemId: zod.string().uuid(),
+            dependencyType: zod.enum([
+              "finish_to_start",
+              "start_to_start",
+              "finish_to_finish",
+              "start_to_finish",
+            ]),
+            lagDays: zod.number(),
+            title: zod.string(),
+          }),
+        ),
+        notesStream: zod.array(
+          zod.object({
+            id: zod.string(),
+            note: zod.string(),
+            createdAt: zod.coerce.date(),
+            authorId: zod.string().uuid().nullish(),
+            authorName: zod.string().nullish(),
+            authorAvatarUrl: zod.string().nullish(),
+            isLegacy: zod.boolean(),
+          }),
+        ),
+        noteCount: zod.number().optional(),
+        attachments: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            fileId: zod.string().uuid(),
+            filename: zod.string(),
+            originalName: zod.string(),
+            fileUrl: zod.string(),
+            fileSize: zod.number(),
+            mimeType: zod.string().nullish(),
+            createdAt: zod.coerce.date(),
+            icon: zod.string(),
+          }),
+        ),
+        relatedTodos: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            title: zod.string(),
+            isComplete: zod.boolean(),
+            createdAt: zod.coerce.date(),
+            updatedAt: zod.coerce.date(),
+            createdBy: zod.string().uuid().nullish(),
+            createdByName: zod.string().nullish(),
+          }),
+        ),
+        relatedTodoCount: zod.number().optional(),
+        status: zod
+          .string()
+          .describe(
+            'Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\").',
+          ),
+        hasConflict: zod.boolean(),
+        conflictReasons: zod.array(zod.string()),
+        createdBy: zod.string().uuid().nullish(),
+        createdAt: zod.coerce.date(),
+        updatedAt: zod.coerce.date(),
+        deletedAt: zod.coerce.date().nullish(),
+        createdByName: zod.string().nullish(),
+        createdByAvatarUrl: zod.string().nullish(),
+      })
+      .describe(
+        "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
+      ),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    totalItems: zod.number(),
+    totalPages: zod.number(),
+  }),
+});
+
+/**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
  * @summary GET /schedule-items/{id}
  */
@@ -6652,6 +6892,9 @@ export const ScheduleGetScheduleItemsIdResponse = zod.object({
     .object({
       id: zod.string().uuid(),
       jobId: zod.string().uuid().nullish(),
+      jobTitle: zod.string().nullish(),
+      clientId: zod.string().uuid().nullish(),
+      clientName: zod.string().nullish(),
       schedulePhaseId: zod.string().uuid().nullish(),
       phaseId: zod.string().uuid().nullish(),
       phaseName: zod.string().nullish(),
@@ -6924,6 +7167,9 @@ export const SchedulePutScheduleItemsIdResponse = zod.object({
     .object({
       id: zod.string().uuid(),
       jobId: zod.string().uuid().nullish(),
+      jobTitle: zod.string().nullish(),
+      clientId: zod.string().uuid().nullish(),
+      clientName: zod.string().nullish(),
       schedulePhaseId: zod.string().uuid().nullish(),
       phaseId: zod.string().uuid().nullish(),
       phaseName: zod.string().nullish(),

@@ -7205,6 +7205,48 @@ paths:
         - $ref: "#/components/parameters/IdempotencyKey"
       security:
         - bearerAuth: []
+  /daily-logs/feed:
+    get:
+      operationId: daily_logs_get_daily_logs_feed
+      tags:
+        - daily-logs
+      summary: GET /daily-logs/feed
+      description: Company-wide daily log feed (admin/PM only). Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with companyDailyLogFeedQuerySchema. Supports both page and cursor pagination.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyLogListResponse"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/daily-logs.ts
+      security:
+        - bearerAuth: []
   /daily-logs/mine:
     get:
       operationId: daily_log_admin_get_daily_logs_mine
@@ -9502,6 +9544,48 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/schedule_schedulePayloadSchema"
+  /schedule:
+    get:
+      operationId: schedule_get_schedule
+      tags:
+        - schedule
+      summary: GET /schedule
+      description: Company-wide schedule list (admin/PM only). Route defined in artifacts/api-server/src/routes/schedule.ts. Validated query with companyScheduleQuerySchema. Supports both page and cursor pagination.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleListResponse"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/schedule.ts
+      security:
+        - bearerAuth: []
   /schedule-items/{id}:
     get:
       operationId: schedule_get_schedule_items_id
@@ -13422,6 +13506,13 @@ components:
         jobTitle:
           type: string
           nullable: true
+        clientId:
+          type: string
+          format: uuid
+          nullable: true
+        clientName:
+          type: string
+          nullable: true
         logDate:
           type: string
         title:
@@ -13880,6 +13971,16 @@ components:
         jobId:
           type: string
           format: uuid
+          nullable: true
+        jobTitle:
+          type: string
+          nullable: true
+        clientId:
+          type: string
+          format: uuid
+          nullable: true
+        clientName:
+          type: string
           nullable: true
         schedulePhaseId:
           type: string

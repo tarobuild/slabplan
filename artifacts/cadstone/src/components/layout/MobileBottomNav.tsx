@@ -72,15 +72,12 @@ export default function MobileBottomNav() {
         ...(hasRoleAccess(role, ROLE_GATES.clients)
           ? [{ label: "Clients", to: "/clients", icon: Users }]
           : []),
-        // Schedule deep-links to dashboard calendar view until a dedicated
-        // schedule page exists. Marks active when on /dashboard with the
-        // calendar query param.
-        {
-          label: "Schedule",
-          to: "/dashboard?view=calendar",
-          icon: Calendar,
-          matchPrefixes: [],
-        },
+        ...(hasRoleAccess(role, ROLE_GATES.companyViews)
+          ? [{ label: "Schedule", to: "/schedule", icon: Calendar }]
+          : []),
+        ...(hasRoleAccess(role, ROLE_GATES.companyViews)
+          ? [{ label: "Logs", to: "/daily-logs", icon: ClipboardList }]
+          : []),
       ]
 
   const moreItems: MoreItem[] = [

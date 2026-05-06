@@ -14,6 +14,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
+  clients,
   dailyLogAttachments,
   dailyLogComments,
   dailyLogCustomFields,
@@ -30,7 +31,9 @@ import {
   assertCanAccessJob,
   assertCanEditDailyLog,
   assertCanViewDailyLog,
+  listAccessibleJobIds,
 } from "../lib/authorization";
+import { requireManagerOrAbove } from "../middleware/require-auth";
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { buildDailyLogVisibilityFilter } from "../lib/daily-log-visibility";
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
@@ -1398,6 +1401,261 @@ router.post(
 
     const hydrated = await hydrateDailyLog(log.id, req.auth!.userId);
     res.status(201).json(hydrated);
+  }),
+);
+
+const companyDailyLogFeedQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).optional().default(25),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
+  keywords: z.string().trim().optional(),
+  clientId: z.string().uuid().optional(),
+  jobId: z.string().uuid().optional(),
+  createdBy: z.string().uuid().optional(),
+  from: optionalDate,
+  to: optionalDate,
+  hasAttachments: z.coerce.boolean().optional(),
+  hasComments: z.coerce.boolean().optional(),
+});
+
+router.get(
+  "/daily-logs/feed",
+  requireManagerOrAbove,
+  asyncHandler(async (req, res) => {
+    const query = companyDailyLogFeedQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      throw new HttpError(400, "Invalid daily log feed query.", query.error.flatten());
+    }
+
+    const auth = req.auth!;
+    const accessibleJobIds = await listAccessibleJobIds(auth);
+    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
+    const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
+    const cursorLimit = query.data.limit ?? 25;
+
+    if (accessibleJobIds && accessibleJobIds.length === 0) {
+      res.json({
+        logs: [],
+        pagination: isCursorMode
+          ? { limit: cursorLimit, hasMore: false, nextCursor: null }
+          : {
+              page: query.data.page,
+              pageSize: query.data.pageSize,
+              totalItems: 0,
+              totalPages: 1,
+            },
+      });
+      return;
+    }
+
+    const baseConditions: unknown[] = [
+      isNull(dailyLogs.deletedAt),
+      isNull(jobs.deletedAt),
+    ];
+    const visibilityFilter = buildDailyLogVisibilityFilter(auth);
+    if (visibilityFilter) baseConditions.push(visibilityFilter);
+    if (accessibleJobIds) baseConditions.push(inArray(dailyLogs.jobId, accessibleJobIds));
+    if (query.data.clientId) baseConditions.push(eq(jobs.clientId, query.data.clientId));
+    if (query.data.jobId) baseConditions.push(eq(dailyLogs.jobId, query.data.jobId));
+    if (query.data.createdBy) baseConditions.push(eq(dailyLogs.createdBy, query.data.createdBy));
+    if (query.data.from) baseConditions.push(sql`${dailyLogs.logDate} >= ${query.data.from}`);
+    if (query.data.to) baseConditions.push(sql`${dailyLogs.logDate} <= ${query.data.to}`);
+    if (query.data.keywords) {
+      const search = buildContainsLikePattern(query.data.keywords);
+      baseConditions.push(
+        sql`(${ilike(dailyLogs.title, search)} or ${ilike(dailyLogs.notes, search)} or ${ilike(dailyLogs.weatherNotes, search)})`,
+      );
+    }
+    if (query.data.hasAttachments) {
+      baseConditions.push(
+        sql`EXISTS (SELECT 1 FROM ${dailyLogAttachments} WHERE ${dailyLogAttachments.dailyLogId} = ${dailyLogs.id})`,
+      );
+    }
+    if (query.data.hasComments) {
+      baseConditions.push(
+        sql`EXISTS (SELECT 1 FROM ${dailyLogComments} WHERE ${dailyLogComments.dailyLogId} = ${dailyLogs.id})`,
+      );
+    }
+
+    type FeedRow = {
+      id: string;
+      jobId: string | null;
+      jobTitle: string | null;
+      clientId: string | null;
+      clientName: string | null;
+      logDate: string;
+      title: string | null;
+      notes: string;
+      weatherData: unknown;
+      includeWeather: boolean | null;
+      includeWeatherNotes: boolean | null;
+      weatherNotes: string | null;
+      customFieldValues: unknown;
+      shareInternalUsers: boolean | null;
+      shareSubsVendors: boolean | null;
+      shareClient: boolean | null;
+      isPrivate: boolean | null;
+      createdBy: string | null;
+      createdAt: Date;
+      updatedAt: Date | null;
+      publishedAt: Date | null;
+      createdByName: string | null;
+    };
+
+    const fetchFeedRows = async (
+      whereParts: unknown[],
+      options: { limit?: number; offset?: number } = {},
+    ): Promise<FeedRow[]> => {
+      const baseQuery = db
+        .select({
+          id: dailyLogs.id,
+          jobId: dailyLogs.jobId,
+          jobTitle: jobs.title,
+          clientId: jobs.clientId,
+          clientName: clients.companyName,
+          logDate: dailyLogs.logDate,
+          title: dailyLogs.title,
+          notes: dailyLogs.notes,
+          weatherData: dailyLogs.weatherData,
+          includeWeather: dailyLogs.includeWeather,
+          includeWeatherNotes: dailyLogs.includeWeatherNotes,
+          weatherNotes: dailyLogs.weatherNotes,
+          customFieldValues: dailyLogs.customFieldValues,
+          shareInternalUsers: dailyLogs.shareInternalUsers,
+          shareSubsVendors: dailyLogs.shareSubsVendors,
+          shareClient: dailyLogs.shareClient,
+          isPrivate: dailyLogs.isPrivate,
+          createdBy: dailyLogs.createdBy,
+          createdAt: dailyLogs.createdAt,
+          updatedAt: dailyLogs.updatedAt,
+          publishedAt: dailyLogs.publishedAt,
+          createdByName: users.fullName,
+        })
+        .from(dailyLogs)
+        .leftJoin(jobs, eq(dailyLogs.jobId, jobs.id))
+        .leftJoin(clients, eq(jobs.clientId, clients.id))
+        .leftJoin(users, eq(dailyLogs.createdBy, users.id))
+        .where(and(...(whereParts as Parameters<typeof and>)))
+        .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt), desc(dailyLogs.id));
+      if (options.limit !== undefined && options.offset !== undefined) {
+        return await baseQuery.limit(options.limit).offset(options.offset);
+      }
+      if (options.limit !== undefined) {
+        return await baseQuery.limit(options.limit);
+      }
+      return await baseQuery;
+    };
+
+    const enrich = async (pageRows: FeedRow[]) => {
+      const pageIds = pageRows.map((row) => row.id);
+      const [tagRows, attachmentRows] = await Promise.all([
+        pageIds.length > 0
+          ? db
+              .select({ dailyLogId: dailyLogTags.dailyLogId, tagName: dailyLogTags.tagName })
+              .from(dailyLogTags)
+              .where(inArray(dailyLogTags.dailyLogId, pageIds))
+          : Promise.resolve([]),
+        pageIds.length > 0
+          ? db
+              .select({ dailyLogId: dailyLogAttachments.dailyLogId, total: count() })
+              .from(dailyLogAttachments)
+              .where(inArray(dailyLogAttachments.dailyLogId, pageIds))
+              .groupBy(dailyLogAttachments.dailyLogId)
+          : Promise.resolve([]),
+      ]);
+      const tagsByLogId = new Map<string, string[]>();
+      const attachmentCountByLogId = new Map<string, number>();
+      for (const row of tagRows) {
+        if (!row.dailyLogId) continue;
+        const group = tagsByLogId.get(row.dailyLogId) ?? [];
+        group.push(row.tagName);
+        tagsByLogId.set(row.dailyLogId, group);
+      }
+      for (const row of attachmentRows) {
+        if (!row.dailyLogId) continue;
+        attachmentCountByLogId.set(row.dailyLogId, Number(row.total));
+      }
+      const engagement = await loadDailyLogEngagement(pageIds, auth.userId);
+      return pageRows.map((row) => {
+        const weather = decodeWeatherPayload(
+          row.weatherData as Record<string, unknown> | null | undefined,
+        );
+        return {
+          ...row,
+          weatherData: weather.weatherData,
+          notifyUserIds: weather.notifyUserIds,
+          customFieldValues: normalizeCustomFieldValueRecord(row.customFieldValues),
+          tags: normalizeUniqueStrings(tagsByLogId.get(row.id) ?? []),
+          attachmentCount: attachmentCountByLogId.get(row.id) ?? 0,
+          likesCount: engagement.likesCountByLogId.get(row.id) ?? 0,
+          commentsCount: engagement.commentsCountByLogId.get(row.id) ?? 0,
+          likedByCurrentUser: engagement.likedByCurrentUser.has(row.id),
+          visibilityLabel: deriveVisibilityLabel(row),
+          todoCount: engagement.todosCountByLogId.get(row.id) ?? 0,
+          completedTodoCount: engagement.completedTodosCountByLogId.get(row.id) ?? 0,
+          status: row.publishedAt ? "published" : "draft",
+        };
+      });
+    };
+
+    if (isCursorMode) {
+      if (cursorPayload) {
+        const cursorLogDate = String(cursorPayload.k[0] ?? "");
+        const cursorCreatedAtRaw = String(cursorPayload.k[1] ?? "");
+        const cursorCreatedAt = new Date(cursorCreatedAtRaw);
+        const cursorId = typeof cursorPayload.id === "string" ? cursorPayload.id : "";
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(cursorLogDate) ||
+          Number.isNaN(cursorCreatedAt.getTime()) ||
+          !uuidPattern.test(cursorId)
+        ) {
+          throw new HttpError(400, "Invalid cursor.", undefined, "validation");
+        }
+        const anchorCreatedAtIso = cursorCreatedAt.toISOString();
+        baseConditions.push(
+          sql`(${dailyLogs.logDate}, ${dailyLogs.createdAt}, ${dailyLogs.id}) < (${cursorLogDate}::date, ${anchorCreatedAtIso}::timestamptz, ${cursorId})`,
+        );
+      }
+      const fetched = await fetchFeedRows(baseConditions, { limit: cursorLimit + 1 });
+      const hasMore = fetched.length > cursorLimit;
+      const pageRows = hasMore ? fetched.slice(0, cursorLimit) : fetched;
+      const mapped = await enrich(pageRows);
+      const last = mapped[mapped.length - 1];
+      const nextCursor = hasMore && last
+        ? encodeCursor({ v: 1, k: [last.logDate, last.createdAt.toISOString()], id: last.id })
+        : null;
+      res.json({
+        logs: mapped,
+        pagination: { limit: cursorLimit, hasMore, nextCursor },
+      });
+      return;
+    }
+
+    const pageOffset = (query.data.page - 1) * query.data.pageSize;
+    const [[totalRow], pageRows] = await Promise.all([
+      db
+        .select({ total: count() })
+        .from(dailyLogs)
+        .leftJoin(jobs, eq(dailyLogs.jobId, jobs.id))
+        .where(and(...(baseConditions as Parameters<typeof and>))),
+      fetchFeedRows(baseConditions, {
+        limit: query.data.pageSize,
+        offset: pageOffset,
+      }),
+    ]);
+    const totalItems = Number(totalRow?.total ?? 0);
+    const mapped = await enrich(pageRows);
+    res.json({
+      logs: mapped,
+      pagination: {
+        page: query.data.page,
+        pageSize: query.data.pageSize,
+        totalItems,
+        totalPages: Math.max(1, Math.ceil(totalItems / query.data.pageSize)),
+      },
+    });
   }),
 );
 

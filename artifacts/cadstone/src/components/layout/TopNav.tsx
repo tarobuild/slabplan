@@ -64,6 +64,8 @@ export default function TopNav() {
     : [
         { label: "Home", to: "/dashboard" },
         { label: "Clients", to: "/clients", allow: ROLE_GATES.clients },
+        { label: "Schedule", to: "/schedule", allow: ROLE_GATES.companyViews },
+        { label: "Daily Logs", to: "/daily-logs", allow: ROLE_GATES.companyViews },
         { label: "Sales", to: "/sales", allow: ROLE_GATES.sales },
         {
           label: "Reports",

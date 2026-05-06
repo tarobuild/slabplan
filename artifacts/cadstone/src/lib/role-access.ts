@@ -13,6 +13,9 @@ export const ROLE_GATES = {
   // The top-level "Jobs" link is hidden for admin/PM (they reach jobs
   // through Clients). Crew members still need a "My Jobs" entry point.
   myJobs: ["crew_member"] as const,
+  // Company-wide Schedule and Daily Logs feeds (`/schedule`, `/daily-logs`)
+  // are admin/PM only — crew members see only per-job views.
+  companyViews: ["admin", "project_manager"] as const,
 } satisfies Record<string, ReadonlyArray<AppRole>>
 
 // Roles that may perform write/mutation actions on Financials and Schedule

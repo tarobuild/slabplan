@@ -16,6 +16,8 @@ export interface DailyLogListItem {
   id: string;
   jobId?: string | null;
   jobTitle?: string | null;
+  clientId?: string | null;
+  clientName?: string | null;
   logDate: string;
   title?: string | null;
   notes: string;

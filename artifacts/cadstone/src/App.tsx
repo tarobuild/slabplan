@@ -44,6 +44,8 @@ const JobsPage = lazy(() => import("@/pages/jobs"))
 const LeadsPage = lazy(() => import("@/pages/leads"))
 const LoginPage = lazy(() => import("@/pages/login"))
 const MyDailyLogsPage = lazy(() => import("@/pages/my-daily-logs"))
+const CompanySchedulePage = lazy(() => import("@/pages/schedule"))
+const CompanyDailyLogsPage = lazy(() => import("@/pages/daily-logs"))
 const NotFoundPage = lazy(() => import("@/pages/not-found"))
 const ResourcesPage = lazy(() => import("@/pages/resources"))
 const ReportsLayout = lazy(() => import("@/pages/reports"))
@@ -192,6 +194,10 @@ function buildRouter(ready: boolean, basename: string | undefined) {
                 <Route path="days-to-payment" element={<ReportsDaysToPayment />} />
                 <Route path="jobs-by-stage" element={<ReportsJobsByStage />} />
               </Route>
+            </Route>
+            <Route element={<RoleGate allow={ROLE_GATES.companyViews} redirectTo="/403" />}>
+              <Route path="/schedule" element={<CompanySchedulePage />} />
+              <Route path="/daily-logs" element={<CompanyDailyLogsPage />} />
             </Route>
             <Route path="/settings" element={<SettingsLayout />}>
               <Route index element={<Navigate to="/settings/profile" replace />} />

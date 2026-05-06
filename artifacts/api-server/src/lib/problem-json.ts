@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { HttpError } from "./http";
 import { logger } from "./logger";
+import { Sentry, isSentryInitialized } from "./sentry";
 
 export const PROBLEM_TYPE_BASE = "https://cadstonesystems.com/errors";
 
@@ -97,6 +98,38 @@ export function sendUnknownErrorProblem(
   err: unknown,
 ): void {
   logger.error({ err }, "Unhandled request error");
+
+  // Forward 5xx-class unhandled errors to Sentry. HttpError 4xx are
+  // routed through `sendProblem` instead and are intentionally NOT
+  // captured (avoid noise — see Task #348).
+  if (isSentryInitialized()) {
+    const requestId =
+      typeof (req as unknown as { id?: unknown }).id === "string"
+        ? ((req as unknown as { id: string }).id)
+        : undefined;
+    const route =
+      (req.route && typeof req.route === "object" && "path" in req.route
+        ? String((req.route as { path?: unknown }).path ?? "")
+        : null) || (req.originalUrl ?? req.url ?? "").split("?")[0];
+    const userId = (req as unknown as { auth?: { userId?: string; role?: string } }).auth?.userId;
+    const role = (req as unknown as { auth?: { userId?: string; role?: string } }).auth?.role;
+
+    Sentry.withScope((scope) => {
+      if (userId) {
+        scope.setUser({ id: userId, ...(role ? { role } : {}) });
+      }
+      scope.setTag("route", route || "unknown");
+      scope.setTag("method", req.method);
+      Sentry.captureException(err, {
+        extra: {
+          requestId,
+          route,
+          method: req.method,
+        },
+      });
+    });
+  }
+
   const wrapped = new HttpError(500, "Internal server error", undefined, "internal-server-error");
   sendProblem(res, req, wrapped);
 }

@@ -3,6 +3,7 @@
 // automatic runtime in production where this import is a no-op.
 import React, { Component, type ErrorInfo, type ReactNode } from "react"
 void React
+import * as Sentry from "@sentry/react"
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -36,6 +37,19 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("App ErrorBoundary caught an error", error, info)
+    // Forward render errors to Sentry with the React component stack
+    // attached as a context. The Sentry SDK is a no-op when init was
+    // skipped (no DSN), so this is safe in every environment.
+    try {
+      Sentry.withScope((scope) => {
+        scope.setContext("react", {
+          componentStack: info?.componentStack ?? null,
+        })
+        Sentry.captureException(error)
+      })
+    } catch {
+      /* swallow — Sentry must never break the boundary */
+    }
     // Best-effort error reporting. We swallow any failure (the endpoint
     // may not exist in every environment) so reporting can never itself
     // crash the boundary.

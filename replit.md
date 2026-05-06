@@ -16,6 +16,7 @@ Centralizes and streamlines construction management operations, offering job tra
     - `BACKUP_TRIGGER_SECRET`, `BACKUP_WEBHOOK_URL` (GitHub Actions DB backup)
     - `BACKUP_ALERT_EMAIL`, `BACKUP_ALERT_WEBHOOK_URL` (backup alerts)
     - Rate limit tunables: `LOGIN_IP_MAX`, `LOGIN_IP_WINDOW_MS`, `LOGIN_EMAIL_MAX`, `LOGIN_EMAIL_WINDOW_MS`, `AI_PARSE_PER_USER_MAX`, `AI_PARSE_PER_USER_WINDOW_MS`, `UPLOAD_PER_USER_MAX`, `UPLOAD_PER_USER_WINDOW_MS`
+    - **Sentry (Task #348):** `SENTRY_DSN_API` (server, required in prod — boot fails if missing), `SENTRY_DSN_WEB` (web, warning-only if missing). The web DSN, release SHA, and environment are injected into the client bundle via Vite `define` (`__SENTRY_DSN_WEB__`, `__SENTRY_RELEASE__`, `__SENTRY_ENVIRONMENT__`) — deliberately NOT via `envPrefix`, so `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT_WEB` (build-time secrets used by the source-map upload) never reach the browser. Optional: `SENTRY_ENVIRONMENT`/`VITE_SENTRY_ENVIRONMENT`, `VITE_RELEASE_SHA`/`REPLIT_GIT_COMMIT_SHA` (release tag — server, web SDK, and source-map upload all use the same 12-char short SHA), `SENTRY_TEST_TOKEN` (enables `POST /api/_sentry-test?token=…` smoke endpoint). Source-map upload during web build requires `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT_WEB`; maps are emitted only when all three are set, uploaded to Sentry, then deleted from `dist/public/assets` so they never ship to end users. PII filter (`artifacts/api-server/src/lib/pii-filter.ts`, mirrored in `artifacts/cadstone/src/lib/sentry.ts`) drops events whose payload contains an email, phone number, or US street address. Runbook: when an error appears in Sentry, check `release`/`environment` tags and the attached `route`+`requestId` extras to correlate with Pino logs.
 
 ## Stack
 
@@ -43,6 +44,9 @@ Centralizes and streamlines construction management operations, offering job tra
 - **MCP Server:** `lib/mcp-server`
 - **Frontend Role Access Helpers:** `src/lib/role-access.ts`
 - **Frontend Global Error Boundary:** `src/components/ErrorBoundary.tsx`
+- **Sentry Init (server):** `artifacts/api-server/src/lib/sentry.ts` (loaded first in `src/index.ts`)
+- **Sentry Init (web):** `artifacts/cadstone/src/lib/sentry.ts` (loaded first in `src/main.tsx`)
+- **Sentry PII filter + tests:** `artifacts/api-server/src/lib/pii-filter.ts`, `test/pii-filter.test.ts`
 - **Contract Tests:** `artifacts/api-server/test/*-contract.test.ts`
 - **E2E Playwright Tests:** `artifacts/cadstone/tests/e2e/`
 - **App Layout / Top Nav / Mobile Bottom Nav / Breadcrumbs:** `artifacts/cadstone/src/components/layout/{AppLayout,TopNav,MobileBottomNav,Breadcrumbs}.tsx`

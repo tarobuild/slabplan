@@ -2,7 +2,9 @@ import { defineConfig, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import path from "path"
+import { rm } from "node:fs/promises"
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal"
+import { sentryVitePlugin } from "@sentry/vite-plugin"
 
 const rawPort = process.env.PORT ?? "21903"
 const port = Number(rawPort)
@@ -76,6 +78,31 @@ function buildChunkName(id: string) {
 // boundary. This plugin walks the static-import closure of each entry chunk
 // and fails the build if any chunk in that closure includes modules from
 // `pdfjs-dist` or `react-pdf`.
+// Strip generated source maps from the dist output after Sentry has
+// uploaded them, so end users can't fetch *.js.map from the published
+// bundle. Runs as the final `closeBundle` step.
+function deleteSourceMapsAfterUpload(): Plugin {
+  return {
+    name: "delete-source-maps-after-upload",
+    apply: "build",
+    enforce: "post",
+    async closeBundle() {
+      const outDir = path.resolve(import.meta.dirname, "dist/public/assets")
+      try {
+        const fs = await import("node:fs/promises")
+        const entries = await fs.readdir(outDir).catch(() => [] as string[])
+        await Promise.all(
+          entries
+            .filter((name) => name.endsWith(".map"))
+            .map((name) => rm(path.join(outDir, name), { force: true })),
+        )
+      } catch {
+        // Best effort — never fail the build over cleanup.
+      }
+    },
+  }
+}
+
 function assertNoEagerPdfBundles(): Plugin {
   const FORBIDDEN_PATTERNS = [
     { label: "pdfjs-dist", regex: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?pdfjs-dist[\\/]/ },
@@ -139,12 +166,81 @@ function assertNoEagerPdfBundles(): Plugin {
   }
 }
 
-export default defineConfig(async ({ mode }) => ({
+export default defineConfig(async ({ mode }) => {
+const willUploadSourceMaps =
+  mode === "production"
+  && Boolean(process.env.SENTRY_AUTH_TOKEN)
+  && Boolean(process.env.SENTRY_ORG)
+  && Boolean(process.env.SENTRY_PROJECT_WEB)
+
+// Task #348 — single source of truth for the release tag, shared
+// between (a) the runtime web Sentry SDK init, (b) the
+// sentryVitePlugin source-map upload, and (c) the API server (which
+// derives the same 12-char short SHA from REPLIT_GIT_COMMIT_SHA in
+// artifacts/api-server/src/lib/sentry.ts). Keeping the value
+// identical end-to-end is what makes "errors filed against this
+// release" queries in Sentry actually correlate web events, server
+// events, and uploaded source maps.
+const fullReleaseSha =
+  process.env.VITE_RELEASE_SHA
+  ?? process.env.REPLIT_GIT_COMMIT_SHA
+  ?? process.env.GIT_COMMIT
+  ?? process.env.RELEASE_SHA
+  ?? ""
+const releaseSha = fullReleaseSha ? fullReleaseSha.slice(0, 12) : ""
+
+return ({
   base: basePath,
+  // IMPORTANT (Task #348 — security): do NOT add `SENTRY_` to
+  // envPrefix. That would expose every SENTRY_* process env var
+  // (including SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT_WEB
+  // used by the source-map upload below) to `import.meta.env` in
+  // the client bundle. We instead inject the two values the
+  // browser is actually allowed to see — the public DSN and the
+  // release tag — via `define` and read them as
+  // `__SENTRY_DSN_WEB__` / `__SENTRY_RELEASE__` from
+  // src/lib/sentry.ts.
+  define: {
+    __SENTRY_DSN_WEB__: JSON.stringify(
+      process.env.SENTRY_DSN_WEB ?? process.env.VITE_SENTRY_DSN ?? "",
+    ),
+    __SENTRY_RELEASE__: JSON.stringify(releaseSha),
+    __SENTRY_ENVIRONMENT__: JSON.stringify(
+      process.env.SENTRY_ENVIRONMENT
+      ?? process.env.VITE_SENTRY_ENVIRONMENT
+      ?? "",
+    ),
+  },
   plugins: [
     react(),
     tailwindcss(),
     assertNoEagerPdfBundles(),
+    // Source-map upload runs only in production builds when both an
+    // auth token and an org/project pair are present. In all other
+    // builds the plugin is a no-op so dev / typecheck / CI without
+    // Sentry credentials remain unaffected. Maps are deleted from the
+    // dist after upload by `deleteSourceMapsAfterUpload()` below so
+    // end users can't fetch them.
+    ...(willUploadSourceMaps
+      ? [
+          sentryVitePlugin({
+            org: process.env.SENTRY_ORG,
+            project: process.env.SENTRY_PROJECT_WEB,
+            authToken: process.env.SENTRY_AUTH_TOKEN,
+            release: {
+              // Same shared 12-char SHA the runtime SDK reads from
+              // __SENTRY_RELEASE__ — keeps web events / server
+              // events / uploaded source maps on a single release.
+              name: releaseSha || undefined,
+            },
+            sourcemaps: {
+              filesToDeleteAfterUpload: ["dist/public/assets/*.map"],
+            },
+            telemetry: false,
+          }),
+          deleteSourceMapsAfterUpload(),
+        ]
+      : []),
     ...(mode === "development" ? [runtimeErrorOverlay()] : []),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
@@ -201,6 +297,15 @@ export default defineConfig(async ({ mode }) => ({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 500,
+    // Source maps are emitted ONLY when the Sentry upload pipeline is
+    // configured (auth token + org + project all set). They're then
+    // uploaded to Sentry and deleted from the dist by both the Sentry
+    // plugin itself (`sourcemaps.filesToDeleteAfterUpload`) and the
+    // belt-and-braces `deleteSourceMapsAfterUpload()` plugin above, so
+    // they never ship to end users in the published bundle. When the
+    // upload pipeline isn't configured we leave sourcemaps off entirely
+    // — never ship raw maps to production users.
+    sourcemap: willUploadSourceMaps,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -231,4 +336,5 @@ export default defineConfig(async ({ mode }) => ({
     host: "0.0.0.0",
     allowedHosts: true,
   },
-}))
+})
+})

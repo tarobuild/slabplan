@@ -21,6 +21,7 @@ import { isPatToken } from "./lib/personal-access-tokens";
 import { createGlobalApiRateLimit } from "./lib/rate-limit";
 import { readBearerToken } from "./middleware/require-auth";
 import publicSpecRouter from "./routes/public-spec";
+import sentryTestRouter from "./routes/sentry-test";
 import { ensureUploadRoot, streamStoredFileToResponse } from "./lib/storage";
 import { ensureTempUploadDir } from "./lib/uploads";
 import { assertActiveAuthUser } from "./lib/active-user";
@@ -176,6 +177,10 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
 // Mounted before the `/api` router so they bypass auth and the CSRF gate above
 // (which already lets through GET).
 app.use(publicSpecRouter);
+
+// Token-gated Sentry smoke-test endpoint (Task #348). No-op unless
+// SENTRY_TEST_TOKEN is set, so it stays inert in production by default.
+app.use("/api", sentryTestRouter);
 
 app.use("/api", router);
 

@@ -18,6 +18,7 @@
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sentry/node": "^10.51.0",
     "@tokenizer/inflate": "0.4.1",
     "@tokenizer/token": "0.3.0",
     "@workspace/api-zod": "workspace:*",

@@ -62,7 +62,11 @@ async function buildAll() {
       "@swc/*",
       "@aws-sdk/*",
       "@azure/*",
-      "@opentelemetry/*",
+      // Note: `@opentelemetry/*` was previously externalized as a defensive
+      // default. With @sentry/node added (Task #348), externalizing OTel
+      // breaks runtime resolution because pnpm doesn't hoist the deeply-
+      // nested OTel instrumentation packages into a location the api-server
+      // dist can find. OpenTelemetry is pure JS, so bundling is safe.
       "@google-cloud/*",
       "@google/*",
       "googleapis",

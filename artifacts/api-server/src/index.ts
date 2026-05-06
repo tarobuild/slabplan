@@ -1,17 +1,28 @@
 import "./boot-diagnostic";
-import { createServer, type Server } from "node:http";
-import { pool } from "@workspace/db";
-import app, { prepareApp } from "./app";
-import { logger } from "./lib/logger";
-import { initRealtime } from "./lib/realtime";
-import {
+// Sentry MUST initialize before any module that registers route handlers
+// is imported, otherwise async errors raised during module evaluation
+// (and Sentry's auto-instrumentation hooks) miss the window. Static
+// `import` statements are hoisted and evaluated eagerly, so route
+// modules are pulled in via dynamic `await import()` below — after
+// initSentry() has run. See the architectural note in
+// .local/tasks/task-348.md.
+import { initSentry } from "./lib/sentry";
+initSentry();
+
+const { createServer } = await import("node:http");
+type Server = import("node:http").Server;
+const { pool } = await import("@workspace/db");
+const { default: app, prepareApp } = await import("./app");
+const { logger } = await import("./lib/logger");
+const { initRealtime } = await import("./lib/realtime");
+const {
   startScheduleAutoCompleteSweeper,
-  type ScheduleAutoCompleteSweeperHandle,
-} from "./routes/schedule";
-import {
+} = await import("./routes/schedule");
+type ScheduleAutoCompleteSweeperHandle = ReturnType<typeof startScheduleAutoCompleteSweeper>;
+const {
   startTempUploadSweeper,
-  type TempUploadSweeperHandle,
-} from "./lib/uploads";
+} = await import("./lib/uploads");
+type TempUploadSweeperHandle = ReturnType<typeof startTempUploadSweeper>;
 
 const rawPort = process.env["PORT"] ?? "8080";
 

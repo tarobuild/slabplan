@@ -1,0 +1,189 @@
+#
+# End-to-end Playwright suite for CAD Stone Networks.
+#
+# Why this workflow exists (Task #344):
+#   The Replit workspace runs on Nix and the Playwright-bundled
+#   chromium-headless-shell can't find its shared libraries
+#   (libglib-2.0.so.0, libnss3, ...). That made
+#   `pnpm --filter @workspace/cadstone test:e2e` unrunnable in-workspace,
+#   so the Converted-filter spec from Task #343 (and every other
+#   browser-driven spec) was only typechecked, never executed. This
+#   job runs the suite inside Microsoft's official Playwright Docker
+#   image — which ships with all the system libraries chromium needs —
+#   against an ephemeral Postgres service container, so regressions
+#   in user-facing flows surface on every push / PR.
+#
+# What it does:
+#   1. Spins up a Postgres 17 service (matches replit.nix's pkgs.postgresql_17).
+#   2. Installs pnpm deps with a frozen lockfile.
+#   3. Recreates the test DB schema via `pnpm setup-test-db`
+#      (drizzle-kit push --force into cadstone_test).
+#   4. Seeds Cesar / Anwar / worker fixture + the baseline E2E client
+#      and open job that the suite's beforeAll hooks require.
+#   5. Boots the api-server (:8080) and Vite dev server (:21903) in
+#      the background and waits for both to respond.
+#   6. Runs the full Playwright suite. The PM fixture is provisioned
+#      on demand by `auth.setup.ts` (it logs in as Cesar and consumes
+#      a fresh invite for fixture-pm@cadstone.test).
+#   7. Uploads the HTML report and any failure traces / screenshots so
+#      a red run is debuggable without re-running locally.
+#
+# Required GitHub Action repository secrets:
+#   - SEED_ADMIN_CESAR_PASSWORD       Cesar's seed-time password.
+#   - SEED_ADMIN_ANWAR_PASSWORD       Anwar's seed-time password.
+#   - SEED_WORKER_FIXTURE_PASSWORD    worker@cadstone.works fixture password.
+#   - SEED_PM_FIXTURE_PASSWORD        fixture-pm@cadstone.test password.
+#   - E2E_JWT_SECRET                  any 32+ char string; only used to
+#                                     sign tokens against the throwaway
+#                                     test DB. Does NOT need to match
+#                                     production. Generate with e.g.
+#                                     `openssl rand -hex 32`.
+#
+# All four password secrets must satisfy the API password policy
+# (>= 12 chars, no obvious weak patterns); see seed-users.mjs header.
+#
+name: E2E (Playwright)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Pin to the same Playwright version listed in artifacts/cadstone/package.json
+    # so the bundled browser binaries match the @playwright/test API the
+    # specs were written against. Bump both together when upgrading.
+    container:
+      image: mcr.microsoft.com/playwright:v1.59.1-jammy
+      options: --ipc=host
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cadstone
+          POSTGRES_PASSWORD: cadstone
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cadstone"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Test DB connection — matches setup-test-db.ts's DEFAULT_TEST_DATABASE_URL
+      # except hostname=postgres (the service container) instead of 127.0.0.1.
+      TEST_DATABASE_URL: postgres://cadstone:cadstone@postgres:5432/cadstone_test
+      DATABASE_URL: postgres://cadstone:cadstone@postgres:5432/cadstone_test
+      # api-server / Vite ports the spec config expects.
+      PORT: 8080
+      E2E_BASE_URL: http://127.0.0.1:21903
+      NODE_ENV: development
+      # Seed + auth secrets (all from repo secrets — see header).
+      SEED_ADMIN_CESAR_PASSWORD: ${{ secrets.SEED_ADMIN_CESAR_PASSWORD }}
+      SEED_ADMIN_ANWAR_PASSWORD: ${{ secrets.SEED_ADMIN_ANWAR_PASSWORD }}
+      SEED_WORKER_FIXTURE_PASSWORD: ${{ secrets.SEED_WORKER_FIXTURE_PASSWORD }}
+      SEED_PM_FIXTURE_PASSWORD: ${{ secrets.SEED_PM_FIXTURE_PASSWORD }}
+      JWT_SECRET: ${{ secrets.E2E_JWT_SECRET }}
+      # Disable the daily-backup webhook + outbound Resend email in tests.
+      RESEND_API_KEY: ""
+      EMAIL_FROM: "noreply@cadstone.test"
+      APP_PUBLIC_URL: http://127.0.0.1:21903
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable corepack + pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Recreate test database schema
+        run: pnpm setup-test-db
+
+      - name: Seed users + baseline E2E fixture
+        run: node artifacts/api-server/scripts/seed-users.mjs --db=local
+
+      - name: Build api-server
+        working-directory: artifacts/api-server
+        run: node ./build.mjs
+
+      - name: Start api-server (background)
+        working-directory: artifacts/api-server
+        run: |
+          nohup node --enable-source-maps ./dist/index.mjs \
+            > /tmp/api-server.log 2>&1 &
+          echo $! > /tmp/api-server.pid
+          # Wait up to ~60s for /api/livez (cheap liveness probe defined
+          # in artifacts/api-server/src/routes/health.ts). Avoid `/` —
+          # it only serves index.html when the dist bundle is present,
+          # and in this job Vite serves the frontend separately.
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:8080/api/livez >/dev/null 2>&1; then
+              echo "api-server is up"; exit 0
+            fi
+            sleep 0.5
+          done
+          echo "::error::api-server did not start in time"
+          tail -n 200 /tmp/api-server.log || true
+          exit 1
+
+      - name: Start Vite dev server (background)
+        working-directory: artifacts/cadstone
+        env:
+          PORT: 21903
+        run: |
+          nohup pnpm dev > /tmp/vite.log 2>&1 &
+          echo $! > /tmp/vite.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:21903/ >/dev/null 2>&1; then
+              echo "vite is up"; exit 0
+            fi
+            sleep 0.5
+          done
+          echo "::error::vite did not start in time"
+          tail -n 200 /tmp/vite.log || true
+          exit 1
+
+      - name: Run Playwright e2e suite
+        working-directory: artifacts/cadstone
+        env:
+          # The Docker image already has all chromium system libs, so
+          # use the bundled binary rather than CHROMIUM_PATH.
+          CI: "true"
+        run: pnpm test:e2e
+
+      - name: Stop background servers
+        if: always()
+        run: |
+          [ -f /tmp/api-server.pid ] && kill "$(cat /tmp/api-server.pid)" 2>/dev/null || true
+          [ -f /tmp/vite.pid ]       && kill "$(cat /tmp/vite.pid)"       2>/dev/null || true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            artifacts/cadstone/playwright-report
+            artifacts/cadstone/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs
+          path: |
+            /tmp/api-server.log
+            /tmp/vite.log
+          if-no-files-found: ignore
+          retention-days: 7

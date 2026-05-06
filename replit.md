@@ -11,14 +11,25 @@ Centralizes and streamlines construction management operations, offering job tra
 - **Codegen drift check:** `pnpm check-api-codegen`
 - **Unused-code sweep:** `pnpm knip` (config in `knip.json`; registered as a CI validation step — must exit clean)
 - **DB Push:** `drizzle-kit push --force` (for schema changes)
-- **Env Vars:**
-    - `RESEND_API_KEY`, `EMAIL_FROM`, `APP_PUBLIC_URL` (transactional email)
-    - `AGENT_MODEL` (AI Assistant)
-    - `SUPABASE_DATABASE_URL` or `DATABASE_URL`, `DEFAULT_OBJECT_STORAGE_BUCKET_ID` (DB backups)
-    - `BACKUP_TRIGGER_SECRET`, `BACKUP_WEBHOOK_URL` (GitHub Actions DB backup)
-    - `BACKUP_ALERT_EMAIL`, `BACKUP_ALERT_WEBHOOK_URL` (backup alerts)
-    - Rate limit tunables: `LOGIN_IP_MAX`, `LOGIN_IP_WINDOW_MS`, `LOGIN_EMAIL_MAX`, `LOGIN_EMAIL_WINDOW_MS`, `AI_PARSE_PER_USER_MAX`, `AI_PARSE_PER_USER_WINDOW_MS`, `UPLOAD_PER_USER_MAX`, `UPLOAD_PER_USER_WINDOW_MS`
-    - **Sentry (Task #348):** `SENTRY_DSN_API` (server, required in prod — boot fails if missing), `SENTRY_DSN_WEB` (web, warning-only if missing). The web DSN, release SHA, and environment are injected into the client bundle via Vite `define` (`__SENTRY_DSN_WEB__`, `__SENTRY_RELEASE__`, `__SENTRY_ENVIRONMENT__`) — deliberately NOT via `envPrefix`, so `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT_WEB` (build-time secrets used by the source-map upload) never reach the browser. Optional: `SENTRY_ENVIRONMENT`/`VITE_SENTRY_ENVIRONMENT`, `VITE_RELEASE_SHA`/`REPLIT_GIT_COMMIT_SHA` (release tag — server, web SDK, and source-map upload all use the same 12-char short SHA), `SENTRY_TEST_TOKEN` (enables `POST /api/_sentry-test?token=…` smoke endpoint). Source-map upload during web build requires `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT_WEB`; maps are emitted only when all three are set, uploaded to Sentry, then deleted from `dist/public/assets` so they never ship to end users. PII filter (`artifacts/api-server/src/lib/pii-filter.ts`, mirrored in `artifacts/cadstone/src/lib/sentry.ts`) drops events whose payload contains an email, phone number, or US street address. Runbook: when an error appears in Sentry, check `release`/`environment` tags and the attached `route`+`requestId` extras to correlate with Pino logs.
+- **Env Vars (canonical list — checked into `docs/launch-checklist.md` §4.1):**
+    - **Required in production (cutover-blocking if missing):**
+      - DB: `SUPABASE_DATABASE_URL` (and dev/test fallback `DATABASE_URL`)
+      - Auth: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_UPLOAD_SECRET`, `JWT_RESET_SECRET`, `SESSION_SECRET`
+      - Email: `RESEND_API_KEY`, `EMAIL_FROM`, `APP_PUBLIC_URL` (invites, password resets, optional email transport for backup alerts)
+      - CORS / origins: `CORS_ALLOWED_ORIGINS` *or* `APP_ORIGIN` (one must list the customer-facing origin — `artifacts/api-server/src/lib/cors.ts` reads both, plus `FRONTEND_ORIGIN` / `PUBLIC_APP_ORIGIN` / `CUSTOM_DOMAIN_ORIGIN` / Replit-managed domain vars, into one allow-list); `NODE_ENV=production`
+      - AI: `AI_INTEGRATIONS_ANTHROPIC_API_KEY`, `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`
+      - Storage: `DEFAULT_OBJECT_STORAGE_BUCKET_ID`, `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS`
+      - Monitoring: `SENTRY_DSN_API` (server boot fails without it in prod)
+    - **Recommended:** `SENTRY_DSN_WEB` (warning-only if missing; client errors will not be captured)
+    - **Optional / tunables:**
+      - `AGENT_MODEL` (AI Assistant model override)
+      - `BACKUP_TRIGGER_SECRET`, `BACKUP_WEBHOOK_URL` (arms the GitHub Actions DB backup cron — see `docs/restore-drill.md` §6)
+      - `BACKUP_ALERT_EMAIL`, `BACKUP_ALERT_WEBHOOK_URL` (backup alert fan-out; see `docs/restore-drill.md`)
+      - `BACKUP_SIZE_TOLERANCE_PCT`, `BACKUP_HISTORY_WINDOW_DAYS` (backup-size sanity check tuning)
+      - Rate limits: `LOGIN_IP_MAX`, `LOGIN_IP_WINDOW_MS`, `LOGIN_EMAIL_MAX`, `LOGIN_EMAIL_WINDOW_MS`, `AI_PARSE_PER_USER_MAX`, `AI_PARSE_PER_USER_WINDOW_MS`, `UPLOAD_PER_USER_MAX`, `UPLOAD_PER_USER_WINDOW_MS`
+      - Sentry build-time (web source-map upload only — never reach the browser): `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT_WEB`; runtime tag overrides: `SENTRY_ENVIRONMENT` / `VITE_SENTRY_ENVIRONMENT`, `VITE_RELEASE_SHA` / `REPLIT_GIT_COMMIT_SHA`; smoke endpoint: `SENTRY_TEST_TOKEN`
+    - **Sentry plumbing (Task #348):** the web DSN, release SHA, and environment are injected into the client bundle via Vite `define` (`__SENTRY_DSN_WEB__`, `__SENTRY_RELEASE__`, `__SENTRY_ENVIRONMENT__`) — deliberately NOT via `envPrefix`, so `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT_WEB` never reach the browser. Source-map upload during web build requires those three; maps are emitted only when all three are set, uploaded to Sentry, then deleted from `dist/public/assets` so they never ship to end users. PII filter (`artifacts/api-server/src/lib/pii-filter.ts`, mirrored in `artifacts/cadstone/src/lib/sentry.ts`) drops events whose payload contains an email, phone number, or US street address. Runbook: when an error appears in Sentry, check `release`/`environment` tags and the attached `route`+`requestId` extras to correlate with Pino logs.
+- **Launch readiness:** see `docs/launch-checklist.md` for the cutover gate (automated gates, CI test runs, manual smoke, env-var audit, security scanners, architect sign-off).
 
 ## Stack
 
@@ -113,3 +124,4 @@ Do not make changes to files related to `mcp.test.ts`.
 - **Playwright:** [https://playwright.dev/docs/](https://playwright.dev/docs/)
 - **Postgres `pg_dump`:** [https://www.postgresql.org/docs/current/app-pgdump.html](https://www.postgresql.org/docs/current/app-pgdump.html)
 - **Restore Drill Documentation:** `docs/restore-drill.md`
+- **Launch Readiness Checklist:** `docs/launch-checklist.md`

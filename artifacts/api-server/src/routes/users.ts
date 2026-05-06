@@ -561,7 +561,7 @@ router.post(
       extra: { invitedRole: created.role, invitedEmail: created.email },
     }).catch((error) => {
       // Activity logging must never block the invite from being returned.
-      console.warn("[users] failed to record invite activity:", error);
+      req.log.warn({ err: error }, "users: failed to record invite activity");
     });
 
     const inviterName = await resolveInviterName(req.auth!.userId);
@@ -639,7 +639,7 @@ router.post(
       jobId: null,
       description: `Reissued setup link for ${target.fullName} (${target.email})`,
     }).catch((error) => {
-      console.warn("[users] failed to record reissue activity:", error);
+      req.log.warn({ err: error }, "users: failed to record reissue activity");
     });
 
     const inviterName = await resolveInviterName(req.auth!.userId);
@@ -735,7 +735,7 @@ router.post(
       jobId: null,
       description: `Resent setup email for ${target.fullName} (${target.email})`,
     }).catch((error) => {
-      console.warn("[users] failed to record invite resend activity:", error);
+      req.log.warn({ err: error }, "users: failed to record invite resend activity");
     });
 
     const inviterName = await resolveInviterName(req.auth!.userId);
@@ -889,7 +889,7 @@ router.patch(
         description: `${target.fullName}: ${description.join(", ")}`,
         extra: parsed.data,
       }).catch((error) => {
-        console.warn("[users] failed to record update activity:", error);
+        req.log.warn({ err: error }, "users: failed to record update activity");
       });
     }
 

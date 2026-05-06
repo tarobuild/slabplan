@@ -1235,9 +1235,9 @@ async function applyInvoiceMatches(
   // Observability: surfaces the batch size + wall time so a regression
   // (e.g. accidentally re-introducing per-row UPDATEs) shows up in logs.
   if (matches.length >= 25) {
-    // eslint-disable-next-line no-console
-    console.log(
-      `[financials] applyInvoiceMatches invoice=${invoiceId} matches=${matches.length} took=${Date.now() - startedAt}ms`,
+    logger.info(
+      { invoiceId, matches: matches.length, durationMs: Date.now() - startedAt },
+      "financials: applyInvoiceMatches batch complete",
     );
   }
 }

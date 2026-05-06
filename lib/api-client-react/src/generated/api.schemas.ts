@@ -1957,6 +1957,367 @@ export interface PersonalAccessTokenCreatePayload {
   expiresAt?: string | null;
 }
 
+export interface CrewScheduleItem {
+  id: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  startTime: string | null;
+  endTime: string | null;
+  displayColor: string;
+  progress: number;
+  isComplete: boolean;
+  jobId: string;
+  jobTitle: string | null;
+  jobCity: string | null;
+  jobState: string | null;
+  jobAddress: string | null;
+}
+
+export interface CrewTodo {
+  id: string;
+  title: string;
+  isComplete: boolean;
+  scheduleItemId: string;
+  scheduleItemTitle: string | null;
+  jobId: string | null;
+  jobTitle: string | null;
+}
+
+export interface CrewForecast {
+  jobId: string;
+  jobTitle: string | null;
+  address: string;
+  condition: string;
+  icon: string;
+  temperatureHigh: number | null;
+  temperatureLow: number | null;
+  windMph: number | null;
+  humidity: number | null;
+  precipitation: number;
+  fetchedAt: string;
+}
+
+export type HomeWeatherStripWeatherData = { [key: string]: unknown } | null;
+
+export interface HomeWeatherStrip {
+  jobId: string;
+  jobTitle: string | null;
+  logDate: string;
+  weatherData: HomeWeatherStripWeatherData;
+  weatherNotes: string | null;
+}
+
+export interface CrewLatestLog {
+  id: string;
+  logDate: string;
+  jobId: string;
+  jobTitle: string | null;
+  title: string | null;
+}
+
+export type CrewHomeRole = (typeof CrewHomeRole)[keyof typeof CrewHomeRole];
+
+export const CrewHomeRole = {
+  crew: "crew",
+} as const;
+
+export type CrewHomeSchedule = {
+  items: CrewScheduleItem[];
+};
+
+/**
+ * Role-aware Home payload returned to crew members. Discriminator value "crew".
+ */
+export interface CrewHome {
+  role: CrewHomeRole;
+  today: string;
+  schedule: CrewHomeSchedule;
+  todos: CrewTodo[];
+  forecast: CrewForecast | null;
+  weather: HomeWeatherStrip | null;
+  latestLog: CrewLatestLog | null;
+}
+
+export interface PmWeekItem {
+  id: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  progress: number;
+  isComplete: boolean;
+  displayColor: string;
+  jobId: string;
+  jobTitle: string | null;
+}
+
+export interface PmTeamLog {
+  id: string;
+  logDate: string;
+  title: string | null;
+  notes: string;
+  jobId: string;
+  jobTitle: string | null;
+  createdAt: string;
+  createdById: string | null;
+  createdByName: string | null;
+}
+
+export type PmAtRiskSamplesOverdueItem = {
+  id: string;
+  title: string;
+  endDate: string;
+  jobId: string;
+  jobTitle: string | null;
+};
+
+export type PmAtRiskSamplesMissingLogJobsItem = {
+  id: string;
+  title: string;
+};
+
+export type PmAtRiskSamplesPendingChangeOrdersItem = {
+  id: string;
+  number: string;
+  amountCents: number;
+  jobId: string;
+  jobTitle: string | null;
+};
+
+export type PmAtRiskSamples = {
+  overdue: PmAtRiskSamplesOverdueItem[];
+  missingLogJobs: PmAtRiskSamplesMissingLogJobsItem[];
+  pendingChangeOrders: PmAtRiskSamplesPendingChangeOrdersItem[];
+};
+
+export interface PmAtRisk {
+  overdueScheduleItems: number;
+  jobsMissingLogs: number;
+  pendingChangeOrders: number;
+  samples: PmAtRiskSamples;
+}
+
+export type PmHomeRole = (typeof PmHomeRole)[keyof typeof PmHomeRole];
+
+export const PmHomeRole = {
+  pm: "pm",
+} as const;
+
+export type PmHomeWeek = {
+  start: string;
+  end: string;
+  items: PmWeekItem[];
+};
+
+export type PmHomeSummary = {
+  activeJobs: number;
+  openLeads: number;
+  openScheduleItems: number;
+};
+
+/**
+ * Role-aware Home payload returned to project managers. Discriminator value "pm".
+ */
+export interface PmHome {
+  role: PmHomeRole;
+  today: string;
+  week: PmHomeWeek;
+  atRisk: PmAtRisk;
+  teamLogs: PmTeamLog[];
+  summary: PmHomeSummary;
+}
+
+export interface AdminTopClient {
+  clientId: string | null;
+  clientName: string;
+  openBalanceCents: number;
+}
+
+export interface AdminPastDueInvoice {
+  id: string;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  totalCents: number;
+  paidCents: number;
+  jobId: string;
+  jobTitle: string | null;
+  clientId: string | null;
+  clientName: string | null;
+}
+
+export interface AdminRecentLead {
+  id: string;
+  title: string;
+  status: string;
+  city: string | null;
+  state: string | null;
+  confidence: number | null;
+  createdAt: string;
+}
+
+export type AdminHomeRole = (typeof AdminHomeRole)[keyof typeof AdminHomeRole];
+
+export const AdminHomeRole = {
+  admin: "admin",
+} as const;
+
+export type AdminHomeKpis = {
+  activeJobs: number;
+  openLeads: number;
+  newJobsThisMonth: number;
+  newContractValueThisMonthCents: number;
+  arOutstandingCents: number;
+  pastDueInvoiceCount: number;
+};
+
+export type AdminHomeJobsByStageItem = {
+  stage: string;
+  total: number;
+};
+
+export type AdminHomeCalendar = {
+  start: string;
+  end: string;
+  items: PmWeekItem[];
+};
+
+/**
+ * Role-aware Home payload returned to admins. Discriminator value "admin".
+ */
+export interface AdminHome {
+  role: AdminHomeRole;
+  today: string;
+  monthStart: string;
+  kpis: AdminHomeKpis;
+  topClients: AdminTopClient[];
+  pastDueInvoices: AdminPastDueInvoice[];
+  jobsByStage: AdminHomeJobsByStageItem[];
+  recentLeads: AdminRecentLead[];
+  calendar: AdminHomeCalendar;
+}
+
+/**
+ * Role-aware /dashboard/home response. Discriminated by `role` (crew | pm | admin).
+ */
+export type HomePayload = CrewHome | PmHome | AdminHome;
+
+export interface ArAgingRow {
+  clientId: string | null;
+  clientName: string;
+  current: number;
+  d1to30: number;
+  d31to60: number;
+  d61to90: number;
+  d90plus: number;
+  total: number;
+}
+
+export interface ArAgingResponse {
+  rows: ArAgingRow[];
+}
+
+export type RevenueMonthTopJobsItem = {
+  jobId: string;
+  jobTitle: string;
+  amountCents: number;
+};
+
+export interface RevenueMonth {
+  month: string;
+  billedCents: number;
+  collectedCents: number;
+  topJobs: RevenueMonthTopJobsItem[];
+}
+
+export interface RevenueResponse {
+  months: RevenueMonth[];
+}
+
+export type PipelineResponseFunnelItem = {
+  stage: string;
+  count: number;
+};
+
+export interface PipelineResponse {
+  funnel: PipelineResponseFunnelItem[];
+  winRate: number;
+  won: number;
+  lost: number;
+  avgDaysToClose: number;
+}
+
+export interface DaysToPaymentBucket {
+  id: string;
+  label: string;
+  count: number;
+  avgDays: number;
+  p90Days: number;
+}
+
+export interface DaysToPaymentResponse {
+  byClient: DaysToPaymentBucket[];
+  byJobType: DaysToPaymentBucket[];
+}
+
+export interface JobsByStageRow {
+  clientId: string | null;
+  clientName: string;
+  open: number;
+  closed: number;
+  archived: number;
+  total: number;
+}
+
+export interface JobsByStageResponse {
+  rows: JobsByStageRow[];
+}
+
+export type NotificationPrefsResponsePrefs = { [key: string]: boolean };
+
+/**
+ * Per-user notification preferences. Map of event-key → boolean.
+ */
+export interface NotificationPrefsResponse {
+  prefs: NotificationPrefsResponsePrefs;
+}
+
+export type NotificationPrefsUpdateRequestPrefs = { [key: string]: boolean };
+
+/**
+ * Partial update to notification preferences. Posted keys are merged into the stored blob (omitted keys are preserved).
+ */
+export interface NotificationPrefsUpdateRequest {
+  prefs: NotificationPrefsUpdateRequestPrefs;
+}
+
+export type ReportRangeParamParameter =
+  (typeof ReportRangeParamParameter)[keyof typeof ReportRangeParamParameter];
+
+export const ReportRangeParamParameter = {
+  last_30: "last_30",
+  last_90: "last_90",
+  ytd: "ytd",
+  custom: "custom",
+} as const;
+
+/**
+ * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
+ */
+export type ReportFromParamParameter = string;
+
+/**
+ * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
+ */
+export type ReportToParamParameter = string;
+
+export type ReportFormatParamParameter =
+  (typeof ReportFormatParamParameter)[keyof typeof ReportFormatParamParameter];
+
+export const ReportFormatParamParameter = {
+  json: "json",
+  csv: "csv",
+} as const;
+
 /**
  * Optional client-supplied unique key. When present on a write request (POST/PUT/PATCH/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.
  */
@@ -2266,6 +2627,32 @@ export const DailyLogsGetJobsJobIdDailyLogsSharedWith = {
   installers: "installers",
 } as const;
 
+export type DailyLogsGetDailyLogsFeedParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  pageSize?: number;
+  cursor?: string;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  keywords?: string;
+  clientId?: string;
+  jobId?: string;
+  createdBy?: string;
+  from?: string | null;
+  to?: string | null;
+  hasAttachments?: boolean;
+  hasComments?: boolean;
+};
+
 export type DailyLogAdminGetDailyLogsMineParams = {
   /**
    * Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.
@@ -2477,4 +2864,109 @@ export type SearchGetSearch200 = {
   results: SearchGetSearch200ResultsItem[];
   /** Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`. */
   pagination: SearchGetSearch200Pagination;
+};
+
+export type ReportsGetReportsArAgingParams = {
+  /**
+   * Preset date range. Use `custom` together with `from` and `to`.
+   */
+  range?: ReportRangeParamParameter;
+  /**
+   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  from?: ReportFromParamParameter;
+  /**
+   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  to?: ReportToParamParameter;
+  /**
+   * Response format. JSON (default) or CSV download.
+   */
+  format?: ReportFormatParamParameter;
+};
+
+export type ReportsGetReportsRevenueParams = {
+  /**
+   * Preset date range. Use `custom` together with `from` and `to`.
+   */
+  range?: ReportRangeParamParameter;
+  /**
+   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  from?: ReportFromParamParameter;
+  /**
+   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  to?: ReportToParamParameter;
+  /**
+   * Response format. JSON (default) or CSV download.
+   */
+  format?: ReportFormatParamParameter;
+};
+
+export type ReportsGetReportsPipelineParams = {
+  /**
+   * Preset date range. Use `custom` together with `from` and `to`.
+   */
+  range?: ReportRangeParamParameter;
+  /**
+   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  from?: ReportFromParamParameter;
+  /**
+   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  to?: ReportToParamParameter;
+  /**
+   * Response format. JSON (default) or CSV download.
+   */
+  format?: ReportFormatParamParameter;
+};
+
+export type ReportsGetReportsDaysToPaymentParams = {
+  /**
+   * Preset date range. Use `custom` together with `from` and `to`.
+   */
+  range?: ReportRangeParamParameter;
+  /**
+   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  from?: ReportFromParamParameter;
+  /**
+   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  to?: ReportToParamParameter;
+  /**
+   * Response format. JSON (default) or CSV download.
+   */
+  format?: ReportFormatParamParameter;
+};
+
+export type ReportsGetReportsJobsByStageParams = {
+  /**
+   * Preset date range. Use `custom` together with `from` and `to`.
+   */
+  range?: ReportRangeParamParameter;
+  /**
+   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  from?: ReportFromParamParameter;
+  /**
+   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  to?: ReportToParamParameter;
+  /**
+   * Response format. JSON (default) or CSV download.
+   */
+  format?: ReportFormatParamParameter;
 };

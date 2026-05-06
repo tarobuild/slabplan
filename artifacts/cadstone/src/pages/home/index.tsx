@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { dashboardGetDashboardHome } from "@workspace/api-client-react"
+import { useEffect } from "react"
+import { useDashboardGetDashboardHome } from "@workspace/api-client-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toastApiError } from "@/lib/api-errors"
@@ -8,7 +8,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title"
 import AdminHomePage from "./AdminHomePage"
 import MyDayPage from "./MyDayPage"
 import PMHomePage from "./PMHomePage"
-import type { AdminHome, CrewHome, HomePayload, PmHome } from "./types"
+import type { AdminHome, CrewHome, PmHome } from "./types"
 
 // One endpoint, three layouts. The backend already discriminates the
 // payload by role (`crew | pm | admin`); this component just dispatches to
@@ -17,30 +17,17 @@ import type { AdminHome, CrewHome, HomePayload, PmHome } from "./types"
 // disagree (e.g. mid-deploy).
 export default function HomePage() {
   const user = useAuthStore((state) => state.user)
-  const [data, setData] = useState<HomePayload | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { data, isLoading, error } = useDashboardGetDashboardHome({
+    query: { queryKey: ["dashboard-home", user?.id ?? "anon"] },
+  })
 
   useDocumentTitle("Home — CAD Stone Networks")
 
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    ;(dashboardGetDashboardHome() as Promise<HomePayload>)
-      .then((payload) => {
-        if (!cancelled) setData(payload)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) toastApiError(err, "Failed to load Home")
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [user?.id])
+    if (error) toastApiError(error, "Failed to load Home")
+  }, [error])
 
-  if (loading || !data) {
+  if (isLoading || !data) {
     return (
       <div className="space-y-4" data-testid="home-loading">
         <Skeleton className="h-8 w-48" />

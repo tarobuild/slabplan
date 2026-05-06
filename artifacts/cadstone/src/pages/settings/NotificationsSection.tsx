@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react"
 import { Bell, Loader2 } from "lucide-react"
 import { toast } from "sonner"
-import { api } from "@/lib/api"
+import {
+  useUsersGetUsersMeNotificationPrefs,
+  useUsersPutUsersMeNotificationPrefs,
+} from "@workspace/api-client-react"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { useDocumentTitle } from "@/hooks/use-document-title"
@@ -68,27 +71,18 @@ const EVENTS: NotificationEvent[] = [
 export default function NotificationsSection() {
   useDocumentTitle("Notifications · Settings")
   const [prefs, setPrefs] = useState<Record<string, boolean>>({})
-  const [loading, setLoading] = useState(true)
   const [savingKey, setSavingKey] = useState<string | null>(null)
 
+  const { data, isLoading: loading, error } = useUsersGetUsersMeNotificationPrefs()
+  const putMutation = useUsersPutUsersMeNotificationPrefs()
+
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    api
-      .get<{ prefs: Record<string, boolean> }>("/users/me/notification-prefs")
-      .then((r) => {
-        if (!cancelled) setPrefs(r.data.prefs ?? {})
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) toastApiError(err, "Failed to load notifications")
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    if (data?.prefs) setPrefs(data.prefs)
+  }, [data])
+
+  useEffect(() => {
+    if (error) toastApiError(error, "Failed to load notifications")
+  }, [error])
 
   const valueFor = (event: NotificationEvent): boolean => {
     if (Object.prototype.hasOwnProperty.call(prefs, event.key)) {
@@ -102,11 +96,10 @@ export default function NotificationsSection() {
     setPrefs((p) => ({ ...p, [event.key]: next }))
     setSavingKey(event.key)
     try {
-      const r = await api.put<{ prefs: Record<string, boolean> }>(
-        "/users/me/notification-prefs",
-        { prefs: { [event.key]: next } },
-      )
-      setPrefs(r.data.prefs ?? {})
+      const result = await putMutation.mutateAsync({
+        data: { prefs: { [event.key]: next } },
+      })
+      setPrefs(result.prefs ?? {})
       toast.success(`${event.label}: ${next ? "on" : "off"}`)
     } catch (err: unknown) {
       // Roll back optimistic state on failure.

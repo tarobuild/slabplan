@@ -19,6 +19,7 @@ import type {
 import type {
   ActivityGetActivityParams,
   AnyValue,
+  ArAgingResponse,
   AuthAcceptInviteSchema,
   ClientDetailResponse,
   ClientErrorsClientErrorPayload,
@@ -41,10 +42,12 @@ import type {
   DailyLogsCommentPayloadSchema,
   DailyLogsCommentReactionPayloadSchema,
   DailyLogsDailyLogPayloadSchema,
+  DailyLogsGetDailyLogsFeedParams,
   DailyLogsGetJobsJobIdDailyLogsParams,
   DailyLogsTodoPayloadSchema,
   DailyLogsTodoTogglePayloadSchema,
   DashboardGetDashboardScheduleParams,
+  DaysToPaymentResponse,
   FilesGetFoldersIdFilesParams,
   FilesRenameFileSchema,
   FoldersFolderBodySchema,
@@ -53,10 +56,12 @@ import type {
   GenericObject,
   HealthStatus,
   HealthStatusDeep,
+  HomePayload,
   JobAssigneesResponse,
   JobDetailResponse,
   JobListResponse,
   JobsAssigneePayloadSchema,
+  JobsByStageResponse,
   JobsGetJobsParams,
   JobsJobCreatePayloadSchema,
   JobsJobPayloadSchema,
@@ -74,10 +79,19 @@ import type {
   LeadsGetLeadsParams,
   LeadsLeadPayloadSchema,
   MyDailyLogsResponse,
+  NotificationPrefsResponse,
+  NotificationPrefsUpdateRequest,
   PersonalAccessTokenCreatePayload,
   PersonalAccessTokenCreated,
   PersonalAccessTokenList,
+  PipelineResponse,
   Problem,
+  ReportsGetReportsArAgingParams,
+  ReportsGetReportsDaysToPaymentParams,
+  ReportsGetReportsJobsByStageParams,
+  ReportsGetReportsPipelineParams,
+  ReportsGetReportsRevenueParams,
+  RevenueResponse,
   ScheduleAttachmentResponse,
   ScheduleAttachmentsCreatedResponse,
   ScheduleBaselineResponse,
@@ -7850,42 +7864,66 @@ export const useDailyLogAdminDeleteDailyLogsCustomFieldsFieldId = <
  * Company-wide daily log feed (admin/PM only). Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with companyDailyLogFeedQuerySchema. Supports both page and cursor pagination.
  * @summary GET /daily-logs/feed
  */
-export const getDailyLogsGetDailyLogsFeedUrl = () => {
-  return `/api/daily-logs/feed`;
+export const getDailyLogsGetDailyLogsFeedUrl = (
+  params?: DailyLogsGetDailyLogsFeedParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/daily-logs/feed?${stringifiedParams}`
+    : `/api/daily-logs/feed`;
 };
 
 export const dailyLogsGetDailyLogsFeed = async (
+  params?: DailyLogsGetDailyLogsFeedParams,
   options?: RequestInit,
 ): Promise<DailyLogListResponse> => {
-  return customFetch<DailyLogListResponse>(getDailyLogsGetDailyLogsFeedUrl(), {
-    ...options,
-    method: "GET",
-  });
+  return customFetch<DailyLogListResponse>(
+    getDailyLogsGetDailyLogsFeedUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
-export const getDailyLogsGetDailyLogsFeedQueryKey = () => {
-  return [`/api/daily-logs/feed`] as const;
+export const getDailyLogsGetDailyLogsFeedQueryKey = (
+  params?: DailyLogsGetDailyLogsFeedParams,
+) => {
+  return [`/api/daily-logs/feed`, ...(params ? [params] : [])] as const;
 };
 
 export const getDailyLogsGetDailyLogsFeedQueryOptions = <
   TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
   TError = ErrorType<Problem>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: DailyLogsGetDailyLogsFeedParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getDailyLogsGetDailyLogsFeedQueryKey();
+    queryOptions?.queryKey ?? getDailyLogsGetDailyLogsFeedQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>
-  > = ({ signal }) => dailyLogsGetDailyLogsFeed({ signal, ...requestOptions });
+  > = ({ signal }) =>
+    dailyLogsGetDailyLogsFeed(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
@@ -7906,15 +7944,21 @@ export type DailyLogsGetDailyLogsFeedQueryError = ErrorType<Problem>;
 export function useDailyLogsGetDailyLogsFeed<
   TData = Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
   TError = ErrorType<Problem>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getDailyLogsGetDailyLogsFeedQueryOptions(options);
+>(
+  params?: DailyLogsGetDailyLogsFeedParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof dailyLogsGetDailyLogsFeed>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getDailyLogsGetDailyLogsFeedQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -11787,8 +11831,8 @@ export const getDashboardGetDashboardHomeUrl = () => {
 
 export const dashboardGetDashboardHome = async (
   options?: RequestInit,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getDashboardGetDashboardHomeUrl(), {
+): Promise<HomePayload> => {
+  return customFetch<HomePayload>(getDashboardGetDashboardHomeUrl(), {
     ...options,
     method: "GET",
   });
@@ -12645,4 +12689,701 @@ export const useAccountTokensRevoke = <
   TContext
 > => {
   return useMutation(getAccountTokensRevokeMutationOptions(options));
+};
+
+/**
+ * A/R aging buckets by client. Admin-only. CSV export when format=csv.
+ * @summary GET /reports/ar-aging
+ */
+export const getReportsGetReportsArAgingUrl = (
+  params?: ReportsGetReportsArAgingParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/ar-aging?${stringifiedParams}`
+    : `/api/reports/ar-aging`;
+};
+
+export const reportsGetReportsArAging = async (
+  params?: ReportsGetReportsArAgingParams,
+  options?: RequestInit,
+): Promise<ArAgingResponse> => {
+  return customFetch<ArAgingResponse>(getReportsGetReportsArAgingUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getReportsGetReportsArAgingQueryKey = (
+  params?: ReportsGetReportsArAgingParams,
+) => {
+  return [`/api/reports/ar-aging`, ...(params ? [params] : [])] as const;
+};
+
+export const getReportsGetReportsArAgingQueryOptions = <
+  TData = Awaited<ReturnType<typeof reportsGetReportsArAging>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsArAgingParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsArAging>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getReportsGetReportsArAgingQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof reportsGetReportsArAging>>
+  > = ({ signal }) =>
+    reportsGetReportsArAging(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof reportsGetReportsArAging>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ReportsGetReportsArAgingQueryResult = NonNullable<
+  Awaited<ReturnType<typeof reportsGetReportsArAging>>
+>;
+export type ReportsGetReportsArAgingQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /reports/ar-aging
+ */
+
+export function useReportsGetReportsArAging<
+  TData = Awaited<ReturnType<typeof reportsGetReportsArAging>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsArAgingParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsArAging>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getReportsGetReportsArAgingQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Billed/collected revenue by month with top jobs. Admin-only.
+ * @summary GET /reports/revenue
+ */
+export const getReportsGetReportsRevenueUrl = (
+  params?: ReportsGetReportsRevenueParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/revenue?${stringifiedParams}`
+    : `/api/reports/revenue`;
+};
+
+export const reportsGetReportsRevenue = async (
+  params?: ReportsGetReportsRevenueParams,
+  options?: RequestInit,
+): Promise<RevenueResponse> => {
+  return customFetch<RevenueResponse>(getReportsGetReportsRevenueUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getReportsGetReportsRevenueQueryKey = (
+  params?: ReportsGetReportsRevenueParams,
+) => {
+  return [`/api/reports/revenue`, ...(params ? [params] : [])] as const;
+};
+
+export const getReportsGetReportsRevenueQueryOptions = <
+  TData = Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsRevenueParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getReportsGetReportsRevenueQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof reportsGetReportsRevenue>>
+  > = ({ signal }) =>
+    reportsGetReportsRevenue(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ReportsGetReportsRevenueQueryResult = NonNullable<
+  Awaited<ReturnType<typeof reportsGetReportsRevenue>>
+>;
+export type ReportsGetReportsRevenueQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /reports/revenue
+ */
+
+export function useReportsGetReportsRevenue<
+  TData = Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsRevenueParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getReportsGetReportsRevenueQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Lead pipeline funnel and win rates. Admin-only.
+ * @summary GET /reports/pipeline
+ */
+export const getReportsGetReportsPipelineUrl = (
+  params?: ReportsGetReportsPipelineParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/pipeline?${stringifiedParams}`
+    : `/api/reports/pipeline`;
+};
+
+export const reportsGetReportsPipeline = async (
+  params?: ReportsGetReportsPipelineParams,
+  options?: RequestInit,
+): Promise<PipelineResponse> => {
+  return customFetch<PipelineResponse>(
+    getReportsGetReportsPipelineUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getReportsGetReportsPipelineQueryKey = (
+  params?: ReportsGetReportsPipelineParams,
+) => {
+  return [`/api/reports/pipeline`, ...(params ? [params] : [])] as const;
+};
+
+export const getReportsGetReportsPipelineQueryOptions = <
+  TData = Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsPipelineParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getReportsGetReportsPipelineQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof reportsGetReportsPipeline>>
+  > = ({ signal }) =>
+    reportsGetReportsPipeline(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ReportsGetReportsPipelineQueryResult = NonNullable<
+  Awaited<ReturnType<typeof reportsGetReportsPipeline>>
+>;
+export type ReportsGetReportsPipelineQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /reports/pipeline
+ */
+
+export function useReportsGetReportsPipeline<
+  TData = Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsPipelineParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getReportsGetReportsPipelineQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Average / p90 days to payment grouped by client and job type. Admin-only.
+ * @summary GET /reports/days-to-payment
+ */
+export const getReportsGetReportsDaysToPaymentUrl = (
+  params?: ReportsGetReportsDaysToPaymentParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/days-to-payment?${stringifiedParams}`
+    : `/api/reports/days-to-payment`;
+};
+
+export const reportsGetReportsDaysToPayment = async (
+  params?: ReportsGetReportsDaysToPaymentParams,
+  options?: RequestInit,
+): Promise<DaysToPaymentResponse> => {
+  return customFetch<DaysToPaymentResponse>(
+    getReportsGetReportsDaysToPaymentUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getReportsGetReportsDaysToPaymentQueryKey = (
+  params?: ReportsGetReportsDaysToPaymentParams,
+) => {
+  return [`/api/reports/days-to-payment`, ...(params ? [params] : [])] as const;
+};
+
+export const getReportsGetReportsDaysToPaymentQueryOptions = <
+  TData = Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsDaysToPaymentParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getReportsGetReportsDaysToPaymentQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>
+  > = ({ signal }) =>
+    reportsGetReportsDaysToPayment(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ReportsGetReportsDaysToPaymentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>
+>;
+export type ReportsGetReportsDaysToPaymentQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /reports/days-to-payment
+ */
+
+export function useReportsGetReportsDaysToPayment<
+  TData = Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsDaysToPaymentParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getReportsGetReportsDaysToPaymentQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Job counts (open / closed / archived) grouped by client. Admin-only.
+ * @summary GET /reports/jobs-by-stage
+ */
+export const getReportsGetReportsJobsByStageUrl = (
+  params?: ReportsGetReportsJobsByStageParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/reports/jobs-by-stage?${stringifiedParams}`
+    : `/api/reports/jobs-by-stage`;
+};
+
+export const reportsGetReportsJobsByStage = async (
+  params?: ReportsGetReportsJobsByStageParams,
+  options?: RequestInit,
+): Promise<JobsByStageResponse> => {
+  return customFetch<JobsByStageResponse>(
+    getReportsGetReportsJobsByStageUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getReportsGetReportsJobsByStageQueryKey = (
+  params?: ReportsGetReportsJobsByStageParams,
+) => {
+  return [`/api/reports/jobs-by-stage`, ...(params ? [params] : [])] as const;
+};
+
+export const getReportsGetReportsJobsByStageQueryOptions = <
+  TData = Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsJobsByStageParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getReportsGetReportsJobsByStageQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>
+  > = ({ signal }) =>
+    reportsGetReportsJobsByStage(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ReportsGetReportsJobsByStageQueryResult = NonNullable<
+  Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>
+>;
+export type ReportsGetReportsJobsByStageQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /reports/jobs-by-stage
+ */
+
+export function useReportsGetReportsJobsByStage<
+  TData = Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: ReportsGetReportsJobsByStageParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getReportsGetReportsJobsByStageQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Get the authenticated user's notification preferences map.
+ * @summary GET /users/me/notification-prefs
+ */
+export const getUsersGetUsersMeNotificationPrefsUrl = () => {
+  return `/api/users/me/notification-prefs`;
+};
+
+export const usersGetUsersMeNotificationPrefs = async (
+  options?: RequestInit,
+): Promise<NotificationPrefsResponse> => {
+  return customFetch<NotificationPrefsResponse>(
+    getUsersGetUsersMeNotificationPrefsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getUsersGetUsersMeNotificationPrefsQueryKey = () => {
+  return [`/api/users/me/notification-prefs`] as const;
+};
+
+export const getUsersGetUsersMeNotificationPrefsQueryOptions = <
+  TData = Awaited<ReturnType<typeof usersGetUsersMeNotificationPrefs>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof usersGetUsersMeNotificationPrefs>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getUsersGetUsersMeNotificationPrefsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof usersGetUsersMeNotificationPrefs>>
+  > = ({ signal }) =>
+    usersGetUsersMeNotificationPrefs({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof usersGetUsersMeNotificationPrefs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type UsersGetUsersMeNotificationPrefsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof usersGetUsersMeNotificationPrefs>>
+>;
+export type UsersGetUsersMeNotificationPrefsQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /users/me/notification-prefs
+ */
+
+export function useUsersGetUsersMeNotificationPrefs<
+  TData = Awaited<ReturnType<typeof usersGetUsersMeNotificationPrefs>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof usersGetUsersMeNotificationPrefs>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getUsersGetUsersMeNotificationPrefsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Partial merge update of the authenticated user's notification preferences.
+ * @summary PUT /users/me/notification-prefs
+ */
+export const getUsersPutUsersMeNotificationPrefsUrl = () => {
+  return `/api/users/me/notification-prefs`;
+};
+
+export const usersPutUsersMeNotificationPrefs = async (
+  notificationPrefsUpdateRequest: NotificationPrefsUpdateRequest,
+  options?: RequestInit,
+): Promise<NotificationPrefsResponse> => {
+  return customFetch<NotificationPrefsResponse>(
+    getUsersPutUsersMeNotificationPrefsUrl(),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(notificationPrefsUpdateRequest),
+    },
+  );
+};
+
+export const getUsersPutUsersMeNotificationPrefsMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPutUsersMeNotificationPrefs>>,
+    TError,
+    { data: BodyType<NotificationPrefsUpdateRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersPutUsersMeNotificationPrefs>>,
+  TError,
+  { data: BodyType<NotificationPrefsUpdateRequest> },
+  TContext
+> => {
+  const mutationKey = ["usersPutUsersMeNotificationPrefs"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersPutUsersMeNotificationPrefs>>,
+    { data: BodyType<NotificationPrefsUpdateRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return usersPutUsersMeNotificationPrefs(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersPutUsersMeNotificationPrefsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersPutUsersMeNotificationPrefs>>
+>;
+export type UsersPutUsersMeNotificationPrefsMutationBody =
+  BodyType<NotificationPrefsUpdateRequest>;
+export type UsersPutUsersMeNotificationPrefsMutationError = ErrorType<Problem>;
+
+/**
+ * @summary PUT /users/me/notification-prefs
+ */
+export const useUsersPutUsersMeNotificationPrefs = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersPutUsersMeNotificationPrefs>>,
+    TError,
+    { data: BodyType<NotificationPrefsUpdateRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof usersPutUsersMeNotificationPrefs>>,
+  TError,
+  { data: BodyType<NotificationPrefsUpdateRequest> },
+  TContext
+> => {
+  return useMutation(
+    getUsersPutUsersMeNotificationPrefsMutationOptions(options),
+  );
 };

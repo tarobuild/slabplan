@@ -1,8 +1,6 @@
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
-import { api } from "@/lib/api"
-import { useQuery } from "@tanstack/react-query"
 
 export type RangePreset = "last_30" | "last_90" | "ytd" | "custom"
 
@@ -173,15 +171,18 @@ export function useReportRange(): [ReportRange, (r: ReportRange) => void] {
   return [range, setRange]
 }
 
-export function useReport<T>(path: string, range: ReportRange) {
-  const params = useMemo(() => rangeToParams(range), [range])
-  return useQuery<T>({
-    queryKey: ["report", path, params],
-    queryFn: async () => {
-      const { data } = await api.get<T>(`/reports/${path}`, { params })
-      return data
-    },
-  })
+// Adapter: turn the picker's `ReportRange` into the orval-generated query
+// params shape. All five report endpoints share the same params shape, so
+// we expose a single helper here rather than per-endpoint wrappers.
+export function rangeToReportParams(range: ReportRange): {
+  range: RangePreset
+  from?: string
+  to?: string
+} {
+  if (range.range === "custom" && range.from && range.to) {
+    return { range: "custom", from: range.from, to: range.to }
+  }
+  return { range: range.range }
 }
 
 export function csvDownloadHref(path: string, range: ReportRange): string {

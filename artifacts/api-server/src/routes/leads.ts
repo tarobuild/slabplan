@@ -1731,10 +1731,10 @@ router.post(
     try {
       await ensureSystemFolders(job.id, { includeJobTemplates: true });
     } catch (err) {
-      console.error("[convert-to-job] ensureSystemFolders failed", {
-        jobId: job.id,
-        err,
-      });
+      req.log.error(
+        { err, jobId: job.id },
+        "convert-to-job: ensureSystemFolders failed",
+      );
     }
 
     if (lead.status !== "won") {

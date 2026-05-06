@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { useReportsGetReportsArAging } from "@workspace/api-client-react"
 import {
   EmptyState,
   LoadingCard,
@@ -7,7 +8,6 @@ import {
   SnapshotToolbar,
   csvDownloadHref,
   formatMoney,
-  useReport,
 } from "./shared"
 
 type ArRow = {
@@ -30,7 +30,7 @@ type SortKey = "clientName" | "current" | "d1to30" | "d31to60" | "d61to90" | "d9
 const SNAPSHOT_RANGE = { range: "last_30" as const, from: "", to: "" }
 
 export default function ArAgingReport() {
-  const q = useReport<{ rows: ArRow[] }>("ar-aging", SNAPSHOT_RANGE)
+  const q = useReportsGetReportsArAging({ range: SNAPSHOT_RANGE.range })
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "total",
     dir: "desc",

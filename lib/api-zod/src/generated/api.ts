@@ -5103,6 +5103,38 @@ export const DailyLogAdminDeleteDailyLogsCustomFieldsFieldIdResponse =
  * Company-wide daily log feed (admin/PM only). Route defined in artifacts/api-server/src/routes/daily-logs.ts. Validated query with companyDailyLogFeedQuerySchema. Supports both page and cursor pagination.
  * @summary GET /daily-logs/feed
  */
+export const dailyLogsGetDailyLogsFeedQueryPageDefault = 1;
+
+export const dailyLogsGetDailyLogsFeedQueryPageSizeDefault = 25;
+export const dailyLogsGetDailyLogsFeedQueryPageSizeMax = 100;
+
+export const dailyLogsGetDailyLogsFeedQueryLimitMax = 100;
+
+export const DailyLogsGetDailyLogsFeedQueryParams = zod.object({
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(dailyLogsGetDailyLogsFeedQueryPageDefault),
+  pageSize: zod.coerce
+    .number()
+    .min(1)
+    .max(dailyLogsGetDailyLogsFeedQueryPageSizeMax)
+    .default(dailyLogsGetDailyLogsFeedQueryPageSizeDefault),
+  cursor: zod.coerce.string().optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(dailyLogsGetDailyLogsFeedQueryLimitMax)
+    .optional(),
+  keywords: zod.coerce.string().optional(),
+  clientId: zod.coerce.string().uuid().optional(),
+  jobId: zod.coerce.string().uuid().optional(),
+  createdBy: zod.coerce.string().uuid().optional(),
+  from: zod.date().nullish(),
+  to: zod.date().nullish(),
+  hasAttachments: zod.coerce.boolean().optional(),
+  hasComments: zod.coerce.boolean().optional(),
+});
 
 export const dailyLogsGetDailyLogsFeedResponsePaginationOneTotalItemsMin = 0;
 
@@ -7792,7 +7824,232 @@ client falls back to device geolocation in that case).
 
  * @summary GET /dashboard/home
  */
-export const DashboardGetDashboardHomeResponse = zod.unknown();
+export const DashboardGetDashboardHomeResponse = zod
+  .union([
+    zod
+      .object({
+        role: zod.enum(["crew"]),
+        today: zod.string(),
+        schedule: zod.object({
+          items: zod.array(
+            zod.object({
+              id: zod.string().uuid(),
+              title: zod.string(),
+              startDate: zod.string(),
+              endDate: zod.string(),
+              startTime: zod.string().nullable(),
+              endTime: zod.string().nullable(),
+              displayColor: zod.string(),
+              progress: zod.number(),
+              isComplete: zod.boolean(),
+              jobId: zod.string().uuid(),
+              jobTitle: zod.string().nullable(),
+              jobCity: zod.string().nullable(),
+              jobState: zod.string().nullable(),
+              jobAddress: zod.string().nullable(),
+            }),
+          ),
+        }),
+        todos: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            title: zod.string(),
+            isComplete: zod.boolean(),
+            scheduleItemId: zod.string().uuid(),
+            scheduleItemTitle: zod.string().nullable(),
+            jobId: zod.string().uuid().nullable(),
+            jobTitle: zod.string().nullable(),
+          }),
+        ),
+        forecast: zod.union([
+          zod.object({
+            jobId: zod.string().uuid(),
+            jobTitle: zod.string().nullable(),
+            address: zod.string(),
+            condition: zod.string(),
+            icon: zod.string(),
+            temperatureHigh: zod.number().nullable(),
+            temperatureLow: zod.number().nullable(),
+            windMph: zod.number().nullable(),
+            humidity: zod.number().nullable(),
+            precipitation: zod.number(),
+            fetchedAt: zod.coerce.date(),
+          }),
+          zod.null(),
+        ]),
+        weather: zod.union([
+          zod.object({
+            jobId: zod.string().uuid(),
+            jobTitle: zod.string().nullable(),
+            logDate: zod.string(),
+            weatherData: zod.object({}).nullable(),
+            weatherNotes: zod.string().nullable(),
+          }),
+          zod.null(),
+        ]),
+        latestLog: zod.union([
+          zod.object({
+            id: zod.string().uuid(),
+            logDate: zod.string(),
+            jobId: zod.string().uuid(),
+            jobTitle: zod.string().nullable(),
+            title: zod.string().nullable(),
+          }),
+          zod.null(),
+        ]),
+      })
+      .describe(
+        'Role-aware Home payload returned to crew members. Discriminator value \"crew\".',
+      ),
+    zod
+      .object({
+        role: zod.enum(["pm"]),
+        today: zod.string(),
+        week: zod.object({
+          start: zod.string(),
+          end: zod.string(),
+          items: zod.array(
+            zod.object({
+              id: zod.string().uuid(),
+              title: zod.string(),
+              startDate: zod.string(),
+              endDate: zod.string(),
+              progress: zod.number(),
+              isComplete: zod.boolean(),
+              displayColor: zod.string(),
+              jobId: zod.string().uuid(),
+              jobTitle: zod.string().nullable(),
+            }),
+          ),
+        }),
+        atRisk: zod.object({
+          overdueScheduleItems: zod.number(),
+          jobsMissingLogs: zod.number(),
+          pendingChangeOrders: zod.number(),
+          samples: zod.object({
+            overdue: zod.array(
+              zod.object({
+                id: zod.string().uuid(),
+                title: zod.string(),
+                endDate: zod.string(),
+                jobId: zod.string().uuid(),
+                jobTitle: zod.string().nullable(),
+              }),
+            ),
+            missingLogJobs: zod.array(
+              zod.object({
+                id: zod.string().uuid(),
+                title: zod.string(),
+              }),
+            ),
+            pendingChangeOrders: zod.array(
+              zod.object({
+                id: zod.string().uuid(),
+                number: zod.string(),
+                amountCents: zod.number(),
+                jobId: zod.string().uuid(),
+                jobTitle: zod.string().nullable(),
+              }),
+            ),
+          }),
+        }),
+        teamLogs: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            logDate: zod.string(),
+            title: zod.string().nullable(),
+            notes: zod.string(),
+            jobId: zod.string().uuid(),
+            jobTitle: zod.string().nullable(),
+            createdAt: zod.coerce.date(),
+            createdById: zod.string().uuid().nullable(),
+            createdByName: zod.string().nullable(),
+          }),
+        ),
+        summary: zod.object({
+          activeJobs: zod.number(),
+          openLeads: zod.number(),
+          openScheduleItems: zod.number(),
+        }),
+      })
+      .describe(
+        'Role-aware Home payload returned to project managers. Discriminator value \"pm\".',
+      ),
+    zod
+      .object({
+        role: zod.enum(["admin"]),
+        today: zod.string(),
+        monthStart: zod.string(),
+        kpis: zod.object({
+          activeJobs: zod.number(),
+          openLeads: zod.number(),
+          newJobsThisMonth: zod.number(),
+          newContractValueThisMonthCents: zod.number(),
+          arOutstandingCents: zod.number(),
+          pastDueInvoiceCount: zod.number(),
+        }),
+        topClients: zod.array(
+          zod.object({
+            clientId: zod.string().uuid().nullable(),
+            clientName: zod.string(),
+            openBalanceCents: zod.number(),
+          }),
+        ),
+        pastDueInvoices: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            invoiceNumber: zod.string().nullable(),
+            invoiceDate: zod.string().nullable(),
+            totalCents: zod.number(),
+            paidCents: zod.number(),
+            jobId: zod.string().uuid(),
+            jobTitle: zod.string().nullable(),
+            clientId: zod.string().uuid().nullable(),
+            clientName: zod.string().nullable(),
+          }),
+        ),
+        jobsByStage: zod.array(
+          zod.object({
+            stage: zod.string(),
+            total: zod.number(),
+          }),
+        ),
+        recentLeads: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            title: zod.string(),
+            status: zod.string(),
+            city: zod.string().nullable(),
+            state: zod.string().nullable(),
+            confidence: zod.number().nullable(),
+            createdAt: zod.coerce.date(),
+          }),
+        ),
+        calendar: zod.object({
+          start: zod.string(),
+          end: zod.string(),
+          items: zod.array(
+            zod.object({
+              id: zod.string().uuid(),
+              title: zod.string(),
+              startDate: zod.string(),
+              endDate: zod.string(),
+              progress: zod.number(),
+              isComplete: zod.boolean(),
+              displayColor: zod.string(),
+              jobId: zod.string().uuid(),
+              jobTitle: zod.string().nullable(),
+            }),
+          ),
+        }),
+      })
+      .describe(
+        'Role-aware Home payload returned to admins. Discriminator value \"admin\".',
+      ),
+  ])
+  .describe(
+    "Role-aware \/dashboard\/home response. Discriminated by `role` (crew | pm | admin).",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/dashboard.ts. Validated query with dashboardScheduleQuerySchema.
@@ -8107,3 +8364,290 @@ export const AccountTokensRevokeHeader = zod.object({
       "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
     ),
 });
+
+/**
+ * A/R aging buckets by client. Admin-only. CSV export when format=csv.
+ * @summary GET /reports/ar-aging
+ */
+export const reportsGetReportsArAgingQueryRangeDefault = `last_90`;
+export const reportsGetReportsArAgingQueryFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsArAgingQueryToRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsArAgingQueryFormatDefault = `json`;
+
+export const ReportsGetReportsArAgingQueryParams = zod.object({
+  range: zod
+    .enum(["last_30", "last_90", "ytd", "custom"])
+    .default(reportsGetReportsArAgingQueryRangeDefault)
+    .describe("Preset date range. Use `custom` together with `from` and `to`."),
+  from: zod.coerce
+    .string()
+    .regex(reportsGetReportsArAgingQueryFromRegExp)
+    .optional()
+    .describe(
+      "Inclusive start date (YYYY-MM-DD). Required when `range=custom`.",
+    ),
+  to: zod.coerce
+    .string()
+    .regex(reportsGetReportsArAgingQueryToRegExp)
+    .optional()
+    .describe("Inclusive end date (YYYY-MM-DD). Required when `range=custom`."),
+  format: zod
+    .enum(["json", "csv"])
+    .default(reportsGetReportsArAgingQueryFormatDefault)
+    .describe("Response format. JSON (default) or CSV download."),
+});
+
+export const ReportsGetReportsArAgingResponse = zod.object({
+  rows: zod.array(
+    zod.object({
+      clientId: zod.string().nullable(),
+      clientName: zod.string(),
+      current: zod.number(),
+      d1to30: zod.number(),
+      d31to60: zod.number(),
+      d61to90: zod.number(),
+      d90plus: zod.number(),
+      total: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * Billed/collected revenue by month with top jobs. Admin-only.
+ * @summary GET /reports/revenue
+ */
+export const reportsGetReportsRevenueQueryRangeDefault = `last_90`;
+export const reportsGetReportsRevenueQueryFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsRevenueQueryToRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsRevenueQueryFormatDefault = `json`;
+
+export const ReportsGetReportsRevenueQueryParams = zod.object({
+  range: zod
+    .enum(["last_30", "last_90", "ytd", "custom"])
+    .default(reportsGetReportsRevenueQueryRangeDefault)
+    .describe("Preset date range. Use `custom` together with `from` and `to`."),
+  from: zod.coerce
+    .string()
+    .regex(reportsGetReportsRevenueQueryFromRegExp)
+    .optional()
+    .describe(
+      "Inclusive start date (YYYY-MM-DD). Required when `range=custom`.",
+    ),
+  to: zod.coerce
+    .string()
+    .regex(reportsGetReportsRevenueQueryToRegExp)
+    .optional()
+    .describe("Inclusive end date (YYYY-MM-DD). Required when `range=custom`."),
+  format: zod
+    .enum(["json", "csv"])
+    .default(reportsGetReportsRevenueQueryFormatDefault)
+    .describe("Response format. JSON (default) or CSV download."),
+});
+
+export const ReportsGetReportsRevenueResponse = zod.object({
+  months: zod.array(
+    zod.object({
+      month: zod.string(),
+      billedCents: zod.number(),
+      collectedCents: zod.number(),
+      topJobs: zod.array(
+        zod.object({
+          jobId: zod.string(),
+          jobTitle: zod.string(),
+          amountCents: zod.number(),
+        }),
+      ),
+    }),
+  ),
+});
+
+/**
+ * Lead pipeline funnel and win rates. Admin-only.
+ * @summary GET /reports/pipeline
+ */
+export const reportsGetReportsPipelineQueryRangeDefault = `last_90`;
+export const reportsGetReportsPipelineQueryFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsPipelineQueryToRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsPipelineQueryFormatDefault = `json`;
+
+export const ReportsGetReportsPipelineQueryParams = zod.object({
+  range: zod
+    .enum(["last_30", "last_90", "ytd", "custom"])
+    .default(reportsGetReportsPipelineQueryRangeDefault)
+    .describe("Preset date range. Use `custom` together with `from` and `to`."),
+  from: zod.coerce
+    .string()
+    .regex(reportsGetReportsPipelineQueryFromRegExp)
+    .optional()
+    .describe(
+      "Inclusive start date (YYYY-MM-DD). Required when `range=custom`.",
+    ),
+  to: zod.coerce
+    .string()
+    .regex(reportsGetReportsPipelineQueryToRegExp)
+    .optional()
+    .describe("Inclusive end date (YYYY-MM-DD). Required when `range=custom`."),
+  format: zod
+    .enum(["json", "csv"])
+    .default(reportsGetReportsPipelineQueryFormatDefault)
+    .describe("Response format. JSON (default) or CSV download."),
+});
+
+export const ReportsGetReportsPipelineResponse = zod.object({
+  funnel: zod.array(
+    zod.object({
+      stage: zod.string(),
+      count: zod.number(),
+    }),
+  ),
+  winRate: zod.number(),
+  won: zod.number(),
+  lost: zod.number(),
+  avgDaysToClose: zod.number(),
+});
+
+/**
+ * Average / p90 days to payment grouped by client and job type. Admin-only.
+ * @summary GET /reports/days-to-payment
+ */
+export const reportsGetReportsDaysToPaymentQueryRangeDefault = `last_90`;
+export const reportsGetReportsDaysToPaymentQueryFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsDaysToPaymentQueryToRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsDaysToPaymentQueryFormatDefault = `json`;
+
+export const ReportsGetReportsDaysToPaymentQueryParams = zod.object({
+  range: zod
+    .enum(["last_30", "last_90", "ytd", "custom"])
+    .default(reportsGetReportsDaysToPaymentQueryRangeDefault)
+    .describe("Preset date range. Use `custom` together with `from` and `to`."),
+  from: zod.coerce
+    .string()
+    .regex(reportsGetReportsDaysToPaymentQueryFromRegExp)
+    .optional()
+    .describe(
+      "Inclusive start date (YYYY-MM-DD). Required when `range=custom`.",
+    ),
+  to: zod.coerce
+    .string()
+    .regex(reportsGetReportsDaysToPaymentQueryToRegExp)
+    .optional()
+    .describe("Inclusive end date (YYYY-MM-DD). Required when `range=custom`."),
+  format: zod
+    .enum(["json", "csv"])
+    .default(reportsGetReportsDaysToPaymentQueryFormatDefault)
+    .describe("Response format. JSON (default) or CSV download."),
+});
+
+export const ReportsGetReportsDaysToPaymentResponse = zod.object({
+  byClient: zod.array(
+    zod.object({
+      id: zod.string(),
+      label: zod.string(),
+      count: zod.number(),
+      avgDays: zod.number(),
+      p90Days: zod.number(),
+    }),
+  ),
+  byJobType: zod.array(
+    zod.object({
+      id: zod.string(),
+      label: zod.string(),
+      count: zod.number(),
+      avgDays: zod.number(),
+      p90Days: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * Job counts (open / closed / archived) grouped by client. Admin-only.
+ * @summary GET /reports/jobs-by-stage
+ */
+export const reportsGetReportsJobsByStageQueryRangeDefault = `last_90`;
+export const reportsGetReportsJobsByStageQueryFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsJobsByStageQueryToRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const reportsGetReportsJobsByStageQueryFormatDefault = `json`;
+
+export const ReportsGetReportsJobsByStageQueryParams = zod.object({
+  range: zod
+    .enum(["last_30", "last_90", "ytd", "custom"])
+    .default(reportsGetReportsJobsByStageQueryRangeDefault)
+    .describe("Preset date range. Use `custom` together with `from` and `to`."),
+  from: zod.coerce
+    .string()
+    .regex(reportsGetReportsJobsByStageQueryFromRegExp)
+    .optional()
+    .describe(
+      "Inclusive start date (YYYY-MM-DD). Required when `range=custom`.",
+    ),
+  to: zod.coerce
+    .string()
+    .regex(reportsGetReportsJobsByStageQueryToRegExp)
+    .optional()
+    .describe("Inclusive end date (YYYY-MM-DD). Required when `range=custom`."),
+  format: zod
+    .enum(["json", "csv"])
+    .default(reportsGetReportsJobsByStageQueryFormatDefault)
+    .describe("Response format. JSON (default) or CSV download."),
+});
+
+export const ReportsGetReportsJobsByStageResponse = zod.object({
+  rows: zod.array(
+    zod.object({
+      clientId: zod.string().nullable(),
+      clientName: zod.string(),
+      open: zod.number(),
+      closed: zod.number(),
+      archived: zod.number(),
+      total: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * Get the authenticated user's notification preferences map.
+ * @summary GET /users/me/notification-prefs
+ */
+export const UsersGetUsersMeNotificationPrefsResponse = zod
+  .object({
+    prefs: zod.record(zod.string(), zod.boolean()),
+  })
+  .describe("Per-user notification preferences. Map of event-key → boolean.");
+
+/**
+ * Partial merge update of the authenticated user's notification preferences.
+ * @summary PUT /users/me/notification-prefs
+ */
+export const UsersPutUsersMeNotificationPrefsBody = zod
+  .object({
+    prefs: zod.record(zod.string(), zod.boolean()),
+  })
+  .describe(
+    "Partial update to notification preferences. Posted keys are merged into the stored blob (omitted keys are preserved).",
+  );
+
+export const UsersPutUsersMeNotificationPrefsResponse = zod
+  .object({
+    prefs: zod.record(zod.string(), zod.boolean()),
+  })
+  .describe("Per-user notification preferences. Map of event-key → boolean.");

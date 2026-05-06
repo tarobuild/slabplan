@@ -3,6 +3,7 @@ import type { CookieOptions, Response } from "express";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import type { User } from "@workspace/db/schema";
 import { HttpError } from "./http";
+import { logger } from "./logger";
 
 type TokenType = "access" | "refresh" | "upload" | "file_view";
 
@@ -61,8 +62,9 @@ function readJwtSecret(envName: JwtSecretEnvName) {
 
   if (!warnedMissingSecrets.has(envName)) {
     warnedMissingSecrets.add(envName);
-    console.warn(
-      "[auth] " + envName + " is not configured; using an ephemeral runtime secret for this process.",
+    logger.warn(
+      { envName },
+      "JWT secret env var is not configured; using an ephemeral runtime secret for this process.",
     );
   }
 

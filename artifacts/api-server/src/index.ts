@@ -1,4 +1,3 @@
-import "./boot-diagnostic";
 // Sentry MUST initialize before any module that registers route handlers
 // is imported, otherwise async errors raised during module evaluation
 // (and Sentry's auto-instrumentation hooks) miss the window. Static
@@ -36,6 +35,24 @@ if (Number.isNaN(port) || !Number.isInteger(port) || port <= 0 || port > 65535) 
 const SHUTDOWN_DRAIN_MS = 10_000;
 
 async function bootstrap() {
+  // Boot diagnostic: env presence (no values, just booleans) so a missing
+  // secret in production shows up before anything else evaluates. Replaces
+  // the older boot-diagnostic.ts shim that wrote raw stderr lines.
+  logger.info(
+    {
+      pid: process.pid,
+      port,
+      host,
+      nodeEnv: process.env["NODE_ENV"] ?? null,
+      hasSupabaseDb: Boolean(process.env["SUPABASE_DATABASE_URL"]),
+      hasJwtUpload: Boolean(process.env["JWT_UPLOAD_SECRET"]),
+      hasPrivateObjectDir: Boolean(process.env["PRIVATE_OBJECT_DIR"]),
+      hasPublicObjectSearchPaths: Boolean(process.env["PUBLIC_OBJECT_SEARCH_PATHS"]),
+      hasDefaultObjectBucket: Boolean(process.env["DEFAULT_OBJECT_STORAGE_BUCKET_ID"]),
+    },
+    "boot",
+  );
+
   await prepareApp();
 
   const server = createServer(app);
@@ -51,13 +68,11 @@ async function bootstrap() {
   const scheduleAutoCompleteSweeper = startScheduleAutoCompleteSweeper();
 
   server.on("error", (err) => {
-    console.error("[boot:fatal] server.error", err);
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   });
 
   server.listen(port, host, () => {
-    console.error("[boot] LISTENING", { host, port });
     logger.info({ host, port }, "Server listening");
   });
 

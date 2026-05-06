@@ -11,12 +11,14 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "check-api-codegen": "pnpm --filter @workspace/scripts run check-api-codegen",
+    "knip": "knip",
     "setup-test-db": "pnpm --filter @workspace/db run setup-test-db",
     "validate": "pnpm run typecheck && pnpm run check-api-codegen"
   },
   "private": true,
   "devDependencies": {
-    "typescript": "~5.9.2",
-    "prettier": "^3.8.1"
+    "knip": "^6.11.0",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
   }
 }

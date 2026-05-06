@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useReportsGetReportsRevenue } from "@workspace/api-client-react"
 import {
   EmptyState,
   LoadingCard,
@@ -6,7 +7,7 @@ import {
   ReportToolbar,
   csvDownloadHref,
   formatMoney,
-  useReport,
+  rangeToReportParams,
   useReportRange,
 } from "./shared"
 
@@ -22,7 +23,7 @@ type Mode = "billed" | "collected"
 export default function RevenueReport() {
   const [range, setRange] = useReportRange()
   const [mode, setMode] = useState<Mode>("billed")
-  const q = useReport<{ months: Month[] }>("revenue", range)
+  const q = useReportsGetReportsRevenue(rangeToReportParams(range))
 
   const months = q.data?.months ?? []
   const allZero = months.every((m) => m.billedCents === 0 && m.collectedCents === 0)

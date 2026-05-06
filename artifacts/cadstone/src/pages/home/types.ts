@@ -148,8 +148,6 @@ export type AdminHome = {
   calendar: { start: string; end: string; items: PmWeekItem[] }
 }
 
-export type HomePayload = CrewHome | PmHome | AdminHome
-
 export function formatCents(cents: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

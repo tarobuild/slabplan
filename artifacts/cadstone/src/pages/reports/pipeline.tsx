@@ -1,20 +1,18 @@
 import {
+  useReportsGetReportsPipeline,
+  type PipelineResponse,
+} from "@workspace/api-client-react"
+import {
   EmptyState,
   LoadingCard,
   ReportSection,
   ReportToolbar,
   csvDownloadHref,
-  useReport,
+  rangeToReportParams,
   useReportRange,
 } from "./shared"
 
-type PipelineData = {
-  funnel: Array<{ stage: string; count: number }>
-  winRate: number
-  won: number
-  lost: number
-  avgDaysToClose: number
-}
+type PipelineData = PipelineResponse
 
 // Funnel order goes top → bottom: New → Qualified → Proposal → Won + Lost.
 // Won and Lost are siblings at the bottom because a deal terminates in one
@@ -27,7 +25,7 @@ const FUNNEL_ORDER: Array<{ stage: string; label: string; color: string }> = [
 
 export default function PipelineReport() {
   const [range, setRange] = useReportRange()
-  const q = useReport<PipelineData>("pipeline", range)
+  const q = useReportsGetReportsPipeline(rangeToReportParams(range))
 
   return (
     <>

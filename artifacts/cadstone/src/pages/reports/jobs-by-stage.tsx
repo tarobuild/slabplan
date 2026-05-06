@@ -1,10 +1,10 @@
+import { useReportsGetReportsJobsByStage } from "@workspace/api-client-react"
 import {
   EmptyState,
   LoadingCard,
   ReportSection,
   SnapshotToolbar,
   csvDownloadHref,
-  useReport,
 } from "./shared"
 
 // Jobs by Stage is a current-state snapshot, not time-windowed —
@@ -27,7 +27,7 @@ const SEGMENTS = [
 ]
 
 export default function JobsByStageReport() {
-  const q = useReport<{ rows: Row[] }>("jobs-by-stage", SNAPSHOT_RANGE)
+  const q = useReportsGetReportsJobsByStage({ range: SNAPSHOT_RANGE.range })
   const rows = q.data?.rows ?? []
   const max = Math.max(1, ...rows.map((r) => r.total))
 

@@ -10,7 +10,12 @@ import {
   Users,
   X,
 } from "lucide-react"
-import type { DailyLogListItem } from "@workspace/api-client-react"
+import {
+  dailyLogsGetDailyLogsFeed,
+  type CursorPagination as GeneratedCursorPagination,
+  type DailyLogListItem,
+  type DailyLogsGetDailyLogsFeedParams,
+} from "@workspace/api-client-react"
 import { api } from "@/lib/api"
 import { apiErrorMessage } from "@/lib/api-errors"
 import { useDocumentTitle } from "@/hooks/use-document-title"
@@ -30,12 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 const PAGE_LIMIT = 25
 
-type CursorPagination = { limit: number; hasMore: boolean; nextCursor: string | null }
-
-type FeedResponse = {
-  logs: DailyLogListItem[]
-  pagination: CursorPagination | { page: number; pageSize: number; totalItems: number; totalPages: number }
-}
+type CursorPagination = GeneratedCursorPagination
 
 const FILTER_KEYS = [
   "clientId",
@@ -195,22 +195,28 @@ export default function CompanyDailyLogsPage() {
       setLoadingMore(true)
     }
     try {
-      const params: Record<string, string | number | boolean> = {
-        cursor: cursor ?? "",
+      const params: DailyLogsGetDailyLogsFeedParams = {
         limit: PAGE_LIMIT,
       }
+      if (cursor) params.cursor = cursor
       if (debouncedSearch.trim()) params.keywords = debouncedSearch.trim()
-      for (const key of FILTER_KEYS) {
-        const v = filters[key]
-        if (v) params[key] = v
-      }
-      const response = await api.get<FeedResponse>("/daily-logs/feed", { params })
+      // Filters are stored as strings in URL state. Coerce the boolean
+      // ones (`hasAttachments`/`hasComments`) since the typed query
+      // params expect actual booleans, not "true"/"false".
+      if (filters.clientId) params.clientId = filters.clientId
+      if (filters.jobId) params.jobId = filters.jobId
+      if (filters.createdBy) params.createdBy = filters.createdBy
+      if (filters.from) params.from = filters.from
+      if (filters.to) params.to = filters.to
+      if (filters.hasAttachments) params.hasAttachments = filters.hasAttachments === "true"
+      if (filters.hasComments) params.hasComments = filters.hasComments === "true"
+      const data = await dailyLogsGetDailyLogsFeed(params)
       if (requestId !== loadRequestIdRef.current) return
-      const fetched = response.data.logs ?? []
+      const fetched = data.logs ?? []
       setLogs((prev) => (isInitial ? fetched : [...prev, ...fetched]))
-      const pag = response.data.pagination as CursorPagination | undefined
+      const pag = data.pagination as CursorPagination | undefined
       setHasMore(pag && "hasMore" in pag ? pag.hasMore : false)
-      setNextCursor(pag && "nextCursor" in pag ? pag.nextCursor : null)
+      setNextCursor(pag && "nextCursor" in pag ? (pag.nextCursor ?? null) : null)
     } catch (error) {
       if (requestId !== loadRequestIdRef.current) return
       setErrorMessage(apiErrorMessage(error, "Failed to load daily logs"))

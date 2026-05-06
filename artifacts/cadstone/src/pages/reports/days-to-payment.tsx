@@ -1,10 +1,11 @@
+import { useReportsGetReportsDaysToPayment } from "@workspace/api-client-react"
 import {
   EmptyState,
   LoadingCard,
   ReportSection,
   ReportToolbar,
   csvDownloadHref,
-  useReport,
+  rangeToReportParams,
   useReportRange,
 } from "./shared"
 
@@ -16,11 +17,9 @@ type Bucket = {
   p90Days: number
 }
 
-type Data = { byClient: Bucket[]; byJobType: Bucket[] }
-
 export default function DaysToPaymentReport() {
   const [range, setRange] = useReportRange()
-  const q = useReport<Data>("days-to-payment", range)
+  const q = useReportsGetReportsDaysToPayment(rangeToReportParams(range))
   const empty = q.data && q.data.byClient.length === 0 && q.data.byJobType.length === 0
 
   return (

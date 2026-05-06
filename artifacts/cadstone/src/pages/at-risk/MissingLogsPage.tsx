@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { Link } from "react-router-dom"
-import { dashboardGetDashboardHome } from "@workspace/api-client-react"
+import { useDashboardGetDashboardHome } from "@workspace/api-client-react"
 import { ArrowLeft, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toastApiError } from "@/lib/api-errors"
-import type { HomePayload, PmHome } from "../home/types"
+import type { PmHome } from "../home/types"
 
 // Drill-down list for the PM Home "Jobs missing logs (3+ working days)"
 // at-risk tile. The /dashboard/home payload already returns the full set
@@ -16,32 +16,13 @@ import type { HomePayload, PmHome } from "../home/types"
 // from that payload rather than hitting a dedicated list endpoint.
 export default function MissingLogsAtRiskPage() {
   useDocumentTitle("Jobs missing logs — At-risk")
-  const [data, setData] = useState<PmHome | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [notPm, setNotPm] = useState(false)
+  const { data: payload, isLoading: loading, error } = useDashboardGetDashboardHome()
+  const data = payload && payload.role === "pm" ? (payload as PmHome) : null
+  const notPm = !!payload && payload.role !== "pm"
 
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    ;(dashboardGetDashboardHome() as Promise<HomePayload>)
-      .then((payload) => {
-        if (cancelled) return
-        if (payload.role !== "pm") {
-          setNotPm(true)
-          return
-        }
-        setData(payload)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) toastApiError(err, "Failed to load at-risk list")
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    if (error) toastApiError(error, "Failed to load at-risk list")
+  }, [error])
 
   return (
     <div className="space-y-4" data-testid="at-risk-missing-logs">

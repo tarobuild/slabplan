@@ -20,6 +20,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import CreateJobDialog from "@/components/jobs/CreateJobDialog"
 
 type ClientContact = {
   id: string
@@ -341,6 +342,7 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>("jobs")
   const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([])
+  const [createJobOpen, setCreateJobOpen] = useState(false)
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === "admin"
 
@@ -578,15 +580,7 @@ export default function ClientDetailPage() {
             <Button
               size="sm"
               variant="orange"
-              onClick={() =>
-                navigate("/jobs", {
-                  state: {
-                    openCreate: true,
-                    clientId: client.id,
-                    lockClient: true,
-                  },
-                })
-              }
+              onClick={() => setCreateJobOpen(true)}
             >
               <Plus className="mr-1 size-3.5" />
               New Job
@@ -599,15 +593,7 @@ export default function ClientDetailPage() {
                 <button
                   type="button"
                   className="ml-2 text-orange-600 hover:underline"
-                  onClick={() =>
-                    navigate("/jobs", {
-                      state: {
-                        openCreate: true,
-                        clientId: client.id,
-                        lockClient: true,
-                      },
-                    })
-                  }
+                  onClick={() => setCreateJobOpen(true)}
                 >
                   <Plus className="inline size-3.5" /> Add a job
                 </button>
@@ -847,21 +833,35 @@ export default function ClientDetailPage() {
                   : "Schedules for this client are managed per job."}
             </p>
             <div className="flex justify-center gap-2">
-              <Link
-                to={
-                  tab === "files"
-                    ? `/files/documents?client=${client.id}`
-                    : tab === "daily-logs"
+              {tab === "files" ? (
+                /*
+                 * Files no longer live at the top level (#318) — they are
+                 * always job-scoped. We no longer surface a top-level link;
+                 * instead we point the user back to the Jobs tab where each
+                 * job's files live under /jobs/:id/files/*.
+                 */
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setTab("jobs")}
+                >
+                  <FileText className="mr-1.5 size-3.5" />
+                  See files on each job
+                </Button>
+              ) : (
+                <Link
+                  to={
+                    tab === "daily-logs"
                       ? `/daily-logs/mine?client=${client.id}`
                       : `/dashboard?client=${client.id}`
-                }
-              >
-                <Button size="sm" variant="outline">
-                  {tab === "files" && <FileText className="mr-1.5 size-3.5" />}
-                  {tab === "daily-logs" && <ClipboardList className="mr-1.5 size-3.5" />}
-                  Open {TAB_LABELS[tab]} (filtered to this client)
-                </Button>
-              </Link>
+                  }
+                >
+                  <Button size="sm" variant="outline">
+                    {tab === "daily-logs" && <ClipboardList className="mr-1.5 size-3.5" />}
+                    Open {TAB_LABELS[tab]} (filtered to this client)
+                  </Button>
+                </Link>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -878,6 +878,18 @@ export default function ClientDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/*
+        In-place "New Job" — lifted out of /jobs (#318) so an admin can
+        create a job for *this* client without a context-losing redirect.
+        Client is locked since we already know it.
+      */}
+      <CreateJobDialog
+        open={createJobOpen}
+        onOpenChange={setCreateJobOpen}
+        defaultClientId={client.id}
+        lockClient
+      />
     </div>
   )
 }

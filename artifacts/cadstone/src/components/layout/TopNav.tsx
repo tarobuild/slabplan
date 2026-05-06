@@ -2,11 +2,7 @@ import { useEffect, useState } from "react"
 import {
   ChevronDown,
   ClipboardList,
-  FileImage,
-  FileText,
-  Film,
   LogOut,
-  Menu,
   Search,
   Settings,
   Sparkles,
@@ -22,11 +18,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import GlobalSearch from "./GlobalSearch"
-import Sidebar from "./Sidebar"
 import { logoutSession } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { useAgentPanelStore } from "@/store/agent"
 import { hasRoleAccess, ROLE_GATES, type AppRole } from "@/lib/role-access"
+import { isFeatureEnabled } from "@/lib/features"
 import { cn } from "@/lib/utils"
 
 function initials(name: string) {
@@ -38,47 +34,51 @@ function initials(name: string) {
     .toUpperCase()
 }
 
-const FILES_LINKS = [
-  { label: "Documents", to: "/files/documents", icon: FileText },
-  { label: "Photos", to: "/files/photos", icon: FileImage },
-  { label: "Videos", to: "/files/videos", icon: Film },
-]
-
-type DrawerNavItem = {
+type TopNavLink = {
   label: string
   to: string
   allow?: ReadonlyArray<AppRole>
+  hidden?: boolean
 }
-
-const DRAWER_NAV: DrawerNavItem[] = [
-  { label: "Dashboard", to: "/dashboard" },
-  { label: "My Jobs", to: "/jobs", allow: ROLE_GATES.myJobs },
-  { label: "Clients", to: "/clients", allow: ROLE_GATES.clients },
-  { label: "Resources", to: "/resources" },
-  { label: "Sales", to: "/sales", allow: ROLE_GATES.sales },
-  { label: "My Daily Logs", to: "/daily-logs/mine" },
-  { label: "Settings", to: "/settings" },
-]
 
 export default function TopNav() {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const toggleAgent = useAgentPanelStore((s) => s.toggle)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
 
   const role = user?.role
-  const canSeeSales = hasRoleAccess(role, ROLE_GATES.sales)
-  const canSeeClients = hasRoleAccess(role, ROLE_GATES.clients)
-  const canSeeMyJobs = hasRoleAccess(role, ROLE_GATES.myJobs)
-  const drawerNav = DRAWER_NAV.filter(
-    (item) => !item.allow || hasRoleAccess(role, item.allow),
-  )
+  const isCrew = role === "crew_member"
   const accountLabel = user?.fullName?.split(" ")[0] ?? "Account"
 
+  // Role-based primary nav. Admin/PM see Home·Clients·Sales·Reports·
+  // Resources; crew see Home·My Jobs·Resources. Reports stays hidden
+  // until the route ships (FEATURES.reports).
+  const navLinks: TopNavLink[] = isCrew
+    ? [
+        { label: "Home", to: "/dashboard" },
+        { label: "My Jobs", to: "/jobs" },
+        { label: "Resources", to: "/resources" },
+      ]
+    : [
+        { label: "Home", to: "/dashboard" },
+        { label: "Clients", to: "/clients", allow: ROLE_GATES.clients },
+        { label: "Sales", to: "/sales", allow: ROLE_GATES.sales },
+        {
+          label: "Reports",
+          to: "/reports",
+          allow: ROLE_GATES.sales,
+          hidden: !isFeatureEnabled("reports"),
+        },
+        { label: "Resources", to: "/resources" },
+      ]
+
+  const visibleLinks = navLinks.filter(
+    (item) => !item.hidden && (!item.allow || hasRoleAccess(role, item.allow)),
+  )
+
   useEffect(() => {
-    setDrawerOpen(false)
     setSearchOpen(false)
   }, [location.pathname])
 
@@ -108,21 +108,8 @@ export default function TopNav() {
   return (
     <header className="sticky top-0 z-30 shadow-md" style={{ backgroundColor: "#1D1D1D" }}>
       <div className="flex h-14 lg:h-12 items-center gap-1 px-3">
-
-        {/* Hamburger button — mobile only */}
-        <button
-          className="lg:hidden mr-1 flex items-center justify-center rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-          onClick={() => setDrawerOpen(true)}
-          aria-label="Open navigation menu"
-        >
-          <Menu className="size-6" />
-        </button>
-
         {/* Logo */}
-        <Link
-          to="/dashboard"
-          className="flex items-center shrink-0 mr-3"
-        >
+        <Link to="/dashboard" className="flex items-center shrink-0 mr-3">
           <div className="flex items-center bg-white rounded px-2 py-1">
             <img
               src="/cad-logo.png"
@@ -132,11 +119,12 @@ export default function TopNav() {
           </div>
         </Link>
 
-        {/* Primary nav — desktop only */}
-        <nav className="hidden lg:flex items-center gap-0.5">
-          {canSeeClients && (
+        {/* Primary nav — hidden on mobile (replaced by bottom-tab nav). */}
+        <nav className="hidden md:flex items-center gap-0.5">
+          {visibleLinks.map((item) => (
             <NavLink
-              to="/clients"
+              key={item.to}
+              to={item.to}
               className={({ isActive }) =>
                 cn(
                   "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
@@ -146,99 +134,21 @@ export default function TopNav() {
                 )
               }
             >
-              Clients
+              {item.label}
             </NavLink>
-          )}
-
-          {canSeeMyJobs && (
-            <NavLink
-              to="/jobs"
-              className={({ isActive }) =>
-                cn(
-                  "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
-                  isActive
-                    ? "text-[#E85D04] bg-white/10"
-                    : "text-white/70 hover:text-white hover:bg-white/10",
-                )
-              }
-            >
-              My Jobs
-            </NavLink>
-          )}
-
-          <NavLink
-            to="/resources"
-            className={({ isActive }) =>
-              cn(
-                "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
-                isActive
-                  ? "text-[#E85D04] bg-white/10"
-                  : "text-white/70 hover:text-white hover:bg-white/10",
-              )
-            }
-          >
-            Resources
-          </NavLink>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className={cn(
-                  "flex items-center gap-1 px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap outline-none font-medium",
-                  location.pathname.startsWith("/files")
-                    ? "text-[#E85D04] bg-white/10"
-                    : "text-white/70 hover:text-white hover:bg-white/10",
-                )}
-              >
-                Job Files
-                <ChevronDown className="size-3.5 opacity-70" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="w-44 border-[#E5E7EB] shadow-lg mt-1"
-            >
-              {FILES_LINKS.map((item) => (
-                <DropdownMenuItem key={item.to} asChild>
-                  <Link
-                    to={item.to}
-                    className="flex items-center gap-2.5 cursor-pointer"
-                  >
-                    <item.icon className="size-4 text-slate-500" />
-                    {item.label}
-                  </Link>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {canSeeSales && (
-            <NavLink
-              to="/sales"
-              className={({ isActive }) =>
-                cn(
-                  "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
-                  isActive
-                    ? "text-[#E85D04] bg-white/10"
-                    : "text-white/70 hover:text-white hover:bg-white/10",
-                )
-              }
-            >
-              Sales
-            </NavLink>
-          )}
+          ))}
         </nav>
 
         <div className="flex-1" />
 
         {/* Global search — desktop only */}
-        <div id="cadstone-topbar-search" className="hidden lg:block w-72 mr-1">
+        <div id="cadstone-topbar-search" className="hidden md:block w-72 mr-1">
           <GlobalSearch />
         </div>
 
         {/* Search button — mobile only */}
         <button
-          className="lg:hidden flex items-center justify-center rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          className="md:hidden flex items-center justify-center rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
           onClick={() => setSearchOpen(true)}
           aria-label="Open search"
         >
@@ -266,7 +176,10 @@ export default function TopNav() {
               className="ml-1 flex items-center gap-1.5 rounded px-2 py-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors outline-none"
             >
               <Avatar className="size-7 border border-white/20 cursor-pointer">
-                <AvatarFallback className="text-[10px] font-semibold text-white" style={{ backgroundColor: "#E85D04" }}>
+                <AvatarFallback
+                  className="text-[10px] font-semibold text-white"
+                  style={{ backgroundColor: "#E85D04" }}
+                >
                   {user ? initials(user.fullName) : "CS"}
                 </AvatarFallback>
               </Avatar>
@@ -308,67 +221,6 @@ export default function TopNav() {
         </DropdownMenu>
       </div>
 
-      {/* Mobile navigation drawer */}
-      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <SheetContent side="left" className="w-72 p-0 flex flex-col gap-0">
-          {/* Drawer header */}
-          <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 shrink-0">
-            <div className="flex items-center rounded bg-[#1D1D1D] px-2 py-1">
-              <img src="/cad-logo.png" alt="CAD Stone Networks" className="h-5 w-auto" />
-            </div>
-            <span className="text-sm font-semibold text-slate-800">CAD Stone Networks</span>
-          </div>
-
-          {/* Nav links */}
-          <nav className="flex shrink-0 flex-col gap-0.5 p-2">
-            {drawerNav.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  cn(
-                    "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-orange-50 text-orange-700"
-                      : "text-slate-700 hover:bg-slate-100",
-                  )
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-
-            <div className="mt-1">
-              <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                Files
-              </p>
-              {FILES_LINKS.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-orange-50 text-orange-700"
-                        : "text-slate-700 hover:bg-slate-100",
-                    )
-                  }
-                >
-                  <item.icon className="size-4 text-slate-400" />
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
-          </nav>
-
-          {/* Jobs list */}
-          <div className="flex-1 overflow-hidden border-t border-slate-200">
-            <Sidebar />
-          </div>
-        </SheetContent>
-      </Sheet>
-
       {/* Mobile search sheet */}
       <Sheet open={searchOpen} onOpenChange={setSearchOpen}>
         <SheetContent
@@ -377,7 +229,6 @@ export default function TopNav() {
         >
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
             <SheetTitle className="text-base">Search</SheetTitle>
-            {/* Spacer so the built-in close (X) button has room. */}
             <span className="size-6" aria-hidden="true" />
           </div>
           <div className="flex flex-1 min-h-0 flex-col p-4">

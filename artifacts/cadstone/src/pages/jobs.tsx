@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Briefcase, Calendar, Check, ChevronDown, Loader2, Search, User } from "lucide-react"
+import { Briefcase, Calendar, Check, ChevronDown, Search, User } from "lucide-react"
 import {
   getJobsGetJobsQueryKey,
   jobsGetJobsId,
@@ -10,25 +10,13 @@ import {
   type JobListItem as JobListItemDto,
   type JobsGetJobsParams,
   type JobsGetJobsQueryResult,
-  type JobsJobCreatePayloadSchema,
   type JobsJobPayloadSchema,
 } from "@workspace/api-client-react"
-import { ClientsPostClientsBody, JobsPostJobsBody } from "@workspace/api-zod"
 import { useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
-import { validatePayload } from "@/lib/validate-payload"
-import WorkerAssignmentPicker, { type WorkerOption } from "@/components/WorkerAssignmentPicker"
+import { type WorkerOption } from "@/components/WorkerAssignmentPicker"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Popover,
   PopoverContent,
@@ -44,6 +32,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { invalidateAppData, subscribeToDataRefresh } from "@/lib/data-refresh"
 import { useDocumentTitle } from "@/hooks/use-document-title"
+import CreateJobDialog from "@/components/jobs/CreateJobDialog"
+import { api } from "@/lib/api"
 import {
   Table,
   TableBody,
@@ -332,14 +322,6 @@ function DatePopover({
   )
 }
 
-const JOB_TYPES = [
-  "kitchen_countertops",
-  "bathrooms",
-  "flooring",
-  "backsplash",
-  "full_house_project",
-  "custom",
-] as const
 const JOB_TYPE_LABELS: Record<string, string> = {
   kitchen_countertops: "Kitchen Countertops",
   bathrooms: "Bathrooms",
@@ -348,7 +330,6 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   full_house_project: "Full House Project",
   custom: "Custom",
 }
-const ADD_NEW_CLIENT_VALUE = "__add_new_client__"
 
 const toLabel = (s: string) =>
   JOB_TYPE_LABELS[s] ?? s.replace(/\b\w/g, (c) => c.toUpperCase())
@@ -359,31 +340,6 @@ function fmtDate(d: string) {
 function fmtCurrency(v: string | null | undefined) {
   if (!v) return "—"
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(v))
-}
-
-type ClientOption = { id: string; companyName: string }
-
-type CreateJobForm = {
-  title: string
-  status: string
-  jobType: string
-  contractType: string
-  streetAddress: string
-  city: string
-  state: string
-  zipCode: string
-  contractPrice: string
-  projectedStart: string
-  projectedCompletion: string
-  clientId: string
-  assigneeIds: string[]
-}
-
-const emptyForm: CreateJobForm = {
-  title: "", status: "open", jobType: "", contractType: "",
-  streetAddress: "", city: "", state: "", zipCode: "",
-  contractPrice: "", projectedStart: "", projectedCompletion: "",
-  clientId: "", assigneeIds: [],
 }
 
 export default function JobsPage() {
@@ -400,22 +356,13 @@ export default function JobsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [status, setStatus] = useState<string>("all")
   const [createOpen, setCreateOpen] = useState(false)
-  const [step, setStep] = useState<1 | 2>(1)
-  const [form, setForm] = useState<CreateJobForm>(emptyForm)
-  const [saving, setSaving] = useState(false)
-  const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
+  const [createDefaultClientId, setCreateDefaultClientId] = useState<string | undefined>(undefined)
+  const [createLockClient, setCreateLockClient] = useState(false)
   const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([])
-  const [showCreateClient, setShowCreateClient] = useState(false)
-  const [newClientCompanyName, setNewClientCompanyName] = useState("")
-  const [newClientContactName, setNewClientContactName] = useState("")
-  const [newClientEmail, setNewClientEmail] = useState("")
-  const [newClientPhone, setNewClientPhone] = useState("")
-  const [creatingClient, setCreatingClient] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
 
-  const [lockClient, setLockClient] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const handleNewJobClick = () => {
@@ -431,42 +378,10 @@ export default function JobsPage() {
     options?: { defaultClientId?: string; lockClient?: boolean },
   ) => {
     if (!isAdmin) return
-    setForm({
-      ...emptyForm,
-      clientId: options?.defaultClientId ?? "",
-    })
-    setLockClient(Boolean(options?.lockClient && options?.defaultClientId))
-    setShowCreateClient(false)
-    setNewClientCompanyName("")
-    setNewClientContactName("")
-    setNewClientEmail("")
-    setNewClientPhone("")
-    setStep(1)
+    setCreateDefaultClientId(options?.defaultClientId)
+    setCreateLockClient(Boolean(options?.lockClient && options?.defaultClientId))
     setCreateOpen(true)
   }
-
-  const handleDialogOpenChange = (open: boolean) => {
-    setCreateOpen(open)
-    if (!open) {
-      setForm(emptyForm)
-      setShowCreateClient(false)
-      setNewClientCompanyName("")
-      setNewClientContactName("")
-      setNewClientEmail("")
-      setNewClientPhone("")
-      setStep(1)
-    }
-  }
-
-  useEffect(() => {
-    if (!isAdmin) {
-      setClientOptions([])
-      return
-    }
-    api.get("/clients?pageSize=100")
-      .then(r => setClientOptions(r.data.clients ?? []))
-      .catch((err: unknown) => toastApiError(err, "Failed to load clients"))
-  }, [isAdmin])
 
   useEffect(() => {
     if (!isAdmin) {
@@ -584,124 +499,17 @@ export default function JobsPage() {
     setPage(p)
   }
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.clientId) {
-      toast.error("Pick a client before creating the job.")
-      setStep(1)
-      return
-    }
-    const payload: JobsJobCreatePayloadSchema = {
-      title: form.title,
-      status: form.status as JobsJobPayloadSchema["status"],
-      jobType: (form.jobType || null) as JobsJobPayloadSchema["jobType"],
-      contractType: (form.contractType || null) as JobsJobPayloadSchema["contractType"],
-      streetAddress: form.streetAddress || null,
-      city: form.city || null,
-      state: form.state || null,
-      zipCode: form.zipCode || null,
-      contractPrice: form.contractPrice || null,
-      projectedStart: form.projectedStart || null,
-      projectedCompletion: form.projectedCompletion || null,
-      clientId: form.clientId,
-      assigneeIds: isAdmin ? form.assigneeIds : [],
-    }
-    const validated = validatePayload(JobsPostJobsBody, payload)
-    if (!validated) return
-    setSaving(true)
-    const hadStartDate = Boolean(form.projectedStart)
-    try {
-      const res = await createJobMutation.mutateAsync({ data: validated })
-      const newJobId = res?.job?.id
-      const openNewJob = () => {
-        if (newJobId) navigate(`/jobs/${newJobId}`)
-      }
-      toast.success("Job created", {
-        action: newJobId
-          ? { label: "Open job", onClick: openNewJob }
-          : undefined,
+  const handleCreated = (newJobId: string | undefined) => {
+    setPage(1)
+    invalidateJobsList()
+    if (newJobId) {
+      toast("Open the new job?", {
+        action: { label: "Open job", onClick: () => navigate(`/jobs/${newJobId}`) },
       })
-      if (!hadStartDate) {
-        toast("Add a start date later", {
-          description:
-            "This job won't appear on the calendar until you set a start date.",
-          action: newJobId
-            ? { label: "Open job", onClick: openNewJob }
-            : undefined,
-        })
-      }
-      setCreateOpen(false)
-      setForm(emptyForm)
-      setShowCreateClient(false)
-      setNewClientCompanyName("")
-      setNewClientContactName("")
-      setNewClientEmail("")
-      setNewClientPhone("")
-      setStep(1)
-      setPage(1)
-      invalidateJobsList()
-      invalidateAppData(["jobs", "navigation"])
-    } catch (err: unknown) {
-      toastApiError(err, "Failed to create job")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleCreateClient = async () => {
-    if (!newClientCompanyName.trim()) {
-      toast.error("Company name is required")
-      return
-    }
-
-    const clientPayload = validatePayload(ClientsPostClientsBody, {
-      companyName: newClientCompanyName.trim(),
-      email: newClientEmail.trim() || null,
-      phone: newClientPhone.trim() || null,
-    })
-    if (!clientPayload) return
-    setCreatingClient(true)
-    try {
-      const response = await api.post("/clients", clientPayload)
-      const nextClient = response.data.client
-
-      if (newClientContactName.trim()) {
-        const nameParts = newClientContactName.trim().split(/\s+/)
-        const firstName = nameParts[0] || null
-        const lastName = nameParts.slice(1).join(" ") || null
-        try {
-          await api.post(`/clients/${nextClient.id}/contacts`, {
-            firstName,
-            lastName,
-            email: newClientEmail.trim() || null,
-            phone: newClientPhone.trim() || null,
-            isPrimary: true,
-          })
-        } catch {
-          // Contact creation is best-effort; client was already created
-        }
-      }
-
-      setClientOptions((current) =>
-        [...current, nextClient].sort((left, right) => left.companyName.localeCompare(right.companyName)),
-      )
-      setForm((current) => ({ ...current, clientId: nextClient.id }))
-      setShowCreateClient(false)
-      setNewClientCompanyName("")
-      setNewClientContactName("")
-      setNewClientEmail("")
-      setNewClientPhone("")
-      toast.success("Client created")
-    } catch (err: unknown) {
-      toastApiError(err, "Failed to create client")
-    } finally {
-      setCreatingClient(false)
     }
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const setField = (k: keyof CreateJobForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm(f => ({ ...f, [k]: e.target.value }))
 
   // Determines whether the current user can flip the status of a row from
   // the listing. Admins can edit any job; project managers only the jobs
@@ -1207,233 +1015,13 @@ export default function JobsPage() {
         </div>
       )}
 
-      <Dialog open={createOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Job</DialogTitle>
-            <p className="text-xs text-slate-400">
-              {step === 1 ? "Step 1 of 2 — Job Basics" : "Step 2 of 2 — Location & Contract"}
-            </p>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              if (step === 1) {
-                e.preventDefault()
-                if (form.title.trim()) setStep(2)
-                return
-              }
-              handleCreate(e)
-            }}
-          >
-            {step === 1 ? (
-              <div className="grid grid-cols-2 gap-4 py-4">
-                <div className="col-span-2 space-y-1.5">
-                  <Label htmlFor="title">Title *</Label>
-                  <Input id="title" value={form.title} onChange={setField("title")} required placeholder="e.g. Johnson Kitchen Countertops" />
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <Label>Client {lockClient ? <span className="text-[10px] text-slate-400">(locked)</span> : null}</Label>
-                  <Select
-                    value={form.clientId || "_none"}
-                    disabled={lockClient}
-                    onValueChange={(value) => {
-                      if (value === ADD_NEW_CLIENT_VALUE) {
-                        setShowCreateClient(true)
-                        return
-                      }
-
-                      setShowCreateClient(false)
-                      setForm((current) => ({ ...current, clientId: value === "_none" ? "" : value }))
-                    }}
-                  >
-                    <SelectTrigger><SelectValue placeholder="Link to a client (optional)" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_none">— None —</SelectItem>
-                      {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
-                      {isAdmin ? (
-                        <SelectItem value={ADD_NEW_CLIENT_VALUE}>Add new client…</SelectItem>
-                      ) : null}
-                    </SelectContent>
-                  </Select>
-                  {isAdmin && showCreateClient ? (
-                    <div className="rounded-md border border-[#E5E7EB] bg-slate-50 p-3 space-y-3">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="new-client-company">Company Name *</Label>
-                        <Input
-                          id="new-client-company"
-                          value={newClientCompanyName}
-                          onChange={(event) => setNewClientCompanyName(event.target.value)}
-                          placeholder="e.g. Acme Builders"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="new-client-contact">Contact Name</Label>
-                        <Input
-                          id="new-client-contact"
-                          value={newClientContactName}
-                          onChange={(event) => setNewClientContactName(event.target.value)}
-                          placeholder="e.g. John Smith"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="new-client-email">Email</Label>
-                          <Input
-                            id="new-client-email"
-                            type="email"
-                            value={newClientEmail}
-                            onChange={(event) => setNewClientEmail(event.target.value)}
-                            placeholder="john@example.com"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="new-client-phone">Phone Number</Label>
-                          <Input
-                            id="new-client-phone"
-                            type="tel"
-                            value={newClientPhone}
-                            onChange={(event) => setNewClientPhone(event.target.value)}
-                            placeholder="(555) 123-4567"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex justify-end">
-                        <Button type="button" onClick={handleCreateClient} disabled={creatingClient}>
-                          {creatingClient && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-                          Add Client
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <Label>Job Type</Label>
-                  <Select value={form.jobType} onValueChange={v => setForm(f => ({ ...f, jobType: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                    <SelectContent className="max-h-60 overflow-y-auto">
-                      {JOB_TYPES.map(t => <SelectItem key={t} value={t}>{toLabel(t)}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {isAdmin ? (
-                  <div className="col-span-2 space-y-1.5">
-                    <Label>Assign Workers</Label>
-                    <WorkerAssignmentPicker
-                      options={workerOptions}
-                      selectedIds={form.assigneeIds}
-                      onChange={(assigneeIds) => setForm((current) => ({ ...current, assigneeIds }))}
-                      placeholder="Search project managers or crew members"
-                    />
-                  </div>
-                ) : null}
-                <div className="space-y-1.5">
-                  <Label htmlFor="projectedStart">Start Date</Label>
-                  <Input
-                    id="projectedStart"
-                    type="date"
-                    value={form.projectedStart}
-                    onChange={setField("projectedStart")}
-                  />
-                  <p className="text-xs text-slate-400">
-                    Required for the job to appear on the schedule.
-                  </p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="projectedCompletion">Est. Completion</Label>
-                  <Input
-                    id="projectedCompletion"
-                    type="date"
-                    value={form.projectedCompletion}
-                    onChange={setField("projectedCompletion")}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-4 py-4">
-                <div className="col-span-2 space-y-1.5">
-                  <Label htmlFor="streetAddress">Street Address</Label>
-                  <Input id="streetAddress" value={form.streetAddress} onChange={setField("streetAddress")} placeholder="123 Main St" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="city">City</Label>
-                  <Input id="city" value={form.city} onChange={setField("city")} placeholder="Austin" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="state">State</Label>
-                    <Input id="state" value={form.state} onChange={setField("state")} placeholder="TX" maxLength={2} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="zipCode">Zip</Label>
-                    <Input id="zipCode" value={form.zipCode} onChange={setField("zipCode")} placeholder="78701" />
-                  </div>
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <Label>Contract Type</Label>
-                  <div className="flex gap-6 pt-0.5">
-                    {(["fixed_price", "open_book"] as const).map(ct => (
-                      <label key={ct} className="flex items-start gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="createContractType"
-                          value={ct}
-                          checked={form.contractType === ct}
-                          onChange={() => setForm(f => ({ ...f, contractType: ct }))}
-                          className="mt-0.5 accent-orange-600"
-                        />
-                        <div>
-                          <div className="text-sm font-medium text-slate-800">
-                            {ct === "fixed_price" ? "Fixed price" : "Open book"}
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            {ct === "fixed_price" ? "Set contract price for the client" : "Projected costs + markup"}
-                          </div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <Label htmlFor="contractPrice">Contract Price ($)</Label>
-                  <Input id="contractPrice" value={form.contractPrice} onChange={setField("contractPrice")} placeholder="0.00" type="number" min="0" step="0.01" />
-                </div>
-              </div>
-            )}
-            <DialogFooter>
-              {step === 1 ? (
-                <>
-                  <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={!form.title.trim()}
-                    style={{ backgroundColor: "#E85D04", color: "#fff" }}
-                    className="hover:opacity-90 transition-opacity"
-                  >
-                    Next: Location & Contract →
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button type="button" variant="outline" onClick={() => setStep(1)}>
-                    ← Back
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={saving || !form.clientId}
-                    style={{ backgroundColor: "#E85D04", color: "#fff" }}
-                    className="hover:opacity-90 transition-opacity"
-                  >
-                    {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
-                    Create Job
-                  </Button>
-                </>
-              )}
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <CreateJobDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        defaultClientId={createDefaultClientId}
+        lockClient={createLockClient}
+        onCreated={handleCreated}
+      />
       <ClientPickerDialog
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -1446,3 +1034,4 @@ export default function JobsPage() {
     </div>
   )
 }
+

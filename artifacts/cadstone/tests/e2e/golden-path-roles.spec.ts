@@ -159,14 +159,14 @@ test.describe("golden path — crew (worker) UI", () => {
 
     // ---- 1. Assigned job is visible on the crew /jobs list, and the
     //         "+ New Job" affordance is hidden (admin-only). On
-    //         mobile, also confirm the hamburger drawer is the entry
-    //         point and that the admin-only "+ New Job" remains
-    //         hidden inside that drawer-driven layout.
+    //         mobile, also confirm the bottom-tab nav (post-#318) is
+    //         the entry point and that the admin-only "+ New Job"
+    //         remains hidden inside that bottom-nav-driven layout.
     if (isMobileViewport(page)) {
       await page.goto("/dashboard")
       await expect(
-        page.getByRole("button", { name: /open navigation menu/i }),
-        "crew on mobile sees the hamburger nav trigger",
+        page.getByRole("navigation", { name: /primary mobile/i }),
+        "crew on mobile sees the bottom-tab nav",
       ).toBeVisible()
     }
     await gotoViaTopNav(page, "/jobs", /^my jobs$/i)

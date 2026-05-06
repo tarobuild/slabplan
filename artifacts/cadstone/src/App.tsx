@@ -31,9 +31,6 @@ const queryClient = getQueryClient()
 const ClientsPage = lazy(() => import("@/pages/clients"))
 const ClientDetailPage = lazy(() => import("@/pages/client-detail"))
 const DashboardPage = lazy(() => import("@/pages/dashboard"))
-const FilesDocumentsPage = lazy(() => import("@/pages/files-documents"))
-const FilesPhotosPage = lazy(() => import("@/pages/files-photos"))
-const FilesVideosPage = lazy(() => import("@/pages/files-videos"))
 const ForbiddenPage = lazy(() => import("@/pages/forbidden"))
 const JobDailyLogsPage = lazy(() => import("@/pages/job-daily-logs"))
 const JobDetailPage = lazy(() => import("@/pages/job-detail"))
@@ -84,6 +81,13 @@ function ProtectedRoute({ ready }: { ready: boolean }) {
   }
 
   return <Outlet />
+}
+
+function FilesRedirect() {
+  const user = useAuthStore((state) => state.user)
+  const target =
+    user?.role === "crew_member" ? "/jobs" : "/clients"
+  return <Navigate to={target} replace />
 }
 
 function ForbiddenListener() {
@@ -145,9 +149,16 @@ function buildRouter(ready: boolean, basename: string | undefined) {
             <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/resources" element={<ResourcesPage />} />
-            <Route path="/files/documents" element={<FilesDocumentsPage />} />
-            <Route path="/files/photos" element={<FilesPhotosPage />} />
-            <Route path="/files/videos" element={<FilesVideosPage />} />
+            {/*
+              Top-level Files routes were removed in #318. Files are now
+              accessed per-job (see /jobs/:jobId/files/*). Redirect any
+              lingering links so bookmarks don't 404 — admin/PM land on
+              /clients (their nav entry-point), crew lands on /jobs.
+            */}
+            <Route path="/files" element={<FilesRedirect />} />
+            <Route path="/files/documents" element={<FilesRedirect />} />
+            <Route path="/files/photos" element={<FilesRedirect />} />
+            <Route path="/files/videos" element={<FilesRedirect />} />
             <Route path="/jobs/:jobId" element={<JobDetailPage />}>
               <Route index element={<Navigate to="daily-logs" replace />} />
               <Route path="summary" element={<JobSummaryPage />} />

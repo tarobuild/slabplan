@@ -77,20 +77,16 @@ test.describe("golden path — admin", () => {
     await page.goto("/dashboard")
     await expect(page).toHaveURL(/\/dashboard/)
 
-    // On mobile the desktop top-nav links are hidden behind a
-    // hamburger-driven Sheet drawer. Confirm that affordance is the
-    // one rendered at iPhone widths so a regression in the
-    // `lg:hidden` / `hidden lg:flex` rules surfaces here instead of
+    // On mobile the desktop top-nav links are hidden in favor of a
+    // fixed bottom-tab navigator (post-#318). Confirm that affordance
+    // is the one rendered at iPhone widths so a regression in the
+    // `md:hidden` / `hidden md:flex` rules surfaces here instead of
     // silently breaking the field UX.
     if (isMobileViewport(page)) {
       await expect(
-        page.getByRole("button", { name: /open navigation menu/i }),
-        "hamburger nav trigger must be visible on mobile",
+        page.getByRole("navigation", { name: /primary mobile/i }),
+        "bottom-tab nav must be visible on mobile",
       ).toBeVisible()
-      await expect(
-        page.locator("nav.hidden.lg\\:flex"),
-        "desktop top nav must be hidden on mobile",
-      ).toBeHidden()
     }
 
     // ---- 2. Create a client through the UI. The first navigation

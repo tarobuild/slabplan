@@ -45,6 +45,10 @@ Centralizes and streamlines construction management operations, offering job tra
 - **Frontend Global Error Boundary:** `src/components/ErrorBoundary.tsx`
 - **Contract Tests:** `artifacts/api-server/test/*-contract.test.ts`
 - **E2E Playwright Tests:** `artifacts/cadstone/tests/e2e/`
+- **App Layout / Top Nav / Mobile Bottom Nav / Breadcrumbs:** `artifacts/cadstone/src/components/layout/{AppLayout,TopNav,MobileBottomNav,Breadcrumbs}.tsx`
+- **Breadcrumbs Hook:** `artifacts/cadstone/src/hooks/use-breadcrumbs.tsx`
+- **Feature Flags:** `artifacts/cadstone/src/lib/features.ts`
+- **Reusable Create Job Dialog:** `artifacts/cadstone/src/components/jobs/CreateJobDialog.tsx`
 
 ## Architecture decisions
 
@@ -53,6 +57,7 @@ Centralizes and streamlines construction management operations, offering job tra
 - **Database Integrity:** Schema-level `CHECK` and `FOREIGN KEY` constraints enforce critical invariants directly in PostgreSQL.
 - **Atomic Rate Limiting:** All API rate limits use token buckets stored in a shared Postgres table, ensuring global budget enforcement across multiple API instances and preventing race conditions.
 - **Decoupled DB Backups:** A dedicated Node script performs `pg_dump | gzip` and uploads to object storage, with robust alerting and pruning, designed for scheduled deployment or GitHub Actions trigger.
+- **Role-aware Information Architecture (Task #318):** Top nav exposes role-specific primary destinations (admin/PM: Home·Clients·Sales·Reports·Resources; crew: Home·My Jobs·Resources; Reports gated behind `FEATURES.reports`). On `<md` viewports a fixed bottom-tab navigator (`MobileBottomNav`, `aria-label="Primary mobile navigation"`) replaces the hamburger drawer; admin/PM Schedule tab deep-links `/dashboard?view=calendar`. Persistent breadcrumbs render under the top nav, auto-derived from the route and overridable per-page via `useSetBreadcrumbs`. Top-level `/files/*` routes were removed in favor of role-based `<FilesRedirect>` (crew → `/jobs`, others → `/clients`); per-job `/jobs/:jobId/files/*` is unchanged. The Create Job dialog is a reusable component so client-detail can launch it in place with `defaultClientId` + `lockClient`.
 
 ## Product
 
@@ -83,6 +88,7 @@ Do not make changes to files related to `mcp.test.ts`.
 - **No Manual API Client Calls for Generated Hooks:** New code must use generated mutation hooks (e.g., `useClientsPostClients`) for endpoints with generated hooks, centralizing cache invalidation and error handling. Direct `api.post/put/patch/delete` calls are only for endpoints not yet in `openapi.yaml`.
 
 ## Pointers
+
 
 - **Replit App Storage:** _Populate as you build_
 - **Google Cloud Storage (GCS) Sidecar:** _Populate as you build_

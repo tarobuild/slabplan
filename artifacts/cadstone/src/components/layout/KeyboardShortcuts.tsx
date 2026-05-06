@@ -35,7 +35,7 @@ function buildShortcutGroups(isAdmin: boolean): ShortcutGroup[] {
     {
       heading: "Navigation",
       shortcuts: [
-        { keys: ["g", "d"], label: "Go to Dashboard" },
+        { keys: ["g", "d"], label: "Go to Home" },
         { keys: ["g", "j"], label: "Go to Jobs" },
         { keys: ["g", "c"], label: "Go to Clients" },
         { keys: ["g", "l"], label: "Go to Leads" },

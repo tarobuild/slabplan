@@ -3,30 +3,34 @@ import { expect, type Page } from "@playwright/test"
 /**
  * Mobile-viewport helpers for the golden-path specs.
  *
- * The CAD Stone app collapses its top nav into a hamburger-driven
- * Sheet drawer below the Tailwind `lg` breakpoint (1024px). The
- * golden-path specs run at both Desktop Chrome (>= 1024px) and the
+ * Post-#318 the CAD Stone app renders a fixed bottom-tab navigator
+ * below the Tailwind `md` breakpoint (768px) instead of a hamburger
+ * drawer. The bottom nav surfaces 4 role-based tabs + a "More" sheet
+ * (Crew: Home·My Jobs·Logs·More; Admin/PM: Home·Clients·Schedule·
+ * More). The desktop top nav reappears at `md:flex`.
+ *
+ * The golden-path specs run at both Desktop Chrome (>= md) and the
  * `mobile-chromium` Playwright project (iPhone 13, 390px). These
  * helpers branch on viewport width so the same scenario covers both
  * code paths without forking the spec.
  */
 
-const LG_BREAKPOINT_PX = 1024
+const MD_BREAKPOINT_PX = 768
 
 export function isMobileViewport(page: Page): boolean {
   const size = page.viewportSize()
-  return Boolean(size && size.width < LG_BREAKPOINT_PX)
+  return Boolean(size && size.width < MD_BREAKPOINT_PX)
 }
 
 /**
- * On mobile, asserts the hamburger button is visible (and the desktop
- * top nav links are hidden), opens the drawer, and clicks the link
- * matching `linkName`. On desktop, falls back to a plain navigation.
+ * On mobile, asserts the bottom-tab nav is visible (and the desktop
+ * top-nav links are hidden), then taps the matching tab via its
+ * `aria-label`. Falls back to a plain `page.goto` on desktop.
  *
- * Use this for the FIRST navigation in a spec so the mobile drawer
- * gets exercised end-to-end (open → render nav → tap link → drawer
- * closes → URL updates). Subsequent steps can use `page.goto` since
- * those code paths are viewport-independent.
+ * `linkName` should match a bottom-tab `aria-label` such as `/clients/i`
+ * or `/my jobs/i`. Items only available under the "More" sheet (e.g.
+ * Resources) need a different helper — this one only navigates between
+ * top-level tabs.
  */
 export async function gotoViaTopNav(
   page: Page,
@@ -38,22 +42,15 @@ export async function gotoViaTopNav(
     return
   }
 
-  // Mobile-specific assertions: the hamburger trigger MUST be visible
-  // and the desktop "Clients"/"My Jobs" top-nav links MUST be hidden.
-  // Catches a regression where the `lg:hidden` / `hidden lg:flex`
-  // breakpoints get inverted or removed.
-  const hamburger = page.getByRole("button", {
-    name: /open navigation menu/i,
-  })
+  // Mobile-specific assertions: the bottom-tab nav MUST be visible and
+  // the desktop primary nav (`hidden md:flex`) MUST be hidden. Catches
+  // a regression where the breakpoints get inverted or removed.
+  const bottomNav = page.getByRole("navigation", { name: /primary mobile/i })
   await expect(
-    hamburger,
-    "hamburger button must be visible at mobile widths",
+    bottomNav,
+    "bottom-tab nav must be visible at mobile widths",
   ).toBeVisible()
 
-  await hamburger.click()
-  const drawer = page.getByRole("dialog").first()
-  await expect(drawer).toBeVisible({ timeout: 5_000 })
-
-  await drawer.getByRole("link", { name: linkName }).first().click()
+  await bottomNav.getByRole("link", { name: linkName }).first().click()
   await expect(page).toHaveURL(new RegExp(href.replace(/\//g, "\\/")))
 }

@@ -1,5 +1,5 @@
 export const FEATURES = {
-  reports: false,
+  reports: true,
 } as const
 
 export type FeatureFlag = keyof typeof FEATURES

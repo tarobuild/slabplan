@@ -46,6 +46,12 @@ const LoginPage = lazy(() => import("@/pages/login"))
 const MyDailyLogsPage = lazy(() => import("@/pages/my-daily-logs"))
 const NotFoundPage = lazy(() => import("@/pages/not-found"))
 const ResourcesPage = lazy(() => import("@/pages/resources"))
+const ReportsLayout = lazy(() => import("@/pages/reports"))
+const ReportsArAging = lazy(() => import("@/pages/reports/ar-aging"))
+const ReportsRevenue = lazy(() => import("@/pages/reports/revenue"))
+const ReportsPipeline = lazy(() => import("@/pages/reports/pipeline"))
+const ReportsDaysToPayment = lazy(() => import("@/pages/reports/days-to-payment"))
+const ReportsJobsByStage = lazy(() => import("@/pages/reports/jobs-by-stage"))
 const SettingsLayout = lazy(() => import("@/pages/settings/SettingsLayout"))
 const ProfileSection = lazy(() => import("@/pages/settings/ProfileSection"))
 const PasswordSection = lazy(() => import("@/pages/settings/PasswordSection"))
@@ -176,6 +182,16 @@ function buildRouter(ready: boolean, basename: string | undefined) {
             <Route element={<RoleGate allow={ROLE_GATES.clients} />}>
               <Route path="/clients" element={<ClientsPage />} />
               <Route path="/clients/:clientId" element={<ClientDetailPage />} />
+            </Route>
+            <Route element={<RoleGate allow={ROLE_GATES.reports} redirectTo="/403" />}>
+              <Route path="/reports" element={<ReportsLayout />}>
+                <Route index element={<Navigate to="ar-aging" replace />} />
+                <Route path="ar-aging" element={<ReportsArAging />} />
+                <Route path="revenue" element={<ReportsRevenue />} />
+                <Route path="pipeline" element={<ReportsPipeline />} />
+                <Route path="days-to-payment" element={<ReportsDaysToPayment />} />
+                <Route path="jobs-by-stage" element={<ReportsJobsByStage />} />
+              </Route>
             </Route>
             <Route path="/settings" element={<SettingsLayout />}>
               <Route index element={<Navigate to="/settings/profile" replace />} />

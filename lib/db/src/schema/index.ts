@@ -1110,7 +1110,13 @@ export const trackerInvoices = pgTable(
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     ...baseTimestamps,
   },
-  (table) => [index("tracker_invoices_tracker_id_idx").on(table.trackerId)],
+  (table) => [
+    index("tracker_invoices_tracker_id_idx").on(table.trackerId),
+    // Reports (Task #322): date-range filters on invoice_date /
+    // applied_at would otherwise seq-scan as invoice volume grows.
+    index("tracker_invoices_invoice_date_idx").on(table.invoiceDate),
+    index("tracker_invoices_applied_at_idx").on(table.appliedAt),
+  ],
 );
 
 export const invoiceLinePayments = pgTable(
@@ -1129,6 +1135,9 @@ export const invoiceLinePayments = pgTable(
   (table) => [
     index("invoice_line_payments_invoice_id_idx").on(table.invoiceId),
     index("invoice_line_payments_line_item_id_idx").on(table.lineItemId),
+    // Reports (Task #322): "collected by month" aggregates filter and
+    // group on createdAt — see /api/reports/revenue.
+    index("invoice_line_payments_created_at_idx").on(table.createdAt),
   ],
 );
 

@@ -17,6 +17,7 @@ import financialsRouter from "./financials";
 import jobsRouter from "./jobs";
 import leadsRouter from "./leads";
 import mcpRouter from "./mcp";
+import reportsRouter from "./reports";
 import resourcesRouter from "./resources";
 import scheduleRouter from "./schedule";
 import searchRouter from "./search";
@@ -83,6 +84,7 @@ router.use("/jobs", jobsRouter);
 router.use("/jobs", financialsRouter);
 router.use("/leads", leadsRouter);
 router.use("/clients", clientsRouter);
+router.use("/reports", reportsRouter);
 
 // Catch errors propagating from any of the routes above (including the
 // pre-route `requireAuth` rejection) and emit a structured `view.fail`

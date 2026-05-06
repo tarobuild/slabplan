@@ -7,6 +7,9 @@ export type AppRole = "admin" | "project_manager" | "crew_member"
 export const ROLE_GATES = {
   sales: ["admin", "project_manager"] as const,
   clients: ["admin", "project_manager"] as const,
+  // Reports are admin-only (per task #322). PMs and crew get a 403 from
+  // the backend; the nav link is hidden via this gate too.
+  reports: ["admin"] as const,
   // The top-level "Jobs" link is hidden for admin/PM (they reach jobs
   // through Clients). Crew members still need a "My Jobs" entry point.
   myJobs: ["crew_member"] as const,

@@ -68,7 +68,7 @@ export default function TopNav() {
         {
           label: "Reports",
           to: "/reports",
-          allow: ROLE_GATES.sales,
+          allow: ROLE_GATES.reports,
           hidden: !isFeatureEnabled("reports"),
         },
         { label: "Resources", to: "/resources" },

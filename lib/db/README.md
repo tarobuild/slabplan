@@ -1,9 +1,15 @@
 # `@workspace/db`
 
-# `@workspace/db`
-
 Shared Drizzle schema (`src/schema/`) and the SQL migration runner used by
 every artifact in the monorepo.
+
+> **Schema source of truth: hand-written idempotent SQL in `migrations/`.**
+> `scripts/post-merge.sh` runs `pnpm --filter db migrate` (the custom runner
+> in `src/migrate.ts`) on every merge. `drizzle-kit push --force` is **not**
+> used in CI or post-merge — it can silently turn a column rename into a
+> drop-and-recreate, which would lose production data. The `push` /
+> `push-force` scripts in `package.json` exist only for local exploration
+> against throwaway databases.
 
 ## Layout
 
@@ -20,29 +26,31 @@ every artifact in the monorepo.
   non-idempotent baseline `0000_far_doctor_strange.sql` as already
   applied. Every later migration is written to be idempotent so it can
   run safely on top of that baseline.
-- `migrations/meta/` — Drizzle-kit's snapshot/journal. **Not** consulted
-  by the runner, but kept in sync (one snapshot + one journal entry per
-  migration file) so future `drizzle-kit generate` calls diff against an
-  accurate baseline. When you add a new `NNNN_*.sql`, also add a matching
-  `NNNN_snapshot.json` (copy from the previous snapshot, give it a fresh
-  `id`, and set `prevId` to the previous snapshot's `id`) and append an
-  entry to `_journal.json`.
+- `migrations/meta/_journal.json` — kept 1:1 with `migrations/*.sql` so
+  the post-merge sanity check (`pnpm --filter db check-migrations-journal`)
+  can fail loudly if a SQL file appears with no journal entry, or vice
+  versa. **Not** consulted by the runner. Regenerate with
+  `pnpm --filter db rebuild-migrations-journal` after adding a new SQL
+  file. The per-migration `NNNN_snapshot.json` files only matter if you
+  ever decide to use `drizzle-kit generate` (we don't); they are
+  intentionally not maintained for migrations past `0010`.
 
 ## Day-to-day workflow
 
 1. Edit the Drizzle schema in `src/schema/`.
 2. Hand-write an idempotent SQL migration with the next number prefix
-   (e.g. `0010_my_change.sql`). Use `IF NOT EXISTS`, `DO $$ … pg_constraint
+   (e.g. `0019_my_change.sql`). Use `IF NOT EXISTS`, `DO $$ … pg_constraint
    lookup … END$$;`, and `CREATE INDEX IF NOT EXISTS` patterns so the file
    can be re-applied against any database state. `0008_folder_scope_columns.sql`
    and `0009_schema_audit_alignment.sql` are good templates.
-3. Add a matching `migrations/meta/NNNN_snapshot.json` and `_journal.json`
-   entry as described above (so `drizzle-kit generate` keeps a clean
-   baseline).
+3. Run `pnpm --filter @workspace/db rebuild-migrations-journal` to refresh
+   `migrations/meta/_journal.json` so the post-merge sanity check stays
+   green.
 4. Run `pnpm --filter @workspace/db migrate` against your local Postgres
    to apply it.
 5. Verify there is no drift between the schema and migrations (see below).
-6. Ship.
+6. Ship. Post-merge will run `check-migrations-journal` then `migrate`
+   automatically against the dev/prod database.
 
 We deliberately do **not** use `drizzle-kit generate`. Generated migrations
 are not idempotent and don't survive partial failures or hand-patched
@@ -91,3 +99,17 @@ ignore:
 
 Anything else is real drift and should ship as a new idempotent migration
 following the rules above.
+
+### Reproducible parity check
+
+`pnpm --filter @workspace/db verify-schema-parity` automates the diff
+above. It creates two scratch databases on the server in `DATABASE_URL`,
+populates one with `migrate` and the other with `drizzle-kit push --force`,
+then `pg_dump`s and normalizes both. Evidence (both normalized dumps and
+the unified diff) is written to
+`.local/state/schema-parity/<timestamp>-migrate-vs-push/` so a reviewer
+can audit a specific run after the fact. Pass `--mode=dev-vs-prod` to
+compare the live dev DB to prod (requires `PROD_DATABASE_URL`; read-only
+on both ends). The script auto-discovers a postgresql-17 `pg_dump` in
+`/nix/store`; override with `PG_DUMP=/path/to/pg_dump`.
+

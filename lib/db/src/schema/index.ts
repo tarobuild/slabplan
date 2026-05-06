@@ -9,6 +9,7 @@ import {
   index,
   integer,
   json,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -105,7 +106,7 @@ export const users = pgTable(
     // Per-event email notification preferences. See migration
     // 0017_user_notification_prefs.sql for rationale on storing this
     // as JSONB instead of a side table.
-    notificationPrefs: json("notification_prefs")
+    notificationPrefs: jsonb("notification_prefs")
       .$type<Record<string, boolean>>()
       .notNull()
       .default({}),

@@ -20,7 +20,10 @@
     "seed": "tsx ./src/seed-cli.ts",
     "build-files-folder-index": "tsx ./src/scripts/build-files-folder-index-concurrently.ts",
     "setup-test-db": "tsx ./src/scripts/setup-test-db.ts",
-    "ensure-test-db": "tsx ./src/scripts/ensure-test-db.ts"
+    "ensure-test-db": "tsx ./src/scripts/ensure-test-db.ts",
+    "check-migrations-journal": "tsx ./src/scripts/check-migrations-journal.ts",
+    "rebuild-migrations-journal": "tsx ./src/scripts/rebuild-migrations-journal.ts",
+    "verify-schema-parity": "tsx ./src/scripts/verify-schema-parity.ts"
   },
   "dependencies": {
     "bcrypt": "6.0.0",

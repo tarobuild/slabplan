@@ -36,18 +36,6 @@ function buildChunkName(id: string) {
     return "radix-vendor"
   }
 
-  if (normalized.includes("/@tiptap/")) {
-    return "tiptap-vendor"
-  }
-
-  if (
-    normalized.includes("/recharts/")
-    || normalized.includes("/frappe-gantt/")
-    || normalized.includes("/react-big-calendar/")
-  ) {
-    return "visualization-vendor"
-  }
-
   if (
     normalized.includes("/date-fns/")
     || normalized.includes("/react-day-picker/")
@@ -196,26 +184,20 @@ export default defineConfig(async ({ mode }) => ({
     //   (and the `check-eager-bundle` validation workflow) the moment a
     //   regression lands. See Task #315.
     //
-    // Initial-payload baseline (Task #313):
-    //   The "visualization-vendor" (recharts + frappe-gantt +
-    //   react-big-calendar) and "tiptap-vendor" chunks below are
-    //   currently NOT in the eager bundle. recharts has only one
-    //   in-tree importer — src/components/ui/chart.tsx — and that file
-    //   has no callers, so Rollup tree-shakes it out. frappe-gantt,
-    //   react-big-calendar, and @tiptap/* have no static importers in
-    //   artifacts/cadstone/src at all (the schedule's Gantt view in
-    //   src/pages/job-schedule renders its own SVG and does not use
-    //   frappe-gantt). The manualChunks rules below are kept as a
-    //   defensive isolation layer: if anyone re-introduces a static
-    //   import of these libs from a module in the eager graph, they
-    //   will at least land in their own chunk instead of fattening
-    //   `react-vendor` — but they should be wrapped in
-    //   `React.lazy(() => import(...))` + <Suspense> the same way
-    //   PdfViewer is wrapped in src/components/files/FilePreview.tsx,
-    //   so the dashboard's first paint stays small.
-    //   Verified eager payload after Task #313 build: ~997 KB raw /
-    //   ~323 KB gzip across 29 preloaded chunks (no recharts /
-    //   frappe-gantt / react-big-calendar / @tiptap bytes shipped).
+    // Initial-payload baseline (Task #313 / #316):
+    //   recharts, frappe-gantt, react-big-calendar, and @tiptap/* were
+    //   confirmed in Task #313 to have no callers in
+    //   artifacts/cadstone/src and were fully removed from
+    //   package.json's dependencies in Task #316 (along with the
+    //   unreferenced src/components/ui/chart.tsx shadcn wrapper around
+    //   recharts). The corresponding "visualization-vendor" and
+    //   "tiptap-vendor" manualChunks entries were dropped at the same
+    //   time since the libs themselves are gone. If you need a chart,
+    //   gantt, calendar, or rich-text editor in the dashboard, prefer
+    //   re-introducing them behind a `React.lazy(() => import(...))`
+    //   + <Suspense> boundary the same way PdfViewer is wrapped in
+    //   src/components/files/FilePreview.tsx, so the dashboard's first
+    //   paint stays small.
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 500,

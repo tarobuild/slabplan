@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import {
   ChevronRight,
@@ -11,12 +11,17 @@ import {
   X,
 } from "lucide-react"
 import {
-  dailyLogsGetDailyLogsFeed,
+  useDailyLogsGetDailyLogsFeed,
+  useClientsGetClients,
+  useJobsGetJobs,
+  useUsersGetUsers,
   type CursorPagination as GeneratedCursorPagination,
   type DailyLogListItem,
+  type DailyLogListResponse,
   type DailyLogsGetDailyLogsFeedParams,
+  type ClientListItem,
+  type JobListItem,
 } from "@workspace/api-client-react"
-import { api } from "@/lib/api"
 import { apiErrorMessage } from "@/lib/api-errors"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
@@ -82,21 +87,22 @@ function summarizeWeather(log: DailyLogListItem): string | null {
   return parts.length > 0 ? parts.join(" · ") : null
 }
 
+function getCursorMeta(page: DailyLogListResponse | undefined): {
+  hasMore: boolean
+  nextCursor: string | null
+} {
+  const pag = page?.pagination as CursorPagination | undefined
+  if (!pag) return { hasMore: false, nextCursor: null }
+  const hasMore = "hasMore" in pag ? pag.hasMore : false
+  const nextCursor = "nextCursor" in pag ? (pag.nextCursor ?? null) : null
+  return { hasMore, nextCursor }
+}
+
 export default function CompanyDailyLogsPage() {
   useDocumentTitle("Daily Logs")
   const [searchParams, setSearchParams] = useSearchParams()
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [logs, setLogs] = useState<DailyLogListItem[]>([])
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [hasMore, setHasMore] = useState(false)
-  const [errorMessage, setErrorMessage] = useState("")
   const [searchInput, setSearchInput] = useState(searchParams.get("keywords") ?? "")
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get("keywords") ?? "")
-  const [clientOptions, setClientOptions] = useState<OptionRow[]>([])
-  const [jobOptions, setJobOptions] = useState<OptionRow[]>([])
-  const [authorOptions, setAuthorOptions] = useState<OptionRow[]>([])
-  const loadRequestIdRef = useRef(0)
 
   const filters = useMemo<Partial<Record<FilterKey, string>>>(() => {
     const out: Partial<Record<FilterKey, string>> = {}
@@ -121,44 +127,120 @@ export default function CompanyDailyLogsPage() {
     }
   }, [debouncedSearch, searchParams, setSearchParams])
 
+  // Filter-option dropdowns are populated from the typed list endpoints. We
+  // ask for the maximum page size each contract allows so the dropdowns
+  // match what the underlying lists can deliver in one request.
+  const clientsOptionsQuery = useClientsGetClients({ pageSize: 100 })
+  const jobsOptionsQuery = useJobsGetJobs({ pageSize: 100 })
+  const usersOptionsQuery = useUsersGetUsers({
+    roles: "admin,project_manager,crew_member",
+    limit: 200,
+  })
+
+  const clientOptions = useMemo<OptionRow[]>(() => {
+    const list = clientsOptionsQuery.data?.clients ?? []
+    return list.map((c: ClientListItem) => ({
+      id: c.id,
+      label: c.companyName ?? c.id,
+    }))
+  }, [clientsOptionsQuery.data])
+
+  const jobOptions = useMemo<OptionRow[]>(() => {
+    const list = jobsOptionsQuery.data?.jobs ?? []
+    return list.map((j: JobListItem) => ({
+      id: j.id,
+      label: j.clientName ? `${j.clientName} · ${j.title ?? j.id}` : (j.title ?? j.id),
+    }))
+  }, [jobsOptionsQuery.data])
+
+  const authorOptions = useMemo<OptionRow[]>(() => {
+    // `usersGetUsers` is currently typed as `AnyValue`, so we narrow the
+    // shape inline rather than across the whole file.
+    const data = usersOptionsQuery.data as
+      | { users?: Array<{ id: string; fullName?: string | null; email: string }> }
+      | undefined
+    return (data?.users ?? []).map((u) => ({
+      id: u.id,
+      label: u.fullName ?? u.email,
+    }))
+  }, [usersOptionsQuery.data])
+
+  // Cursor pagination is modelled as an array of "page cursors". Index 0 is
+  // always the initial fetch (`null` cursor); each Load-more click appends
+  // the next cursor returned by the previous page. We only run a query for
+  // the latest cursor; previously-loaded pages stay cached by their own
+  // queryKey so users don't re-pay the network cost when revisiting.
+  const [pageCursors, setPageCursors] = useState<Array<string | null>>([null])
+  const [pages, setPages] = useState<DailyLogListResponse[]>([])
+
+  // Reset pagination whenever a filter or the search term changes.
   useEffect(() => {
-    let cancelled = false
-    api
-      .get<{ clients?: Array<{ id: string; companyName?: string | null; name?: string | null }> }>(
-        "/clients?pageSize=200",
-      )
-      .then((r) => {
-        if (cancelled) return
-        setClientOptions((r.data.clients ?? []).map((c) => ({ id: c.id, label: c.companyName ?? c.name ?? c.id })))
-      })
-      .catch(() => {})
-    api
-      .get<{ jobs?: Array<{ id: string; title?: string | null; clientName?: string | null }> }>(
-        "/jobs?pageSize=200",
-      )
-      .then((r) => {
-        if (cancelled) return
-        setJobOptions(
-          (r.data.jobs ?? []).map((j) => ({
-            id: j.id,
-            label: j.clientName ? `${j.clientName} · ${j.title ?? j.id}` : (j.title ?? j.id),
-          })),
-        )
-      })
-      .catch(() => {})
-    api
-      .get<{ users?: Array<{ id: string; fullName?: string | null; email: string }> }>(
-        "/users?roles=admin,project_manager,crew_member&limit=200",
-      )
-      .then((r) => {
-        if (cancelled) return
-        setAuthorOptions((r.data.users ?? []).map((u) => ({ id: u.id, label: u.fullName ?? u.email })))
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    setPageCursors([null])
+    setPages([])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, JSON.stringify(filters)])
+
+  const currentCursor = pageCursors[pageCursors.length - 1]
+
+  const feedParams = useMemo<DailyLogsGetDailyLogsFeedParams>(() => {
+    const params: DailyLogsGetDailyLogsFeedParams = { limit: PAGE_LIMIT }
+    if (currentCursor) params.cursor = currentCursor
+    if (debouncedSearch.trim()) params.keywords = debouncedSearch.trim()
+    // URL state stores filters as strings; coerce the boolean ones since
+    // the typed query params expect actual booleans.
+    if (filters.clientId) params.clientId = filters.clientId
+    if (filters.jobId) params.jobId = filters.jobId
+    if (filters.createdBy) params.createdBy = filters.createdBy
+    if (filters.from) params.from = filters.from
+    if (filters.to) params.to = filters.to
+    if (filters.hasAttachments) params.hasAttachments = filters.hasAttachments === "true"
+    if (filters.hasComments) params.hasComments = filters.hasComments === "true"
+    return params
+  }, [currentCursor, debouncedSearch, filters])
+
+  const feedQuery = useDailyLogsGetDailyLogsFeed(feedParams)
+
+  // Append the freshly-loaded page when its data resolves. We gate on
+  // `isFetching` so a stale `data` reference (e.g. during the brief
+  // transition between query keys) doesn't get appended twice.
+  useEffect(() => {
+    if (feedQuery.isFetching) return
+    const data = feedQuery.data
+    if (!data) return
+    setPages((prev) => {
+      const expectedIndex = pageCursors.length - 1
+      // Refetch of the current page (e.g. after invalidation): replace it
+      // in place rather than appending.
+      if (prev.length > expectedIndex) {
+        if (prev[expectedIndex] === data) return prev
+        const next = prev.slice(0, expectedIndex)
+        next.push(data)
+        return next
+      }
+      // New page just loaded.
+      if (prev.length === expectedIndex) {
+        return [...prev, data]
+      }
+      // Should not happen, but reset defensively.
+      return [data]
+    })
+  }, [feedQuery.data, feedQuery.isFetching, pageCursors.length])
+
+  const errorMessage = feedQuery.error
+    ? apiErrorMessage(feedQuery.error, "Failed to load daily logs")
+    : ""
+
+  const logs: DailyLogListItem[] = useMemo(
+    () => pages.flatMap((p) => p.logs ?? []),
+    [pages],
+  )
+
+  const lastPage = pages[pages.length - 1]
+  const { hasMore, nextCursor } = getCursorMeta(lastPage)
+
+  const isInitialLoad = pages.length === 0
+  const loading = isInitialLoad && feedQuery.isFetching && !errorMessage
+  const loadingMore = !isInitialLoad && feedQuery.isFetching
 
   function setFilter(key: FilterKey, value: string) {
     const next = new URLSearchParams(searchParams)
@@ -185,60 +267,11 @@ export default function CompanyDailyLogsPage() {
     setSearchParams(new URLSearchParams(), { replace: true })
   }
 
-  async function loadLogs(cursor: string | null) {
-    const isInitial = cursor === null
-    const requestId = ++loadRequestIdRef.current
-    if (isInitial) {
-      setLoading(true)
-      setErrorMessage("")
-    } else {
-      setLoadingMore(true)
-    }
-    try {
-      const params: DailyLogsGetDailyLogsFeedParams = {
-        limit: PAGE_LIMIT,
-      }
-      if (cursor) params.cursor = cursor
-      if (debouncedSearch.trim()) params.keywords = debouncedSearch.trim()
-      // Filters are stored as strings in URL state. Coerce the boolean
-      // ones (`hasAttachments`/`hasComments`) since the typed query
-      // params expect actual booleans, not "true"/"false".
-      if (filters.clientId) params.clientId = filters.clientId
-      if (filters.jobId) params.jobId = filters.jobId
-      if (filters.createdBy) params.createdBy = filters.createdBy
-      if (filters.from) params.from = filters.from
-      if (filters.to) params.to = filters.to
-      if (filters.hasAttachments) params.hasAttachments = filters.hasAttachments === "true"
-      if (filters.hasComments) params.hasComments = filters.hasComments === "true"
-      const data = await dailyLogsGetDailyLogsFeed(params)
-      if (requestId !== loadRequestIdRef.current) return
-      const fetched = data.logs ?? []
-      setLogs((prev) => (isInitial ? fetched : [...prev, ...fetched]))
-      const pag = data.pagination as CursorPagination | undefined
-      setHasMore(pag && "hasMore" in pag ? pag.hasMore : false)
-      setNextCursor(pag && "nextCursor" in pag ? (pag.nextCursor ?? null) : null)
-    } catch (error) {
-      if (requestId !== loadRequestIdRef.current) return
-      setErrorMessage(apiErrorMessage(error, "Failed to load daily logs"))
-      if (isInitial) {
-        setLogs([])
-        setHasMore(false)
-        setNextCursor(null)
-      }
-    } finally {
-      if (requestId === loadRequestIdRef.current) {
-        if (isInitial) setLoading(false)
-        else setLoadingMore(false)
-      }
-    }
+  function loadMore() {
+    if (!hasMore || !nextCursor) return
+    if (feedQuery.isFetching) return
+    setPageCursors((prev) => [...prev, nextCursor])
   }
-
-  useEffect(() => {
-    setNextCursor(null)
-    setHasMore(false)
-    void loadLogs(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, JSON.stringify(filters)])
 
   const activeChips = FILTER_KEYS.filter((k) => filters[k])
 
@@ -504,7 +537,7 @@ export default function CompanyDailyLogsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void loadLogs(nextCursor)}
+                onClick={loadMore}
                 disabled={loadingMore}
               >
                 {loadingMore ? (

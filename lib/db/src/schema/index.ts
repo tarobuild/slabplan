@@ -102,6 +102,13 @@ export const users = pgTable(
     passwordSetAt: timestampTz("password_set_at"),
     lastInviteEmailSentAt: timestampTz("last_invite_email_sent_at"),
     lastInviteEmailError: varchar("last_invite_email_error", { length: 500 }),
+    // Per-event email notification preferences. See migration
+    // 0017_user_notification_prefs.sql for rationale on storing this
+    // as JSONB instead of a side table.
+    notificationPrefs: json("notification_prefs")
+      .$type<Record<string, boolean>>()
+      .notNull()
+      .default({}),
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },

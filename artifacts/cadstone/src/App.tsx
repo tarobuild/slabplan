@@ -49,7 +49,13 @@ const LoginPage = lazy(() => import("@/pages/login"))
 const MyDailyLogsPage = lazy(() => import("@/pages/my-daily-logs"))
 const NotFoundPage = lazy(() => import("@/pages/not-found"))
 const ResourcesPage = lazy(() => import("@/pages/resources"))
-const SettingsPage = lazy(() => import("@/pages/settings"))
+const SettingsLayout = lazy(() => import("@/pages/settings/SettingsLayout"))
+const ProfileSection = lazy(() => import("@/pages/settings/ProfileSection"))
+const PasswordSection = lazy(() => import("@/pages/settings/PasswordSection"))
+const TokensSection = lazy(() => import("@/pages/settings/TokensSection"))
+const NotificationsSection = lazy(() => import("@/pages/settings/NotificationsSection"))
+const CompanySection = lazy(() => import("@/pages/settings/CompanySection"))
+const IntegrationsSection = lazy(() => import("@/pages/settings/IntegrationsSection"))
 const UsersPage = lazy(() => import("@/pages/users"))
 const AcceptInvitePage = lazy(() => import("@/pages/accept-invite"))
 
@@ -160,10 +166,26 @@ function buildRouter(ready: boolean, basename: string | undefined) {
               <Route path="/clients" element={<ClientsPage />} />
               <Route path="/clients/:clientId" element={<ClientDetailPage />} />
             </Route>
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route element={<AdminRoute />}>
-              <Route path="/settings/users" element={<UsersPage />} />
+            <Route path="/settings" element={<SettingsLayout />}>
+              <Route index element={<Navigate to="/settings/profile" replace />} />
+              <Route path="profile" element={<ProfileSection />} />
+              <Route path="password" element={<PasswordSection />} />
+              <Route path="notifications" element={<NotificationsSection />} />
+              <Route path="tokens" element={<TokensSection />} />
+              <Route element={<AdminRoute />}>
+                <Route path="team" element={<UsersPage />} />
+                <Route path="company" element={<CompanySection />} />
+                <Route path="integrations" element={<IntegrationsSection />} />
+              </Route>
             </Route>
+            {/* Backward-compat redirect: the standalone /settings/users
+                route was moved into the new Settings shell as
+                /settings/team. Keep the old URL working for bookmarks
+                and any external links that still point at it. */}
+            <Route
+              path="/settings/users"
+              element={<Navigate to="/settings/team" replace />}
+            />
             <Route path="/403" element={<ForbiddenPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>

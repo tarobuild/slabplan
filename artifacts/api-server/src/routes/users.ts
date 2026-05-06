@@ -417,6 +417,55 @@ router.put(
   }),
 );
 
+// Per-user notification preferences. See lib/db/schema notificationPrefs
+// (migration 0017) for the JSONB shape. We accept any string-keyed
+// boolean map and merge into the existing blob so partial updates from
+// the UI don't clobber events we don't yet render.
+const notificationPrefsSchema = z.object({
+  prefs: z.record(z.boolean()),
+});
+
+router.get(
+  "/me/notification-prefs",
+  asyncHandler(async (req, res) => {
+    const user = await findActiveUserById(req.auth!.userId);
+    if (!user) {
+      throw new HttpError(404, "User not found.");
+    }
+    const [row] = await db
+      .select({ prefs: users.notificationPrefs })
+      .from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
+    res.json({ prefs: row?.prefs ?? {} });
+  }),
+);
+
+router.put(
+  "/me/notification-prefs",
+  asyncHandler(async (req, res) => {
+    const user = await findActiveUserById(req.auth!.userId);
+    if (!user) {
+      throw new HttpError(404, "User not found.");
+    }
+    const parsed = notificationPrefsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, "Invalid notification prefs payload.", parsed.error.flatten());
+    }
+    const [existing] = await db
+      .select({ prefs: users.notificationPrefs })
+      .from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
+    const merged = { ...(existing?.prefs ?? {}), ...parsed.data.prefs };
+    await db
+      .update(users)
+      .set({ notificationPrefs: merged, updatedAt: new Date() })
+      .where(eq(users.id, user.id));
+    res.json({ prefs: merged });
+  }),
+);
+
 router.post(
   "/me/password",
   asyncHandler(async (req, res) => {

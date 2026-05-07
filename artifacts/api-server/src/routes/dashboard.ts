@@ -652,7 +652,10 @@ async function buildPmHome(auth: NonNullable<Express.Request["auth"]>) {
   const weekStart = startOfThisWeekIso(today);
   const weekEnd = endOfThisWeekIso(today);
 
-  const accessibleJobIds = await listAccessibleJobIds(auth);
+  const [accessibleJobIds, accessibleLeadIds] = await Promise.all([
+    listAccessibleJobIds(auth),
+    listAccessibleLeadIds(auth),
+  ]);
   if (accessibleJobIds && accessibleJobIds.length === 0) {
     return {
       role: "pm" as const,
@@ -818,7 +821,13 @@ async function buildPmHome(auth: NonNullable<Express.Request["auth"]>) {
     db
       .select({ total: count() })
       .from(leads)
-      .where(and(isNull(leads.deletedAt), eq(leads.status, "open"))),
+      .where(
+        and(
+          isNull(leads.deletedAt),
+          eq(leads.status, "open"),
+          accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
+        ),
+      ),
     db
       .select({ total: count() })
       .from(scheduleItems)

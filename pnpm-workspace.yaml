@@ -108,19 +108,21 @@ overrides:
   # (latest 8.5.12 as of 2026-04-30); same major as the version Vite/Tailwind
   # already resolve, so no API break. Tracked in Task #212.
   postcss: ^8.5.12
-  # NOT pinned (and remaining as a low-severity audit finding):
-  #   @tootallnate/once <3.0.1 (deep transitive of @google-cloud/storage
-  #   via teeny-request > http-proxy-agent). The patched 3.0.1 is
-  #   ESM-only; the consuming http-proxy-agent@5.0.0 still uses CJS, so
-  #   an override breaks @google-cloud/storage at runtime. Bumping
-  #   http-proxy-agent to ^6/^7 also breaks teeny-request@9.0.0 because
-  #   v6+ exports a named HttpProxyAgent class instead of being the
-  #   constructor itself, so teeny-request's `new Agent(...)` call would
-  #   throw TypeError. Cannot fix without a major bump of
-  #   @google-cloud/storage, which does not yet exist (latest is 7.19.0).
-  #   Tracked + re-check schedule documented in replit.md under the
-  #   "Security Advisories" section (Task #176, originally triaged in
-  #   Task #100).
+  # @tootallnate/once <3.0.1 — incorrect control flow scoping (GHSA-vpq2-c234-7xj6, low).
+  # Transitive of @google-cloud/storage via teeny-request > http-proxy-agent.
+  # Previously deferred (Task #176 / Task #100) due to concern that 3.0.1
+  # is ESM-only and might break the CJS http-proxy-agent@5 consumer.
+  # Pinning now per Task #384; install + typecheck verified passing. (Task #384)
+  "@tootallnate/once": "^3.0.1"
+  # hono <4.12.16 — two advisories: bodyLimit() bypass (GHSA-9vqf-7f2p-gf9v,
+  # moderate) and hono/jsx unvalidated tag names / HTML injection
+  # (GHSA-69xw-7hcm-h432, moderate). Transitive of
+  # @modelcontextprotocol/sdk. (Task #384)
+  hono: "^4.12.16"
+  # ip-address <=10.1.0 — XSS in Address6 HTML-emitting methods
+  # (GHSA-v2v4-37r5-5v8g, moderate). Transitive of
+  # @modelcontextprotocol/sdk via express-rate-limit. (Task #384)
+  ip-address: "^10.1.1"
   # ----- end audit pins -----
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"

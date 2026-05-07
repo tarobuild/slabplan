@@ -894,7 +894,7 @@ router.delete(
 const lineItemCreateSchema = z.object({
   areaId: z.string().uuid(),
   description: z.string().trim().min(1),
-  qty: z.coerce.number().optional().default(1),
+  qty: z.coerce.number().finite().nonnegative().optional().default(1),
   rateCents: z.coerce.number().int().nonnegative().optional().default(0),
   scheduledValueCents: z.coerce.number().int().nonnegative().optional().default(0),
   isChangeOrder: z.boolean().optional().default(false),
@@ -930,7 +930,7 @@ router.post(
 
 const lineItemPatchSchema = z.object({
   description: z.string().trim().min(1).optional(),
-  qty: z.coerce.number().optional(),
+  qty: z.coerce.number().finite().nonnegative().optional(),
   rateCents: z.coerce.number().int().nonnegative().optional(),
   scheduledValueCents: z.coerce.number().int().nonnegative().optional(),
   percentComplete: z.coerce.number().min(0).max(100).optional(),
@@ -962,17 +962,33 @@ router.patch(
     if (body.data.isRemoved !== undefined) updates.isRemoved = body.data.isRemoved;
     if (body.data.sortOrder !== undefined) updates.sortOrder = body.data.sortOrder;
 
-    // Compute next scheduled and percent so we can derive billed = scheduled * pct.
-    const nextScheduled =
-      body.data.scheduledValueCents !== undefined
-        ? body.data.scheduledValueCents
+    // Effective qty/rate after this patch (sent value or current).
+    const effectiveQty =
+      body.data.qty !== undefined ? body.data.qty : Number(current.qty ?? 0);
+    const effectiveRate =
+      body.data.rateCents !== undefined
+        ? body.data.rateCents
+        : Number(current.rateCents ?? 0);
+    // qty * rate auto-recompute: when scheduledValueCents wasn't sent
+    // explicitly but qty or rate changed, derive scheduled from them.
+    // Without this the row's scheduled stays at whatever it was on
+    // creation (often 0) even after the user fills in qty + rate.
+    const qtyOrRateChanged =
+      body.data.qty !== undefined || body.data.rateCents !== undefined;
+    const scheduledExplicit = body.data.scheduledValueCents !== undefined;
+    const nextScheduled = scheduledExplicit
+      ? (body.data.scheduledValueCents as number)
+      : qtyOrRateChanged
+        ? Math.round(effectiveQty * effectiveRate)
         : Number(current.scheduledValueCents ?? 0);
     let nextPct =
       body.data.percentComplete !== undefined
         ? body.data.percentComplete
         : Number(current.percentComplete ?? 0);
 
-    const scheduledChanged = body.data.scheduledValueCents !== undefined;
+    const scheduledChanged =
+      scheduledExplicit ||
+      (qtyOrRateChanged && nextScheduled !== Number(current.scheduledValueCents ?? 0));
     const pctChanged = body.data.percentComplete !== undefined;
 
     if (scheduledChanged) updates.scheduledValueCents = nextScheduled;

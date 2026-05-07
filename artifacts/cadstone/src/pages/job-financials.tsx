@@ -238,6 +238,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       </td>
       <td className="px-3 py-2 text-right tabular-nums">
         <Input
+          key={`sched-${li.scheduledValueCents}`}
           type="number"
           step="0.01"
           defaultValue={(li.scheduledValueCents / 100).toFixed(2)}

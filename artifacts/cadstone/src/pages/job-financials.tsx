@@ -39,6 +39,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 type LinePayment = { id: string; invoiceId: string; amountCents: number }
 
@@ -707,6 +717,13 @@ export default function JobFinancialsPage() {
   } | null>(null)
   const [coSaving, setCoSaving] = useState(false)
 
+  // Pending delete dialogs — converted from window.confirm so the
+  // experience matches the AlertDialog pattern used elsewhere.
+  const [pendingDeleteLineItemId, setPendingDeleteLineItemId] = useState<string | null>(null)
+  const [pendingDeleteArea, setPendingDeleteArea] = useState<{ id: string; name: string } | null>(null)
+  const [pendingDeleteInvoiceId, setPendingDeleteInvoiceId] = useState<string | null>(null)
+  const [deletingFinancial, setDeletingFinancial] = useState(false)
+
   const performCoParse = async (file: File) => {
     if (!jobId) return
     setCoUploading(true)
@@ -796,20 +813,25 @@ export default function JobFinancialsPage() {
     [jobId, load, invalidate],
   )
 
-  const deleteLineItem = useCallback(
-    async (lineItemId: string) => {
-      if (!jobId) return
-      if (!window.confirm("Delete this line item?")) return
-      try {
-        await api.delete(`/jobs/${jobId}/financials/line-items/${lineItemId}`)
-        await load()
-        invalidate()
-      } catch (err) {
-        toastApiError(err, "Failed to delete line item")
-      }
-    },
-    [jobId, load, invalidate],
-  )
+  const deleteLineItem = useCallback((lineItemId: string) => {
+    setPendingDeleteLineItemId(lineItemId)
+  }, [])
+
+  const confirmDeleteLineItem = useCallback(async () => {
+    const lineItemId = pendingDeleteLineItemId
+    if (!jobId || !lineItemId) return
+    setDeletingFinancial(true)
+    try {
+      await api.delete(`/jobs/${jobId}/financials/line-items/${lineItemId}`)
+      await load()
+      invalidate()
+      setPendingDeleteLineItemId(null)
+    } catch (err) {
+      toastApiError(err, "Failed to delete line item")
+    } finally {
+      setDeletingFinancial(false)
+    }
+  }, [jobId, load, invalidate, pendingDeleteLineItemId])
 
   const addArea = async () => {
     if (!jobId) return
@@ -840,26 +862,25 @@ export default function JobFinancialsPage() {
     [jobId, load, invalidate],
   )
 
-  const deleteArea = useCallback(
-    async (areaId: string, name: string) => {
-      if (!jobId) return
-      if (
-        !window.confirm(
-          `Delete area "${name}" and all of its line items? Invoice payments tied to this area will also be reversed.`,
-        )
-      ) {
-        return
-      }
-      try {
-        await api.delete(`/jobs/${jobId}/financials/areas/${areaId}`)
-        await load()
-        invalidate()
-      } catch (err) {
-        toastApiError(err, "Failed to delete area")
-      }
-    },
-    [jobId, load, invalidate],
-  )
+  const deleteArea = useCallback((areaId: string, name: string) => {
+    setPendingDeleteArea({ id: areaId, name })
+  }, [])
+
+  const confirmDeleteArea = useCallback(async () => {
+    const target = pendingDeleteArea
+    if (!jobId || !target) return
+    setDeletingFinancial(true)
+    try {
+      await api.delete(`/jobs/${jobId}/financials/areas/${target.id}`)
+      await load()
+      invalidate()
+      setPendingDeleteArea(null)
+    } catch (err) {
+      toastApiError(err, "Failed to delete area")
+    } finally {
+      setDeletingFinancial(false)
+    }
+  }, [jobId, load, invalidate, pendingDeleteArea])
 
   const openInvoiceFile = async (fileId: string) => {
     try {
@@ -937,15 +958,23 @@ export default function JobFinancialsPage() {
     }
   }
 
-  const deleteInvoice = async (invoiceId: string) => {
-    if (!jobId) return
-    if (!window.confirm("Delete this invoice and reverse its payments?")) return
+  const deleteInvoice = (invoiceId: string) => {
+    setPendingDeleteInvoiceId(invoiceId)
+  }
+
+  const confirmDeleteInvoice = async () => {
+    const invoiceId = pendingDeleteInvoiceId
+    if (!jobId || !invoiceId) return
+    setDeletingFinancial(true)
     try {
       await api.delete(`/jobs/${jobId}/financials/invoices/${invoiceId}`)
       await load()
       invalidate()
+      setPendingDeleteInvoiceId(null)
     } catch (err) {
       toastApiError(err, "Failed to delete invoice")
+    } finally {
+      setDeletingFinancial(false)
     }
   }
 
@@ -1897,6 +1926,95 @@ export default function JobFinancialsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={pendingDeleteLineItemId !== null}
+        onOpenChange={(next) => {
+          if (!next && !deletingFinancial) setPendingDeleteLineItemId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete line item</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this line item?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFinancial}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingFinancial}
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault()
+                void confirmDeleteLineItem()
+              }}
+            >
+              {deletingFinancial ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={pendingDeleteArea !== null}
+        onOpenChange={(next) => {
+          if (!next && !deletingFinancial) setPendingDeleteArea(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete area</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDeleteArea
+                ? `Delete area "${pendingDeleteArea.name}" and all of its line items? Invoice payments tied to this area will also be reversed.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFinancial}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingFinancial}
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault()
+                void confirmDeleteArea()
+              }}
+            >
+              {deletingFinancial ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={pendingDeleteInvoiceId !== null}
+        onOpenChange={(next) => {
+          if (!next && !deletingFinancial) setPendingDeleteInvoiceId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete invoice</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete this invoice and reverse its payments?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFinancial}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingFinancial}
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault()
+                void confirmDeleteInvoice()
+              }}
+            >
+              {deletingFinancial ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

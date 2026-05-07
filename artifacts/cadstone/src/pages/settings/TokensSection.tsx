@@ -10,6 +10,16 @@ import {
   type PersonalAccessTokenCreatePayload,
 } from "@workspace/api-client-react"
 import { AccountTokensCreateBody } from "@workspace/api-zod"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -43,6 +53,7 @@ export default function TokensSection() {
   const [creatingToken, setCreatingToken] = useState(false)
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [tokenToRevoke, setTokenToRevoke] = useState<ApiToken | null>(null)
 
   useEffect(() => {
     if (tokensQuery.error) {
@@ -84,14 +95,20 @@ export default function TokensSection() {
     }
   }
 
-  const handleRevoke = async (token: ApiToken) => {
+  const requestRevoke = (token: ApiToken) => {
     if (token.revokedAt) return
-    if (!window.confirm(`Revoke "${token.name}"? Apps using this token will stop working.`)) return
+    setTokenToRevoke(token)
+  }
+
+  const confirmRevoke = async () => {
+    const token = tokenToRevoke
+    if (!token) return
     setRevokingId(token.id)
     try {
       await accountTokensRevoke(token.id)
       toast.success("Token revoked")
       await queryClient.invalidateQueries({ queryKey: getAccountTokensListQueryKey() })
+      setTokenToRevoke(null)
     } catch (err: unknown) {
       toastApiError(err, "Failed to revoke token")
     } finally {
@@ -258,7 +275,7 @@ export default function TokensSection() {
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleRevoke(t)}
+                              onClick={() => requestRevoke(t)}
                               disabled={revokingId === t.id}
                               aria-label={`Revoke ${t.name}`}
                             >
@@ -279,6 +296,37 @@ export default function TokensSection() {
           )}
         </div>
       </div>
+      <AlertDialog
+        open={tokenToRevoke !== null}
+        onOpenChange={(next) => {
+          if (!next && revokingId === null) setTokenToRevoke(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke API token</AlertDialogTitle>
+            <AlertDialogDescription>
+              {tokenToRevoke
+                ? `Revoke "${tokenToRevoke.name}"? Apps using this token will stop working.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={revokingId !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={revokingId !== null}
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault()
+                void confirmRevoke()
+              }}
+            >
+              {revokingId !== null ? <Loader2 className="size-4 animate-spin" /> : null}
+              Revoke
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

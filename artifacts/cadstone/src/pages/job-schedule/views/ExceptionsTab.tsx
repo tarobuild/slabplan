@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction } from "react"
+import { useState, type Dispatch, type SetStateAction } from "react"
 import {
   ArrowLeft,
   Download,
@@ -13,6 +13,16 @@ import {
   type ScheduleSettings,
   type ScheduleWorkdayException,
 } from "@/lib/schedule"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -109,6 +119,8 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
     handleSaveCategory,
   } = props
 
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+
   return (
     <div className="space-y-4">
       <div data-print-hide="true" className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
@@ -176,7 +188,7 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
             </div>
             <div className="flex items-center gap-2">
               {workdayForm.id ? (
-                <Button type="button" variant="outline" className="border-rose-200 text-rose-700" onClick={() => void handleDeleteWorkdayException()}>
+                <Button type="button" variant="outline" className="border-rose-200 text-rose-700" onClick={() => setConfirmDeleteOpen(true)}>
                   Delete
                 </Button>
               ) : null}
@@ -417,6 +429,33 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
           </div>
         </div>
       )}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete workday exception</AlertDialogTitle>
+            <AlertDialogDescription>
+              {workdayForm.title
+                ? `Delete "${workdayForm.title}"? This cannot be undone.`
+                : "Delete this workday exception? This cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={workdaySaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={workdaySaving}
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault()
+                setConfirmDeleteOpen(false)
+                void handleDeleteWorkdayException()
+              }}
+            >
+              {workdaySaving ? <Loader2 className="size-4 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

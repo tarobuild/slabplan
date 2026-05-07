@@ -66,6 +66,16 @@ import { apiErrorDetailCode, apiErrorMessage as apiError, toastApiError } from "
 import { cn } from "@/lib/utils"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { useAuthStore } from "@/store/auth"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -1422,6 +1432,7 @@ function SettingsDialog({
     displayOrder: 0,
   })
   const [newFieldOptions, setNewFieldOptions] = useState("")
+  const [pendingRemoveFieldId, setPendingRemoveFieldId] = useState<string | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -1695,7 +1706,13 @@ function SettingsDialog({
                           type="button"
                           variant="ghost"
                           className="text-red-600 hover:text-red-700"
-                          onClick={() => setDraftFields((current) => current.filter((entry) => entry.id !== field.id))}
+                          onClick={() => {
+                            if (field.id.startsWith("draft-")) {
+                              setDraftFields((current) => current.filter((entry) => entry.id !== field.id))
+                            } else {
+                              setPendingRemoveFieldId(field.id)
+                            }
+                          }}
                         >
                           <X className="size-4" />
                         </Button>
@@ -1732,6 +1749,37 @@ function SettingsDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      <AlertDialog
+        open={pendingRemoveFieldId !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingRemoveFieldId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove custom field</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove this custom field? Historical data captured for this
+              field on existing daily logs will no longer be displayed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault()
+                const id = pendingRemoveFieldId
+                if (!id) return
+                setDraftFields((current) => current.filter((entry) => entry.id !== id))
+                setPendingRemoveFieldId(null)
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }
@@ -1974,6 +2022,9 @@ function CommentsSheet({
   const [replyTo, setReplyTo] = useState<CommentRecord | null>(null)
   const [selectedMentionIds, setSelectedMentionIds] = useState<string[]>([])
   const [attachments, setAttachments] = useState<CommentDraftAttachment[]>([])
+  const [pendingRemoveCommentAttachmentId, setPendingRemoveCommentAttachmentId] = useState<
+    string | null
+  >(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // All writes go through generated mutation hooks (see replit.md).
@@ -2328,13 +2379,7 @@ function CommentsSheet({
                   <span className="max-w-[180px] truncate">{attachment.name}</span>
                   <button
                     type="button"
-                    onClick={() =>
-                      setAttachments((current) => {
-                        const next = current.filter((item) => item.fileId !== attachment.fileId)
-                        URL.revokeObjectURL(attachment.previewUrl)
-                        return next
-                      })
-                    }
+                    onClick={() => setPendingRemoveCommentAttachmentId(attachment.fileId)}
                   >
                     <X className="size-3.5" />
                   </button>
@@ -2395,6 +2440,40 @@ function CommentsSheet({
           </div>
         </div>
       </SheetContent>
+      <AlertDialog
+        open={pendingRemoveCommentAttachmentId !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingRemoveCommentAttachmentId(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove attachment</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove this attachment from your comment?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault()
+                const targetId = pendingRemoveCommentAttachmentId
+                if (!targetId) return
+                setAttachments((current) => {
+                  const target = current.find((item) => item.fileId === targetId)
+                  if (target) URL.revokeObjectURL(target.previewUrl)
+                  return current.filter((item) => item.fileId !== targetId)
+                })
+                setPendingRemoveCommentAttachmentId(null)
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   )
 }
@@ -2434,6 +2513,10 @@ function DailyLogDialog({
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [initialSnapshot, setInitialSnapshot] = useState("")
+  const [confirmDeleteLogOpen, setConfirmDeleteLogOpen] = useState(false)
+  const [pendingRemoveAttachment, setPendingRemoveAttachment] = useState<
+    { key: string; existing: boolean } | null
+  >(null)
 
   // All writes go through generated mutation hooks (see replit.md).
   const createLogMutation = useDailyLogsPostJobsJobIdDailyLogs()
@@ -3012,17 +3095,12 @@ function DailyLogDialog({
                             )}
                             title={isMissing ? "Remove orphan attachment" : undefined}
                             aria-label={isMissing ? "Remove orphan attachment" : "Remove attachment"}
-                            onClick={() => {
-                              if (attachment.existing) {
-                                setRemovedAttachmentIds((current) => uniqueStrings([...current, attachment.key]))
-                              } else {
-                                setPendingFiles((current) =>
-                                  current.filter(
-                                    (file) => `${file.name}-${file.size}-${file.lastModified}` !== attachment.key,
-                                  ),
-                                )
-                              }
-                            }}
+                            onClick={() =>
+                              setPendingRemoveAttachment({
+                                key: attachment.key,
+                                existing: attachment.existing,
+                              })
+                            }
                           >
                             {isMissing ? <Trash2 className="size-4" /> : <X className="size-4" />}
                           </button>
@@ -3062,7 +3140,7 @@ function DailyLogDialog({
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {currentLog ? (
-                  <Button variant="ghost" className="text-red-600 hover:text-red-700" onClick={() => void deleteLog()} disabled={deleting || saving}>
+                  <Button variant="ghost" className="text-red-600 hover:text-red-700" onClick={() => setConfirmDeleteLogOpen(true)} disabled={deleting || saving}>
                     {deleting ? <Loader2 className="size-4 animate-spin" /> : null}
                     Delete
                   </Button>
@@ -3077,6 +3155,76 @@ function DailyLogDialog({
         )}
       </DialogContent>
     </Dialog>
+    <AlertDialog
+      open={confirmDeleteLogOpen}
+      onOpenChange={(next) => {
+        if (!next && !deleting) setConfirmDeleteLogOpen(false)
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete daily log</AlertDialogTitle>
+          <AlertDialogDescription>
+            {currentLog
+              ? `Are you sure you want to delete "${titleForLog(currentLog.logDate, currentLog.title)}"? This cannot be undone.`
+              : "Are you sure you want to delete this daily log? This cannot be undone."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={deleting}
+            className="bg-red-600 text-white hover:bg-red-700"
+            onClick={(event) => {
+              event.preventDefault()
+              setConfirmDeleteLogOpen(false)
+              void deleteLog()
+            }}
+          >
+            {deleting ? <Loader2 className="size-4 animate-spin" /> : null}
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    <AlertDialog
+      open={pendingRemoveAttachment !== null}
+      onOpenChange={(next) => {
+        if (!next) setPendingRemoveAttachment(null)
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove attachment</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to remove this attachment?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-red-600 text-white hover:bg-red-700"
+            onClick={(event) => {
+              event.preventDefault()
+              const target = pendingRemoveAttachment
+              if (!target) return
+              if (target.existing) {
+                setRemovedAttachmentIds((current) => uniqueStrings([...current, target.key]))
+              } else {
+                setPendingFiles((current) =>
+                  current.filter(
+                    (file) => `${file.name}-${file.size}-${file.lastModified}` !== target.key,
+                  ),
+                )
+              }
+              setPendingRemoveAttachment(null)
+            }}
+          >
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </>
   )
 }
@@ -3141,6 +3289,27 @@ export default function JobDailyLogsPage() {
   // All writes go through generated mutation hooks (see replit.md).
   const toggleLikeMutation = useDailyLogsPostDailyLogsIdLike()
   const deleteLogMutation = useDailyLogsDeleteDailyLogsId()
+  const [pendingDeleteLog, setPendingDeleteLog] = useState<
+    { id: string; label: string } | null
+  >(null)
+  const [deletingLog, setDeletingLog] = useState(false)
+
+  const confirmDeleteLog = async () => {
+    const target = pendingDeleteLog
+    if (!target) return
+    setDeletingLog(true)
+    try {
+      await deleteLogMutation.mutateAsync({ id: target.id })
+      toast.success("Daily log deleted")
+      setSelectedLog(null)
+      setPendingDeleteLog(null)
+      await loadLogs()
+    } catch (error) {
+      toastApiError(error, "Failed to delete daily log")
+    } finally {
+      setDeletingLog(false)
+    }
+  }
 
   async function loadReferenceData() {
     // Some of these endpoints (settings + custom-fields) are admin-only, and
@@ -3600,18 +3769,12 @@ export default function JobDailyLogsPage() {
                             {canEditLog(selectedLog.createdBy) ? (
                               <DropdownMenuItem
                                 className="text-red-600 focus:text-red-600"
-                                onClick={async () => {
-                                  try {
-                                    await deleteLogMutation.mutateAsync({
-                                      id: selectedLog.id,
-                                    })
-                                    toast.success("Daily log deleted")
-                                    setSelectedLog(null)
-                                    await loadLogs()
-                                  } catch (error) {
-                                    toastApiError(error, "Failed to delete daily log")
-                                  }
-                                }}
+                                onClick={() =>
+                                  setPendingDeleteLog({
+                                    id: selectedLog.id,
+                                    label: titleForLog(selectedLog.logDate, selectedLog.title),
+                                  })
+                                }
                               >
                                 <X className="size-4" />
                                 Delete
@@ -3754,6 +3917,38 @@ export default function JobDailyLogsPage() {
           }
         }}
       />
+
+      <AlertDialog
+        open={pendingDeleteLog !== null}
+        onOpenChange={(next) => {
+          if (!next && !deletingLog) setPendingDeleteLog(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete daily log</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDeleteLog
+                ? `Are you sure you want to delete "${pendingDeleteLog.label}"? This cannot be undone.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingLog}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingLog}
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => {
+                event.preventDefault()
+                void confirmDeleteLog()
+              }}
+            >
+              {deletingLog ? <Loader2 className="size-4 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </TooltipProvider>
   )
 }

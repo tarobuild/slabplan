@@ -276,6 +276,7 @@ export function ScheduleItemDialog({
   const [showAddTag, setShowAddTag] = useState(false)
   const [showEditTags, setShowEditTags] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [pendingDeleteAttachmentId, setPendingDeleteAttachmentId] = useState<string | null>(null)
   const [multiDay, setMultiDay] = useState(false)
   const [createDocConfirmOpen, setCreateDocConfirmOpen] = useState(false)
   const [docPreviewOpen, setDocPreviewOpen] = useState(false)
@@ -1881,7 +1882,7 @@ export function ScheduleItemDialog({
                                     <Button
                                       type="button"
                                       variant="ghost"
-                                      onClick={() => void handleDeleteAttachment(attachment.id)}
+                                      onClick={() => setPendingDeleteAttachmentId(attachment.id)}
                                       title={isMissing ? "Remove orphan attachment" : "Delete attachment"}
                                       aria-label={
                                         isMissing ? "Remove orphan attachment" : "Delete attachment"
@@ -2328,6 +2329,38 @@ export function ScheduleItemDialog({
         </div>
       </DialogContent>
     </Dialog>
+    <AlertDialog
+      open={pendingDeleteAttachmentId !== null}
+      onOpenChange={(next) => {
+        if (!next && !saving) setPendingDeleteAttachmentId(null)
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove attachment</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to remove this attachment? This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={saving}
+            className="bg-red-600 text-white hover:bg-red-700"
+            onClick={(event) => {
+              event.preventDefault()
+              const id = pendingDeleteAttachmentId
+              if (!id) return
+              setPendingDeleteAttachmentId(null)
+              void handleDeleteAttachment(id)
+            }}
+          >
+            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>

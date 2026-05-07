@@ -10,7 +10,10 @@ initSentry();
 
 const { createServer } = await import("node:http");
 type Server = import("node:http").Server;
+const path = await import("node:path");
+const { fileURLToPath } = await import("node:url");
 const { pool } = await import("@workspace/db");
+const { applyMigrations } = await import("@workspace/db/migrate");
 const { default: app, prepareApp } = await import("./app");
 const { logger } = await import("./lib/logger");
 const { initRealtime } = await import("./lib/realtime");
@@ -51,6 +54,27 @@ async function bootstrap() {
       hasDefaultObjectBucket: Boolean(process.env["DEFAULT_OBJECT_STORAGE_BUCKET_ID"]),
     },
     "boot",
+  );
+
+  // Apply any pending schema migrations BEFORE the HTTP server binds.
+  // This is the only thing that runs migrations against production —
+  // Cloud Run's deploy step does not. The runner is idempotent and uses
+  // the same connection pool (same DATABASE_URL / SUPABASE_DATABASE_URL)
+  // as the rest of the server, so it always targets the right database.
+  // See "schema migrations run on deploy" in `replit.md` and Task #385.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const migrationsDir = path.resolve(here, "migrations");
+  logger.info({ migrationsDir }, "Applying pending migrations");
+  const migrationResult = await applyMigrations(pool, { migrationsDir });
+  logger.info(
+    {
+      applied: migrationResult.applied,
+      baselined: migrationResult.baselined,
+      skippedCount: migrationResult.skipped.length,
+    },
+    migrationResult.applied.length > 0
+      ? "Migrations applied"
+      : "No pending migrations",
   );
 
   await prepareApp();

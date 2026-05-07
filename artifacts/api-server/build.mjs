@@ -154,6 +154,18 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     },
   });
 
+  // Copy the migration SQL files into dist/migrations so the bundled
+  // server can run pending migrations at boot in production. The
+  // migrate runner is bundled into dist/index.mjs (via @workspace/db),
+  // but esbuild does not bundle .sql assets — they have to be shipped
+  // alongside the JS. Boot then passes `dist/migrations` as
+  // `migrationsDir`. See `lib/db/src/migrate.ts` and the
+  // "schema migrations run on deploy" note in `replit.md`.
+  const dbMigrations = path.resolve(artifactDir, "../../lib/db/migrations");
+  const distMigrations = path.resolve(distDir, "migrations");
+  await cp(dbMigrations, distMigrations, { recursive: true });
+  console.log("✓ Copied lib/db/migrations → dist/migrations");
+
   // Copy the built frontend into dist/public so the deployment is self-contained.
   // In development the cadstone vite dev server runs as its own workflow and
   // serves the SPA directly, so this copy is best-effort: we skip it when the

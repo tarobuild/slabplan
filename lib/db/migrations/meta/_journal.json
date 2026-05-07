@@ -141,10 +141,18 @@
     {
       "idx": 17,
       "version": "7",
-      "when": 1778256000000,
+      "when": 1778179272722,
       "tag": "0019_files_duration_seconds",
       "breakpoints": true,
       "checksum": "6fb9bd3f3da96d03cff853f79f9b597c1a451409ad8914ef0966c6854d751023"
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1778186650197,
+      "tag": "0020_verify_auto_migrate",
+      "breakpoints": true,
+      "checksum": "b67dca6f24cb088f47afbfd6f8b42e825f5dc123bd0542467b552e3a5c5f038f"
     }
   ]
 }

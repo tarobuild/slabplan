@@ -1,6 +1,9 @@
 import {
+  DANGEROUS_UPLOAD_EXTENSIONS,
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_COUNT,
+  WIDE_UPLOAD_ACCEPT_ATTRIBUTE,
+  dangerousUploadMessage,
   formatUploadSize,
 } from "@workspace/api-zod"
 
@@ -12,102 +15,6 @@ export type UploadMediaType = "document" | "photo" | "video" | "any"
 export const UPLOAD_MAX_FILE_SIZE_BYTES = MAX_UPLOAD_FILE_BYTES
 export const UPLOAD_MAX_FILES = MAX_UPLOAD_FILE_COUNT
 
-const documentExtensions = [
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".odt",
-  ".ods",
-  ".txt",
-  ".csv",
-  ".tsv",
-  ".md",
-  ".rtf",
-  ".json",
-]
-
-const photoExtensions = [
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".gif",
-  ".webp",
-  ".heic",
-  ".heif",
-  ".tif",
-  ".tiff",
-  ".bmp",
-  ".svg",
-]
-const videoExtensions = [".mp4", ".mov", ".avi", ".webm", ".m4v"]
-
-const documentMimeTypes = new Set([
-  "application/pdf",
-  "application/msword",
-  "application/vnd.ms-excel",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.oasis.opendocument.text",
-  "application/vnd.oasis.opendocument.spreadsheet",
-  "application/rtf",
-  "text/rtf",
-  "application/json",
-  "text/plain",
-  "text/csv",
-  "text/tab-separated-values",
-  "text/markdown",
-  "text/x-markdown",
-])
-
-const photoMimeTypes = new Set([
-  "image/jpeg",
-  "image/jpg",
-  "image/pjpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-  "image/heic-sequence",
-  "image/heif-sequence",
-  "image/tiff",
-  "image/x-tiff",
-  "image/bmp",
-  "image/x-bmp",
-  "image/x-ms-bmp",
-  "image/svg+xml",
-  "image/svg",
-])
-
-const videoMimeTypes = new Set([
-  "video/mp4",
-  "video/quicktime",
-  "video/x-msvideo",
-  "video/webm",
-  "video/x-m4v",
-])
-
-const documentAcceptMimeTypes = [
-  "application/pdf",
-  "application/msword",
-  "application/vnd.ms-excel",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.oasis.opendocument.text",
-  "application/vnd.oasis.opendocument.spreadsheet",
-  "application/rtf",
-  "application/json",
-  "text/plain",
-  "text/csv",
-  "text/tab-separated-values",
-  "text/markdown",
-]
-
 function lowerExtension(fileName: string) {
   const index = fileName.lastIndexOf(".")
   return index >= 0 ? fileName.slice(index).toLowerCase() : ""
@@ -115,80 +22,34 @@ function lowerExtension(fileName: string) {
 
 const formatMaxFileSize = formatUploadSize
 
-function isAllowedDocumentMimeType(value: string) {
-  return (
-    documentMimeTypes.has(value) ||
-    value.startsWith("application/vnd.openxmlformats-officedocument.") ||
-    value.startsWith("application/vnd.oasis.opendocument.")
-  )
+/**
+ * `accept` attribute for `<input type="file">`. We use the same wide
+ * extension list everywhere — Files, Daily Logs, Daily Log comments,
+ * Schedule attachments, Lead attachments, Job documents — so users can
+ * always attach what they actually have on disk. The `mediaType`
+ * argument is kept on the signature for backwards compatibility with
+ * existing call sites (including the "any" media type added for mixed
+ * pickers); folder organisation in the UI no longer narrows the picker.
+ */
+export function uploadAcceptForMediaType(_mediaType: UploadMediaType) {
+  return WIDE_UPLOAD_ACCEPT_ATTRIBUTE
 }
 
-// Some browsers and OS combinations report a generic MIME type for
-// perfectly valid documents (Windows file picker for `.docx`, Safari
-// for `.csv`, etc.). The server still does the authoritative magic-byte
-// check, so when the extension is one we accept we treat an empty or
-// `application/octet-stream` MIME as plausibly a document and let the
-// upload through instead of dead-ending the user with a confusing toast.
-function isLikelyDocumentMimeType(value: string) {
-  if (isAllowedDocumentMimeType(value)) return true
-  if (value.startsWith("text/")) return true
-  if (value === "application/zip" || value === "application/x-zip-compressed") {
-    // .docx / .xlsx / .pptx surface this MIME in some pickers; the
-    // server's magic-byte sniffer will verify it's a real Office
-    // container before storage.
-    return true
-  }
-  return value === "" || value === "application/octet-stream"
-}
-
-function isLikelyPhotoMimeType(value: string) {
-  if (photoMimeTypes.has(value)) return true
-  if (value.startsWith("image/")) return true
-  return value === "" || value === "application/octet-stream"
-}
-
-function invalidTypeMessage(mediaType: UploadMediaType) {
-  if (mediaType === "photo") {
-    return "Photos must be image files (.jpg, .png, .gif, .webp, .heic, .tiff, .bmp, .svg)."
-  }
-
-  if (mediaType === "video") {
-    return "Videos must be video files (.mp4, .mov, .avi, .webm)."
-  }
-
-  if (mediaType === "any") {
-    return "File type not supported. Use a photo, video, or document."
-  }
-
-  return "Documents must be supported office, text, or PDF files."
-}
-
-export function uploadAcceptForMediaType(mediaType: UploadMediaType) {
-  if (mediaType === "photo") {
-    return [...photoExtensions, ...photoMimeTypes].join(",")
-  }
-
-  if (mediaType === "video") {
-    return [...videoExtensions, ...videoMimeTypes].join(",")
-  }
-
-  if (mediaType === "any") {
-    return [
-      ...documentExtensions,
-      ...photoExtensions,
-      ...videoExtensions,
-      ...documentAcceptMimeTypes,
-      ...photoMimeTypes,
-      ...videoMimeTypes,
-    ].join(",")
-  }
-
-  return [...documentExtensions, ...documentAcceptMimeTypes].join(",")
-}
-
+/**
+ * Front-end pre-flight gate. Mirrors the server's blocklist model: we
+ * accept any file the user picked unless its extension is in the shared
+ * dangerous-extension blocklist (executables, shell scripts, HTML/JS
+ * that could run in a browser session). Size + count limits still apply.
+ *
+ * The server is the authoritative gate (magic-byte sniffer + blocklist),
+ * so we deliberately do NOT block on generic MIMEs like
+ * `application/octet-stream` or empty strings — Windows pickers report
+ * those for legitimate files all the time and we used to dead-end users
+ * because of it.
+ */
 export function validateSelectedFiles(
   files: File[],
-  mediaType: UploadMediaType,
+  _mediaType: UploadMediaType,
   options?: {
     maxFileSizeBytes?: number
     maxFiles?: number
@@ -207,21 +68,8 @@ export function validateSelectedFiles(
     }
 
     const extension = lowerExtension(file.name)
-    const mimeType = file.type.toLowerCase()
-
-    const isAllowed =
-      mediaType === "photo"
-        ? photoExtensions.includes(extension) && isLikelyPhotoMimeType(mimeType)
-        : mediaType === "video"
-          ? videoExtensions.includes(extension) && videoMimeTypes.has(mimeType)
-          : mediaType === "any"
-            ? (photoExtensions.includes(extension) && isLikelyPhotoMimeType(mimeType)) ||
-              (videoExtensions.includes(extension) && videoMimeTypes.has(mimeType)) ||
-              (documentExtensions.includes(extension) && isLikelyDocumentMimeType(mimeType))
-            : documentExtensions.includes(extension) && isLikelyDocumentMimeType(mimeType)
-
-    if (!isAllowed) {
-      return `${file.name}: ${invalidTypeMessage(mediaType)}`
+    if (DANGEROUS_UPLOAD_EXTENSIONS.has(extension)) {
+      return `${file.name}: ${dangerousUploadMessage(file.name)}`
     }
   }
 

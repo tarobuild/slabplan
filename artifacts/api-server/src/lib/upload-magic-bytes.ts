@@ -169,6 +169,98 @@ const SNIFFABLE_CATEGORIES: readonly SniffableCategory[] = [
     claimedExtensions: new Set([".mov", ".qt"]),
     sniffedMimes: new Set(["video/quicktime"]),
   },
+  {
+    category: "Matroska video",
+    claimedMimes: new Set(["video/x-matroska", "video/mkv"]),
+    claimedExtensions: new Set([".mkv"]),
+    sniffedMimes: new Set(["video/x-matroska", "video/webm"]),
+  },
+  {
+    category: "AVIF image",
+    claimedMimes: new Set(["image/avif"]),
+    claimedExtensions: new Set([".avif"]),
+    sniffedMimes: new Set(["image/avif"]),
+  },
+  {
+    category: "Canon RAW image",
+    claimedMimes: new Set(["image/x-canon-cr2", "image/x-canon-cr3"]),
+    claimedExtensions: new Set([".cr2", ".cr3"]),
+    sniffedMimes: new Set(["image/x-canon-cr2", "image/x-canon-cr3", "image/tiff"]),
+  },
+  {
+    category: "Nikon RAW image",
+    claimedMimes: new Set(["image/x-nikon-nef"]),
+    claimedExtensions: new Set([".nef"]),
+    sniffedMimes: new Set(["image/x-nikon-nef", "image/tiff"]),
+  },
+  {
+    category: "Sony RAW image",
+    claimedMimes: new Set(["image/x-sony-arw"]),
+    claimedExtensions: new Set([".arw"]),
+    sniffedMimes: new Set(["image/x-sony-arw", "image/tiff"]),
+  },
+  {
+    category: "Adobe DNG RAW image",
+    claimedMimes: new Set(["image/x-adobe-dng"]),
+    claimedExtensions: new Set([".dng"]),
+    sniffedMimes: new Set(["image/x-adobe-dng", "image/tiff"]),
+  },
+  {
+    category: "MP3 audio",
+    claimedMimes: new Set(["audio/mpeg", "audio/mp3"]),
+    claimedExtensions: new Set([".mp3"]),
+    sniffedMimes: new Set(["audio/mpeg"]),
+  },
+  {
+    category: "M4A audio",
+    claimedMimes: new Set(["audio/mp4", "audio/x-m4a", "audio/m4a"]),
+    claimedExtensions: new Set([".m4a"]),
+    sniffedMimes: new Set(["audio/mp4", "audio/x-m4a"]),
+  },
+  {
+    category: "WAV audio",
+    claimedMimes: new Set(["audio/wav", "audio/x-wav", "audio/wave"]),
+    claimedExtensions: new Set([".wav"]),
+    sniffedMimes: new Set(["audio/wav", "audio/x-wav"]),
+  },
+  {
+    category: "FLAC audio",
+    claimedMimes: new Set(["audio/flac", "audio/x-flac"]),
+    claimedExtensions: new Set([".flac"]),
+    sniffedMimes: new Set(["audio/x-flac", "audio/flac"]),
+  },
+  {
+    category: "ZIP archive",
+    // OOXML/ODF use the same .zip bytes but are matched first via their
+    // own categories above (claimedExtensions list .docx/.xlsx/...). A
+    // raw `.zip` falls through to here.
+    claimedMimes: new Set([
+      "application/zip",
+      "application/x-zip",
+      "application/x-zip-compressed",
+    ]),
+    claimedExtensions: new Set([".zip"]),
+    sniffedMimes: new Set(["application/zip", "application/x-zip"]),
+  },
+  {
+    category: "RAR archive",
+    claimedMimes: new Set([
+      "application/vnd.rar",
+      "application/x-rar",
+      "application/x-rar-compressed",
+    ]),
+    claimedExtensions: new Set([".rar"]),
+    sniffedMimes: new Set([
+      "application/x-rar-compressed",
+      "application/vnd.rar",
+    ]),
+  },
+  {
+    category: "7-Zip archive",
+    claimedMimes: new Set(["application/x-7z-compressed"]),
+    claimedExtensions: new Set([".7z"]),
+    sniffedMimes: new Set(["application/x-7z-compressed"]),
+  },
 ];
 
 function findSniffableCategory(

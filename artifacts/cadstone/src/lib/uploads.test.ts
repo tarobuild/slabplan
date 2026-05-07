@@ -7,7 +7,7 @@ function makeFile(name: string, mimeType: string, size = 16): File {
   return new File([new Uint8Array(size)], name, { type: mimeType })
 }
 
-describe("validateSelectedFiles (document)", () => {
+describe("validateSelectedFiles", () => {
   test("accepts a .pdf with the standard application/pdf MIME", () => {
     const error = validateSelectedFiles([makeFile("plan.pdf", "application/pdf")], "document")
     assert.equal(error, null)
@@ -42,7 +42,26 @@ describe("validateSelectedFiles (document)", () => {
     assert.equal(error, null)
   })
 
-  test("rejects a .exe even when the MIME is application/octet-stream", () => {
+  test("accepts a .dwg CAD drawing with an empty browser MIME", () => {
+    // Browsers don't have a built-in MIME for AutoCAD DWG, so the file
+    // picker reports "" — we used to block this on the front-end and
+    // strand contractors who routinely attach drawings.
+    const error = validateSelectedFiles([makeFile("site.dwg", "")], "document")
+    assert.equal(error, null)
+  })
+
+  test("accepts a HEIC photo, an MP3 voice memo, and a ZIP of plans", () => {
+    for (const f of [
+      makeFile("burst.heic", "image/heic"),
+      makeFile("voicememo.mp3", "audio/mpeg"),
+      makeFile("plans.zip", "application/zip"),
+      makeFile("raw.cr2", ""),
+    ]) {
+      assert.equal(validateSelectedFiles([f], "document"), null, `${f.name} should be accepted`)
+    }
+  })
+
+  test("rejects a .exe with a clear, extension-named message", () => {
     // Loosening the MIME check must not loosen the extension check —
     // a renamed executable still has a non-document extension and
     // must be refused before it leaves the browser.
@@ -51,14 +70,22 @@ describe("validateSelectedFiles (document)", () => {
       "document",
     )
     assert.ok(error, "expected a validation error for .exe")
-    assert.match(error!, /supported office, text, or PDF files/)
+    assert.match(error!, /\.exe/)
+    assert.match(error!, /aren't allowed for safety/)
   })
 
-  test("rejects a .pdf when the MIME is something obviously wrong like image/png", () => {
-    const error = validateSelectedFiles(
-      [makeFile("plan.pdf", "image/png")],
-      "document",
-    )
-    assert.ok(error)
+  test("rejects .bat / .sh / .html across the blocklist", () => {
+    for (const name of ["run.bat", "deploy.sh", "evil.html"]) {
+      const error = validateSelectedFiles([makeFile(name, "")], "document")
+      assert.ok(error, `${name} should be blocked`)
+    }
+  })
+
+  test("does not block .pdf even when the MIME looks unusual (server is authoritative)", () => {
+    // Front-end no longer second-guesses the MIME for legitimate
+    // extensions. The server's PDF magic-byte check catches a renamed
+    // payload before storage.
+    const error = validateSelectedFiles([makeFile("plan.pdf", "image/png")], "document")
+    assert.equal(error, null)
   })
 })

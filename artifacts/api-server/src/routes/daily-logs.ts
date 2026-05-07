@@ -38,7 +38,6 @@ import { requireManagerOrAbove } from "../middleware/require-auth";
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { buildDailyLogVisibilityFilter } from "../lib/daily-log-visibility";
 import {
-  documentExtensions,
   photoExtensions,
   validateUploadForMediaType,
   videoExtensions,
@@ -2128,10 +2127,9 @@ router.post(
     }> = [];
 
     for (const uploadedFile of uploadedFiles) {
-      // The composer in the FE only ever opens an image-typed file picker, so
-      // accepting non-image uploads here would silently widen the surface.
-      // Stay strict — `validateUploadForMediaType("photo")` matches the
-      // existing image-only allowlist used elsewhere.
+      // Shared blocklist gate (executables, shell scripts, web files that
+      // could run in a browser session). The magic-byte sniffer upstream
+      // of this is the authoritative content-level check.
       validateUploadForMediaType("photo", uploadedFile);
 
       const storedFileName = buildStoredFileName(uploadedFile.originalname);
@@ -2225,9 +2223,7 @@ router.post(
         ? "photo"
         : videoExtensions.includes(ext)
           ? "video"
-          : documentExtensions.includes(ext)
-            ? "document"
-            : "document";
+          : "document";
       validateUploadForMediaType(mediaType, uploadedFile);
 
       const storedFileName = buildStoredFileName(uploadedFile.originalname);

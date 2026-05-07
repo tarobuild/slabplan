@@ -2,6 +2,10 @@ import archiver from "archiver";
 import path from "node:path";
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 import type { Response } from "express";
+import {
+  DANGEROUS_UPLOAD_EXTENSIONS,
+  dangerousUploadMessage,
+} from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import {
   activityLog,
@@ -33,23 +37,10 @@ import { emitRealtimeEvent } from "./realtime";
 import { logger } from "./logger";
 import { getMcpContext } from "../middleware/mcp-context";
 
-export const documentExtensions = [
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".odt",
-  ".ods",
-  ".txt",
-  ".csv",
-  ".tsv",
-  ".md",
-  ".rtf",
-  ".json",
-];
+// `photoExtensions` and `videoExtensions` are still used by
+// `buildFileTypeCondition` to power the Files-tab filter chips
+// ("Images", "Video"). They no longer gate uploads — that's now the
+// shared blocklist in `validateUploadForMediaType`.
 export const photoExtensions = [
   ".jpg",
   ".jpeg",
@@ -168,137 +159,49 @@ const JOB_TEMPLATE_FOLDERS: Array<{
   },
 ];
 
-const allowedPhotoMimeTypes = new Set([
-  "image/jpeg",
-  "image/jpg",
-  "image/pjpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-  "image/heic-sequence",
-  "image/heif-sequence",
-  "image/tiff",
-  "image/x-tiff",
-  "image/bmp",
-  "image/x-bmp",
-  "image/x-ms-bmp",
-  "image/svg+xml",
-  "image/svg",
-]);
-
-const allowedVideoMimeTypes = new Set([
-  "video/mp4",
-  "video/quicktime",
-  "video/x-msvideo",
-  "video/webm",
-  "video/x-m4v",
-]);
-
-const allowedDocumentMimeTypes = new Set([
-  "application/pdf",
-  "application/msword",
-  "application/vnd.ms-excel",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.oasis.opendocument.text",
-  "application/vnd.oasis.opendocument.spreadsheet",
-  "application/rtf",
-  "text/rtf",
-  "application/json",
-  "text/plain",
-  "text/csv",
-  "text/tab-separated-values",
-  "text/markdown",
-  "text/x-markdown",
-]);
-
 function lowerExtension(fileName: string) {
   return path.extname(fileName).toLowerCase();
 }
 
-function validateAllowedUpload(
-  extension: string,
-  mimeType: string,
-  allowedExtensions: string[],
-  isAllowedMimeType: (value: string) => boolean,
-  message: string,
-) {
-  if (!allowedExtensions.includes(extension) || !isAllowedMimeType(mimeType)) {
-    throw new HttpError(400, message);
-  }
-}
-
+/**
+ * Authoritative type gate for every upload route.
+ *
+ * Field crews need to attach whatever they get from clients, vendors,
+ * or their phones — HEIC bursts, CAD drawings, scanned PDFs, ZIPs of
+ * plans, voice memos, AutoCAD exports. So we operate as a *blocklist*:
+ * everything is accepted except a small set of file extensions that
+ * are actually dangerous (Windows/Mac executables, shell scripts,
+ * HTML/JS that could run in a browser session).
+ *
+ * The legacy `mediaType` argument (`"photo" | "video" | "document"`)
+ * is preserved on the signature so existing call sites don't need to
+ * churn, but it no longer affects which file types are accepted —
+ * folder organisation in the UI is independent of what users may
+ * upload. Magic-byte sniffing (validateMagicBytesForFile) runs before
+ * us in the pipeline and is the second, content-level gate; we are
+ * the cheap extension-based gate that fires first.
+ */
 export function validateUploadForMediaType(
-  mediaType: string,
+  _mediaType: string,
   file: {
     originalname?: string;
     mimetype?: string;
   },
 ) {
   const extension = lowerExtension(file.originalname ?? "");
-  const mimeType = file.mimetype?.toLowerCase() ?? "";
 
-  if (mediaType === "photo") {
-    // Image MIMEs are sometimes blank or `application/octet-stream` from
-    // older mobile cameras (HEIC/HEIF in particular). The magic-byte
-    // sniffer that runs ahead of this check is the authoritative test
-    // for image content; if the extension is one we accept, allow a
-    // generic MIME through rather than dead-ending users with iPhone
-    // photos.
-    validateAllowedUpload(
-      extension,
-      mimeType,
-      photoExtensions,
-      (value) =>
-        allowedPhotoMimeTypes.has(value) ||
-        value.startsWith("image/") ||
-        value === "" ||
-        value === "application/octet-stream",
-      "Photos must be image files (.jpg, .png, .gif, .webp, .heic, .tiff, .bmp, .svg).",
+  if (DANGEROUS_UPLOAD_EXTENSIONS.has(extension)) {
+    throw new HttpError(
+      415,
+      dangerousUploadMessage(file.originalname ?? ""),
+      {
+        code: "UPLOAD_TYPE_BLOCKED",
+        extension: extension || null,
+        declaredMimeType: (file.mimetype ?? "").toLowerCase() || null,
+      },
+      "unsupported-media-type",
     );
-    return;
   }
-
-  if (mediaType === "video") {
-    validateAllowedUpload(
-      extension,
-      mimeType,
-      videoExtensions,
-      (value) => allowedVideoMimeTypes.has(value),
-      "Videos must be video files (.mp4, .mov, .avi, .webm).",
-    );
-    return;
-  }
-
-  if (mediaType === "document") {
-    // Some browsers and OS combinations report a generic MIME type for
-    // perfectly valid documents (Windows file picker for `.docx`,
-    // Safari for `.csv`, etc.). The magic-byte sniffer that runs
-    // before us in the upload pipeline already does the authoritative
-    // content check for PDFs, so when the extension is one we accept
-    // we treat an empty or `application/octet-stream` MIME as
-    // plausibly a document and let it through. This mirrors the
-    // client-side validator and avoids dead-ending real users.
-    validateAllowedUpload(
-      extension,
-      mimeType,
-      documentExtensions,
-      (value) =>
-        allowedDocumentMimeTypes.has(value) ||
-        value.startsWith("application/vnd.openxmlformats-officedocument.") ||
-        value.startsWith("application/vnd.oasis.opendocument.") ||
-        value.startsWith("text/") ||
-        value === "application/zip" ||
-        value === "application/x-zip-compressed" ||
-        value === "" ||
-        value === "application/octet-stream",
-      "Documents must be supported office, text, or PDF files.",
-    );
-    return;
-  }
-
-  throw new HttpError(400, "Unsupported media type.");
 }
 
 export async function ensureJobExists(jobId: string) {

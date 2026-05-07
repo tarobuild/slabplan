@@ -260,6 +260,7 @@ router.get(
 
 router.get(
   "/jobs/:jobId/trash",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const query = trashQuerySchema.safeParse(req.query);
 

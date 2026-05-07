@@ -1432,6 +1432,34 @@ export async function moveFile(params: {
     );
   }
 
+  if (destination.scope !== sourceFolder.scope) {
+    throw new HttpError(
+      400,
+      "Destination folder must belong to the same scope as the source folder.",
+    );
+  }
+
+  if (destination.leadId !== sourceFolder.leadId) {
+    throw new HttpError(
+      400,
+      "Destination folder must belong to the same lead as the source folder.",
+    );
+  }
+
+  if (destination.dailyLogId !== sourceFolder.dailyLogId) {
+    throw new HttpError(
+      400,
+      "Destination folder must belong to the same daily log as the source folder.",
+    );
+  }
+
+  if (destination.scheduleItemId !== sourceFolder.scheduleItemId) {
+    throw new HttpError(
+      400,
+      "Destination folder must belong to the same schedule item as the source folder.",
+    );
+  }
+
   const [updated] = await db
     .update(files)
     .set({

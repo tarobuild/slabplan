@@ -124,7 +124,12 @@ router.get(
     }
 
     const folderId = getParam(req.params.id, "folder id");
-    await assertCanViewFolder(req.auth!, folderId);
+
+    if (query.data.includeDeleted) {
+      await assertCanUploadToFolder(req.auth!, folderId);
+    } else {
+      await assertCanViewFolder(req.auth!, folderId);
+    }
 
     const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
     const cursor = query.data.cursor ? decodeCursor(query.data.cursor) : null;
@@ -286,8 +291,8 @@ router.get(
   "/files/:id/download",
   asyncHandler(async (req, res) => {
     const fileId = getParam(req.params.id, "file id");
-    await assertCanViewFile(req.auth!, fileId, true);
-    const file = await getFileOrThrow(fileId, true);
+    await assertCanViewFile(req.auth!, fileId);
+    const file = await getFileOrThrow(fileId);
 
     if (!file.fileUrl) {
       throw new HttpError(404, "Stored file missing.");

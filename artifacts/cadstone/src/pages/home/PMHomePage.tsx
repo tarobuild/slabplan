@@ -9,6 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { MobileDrillTile } from "./MobileDrillTile"
 import type { PmHome } from "./types"
 
 export default function PMHomePage({ data }: { data: PmHome }) {
@@ -43,12 +44,29 @@ export default function PMHomePage({ data }: { data: PmHome }) {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryStat label="Active jobs" value={summary.activeJobs} to="/jobs" />
-        <SummaryStat label="Open leads" value={summary.openLeads} to="/sales/leads" />
-        <SummaryStat
+        <MobileDrillTile
+          label="Active jobs"
+          value={summary.activeJobs}
+          to="/jobs"
+          drillTitle="Active jobs"
+          drillKind="active-jobs"
+          testId="home-pm-summary-active-jobs"
+        />
+        <MobileDrillTile
+          label="Open leads"
+          value={summary.openLeads}
+          to="/sales/leads"
+          drillTitle="Open leads"
+          drillKind="open-leads"
+          testId="home-pm-summary-open-leads"
+        />
+        <MobileDrillTile
           label="Open schedule items"
           value={summary.openScheduleItems}
           to="/dashboard"
+          drillTitle="Open schedule items"
+          drillKind="open-schedule"
+          testId="home-pm-summary-open-schedule"
         />
       </div>
 
@@ -114,7 +132,7 @@ export default function PMHomePage({ data }: { data: PmHome }) {
                   <span className="flex-1 truncate text-sm font-medium text-slate-900">
                     {item.title}
                   </span>
-                  <span className="hidden text-xs text-slate-500 sm:inline">
+                  <span className="truncate text-xs text-slate-500">
                     {item.jobTitle}
                   </span>
                   <span className="text-xs text-slate-500">
@@ -161,18 +179,6 @@ export default function PMHomePage({ data }: { data: PmHome }) {
         </Card>
       </div>
     </div>
-  )
-}
-
-function SummaryStat({ label, value, to }: { label: string; value: number; to: string }) {
-  return (
-    <Link
-      to={to}
-      className="rounded-lg border border-[#E5E7EB] bg-white p-4 transition hover:border-orange-300 hover:bg-orange-50/40"
-    >
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
-    </Link>
   )
 }
 

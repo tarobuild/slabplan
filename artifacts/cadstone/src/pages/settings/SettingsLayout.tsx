@@ -103,14 +103,14 @@ export default function SettingsLayout() {
                   data-settings-chip
                   className={({ isActive }) =>
                     cn(
-                      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                      "inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-sm font-medium transition-colors",
                       isActive
                         ? "border-orange-300 bg-orange-50 text-orange-700"
                         : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                     )
                   }
                 >
-                  <item.icon className="size-3.5" aria-hidden="true" />
+                  <item.icon className="size-4" aria-hidden="true" />
                   {item.label}
                 </NavLink>
               </li>

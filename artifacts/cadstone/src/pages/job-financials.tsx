@@ -197,7 +197,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
           {liStatus.label}
         </Badge>
       </td>
-      <td className="px-3 py-2">
+      <td className="sticky left-0 z-10 bg-white px-3 py-2 shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">
         <Input
           defaultValue={li.description}
           onBlur={(e) => {
@@ -211,6 +211,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       <td className="px-3 py-2 text-right">
         <Input
           type="number"
+          inputMode="decimal"
           defaultValue={String(Number(li.qty))}
           onBlur={(e) => {
             const v = Number(e.target.value)
@@ -224,6 +225,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       <td className="px-3 py-2 text-right tabular-nums">
         <Input
           type="number"
+          inputMode="decimal"
           step="0.01"
           defaultValue={(li.rateCents / 100).toFixed(2)}
           onBlur={(e) => {
@@ -240,6 +242,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
         <Input
           key={`sched-${li.scheduledValueCents}`}
           type="number"
+          inputMode="decimal"
           step="0.01"
           defaultValue={(li.scheduledValueCents / 100).toFixed(2)}
           onBlur={(e) => {
@@ -280,6 +283,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       <td className="px-3 py-2 text-right">
         <Input
           type="number"
+          inputMode="numeric"
           min={0}
           max={100}
           step="1"
@@ -342,6 +346,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
           variant="ghost"
           aria-label={`Delete line item: ${li.description}`}
           onClick={() => onDelete(li.id)}
+          className="min-h-10 min-w-10 md:min-h-9 md:min-w-9"
         >
           <Trash2 className="h-4 w-4" />
         </Button>
@@ -459,12 +464,16 @@ const SovAreaRow = memo(function SovAreaRow({
         </div>
       </div>
       {collapsed ? null : (
+        <>
+        <div className="px-3 pt-1 text-[10px] uppercase tracking-wide text-slate-400 md:hidden">
+          ← swipe to see more →
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Description</th>
+                <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">Description</th>
                 <th className="px-3 py-2 text-right">Qty</th>
                 <th className="px-3 py-2 text-right">Rate</th>
                 <th className="px-3 py-2 text-right">Scheduled</th>
@@ -506,6 +515,7 @@ const SovAreaRow = memo(function SovAreaRow({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   )

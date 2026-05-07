@@ -135,7 +135,7 @@ function InlineMoneyInput({
     return (
       <button
         type="button"
-        className="rounded px-1.5 py-0.5 text-right hover:bg-slate-100"
+        className="inline-flex min-h-10 items-center justify-end rounded px-2 py-1 text-right hover:bg-slate-100 md:min-h-0 md:px-1.5 md:py-0.5"
         onClick={() => setEditing(true)}
       >
         {fmtMoney(valueCents)}
@@ -198,7 +198,7 @@ function InlineDate({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="rounded px-1 py-0.5 text-[11px] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          className="inline-flex min-h-10 items-center rounded px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 md:min-h-0 md:px-1 md:py-0.5 md:text-[11px]"
         >
           {value ? fmtDate(value) : placeholder}
         </button>
@@ -276,7 +276,7 @@ function InlinePmPicker({
         <button
           type="button"
           className={cn(
-            "rounded px-1 py-0.5 text-[11px] hover:bg-slate-100 hover:text-slate-700",
+            "inline-flex min-h-10 items-center rounded px-2 py-1.5 text-xs hover:bg-slate-100 hover:text-slate-700 md:min-h-0 md:px-1 md:py-0.5 md:text-[11px]",
             projectManagerId ? "text-slate-700" : "italic text-slate-400",
           )}
         >
@@ -600,7 +600,181 @@ export default function ClientDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-[#E5E7EB] bg-white">
+            <>
+            <div className="space-y-2 md:hidden">
+              {sortedJobs.map((j) => {
+                const contract = j.contractValueCents ?? 0
+                const paid = j.amountPaidCents ?? 0
+                const out = Math.max(0, contract - paid)
+                return (
+                  <div
+                    key={j.id}
+                    className="rounded-lg border border-[#E5E7EB] bg-white p-3 active:bg-slate-50"
+                    onClick={() => navigate(`/jobs/${j.id}`)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium text-slate-900">
+                          {j.title}
+                        </div>
+                        {(j.city || j.state) && (
+                          <div className="truncate text-xs text-slate-400">
+                            {[j.city, j.state].filter(Boolean).join(", ")}
+                          </div>
+                        )}
+                      </div>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button type="button" className="inline-flex">
+                              {j.status ? (
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-xs cursor-pointer",
+                                    JOB_STATUS_COLORS[j.status] ?? "",
+                                  )}
+                                >
+                                  {j.status}
+                                </Badge>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent align="end" className="w-32 p-1">
+                            {JOB_STATUSES.map((s) => (
+                              <button
+                                key={s}
+                                type="button"
+                                className={cn(
+                                  "block w-full rounded px-2 py-1 text-left text-sm hover:bg-slate-100",
+                                  j.status === s && "bg-slate-50 font-semibold",
+                                )}
+                                onClick={() =>
+                                  void saveJobFields(j.id, { status: s })
+                                }
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+
+                    <div
+                      className="mt-2 grid grid-cols-3 gap-2 text-xs"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Contract
+                        </div>
+                        <InlineMoneyInput
+                          valueCents={contract}
+                          disabled={!!j.hasTracker}
+                          disabledTitle="Managed by Financial Tracker"
+                          onSave={(v) => saveJobMoney(j.id, "contractValueCents", v)}
+                        />
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Paid
+                        </div>
+                        <InlineMoneyInput
+                          valueCents={paid}
+                          disabled={!!j.hasTracker}
+                          disabledTitle="Managed by Financial Tracker"
+                          onSave={(v) => saveJobMoney(j.id, "amountPaidCents", v)}
+                        />
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                          Outstanding
+                        </div>
+                        <div
+                          className={cn(
+                            "font-medium tabular-nums",
+                            out > 0 ? "text-orange-700" : "text-slate-400",
+                          )}
+                        >
+                          {fmtMoney(out)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                        Projected
+                      </span>
+                      <InlineDate
+                        value={j.projectedStart}
+                        placeholder="Start —"
+                        onSave={(next) =>
+                          saveJobFields(j.id, { projectedStart: next })
+                        }
+                      />
+                      <span className="text-[11px] text-slate-300">→</span>
+                      <InlineDate
+                        value={j.projectedCompletion}
+                        placeholder="End —"
+                        onSave={(next) =>
+                          saveJobFields(j.id, { projectedCompletion: next })
+                        }
+                      />
+                    </div>
+                    <div
+                      className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                        Actual
+                      </span>
+                      <InlineDate
+                        value={j.actualStart}
+                        placeholder="Start —"
+                        onSave={(next) => saveJobFields(j.id, { actualStart: next })}
+                      />
+                      <span className="text-[11px] text-slate-300">→</span>
+                      <InlineDate
+                        value={j.actualCompletion}
+                        placeholder="End —"
+                        onSave={(next) =>
+                          saveJobFields(j.id, { actualCompletion: next })
+                        }
+                      />
+                    </div>
+                    <div
+                      className="mt-1 flex items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                        PM
+                      </span>
+                      {isAdmin ? (
+                        <InlinePmPicker
+                          projectManagerId={j.projectManagerId}
+                          projectManagerName={j.projectManagerName}
+                          options={workerOptions}
+                          onChange={(next) =>
+                            saveJobFields(j.id, { projectManagerId: next })
+                          }
+                        />
+                      ) : (
+                        <span className="text-[11px] text-slate-500">
+                          {j.projectManagerName ?? "Unassigned"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="hidden md:block overflow-hidden rounded-lg border border-[#E5E7EB] bg-white">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
                   <tr>
@@ -775,6 +949,7 @@ export default function ClientDetailPage() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       )}

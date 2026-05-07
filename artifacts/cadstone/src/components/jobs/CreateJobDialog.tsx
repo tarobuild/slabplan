@@ -271,14 +271,15 @@ export default function CreateJobDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl flex flex-col max-h-[90dvh] p-0 gap-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-2">
           <DialogTitle>Create Job</DialogTitle>
           <p className="text-xs text-slate-400">
             {step === 1 ? "Step 1 of 2 — Job Basics" : "Step 2 of 2 — Location & Contract"}
           </p>
         </DialogHeader>
         <form
+          className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             if (step === 1) {
               e.preventDefault()
@@ -289,7 +290,7 @@ export default function CreateJobDialog({
           }}
         >
           {step === 1 ? (
-            <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4 px-6 py-4 flex-1 overflow-y-auto">
               <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="title">Title *</Label>
                 <Input
@@ -362,6 +363,8 @@ export default function CreateJobDialog({
                         <Input
                           id="new-client-email"
                           type="email"
+                          inputMode="email"
+                          autoComplete="email"
                           value={newClientEmail}
                           onChange={(event) => setNewClientEmail(event.target.value)}
                           placeholder="john@example.com"
@@ -372,6 +375,8 @@ export default function CreateJobDialog({
                         <Input
                           id="new-client-phone"
                           type="tel"
+                          inputMode="tel"
+                          autoComplete="tel"
                           value={newClientPhone}
                           onChange={(event) => setNewClientPhone(event.target.value)}
                           placeholder="(555) 123-4567"
@@ -445,7 +450,7 @@ export default function CreateJobDialog({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4 px-6 py-4 flex-1 overflow-y-auto">
               <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="streetAddress">Street Address</Label>
                 <Input
@@ -482,6 +487,9 @@ export default function CreateJobDialog({
                     value={form.zipCode}
                     onChange={setField("zipCode")}
                     placeholder="78701"
+                    inputMode="numeric"
+                    autoComplete="postal-code"
+                    maxLength={10}
                   />
                 </div>
               </div>
@@ -520,13 +528,14 @@ export default function CreateJobDialog({
                   onChange={setField("contractPrice")}
                   placeholder="0.00"
                   type="number"
+                  inputMode="decimal"
                   min="0"
                   step="0.01"
                 />
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-white px-6 py-3">
             {step === 1 ? (
               <>
                 <Button

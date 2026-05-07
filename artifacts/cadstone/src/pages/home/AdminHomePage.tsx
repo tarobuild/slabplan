@@ -2,6 +2,7 @@ import { Link } from "react-router-dom"
 import { Briefcase, DollarSign, FileWarning, TrendingUp, Users2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { MobileDrillTile } from "./MobileDrillTile"
 import { type AdminHome, formatCents } from "./types"
 
 export default function AdminHomePage({ data }: { data: AdminHome }) {
@@ -29,17 +30,23 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
           sub={`${kpis.newJobsThisMonth} new job${kpis.newJobsThisMonth === 1 ? "" : "s"}`}
           to="/clients"
         />
-        <Kpi
+        <MobileDrillTile
           icon={<Briefcase className="size-4 text-sky-600" />}
           label="Active jobs"
           value={String(kpis.activeJobs)}
           to="/clients"
+          drillTitle="Active jobs"
+          drillKind="active-jobs"
+          testId="home-admin-kpi-active-jobs"
         />
-        <Kpi
+        <MobileDrillTile
           icon={<Users2 className="size-4 text-indigo-600" />}
           label="Open leads"
           value={String(kpis.openLeads)}
           to="/sales/leads"
+          drillTitle="Open leads"
+          drillKind="open-leads"
+          testId="home-admin-kpi-open-leads"
         />
       </div>
 

@@ -1396,6 +1396,8 @@ export default function LeadsPage() {
                     <Input
                       id="contact-email"
                       type="email"
+                      inputMode="email"
+                      autoComplete="email"
                       value={contactForm.email}
                       onChange={(e) =>
                         setContactForm((c) => ({ ...c, email: e.target.value }))
@@ -1408,6 +1410,8 @@ export default function LeadsPage() {
                     <Input
                       id="contact-phone"
                       type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
                       value={contactForm.phone}
                       onChange={(e) =>
                         setContactForm((c) => ({ ...c, phone: e.target.value }))
@@ -1872,6 +1876,8 @@ export default function LeadsPage() {
                           <Label>Email</Label>
                           <Input
                             type="email"
+                            inputMode="email"
+                            autoComplete="email"
                             value={editForm.contactEmail}
                             onChange={setEditField("contactEmail")}
                             placeholder="jane@example.com"
@@ -1881,6 +1887,8 @@ export default function LeadsPage() {
                           <Label>Phone</Label>
                           <Input
                             type="tel"
+                            inputMode="tel"
+                            autoComplete="tel"
                             value={editForm.contactPhone}
                             onChange={setEditField("contactPhone")}
                             placeholder="(555) 000-0000"

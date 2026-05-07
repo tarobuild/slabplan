@@ -25,6 +25,12 @@ import { requireAdmin, requireAuth } from "../middleware/require-auth";
 const router: IRouter = Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Pre-computed bcrypt hash of a dummy password used to ensure the "user not
+// found" code path spends roughly the same CPU time as the "wrong password"
+// path, preventing timing-based email enumeration attacks.
+const DUMMY_HASH =
+  "$2b$12$BnV94b7.YpLdO/ZsFw2ybu9dVyy9URaEbJ5ocrjqtkw0NIAHKySl2";
+
 function normalizeEmailForRateLimit(value: unknown) {
   if (typeof value !== "string") {
     return null;
@@ -202,14 +208,17 @@ router.post(
     const user = await findActiveUserByEmailWithPasswordHash(email);
 
     if (!user) {
+      // Perform a dummy bcrypt comparison so this branch takes the same amount
+      // of CPU time as the real password-check path, preventing timing-based
+      // email enumeration attacks.
+      await bcrypt.compare(password, DUMMY_HASH);
       throw new HttpError(401, "Invalid email or password.");
     }
 
     if (!user.isActive) {
       // Constant-time-ish: still hash so we don't leak active vs inactive
-      // through wall-clock timing. Same approach as the `user not found`
-      // branch (which simply errors without a bcrypt call — the timing
-      // gap there is intentional and existed before this check).
+      // through wall-clock timing. The `user not found` branch above also
+      // performs a dummy bcrypt call for the same reason.
       await bcrypt.compare(password, user.passwordHash);
       throw new HttpError(
         401,

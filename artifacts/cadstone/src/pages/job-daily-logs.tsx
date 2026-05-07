@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useOutletContext } from "react-router-dom"
 import { useDropzone } from "react-dropzone"
 import {
   AlertTriangle,
+  Camera,
   Check,
   ChevronLeft,
   Cloud,
@@ -895,6 +896,30 @@ function groupLogsByDate(logs: DailyLogListItem[]) {
   }
 
   return groups
+}
+
+function PendingImageThumbnail({ file, alt }: { file: File; alt: string }) {
+  const [url, setUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file)
+    setUrl(objectUrl)
+    return () => {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }, [file])
+
+  if (!url) {
+    return <div className="size-10 shrink-0 rounded-md bg-slate-100" />
+  }
+
+  return (
+    <img
+      src={url}
+      alt={alt}
+      className="size-10 shrink-0 rounded-md border border-slate-200 object-cover"
+    />
+  )
 }
 
 function CommentAttachmentThumbnail({
@@ -2514,7 +2539,7 @@ function DailyLogDialog({
 
   const onDrop = useDropzone({
     onDrop: (files) => {
-      const validationError = validateSelectedFiles([...pendingFiles, ...files], "document")
+      const validationError = validateSelectedFiles([...pendingFiles, ...files], "any")
 
       if (validationError) {
         setAttachmentError(validationError)
@@ -2526,6 +2551,20 @@ function DailyLogDialog({
     },
     noKeyboard: true,
   })
+
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+
+  const handleCameraFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const captured = Array.from(files)
+    const validationError = validateSelectedFiles([...pendingFiles, ...captured], "any")
+    if (validationError) {
+      setAttachmentError(validationError)
+      return
+    }
+    setAttachmentError(null)
+    setPendingFiles((current) => [...current, ...captured])
+  }
 
   async function uploadPendingFiles(targetLogId: string) {
     if (pendingFiles.length === 0) return
@@ -2609,7 +2648,14 @@ function DailyLogDialog({
     }
   }
 
-  const combinedAttachments = [
+  const combinedAttachments: Array<{
+    key: string
+    name: string
+    existing: boolean
+    mimeType: string | null
+    storageStatus: "ok" | "missing" | undefined
+    file?: File
+  }> = [
     ...existingAttachments
       .filter((attachment) => !removedAttachmentIds.includes(attachment.id))
       .map((attachment) => ({
@@ -2625,6 +2671,7 @@ function DailyLogDialog({
       existing: false,
       mimeType: file.type || null,
       storageStatus: undefined as "ok" | "missing" | undefined,
+      file,
     })),
   ]
 
@@ -2856,9 +2903,9 @@ function DailyLogDialog({
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-sm font-semibold text-slate-950">Attachments</div>
-                      <div className="text-sm text-slate-500">Upload documents or photos, or drop files anywhere in this section.</div>
+                      <div className="text-sm text-slate-500">Upload photos, videos, or documents, or drop files anywhere in this section.</div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
                         variant="outline"
@@ -2869,9 +2916,29 @@ function DailyLogDialog({
                       >
                         Create new doc
                       </Button>
-                      <Button type="button" variant="outline" onClick={() => onDrop.open()}>
-                        Add
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => cameraInputRef.current?.click()}
+                      >
+                        <Camera className="size-4" />
+                        Take photo
                       </Button>
+                      <Button type="button" variant="outline" onClick={() => onDrop.open()}>
+                        Add file
+                      </Button>
+                      <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        multiple
+                        className="hidden"
+                        onChange={(event) => {
+                          handleCameraFiles(event.target.files)
+                          event.target.value = ""
+                        }}
+                      />
                     </div>
                   </div>
                   <div
@@ -2881,7 +2948,7 @@ function DailyLogDialog({
                       onDrop.isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 bg-slate-50 hover:border-orange-400 hover:bg-orange-50/50",
                     )}
                   >
-                    <input {...onDrop.getInputProps({ accept: uploadAcceptForMediaType("document") })} />
+                    <input {...onDrop.getInputProps({ accept: uploadAcceptForMediaType("any") })} />
                     {onDrop.isDragActive ? (
                       <>
                         <Upload className="mx-auto size-5 text-orange-500" />
@@ -2918,6 +2985,8 @@ function DailyLogDialog({
                           <div className="flex min-w-0 items-center gap-3">
                             {isMissing ? (
                               <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+                            ) : !attachment.existing && attachment.file && (attachment.mimeType ?? "").startsWith("image/") ? (
+                              <PendingImageThumbnail file={attachment.file} alt={attachment.name} />
                             ) : (
                               <FileText className="size-4 shrink-0 text-slate-400" />
                             )}

@@ -4,7 +4,7 @@ import {
   formatUploadSize,
 } from "@workspace/api-zod"
 
-export type UploadMediaType = "document" | "photo" | "video"
+export type UploadMediaType = "document" | "photo" | "video" | "any"
 
 // The size and count limits live in @workspace/api-zod so the file picker
 // and the multer config on the server cannot drift apart. Keep the legacy
@@ -156,6 +156,10 @@ function invalidTypeMessage(mediaType: UploadMediaType) {
     return "Videos must be video files (.mp4, .mov, .avi, .webm)."
   }
 
+  if (mediaType === "any") {
+    return "File type not supported. Use a photo, video, or document."
+  }
+
   return "Documents must be supported office, text, or PDF files."
 }
 
@@ -166,6 +170,17 @@ export function uploadAcceptForMediaType(mediaType: UploadMediaType) {
 
   if (mediaType === "video") {
     return [...videoExtensions, ...videoMimeTypes].join(",")
+  }
+
+  if (mediaType === "any") {
+    return [
+      ...documentExtensions,
+      ...photoExtensions,
+      ...videoExtensions,
+      ...documentAcceptMimeTypes,
+      ...photoMimeTypes,
+      ...videoMimeTypes,
+    ].join(",")
   }
 
   return [...documentExtensions, ...documentAcceptMimeTypes].join(",")
@@ -199,7 +214,11 @@ export function validateSelectedFiles(
         ? photoExtensions.includes(extension) && isLikelyPhotoMimeType(mimeType)
         : mediaType === "video"
           ? videoExtensions.includes(extension) && videoMimeTypes.has(mimeType)
-          : documentExtensions.includes(extension) && isLikelyDocumentMimeType(mimeType)
+          : mediaType === "any"
+            ? (photoExtensions.includes(extension) && isLikelyPhotoMimeType(mimeType)) ||
+              (videoExtensions.includes(extension) && videoMimeTypes.has(mimeType)) ||
+              (documentExtensions.includes(extension) && isLikelyDocumentMimeType(mimeType))
+            : documentExtensions.includes(extension) && isLikelyDocumentMimeType(mimeType)
 
     if (!isAllowed) {
       return `${file.name}: ${invalidTypeMessage(mediaType)}`

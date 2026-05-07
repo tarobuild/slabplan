@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import {
   and,
   asc,
@@ -36,7 +37,13 @@ import {
 import { requireManagerOrAbove } from "../middleware/require-auth";
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { buildDailyLogVisibilityFilter } from "../lib/daily-log-visibility";
-import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
+import {
+  documentExtensions,
+  photoExtensions,
+  validateUploadForMediaType,
+  videoExtensions,
+  writeActivity,
+} from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
 import { emitRealtimeEvent } from "../lib/realtime";
@@ -2208,12 +2215,25 @@ router.post(
     const attachments = [];
 
     for (const uploadedFile of uploadedFiles) {
-      validateUploadForMediaType("document", uploadedFile);
+      // Daily logs accept docs, photos, and videos so workers can drop a
+      // phone snapshot straight into the field log. Pick the right
+      // mediaType per file so HEIC/MOV land under the photo/video
+      // subfolder (and pass the matching allowlist) rather than getting
+      // rejected by the document-only validator.
+      const ext = path.extname(uploadedFile.originalname ?? "").toLowerCase();
+      const mediaType: "photo" | "video" | "document" = photoExtensions.includes(ext)
+        ? "photo"
+        : videoExtensions.includes(ext)
+          ? "video"
+          : documentExtensions.includes(ext)
+            ? "document"
+            : "document";
+      validateUploadForMediaType(mediaType, uploadedFile);
 
       const storedFileName = buildStoredFileName(uploadedFile.originalname);
       const uploadPath = buildUploadPath({
         jobId: `daily-log-${logId}`,
-        mediaType: "document",
+        mediaType,
         storedFileName,
       });
 

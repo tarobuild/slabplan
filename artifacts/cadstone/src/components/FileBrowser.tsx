@@ -58,7 +58,12 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
-import { uploadAcceptForMediaType, uploadWithProgress, validateSelectedFiles } from "@/lib/uploads"
+import {
+  uploadAcceptForMediaType,
+  uploadWithProgress,
+  validateSelectedFilesAsync,
+  videoUploadHint,
+} from "@/lib/uploads"
 import { useAuthStore } from "@/store/auth"
 import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
@@ -449,7 +454,7 @@ export default function FileBrowser({
     }
   }
 
-  const handleUploadSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return
     if (uploadTask) {
       toast.info("Wait for the current upload to finish or cancel it first.")
@@ -457,7 +462,10 @@ export default function FileBrowser({
       return
     }
     const nextFiles = Array.from(e.target.files)
-    const validationError = validateSelectedFiles(nextFiles, mediaType)
+    // Single helper runs the synchronous type/size/count checks and
+    // then the async video-duration probe so a long clip is rejected
+    // before the upload starts.
+    const validationError = await validateSelectedFilesAsync(nextFiles, mediaType)
 
     if (validationError) {
       setUploadError(validationError)
@@ -782,7 +790,7 @@ export default function FileBrowser({
   }
 
   const onDrop = useCallback(
-    (droppedFiles: File[]) => {
+    async (droppedFiles: File[]) => {
       if (!currentFolderId || isReadOnly) return
       // Refuse a second concurrent upload — we only track one task and
       // letting another overwrite it would corrupt the progress UI.
@@ -790,7 +798,7 @@ export default function FileBrowser({
         toast.info("Wait for the current upload to finish or cancel it first.")
         return
       }
-      const validationError = validateSelectedFiles(droppedFiles, mediaType)
+      const validationError = await validateSelectedFilesAsync(droppedFiles, mediaType)
       if (validationError) {
         setUploadError(validationError)
         return
@@ -1094,6 +1102,9 @@ export default function FileBrowser({
                   >
                     <Upload className="mx-auto mb-3 size-8 text-slate-300" />
                     <p className="text-sm font-medium text-slate-500">Drag & drop files here, or click to upload</p>
+                    {mediaType === "video" ? (
+                      <p className="mt-1 text-xs text-slate-400">{videoUploadHint()}</p>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="py-16 text-center">
@@ -1110,6 +1121,9 @@ export default function FileBrowser({
                 >
                   <Upload className="mb-2 size-5 text-slate-300" />
                   <p className="text-sm text-slate-500">Drag & drop files here, or click to upload</p>
+                  {mediaType === "video" ? (
+                    <p className="mt-1 text-xs text-slate-400">{videoUploadHint()}</p>
+                  ) : null}
                 </div>
               ) : (
                 <div className="py-8 text-center text-sm text-slate-400">

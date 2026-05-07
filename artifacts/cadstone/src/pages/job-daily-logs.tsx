@@ -119,7 +119,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
-import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
+import { uploadAcceptForMediaType, validateSelectedFilesAsync } from "@/lib/uploads"
 import { useFilePreview } from "@/components/files/file-preview-context"
 import type { PreviewFile } from "@/components/files/FilePreview"
 import { toast } from "sonner"
@@ -2621,8 +2621,16 @@ function DailyLogDialog({
   }, [open, values.includeWeather, values.logDate, values.jobId, selectedJob?.streetAddress, selectedJob?.city, selectedJob?.state, selectedJob?.zipCode])
 
   const onDrop = useDropzone({
-    onDrop: (files) => {
-      const validationError = validateSelectedFiles([...pendingFiles, ...files], "any")
+    onDrop: async (files) => {
+      // `validateSelectedFilesAsync` runs the synchronous type/size/count
+      // checks first and then probes the duration of any video files in
+      // the selection so a 3-minute clip is rejected before it leaves
+      // the browser. Daily-logs accepts photos, videos, and documents
+      // (mediaType "any"), so the duration cap matters here.
+      const validationError = await validateSelectedFilesAsync(
+        [...pendingFiles, ...files],
+        "any",
+      )
 
       if (validationError) {
         setAttachmentError(validationError)
@@ -2637,10 +2645,15 @@ function DailyLogDialog({
 
   const cameraInputRef = useRef<HTMLInputElement>(null)
 
-  const handleCameraFiles = (files: FileList | null) => {
+  const handleCameraFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     const captured = Array.from(files)
-    const validationError = validateSelectedFiles([...pendingFiles, ...captured], "any")
+    // Same async validator as the dropzone — enforces video duration
+    // cap on captured clips before queuing them for upload.
+    const validationError = await validateSelectedFilesAsync(
+      [...pendingFiles, ...captured],
+      "any",
+    )
     if (validationError) {
       setAttachmentError(validationError)
       return

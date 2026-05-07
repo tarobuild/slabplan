@@ -15,6 +15,24 @@ export type UploadMediaType = "document" | "photo" | "video" | "any"
 export const UPLOAD_MAX_FILE_SIZE_BYTES = MAX_UPLOAD_FILE_BYTES
 export const UPLOAD_MAX_FILES = MAX_UPLOAD_FILE_COUNT
 
+// Max length of an uploaded video. The server cannot cheaply verify
+// duration without transcoding, so we enforce it on the client and rely
+// on the existing 500 MB size cap as the long-term safety net.
+export const MAX_VIDEO_DURATION_SECONDS = 120
+
+// Used by `isVideoFile` below to decide which selected files need a
+// duration probe. The picker no longer narrows by media type (we use
+// the shared WIDE_UPLOAD_ACCEPT_ATTRIBUTE everywhere) so these lists
+// only exist for the duration check.
+const videoExtensions = [".mp4", ".mov", ".avi", ".webm", ".m4v"]
+const videoMimeTypes = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/x-msvideo",
+  "video/webm",
+  "video/x-m4v",
+])
+
 function lowerExtension(fileName: string) {
   const index = fileName.lastIndexOf(".")
   return index >= 0 ? fileName.slice(index).toLowerCase() : ""
@@ -33,6 +51,26 @@ const formatMaxFileSize = formatUploadSize
  */
 export function uploadAcceptForMediaType(_mediaType: UploadMediaType) {
   return WIDE_UPLOAD_ACCEPT_ATTRIBUTE
+}
+
+/** Hint surfaced near video upload pickers so users learn the cap before they pick. */
+export function videoUploadHint() {
+  return `Videos must be ${MAX_VIDEO_DURATION_SECONDS / 60} minutes or shorter.`
+}
+
+/**
+ * Format a duration in seconds as a friendly "Xm Ys" / "Ys" string for
+ * end-user error messages. We intentionally avoid colon-separated
+ * times here because "0:07" reads ambiguously without context.
+ */
+export function formatVideoDuration(seconds: number): string {
+  const safe = Math.max(0, seconds)
+  const totalSeconds = Math.round(safe)
+  const minutes = Math.floor(totalSeconds / 60)
+  const remainder = totalSeconds % 60
+  if (minutes === 0) return `${remainder}s`
+  if (remainder === 0) return `${minutes}m`
+  return `${minutes}m ${remainder}s`
 }
 
 /**
@@ -74,6 +112,137 @@ export function validateSelectedFiles(
   }
 
   return null
+}
+
+// ---------------------------------------------------------------------------
+// Async video-duration validator.
+// ---------------------------------------------------------------------------
+//
+// Run this AFTER the synchronous `validateSelectedFiles` check passes —
+// it short-circuits non-video selections and otherwise reads each
+// video's duration via an off-DOM `<video>` element so we can reject
+// clips longer than `MAX_VIDEO_DURATION_SECONDS` before the upload
+// starts. If the browser cannot decode the metadata (corrupt header,
+// exotic codec) we treat the duration as unknown and let the file
+// through — the server's existing size + magic-byte checks remain the
+// safety net.
+
+type DurationProbe = (file: File) => Promise<number | null>
+
+const DEFAULT_PROBE_TIMEOUT_MS = 8000
+
+function defaultProbeDuration(file: File): Promise<number | null> {
+  if (typeof document === "undefined" || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+    return Promise.resolve(null)
+  }
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const video = document.createElement("video")
+    video.preload = "metadata"
+    video.muted = true
+    let settled = false
+
+    const cleanup = () => {
+      try {
+        URL.revokeObjectURL(url)
+      } catch {
+        /* ignore */
+      }
+      video.removeAttribute("src")
+      try {
+        video.load()
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const finish = (value: number | null) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }
+
+    video.onloadedmetadata = () => {
+      const duration = video.duration
+      finish(Number.isFinite(duration) && duration > 0 ? duration : null)
+    }
+    video.onerror = () => finish(null)
+    setTimeout(() => finish(null), DEFAULT_PROBE_TIMEOUT_MS)
+
+    try {
+      video.src = url
+    } catch {
+      finish(null)
+    }
+  })
+}
+
+function isVideoFile(file: File): boolean {
+  const mime = file.type.toLowerCase()
+  if (mime.startsWith("video/") || videoMimeTypes.has(mime)) return true
+  return videoExtensions.includes(lowerExtension(file.name))
+}
+
+/**
+ * Async companion to `validateSelectedFiles`. Returns the first
+ * user-facing error message (or `null` if every video is acceptable /
+ * has unreadable metadata). Callers should still run the synchronous
+ * validator first; this helper assumes the file list has already
+ * passed type/size/count checks.
+ */
+export async function validateVideoDurations(
+  files: File[],
+  options?: {
+    maxDurationSeconds?: number
+    probe?: DurationProbe
+  },
+): Promise<string | null> {
+  const maxSeconds = options?.maxDurationSeconds ?? MAX_VIDEO_DURATION_SECONDS
+  const probe = options?.probe ?? defaultProbeDuration
+
+  for (const file of files) {
+    if (!isVideoFile(file)) continue
+    const duration = await probe(file)
+    if (duration == null) continue // unreadable → fall through to server
+    if (duration > maxSeconds) {
+      const limit = maxSeconds % 60 === 0
+        ? `${maxSeconds / 60} minute${maxSeconds === 60 ? "" : "s"}`
+        : `${maxSeconds} seconds`
+      return `Videos must be ${limit} or shorter. ${file.name} is ${formatVideoDuration(duration)}.`
+    }
+  }
+
+  return null
+}
+
+/**
+ * Runs the synchronous `validateSelectedFiles` first and, if it
+ * passes, runs `validateVideoDurations` on any video files in the
+ * selection. Returns the first failing message or `null` if everything
+ * is acceptable.
+ *
+ * The duration check fires regardless of `mediaType` so any picker —
+ * the Files > Videos browser, the daily-logs attachment dropzone (now
+ * mediaType `"any"`), or a future combined picker — gets the 2-minute
+ * cap enforced for free the moment a video file is selected.
+ */
+export async function validateSelectedFilesAsync(
+  files: File[],
+  mediaType: UploadMediaType,
+  options?: {
+    maxFileSizeBytes?: number
+    maxFiles?: number
+    maxDurationSeconds?: number
+    probeDuration?: DurationProbe
+  },
+): Promise<string | null> {
+  const sync = validateSelectedFiles(files, mediaType, options)
+  if (sync) return sync
+  return validateVideoDurations(files, {
+    maxDurationSeconds: options?.maxDurationSeconds,
+    probe: options?.probeDuration,
+  })
 }
 
 // ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ import { HttpError } from "./http";
 import { logger } from "./logger";
 import { deletePhysicalFile } from "./storage";
 import { validateMagicBytesForFiles } from "./upload-magic-bytes";
+import { validateVideoDurationsForFiles } from "./upload-video-duration";
 import { multipartIdempotencyMiddleware } from "../middleware/idempotency";
 
 const TMP_UPLOAD_DIR = path.resolve(process.cwd(), "tmp", "uploads");
@@ -627,6 +628,19 @@ function wrapMulter(
       } catch (validationErr) {
         logUploadOutcome(req, collectRequestUploads(req), validationErr);
         next(validationErr);
+        return;
+      }
+
+      // Video duration check. The browser-side picker enforces the same
+      // 2-minute cap, but a non-browser client can bypass it; ffprobe
+      // on the saved temp file closes that gap. Failures to probe
+      // (ffprobe missing, exotic codec) fall through, mirroring the
+      // client's behavior when the browser can't decode metadata.
+      try {
+        await validateVideoDurationsForFiles(collectRequestUploads(req));
+      } catch (durationErr) {
+        logUploadOutcome(req, collectRequestUploads(req), durationErr);
+        next(durationErr);
         return;
       }
 

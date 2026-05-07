@@ -14,6 +14,61 @@ export const MAX_UPLOAD_FILE_BYTES = 1024 * 1024 * 500;
 export const MAX_UPLOAD_FILE_COUNT = 20;
 
 /**
+ * Maximum allowed duration of an uploaded video, in seconds. Both the
+ * browser-side picker AND the API server enforce this — the client check
+ * gives users instant feedback before a multi-hundred-MB upload starts,
+ * and the server check (ffprobe on the saved temp file) closes the gap
+ * for non-browser clients or anyone who bypasses the picker.
+ */
+export const MAX_VIDEO_DURATION_SECONDS = 120;
+
+/**
+ * File extensions we treat as video for the duration check. The list is
+ * intentionally narrow — it mirrors the formats ffprobe / browsers can
+ * decode reliably. Unknown video containers fall through (probe returns
+ * null) on both sides of the wire.
+ */
+export const VIDEO_UPLOAD_EXTENSIONS: readonly string[] = [
+  ".mp4",
+  ".mov",
+  ".avi",
+  ".webm",
+  ".m4v",
+  ".mkv",
+];
+
+/** True when the given filename's extension or MIME indicates a video. */
+export function isVideoUpload(fileName: string, mimeType?: string | null): boolean {
+  const mime = (mimeType ?? "").toLowerCase();
+  if (mime.startsWith("video/")) return true;
+  return VIDEO_UPLOAD_EXTENSIONS.includes(extensionOf(fileName));
+}
+
+/**
+ * Format a duration in seconds as a friendly "Xm Ys" / "Ys" string for
+ * end-user error messages. We deliberately avoid colon-separated times
+ * here because "0:07" reads ambiguously without context.
+ */
+export function formatVideoDuration(seconds: number): string {
+  const safe = Math.max(0, seconds);
+  const totalSeconds = Math.round(safe);
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainder = totalSeconds % 60;
+  if (minutes === 0) return `${remainder}s`;
+  if (remainder === 0) return `${minutes}m`;
+  return `${minutes}m ${remainder}s`;
+}
+
+/** Friendly "2 minutes" / "30 seconds" label for the duration cap. */
+export function videoDurationLimitLabel(maxSeconds: number = MAX_VIDEO_DURATION_SECONDS): string {
+  if (maxSeconds % 60 === 0) {
+    const minutes = maxSeconds / 60;
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  return `${maxSeconds} seconds`;
+}
+
+/**
  * Human-friendly rendering of a byte limit (e.g. "100 MB", "256 KB",
  * "500 B"). Used in user-facing error messages on both sides of the wire.
  *

@@ -2,9 +2,12 @@ import {
   DANGEROUS_UPLOAD_EXTENSIONS,
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_COUNT,
+  MAX_VIDEO_DURATION_SECONDS as SHARED_MAX_VIDEO_DURATION_SECONDS,
   WIDE_UPLOAD_ACCEPT_ATTRIBUTE,
   dangerousUploadMessage,
   formatUploadSize,
+  formatVideoDuration as sharedFormatVideoDuration,
+  videoDurationLimitLabel,
 } from "@workspace/api-zod"
 
 export type UploadMediaType = "document" | "photo" | "video" | "any"
@@ -15,10 +18,11 @@ export type UploadMediaType = "document" | "photo" | "video" | "any"
 export const UPLOAD_MAX_FILE_SIZE_BYTES = MAX_UPLOAD_FILE_BYTES
 export const UPLOAD_MAX_FILES = MAX_UPLOAD_FILE_COUNT
 
-// Max length of an uploaded video. The server cannot cheaply verify
-// duration without transcoding, so we enforce it on the client and rely
-// on the existing 500 MB size cap as the long-term safety net.
-export const MAX_VIDEO_DURATION_SECONDS = 120
+// Max length of an uploaded video. Source of truth lives in
+// @workspace/api-zod so the server-side ffprobe check and this client
+// pre-flight cannot drift apart. Re-exported under the legacy name so
+// existing call sites don't churn.
+export const MAX_VIDEO_DURATION_SECONDS = SHARED_MAX_VIDEO_DURATION_SECONDS
 
 // Used by `isVideoFile` below to decide which selected files need a
 // duration probe. The picker no longer narrows by media type (we use
@@ -58,20 +62,9 @@ export function videoUploadHint() {
   return `Videos must be ${MAX_VIDEO_DURATION_SECONDS / 60} minutes or shorter.`
 }
 
-/**
- * Format a duration in seconds as a friendly "Xm Ys" / "Ys" string for
- * end-user error messages. We intentionally avoid colon-separated
- * times here because "0:07" reads ambiguously without context.
- */
-export function formatVideoDuration(seconds: number): string {
-  const safe = Math.max(0, seconds)
-  const totalSeconds = Math.round(safe)
-  const minutes = Math.floor(totalSeconds / 60)
-  const remainder = totalSeconds % 60
-  if (minutes === 0) return `${remainder}s`
-  if (remainder === 0) return `${minutes}m`
-  return `${minutes}m ${remainder}s`
-}
+// Re-export the shared formatter so existing call sites keep working
+// without each having to import from @workspace/api-zod directly.
+export const formatVideoDuration = sharedFormatVideoDuration
 
 /**
  * Front-end pre-flight gate. Mirrors the server's blocklist model: we
@@ -206,9 +199,7 @@ export async function validateVideoDurations(
     const duration = await probe(file)
     if (duration == null) continue // unreadable → fall through to server
     if (duration > maxSeconds) {
-      const limit = maxSeconds % 60 === 0
-        ? `${maxSeconds / 60} minute${maxSeconds === 60 ? "" : "s"}`
-        : `${maxSeconds} seconds`
+      const limit = videoDurationLimitLabel(maxSeconds)
       return `Videos must be ${limit} or shorter. ${file.name} is ${formatVideoDuration(duration)}.`
     }
   }

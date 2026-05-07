@@ -4,7 +4,10 @@ import {
   createMcpHttpHandler,
   type ResolvedMcpRequest,
 } from "@workspace/mcp-server/http";
-import type { ToolAuditHook } from "@workspace/mcp-server";
+import {
+  type ToolAuditHook,
+  TOOL_DEFINITIONS,
+} from "@workspace/mcp-server";
 import { db } from "@workspace/db";
 import { activityLog } from "@workspace/db/schema";
 import { readBearerToken } from "../middleware/require-auth";
@@ -16,7 +19,9 @@ import { getMcpInternalSecret } from "../middleware/mcp-context";
 import { logger } from "../lib/logger";
 
 
-const router: IRouter = Router();
+// ---------------------------------------------------------------------------
+// Shared audit writer
+// ---------------------------------------------------------------------------
 
 type AuditPayload = {
   toolName: string;
@@ -58,6 +63,12 @@ async function writeMcpAuditRow(payload: AuditPayload): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// MCP streamable-HTTP transport router
+// Mounted BEFORE requireAuth — the handler performs its own PAT-only auth
+// and emits JSON-RPC-friendly errors.
+// ---------------------------------------------------------------------------
+
 const buildAuditHook = (resolved: ResolvedMcpRequest): ToolAuditHook => {
   return async (event) => {
     await writeMcpAuditRow({
@@ -90,7 +101,9 @@ const mcpHandler = createMcpHttpHandler({
   },
 });
 
-router.all("/mcp", async (req: Request, res: Response) => {
+export const mcpTransportRouter: IRouter = Router();
+
+mcpTransportRouter.all("/mcp", async (req: Request, res: Response) => {
   try {
     await mcpHandler(req, res);
   } catch (err) {
@@ -106,6 +119,28 @@ router.all("/mcp", async (req: Request, res: Response) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// MCP stdio audit router
+// Mounted AFTER requireAuth and the per-identity rate limiter so that:
+//   1. Read-only PATs are rejected (requireAuth enforces scope on POST).
+//   2. Flood attempts are subject to the same per-identity bucket as every
+//      other authenticated endpoint.
+//   3. Non-PAT session tokens are rejected (patId presence check below).
+// ---------------------------------------------------------------------------
+
+// Derive the allowlist from the single source of truth for registered tools.
+// Any tool name not in this set is rejected at the audit endpoint, preventing
+// callers from inventing fictitious tool names in the log.
+const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set(
+  TOOL_DEFINITIONS.map((t) => t.name),
+);
+
+// Maximum clock skew allowed between the caller's reported startedAt and server
+// wall-clock time. Prevents backdating (past) and future-dating (future) of
+// audit entries. The stdio binary submits this immediately after tool execution,
+// so 5 minutes is generous even on slow networks.
+const MAX_TIMESTAMP_SKEW_MS = 5 * 60 * 1000;
+
 const auditPayloadSchema = z.object({
   toolName: z
     .string()
@@ -119,29 +154,25 @@ const auditPayloadSchema = z.object({
   errorMessage: z.string().max(2_000).optional(),
 });
 
+export const mcpAuditRouter: IRouter = Router();
+
 // PAT-only audit endpoint used by the stdio MCP binary to self-report tool
 // calls. Never mutates business entities — only writes the activity row.
-router.post("/mcp/audit", async (req: Request, res: Response) => {
-  const token = readBearerToken(req);
-  if (!token || !isPatToken(token)) {
-    res.status(401).json({
-      type: "about:blank",
-      title: "Unauthorized",
-      status: 401,
-      detail: "MCP audit requires a Personal Access Token (cs_pat_...).",
-    });
-    return;
-  }
+// Auth and rate limiting are handled by upstream middleware (requireAuth +
+// createPerUserApiRateLimit). This handler additionally:
+//   - Requires a PAT (not an interactive session token).
+//   - Validates toolName against the server-side allowlist of real tools.
+//   - Rejects timestamps that are too old or too far in the future.
+mcpAuditRouter.post("/mcp/audit", async (req: Request, res: Response) => {
+  const auth = req.auth;
 
-  let resolved;
-  try {
-    resolved = await resolvePersonalAccessToken(token);
-  } catch {
-    res.status(401).json({
+  // Require a PAT — interactive session tokens must not create audit rows.
+  if (!auth?.patId) {
+    res.status(403).json({
       type: "about:blank",
-      title: "Unauthorized",
-      status: 401,
-      detail: "PAT is revoked, expired, or unknown.",
+      title: "Forbidden",
+      status: 403,
+      detail: "MCP audit requires a Personal Access Token (cs_pat_...).",
     });
     return;
   }
@@ -158,11 +189,37 @@ router.post("/mcp/audit", async (req: Request, res: Response) => {
     return;
   }
 
+  // Reject unknown tool names — only registered tools may appear in the log.
+  if (!KNOWN_TOOL_NAMES.has(parsed.data.toolName)) {
+    res.status(422).json({
+      type: "about:blank",
+      title: "Unprocessable Entity",
+      status: 422,
+      detail: `Unknown MCP tool: "${parsed.data.toolName}".`,
+    });
+    return;
+  }
+
+  // Reject timestamps that deviate too far from server wall-clock time.
+  // This prevents both backdating (fabricating historical events) and
+  // future-dating (pre-staging events that haven't occurred yet).
+  const startedAt = new Date(parsed.data.startedAt);
+  const skewMs = Math.abs(Date.now() - startedAt.getTime());
+  if (skewMs > MAX_TIMESTAMP_SKEW_MS) {
+    res.status(422).json({
+      type: "about:blank",
+      title: "Unprocessable Entity",
+      status: 422,
+      detail: "startedAt deviates too far from server time (max ±5 minutes).",
+    });
+    return;
+  }
+
   await writeMcpAuditRow({
     toolName: parsed.data.toolName,
-    patId: resolved.patId,
-    userId: resolved.userId,
-    startedAt: new Date(parsed.data.startedAt),
+    patId: auth.patId,
+    userId: auth.userId,
+    startedAt,
     durationMs: parsed.data.durationMs,
     ok: parsed.data.ok,
     errorStatus: parsed.data.errorStatus,
@@ -171,5 +228,3 @@ router.post("/mcp/audit", async (req: Request, res: Response) => {
 
   res.json({ ok: true });
 });
-
-export default router;

@@ -16,7 +16,7 @@ import internalBackupRouter from "./internal-backup";
 import financialsRouter from "./financials";
 import jobsRouter from "./jobs";
 import leadsRouter from "./leads";
-import mcpRouter from "./mcp";
+import { mcpTransportRouter, mcpAuditRouter } from "./mcp";
 import reportsRouter from "./reports";
 import resourcesRouter from "./resources";
 import scheduleRouter from "./schedule";
@@ -47,7 +47,7 @@ router.use(filesSignedRouter);
 // route handles its own PAT-only auth and emits JSON-RPC-friendly errors;
 // going through the regular middleware would convert auth failures into
 // problem+json before the MCP transport could wrap them.
-router.use(mcpRouter);
+router.use(mcpTransportRouter);
 router.use(requireAuth);
 // Per-identity rate limit, layered on top of the global IP-based limiter
 // mounted earlier in app.ts. Authenticated users get their own dedicated
@@ -57,6 +57,11 @@ router.use(requireAuth);
 // headers reflect whichever of the two limiters is currently the binding
 // (stricter) constraint.
 router.use(createPerUserApiRateLimit());
+// MCP stdio audit endpoint. Mounted AFTER requireAuth and the per-identity
+// rate limiter so that read-only PATs are rejected by scope enforcement,
+// flood attempts are throttled per-identity, and session tokens cannot
+// submit audit rows.
+router.use(mcpAuditRouter);
 // Tag downstream activity rows with the calling MCP tool when present.
 // Reads `X-MCP-Tool` from the request and stashes it in AsyncLocalStorage
 // for `writeActivity`. No-op for non-MCP traffic.

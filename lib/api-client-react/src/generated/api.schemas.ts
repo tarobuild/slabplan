@@ -2340,6 +2340,17 @@ export type CursorParamParameter = string;
  */
 export type CursorLimitParamParameter = number;
 
+export type FinancialsPostJobsJobidFinancialsChangeOrdersParseBody = {
+  file: Blob;
+};
+
+export type FinancialsPostJobsJobidFinancialsChangeOrdersParse200 = {
+  number: string;
+  description: string | null;
+  amountCents: number;
+  fileId: string | null;
+};
+
 export type UsersGetUsersParams = {
   /**
    * Admin-only. When `true` the response also includes deactivated users.

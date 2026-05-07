@@ -45,6 +45,130 @@ tags:
   - name: reports
     description: Admin business reports (A/R, revenue, pipeline, etc.)
 paths:
+  /jobs/{jobId}/financials/change-orders/parse:
+    post:
+      operationId: financials_post_jobs_jobid_financials_change_orders_parse
+      tags:
+        - jobs
+      summary: POST /jobs/{jobId}/financials/change-orders/parse
+      description: |
+        Upload a single change-order document (PDF, image, DOCX, XLSX,
+        CSV, or text) and have Claude extract `{ number, description,
+        amountCents }`. The file is saved to the job's "11. FINANCIALS"
+        folder. The change order is NOT inserted — the client posts the
+        confirmed values to `/jobs/{jobId}/financials/change-orders`.
+      x-source-file: artifacts/api-server/src/routes/financials.ts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        description: |
+          multipart/form-data with a single `file` field containing the
+          change-order document (PDF, image, DOCX, XLSX, CSV, text).
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        "200":
+          description: Parsed change order fields plus the saved file id.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  number: { type: string }
+                  description: { type: string, nullable: true }
+                  amountCents: { type: integer }
+                  fileId: { type: string, format: uuid, nullable: true }
+                required: [number, description, amountCents, fileId]
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "400":
+          description: Bad request (missing or unsupported file).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "403":
+          description: Forbidden — caller cannot manage this job.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "429":
+          description: Rate limit exceeded for AI parse.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/Retry-After"
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "502":
+          description: AI returned a malformed response.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
   /auth/register:
     post:
       operationId: auth_post_auth_register

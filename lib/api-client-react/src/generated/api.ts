@@ -50,6 +50,8 @@ import type {
   DaysToPaymentResponse,
   FilesGetFoldersIdFilesParams,
   FilesRenameFileSchema,
+  FinancialsPostJobsJobidFinancialsChangeOrdersParse200,
+  FinancialsPostJobsJobidFinancialsChangeOrdersParseBody,
   FoldersFolderBodySchema,
   FoldersFolderUpdateSchema,
   FoldersMoveFolderSchema,
@@ -134,6 +136,145 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+/**
+ * Upload a single change-order document (PDF, image, DOCX, XLSX,
+CSV, or text) and have Claude extract `{ number, description,
+amountCents }`. The file is saved to the job's "11. FINANCIALS"
+folder. The change order is NOT inserted — the client posts the
+confirmed values to `/jobs/{jobId}/financials/change-orders`.
+
+ * @summary POST /jobs/{jobId}/financials/change-orders/parse
+ */
+export const getFinancialsPostJobsJobidFinancialsChangeOrdersParseUrl = (
+  jobId: string,
+) => {
+  return `/api/jobs/${jobId}/financials/change-orders/parse`;
+};
+
+export const financialsPostJobsJobidFinancialsChangeOrdersParse = async (
+  jobId: string,
+  financialsPostJobsJobidFinancialsChangeOrdersParseBody: FinancialsPostJobsJobidFinancialsChangeOrdersParseBody,
+  options?: RequestInit,
+): Promise<FinancialsPostJobsJobidFinancialsChangeOrdersParse200> => {
+  const formData = new FormData();
+  formData.append(
+    `file`,
+    financialsPostJobsJobidFinancialsChangeOrdersParseBody.file,
+  );
+
+  return customFetch<FinancialsPostJobsJobidFinancialsChangeOrdersParse200>(
+    getFinancialsPostJobsJobidFinancialsChangeOrdersParseUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      body: formData,
+    },
+  );
+};
+
+export const getFinancialsPostJobsJobidFinancialsChangeOrdersParseMutationOptions =
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof financialsPostJobsJobidFinancialsChangeOrdersParse>
+      >,
+      TError,
+      {
+        jobId: string;
+        data: BodyType<FinancialsPostJobsJobidFinancialsChangeOrdersParseBody>;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof financialsPostJobsJobidFinancialsChangeOrdersParse>
+    >,
+    TError,
+    {
+      jobId: string;
+      data: BodyType<FinancialsPostJobsJobidFinancialsChangeOrdersParseBody>;
+    },
+    TContext
+  > => {
+    const mutationKey = ["financialsPostJobsJobidFinancialsChangeOrdersParse"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof financialsPostJobsJobidFinancialsChangeOrdersParse>
+      >,
+      {
+        jobId: string;
+        data: BodyType<FinancialsPostJobsJobidFinancialsChangeOrdersParseBody>;
+      }
+    > = (props) => {
+      const { jobId, data } = props ?? {};
+
+      return financialsPostJobsJobidFinancialsChangeOrdersParse(
+        jobId,
+        data,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type FinancialsPostJobsJobidFinancialsChangeOrdersParseMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof financialsPostJobsJobidFinancialsChangeOrdersParse>
+    >
+  >;
+export type FinancialsPostJobsJobidFinancialsChangeOrdersParseMutationBody =
+  BodyType<FinancialsPostJobsJobidFinancialsChangeOrdersParseBody>;
+export type FinancialsPostJobsJobidFinancialsChangeOrdersParseMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary POST /jobs/{jobId}/financials/change-orders/parse
+ */
+export const useFinancialsPostJobsJobidFinancialsChangeOrdersParse = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof financialsPostJobsJobidFinancialsChangeOrdersParse>
+    >,
+    TError,
+    {
+      jobId: string;
+      data: BodyType<FinancialsPostJobsJobidFinancialsChangeOrdersParseBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<
+    ReturnType<typeof financialsPostJobsJobidFinancialsChangeOrdersParse>
+  >,
+  TError,
+  {
+    jobId: string;
+    data: BodyType<FinancialsPostJobsJobidFinancialsChangeOrdersParseBody>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getFinancialsPostJobsJobidFinancialsChangeOrdersParseMutationOptions(
+      options,
+    ),
+  );
+};
 
 /**
  * Route defined in artifacts/api-server/src/routes/auth.ts.

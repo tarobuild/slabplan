@@ -60,7 +60,7 @@ type AnthropicMessageResponse = Extract<
  * or PII.
  */
 async function callAnthropicWithLogging(args: {
-  event: "ai.estimate.parse" | "ai.invoice.parse";
+  event: "ai.estimate.parse" | "ai.invoice.parse" | "ai.change_order.parse";
   jobId: string;
   request: AnthropicCreateArgs;
 }): Promise<AnthropicMessageResponse> {
@@ -824,6 +824,140 @@ router.post(
 
     const data = await loadTrackerWithChildren(tracker.id);
     res.status(201).json(data);
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// AI: parse change order doc
+// ---------------------------------------------------------------------------
+
+const CHANGE_ORDER_SYSTEM_PROMPT = `You are an estimating assistant for a stone-fabrication contractor.
+Parse the attached change-order document (signed CO, email body, spreadsheet,
+photo of a hand-marked sheet, etc.) and return ONLY valid JSON, no prose,
+in this exact shape:
+{
+  "number": string | null,         // CO number as written on the doc, e.g. "CO-014" or "5"
+  "description": string | null,    // short summary of the scope being added or changed
+  "amountCents": number | null     // total dollar amount in cents (integer). Positive for adds, negative for credits.
+}
+Use cents (integers). Do not invent numbers. If a field is unknown, use null.
+A change order is exactly ONE row with one number + one amount, even if the
+underlying scope has multiple line items.`;
+
+const changeOrderAiSchema = z.object({
+  number: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  amountCents: z.coerce.number().int().nullable().optional(),
+});
+
+router.post(
+  "/:jobId/financials/change-orders/parse",
+  aiParseRateLimit,
+  uploadSingle("file"),
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await assertCanManageJob(req.auth!, jobId);
+
+    const upload = (req.file ?? null) as Express.Multer.File | null;
+    if (!upload) throw new HttpError(400, "Missing change order file.");
+    const isImage = (upload.mimetype ?? "").toLowerCase().startsWith("image/");
+    try {
+      validateUploadForMediaType(isImage ? "photo" : "document", upload);
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      throw new HttpError(400, "Unsupported change order file type.");
+    }
+
+    // Lazy-create the tracker so subsequent CO insert from the
+    // confirm dialog has somewhere to land.
+    await getOrCreateTracker(jobId, req.auth!.userId);
+
+    // Read bytes BEFORE saveUploadedFiles consumes the multer temp file.
+    let bytes: Buffer;
+    if (upload.buffer && upload.buffer.length > 0) {
+      bytes = upload.buffer;
+    } else if (upload.path) {
+      bytes = await fsp.readFile(upload.path);
+    } else {
+      throw new HttpError(500, "Could not read uploaded change order.");
+    }
+
+    // Persist file to FINANCIALS folder so it lives next to the
+    // estimate + invoices.
+    let fileId: string | null = null;
+    const financialsFolderId = await findFinancialsFolderId(jobId);
+    if (financialsFolderId) {
+      const saved = await saveUploadedFiles({
+        folderId: financialsFolderId,
+        userId: req.auth!.userId,
+        uploadedFiles: [upload],
+        note: "AI-parsed change order",
+      });
+      fileId = saved.files[0]?.id ?? null;
+    }
+
+    const userContent: ContentBlockParam[] = await buildAnthropicContent(
+      upload,
+      bytes,
+    );
+    userContent.push({
+      type: "text",
+      text: "Parse this change order and return the JSON described above.",
+    });
+
+    const aiResp = await callAnthropicWithLogging({
+      event: "ai.change_order.parse",
+      jobId,
+      request: {
+        model: ANTHROPIC_MODEL,
+        max_tokens: ANTHROPIC_MAX_TOKENS,
+        system: CHANGE_ORDER_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userContent }],
+      },
+    });
+
+    const textBlock = aiResp.content.find(
+      (b: { type: string }) => b.type === "text",
+    ) as { type: "text"; text: string } | undefined;
+    if (!textBlock) throw new HttpError(502, "AI returned no text.");
+    const parsed = extractJson(textBlock.text);
+    const validated = changeOrderAiSchema.safeParse(parsed);
+    if (!validated.success) {
+      throw new HttpError(
+        502,
+        "AI change order response did not match expected shape.",
+        { issues: validated.error.flatten() },
+      );
+    }
+
+    // Default a sensible placeholder when the doc has no CO number so
+    // the confirm dialog opens (the user can edit before saving)
+    // instead of erroring. Negative amounts are rejected — credits
+    // belong on a manual CO with explicit intent.
+    const rawNumber = (validated.data.number ?? "").trim();
+    const number =
+      rawNumber.length > 0
+        ? rawNumber
+        : `CO-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const amountCents = validated.data.amountCents;
+    if (
+      amountCents == null ||
+      !Number.isInteger(amountCents) ||
+      amountCents < 0
+    ) {
+      throw new HttpError(
+        502,
+        "AI couldn't extract a change order amount. Please enter the amount manually.",
+      );
+    }
+    const description = (validated.data.description ?? "").trim() || null;
+
+    res.status(200).json({
+      number,
+      description,
+      amountCents,
+      fileId,
+    });
   }),
 );
 

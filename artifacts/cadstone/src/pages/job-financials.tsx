@@ -680,6 +680,89 @@ export default function JobFinancialsPage() {
     void performInvoiceUpload(file)
   }
 
+  // -------------------- Upload CO (AI parse) --------------------
+  // Mirrors the estimate / invoice upload UX. The parse endpoint
+  // saves the file to the FINANCIALS folder and returns extracted
+  // {number, description, amountCents}; the user confirms in a
+  // dialog and the existing change-orders POST creates the row.
+  const coInputRef = useRef<HTMLInputElement>(null)
+  const [coUploading, setCoUploading] = useState(false)
+  const [coParseError, setCoParseError] = useState<AiParseError | null>(null)
+  const [coDraft, setCoDraft] = useState<{
+    number: string
+    description: string
+    amountDollars: string
+    areaId: string
+    fileId: string | null
+  } | null>(null)
+  const [coSaving, setCoSaving] = useState(false)
+
+  const performCoParse = async (file: File) => {
+    if (!jobId) return
+    setCoUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append("file", file)
+      const res = await api.post<{
+        number: string
+        description: string | null
+        amountCents: number
+        fileId: string | null
+      }>(`/jobs/${jobId}/financials/change-orders/parse`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      setCoParseError(null)
+      setCoDraft({
+        number: res.data.number,
+        description: res.data.description ?? "",
+        amountDollars: (res.data.amountCents / 100).toFixed(2),
+        areaId: "",
+        fileId: res.data.fileId,
+      })
+    } catch (err) {
+      setCoParseError(toAiError(err, file, "Failed to parse change order"))
+      toastApiError(err, "Failed to parse change order")
+    } finally {
+      setCoUploading(false)
+      if (coInputRef.current) coInputRef.current.value = ""
+    }
+  }
+
+  const onCoPicked = (file: File) => {
+    void performCoParse(file)
+  }
+
+  const saveParsedChangeOrder = async () => {
+    if (!jobId || !coDraft) return
+    const number = coDraft.number.trim()
+    if (!number) {
+      toast.error("CO number is required")
+      return
+    }
+    const amount = Number(coDraft.amountDollars)
+    if (!Number.isFinite(amount) || amount < 0) {
+      toast.error("Amount must be a non-negative number")
+      return
+    }
+    setCoSaving(true)
+    try {
+      await api.post(`/jobs/${jobId}/financials/change-orders`, {
+        number,
+        description: coDraft.description.trim() || null,
+        amountCents: Math.round(amount * 100),
+        areaId: coDraft.areaId || null,
+      })
+      setCoDraft(null)
+      await load()
+      invalidate()
+      toast.success("Change order added")
+    } catch (err) {
+      toastApiError(err, "Failed to add change order")
+    } finally {
+      setCoSaving(false)
+    }
+  }
+
   const updateLineItem = useCallback(
     async (
       lineItemId: string,
@@ -1252,9 +1335,24 @@ export default function JobFinancialsPage() {
                     {formatCurrency(totals?.changeOrderApprovedCents ?? 0)}
                   </span>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => void addChangeOrder()}>
-                  <Plus className="mr-1 h-4 w-4" /> Add CO
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={coUploading}
+                    onClick={() => coInputRef.current?.click()}
+                  >
+                    {coUploading ? (
+                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-1 h-4 w-4" />
+                    )}
+                    Upload CO
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void addChangeOrder()}>
+                    <Plus className="mr-1 h-4 w-4" /> Add CO
+                  </Button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1293,10 +1391,77 @@ export default function JobFinancialsPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg">Change Orders</CardTitle>
-          <Button size="sm" variant="outline" onClick={() => void addChangeOrder()}>
-            <Plus className="mr-1 h-4 w-4" /> Add CO
-          </Button>
+          <div className="flex gap-2">
+            <input
+              ref={coInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.rtf,.md,.json,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,application/pdf,image/*,text/*"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) onCoPicked(f)
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => coInputRef.current?.click()}
+              disabled={coUploading}
+            >
+              {coUploading ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1 h-4 w-4" />
+              )}
+              Upload CO
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void addChangeOrder()}>
+              <Plus className="mr-1 h-4 w-4" /> Add CO
+            </Button>
+          </div>
         </CardHeader>
+        {coParseError ? (
+          <div
+            role="alert"
+            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900"
+          >
+            <div className="min-w-0">
+              <div className="font-medium">
+                Couldn’t parse {coParseError.file.name}
+              </div>
+              <div className="truncate text-xs text-orange-800">
+                <span className="font-mono">{coParseError.code}</span>
+                {": "}
+                {coParseError.message}
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={coUploading}
+                onClick={() => {
+                  const f = coParseError.file
+                  void performCoParse(f)
+                }}
+              >
+                {coUploading ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1 h-4 w-4" />
+                )}
+                Try again
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Dismiss change order parse error"
+                onClick={() => setCoParseError(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <CardContent>
           {data.changeOrders.length === 0 ? (
             <div className="text-sm text-muted-foreground">No change orders.</div>
@@ -1626,6 +1791,98 @@ export default function JobFinancialsPage() {
                 <Loader2 className="mr-1 h-4 w-4 animate-spin" />
               ) : null}
               Save matches
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm parsed change order */}
+      <Dialog
+        open={!!coDraft}
+        onOpenChange={(o) => {
+          if (!o) setCoDraft(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-orange-500" /> Confirm change order
+            </DialogTitle>
+          </DialogHeader>
+          {coDraft ? (
+            <div className="grid gap-3">
+              <div className="text-xs text-muted-foreground">
+                We extracted the following from your document. Review and edit
+                before saving — the change order is created with status{" "}
+                <span className="font-medium">pending</span>.
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs text-muted-foreground">CO #</span>
+                  <Input
+                    aria-label="CO #"
+                    value={coDraft.number}
+                    onChange={(e) =>
+                      setCoDraft((d) => (d ? { ...d, number: e.target.value } : d))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-muted-foreground">Amount (USD)</span>
+                  <Input
+                    aria-label="Amount (USD)"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={coDraft.amountDollars}
+                    onChange={(e) =>
+                      setCoDraft((d) =>
+                        d ? { ...d, amountDollars: e.target.value } : d,
+                      )
+                    }
+                  />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-xs text-muted-foreground">Description</span>
+                <Input
+                  aria-label="Description"
+                  value={coDraft.description}
+                  onChange={(e) =>
+                    setCoDraft((d) =>
+                      d ? { ...d, description: e.target.value } : d,
+                    )
+                  }
+                />
+              </label>
+              <div>
+                <label className="text-xs text-muted-foreground">
+                  Assign to area (optional)
+                </label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={coDraft.areaId}
+                  onChange={(e) =>
+                    setCoDraft((d) => (d ? { ...d, areaId: e.target.value } : d))
+                  }
+                >
+                  <option value="">— None —</option>
+                  {data.areas.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCoDraft(null)} disabled={coSaving}>
+              Cancel
+            </Button>
+            <Button onClick={() => void saveParsedChangeOrder()} disabled={coSaving}>
+              {coSaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              Save change order
             </Button>
           </DialogFooter>
         </DialogContent>

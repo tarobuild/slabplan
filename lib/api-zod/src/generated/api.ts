@@ -8,6 +8,52 @@
 import * as zod from "zod";
 
 /**
+ * Upload a single change-order document (PDF, image, DOCX, XLSX,
+CSV, or text) and have Claude extract `{ number, description,
+amountCents }`. The file is saved to the job's "11. FINANCIALS"
+folder. The change order is NOT inserted — the client posts the
+confirmed values to `/jobs/{jobId}/financials/change-orders`.
+
+ * @summary POST /jobs/{jobId}/financials/change-orders/parse
+ */
+export const FinancialsPostJobsJobidFinancialsChangeOrdersParseParams =
+  zod.object({
+    jobId: zod.coerce.string().uuid(),
+  });
+
+export const financialsPostJobsJobidFinancialsChangeOrdersParseHeaderIdempotencyKeyMin = 8;
+export const financialsPostJobsJobidFinancialsChangeOrdersParseHeaderIdempotencyKeyMax = 255;
+
+export const FinancialsPostJobsJobidFinancialsChangeOrdersParseHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        financialsPostJobsJobidFinancialsChangeOrdersParseHeaderIdempotencyKeyMin,
+      )
+      .max(
+        financialsPostJobsJobidFinancialsChangeOrdersParseHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+      ),
+  });
+
+export const FinancialsPostJobsJobidFinancialsChangeOrdersParseBodySchema =
+  zod.object({
+    file: zod.instanceof(File),
+  });
+
+export const FinancialsPostJobsJobidFinancialsChangeOrdersParseResponse =
+  zod.object({
+    number: zod.string(),
+    description: zod.string().nullable(),
+    amountCents: zod.number(),
+    fileId: zod.string().uuid().nullable(),
+  });
+
+/**
  * Route defined in artifacts/api-server/src/routes/auth.ts.
  * @summary POST /auth/register
  */

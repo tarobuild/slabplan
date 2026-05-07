@@ -208,6 +208,30 @@ export async function validateVideoDurations(
 }
 
 /**
+ * Probe each selected file and return an array of (seconds | null) in
+ * the same order. Non-video files and files where the browser cannot
+ * decode metadata both yield null. Used at upload time so the server
+ * can persist the duration once and the Files > Videos browser doesn't
+ * have to re-decode every clip on every render (Task #368).
+ */
+export async function probeVideoDurations(
+  files: File[],
+  options?: { probe?: DurationProbe },
+): Promise<Array<number | null>> {
+  const probe = options?.probe ?? defaultProbeDuration
+  const out: Array<number | null> = []
+  for (const file of files) {
+    if (!isVideoFile(file)) {
+      out.push(null)
+      continue
+    }
+    const duration = await probe(file)
+    out.push(duration != null && Number.isFinite(duration) && duration > 0 ? duration : null)
+  }
+  return out
+}
+
+/**
  * Runs the synchronous `validateSelectedFiles` first and, if it
  * passes, runs `validateVideoDurations` on any video files in the
  * selection. Returns the first failing message or `null` if everything

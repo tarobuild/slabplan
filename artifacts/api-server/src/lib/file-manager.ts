@@ -804,6 +804,7 @@ export async function listFilesForFolder(params: {
       mimeType: files.mimeType,
       note: files.note,
       uploadedBy: files.uploadedBy,
+      durationSeconds: files.durationSeconds,
       createdAt: files.createdAt,
       updatedAt: files.updatedAt,
       deletedAt: files.deletedAt,
@@ -1277,6 +1278,12 @@ export async function saveUploadedFiles(params: {
   userId: string;
   uploadedFiles: Express.Multer.File[];
   note?: string | null;
+  // Per-file video durations in whole seconds, indexed in lockstep with
+  // `uploadedFiles`. The client probes these via an off-DOM <video> at
+  // selection time (Task #368). Entries may be null for non-video files
+  // or when the probe failed; if the array is omitted entirely we just
+  // store null for every file.
+  videoDurationsSeconds?: ReadonlyArray<number | null> | null;
 }) {
   const folder = await getFolderOrThrow(params.folderId);
 
@@ -1286,7 +1293,7 @@ export async function saveUploadedFiles(params: {
 
   const created: File[] = [];
 
-  for (const uploadedFile of params.uploadedFiles) {
+  for (const [index, uploadedFile] of params.uploadedFiles.entries()) {
     validateUploadForMediaType(folder.mediaType, uploadedFile);
 
     const storedName = buildStoredFileName(uploadedFile.originalname);
@@ -1312,6 +1319,16 @@ export async function saveUploadedFiles(params: {
 
     let file: File;
 
+    // Only persist a duration when the multer-decoded mimetype actually
+    // looks like a video — guards against a malicious or buggy client
+    // tagging a PDF with a fake "60 seconds" reading.
+    const probedDuration = params.videoDurationsSeconds?.[index] ?? null;
+    const looksLikeVideo = (uploadedFile.mimetype ?? "").toLowerCase().startsWith("video/");
+    const durationSeconds =
+      looksLikeVideo && probedDuration != null && Number.isFinite(probedDuration) && probedDuration > 0
+        ? Math.min(Math.round(probedDuration), 24 * 60 * 60)
+        : null;
+
     try {
       [file] = await db.transaction(async (tx) =>
         tx
@@ -1325,6 +1342,7 @@ export async function saveUploadedFiles(params: {
             mimeType: uploadedFile.mimetype,
             note: params.note ?? null,
             uploadedBy: params.userId,
+            durationSeconds,
           })
           .returning(),
       );

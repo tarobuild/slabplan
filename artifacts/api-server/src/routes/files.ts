@@ -69,6 +69,27 @@ const moveFileSchema = z.object({
   destinationFolderId: z.string().uuid(),
 });
 
+// Per-file video durations the client probed at selection time. Sent as
+// a JSON-encoded array of (number | null), one entry per `files`
+// upload in the same order. Anything we can't parse is treated as if
+// the client never sent it — duration is purely a UX hint, never
+// authoritative, so a malformed payload should not block the upload.
+const videoDurationsField = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((value): Array<number | null> | null => {
+    if (typeof value !== "string" || value.trim().length === 0) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map((entry) =>
+      typeof entry === "number" && Number.isFinite(entry) && entry > 0 ? entry : null,
+    );
+  });
+
 const uploadFilesSchema = z.object({
   note: z
     .union([z.string(), z.null(), z.undefined()])
@@ -80,6 +101,7 @@ const uploadFilesSchema = z.object({
       const trimmed = value.trim();
       return trimmed.length > 0 ? trimmed : null;
     }),
+  videoDurations: videoDurationsField.optional(),
 });
 
 function getParam(value: string | string[] | undefined, label: string) {
@@ -150,6 +172,7 @@ router.post(
       userId: req.auth!.userId,
       uploadedFiles,
       note: body.data.note,
+      videoDurationsSeconds: body.data.videoDurations ?? null,
     });
 
     res.status(201).json(result);

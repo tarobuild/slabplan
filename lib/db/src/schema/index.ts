@@ -320,6 +320,11 @@ export const files = pgTable(
     mimeType: varchar("mime_type", { length: 100 }),
     note: text("note"),
     uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    // Whole-second video length captured by the client's metadata probe at
+    // upload time (Task #368). Null for non-video files and for older rows
+    // that predate the column. Stored once so the Files > Videos browser
+    // can label clips without re-decoding metadata on every render.
+    durationSeconds: integer("duration_seconds"),
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },

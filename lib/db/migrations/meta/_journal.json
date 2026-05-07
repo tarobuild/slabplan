@@ -137,6 +137,14 @@
       "tag": "0018_reports_indexes",
       "breakpoints": true,
       "checksum": "1059439b21e6b706193fa3a0648e00d3962a9f4df30cb60bbf947219660a7107"
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778256000000,
+      "tag": "0019_files_duration_seconds",
+      "breakpoints": true,
+      "checksum": "6fb9bd3f3da96d03cff853f79f9b597c1a451409ad8914ef0966c6854d751023"
     }
   ]
 }

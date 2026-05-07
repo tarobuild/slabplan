@@ -144,11 +144,31 @@ router.post(
     await assertCanUploadToFolder(req.auth!, folderId);
 
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+
+    // Mirror the files-route shape: a JSON-encoded array of (number | null)
+    // probed at selection time. Anything we can't parse is dropped so a
+    // bad payload never blocks the upload (Task #368).
+    const rawDurations = (req.body as Record<string, unknown> | null | undefined)?.videoDurations;
+    let videoDurationsSeconds: Array<number | null> | null = null;
+    if (typeof rawDurations === "string" && rawDurations.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(rawDurations) as unknown;
+        if (Array.isArray(parsed)) {
+          videoDurationsSeconds = parsed.map((entry) =>
+            typeof entry === "number" && Number.isFinite(entry) && entry > 0 ? entry : null,
+          );
+        }
+      } catch {
+        // ignore — duration is a UX hint, never authoritative
+      }
+    }
+
     const result = await saveUploadedFiles({
       folderId,
       userId: req.auth!.userId,
       uploadedFiles,
       note: null,
+      videoDurationsSeconds,
     });
 
     res.status(201).json(result);

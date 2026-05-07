@@ -59,6 +59,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
+  formatVideoDuration,
+  probeVideoDurations,
   uploadAcceptForMediaType,
   uploadWithProgress,
   validateSelectedFilesAsync,
@@ -93,6 +95,10 @@ type FileItem = {
   uploadedBy: string | null
   uploadedByName: string | null
   createdAt: string
+  // Whole-second duration the API surfaces for video files (Task #368).
+  // Null for non-videos and for older rows uploaded before we started
+  // recording it.
+  durationSeconds?: number | null
   storageStatus?: "ok" | "missing"
 }
 
@@ -503,6 +509,14 @@ export default function FileBrowser({
     if (uploadNote.trim()) {
       formData.append("note", uploadNote.trim())
     }
+    // Capture the per-file duration the same way the validator does so
+    // the server can persist it once instead of every render re-decoding
+    // the clip (Task #368). Probe failures yield null and we still
+    // upload — the column is purely a UX hint.
+    const durations = await probeVideoDurations(selectedUploadFiles)
+    if (durations.some((d) => d != null)) {
+      formData.append("videoDurations", JSON.stringify(durations))
+    }
     const controller = new AbortController()
     const totalBytes = selectedUploadFiles.reduce((sum, f) => sum + f.size, 0)
     const taskId = Date.now()
@@ -732,6 +746,12 @@ export default function FileBrowser({
     files.forEach((file) => formData.append("files", file))
     if (note?.trim()) {
       formData.append("note", note.trim())
+    }
+    // Same per-file duration capture as the dialog upload path — see
+    // Task #368.
+    const durations = await probeVideoDurations(files)
+    if (durations.some((d) => d != null)) {
+      formData.append("videoDurations", JSON.stringify(durations))
     }
     setUploadError(null)
     const controller = new AbortController()
@@ -1726,9 +1746,21 @@ function VideoGrid({
               </div>
               <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2.5 py-2">
                 <p className="text-white text-xs font-medium truncate">{displayName(file)}</p>
-                <p className="text-white/60 text-xs">{formatFileSize(file.fileSize)}</p>
+                <p className="text-white/60 text-xs">
+                  {formatFileSize(file.fileSize)}
+                  {file.durationSeconds != null && ` · ${formatVideoDuration(file.durationSeconds)}`}
+                </p>
               </div>
             </button>
+
+            {file.durationSeconds != null && (
+              <span
+                className="absolute bottom-1.5 right-1.5 z-10 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white pointer-events-none"
+                aria-label={`Duration ${formatVideoDuration(file.durationSeconds)}`}
+              >
+                {formatVideoDuration(file.durationSeconds)}
+              </span>
+            )}
 
             <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
               <FileActionsMenu
@@ -1935,7 +1967,13 @@ function FileTable({
                 <td className="px-4 py-3 text-slate-500 tabular-nums">
                   {formatFileSize(file.fileSize)}
                 </td>
-                {showDuration && <td className="px-4 py-3 text-slate-400">—</td>}
+                {showDuration && (
+                  <td className="px-4 py-3 text-slate-500 tabular-nums">
+                    {file.durationSeconds != null
+                      ? formatVideoDuration(file.durationSeconds)
+                      : "—"}
+                  </td>
+                )}
                 {showNotes && (
                   <td className="px-4 py-3 text-slate-500">
                     {file.note ? <span className="line-clamp-2">{file.note}</span> : "—"}

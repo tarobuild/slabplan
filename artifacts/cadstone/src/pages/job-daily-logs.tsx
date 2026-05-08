@@ -33,7 +33,10 @@ import {
   Upload,
   Users,
   Video,
-  FolderOpen,
+  File as FileIcon,
+  FileSpreadsheet,
+  FileAudio,
+  FileArchive,
   X,
 } from "lucide-react"
 import {
@@ -932,6 +935,55 @@ function PendingImageThumbnail({ file, alt }: { file: File; alt: string }) {
   )
 }
 
+// Picks the right icon, colour palette, and short label for a non-media
+// attachment (PDF, spreadsheet, document, audio, archive, plain text…).
+// Used by both the daily-log file chip and the comment file chip so the
+// two stay visually consistent.
+function getFileTypeMeta(mimeType: string | null | undefined, filename: string) {
+  const mime = (mimeType || "").toLowerCase()
+  const ext = filename.split(".").pop()?.toLowerCase() ?? ""
+
+  const is = (m: string) => mime.includes(m)
+  const extIn = (...exts: string[]) => exts.includes(ext)
+
+  if (is("pdf") || extIn("pdf")) {
+    return { Icon: FileText, label: "PDF", iconClass: "text-rose-600", bgClass: "bg-rose-50" }
+  }
+  if (is("spreadsheet") || is("excel") || is("csv") || extIn("xls", "xlsx", "csv", "ods", "numbers")) {
+    return { Icon: FileSpreadsheet, label: "Spreadsheet", iconClass: "text-emerald-600", bgClass: "bg-emerald-50" }
+  }
+  if (is("word") || is("officedocument.wordprocessing") || extIn("doc", "docx", "rtf", "odt", "pages")) {
+    return { Icon: FileText, label: "Document", iconClass: "text-sky-600", bgClass: "bg-sky-50" }
+  }
+  if (is("presentation") || extIn("ppt", "pptx", "odp", "key")) {
+    return { Icon: FileText, label: "Slides", iconClass: "text-amber-600", bgClass: "bg-amber-50" }
+  }
+  if (mime.startsWith("audio/") || extIn("mp3", "wav", "m4a", "aac", "ogg", "flac")) {
+    return { Icon: FileAudio, label: "Audio", iconClass: "text-violet-600", bgClass: "bg-violet-50" }
+  }
+  if (is("zip") || is("compressed") || is("tar") || extIn("zip", "rar", "7z", "tar", "gz")) {
+    return { Icon: FileArchive, label: "Archive", iconClass: "text-orange-600", bgClass: "bg-orange-50" }
+  }
+  if (mime.startsWith("text/") || extIn("txt", "md", "log")) {
+    return { Icon: FileText, label: "Text", iconClass: "text-slate-600", bgClass: "bg-slate-100" }
+  }
+  return { Icon: FileIcon, label: ext ? ext.toUpperCase() : "File", iconClass: "text-slate-600", bgClass: "bg-slate-100" }
+}
+
+// Compact, human-readable byte size for the file chip ("1.4 MB", "812 KB").
+function formatFileSize(bytes: number | null | undefined): string | null {
+  if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return null
+  const units = ["B", "KB", "MB", "GB"]
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  const fixed = value >= 100 || unit === 0 ? value.toFixed(0) : value.toFixed(1)
+  return `${fixed} ${units[unit]}`
+}
+
 function CommentAttachmentThumbnail({
   attachment,
   onOpen,
@@ -996,11 +1048,24 @@ function CommentAttachmentThumbnail({
           <img src={directSrc ?? ""} alt={attachment.name} className="h-36 w-full object-cover" />
         )
       ) : (
-        <div className="flex h-36 items-center justify-center text-slate-400">
-          <FileText className="size-8" />
-        </div>
+        (() => {
+          const meta = getFileTypeMeta(attachment.mimeType, attachment.name)
+          return (
+            <div className="flex items-center gap-2 px-3 py-2">
+              <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-md", meta.bgClass)}>
+                <meta.Icon className={cn("size-5", meta.iconClass)} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-medium text-slate-700">{attachment.name}</div>
+                <div className="text-[11px] text-slate-500">{meta.label}</div>
+              </div>
+            </div>
+          )
+        })()
       )}
-      <div className="truncate border-t border-slate-200 px-3 py-2 text-xs text-slate-600">{attachment.name}</div>
+      {isImage && (
+        <div className="truncate border-t border-slate-200 px-3 py-2 text-xs text-slate-600">{attachment.name}</div>
+      )}
     </button>
   )
 }
@@ -1052,14 +1117,36 @@ function AttachmentThumbnail({
   }
 
   if (isMissing) {
-    return (
-      <div className="flex flex-col items-stretch" title="Original file unavailable">
-        <div className="flex h-[150px] flex-col items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 text-center">
-          <AlertTriangle className="size-7 text-amber-500" />
-          <div className="text-xs font-medium text-amber-700">Original file unavailable</div>
+    // For images/videos we keep the big amber tile (it sits in the photo /
+    // video grid where every sibling is a 150px square). For non-media files
+    // we render a compact amber chip — the file group is a vertical list of
+    // chips so a giant square would look out of place.
+    if (isImage || isVideo) {
+      return (
+        <div className="flex flex-col items-stretch" title="Original file unavailable">
+          <div className="flex h-[150px] flex-col items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 text-center">
+            <AlertTriangle className="size-7 text-amber-500" />
+            <div className="text-xs font-medium text-amber-700">Original file unavailable</div>
+          </div>
+          <div className="mt-1.5 truncate text-xs text-slate-500 line-through decoration-amber-400">
+            {attachment.originalName}
+          </div>
         </div>
-        <div className="mt-1.5 truncate text-xs text-slate-500 line-through decoration-amber-400">
-          {attachment.originalName}
+      )
+    }
+    return (
+      <div
+        className="flex w-full max-w-md items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
+        title="Original file unavailable"
+      >
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-amber-100">
+          <AlertTriangle className="size-5 text-amber-600" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-amber-800 line-through decoration-amber-400">
+            {attachment.originalName}
+          </div>
+          <div className="text-xs text-amber-700">Original file unavailable</div>
         </div>
       </div>
     )
@@ -1097,12 +1184,28 @@ function AttachmentThumbnail({
     )
   }
 
+  // Non-media file (PDF, doc, spreadsheet, audio, archive, …): a compact
+  // horizontal chip is the right shape here — there is nothing to preview,
+  // and a 150×150 gray square just to say "a file is attached" wastes a lot
+  // of vertical space and reads as broken rather than informative.
+  const meta = getFileTypeMeta(attachment.mimeType, attachment.originalName)
+  const sizeLabel = formatFileSize(attachment.fileSize)
   return (
-    <button type="button" onClick={handleClick} className="group flex flex-col items-stretch">
-      <div className="flex h-[150px] items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
-        <FolderOpen className="size-8 text-slate-400" />
+    <button
+      type="button"
+      onClick={handleClick}
+      className="group flex w-full max-w-md items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
+    >
+      <div className={cn("flex size-10 shrink-0 items-center justify-center rounded-md", meta.bgClass)}>
+        <meta.Icon className={cn("size-5", meta.iconClass)} />
       </div>
-      <div className="mt-1.5 truncate text-xs text-slate-500">{attachment.originalName}</div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-slate-800">{attachment.originalName}</div>
+        <div className="truncate text-xs text-slate-500">
+          {meta.label}
+          {sizeLabel && <span className="text-slate-400"> · {sizeLabel}</span>}
+        </div>
+      </div>
     </button>
   )
 }

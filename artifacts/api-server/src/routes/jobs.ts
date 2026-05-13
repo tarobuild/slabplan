@@ -1,9 +1,27 @@
-import { and, asc, count, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  or,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { clients, files, folders, jobAssignees, jobs, type NewJob, users } from "@workspace/db/schema";
+import {
+  clients,
+  files,
+  folders,
+  jobAssignees,
+  jobs,
+  type NewJob,
+  users,
+} from "@workspace/db/schema";
 import {
   assertCanAccessJob,
   assertCanManageJob,
@@ -14,8 +32,15 @@ import { getTrackerTotalsByJobIds } from "./financials";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
-import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
-import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
+import {
+  requireAdmin,
+  requireManagerOrAbove,
+} from "../middleware/require-auth";
+import {
+  decodeCursor,
+  encodeCursor,
+  isCursorModeRequested,
+} from "../lib/cursor";
 import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -39,9 +64,14 @@ const optionalCents = z
     if (!Number.isFinite(n)) return Number.NaN; // invalid sentinel; refine catches it
     return Math.trunc(n);
   })
-  .refine((v) => v === null || (Number.isInteger(v) && v >= 0 && v <= Number.MAX_SAFE_INTEGER), {
-    message: "Money fields must be a non-negative integer number of cents.",
-  });
+  .refine(
+    (v) =>
+      v === null ||
+      (Number.isInteger(v) && v >= 0 && v <= Number.MAX_SAFE_INTEGER),
+    {
+      message: "Money fields must be a non-negative integer number of cents.",
+    },
+  );
 
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
@@ -75,7 +105,8 @@ const optionalMoney = z
       return null;
     }
 
-    const normalized = typeof value === "number" ? value.toString() : value.trim();
+    const normalized =
+      typeof value === "number" ? value.toString() : value.trim();
     return normalized.length === 0 ? null : normalized;
   })
   .refine((value) => value === null || Number.isFinite(Number(value)), {
@@ -113,7 +144,11 @@ const jobPayloadBaseSchema = z.object({
   projectedCompletion: optionalDate,
   actualStart: optionalDate,
   actualCompletion: optionalDate,
-  contractType: z.enum(["fixed_price", "open_book"]).nullable().optional().default(null),
+  contractType: z
+    .enum(["fixed_price", "open_book"])
+    .nullable()
+    .optional()
+    .default(null),
   internalNotes: optionalString,
   subVendorNotes: optionalString,
   squareFeet: z
@@ -154,7 +189,9 @@ function checkPaidNotOverContract(
   }
 }
 
-const jobPayloadSchema = jobPayloadBaseSchema.superRefine(checkPaidNotOverContract);
+const jobPayloadSchema = jobPayloadBaseSchema.superRefine(
+  checkPaidNotOverContract,
+);
 
 const createJobPayloadSchema = jobPayloadBaseSchema
   .extend({
@@ -184,7 +221,10 @@ function getParam(value: string | string[] | undefined, label: string) {
   return normalized;
 }
 
-function toJobInsert(data: z.infer<typeof jobPayloadBaseSchema>, createdBy: string): NewJob {
+function toJobInsert(
+  data: z.infer<typeof jobPayloadBaseSchema>,
+  createdBy: string,
+): NewJob {
   return {
     title: data.title,
     status: data.status,
@@ -223,12 +263,7 @@ async function listJobAssignees(jobId: string) {
     })
     .from(jobAssignees)
     .innerJoin(users, eq(jobAssignees.userId, users.id))
-    .where(
-      and(
-        eq(jobAssignees.jobId, jobId),
-        isNull(users.deletedAt),
-      ),
-    )
+    .where(and(eq(jobAssignees.jobId, jobId), isNull(users.deletedAt)))
     .orderBy(asc(users.fullName));
 }
 
@@ -341,7 +376,9 @@ async function findJobById(id: string) {
     contractValueCents: trackerTotals
       ? trackerTotals.contractWithChangesCents
       : job.contractValueCents,
-    amountPaidCents: trackerTotals ? trackerTotals.billedCents : job.amountPaidCents,
+    amountPaidCents: trackerTotals
+      ? trackerTotals.netReceivedCents
+      : job.amountPaidCents,
   };
 }
 
@@ -356,15 +393,23 @@ router.get(
 
     const accessibleJobIds = await listAccessibleJobIds(req.auth!);
     const { page, pageSize } = query.data;
-    const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
-    const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
+    const isCursorMode = isCursorModeRequested(
+      req.query as Record<string, unknown>,
+    );
+    const cursorPayload = query.data.cursor
+      ? decodeCursor(query.data.cursor)
+      : null;
     const effectiveLimit = isCursorMode ? (query.data.limit ?? 25) : pageSize;
 
     if (accessibleJobIds && accessibleJobIds.length === 0) {
       if (isCursorMode) {
         res.json({
           jobs: [],
-          pagination: { limit: effectiveLimit, hasMore: false, nextCursor: null },
+          pagination: {
+            limit: effectiveLimit,
+            hasMore: false,
+            nextCursor: null,
+          },
         });
         return;
       }
@@ -463,8 +508,21 @@ router.get(
     // Enrich each row with tracker totals so the list view can show
     // tracker-managed contract/billed values (and the read-only money
     // field hint) without an extra round trip.
-    const enrich = async <T extends { id: string; contractValueCents: number | null; amountPaidCents: number | null }>(items: T[]) => {
-      if (items.length === 0) return items.map((j) => ({ ...j, hasTracker: false, trackerTotals: null }));
+    const enrich = async <
+      T extends {
+        id: string;
+        contractValueCents: number | null;
+        amountPaidCents: number | null;
+      },
+    >(
+      items: T[],
+    ) => {
+      if (items.length === 0)
+        return items.map((j) => ({
+          ...j,
+          hasTracker: false,
+          trackerTotals: null,
+        }));
       const trackerMap = await getTrackerTotalsByJobIds(items.map((j) => j.id));
       return items.map((j) => {
         const t = trackerMap.get(j.id) ?? null;
@@ -472,8 +530,10 @@ router.get(
           ...j,
           hasTracker: t !== null,
           trackerTotals: t,
-          contractValueCents: t ? t.contractWithChangesCents : j.contractValueCents,
-          amountPaidCents: t ? t.billedCents : j.amountPaidCents,
+          contractValueCents: t
+            ? t.contractWithChangesCents
+            : j.contractValueCents,
+          amountPaidCents: t ? t.netReceivedCents : j.amountPaidCents,
         };
       });
     };
@@ -482,9 +542,14 @@ router.get(
       const hasMore = rows.length > effectiveLimit;
       const trimmed = hasMore ? rows.slice(0, effectiveLimit) : rows;
       const last = trimmed[trimmed.length - 1];
-      const nextCursor = hasMore && last
-        ? encodeCursor({ v: 1, k: [last.createdAt.toISOString()], id: last.id })
-        : null;
+      const nextCursor =
+        hasMore && last
+          ? encodeCursor({
+              v: 1,
+              k: [last.createdAt.toISOString()],
+              id: last.id,
+            })
+          : null;
       res.json({
         jobs: await enrich(trimmed),
         pagination: { limit: effectiveLimit, hasMore, nextCursor },
@@ -577,7 +642,11 @@ router.post(
     const body = assigneePayloadSchema.safeParse(req.body);
 
     if (!body.success) {
-      throw new HttpError(400, "Invalid assignee payload.", body.error.flatten());
+      throw new HttpError(
+        400,
+        "Invalid assignee payload.",
+        body.error.flatten(),
+      );
     }
 
     const jobId = getParam(req.params.id, "job id");
@@ -611,10 +680,7 @@ router.delete(
     await db
       .delete(jobAssignees)
       .where(
-        and(
-          eq(jobAssignees.jobId, jobId),
-          eq(jobAssignees.userId, userId),
-        ),
+        and(eq(jobAssignees.jobId, jobId), eq(jobAssignees.userId, userId)),
       );
 
     res.json({
@@ -684,12 +750,16 @@ router.put(
     });
 
     if (existing.status !== updated.status) {
-      emitRealtimeEvent("job:status-changed", {
-        id: updated.id,
-        title: updated.title,
-        previousStatus: existing.status,
-        status: updated.status,
-      }, updated.id);
+      emitRealtimeEvent(
+        "job:status-changed",
+        {
+          id: updated.id,
+          title: updated.title,
+          previousStatus: existing.status,
+          status: updated.status,
+        },
+        updated.id,
+      );
     }
 
     const hydrated = await findJobById(updated.id);

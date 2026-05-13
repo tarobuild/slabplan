@@ -14,11 +14,11 @@ import {
   sovLineItems,
   trackerInvoices,
 } from "@workspace/db/schema";
-import { anthropic, type ContentBlockParam } from "@workspace/integrations-anthropic-ai";
 import {
-  assertCanAccessJob,
-  assertCanManageJob,
-} from "../lib/authorization";
+  anthropic,
+  type ContentBlockParam,
+} from "@workspace/integrations-anthropic-ai";
+import { assertCanAccessJob, assertCanManageJob } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
 import { uploadSingle } from "../lib/uploads";
 import { createAiParsePerUserRateLimit } from "../lib/rate-limit";
@@ -69,8 +69,12 @@ async function callAnthropicWithLogging(args: {
     const response = (await anthropic.messages.create(
       args.request,
     )) as AnthropicMessageResponse;
-    const usage = (response as { usage?: { input_tokens?: number; output_tokens?: number } })
-      .usage ?? {};
+    const usage =
+      (
+        response as {
+          usage?: { input_tokens?: number; output_tokens?: number };
+        }
+      ).usage ?? {};
     const promptTokens = Number(usage.input_tokens ?? 0);
     const completionTokens = Number(usage.output_tokens ?? 0);
     logger.info(
@@ -111,11 +115,22 @@ router.use(requireManagerOrAbove);
 
 const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_MAX_TOKENS = 8192;
+const DEFAULT_RETENTION_RATE_BPS = 1000;
 
 function getParam(value: string | string[] | undefined, label: string) {
   const normalized = Array.isArray(value) ? value[0] : value;
   if (!normalized) throw new HttpError(400, `Missing ${label}.`);
   return normalized;
+}
+
+function normalizeRetentionRateBps(value: number) {
+  return Math.max(0, Math.min(10000, Math.round(value)));
+}
+
+function retentionAmount(totalCents: number, rateBps: number) {
+  return Math.round(
+    (Math.max(0, totalCents) * normalizeRetentionRateBps(rateBps)) / 10000,
+  );
 }
 
 /**
@@ -143,27 +158,36 @@ async function assertLineItemInJob(lineItemId: string, jobId: string) {
     .innerJoin(financialTrackers, eq(sovAreas.trackerId, financialTrackers.id))
     .where(eq(sovLineItems.id, lineItemId))
     .limit(1);
-  if (!row || row.jobId !== jobId) throw new HttpError(404, "Line item not found.");
+  if (!row || row.jobId !== jobId)
+    throw new HttpError(404, "Line item not found.");
 }
 
 async function assertChangeOrderInJob(coId: string, jobId: string) {
   const [row] = await db
     .select({ id: changeOrders.id, jobId: financialTrackers.jobId })
     .from(changeOrders)
-    .innerJoin(financialTrackers, eq(changeOrders.trackerId, financialTrackers.id))
+    .innerJoin(
+      financialTrackers,
+      eq(changeOrders.trackerId, financialTrackers.id),
+    )
     .where(eq(changeOrders.id, coId))
     .limit(1);
-  if (!row || row.jobId !== jobId) throw new HttpError(404, "Change order not found.");
+  if (!row || row.jobId !== jobId)
+    throw new HttpError(404, "Change order not found.");
 }
 
 async function assertInvoiceInJob(invoiceId: string, jobId: string) {
   const [row] = await db
     .select({ id: trackerInvoices.id, jobId: financialTrackers.jobId })
     .from(trackerInvoices)
-    .innerJoin(financialTrackers, eq(trackerInvoices.trackerId, financialTrackers.id))
+    .innerJoin(
+      financialTrackers,
+      eq(trackerInvoices.trackerId, financialTrackers.id),
+    )
     .where(eq(trackerInvoices.id, invoiceId))
     .limit(1);
-  if (!row || row.jobId !== jobId) throw new HttpError(404, "Invoice not found.");
+  if (!row || row.jobId !== jobId)
+    throw new HttpError(404, "Invoice not found.");
 }
 
 async function getOrCreateTracker(jobId: string, userId: string) {
@@ -233,7 +257,10 @@ async function loadTrackerWithChildren(trackerId: string) {
       .select()
       .from(trackerInvoices)
       .where(eq(trackerInvoices.trackerId, trackerId))
-      .orderBy(desc(trackerInvoices.invoiceDate), desc(trackerInvoices.createdAt)),
+      .orderBy(
+        desc(trackerInvoices.invoiceDate),
+        desc(trackerInvoices.createdAt),
+      ),
     db
       .select({
         id: invoiceLinePayments.id,
@@ -242,7 +269,10 @@ async function loadTrackerWithChildren(trackerId: string) {
         amountCents: invoiceLinePayments.amountCents,
       })
       .from(invoiceLinePayments)
-      .innerJoin(trackerInvoices, eq(invoiceLinePayments.invoiceId, trackerInvoices.id))
+      .innerJoin(
+        trackerInvoices,
+        eq(invoiceLinePayments.invoiceId, trackerInvoices.id),
+      )
       .where(eq(trackerInvoices.trackerId, trackerId)),
   ]);
 
@@ -275,30 +305,64 @@ async function loadTrackerWithChildren(trackerId: string) {
 
   let scheduledTotal = 0;
   let billedTotal = 0;
+  let invoiceRetentionHeldTotal = 0;
+  let invoiceNetPaidTotal = 0;
   for (const li of lineItems) {
     if (li.isRemoved) continue;
     scheduledTotal += Number(li.scheduledValueCents ?? 0);
     billedTotal += Number(li.billedCents ?? 0);
   }
+  for (const inv of invoices) {
+    invoiceRetentionHeldTotal += Number(inv.retentionHeldCents ?? 0);
+    invoiceNetPaidTotal += Number(inv.netPaidCents ?? 0);
+  }
   const changeOrderTotal = cos
     .filter((c) => c.status === "approved")
     .reduce((s, c) => s + Number(c.amountCents ?? 0), 0);
+  const contractWithChanges = scheduledTotal + changeOrderTotal;
+  const retentionEnabled = Boolean(tracker.retentionEnabled);
+  const retentionRateBps = normalizeRetentionRateBps(
+    Number(tracker.retentionRateBps ?? DEFAULT_RETENTION_RATE_BPS),
+  );
+  const retentionReleased = Boolean(tracker.retentionReleasedAt);
+  const maxRetentionCents = retentionEnabled
+    ? retentionAmount(contractWithChanges, retentionRateBps)
+    : 0;
+  const retentionHeldCents = retentionEnabled ? invoiceRetentionHeldTotal : 0;
+  const netReceivedCents = retentionEnabled
+    ? retentionReleased
+      ? billedTotal
+      : Math.max(0, billedTotal - retentionHeldCents)
+    : billedTotal;
 
   const totals = {
     scheduledValueCents: scheduledTotal,
     billedCents: billedTotal,
-    outstandingCents: Math.max(0, scheduledTotal + changeOrderTotal - billedTotal),
+    outstandingCents: Math.max(0, contractWithChanges - netReceivedCents),
     changeOrderApprovedCents: changeOrderTotal,
-    contractWithChangesCents: scheduledTotal + changeOrderTotal,
+    contractWithChangesCents: contractWithChanges,
     percentBilled:
-      scheduledTotal + changeOrderTotal > 0
+      contractWithChanges > 0
         ? Math.min(
             100,
-            Math.round(
-              (billedTotal / (scheduledTotal + changeOrderTotal)) * 10000,
-            ) / 100,
+            Math.round((billedTotal / contractWithChanges) * 10000) / 100,
           )
         : 0,
+    retention: {
+      enabled: retentionEnabled,
+      rateBps: retentionRateBps,
+      releasedAt: tracker.retentionReleasedAt,
+      releasedBy: tracker.retentionReleasedBy,
+      released: retentionReleased,
+      maxRetentionCents,
+      retentionHeldCents,
+      retentionOutstandingCents:
+        retentionEnabled && !retentionReleased
+          ? Math.max(0, maxRetentionCents - retentionHeldCents)
+          : 0,
+      netReceivedCents,
+      invoiceNetPaidCents: retentionEnabled ? invoiceNetPaidTotal : billedTotal,
+    },
   };
 
   return {
@@ -339,6 +403,8 @@ const trackerPatchSchema = z.object({
     .nullable()
     .optional(),
   currency: z.string().trim().min(1).max(8).optional(),
+  retentionEnabled: z.boolean().optional(),
+  retentionRateBps: z.coerce.number().int().min(0).max(10000).optional(),
 });
 
 router.patch(
@@ -348,13 +414,39 @@ router.patch(
     await assertCanManageJob(req.auth!, jobId);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const body = trackerPatchSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid payload.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid payload.", body.error.flatten());
     const [updated] = await db
       .update(financialTrackers)
-      .set({ ...body.data, updatedAt: new Date() })
+      .set({
+        ...body.data,
+        ...(body.data.retentionEnabled === false
+          ? { retentionReleasedAt: null, retentionReleasedBy: null }
+          : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(financialTrackers.id, tracker.id))
       .returning();
     res.json({ tracker: updated });
+  }),
+);
+
+router.post(
+  "/:jobId/financials/retention/release",
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    await assertCanManageJob(req.auth!, jobId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    await db
+      .update(financialTrackers)
+      .set({
+        retentionReleasedAt: new Date(),
+        retentionReleasedBy: req.auth!.userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(financialTrackers.id, tracker.id));
+    const data = await loadTrackerWithChildren(tracker.id);
+    res.json(data);
   }),
 );
 
@@ -404,7 +496,9 @@ function extractJson(text: string): unknown {
   try {
     return JSON.parse(candidate.slice(start, end + 1));
   } catch (err) {
-    throw new HttpError(502, "AI returned invalid JSON.", { error: String(err) });
+    throw new HttpError(502, "AI returned invalid JSON.", {
+      error: String(err),
+    });
   }
 }
 
@@ -422,13 +516,25 @@ const estimateAiSchema = z.object({
               description: z.string().min(1),
               qty: z.coerce.number().default(1),
               rateCents: z.coerce.number().int().nonnegative().default(0),
-              scheduledValueCents: z.coerce.number().int().nonnegative().default(0),
+              scheduledValueCents: z.coerce
+                .number()
+                .int()
+                .nonnegative()
+                .default(0),
             }),
           )
           .default([]),
       }),
     )
     .default([]),
+});
+
+const retentionUploadSchema = z.object({
+  retentionEnabled: z.preprocess((value) => {
+    if (value === undefined) return undefined;
+    return value === true || value === "true";
+  }, z.boolean().optional()),
+  retentionRateBps: z.coerce.number().int().min(0).max(10000).optional(),
 });
 
 async function findFinancialsFolderId(jobId: string): Promise<string | null> {
@@ -458,7 +564,11 @@ const ESTIMATE_IMAGE_ANTHROPIC_MEDIA = new Set([
   "image/webp",
 ]);
 
-type AnthropicImageMedia = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+type AnthropicImageMedia =
+  | "image/jpeg"
+  | "image/png"
+  | "image/gif"
+  | "image/webp";
 
 async function buildAnthropicContent(
   upload: Express.Multer.File,
@@ -496,7 +606,8 @@ async function buildAnthropicContent(
   }
   // DOCX → mammoth → text
   if (
-    mt === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mt ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     ext === "docx"
   ) {
     const mammoth = await import("mammoth");
@@ -520,14 +631,13 @@ async function buildAnthropicContent(
   }
   // XLSX → exceljs → CSV per sheet → text
   if (
-    mt === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mt ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
     ext === "xlsx"
   ) {
     const { parseXlsxToSheets } = await import("../lib/spreadsheet");
     const parsed = await parseXlsxToSheets(bytes);
-    const parts = parsed.sheets.map(
-      (s) => `### Sheet: ${s.name}\n${s.csv}`,
-    );
+    const parts = parsed.sheets.map((s) => `### Sheet: ${s.name}\n${s.csv}`);
     const text = parts.join("\n\n").slice(0, 200_000);
     return [
       {
@@ -573,6 +683,14 @@ router.post(
       throw new HttpError(400, "Unsupported estimate file type.");
     }
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    const retentionUpload = retentionUploadSchema.safeParse(req.body ?? {});
+    if (!retentionUpload.success) {
+      throw new HttpError(
+        400,
+        "Invalid retention settings.",
+        retentionUpload.error.flatten(),
+      );
+    }
 
     // Read the bytes BEFORE saveUploadedFiles (which consumes the multer
     // temp file).
@@ -666,9 +784,7 @@ router.post(
             .from(invoiceLinePayments)
             .where(inArray(invoiceLinePayments.lineItemId, existingItemIds))
         : [];
-      const itemById = new Map(
-        existingItems.map((i) => [i.id, i] as const),
-      );
+      const itemById = new Map(existingItems.map((i) => [i.id, i] as const));
       const matchKey = (area: string, desc: string) =>
         `${area.trim().toLowerCase()}|${desc.trim().toLowerCase()}`;
 
@@ -712,7 +828,10 @@ router.post(
                 sortOrder: liSort++,
               })),
             )
-            .returning({ id: sovLineItems.id, description: sovLineItems.description });
+            .returning({
+              id: sovLineItems.id,
+              description: sovLineItems.description,
+            });
           for (const c of created) {
             newItemByKey.set(matchKey(area.name, c.description), c.id);
           }
@@ -721,7 +840,10 @@ router.post(
 
       // 4) Reattach payments by description match. Group payments per
       //    invoice + new line item and increment billedCents accordingly.
-      const reattach = new Map<string, { invoiceId: string; lineItemId: string; amountCents: number }>();
+      const reattach = new Map<
+        string,
+        { invoiceId: string; lineItemId: string; amountCents: number }
+      >();
       for (const p of existingPayments) {
         const old = itemById.get(p.lineItemId);
         if (!old) continue;
@@ -731,7 +853,12 @@ router.post(
         const prev = reattach.get(k);
         const amt = Number(p.amountCents ?? 0);
         if (prev) prev.amountCents += amt;
-        else reattach.set(k, { invoiceId: p.invoiceId, lineItemId: newId, amountCents: amt });
+        else
+          reattach.set(k, {
+            invoiceId: p.invoiceId,
+            lineItemId: newId,
+            amountCents: amt,
+          });
       }
       if (reattach.size > 0) {
         // Cap each reattached amount to the new line item's remaining
@@ -759,7 +886,11 @@ router.post(
             ),
           );
         }
-        const cappedReattach: Array<{ invoiceId: string; lineItemId: string; amountCents: number }> = [];
+        const cappedReattach: Array<{
+          invoiceId: string;
+          lineItemId: string;
+          amountCents: number;
+        }> = [];
         for (const r of reattach.values()) {
           const cap = remaining.get(r.lineItemId) ?? 0;
           const applied = Math.max(0, Math.min(r.amountCents, cap));
@@ -806,6 +937,15 @@ router.post(
         .set({
           projectName: validated.data.projectName ?? tracker.projectName,
           contractDate: validated.data.contractDate ?? tracker.contractDate,
+          ...(retentionUpload.data.retentionEnabled !== undefined
+            ? { retentionEnabled: retentionUpload.data.retentionEnabled }
+            : {}),
+          ...(retentionUpload.data.retentionRateBps !== undefined
+            ? { retentionRateBps: retentionUpload.data.retentionRateBps }
+            : {}),
+          ...(retentionUpload.data.retentionEnabled === false
+            ? { retentionReleasedAt: null, retentionReleasedBy: null }
+            : {}),
           rawEstimateResponse: parsed as Record<string, unknown>,
           estimateFileId: estimateFileId ?? tracker.estimateFileId,
           updatedAt: new Date(),
@@ -979,7 +1119,8 @@ router.post(
     await assertCanManageJob(req.auth!, jobId);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const body = areaCreateSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid area payload.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid area payload.", body.error.flatten());
     const [area] = await db
       .insert(sovAreas)
       .values({
@@ -1002,7 +1143,8 @@ router.patch(
     const areaId = getParam(req.params.areaId, "area id");
     await assertAreaInJob(areaId, jobId);
     const body = areaCreateSchema.partial().safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid area payload.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid area payload.", body.error.flatten());
     const [area] = await db
       .update(sovAreas)
       .set({ ...body.data, updatedAt: new Date() })
@@ -1030,7 +1172,12 @@ const lineItemCreateSchema = z.object({
   description: z.string().trim().min(1),
   qty: z.coerce.number().finite().nonnegative().optional().default(1),
   rateCents: z.coerce.number().int().nonnegative().optional().default(0),
-  scheduledValueCents: z.coerce.number().int().nonnegative().optional().default(0),
+  scheduledValueCents: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .default(0),
   isChangeOrder: z.boolean().optional().default(false),
   sortOrder: z.coerce.number().int().optional().default(0),
 });
@@ -1041,7 +1188,8 @@ router.post(
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanManageJob(req.auth!, jobId);
     const body = lineItemCreateSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid line item.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid line item.", body.error.flatten());
     await assertAreaInJob(body.data.areaId, jobId);
     const scheduled =
       body.data.scheduledValueCents ||
@@ -1080,7 +1228,8 @@ router.patch(
     const lineItemId = getParam(req.params.lineItemId, "line item id");
     await assertLineItemInJob(lineItemId, jobId);
     const body = lineItemPatchSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid line item.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid line item.", body.error.flatten());
 
     const [current] = await db
       .select()
@@ -1090,11 +1239,15 @@ router.patch(
     if (!current) throw new HttpError(404, "Line item not found.");
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
-    if (body.data.description !== undefined) updates.description = body.data.description;
+    if (body.data.description !== undefined)
+      updates.description = body.data.description;
     if (body.data.qty !== undefined) updates.qty = String(body.data.qty);
-    if (body.data.rateCents !== undefined) updates.rateCents = body.data.rateCents;
-    if (body.data.isRemoved !== undefined) updates.isRemoved = body.data.isRemoved;
-    if (body.data.sortOrder !== undefined) updates.sortOrder = body.data.sortOrder;
+    if (body.data.rateCents !== undefined)
+      updates.rateCents = body.data.rateCents;
+    if (body.data.isRemoved !== undefined)
+      updates.isRemoved = body.data.isRemoved;
+    if (body.data.sortOrder !== undefined)
+      updates.sortOrder = body.data.sortOrder;
 
     // Effective qty/rate after this patch (sent value or current).
     const effectiveQty =
@@ -1122,7 +1275,8 @@ router.patch(
 
     const scheduledChanged =
       scheduledExplicit ||
-      (qtyOrRateChanged && nextScheduled !== Number(current.scheduledValueCents ?? 0));
+      (qtyOrRateChanged &&
+        nextScheduled !== Number(current.scheduledValueCents ?? 0));
     const pctChanged = body.data.percentComplete !== undefined;
 
     if (scheduledChanged) updates.scheduledValueCents = nextScheduled;
@@ -1172,7 +1326,10 @@ const changeOrderSchema = z.object({
   number: z.string().trim().min(1).max(64),
   description: z.string().trim().nullable().optional(),
   amountCents: z.coerce.number().int().default(0),
-  status: z.enum(["pending", "approved", "rejected"]).optional().default("pending"),
+  status: z
+    .enum(["pending", "approved", "rejected"])
+    .optional()
+    .default("pending"),
   areaId: z.string().uuid().nullable().optional(),
 });
 
@@ -1183,7 +1340,8 @@ router.post(
     await assertCanManageJob(req.auth!, jobId);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const body = changeOrderSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid change order.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid change order.", body.error.flatten());
     if (body.data.areaId) await assertAreaInJob(body.data.areaId, jobId);
     const [co] = await db
       .insert(changeOrders)
@@ -1208,7 +1366,8 @@ router.patch(
     const coId = getParam(req.params.coId, "change order id");
     await assertChangeOrderInJob(coId, jobId);
     const body = changeOrderSchema.partial().safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid change order.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid change order.", body.error.flatten());
     if (body.data.areaId) await assertAreaInJob(body.data.areaId, jobId);
     const [co] = await db
       .update(changeOrders)
@@ -1241,20 +1400,29 @@ Match each invoice line to the most likely SOV line item and return ONLY valid J
 {
   "invoiceNumber": string | null,
   "invoiceDate": string | null,             // YYYY-MM-DD
-  "totalCents": number,
+  "totalCents": number,                      // gross billed before retention, in cents
+  "retentionHeldCents": number,              // retention withheld/deducted, in cents
+  "netPaidCents": number,                    // net invoice amount after retention, in cents
   "matches": [
     {
       "sovLineItemId": string,              // must be one of the provided ids
-      "amountCents": number                  // amount applied to this line, in cents
+      "amountCents": number                  // gross amount applied to this line, before retention
     }
   ]
 }
+If the invoice includes a retention deduction (for example "-10% Retention"),
+extract the gross billed amount, the retention withheld, and the net paid
+amount separately. Example: if net paid is $36,085.50 and retention withheld is
+$4,009.50, return totalCents 4009500, retentionHeldCents 400950, and
+netPaidCents 3608550.
 Only use sovLineItemIds from the provided list. If you cannot confidently match a line, omit it.`;
 
 const invoiceAiSchema = z.object({
   invoiceNumber: z.string().nullable().optional(),
   invoiceDate: z.string().nullable().optional(),
   totalCents: z.coerce.number().int().default(0),
+  retentionHeldCents: z.coerce.number().int().nonnegative().optional(),
+  netPaidCents: z.coerce.number().int().nonnegative().optional(),
   matches: z
     .array(
       z.object({
@@ -1328,14 +1496,18 @@ async function applyInvoiceMatches(
     // billed totals so the invariant `applied <= scheduled - billed`
     // still holds (and a future reversal subtracts exactly what was
     // applied).
-    const cappedMatches: Array<{ sovLineItemId: string; amountCents: number }> = [];
+    const cappedMatches: Array<{ sovLineItemId: string; amountCents: number }> =
+      [];
     for (const m of matches) {
       const s = snapshot.get(m.sovLineItemId);
       if (!s) continue;
       const cap = Math.max(0, s.scheduled - s.billed);
       const applied = Math.max(0, Math.min(Number(m.amountCents), cap));
       if (applied > 0) {
-        cappedMatches.push({ sovLineItemId: m.sovLineItemId, amountCents: applied });
+        cappedMatches.push({
+          sovLineItemId: m.sovLineItemId,
+          amountCents: applied,
+        });
         s.billed += applied;
       }
     }
@@ -1356,9 +1528,8 @@ async function applyInvoiceMatches(
     if (touchedIds.length > 0) {
       const rows: Array<{ id: string; billed: number; pct: string }> = [];
       for (const s of snapshot.values()) {
-        const pct = s.scheduled > 0
-          ? Math.min(100, (s.billed / s.scheduled) * 100)
-          : 0;
+        const pct =
+          s.scheduled > 0 ? Math.min(100, (s.billed / s.scheduled) * 100) : 0;
         rows.push({ id: s.id, billed: s.billed, pct: pct.toFixed(2) });
       }
       const valuesSql = sql.join(
@@ -1386,7 +1557,11 @@ async function applyInvoiceMatches(
   // (e.g. accidentally re-introducing per-row UPDATEs) shows up in logs.
   if (matches.length >= 25) {
     logger.info(
-      { invoiceId, matches: matches.length, durationMs: Date.now() - startedAt },
+      {
+        invoiceId,
+        matches: matches.length,
+        durationMs: Date.now() - startedAt,
+      },
       "financials: applyInvoiceMatches batch complete",
     );
   }
@@ -1473,7 +1648,12 @@ router.post(
       })
       .from(sovLineItems)
       .innerJoin(sovAreas, eq(sovLineItems.areaId, sovAreas.id))
-      .where(and(eq(sovAreas.trackerId, tracker.id), eq(sovLineItems.isRemoved, false)));
+      .where(
+        and(
+          eq(sovAreas.trackerId, tracker.id),
+          eq(sovLineItems.isRemoved, false),
+        ),
+      );
 
     const sovSummary = sovItems.map((li) => ({
       id: li.id,
@@ -1513,13 +1693,50 @@ router.post(
     const parsed = extractJson(textBlock.text);
     const validated = invoiceAiSchema.safeParse(parsed);
     if (!validated.success) {
-      throw new HttpError(502, "AI invoice response did not match expected shape.", {
-        issues: validated.error.flatten(),
-      });
+      throw new HttpError(
+        502,
+        "AI invoice response did not match expected shape.",
+        {
+          issues: validated.error.flatten(),
+        },
+      );
     }
 
     const validIds = new Set(sovSummary.map((s) => s.id));
-    const cleanMatches = validated.data.matches.filter((m) => validIds.has(m.sovLineItemId));
+    const cleanMatches = validated.data.matches.filter((m) =>
+      validIds.has(m.sovLineItemId),
+    );
+    const invoiceTotalCents = Math.max(
+      0,
+      Number(validated.data.totalCents ?? 0),
+    );
+    const fallbackRetentionHeld = tracker.retentionEnabled
+      ? retentionAmount(
+          invoiceTotalCents,
+          Number(tracker.retentionRateBps ?? DEFAULT_RETENTION_RATE_BPS),
+        )
+      : 0;
+    const retentionHeldCents = tracker.retentionEnabled
+      ? Math.min(
+          invoiceTotalCents,
+          Math.max(
+            0,
+            Number(validated.data.retentionHeldCents ?? fallbackRetentionHeld),
+          ),
+        )
+      : 0;
+    const netPaidCents = tracker.retentionEnabled
+      ? Math.max(
+          0,
+          Math.min(
+            invoiceTotalCents,
+            Number(
+              validated.data.netPaidCents ??
+                invoiceTotalCents - retentionHeldCents,
+            ),
+          ),
+        )
+      : invoiceTotalCents;
 
     const [invoice] = await db
       .insert(trackerInvoices)
@@ -1527,7 +1744,9 @@ router.post(
         trackerId: tracker.id,
         invoiceNumber: validated.data.invoiceNumber ?? null,
         invoiceDate: validated.data.invoiceDate ?? null,
-        totalCents: validated.data.totalCents ?? 0,
+        totalCents: invoiceTotalCents,
+        retentionHeldCents,
+        netPaidCents,
         fileId,
         rawAiResponse: parsed as Record<string, unknown>,
         createdBy: req.auth!.userId,
@@ -1569,7 +1788,8 @@ router.patch(
     const invoiceId = getParam(req.params.invoiceId, "invoice id");
     await assertInvoiceInJob(invoiceId, jobId);
     const body = invoiceMatchesPatchSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid matches.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid matches.", body.error.flatten());
     // Single batched ownership check: every referenced line item must
     // belong to this job's tracker. Replaces the prior O(N) loop of
     // `assertLineItemInJob` (Task #277).
@@ -1608,6 +1828,7 @@ export type TrackerTotals = {
   trackerId: string;
   scheduledValueCents: number;
   billedCents: number;
+  netReceivedCents: number;
   changeOrderApprovedCents: number;
   contractWithChangesCents: number;
   outstandingCents: number;
@@ -1620,14 +1841,19 @@ export async function getTrackerTotalsByJobIds(
   if (jobIds.length === 0) return result;
 
   const trackers = await db
-    .select({ id: financialTrackers.id, jobId: financialTrackers.jobId })
+    .select({
+      id: financialTrackers.id,
+      jobId: financialTrackers.jobId,
+      retentionEnabled: financialTrackers.retentionEnabled,
+      retentionReleasedAt: financialTrackers.retentionReleasedAt,
+    })
     .from(financialTrackers)
     .where(inArray(financialTrackers.jobId, jobIds));
   if (trackers.length === 0) return result;
 
   const trackerIds = trackers.map((t) => t.id);
 
-  const [lineSums, coSums] = await Promise.all([
+  const [lineSums, coSums, invoiceSums] = await Promise.all([
     db
       .select({
         trackerId: sovAreas.trackerId,
@@ -1646,9 +1872,20 @@ export async function getTrackerTotalsByJobIds(
       .from(changeOrders)
       .where(inArray(changeOrders.trackerId, trackerIds))
       .groupBy(changeOrders.trackerId),
+    db
+      .select({
+        trackerId: trackerInvoices.trackerId,
+        retentionHeld: sql<number>`coalesce(sum(${trackerInvoices.retentionHeldCents}), 0)`,
+      })
+      .from(trackerInvoices)
+      .where(inArray(trackerInvoices.trackerId, trackerIds))
+      .groupBy(trackerInvoices.trackerId),
   ]);
 
-  const linesByTracker = new Map<string, { scheduled: number; billed: number }>();
+  const linesByTracker = new Map<
+    string,
+    { scheduled: number; billed: number }
+  >();
   for (const r of lineSums) {
     linesByTracker.set(r.trackerId, {
       scheduled: Number(r.scheduled ?? 0),
@@ -1659,19 +1896,29 @@ export async function getTrackerTotalsByJobIds(
   for (const r of coSums) {
     coByTracker.set(r.trackerId, Number(r.approved ?? 0));
   }
+  const retentionByTracker = new Map<string, number>();
+  for (const r of invoiceSums) {
+    retentionByTracker.set(r.trackerId, Number(r.retentionHeld ?? 0));
+  }
 
   for (const t of trackers) {
     const lines = linesByTracker.get(t.id) ?? { scheduled: 0, billed: 0 };
     const coTotal = coByTracker.get(t.id) ?? 0;
+    const retentionHeld =
+      Boolean(t.retentionEnabled) && !t.retentionReleasedAt
+        ? (retentionByTracker.get(t.id) ?? 0)
+        : 0;
+    const netReceived = Math.max(0, lines.billed - retentionHeld);
     const contractWithChanges = lines.scheduled + coTotal;
     result.set(t.jobId, {
       jobId: t.jobId,
       trackerId: t.id,
       scheduledValueCents: lines.scheduled,
       billedCents: lines.billed,
+      netReceivedCents: netReceived,
       changeOrderApprovedCents: coTotal,
       contractWithChangesCents: contractWithChanges,
-      outstandingCents: Math.max(0, contractWithChanges - lines.billed),
+      outstandingCents: Math.max(0, contractWithChanges - netReceived),
     });
   }
 

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import GlobalSearch from "./GlobalSearch"
-import { logoutSession } from "@/lib/api"
+import { api, logoutSession } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { useAgentPanelStore } from "@/store/agent"
 import { hasRoleAccess, ROLE_GATES, type AppRole } from "@/lib/role-access"
@@ -47,15 +47,17 @@ export default function TopNav() {
   const user = useAuthStore((s) => s.user)
   const toggleAgent = useAgentPanelStore((s) => s.toggle)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [canUseAssistant, setCanUseAssistant] = useState(false)
 
   const role = user?.role
-  const isCrew = role === "crew_member"
+  const isFieldUser = role === "project_manager" || role === "crew_member"
   const accountLabel = user?.fullName?.split(" ")[0] ?? "Account"
+  const currentJobId = location.pathname.match(/^\/jobs\/([^/]+)/)?.[1] ?? null
 
-  // Role-based primary nav. Admin/PM see Home·Clients·Sales·Reports·
-  // Resources; crew see Home·My Jobs·Resources. Reports stays hidden
+  // Role-based primary nav. Admins see the office workspace; PMs and crew
+  // share the same field-user view. Reports stays hidden
   // until the route ships (FEATURES.reports).
-  const navLinks: TopNavLink[] = isCrew
+  const navLinks: TopNavLink[] = isFieldUser
     ? [
         { label: "Home", to: "/dashboard" },
         { label: "My Jobs", to: "/jobs" },
@@ -83,6 +85,30 @@ export default function TopNav() {
   useEffect(() => {
     setSearchOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    if (!user) {
+      setCanUseAssistant(false)
+      return
+    }
+
+    let cancelled = false
+    const path = currentJobId
+      ? `/agent/access?jobId=${encodeURIComponent(currentJobId)}`
+      : "/agent/access"
+    api
+      .get<{ canUseAssistant: boolean }>(path, { suppressForbiddenRedirect: true })
+      .then((response) => {
+        if (!cancelled) setCanUseAssistant(response.data.canUseAssistant)
+      })
+      .catch(() => {
+        if (!cancelled) setCanUseAssistant(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentJobId, user?.id])
 
   // Wire the `/` global keyboard shortcut to either focus the desktop
   // search input directly or open the mobile search sheet (where the
@@ -157,17 +183,18 @@ export default function TopNav() {
           <Search className="size-5" />
         </button>
 
-        {/* Assistant button */}
-        <button
-          type="button"
-          onClick={toggleAgent}
-          className="ml-1 flex items-center justify-center gap-1.5 rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-          aria-label="Open assistant"
-          title="Assistant"
-        >
-          <Sparkles className="size-5" style={{ color: "#E85D04" }} />
-          <span className="hidden text-sm font-medium md:block">Assistant</span>
-        </button>
+        {canUseAssistant ? (
+          <button
+            type="button"
+            onClick={toggleAgent}
+            className="ml-1 flex items-center justify-center gap-1.5 rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Open assistant"
+            title="Assistant"
+          >
+            <Sparkles className="size-5" style={{ color: "#E85D04" }} />
+            <span className="hidden text-sm font-medium md:block">Assistant</span>
+          </button>
+        ) : null}
 
         {/* User menu */}
         <DropdownMenu>

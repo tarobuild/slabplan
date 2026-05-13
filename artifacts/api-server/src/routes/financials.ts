@@ -18,7 +18,11 @@ import {
   anthropic,
   type ContentBlockParam,
 } from "@workspace/integrations-anthropic-ai";
-import { assertCanAccessJob, assertCanManageJob } from "../lib/authorization";
+import {
+  assertCanAccessJobFeature,
+  isAdmin,
+  type AuthContext,
+} from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
 import { uploadSingle } from "../lib/uploads";
 import { createAiParsePerUserRateLimit } from "../lib/rate-limit";
@@ -34,10 +38,15 @@ import {
   validateUploadForMediaType,
   writeActivity,
 } from "../lib/file-manager";
-import { requireManagerOrAbove } from "../middleware/require-auth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router({ mergeParams: true });
+
+function assertCanEditFinancials(auth: AuthContext) {
+  if (!isAdmin(auth)) {
+    throw new HttpError(403, "Only admins can update job financials.");
+  }
+}
 
 type AnthropicCreateArgs = Parameters<typeof anthropic.messages.create>[0];
 // The route never enables streaming, so the response is always a
@@ -110,8 +119,7 @@ async function callAnthropicWithLogging(args: {
   }
 }
 
-// Whole financials surface is admin/PM only — crew_member cannot read it.
-router.use(requireManagerOrAbove);
+// Financials visibility is controlled per job assignment. Mutations are admin-only.
 
 const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_MAX_TOKENS = 8192;
@@ -388,7 +396,7 @@ router.get(
   "/:jobId/financials",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const data = await loadTrackerWithChildren(tracker.id);
     res.json(data);
@@ -411,7 +419,8 @@ router.patch(
   "/:jobId/financials",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const body = trackerPatchSchema.safeParse(req.body);
     if (!body.success)
@@ -435,7 +444,8 @@ router.post(
   "/:jobId/financials/retention/release",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     await db
       .update(financialTrackers)
@@ -669,7 +679,8 @@ router.post(
   uploadSingle("file"),
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
 
     const upload = (req.file ?? null) as Express.Multer.File | null;
     if (!upload) throw new HttpError(400, "Missing estimate file.");
@@ -996,7 +1007,8 @@ router.post(
   uploadSingle("file"),
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
 
     const upload = (req.file ?? null) as Express.Multer.File | null;
     if (!upload) throw new HttpError(400, "Missing change order file.");
@@ -1116,7 +1128,8 @@ router.post(
   "/:jobId/financials/areas",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const body = areaCreateSchema.safeParse(req.body);
     if (!body.success)
@@ -1139,7 +1152,8 @@ router.patch(
   "/:jobId/financials/areas/:areaId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const areaId = getParam(req.params.areaId, "area id");
     await assertAreaInJob(areaId, jobId);
     const body = areaCreateSchema.partial().safeParse(req.body);
@@ -1159,7 +1173,8 @@ router.delete(
   "/:jobId/financials/areas/:areaId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const areaId = getParam(req.params.areaId, "area id");
     await assertAreaInJob(areaId, jobId);
     await db.delete(sovAreas).where(eq(sovAreas.id, areaId));
@@ -1186,7 +1201,8 @@ router.post(
   "/:jobId/financials/line-items",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const body = lineItemCreateSchema.safeParse(req.body);
     if (!body.success)
       throw new HttpError(400, "Invalid line item.", body.error.flatten());
@@ -1224,7 +1240,8 @@ router.patch(
   "/:jobId/financials/line-items/:lineItemId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const lineItemId = getParam(req.params.lineItemId, "line item id");
     await assertLineItemInJob(lineItemId, jobId);
     const body = lineItemPatchSchema.safeParse(req.body);
@@ -1314,7 +1331,8 @@ router.delete(
   "/:jobId/financials/line-items/:lineItemId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const lineItemId = getParam(req.params.lineItemId, "line item id");
     await assertLineItemInJob(lineItemId, jobId);
     await db.delete(sovLineItems).where(eq(sovLineItems.id, lineItemId));
@@ -1337,7 +1355,8 @@ router.post(
   "/:jobId/financials/change-orders",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const body = changeOrderSchema.safeParse(req.body);
     if (!body.success)
@@ -1362,7 +1381,8 @@ router.patch(
   "/:jobId/financials/change-orders/:coId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const coId = getParam(req.params.coId, "change order id");
     await assertChangeOrderInJob(coId, jobId);
     const body = changeOrderSchema.partial().safeParse(req.body);
@@ -1383,7 +1403,8 @@ router.delete(
   "/:jobId/financials/change-orders/:coId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const coId = getParam(req.params.coId, "change order id");
     await assertChangeOrderInJob(coId, jobId);
     await db.delete(changeOrders).where(eq(changeOrders.id, coId));
@@ -1601,7 +1622,8 @@ router.post(
   uploadSingle("file"),
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
 
     const upload = (req.file ?? null) as Express.Multer.File | null;
     if (!upload) throw new HttpError(400, "Missing invoice file.");
@@ -1784,7 +1806,8 @@ router.patch(
   "/:jobId/financials/invoices/:invoiceId/matches",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const invoiceId = getParam(req.params.invoiceId, "invoice id");
     await assertInvoiceInJob(invoiceId, jobId);
     const body = invoiceMatchesPatchSchema.safeParse(req.body);
@@ -1808,7 +1831,8 @@ router.delete(
   "/:jobId/financials/invoices/:invoiceId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    assertCanEditFinancials(req.auth!);
     const invoiceId = getParam(req.params.invoiceId, "invoice id");
     await assertInvoiceInJob(invoiceId, jobId);
     // Reverse payments by setting matches to [], then delete the invoice.

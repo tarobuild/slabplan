@@ -128,7 +128,7 @@ export default function Sidebar() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === "admin"
-  const canSeeClients = user?.role !== "crew_member"
+  const canSeeClients = isAdmin
   const [jobs, setJobs] = useState<Job[]>([])
   const [search, setSearch] = useState(readStoredSearch)
   const [sortAsc, setSortAsc] = useState(readStoredSortAsc)
@@ -234,7 +234,7 @@ export default function Sidebar() {
       statusFiltered.filter((j) => {
         if (!isSearching) return true
         const inTitle = j.title.toLowerCase().includes(searchQuery)
-        // Crew members can't see clients, so don't expose them via search either.
+        // Field users can't see clients, so don't expose them via search either.
         const inClient =
           canSeeClients &&
           (j.clientName ?? "").toLowerCase().includes(searchQuery)
@@ -553,7 +553,7 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Crew members can't see clients — render a flat job list. */}
+        {/* Field users can't see clients — render a flat job list. */}
         {totalJobsShown > 0 && !canSeeClients && (
           <div>
             {searchFiltered
@@ -576,7 +576,7 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Admin/PM see jobs grouped under their client. */}
+        {/* Admins see jobs grouped under their client. */}
         {totalJobsShown > 0 && canSeeClients &&
           groups.map((group) => {
             // When searching, always show jobs expanded so results are visible.

@@ -20,6 +20,11 @@ import {
 } from "../lib/agent/inflight";
 import { createRateLimit } from "../lib/rate-limit";
 import { logger } from "../lib/logger";
+import {
+  assertCanAccessJob,
+  assertCanUseAssistant,
+  getJobAccess,
+} from "../lib/authorization";
 
 const router: IRouter = Router();
 
@@ -72,6 +77,35 @@ const agentSendRateLimit = createRateLimit({
     return userId ? `u:${userId}` : null;
   },
 });
+
+router.get(
+  "/access",
+  asyncHandler(async (req, res) => {
+    const jobId = typeof req.query.jobId === "string" ? req.query.jobId : null;
+    if (jobId) {
+      await assertCanAccessJob(req.auth!, jobId);
+      const access = await getJobAccess(req.auth!, jobId);
+      res.json({ canUseAssistant: access.assistant });
+      return;
+    }
+
+    try {
+      await assertCanUseAssistant(req.auth!);
+      res.json({ canUseAssistant: true });
+    } catch (error) {
+      if (error instanceof HttpError && error.statusCode === 403) {
+        res.json({ canUseAssistant: false });
+        return;
+      }
+      throw error;
+    }
+  }),
+);
+
+router.use(asyncHandler(async (req, _res, next) => {
+  await assertCanUseAssistant(req.auth!);
+  next();
+}));
 
 async function loadOwnedConversation(userId: string, id: string) {
   const [row] = await db

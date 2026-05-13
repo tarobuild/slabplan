@@ -20,7 +20,6 @@ import {
 } from "@workspace/db/schema";
 import {
   isAdmin,
-  isManagerOrAbove,
   listAccessibleJobIds,
   listAccessibleLeadIds,
 } from "../lib/authorization";
@@ -1198,10 +1197,6 @@ router.get(
     const auth = req.auth!;
     if (isAdmin(auth)) {
       res.json(await buildAdminHome(auth));
-      return;
-    }
-    if (isManagerOrAbove(auth)) {
-      res.json(await buildPmHome(auth));
       return;
     }
     res.json(await buildCrewHome(auth));

@@ -37,14 +37,13 @@ import {
 } from "@workspace/db/schema";
 import {
   assertCanAccessJob,
-  assertCanManageJob,
-  assertCanManageScheduleItem,
+  assertCanAccessJobFeature,
   assertCanViewScheduleItem,
   isAdmin,
   listAccessibleJobIds,
   type AuthContext,
 } from "../lib/authorization";
-import { requireManagerOrAbove } from "../middleware/require-auth";
+import { requireAdmin } from "../middleware/require-auth";
 import { decodeCursor, encodeCursor } from "../lib/cursor";
 import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
@@ -268,7 +267,7 @@ const scheduleTodoUpdatePayloadSchema = z.object({
 // Narrow payload accepted by POST /schedule-items/:id/complete.
 // This is the assignee-side write path for crew members; it deliberately
 // only carries the completion-state fields and never touches schedule
-// dates, visibility, predecessors, or other admin/PM-managed properties.
+// dates, visibility, predecessors, or other admin-managed properties.
 const scheduleCompletionPayloadSchema = z.object({
   isComplete: z.coerce.boolean(),
   progress: z.coerce.number().int().min(0).max(100).optional(),
@@ -306,9 +305,12 @@ const requireScheduleJobRouteAccess = asyncHandler(async (req, _res, next) => {
   const jobId = getParam(req.params.jobId, "job id");
 
   if (req.method === "GET") {
-    await assertCanAccessJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "schedule");
   } else {
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, "schedule");
+    if (!isAdmin(req.auth!)) {
+      throw new HttpError(403, "Only admins can update job schedules.");
+    }
   }
 
   next();
@@ -329,7 +331,9 @@ const requireScheduleItemRouteAccess = asyncHandler(async (req, _res, next) => {
   if (req.method === "GET" || isCollaborativeUpdate) {
     await assertCanViewScheduleItem(req.auth!, itemId);
   } else {
-    await assertCanManageScheduleItem(req.auth!, itemId);
+    if (!isAdmin(req.auth!)) {
+      throw new HttpError(403, "Only admins can update job schedules.");
+    }
   }
 
   next();
@@ -1651,7 +1655,9 @@ async function resolveWorkdayExceptionTargetJobIds(
 
   const jobIds = uniqueJobIds(Array.isArray(exception.jobIds) ? exception.jobIds : []);
 
-  await Promise.all(jobIds.map((targetJobId) => assertCanManageJob(auth, targetJobId)));
+  if (!isAdmin(auth)) {
+    throw new HttpError(403, "Only admins can manage workday exceptions.");
+  }
 
   return jobIds;
 }
@@ -3270,7 +3276,7 @@ const companyScheduleQuerySchema = z.object({
 
 router.get(
   "/schedule",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const parsedQuery = companyScheduleQuerySchema.safeParse(req.query);
     if (!parsedQuery.success) {
@@ -3631,18 +3637,10 @@ router.post(
       throw new HttpError(403, "You do not have access to that schedule item.");
     }
 
-    // Re-check write permission narrowly: caller must either be a manager
-    // of the item (admin / PM-on-job) OR be currently assigned to it.
+    // Re-check write permission narrowly: caller must either be an admin
+    // OR be currently assigned to it.
     // The route-level middleware only confirmed view access.
-    let canManage = false;
-    try {
-      await assertCanManageScheduleItem(req.auth!, itemId);
-      canManage = true;
-    } catch (err) {
-      if (!(err instanceof HttpError) || err.statusCode !== 403) {
-        throw err;
-      }
-    }
+    const canManage = isAdmin(req.auth!);
 
     if (!canManage) {
       const [assignment] = await db

@@ -40,7 +40,7 @@ type ScheduleToolbarProps = {
   draftFutureLength: number
   activeFilterCount: number
   hasActiveItems: boolean
-  // Whether the current user may perform write actions (admin/PM).
+  // Whether the current user may perform write actions (admin).
   // Crew members get a read-only toolbar — write affordances are
   // hidden, never just disabled.
   canWrite: boolean

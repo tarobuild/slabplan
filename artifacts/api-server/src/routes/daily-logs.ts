@@ -30,11 +30,15 @@ import {
 } from "@workspace/db/schema";
 import {
   assertCanAccessJob,
+  assertCanAccessJobFeature,
+  assertCanCreateDailyLog,
   assertCanEditDailyLog,
   assertCanViewDailyLog,
+  isAdmin,
   listAccessibleJobIds,
+  type AuthContext,
 } from "../lib/authorization";
-import { requireManagerOrAbove } from "../middleware/require-auth";
+import { requireAdmin } from "../middleware/require-auth";
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { buildDailyLogVisibilityFilter } from "../lib/daily-log-visibility";
 import {
@@ -235,7 +239,10 @@ function requireDailyLogJobId(dailyLog: { jobId: string | null }) {
 
 const requireDailyLogJobAccess = asyncHandler(async (req, _res, next) => {
   const jobId = getParam(req.params.jobId, "job id");
-  await assertCanAccessJob(req.auth!, jobId);
+  await assertCanAccessJobFeature(req.auth!, jobId, "dailyLogs");
+  if (req.method !== "GET") {
+    await assertCanCreateDailyLog(req.auth!, jobId);
+  }
   next();
 });
 
@@ -246,8 +253,33 @@ const requireDailyLogViewAccess = asyncHandler(async (req, _res, next) => {
 });
 
 const requireDailyLogEditAccess = asyncHandler(async (req, _res, next) => {
+  if (!isAdmin(req.auth!)) {
+    throw new HttpError(403, "Only admins can update daily logs.");
+  }
   const logId = getParam(req.params.id, "daily log id");
   await assertCanEditDailyLog(req.auth!, logId);
+  next();
+});
+
+async function assertCanContributeToDailyLog(auth: AuthContext, logId: string) {
+  const dailyLog = await getDailyLogOrThrow(logId);
+  const jobId = requireDailyLogJobId(dailyLog);
+
+  if (isAdmin(auth)) {
+    return dailyLog;
+  }
+
+  if (dailyLog.createdBy !== auth.userId) {
+    throw new HttpError(403, "You can only add to daily logs you created.");
+  }
+
+  await assertCanCreateDailyLog(auth, jobId);
+  return dailyLog;
+}
+
+const requireDailyLogContributorAccess = asyncHandler(async (req, _res, next) => {
+  const logId = getParam(req.params.id, "daily log id");
+  await assertCanContributeToDailyLog(req.auth!, logId);
   next();
 });
 
@@ -1301,7 +1333,7 @@ const companyDailyLogFeedQuerySchema = z.object({
 
 router.get(
   "/daily-logs/feed",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const query = companyDailyLogFeedQuerySchema.safeParse(req.query);
     if (!query.success) {
@@ -1568,7 +1600,7 @@ router.put(
     }
 
     await ensureJobExists(nextJobId);
-    await assertCanAccessJob(req.auth!, nextJobId);
+    await assertCanAccessJobFeature(req.auth!, nextJobId, "dailyLogs");
 
     await db
       .update(dailyLogs)
@@ -1646,7 +1678,7 @@ router.delete(
 
 router.post(
   "/daily-logs/:id/publish",
-  requireDailyLogEditAccess,
+  requireDailyLogContributorAccess,
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
     const existing = await getDailyLogOrThrow(logId);
@@ -2196,7 +2228,7 @@ router.post(
 
 router.post(
   "/daily-logs/:id/attachments",
-  requireDailyLogEditAccess,
+  requireDailyLogContributorAccess,
   uploadRateLimit,
   uploadArray("files", 20),
   asyncHandler(async (req, res) => {

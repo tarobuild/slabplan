@@ -18,6 +18,23 @@ import {
 import { HttpError } from "./http";
 
 export type AppRole = "admin" | "project_manager" | "crew_member";
+export type JobAccessFeature =
+  | "financials"
+  | "documents"
+  | "photos"
+  | "videos"
+  | "dailyLogs"
+  | "schedule"
+  | "assistant";
+
+export type JobContributionFeature =
+  | "createDailyLogs"
+  | "uploadDocuments"
+  | "uploadPhotos"
+  | "uploadVideos"
+  | "createFolders";
+
+export type JobAccess = Record<JobAccessFeature | JobContributionFeature, boolean>;
 
 export type AuthContext = NonNullable<Express.Request["auth"]>;
 
@@ -74,6 +91,54 @@ type ScheduleItemAccessRecord = {
   isAssignedToCurrentUser: boolean;
 };
 
+const FULL_JOB_ACCESS: JobAccess = {
+  financials: true,
+  documents: true,
+  photos: true,
+  videos: true,
+  dailyLogs: true,
+  schedule: true,
+  assistant: true,
+  createDailyLogs: true,
+  uploadDocuments: true,
+  uploadPhotos: true,
+  uploadVideos: true,
+  createFolders: true,
+};
+
+const FIELD_JOB_ACCESS: JobAccess = {
+  financials: false,
+  documents: false,
+  photos: true,
+  videos: true,
+  dailyLogs: true,
+  schedule: true,
+  assistant: false,
+  createDailyLogs: true,
+  uploadDocuments: false,
+  uploadPhotos: true,
+  uploadVideos: true,
+  createFolders: false,
+};
+
+export function defaultJobAccessForRole(role: AppRole): JobAccess {
+  return role === "admin" ? { ...FULL_JOB_ACCESS } : { ...FIELD_JOB_ACCESS };
+}
+
+function folderMediaTypeToFeature(mediaType: string | null): JobAccessFeature | null {
+  if (mediaType === "document") return "documents";
+  if (mediaType === "photo") return "photos";
+  if (mediaType === "video") return "videos";
+  return null;
+}
+
+function folderMediaTypeToUploadFeature(mediaType: string | null): JobContributionFeature | null {
+  if (mediaType === "document") return "uploadDocuments";
+  if (mediaType === "photo") return "uploadPhotos";
+  if (mediaType === "video") return "uploadVideos";
+  return null;
+}
+
 function roleFromAuth(auth: AuthContext): AppRole {
   if (auth.role === "admin" || auth.role === "project_manager" || auth.role === "crew_member") {
     return auth.role;
@@ -91,6 +156,37 @@ function permissionEnabled(
   key: string,
 ): boolean {
   return permissions?.[key] === true;
+}
+
+function explicitUserPermission(
+  permissions: Record<string, unknown> | null,
+  userId: string,
+): boolean | null {
+  const users = permissions?.users;
+
+  if (!users || typeof users !== "object" || Array.isArray(users)) {
+    return null;
+  }
+
+  const value = (users as Record<string, unknown>)[userId];
+  return typeof value === "boolean" ? value : null;
+}
+
+function folderPermissionAllows(
+  auth: AuthContext,
+  permissions: Record<string, unknown> | null,
+) {
+  if (permissions === null) {
+    return true;
+  }
+
+  const userOverride = explicitUserPermission(permissions, auth.userId);
+  if (userOverride !== null) {
+    return userOverride;
+  }
+
+  const role = roleFromAuth(auth);
+  return permissionEnabled(permissions, role) || permissionEnabled(permissions, "internal");
 }
 
 export function isAdmin(auth: AuthContext) {
@@ -140,18 +236,6 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
         isNull(jobs.deletedAt),
       ),
     );
-
-  if (role === "project_manager") {
-    const [managedJobIds, assignedJobRows] = await Promise.all([
-      listManagedJobIds(auth),
-      assignedJobRowsPromise,
-    ]);
-
-    return uniqueIds([
-      ...(managedJobIds ?? []),
-      ...assignedJobRows.map((row) => row.id),
-    ]);
-  }
 
   const [createdRows, assignedRows, dailyLogRows, uploadedRows, jobAssigneeRows] = await Promise.all([
     db
@@ -286,6 +370,131 @@ export async function assertCanAccessJob(auth: AuthContext, jobId: string) {
   }
 }
 
+export async function getJobAccess(auth: AuthContext, jobId: string): Promise<JobAccess> {
+  if (isAdmin(auth)) {
+    return { ...FULL_JOB_ACCESS };
+  }
+
+  const role = roleFromAuth(auth);
+  const [[job], [assignment]] = await Promise.all([
+    db
+      .select({
+        id: jobs.id,
+        projectManagerId: jobs.projectManagerId,
+        createdBy: jobs.createdBy,
+      })
+      .from(jobs)
+      .where(and(eq(jobs.id, jobId), isNull(jobs.deletedAt)))
+      .limit(1),
+    db
+      .select({
+        financials: jobAssignees.canViewFinancials,
+        documents: jobAssignees.canViewDocuments,
+        photos: jobAssignees.canViewPhotos,
+        videos: jobAssignees.canViewVideos,
+        dailyLogs: jobAssignees.canViewDailyLogs,
+        schedule: jobAssignees.canViewSchedule,
+        assistant: jobAssignees.canUseAssistant,
+        createDailyLogs: jobAssignees.canCreateDailyLogs,
+        uploadDocuments: jobAssignees.canUploadDocuments,
+        uploadPhotos: jobAssignees.canUploadPhotos,
+        uploadVideos: jobAssignees.canUploadVideos,
+        createFolders: jobAssignees.canCreateFolders,
+      })
+      .from(jobAssignees)
+      .where(and(eq(jobAssignees.jobId, jobId), eq(jobAssignees.userId, auth.userId)))
+      .limit(1),
+  ]);
+
+  if (!job) {
+    throw new HttpError(404, "Job not found.");
+  }
+
+  if (assignment) {
+    return assignment;
+  }
+
+  return defaultJobAccessForRole(role);
+}
+
+async function assertJobFeatureAllowed(
+  auth: AuthContext,
+  jobId: string,
+  feature: JobAccessFeature,
+) {
+  const access = await getJobAccess(auth, jobId);
+  if (!access[feature]) {
+    throw new HttpError(403, "You do not have access to that part of the job.");
+  }
+}
+
+export async function assertCanAccessJobFeature(
+  auth: AuthContext,
+  jobId: string,
+  feature: JobAccessFeature,
+) {
+  await assertCanAccessJob(auth, jobId);
+  await assertJobFeatureAllowed(auth, jobId, feature);
+}
+
+async function assertJobContributionAllowed(
+  auth: AuthContext,
+  jobId: string,
+  feature: JobContributionFeature,
+) {
+  const access = await getJobAccess(auth, jobId);
+  if (!access[feature]) {
+    throw new HttpError(403, "You do not have permission to add content to that part of the job.");
+  }
+}
+
+export async function assertCanCreateDailyLog(auth: AuthContext, jobId: string) {
+  await assertCanAccessJobFeature(auth, jobId, "dailyLogs");
+  if (isAdmin(auth)) {
+    return;
+  }
+  await assertJobContributionAllowed(auth, jobId, "createDailyLogs");
+}
+
+export async function assertCanCreateJobFolder(
+  auth: AuthContext,
+  jobId: string,
+  mediaType: string | null,
+) {
+  await assertCanAccessJob(auth, jobId);
+  const viewFeature = folderMediaTypeToFeature(mediaType);
+  if (viewFeature) {
+    await assertJobFeatureAllowed(auth, jobId, viewFeature);
+  }
+  if (isAdmin(auth)) {
+    return;
+  }
+  await assertJobContributionAllowed(auth, jobId, "createFolders");
+}
+
+export async function assertCanUseAssistant(auth: AuthContext) {
+  if (isAdmin(auth)) {
+    return;
+  }
+
+  const [row] = await db
+    .select({ id: jobAssignees.id })
+    .from(jobAssignees)
+    .innerJoin(jobs, eq(jobAssignees.jobId, jobs.id))
+    .where(
+      and(
+        eq(jobAssignees.userId, auth.userId),
+        eq(jobAssignees.canUseAssistant, true),
+        isNull(jobs.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!row) {
+    throw new HttpError(403, "You do not have access to the assistant.");
+  }
+}
+
 export async function assertCanManageJob(auth: AuthContext, jobId: string) {
   if (isAdmin(auth)) {
     return;
@@ -355,12 +564,7 @@ function canViewFolderForRole(auth: AuthContext, folder: FolderAccessRecord) {
     return true;
   }
 
-  const role = roleFromAuth(auth);
-  return (
-    permissionEnabled(folder.viewingPermissions, role) ||
-    permissionEnabled(folder.viewingPermissions, "internal") ||
-    folder.viewingPermissions === null
-  );
+  return folderPermissionAllows(auth, folder.viewingPermissions);
 }
 
 function canUploadToFolderForRole(auth: AuthContext, folder: FolderAccessRecord) {
@@ -368,16 +572,24 @@ function canUploadToFolderForRole(auth: AuthContext, folder: FolderAccessRecord)
     return true;
   }
 
-  const role = roleFromAuth(auth);
+  return folderPermissionAllows(auth, folder.uploadingPermissions);
+}
 
-  if (folder.uploadingPermissions === null) {
-    return isManagerOrAbove(auth);
+async function assertCanUploadToJobFolder(auth: AuthContext, folder: FolderAccessRecord) {
+  if (!folder.jobId) {
+    throw new HttpError(403, "You do not have access to that folder.");
   }
-
-  return (
-    permissionEnabled(folder.uploadingPermissions, role) ||
-    permissionEnabled(folder.uploadingPermissions, "internal")
-  );
+  if (isAdmin(auth)) {
+    return;
+  }
+  const uploadFeature = folderMediaTypeToUploadFeature(folder.mediaType);
+  if (!uploadFeature) {
+    throw new HttpError(403, "You do not have permission to upload to that folder.");
+  }
+  await assertJobContributionAllowed(auth, folder.jobId, uploadFeature);
+  if (!canUploadToFolderForRole(auth, folder)) {
+    throw new HttpError(403, "You do not have permission to upload to that folder.");
+  }
 }
 
 function resolveFolderScope(folder: FolderAccessRecord): FolderScope {
@@ -387,7 +599,7 @@ function resolveFolderScope(folder: FolderAccessRecord): FolderScope {
 async function assertScopedFolderAccess(
   auth: AuthContext,
   folder: FolderAccessRecord,
-  mode: "view" | "manage",
+  mode: "view" | "upload" | "manage",
   related?: {
     leadId?: string | null;
     dailyLogId?: string | null;
@@ -407,6 +619,11 @@ async function assertScopedFolderAccess(
       return;
     }
 
+    if (mode === "upload") {
+      await assertCanManageLead(auth, leadId);
+      return;
+    }
+
     await assertCanManageLead(auth, leadId);
     return;
   }
@@ -419,6 +636,11 @@ async function assertScopedFolderAccess(
 
     if (mode === "view") {
       await assertCanViewDailyLog(auth, dailyLogId);
+      return;
+    }
+
+    if (mode === "upload") {
+      await assertCanEditDailyLog(auth, dailyLogId);
       return;
     }
 
@@ -437,6 +659,11 @@ async function assertScopedFolderAccess(
       return;
     }
 
+    if (mode === "upload") {
+      await assertCanManageScheduleItem(auth, scheduleItemId);
+      return;
+    }
+
     await assertCanManageScheduleItem(auth, scheduleItemId);
     return;
   }
@@ -447,13 +674,27 @@ async function assertScopedFolderAccess(
     }
 
     await assertCanAccessJob(auth, folder.jobId);
+    const feature = folderMediaTypeToFeature(folder.mediaType);
+    if (feature) {
+      await assertJobFeatureAllowed(auth, folder.jobId, feature);
+    }
   }
 
   if (mode === "view" && !canViewFolderForRole(auth, folder)) {
     throw new HttpError(403, "You do not have access to that folder.");
   }
 
-  if (mode === "manage" && !canUploadToFolderForRole(auth, folder)) {
+  if (mode === "upload") {
+    if (scope === "job") {
+      await assertCanUploadToJobFolder(auth, folder);
+      return;
+    }
+    if (!canUploadToFolderForRole(auth, folder)) {
+      throw new HttpError(403, "You do not have permission to upload to that folder.");
+    }
+  }
+
+  if (mode === "manage" && !isAdmin(auth)) {
     throw new HttpError(403, "You do not have permission to modify that folder.");
   }
 }
@@ -493,9 +734,9 @@ async function getFolderAccessOrThrow(folderId: string, includeDeleted = false) 
  * based on the per-folder `viewingPermissions` JSONB column. Returns `null` for
  * admins so callers can skip filtering entirely.
  *
- * Mirrors `canViewFolderForRole` (admin sees everything; non-admin sees a
- * folder when permissions are NULL, when `internal` is true, or when the
- * caller's specific role flag is true).
+ * Mirrors `canViewFolderForRole` (admin sees everything; non-admin sees open
+ * folders, explicit per-user allows, or their role/internal defaults). An
+ * explicit per-user `false` wins over broad role/internal permissions.
  */
 export function buildFolderVisibilityCondition(auth: AuthContext): SQL | null {
   if (isAdmin(auth)) {
@@ -505,8 +746,17 @@ export function buildFolderVisibilityCondition(auth: AuthContext): SQL | null {
   const role = roleFromAuth(auth);
   return sql`(
     ${folders.viewingPermissions} IS NULL
-    OR ${folders.viewingPermissions} ->> 'internal' = 'true'
-    OR ${folders.viewingPermissions} ->> ${role} = 'true'
+    OR (
+      ${folders.viewingPermissions} -> 'users' -> ${auth.userId} IS NOT NULL
+      AND ${folders.viewingPermissions} -> 'users' ->> ${auth.userId} = 'true'
+    )
+    OR (
+      ${folders.viewingPermissions} -> 'users' -> ${auth.userId} IS NULL
+      AND (
+        ${folders.viewingPermissions} ->> 'internal' = 'true'
+        OR ${folders.viewingPermissions} ->> ${role} = 'true'
+      )
+    )
   )`;
 }
 
@@ -527,7 +777,7 @@ export async function assertCanUploadToFolder(
   includeDeleted = false,
 ) {
   const folder = await getFolderAccessOrThrow(folderId, includeDeleted);
-  await assertScopedFolderAccess(auth, folder, "manage");
+  await assertScopedFolderAccess(auth, folder, "upload");
 
   return folder;
 }
@@ -609,6 +859,7 @@ async function assertFileAccess(auth: AuthContext, record: FileAccessRecord, mod
   if (record.dailyLogJobId) {
     if (mode === "view") {
       await assertCanAccessJob(auth, record.dailyLogJobId);
+      await assertJobFeatureAllowed(auth, record.dailyLogJobId, "dailyLogs");
       return;
     }
 
@@ -619,6 +870,7 @@ async function assertFileAccess(auth: AuthContext, record: FileAccessRecord, mod
   if (record.scheduleJobId) {
     if (mode === "view") {
       await assertCanAccessJob(auth, record.scheduleJobId);
+      await assertJobFeatureAllowed(auth, record.scheduleJobId, "schedule");
       return;
     }
 
@@ -686,6 +938,7 @@ export async function assertCanViewDailyLog(auth: AuthContext, logId: string) {
   }
 
   await assertCanAccessJob(auth, log.jobId);
+  await assertJobFeatureAllowed(auth, log.jobId, "dailyLogs");
 
   if (isAdmin(auth) || log.createdBy === auth.userId) {
     return log;
@@ -776,6 +1029,7 @@ export async function assertCanViewScheduleItem(auth: AuthContext, itemId: strin
   }
 
   await assertCanAccessJob(auth, item.jobId);
+  await assertJobFeatureAllowed(auth, item.jobId, "schedule");
 
   if (!canViewScheduleItem(auth, item)) {
     throw new HttpError(403, "You do not have access to that schedule item.");

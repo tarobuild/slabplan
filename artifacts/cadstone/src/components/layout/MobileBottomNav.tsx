@@ -59,9 +59,9 @@ export default function MobileBottomNav() {
   const user = useAuthStore((s) => s.user)
   const [moreOpen, setMoreOpen] = useState(false)
   const role = user?.role
-  const isCrew = role === "crew_member"
+  const isFieldUser = role === "project_manager" || role === "crew_member"
 
-  const primaryTabs: TabItem[] = isCrew
+  const primaryTabs: TabItem[] = isFieldUser
     ? [
         { label: "Home", to: "/dashboard", icon: Home },
         { label: "My Jobs", to: "/jobs", icon: Briefcase },
@@ -95,7 +95,7 @@ export default function MobileBottomNav() {
       allow: ROLE_GATES.sales,
       hidden: !isFeatureEnabled("reports"),
     },
-    ...(isCrew
+    ...(isFieldUser
       ? []
       : [
           {

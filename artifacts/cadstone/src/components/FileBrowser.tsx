@@ -41,6 +41,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,6 +78,23 @@ type FolderItem = {
   fileCount: number
   parentFolderId: string | null
   createdAt: string
+  viewingPermissions: FolderPermissions
+  uploadingPermissions: FolderPermissions
+}
+
+type FolderPermissions = {
+  admin?: boolean
+  project_manager?: boolean
+  crew_member?: boolean
+  internal?: boolean
+  users?: Record<string, boolean>
+} | null
+
+type FolderAssignee = {
+  id: string
+  fullName: string
+  email: string
+  role: string
 }
 
 type BreadcrumbItem = {
@@ -148,6 +166,49 @@ function displayName(file: FileItem) {
   return file.originalName || file.filename
 }
 
+function explicitFolderPermission(
+  permissions: FolderPermissions,
+  userId: string,
+): boolean | null {
+  const value = permissions?.users?.[userId]
+  return typeof value === "boolean" ? value : null
+}
+
+function folderPermissionAllowsUser(
+  permissions: FolderPermissions,
+  assignee: Pick<FolderAssignee, "id" | "role"> | null | undefined,
+) {
+  if (!assignee) return false
+  if (permissions === null) return true
+
+  const explicit = explicitFolderPermission(permissions, assignee.id)
+  if (explicit !== null) return explicit
+
+  return permissions[assignee.role as keyof Omit<NonNullable<FolderPermissions>, "users">] === true ||
+    permissions.internal === true
+}
+
+function updateFolderUserPermission(
+  permissions: FolderPermissions,
+  userId: string,
+  allowed: boolean,
+): FolderPermissions {
+  return {
+    ...(permissions ?? {}),
+    users: {
+      ...(permissions?.users ?? {}),
+      [userId]: allowed,
+    },
+  }
+}
+
+function roleLabel(role: string) {
+  if (role === "project_manager") return "Project Manager"
+  if (role === "crew_member") return "Crew Worker"
+  if (role === "admin") return "Admin"
+  return role
+}
+
 function useAuthenticatedUrl(viewUrl: string | null): {
   blobUrl: string | null
   loading: boolean
@@ -205,27 +266,32 @@ export default function FileBrowser({
   jobIdOverride,
   scope = "job",
   rootLabel,
+  canUpload,
+  canCreateFolders,
 }: {
   mediaType: MediaType
   defaultView?: ViewMode
   jobIdOverride?: string
   scope?: ScopeMode
   rootLabel?: string
+  canUpload?: boolean
+  canCreateFolders?: boolean
 }) {
   const { jobId: jobIdParam } = useParams<{ jobId: string }>()
   const jobId = jobIdOverride ?? jobIdParam
   const user = useAuthStore((state) => state.user)
   const isResourceScope = scope === "resource"
-  const isReadOnly = isResourceScope && user?.role !== "admin"
   const showCrewPhotoNote = user?.role === "crew_member" && mediaType === "photo"
 
   const resolvedDefault: ViewMode =
     defaultView ?? (mediaType === "document" ? "list" : "grid")
 
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+  const [currentFolder, setCurrentFolder] = useState<FolderItem | null>(null)
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([])
   const [folders, setFolders] = useState<FolderItem[]>([])
   const [files, setFiles] = useState<FileItem[]>([])
+  const [folderAssignees, setFolderAssignees] = useState<FolderAssignee[]>([])
   const [loading, setLoading] = useState(true)
   const [filesLoading, setFilesLoading] = useState(false)
 
@@ -240,17 +306,18 @@ export default function FileBrowser({
   const [renameFolderName, setRenameFolderName] = useState("")
   const [renamingFolder, setRenamingFolder] = useState(false)
 
+  const [accessFolderTarget, setAccessFolderTarget] = useState<FolderItem | null>(null)
+  const [accessViewingPermissions, setAccessViewingPermissions] =
+    useState<FolderPermissions>(null)
+  const [accessUploadingPermissions, setAccessUploadingPermissions] =
+    useState<FolderPermissions>(null)
+  const [savingFolderAccess, setSavingFolderAccess] = useState(false)
+
   const [deleteConfirmFolder, setDeleteConfirmFolder] = useState<FolderItem | null>(null)
   const [deletingFolder, setDeletingFolder] = useState(false)
 
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<FileItem | null>(null)
   const [deletingFile, setDeletingFile] = useState(false)
-
-  // The backend's `assertCanManageFile` ends in `canUploadToFolderForRole`,
-  // which for admin-owned folders admits admins, PMs-of-the-job, and the
-  // original uploader. To mirror that UI-side we need the job's PM id.
-  // Resource scope is admin-only write, so we skip the fetch there.
-  const [jobProjectManagerId, setJobProjectManagerId] = useState<string | null>(null)
 
   type UploadTask = {
     id: number
@@ -290,11 +357,12 @@ export default function FileBrowser({
         isResourceScope
           ? `/resources/folders?${params}`
           : `/jobs/${jobId}/folders?${params}`,
-      )
-      .then((r) => {
-        setFolders(r.data.folders ?? [])
-        setBreadcrumb(r.data.breadcrumb ?? [])
-      })
+	      )
+	      .then((r) => {
+	        setFolders(r.data.folders ?? [])
+	        setCurrentFolder(r.data.currentFolder ?? null)
+	        setBreadcrumb(r.data.breadcrumb ?? [])
+	      })
       .catch((err: unknown) => toastApiError(err, "Failed to load folders"))
       .finally(() => setLoading(false))
   }
@@ -312,56 +380,32 @@ export default function FileBrowser({
       .finally(() => setFilesLoading(false))
   }
 
-  useEffect(() => {
-    setCurrentFolderId(null)
-    setFiles([])
-    setBreadcrumb([])
+	  useEffect(() => {
+	    setCurrentFolderId(null)
+	    setCurrentFolder(null)
+	    setFiles([])
+	    setBreadcrumb([])
     setUploadError(null)
     setSelectedUploadFiles([])
     setUploadNote("")
-    loadFolders(null)
-  }, [jobId, mediaType, scope])
+	    loadFolders(null)
+	  }, [jobId, mediaType, scope])
 
-  // Fetch the job's project-manager id once so we can mirror the backend's
-  // manage-file rule client-side (admin / PM of this job / uploader).
-  useEffect(() => {
-    if (isResourceScope || !jobId) {
-      setJobProjectManagerId(null)
-      return
-    }
-    let cancelled = false
-    api
-      .get(`/jobs/${jobId}`)
-      .then((r) => {
-        if (cancelled) return
-        const j = r.data.job ?? r.data
-        setJobProjectManagerId(j?.projectManagerId ?? null)
-      })
-      .catch(() => {
-        // Non-fatal — failing closed just means the overflow won't show
-        // for a PM whose job-fetch failed. Admins stay unaffected.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [jobId, isResourceScope])
+	  useEffect(() => {
+	    if (user?.role !== "admin" || isResourceScope || !jobId) {
+	      setFolderAssignees([])
+	      return
+	    }
+
+	    api
+	      .get(`/jobs/${jobId}/assignees`)
+	      .then((r) => setFolderAssignees(r.data.assignees ?? []))
+	      .catch((err: unknown) => toastApiError(err, "Failed to load job access"))
+	  }, [user?.role, isResourceScope, jobId])
 
   const canManageFile = useCallback(
-    (file: FileItem): boolean => {
-      if (!user) return false
-      if (user.role === "admin") return true
-      // Resource-scope folders are admin-write-only; mirror that here.
-      if (isResourceScope) return false
-      if (file.uploadedBy && file.uploadedBy === user.id) return true
-      if (
-        user.role === "project_manager" &&
-        jobProjectManagerId &&
-        jobProjectManagerId === user.id
-      )
-        return true
-      return false
-    },
-    [user, isResourceScope, jobProjectManagerId],
+    (_file: FileItem): boolean => user?.role === "admin",
+    [user?.role],
   )
 
   const handleDeleteFile = async () => {
@@ -388,22 +432,25 @@ export default function FileBrowser({
     }
   }
 
-  const openFolder = (folder: FolderItem) => {
-    setCurrentFolderId(folder.id)
-    loadFolders(folder.id)
-    loadFiles(folder.id)
-  }
+	  const openFolder = (folder: FolderItem) => {
+	    setCurrentFolderId(folder.id)
+	    setCurrentFolder(folder)
+	    loadFolders(folder.id)
+	    loadFiles(folder.id)
+	  }
 
-  const navigateTo = (folderId: string | null) => {
-    setCurrentFolderId(folderId)
-    setFiles([])
-    loadFolders(folderId)
+	  const navigateTo = (folderId: string | null) => {
+	    setCurrentFolderId(folderId)
+	    setCurrentFolder(folderId ? folders.find((folder) => folder.id === folderId) ?? null : null)
+	    setFiles([])
+	    loadFolders(folderId)
     if (folderId) loadFiles(folderId)
   }
 
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!isResourceScope && !jobId) return
+    if (!canCreateFoldersForScope) return
     setCreatingFolder(true)
     try {
       if (isResourceScope) {
@@ -429,10 +476,10 @@ export default function FileBrowser({
     }
   }
 
-  const handleRenameFolder = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!renameFolderTarget) return
-    setRenamingFolder(true)
+	  const handleRenameFolder = async (e: React.FormEvent) => {
+	    e.preventDefault()
+	    if (!renameFolderTarget) return
+	    setRenamingFolder(true)
     try {
       await api.put(`/folders/${renameFolderTarget.id}`, { title: renameFolderName })
       toast.success("Folder renamed")
@@ -441,11 +488,42 @@ export default function FileBrowser({
     } catch (err: unknown) {
       toastApiError(err, "Failed to rename folder")
     } finally {
-      setRenamingFolder(false)
-    }
-  }
+	      setRenamingFolder(false)
+	    }
+	  }
 
-  const handleDeleteFolder = async () => {
+	  const openFolderAccess = (folder: FolderItem) => {
+	    setAccessFolderTarget(folder)
+	    setAccessViewingPermissions(folder.viewingPermissions)
+	    setAccessUploadingPermissions(folder.uploadingPermissions)
+	  }
+
+	  const handleSaveFolderAccess = async () => {
+	    if (!accessFolderTarget) return
+	    setSavingFolderAccess(true)
+	    try {
+	      const response = await api.put(`/folders/${accessFolderTarget.id}`, {
+	        viewingPermissions: accessViewingPermissions,
+	        uploadingPermissions: accessUploadingPermissions,
+	      })
+	      const updatedFolder = response.data.folder as FolderItem
+	      setFolders((prev) =>
+	        prev.map((folder) => (folder.id === updatedFolder.id ? { ...folder, ...updatedFolder } : folder)),
+	      )
+	      setCurrentFolder((prev) =>
+	        prev?.id === updatedFolder.id ? { ...prev, ...updatedFolder } : prev,
+	      )
+	      setAccessFolderTarget(null)
+	      toast.success("Folder access saved")
+	      loadFolders(currentFolderId)
+	    } catch (err: unknown) {
+	      toastApiError(err, "Failed to save folder access")
+	    } finally {
+	      setSavingFolderAccess(false)
+	    }
+	  }
+
+	  const handleDeleteFolder = async () => {
     if (!deleteConfirmFolder) return
     setDeletingFolder(true)
     try {
@@ -731,10 +809,20 @@ export default function FileBrowser({
 
   const mediaLabel =
     mediaType === "document" ? "Documents" : mediaType === "photo" ? "Photos" : "Videos"
-  const rootFolderLabel = rootLabel ?? mediaLabel
-  const canToggleView = true
-  const canManageFolders = !isReadOnly
-  const canUploadFiles = !!currentFolderId && !isReadOnly
+	  const rootFolderLabel = rootLabel ?? mediaLabel
+	  const canToggleView = true
+	  const canManageFolders = user?.role === "admin"
+	  const canCreateFoldersForScope =
+	    user?.role === "admin" || (!isResourceScope && canCreateFolders === true)
+	  const currentUserForFolder =
+	    user ? { id: user.id, role: user.role } : null
+	  const currentFolderAllowsUpload =
+	    !!currentFolderId &&
+	    folderPermissionAllowsUser(currentFolder?.uploadingPermissions ?? null, currentUserForFolder)
+	  const canUploadFiles =
+	    !!currentFolderId &&
+	    (user?.role === "admin" ||
+	      (!isResourceScope && canUpload === true && currentFolderAllowsUpload))
 
   async function uploadFilesImmediately(files: File[], note?: string) {
     if (!currentFolderId || files.length === 0) return
@@ -811,7 +899,7 @@ export default function FileBrowser({
 
   const onDrop = useCallback(
     async (droppedFiles: File[]) => {
-      if (!currentFolderId || isReadOnly) return
+      if (!canUploadFiles) return
       // Refuse a second concurrent upload — we only track one task and
       // letting another overwrite it would corrupt the progress UI.
       if (uploadTask) {
@@ -833,14 +921,14 @@ export default function FileBrowser({
       // Instant upload — no dialog
       void uploadFilesImmediately(droppedFiles)
     },
-    [currentFolderId, isReadOnly, mediaType, showCrewPhotoNote, uploadTask],
+    [canUploadFiles, mediaType, showCrewPhotoNote, uploadTask],
   )
 
   const { getRootProps, getInputProps, isDragActive, open: openDropzone } = useDropzone({
     onDrop,
     noClick: true,
     noKeyboard: true,
-    disabled: !currentFolderId || isReadOnly || uploading,
+    disabled: !canUploadFiles || uploading,
   })
 
   return (
@@ -947,7 +1035,7 @@ export default function FileBrowser({
               </Button>
             </>
           )}
-          {canManageFolders ? (
+          {canCreateFoldersForScope ? (
             <Button
               size="sm"
               onClick={() => {
@@ -1040,12 +1128,13 @@ export default function FileBrowser({
                   isOpen={currentFolderId === folder.id}
                   showActions={canManageFolders}
                   onOpen={() => openFolder(folder)}
-                  onRename={() => {
-                    setRenameFolderTarget(folder)
-                    setRenameFolderName(folder.title)
-                  }}
-                  onDelete={() => setDeleteConfirmFolder(folder)}
-                />
+	                  onRename={() => {
+	                    setRenameFolderTarget(folder)
+	                    setRenameFolderName(folder.title)
+	                  }}
+	                  onAccess={() => openFolderAccess(folder)}
+	                  onDelete={() => setDeleteConfirmFolder(folder)}
+	                />
               ))}
             </div>
           )}
@@ -1157,7 +1246,7 @@ export default function FileBrowser({
             <div className="py-16 text-center">
               <Folder className="mx-auto mb-3 size-8 text-slate-200" />
               <p className="text-sm text-slate-400">No folders yet.</p>
-              {canManageFolders ? (
+              {canCreateFoldersForScope ? (
                 <button
                   onClick={() => {
                     setNewFolderName("")
@@ -1313,11 +1402,11 @@ export default function FileBrowser({
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={!!renameFolderTarget}
-        onOpenChange={(open) => {
-          if (!open) setRenameFolderTarget(null)
-        }}
+	      <Dialog
+	        open={!!renameFolderTarget}
+	        onOpenChange={(open) => {
+	          if (!open) setRenameFolderTarget(null)
+	        }}
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -1348,11 +1437,97 @@ export default function FileBrowser({
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+	        </DialogContent>
+	      </Dialog>
 
-      <AlertDialog
-        open={!!deleteConfirmFolder}
+	      <Dialog
+	        open={!!accessFolderTarget}
+	        onOpenChange={(open) => {
+	          if (!open && !savingFolderAccess) setAccessFolderTarget(null)
+	        }}
+	      >
+	        <DialogContent className="sm:max-w-lg">
+	          <DialogHeader>
+	            <DialogTitle>Folder Access</DialogTitle>
+	          </DialogHeader>
+	          <div className="space-y-3 py-2">
+	            <div className="grid grid-cols-[1fr_72px_72px] items-center gap-3 border-b border-slate-200 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+	              <span>Person</span>
+	              <span className="text-center">View</span>
+	              <span className="text-center">Upload</span>
+	            </div>
+	            {folderAssignees.length === 0 ? (
+	              <div className="rounded-lg border border-slate-200 px-3 py-6 text-center text-sm text-slate-500">
+	                Assign people to this job first.
+	              </div>
+	            ) : (
+	              folderAssignees.map((assignee) => {
+	                const canView = folderPermissionAllowsUser(accessViewingPermissions, assignee)
+	                const canUpload = folderPermissionAllowsUser(accessUploadingPermissions, assignee)
+
+	                return (
+	                  <div
+	                    key={assignee.id}
+	                    className="grid grid-cols-[1fr_72px_72px] items-center gap-3 rounded-lg border border-slate-200 px-3 py-2"
+	                  >
+	                    <div className="min-w-0">
+	                      <div className="truncate text-sm font-medium text-slate-900">
+	                        {assignee.fullName}
+	                      </div>
+	                      <div className="truncate text-xs text-slate-500">
+	                        {roleLabel(assignee.role)}
+	                      </div>
+	                    </div>
+	                    <div className="flex justify-center">
+	                      <Switch
+	                        checked={canView}
+	                        onCheckedChange={(checked) =>
+	                          setAccessViewingPermissions((prev) =>
+	                            updateFolderUserPermission(prev, assignee.id, checked),
+	                          )
+	                        }
+	                        aria-label={`${assignee.fullName} can view ${accessFolderTarget?.title ?? "folder"}`}
+	                      />
+	                    </div>
+	                    <div className="flex justify-center">
+	                      <Switch
+	                        checked={canUpload}
+	                        onCheckedChange={(checked) =>
+	                          setAccessUploadingPermissions((prev) =>
+	                            updateFolderUserPermission(prev, assignee.id, checked),
+	                          )
+	                        }
+	                        aria-label={`${assignee.fullName} can upload to ${accessFolderTarget?.title ?? "folder"}`}
+	                      />
+	                    </div>
+	                  </div>
+	                )
+	              })
+	            )}
+	          </div>
+	          <DialogFooter>
+	            <Button
+	              type="button"
+	              variant="outline"
+	              onClick={() => setAccessFolderTarget(null)}
+	              disabled={savingFolderAccess}
+	            >
+	              Cancel
+	            </Button>
+	            <Button
+	              type="button"
+	              onClick={handleSaveFolderAccess}
+	              disabled={savingFolderAccess || folderAssignees.length === 0}
+	            >
+	              {savingFolderAccess && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+	              Save Access
+	            </Button>
+	          </DialogFooter>
+	        </DialogContent>
+	      </Dialog>
+
+	      <AlertDialog
+	        open={!!deleteConfirmFolder}
         onOpenChange={(open) => {
           if (!open) setDeleteConfirmFolder(null)
         }}
@@ -1434,17 +1609,19 @@ function FolderCard({
   folder,
   isOpen,
   showActions,
-  onOpen,
-  onRename,
-  onDelete,
-}: {
-  folder: FolderItem
-  isOpen: boolean
-  showActions: boolean
-  onOpen: () => void
-  onRename: () => void
-  onDelete: () => void
-}) {
+	  onOpen,
+	  onRename,
+	  onAccess,
+	  onDelete,
+	}: {
+	  folder: FolderItem
+	  isOpen: boolean
+	  showActions: boolean
+	  onOpen: () => void
+	  onRename: () => void
+	  onAccess: () => void
+	  onDelete: () => void
+	}) {
   return (
     <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-orange-200 hover:bg-orange-50/30 transition-colors cursor-pointer select-none">
       <button
@@ -1482,11 +1659,19 @@ function FolderCard({
                 >
                   <MoreHorizontal className="size-4" />
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation()
+	              </DropdownMenuTrigger>
+	              <DropdownMenuContent align="end" className="w-40">
+	                <DropdownMenuItem
+	                  onClick={(e) => {
+	                    e.stopPropagation()
+	                    onAccess()
+	                  }}
+	                >
+	                  Access
+	                </DropdownMenuItem>
+	                <DropdownMenuItem
+	                  onClick={(e) => {
+	                    e.stopPropagation()
                     onRename()
                   }}
                 >

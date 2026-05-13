@@ -84,7 +84,7 @@ export default function JobSchedulePage() {
   const { jobId } = useParams<{ jobId: string }>()
   const currentUser = useAuthStore((s) => s.user)
   // Hide write affordances (Set Baseline, Workday Exception editor,
-  // Settings cog, New Schedule Item, Delete All, etc.) for crew. Writes
+  // Settings cog, New Schedule Item, Delete All, etc.) for PMs and crew. Writes
   // are still authoritatively enforced server-side; this just keeps the
   // UI honest. See `canWrite` convention in replit.md.
   const canWrite = canWriteRole(currentUser?.role)

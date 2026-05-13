@@ -120,6 +120,36 @@ function buildHistoryForApi(history: AgentMessage[], userText: string): Anthropi
   return out;
 }
 
+async function assertToolCitationsAllowedForAssistant(
+  apiClient: ApiClient,
+  citations: AgentCitation[],
+) {
+  const jobIds = Array.from(
+    new Set(
+      citations
+        .map((citation) => citation.jobId ?? (citation.kind === "job" ? citation.id : null))
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    ),
+  );
+
+  for (const jobId of jobIds) {
+    const response = await apiClient.request<{ canUseAssistant: boolean }>({
+      method: "GET",
+      path: "/agent/access",
+      query: { jobId },
+      toolName: "agent_permission_check",
+    });
+
+    if (!response.data.canUseAssistant) {
+      throw new ApiError(
+        403,
+        "The assistant is not allowed to use information from one or more jobs in that result.",
+        null,
+      );
+    }
+  }
+}
+
 export async function runAgentTurn(
   opts: AgentOrchestratorOptions,
 ): Promise<AgentOrchestratorResult> {
@@ -263,6 +293,7 @@ export async function runAgentTurn(
           const data = await def.handler(apiClient, { ...input });
           const durationMs = Date.now() - startedAt;
           const citationsForCall = extractCitations(toolName, data);
+          await assertToolCitationsAllowedForAssistant(apiClient, citationsForCall);
           const summary = summarizeToolResult(data);
           pushCitations(citationsForCall);
           toolCalls.push({

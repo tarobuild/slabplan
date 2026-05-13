@@ -570,10 +570,9 @@ const SovAreaRow = memo(function SovAreaRow({
 export default function JobFinancialsPage() {
   const { jobId } = useParams<{ jobId: string }>()
   const user = useAuthStore((s) => s.user)
-  // canWrite is the canonical write-affordance gate (admin | PM); see
-  // replit.md "canWrite role gating". The page already early-returns
-  // an access-denied card below when this is false, so every write
-  // affordance is intrinsically hidden for crew members.
+  // canWrite is the canonical write-affordance gate (admin | PM). A user can
+  // now be granted read-only financials access per job, but editing remains
+  // limited to admins and PMs.
   const canManage = canWriteRole(user?.role)
   const queryClient = useQueryClient()
   const [data, setData] = useState<TrackerData | null>(null)
@@ -1295,14 +1294,6 @@ export default function JobFinancialsPage() {
       })
   }, [data?.invoices, data?.totals.retention.enabled])
 
-  if (!canManage) {
-    return (
-      <div className="p-6 text-sm text-muted-foreground">
-        You do not have permission to view financials.
-      </div>
-    )
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -1317,6 +1308,11 @@ export default function JobFinancialsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
+      {!canManage ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          You have read-only access to this financial dashboard.
+        </div>
+      ) : null}
       {/* Header strip — contract date, main contract, change orders,
           contract w/ COs, billed, balance, applications, % billed */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">

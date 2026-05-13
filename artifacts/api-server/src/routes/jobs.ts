@@ -24,18 +24,17 @@ import {
 } from "@workspace/db/schema";
 import {
   assertCanAccessJob,
-  assertCanManageJob,
+  defaultJobAccessForRole,
+  getJobAccess,
   listAccessibleJobIds,
+  type AuthContext,
 } from "../lib/authorization";
 import { ensureSystemFolders, writeActivity } from "../lib/file-manager";
 import { getTrackerTotalsByJobIds } from "./financials";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
-import {
-  requireAdmin,
-  requireManagerOrAbove,
-} from "../middleware/require-auth";
+import { requireAdmin } from "../middleware/require-auth";
 import {
   decodeCursor,
   encodeCursor,
@@ -253,18 +252,52 @@ function toJobInsert(
 }
 
 async function listJobAssignees(jobId: string) {
-  return db
+  const rows = await db
     .select({
       id: users.id,
       fullName: users.fullName,
       email: users.email,
       role: users.role,
       avatarUrl: users.avatarUrl,
+      canViewFinancials: jobAssignees.canViewFinancials,
+      canViewDocuments: jobAssignees.canViewDocuments,
+      canViewPhotos: jobAssignees.canViewPhotos,
+      canViewVideos: jobAssignees.canViewVideos,
+      canViewDailyLogs: jobAssignees.canViewDailyLogs,
+      canViewSchedule: jobAssignees.canViewSchedule,
+      canUseAssistant: jobAssignees.canUseAssistant,
+      canCreateDailyLogs: jobAssignees.canCreateDailyLogs,
+      canUploadDocuments: jobAssignees.canUploadDocuments,
+      canUploadPhotos: jobAssignees.canUploadPhotos,
+      canUploadVideos: jobAssignees.canUploadVideos,
+      canCreateFolders: jobAssignees.canCreateFolders,
     })
     .from(jobAssignees)
     .innerJoin(users, eq(jobAssignees.userId, users.id))
     .where(and(eq(jobAssignees.jobId, jobId), isNull(users.deletedAt)))
     .orderBy(asc(users.fullName));
+
+  return rows.map((row) => ({
+    id: row.id,
+    fullName: row.fullName,
+    email: row.email,
+    role: row.role,
+    avatarUrl: row.avatarUrl,
+    access: {
+      financials: row.canViewFinancials,
+      documents: row.canViewDocuments,
+      photos: row.canViewPhotos,
+      videos: row.canViewVideos,
+      dailyLogs: row.canViewDailyLogs,
+      schedule: row.canViewSchedule,
+      assistant: row.canUseAssistant,
+      createDailyLogs: row.canCreateDailyLogs,
+      uploadDocuments: row.canUploadDocuments,
+      uploadPhotos: row.canUploadPhotos,
+      uploadVideos: row.canUploadVideos,
+      createFolders: row.canCreateFolders,
+    },
+  }));
 }
 
 async function ensureAssignableUserIds(userIds: string[]) {
@@ -308,15 +341,39 @@ async function insertJobAssignees(
   await executor
     .insert(jobAssignees)
     .values(
-      uniqueUserIds.map((userId) => ({
-        jobId,
-        userId,
-      })),
+      await Promise.all(
+        uniqueUserIds.map(async (userId) => {
+          const [user] = await db
+            .select({ role: users.role })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+          const access = defaultJobAccessForRole(
+            user?.role === "project_manager" ? "project_manager" : "crew_member",
+          );
+          return {
+            jobId,
+            userId,
+            canViewFinancials: access.financials,
+            canViewDocuments: access.documents,
+            canViewPhotos: access.photos,
+            canViewVideos: access.videos,
+            canViewDailyLogs: access.dailyLogs,
+            canViewSchedule: access.schedule,
+            canUseAssistant: access.assistant,
+            canCreateDailyLogs: access.createDailyLogs,
+            canUploadDocuments: access.uploadDocuments,
+            canUploadPhotos: access.uploadPhotos,
+            canUploadVideos: access.uploadVideos,
+            canCreateFolders: access.createFolders,
+          };
+        }),
+      ),
     )
     .onConflictDoNothing();
 }
 
-async function findJobById(id: string) {
+async function findJobById(id: string, auth?: AuthContext) {
   const projectManagers = alias(users, "pm");
   const [job] = await db
     .select({
@@ -368,6 +425,7 @@ async function findJobById(id: string) {
   return {
     ...job,
     assignees,
+    access: auth ? await getJobAccess(auth, id) : undefined,
     hasTracker: trackerTotals !== null,
     trackerTotals,
     // When a tracker exists, prefer its values for the contract/billed
@@ -608,7 +666,7 @@ router.post(
       description: `Created job ${job.title}`,
     });
 
-    const hydrated = await findJobById(job.id);
+    const hydrated = await findJobById(job.id, req.auth!);
 
     res.status(201).json({ job: hydrated });
   }),
@@ -618,12 +676,27 @@ const assigneePayloadSchema = z.object({
   userId: z.string().uuid(),
 });
 
+const assigneeAccessSchema = z.object({
+  financials: z.boolean(),
+  documents: z.boolean(),
+  photos: z.boolean(),
+  videos: z.boolean(),
+  dailyLogs: z.boolean(),
+  schedule: z.boolean(),
+  assistant: z.boolean(),
+  createDailyLogs: z.boolean(),
+  uploadDocuments: z.boolean(),
+  uploadPhotos: z.boolean(),
+  uploadVideos: z.boolean(),
+  createFolders: z.boolean(),
+});
+
 router.get(
   "/:id/assignees",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.id, "job id");
     await assertCanAccessJob(req.auth!, jobId);
-    const job = await findJobById(jobId);
+    const job = await findJobById(jobId, req.auth!);
 
     if (!job) {
       throw new HttpError(404, "Job not found.");
@@ -650,7 +723,7 @@ router.post(
     }
 
     const jobId = getParam(req.params.id, "job id");
-    const job = await findJobById(jobId);
+    const job = await findJobById(jobId, req.auth!);
 
     if (!job) {
       throw new HttpError(404, "Job not found.");
@@ -671,7 +744,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.id, "job id");
     const userId = getParam(req.params.userId, "user id");
-    const job = await findJobById(jobId);
+    const job = await findJobById(jobId, req.auth!);
 
     if (!job) {
       throw new HttpError(404, "Job not found.");
@@ -689,12 +762,63 @@ router.delete(
   }),
 );
 
+router.patch(
+  "/:id/assignees/:userId/access",
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const body = assigneeAccessSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(
+        400,
+        "Invalid assignee access payload.",
+        body.error.flatten(),
+      );
+    }
+
+    const jobId = getParam(req.params.id, "job id");
+    const userId = getParam(req.params.userId, "user id");
+    const job = await findJobById(jobId, req.auth!);
+
+    if (!job) {
+      throw new HttpError(404, "Job not found.");
+    }
+
+    const [updated] = await db
+      .update(jobAssignees)
+      .set({
+        canViewFinancials: body.data.financials,
+        canViewDocuments: body.data.documents,
+        canViewPhotos: body.data.photos,
+        canViewVideos: body.data.videos,
+        canViewDailyLogs: body.data.dailyLogs,
+        canViewSchedule: body.data.schedule,
+        canUseAssistant: body.data.assistant,
+        canCreateDailyLogs: body.data.createDailyLogs,
+        canUploadDocuments: body.data.uploadDocuments,
+        canUploadPhotos: body.data.uploadPhotos,
+        canUploadVideos: body.data.uploadVideos,
+        canCreateFolders: body.data.createFolders,
+      })
+      .where(and(eq(jobAssignees.jobId, jobId), eq(jobAssignees.userId, userId)))
+      .returning({ id: jobAssignees.id });
+
+    if (!updated) {
+      throw new HttpError(404, "Assignee not found.");
+    }
+
+    res.json({
+      assignees: await listJobAssignees(jobId),
+    });
+  }),
+);
+
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.id, "job id");
     await assertCanAccessJob(req.auth!, jobId);
-    const job = await findJobById(jobId);
+    const job = await findJobById(jobId, req.auth!);
 
     if (!job) {
       throw new HttpError(404, "Job not found.");
@@ -706,7 +830,7 @@ router.get(
 
 router.put(
   "/:id",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const body = jobPayloadSchema.safeParse(req.body);
 
@@ -715,25 +839,16 @@ router.put(
     }
 
     const jobId = getParam(req.params.id, "job id");
-    await assertCanManageJob(req.auth!, jobId);
-    const existing = await findJobById(jobId);
+    const existing = await findJobById(jobId, req.auth!);
 
     if (!existing) {
       throw new HttpError(404, "Job not found.");
     }
 
-    const payload =
-      req.auth!.role === "project_manager"
-        ? {
-            ...body.data,
-            projectManagerId: req.auth!.userId,
-          }
-        : body.data;
-
     const [updated] = await db
       .update(jobs)
       .set({
-        ...toJobInsert(payload, existing.createdById ?? req.auth!.userId),
+        ...toJobInsert(body.data, existing.createdById ?? req.auth!.userId),
         updatedAt: new Date(),
       })
       .where(eq(jobs.id, jobId))
@@ -762,7 +877,7 @@ router.put(
       );
     }
 
-    const hydrated = await findJobById(updated.id);
+    const hydrated = await findJobById(updated.id, req.auth!);
 
     res.json({ job: hydrated });
   }),
@@ -774,7 +889,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.id, "job id");
     await assertCanAccessJob(req.auth!, jobId);
-    const existing = await findJobById(jobId);
+    const existing = await findJobById(jobId, req.auth!);
 
     if (!existing) {
       throw new HttpError(404, "Job not found.");

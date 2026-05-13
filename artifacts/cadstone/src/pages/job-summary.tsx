@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
 import { invalidateAppData } from "@/lib/data-refresh"
@@ -97,6 +98,32 @@ const WORK_DAYS_LABELS: Record<string, string> = {
   mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun"
 }
 
+const ACCESS_CONTROLS = [
+  { key: "financials", label: "Financials" },
+  { key: "documents", label: "Documents" },
+  { key: "photos", label: "Photos" },
+  { key: "videos", label: "Videos" },
+  { key: "dailyLogs", label: "Daily logs" },
+  { key: "schedule", label: "Schedule" },
+  { key: "assistant", label: "Assistant" },
+  { key: "createDailyLogs", label: "Create daily logs" },
+  { key: "uploadDocuments", label: "Upload documents" },
+  { key: "uploadPhotos", label: "Upload photos" },
+  { key: "uploadVideos", label: "Upload videos" },
+  { key: "createFolders", label: "Create folders" },
+] as const
+
+const ACCESS_CONTROL_GROUPS = [
+  {
+    title: "Can view",
+    controls: ACCESS_CONTROLS.slice(0, 7),
+  },
+  {
+    title: "Can add",
+    controls: ACCESS_CONTROLS.slice(7),
+  },
+] as const
+
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
@@ -154,6 +181,7 @@ export default function JobSummaryPage() {
   const { setJob: setParentJob } = useOutletContext<JobDetailContext>()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === "admin"
+  const canEditJob = isAdmin
   const [job, setJob] = useState<Job | null>(null)
   const [savedJob, setSavedJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
@@ -163,7 +191,8 @@ export default function JobSummaryPage() {
   const [assigneePopoverOpen, setAssigneePopoverOpen] = useState(false)
   const [assigneeDraftIds, setAssigneeDraftIds] = useState<string[]>([])
   const [savingAssignees, setSavingAssignees] = useState(false)
-  const hasUnsavedChanges = !!job && !!savedJob && serializeJob(job) !== serializeJob(savedJob)
+  const [savingAccessUserId, setSavingAccessUserId] = useState<string | null>(null)
+  const hasUnsavedChanges = canEditJob && !!job && !!savedJob && serializeJob(job) !== serializeJob(savedJob)
   const unsavedChanges = useUnsavedChangesGuard(hasUnsavedChanges && !saving)
   const projectManagerOptions = workerOptions.filter((option) => option.role === "project_manager")
   const updateJobMutation = useJobsPutJobsId()
@@ -210,11 +239,13 @@ export default function JobSummaryPage() {
       .finally(() => setLoading(false))
   }, [jobId])
 
-  const setField = (key: keyof Job, value: any) =>
+  const setField = (key: keyof Job, value: any) => {
+    if (!canEditJob) return
     setJob(j => j ? { ...j, [key]: value } : j)
+  }
 
   const toggleWorkDay = (day: string) => {
-    if (!job) return
+    if (!job || !canEditJob) return
     const current = job.workDays ?? []
     const updated = current.includes(day)
       ? current.filter(d => d !== day)
@@ -223,7 +254,7 @@ export default function JobSummaryPage() {
   }
 
   const handleSave = async () => {
-    if (!job || !jobId) return
+    if (!job || !jobId || !canEditJob) return
     setSaving(true)
     try {
       const payload: JobsJobPayloadSchema = {
@@ -314,6 +345,35 @@ export default function JobSummaryPage() {
     }
   }
 
+  const handleUpdateAssigneeAccess = async (
+    assignee: WorkerOption,
+    key: (typeof ACCESS_CONTROLS)[number]["key"],
+    value: boolean,
+  ) => {
+    if (!jobId || !assignee.access) return
+
+    const nextAccess = { ...assignee.access, [key]: value }
+    setSavingAccessUserId(assignee.id)
+    try {
+      const response = await customFetch<{ assignees?: WorkerOption[] }>(
+        `/api/jobs/${jobId}/assignees/${assignee.id}/access`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(nextAccess),
+          responseType: "json",
+        },
+      )
+      const assignees = response.assignees ?? []
+      setJob((current) => current ? { ...current, assignees } : current)
+      setSavedJob((current) => current ? { ...current, assignees } : current)
+      toast.success("Access updated")
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to update access")
+    } finally {
+      setSavingAccessUserId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4 max-w-2xl">
@@ -332,6 +392,11 @@ export default function JobSummaryPage() {
   return (
     <div className="space-y-5">
       {unsavedChanges.dialog}
+      {!canEditJob ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          You have view-only access to this job. An admin can update job details, assignments, and access settings.
+        </div>
+      ) : null}
       {/* Two-panel layout */}
       <div className="flex gap-5 items-start">
 
@@ -342,13 +407,13 @@ export default function JobSummaryPage() {
 
             <div className="space-y-1.5">
               <Label>Title *</Label>
-              <Input value={job.title} onChange={e => setField("title", e.target.value)} />
+              <Input value={job.title} onChange={e => setField("title", e.target.value)} disabled={!canEditJob} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Job Type</Label>
-                <Select value={job.jobType ?? "_none"} onValueChange={v => setField("jobType", v === "_none" ? null : v)}>
+                <Select value={job.jobType ?? "_none"} onValueChange={v => setField("jobType", v === "_none" ? null : v)} disabled={!canEditJob}>
                   <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent className="max-h-60 overflow-y-auto">
                     <SelectItem value="_none">— None —</SelectItem>
@@ -358,7 +423,7 @@ export default function JobSummaryPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Status</Label>
-                <Select value={job.status} onValueChange={v => setField("status", v)}>
+                <Select value={job.status} onValueChange={v => setField("status", v)} disabled={!canEditJob}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="open">Open</SelectItem>
@@ -386,7 +451,7 @@ export default function JobSummaryPage() {
                 }
                 onChange={e => setField("contractPrice", e.target.value || null)}
                 type="number" step="0.01" min="0" placeholder="0.00"
-                disabled={!!job.hasTracker}
+                disabled={!canEditJob || !!job.hasTracker}
                 title={job.hasTracker ? "This job uses a Financial Tracker. Edit values on the Financials tab." : undefined}
               />
             </div>
@@ -395,13 +460,14 @@ export default function JobSummaryPage() {
               <Label>Contract Type</Label>
               <div className="flex flex-col gap-2 pt-0.5">
                 {(["fixed_price", "open_book"] as const).map(ct => (
-                  <label key={ct} className="flex items-start gap-2.5 cursor-pointer">
+                  <label key={ct} className={`flex items-start gap-2.5 ${canEditJob ? "cursor-pointer" : "cursor-default opacity-75"}`}>
                     <input
                       type="radio"
                       name="contractType"
                       value={ct}
                       checked={job.contractType === ct}
                       onChange={() => setField("contractType", ct)}
+                      disabled={!canEditJob}
                       className="mt-0.5 accent-orange-600"
                     />
                     <div>
@@ -425,21 +491,21 @@ export default function JobSummaryPage() {
             <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Address</h3>
             <div className="space-y-1.5">
               <Label>Street Address</Label>
-              <Input value={job.streetAddress ?? ""} onChange={e => setField("streetAddress", e.target.value || null)} placeholder="123 Main St" />
+              <Input value={job.streetAddress ?? ""} onChange={e => setField("streetAddress", e.target.value || null)} placeholder="123 Main St" disabled={!canEditJob} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>City</Label>
-                <Input value={job.city ?? ""} onChange={e => setField("city", e.target.value || null)} placeholder="Austin" />
+                <Input value={job.city ?? ""} onChange={e => setField("city", e.target.value || null)} placeholder="Austin" disabled={!canEditJob} />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1.5">
                   <Label>State</Label>
-                  <Input value={job.state ?? ""} onChange={e => setField("state", e.target.value || null)} placeholder="TX" maxLength={2} className="uppercase" />
+                  <Input value={job.state ?? ""} onChange={e => setField("state", e.target.value || null)} placeholder="TX" maxLength={2} className="uppercase" disabled={!canEditJob} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Zip</Label>
-                  <Input value={job.zipCode ?? ""} onChange={e => setField("zipCode", e.target.value || null)} placeholder="78701" />
+                  <Input value={job.zipCode ?? ""} onChange={e => setField("zipCode", e.target.value || null)} placeholder="78701" disabled={!canEditJob} />
                 </div>
               </div>
             </div>
@@ -456,6 +522,7 @@ export default function JobSummaryPage() {
                 placeholder="Internal notes visible only to your team…"
                 maxLength={2500}
                 rows={4}
+                disabled={!canEditJob}
               />
               <p className="text-xs text-slate-400">Maximum 2500 characters</p>
             </div>
@@ -467,6 +534,7 @@ export default function JobSummaryPage() {
                 placeholder="Notes visible to subcontractors and vendors…"
                 maxLength={2500}
                 rows={4}
+                disabled={!canEditJob}
               />
               <p className="text-xs text-slate-400">Maximum 2500 characters</p>
             </div>
@@ -482,19 +550,19 @@ export default function JobSummaryPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Projected Start</Label>
-                <Input type="date" value={job.projectedStart ?? ""} onChange={e => setField("projectedStart", e.target.value || null)} className="text-xs" />
+                <Input type="date" value={job.projectedStart ?? ""} onChange={e => setField("projectedStart", e.target.value || null)} className="text-xs" disabled={!canEditJob} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Actual Start</Label>
-                <Input type="date" value={job.actualStart ?? ""} onChange={e => setField("actualStart", e.target.value || null)} className="text-xs" />
+                <Input type="date" value={job.actualStart ?? ""} onChange={e => setField("actualStart", e.target.value || null)} className="text-xs" disabled={!canEditJob} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Projected Completion</Label>
-                <Input type="date" value={job.projectedCompletion ?? ""} onChange={e => setField("projectedCompletion", e.target.value || null)} className="text-xs" />
+                <Input type="date" value={job.projectedCompletion ?? ""} onChange={e => setField("projectedCompletion", e.target.value || null)} className="text-xs" disabled={!canEditJob} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Actual Completion</Label>
-                <Input type="date" value={job.actualCompletion ?? ""} onChange={e => setField("actualCompletion", e.target.value || null)} className="text-xs" />
+                <Input type="date" value={job.actualCompletion ?? ""} onChange={e => setField("actualCompletion", e.target.value || null)} className="text-xs" disabled={!canEditJob} />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -507,10 +575,11 @@ export default function JobSummaryPage() {
                       key={d}
                       type="button"
                       onClick={() => toggleWorkDay(d)}
+                      disabled={!canEditJob}
                       className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
                         active
                           ? "bg-orange-600 text-white border-orange-600"
-                          : "bg-white text-slate-600 border-[#E5E7EB] hover:border-orange-300"
+                          : `bg-white text-slate-600 border-[#E5E7EB] ${canEditJob ? "hover:border-orange-300" : ""}`
                       }`}
                     >
                       {WORK_DAYS_LABELS[d]}
@@ -529,6 +598,7 @@ export default function JobSummaryPage() {
               <Select
                 value={job.clientId ?? "_none"}
                 onValueChange={v => setField("clientId", v === "_none" ? null : v)}
+                disabled={!canEditJob}
               >
                 <SelectTrigger><SelectValue placeholder="Link to a client" /></SelectTrigger>
                 <SelectContent>
@@ -544,6 +614,7 @@ export default function JobSummaryPage() {
               <Select
                 value={job.projectManagerId ?? "_none"}
                 onValueChange={v => setField("projectManagerId", v === "_none" ? null : v)}
+                disabled={!canEditJob}
               >
                 <SelectTrigger><SelectValue placeholder="Assign a project manager" /></SelectTrigger>
                 <SelectContent>
@@ -560,6 +631,7 @@ export default function JobSummaryPage() {
                 value={job.squareFeet ?? ""}
                 onChange={e => setField("squareFeet", e.target.value || null)}
                 type="number" step="0.01" min="0" placeholder="e.g. 48.5"
+                disabled={!canEditJob}
               />
             </div>
             <div className="space-y-1.5">
@@ -568,6 +640,7 @@ export default function JobSummaryPage() {
                 value={job.permitNumber ?? ""}
                 onChange={e => setField("permitNumber", e.target.value || null)}
                 placeholder="e.g. BP-2024-00123"
+                disabled={!canEditJob}
               />
             </div>
             {job.createdByName && (
@@ -621,17 +694,47 @@ export default function JobSummaryPage() {
             {job.assignees.length > 0 ? (
               <div className="space-y-3">
                 {job.assignees.map((assignee) => (
-                  <div key={assignee.id} className="flex items-center gap-3">
-                    <Avatar className="size-9">
-                      <AvatarImage src={assignee.avatarUrl || undefined} alt={assignee.fullName} />
-                      <AvatarFallback className="bg-slate-100 text-[10px] font-semibold text-slate-700">
-                        {initials(assignee.fullName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-900">{assignee.fullName}</p>
-                      <p className="text-xs capitalize text-slate-500">{assignee.role.replaceAll("_", " ")}</p>
+                  <div key={assignee.id} className="rounded-lg border border-[#E5E7EB] p-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="size-9">
+                        <AvatarImage src={assignee.avatarUrl || undefined} alt={assignee.fullName} />
+                        <AvatarFallback className="bg-slate-100 text-[10px] font-semibold text-slate-700">
+                          {initials(assignee.fullName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-900">{assignee.fullName}</p>
+                        <p className="text-xs capitalize text-slate-500">{assignee.role.replaceAll("_", " ")}</p>
+                      </div>
                     </div>
+                    {isAdmin && assignee.access ? (
+                      <div className="mt-3 space-y-3">
+                        {ACCESS_CONTROL_GROUPS.map((group) => (
+                          <div key={group.title} className="space-y-2">
+                            <p className="text-[11px] font-semibold uppercase text-slate-400">
+                              {group.title}
+                            </p>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {group.controls.map((control) => (
+                                <label
+                                  key={control.key}
+                                  className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2"
+                                >
+                                  <span className="text-xs font-medium text-slate-600">{control.label}</span>
+                                  <Switch
+                                    checked={assignee.access?.[control.key] ?? false}
+                                    disabled={savingAccessUserId === assignee.id}
+                                    onCheckedChange={(checked) =>
+                                      handleUpdateAssigneeAccess(assignee, control.key, checked)
+                                    }
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -642,7 +745,7 @@ export default function JobSummaryPage() {
         </div>
       </div>
 
-      {unsavedChanges.isDirty ? (
+      {canEditJob && unsavedChanges.isDirty ? (
         <>
           {/* Spacer so page content isn't obscured by the sticky bar */}
           <div aria-hidden className="h-16" />
@@ -656,14 +759,14 @@ export default function JobSummaryPage() {
             </div>
           </div>
         </>
-      ) : (
+      ) : canEditJob ? (
         <div>
           <Button onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
             Save Changes
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

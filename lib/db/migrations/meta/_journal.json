@@ -5,7 +5,7 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1775693694895,
+      "when": 1778699453629,
       "tag": "0000_far_doctor_strange",
       "breakpoints": true,
       "checksum": "beeeab1324aae59a044f4a055929dea2221d529e0837668fc5a0850706836f04"
@@ -13,7 +13,7 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1777514199082,
+      "when": 1778699453630,
       "tag": "0004_files-folder-created-id-index",
       "breakpoints": true,
       "checksum": "0fdbe4d30c55308795be9bce9d997a5fd8062dbc8a4419fe51ce10a3db48c8e2"
@@ -21,7 +21,7 @@
     {
       "idx": 2,
       "version": "7",
-      "when": 1777522095057,
+      "when": 1778699453630,
       "tag": "0005_pat-and-idempotency",
       "breakpoints": true,
       "checksum": "68dd51d39839b74f8bf2f62d9d3030c1b51805176edc0126ff09612e7801dd4c"
@@ -29,7 +29,7 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1777532679579,
+      "when": 1778699453630,
       "tag": "0006_agent",
       "breakpoints": true,
       "checksum": "3029d710b2a1cddcbb3cfabcdd29f8a69b7ff82b64f61c57a1d8c5fadd90fc42"
@@ -37,7 +37,7 @@
     {
       "idx": 4,
       "version": "7",
-      "when": 1777582292066,
+      "when": 1778699453630,
       "tag": "0007_user_invitations",
       "breakpoints": true,
       "checksum": "2faec83f7b881e5546cd0e59f1f44d8f7b4dd7603c8779903cb90562dac92aa1"
@@ -45,7 +45,7 @@
     {
       "idx": 5,
       "version": "7",
-      "when": 1777652539753,
+      "when": 1778699453631,
       "tag": "0008_folder_scope_columns",
       "breakpoints": true,
       "checksum": "0ba47926948d13fd67753e10e67140eff8d335809bbdb6cd4df4493a4d51a46c"
@@ -53,7 +53,7 @@
     {
       "idx": 6,
       "version": "7",
-      "when": 1777653244497,
+      "when": 1778699453631,
       "tag": "0009_schema_audit_alignment",
       "breakpoints": true,
       "checksum": "f1280aa87375bc6eabf3c5aa0fd60513fb3b6a8aab4d3bfdce60901bf78bd69e"
@@ -61,7 +61,7 @@
     {
       "idx": 7,
       "version": "7",
-      "when": 1777866445333,
+      "when": 1778699453632,
       "tag": "0010_clients_first_money",
       "breakpoints": true,
       "checksum": "e4842e85cc261d81a3857c454ceb17d6c726746bc826d060a7bcf1e37ef307c0"
@@ -69,7 +69,7 @@
     {
       "idx": 8,
       "version": "7",
-      "when": 1777777884929,
+      "when": 1778699453632,
       "tag": "0011_financial_tracker",
       "breakpoints": true,
       "checksum": "3b64c8d7550eed7a6bba36f75974e398130cc91f9e75ac5ffcf06123bd1eeb01"
@@ -77,7 +77,7 @@
     {
       "idx": 9,
       "version": "7",
-      "when": 1777801308388,
+      "when": 1778699453633,
       "tag": "0012_schema_hardening",
       "breakpoints": true,
       "checksum": "e30fe15d68fbd94497e6c8c20b51d3c8b4ef08fdd058fa2c39b42f53014f74bc"
@@ -85,7 +85,7 @@
     {
       "idx": 10,
       "version": "7",
-      "when": 1777801894249,
+      "when": 1778699453633,
       "tag": "0013_jobs_job_type_enum",
       "breakpoints": true,
       "checksum": "d7773de20bc07fc318aa78945b53026622feb80d16a9bde19e78f6f57a7caa77"
@@ -93,7 +93,7 @@
     {
       "idx": 11,
       "version": "7",
-      "when": 1777803463850,
+      "when": 1778699453634,
       "tag": "0014_rate_limit_buckets",
       "breakpoints": true,
       "checksum": "5076cc364f02840e56a2e0a5b732b636553f45181276b276a02602788473d94e"
@@ -101,7 +101,7 @@
     {
       "idx": 12,
       "version": "7",
-      "when": 1777804363924,
+      "when": 1778699453634,
       "tag": "0015_invite_email_tracking",
       "breakpoints": true,
       "checksum": "2a98108ca18cd2b2133227617964de580fdef0c87717c2922784f24f37605dc1"
@@ -109,7 +109,7 @@
     {
       "idx": 13,
       "version": "7",
-      "when": 1777866478234,
+      "when": 1778699453635,
       "tag": "0016_invite_token_raw",
       "breakpoints": true,
       "checksum": "9239093d2eff7c7518e63900d16e2317bce075ef52918ac292988c9b9e6f67c5"
@@ -117,7 +117,7 @@
     {
       "idx": 14,
       "version": "7",
-      "when": 1777866481708,
+      "when": 1778699453635,
       "tag": "0016_leads_status_qualified",
       "breakpoints": true,
       "checksum": "95f9d7fa7d76517f5d6b699e21643070390f093e743f7e170a7511b7a5d63f29"
@@ -125,7 +125,7 @@
     {
       "idx": 15,
       "version": "7",
-      "when": 1778082699542,
+      "when": 1778699453636,
       "tag": "0017_user_notification_prefs",
       "breakpoints": true,
       "checksum": "da74dac5ddcc6058555d93d7318f88a7bde73257831e3e528f5f8f4a20aa337a"
@@ -133,7 +133,7 @@
     {
       "idx": 16,
       "version": "7",
-      "when": 1778084484380,
+      "when": 1778699453637,
       "tag": "0018_reports_indexes",
       "breakpoints": true,
       "checksum": "1059439b21e6b706193fa3a0648e00d3962a9f4df30cb60bbf947219660a7107"
@@ -141,7 +141,7 @@
     {
       "idx": 17,
       "version": "7",
-      "when": 1778179272722,
+      "when": 1778699453637,
       "tag": "0019_files_duration_seconds",
       "breakpoints": true,
       "checksum": "6fb9bd3f3da96d03cff853f79f9b597c1a451409ad8914ef0966c6854d751023"
@@ -149,7 +149,7 @@
     {
       "idx": 18,
       "version": "7",
-      "when": 1778186650197,
+      "when": 1778699453637,
       "tag": "0020_verify_auto_migrate",
       "breakpoints": true,
       "checksum": "b67dca6f24cb088f47afbfd6f8b42e825f5dc123bd0542467b552e3a5c5f038f"
@@ -157,10 +157,34 @@
     {
       "idx": 19,
       "version": "7",
-      "when": 1778702400000,
+      "when": 1778708040089,
       "tag": "0021_financials_retention",
       "breakpoints": true,
       "checksum": "d429297a061583662b3329b0e2d3ef7d03f155237d2aab48f4a97b3332e657f3"
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1778711254617,
+      "tag": "0022_job_access_controls",
+      "breakpoints": true,
+      "checksum": "2d8fcd108bca29a3f63669419e88ade6fdc9ef65c5b3eb4ea0de121835a7f180"
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1778711259573,
+      "tag": "0023_project_managers_field_access",
+      "breakpoints": true,
+      "checksum": "96ca75414e620af1dfb2b8121081427761f2ee9b9fd70dbaead5a4f63e44822b"
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1778711968915,
+      "tag": "0024_job_contribution_permissions",
+      "breakpoints": true,
+      "checksum": "ad622d9e69f42cf6206937e2bd5e935c1c13db4caac75190dbfd629844e05711"
     }
   ]
 }

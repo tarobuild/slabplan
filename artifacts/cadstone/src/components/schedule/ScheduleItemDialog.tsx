@@ -964,7 +964,7 @@ export function ScheduleItemDialog({
     }
   }
 
-  // Crew members can't issue a full PUT on the schedule item (admin/PM-only),
+  // Crew members can't issue a full PUT on the schedule item (admin-only),
   // but they CAN call the narrow POST /complete endpoint when assigned to it.
   // Persist their toggle immediately rather than buffering it into the form
   // — the form's Save button calls PUT, which would 403 for them.

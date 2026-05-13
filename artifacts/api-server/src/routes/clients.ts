@@ -25,13 +25,12 @@ import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
 import {
   requireAdmin,
-  requireManagerOrAbove,
 } from "../middleware/require-auth";
 import { getTrackerTotalsByJobIds } from "./financials";
 
 const router: IRouter = Router();
 
-router.use(requireManagerOrAbove);
+router.use(requireAdmin);
 
 // Deterministic UUIDv5 sentinel (derived from `cadstone:unknown-client`
 // in the DNS namespace) for the "Unknown client" placeholder created

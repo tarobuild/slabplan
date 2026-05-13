@@ -59,7 +59,7 @@ interface ExceptionsTabProps {
   jobId: string | undefined
   jobs: JobOption[]
   scheduleOffline: boolean
-  // Admin/PM only — crew gets a read-only view of exceptions.
+  // Admin only — crew gets a read-only view of exceptions.
   canWrite: boolean
   workdayExceptions: ScheduleWorkdayException[]
   workdayEditorOpen: boolean

@@ -29,7 +29,7 @@ import { EmptyState } from "../components"
 interface BaselineTabProps {
   baseline: ScheduleBaselineRecord | null
   scheduleOffline: boolean
-  // Admin/PM may set/reset baseline; crew gets read-only.
+  // Admin may set/reset baseline; crew gets read-only.
   canWrite: boolean
   setSettingsOpen: Dispatch<SetStateAction<boolean>>
   setFilterOpen: Dispatch<SetStateAction<boolean>>

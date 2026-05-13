@@ -30,6 +30,7 @@ import { formatCurrencyCents } from "@/lib/format"
 import { describePercentLowering } from "@/lib/percent-confirm"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -92,6 +93,8 @@ type Invoice = {
   invoiceNumber: string | null
   invoiceDate: string | null
   totalCents: number
+  retentionHeldCents: number
+  netPaidCents: number
   appliedAt: string | null
   createdAt: string
   fileId: string | null
@@ -105,6 +108,10 @@ type TrackerData = {
     projectName: string | null
     contractDate: string | null
     currency: string
+    retentionEnabled: boolean
+    retentionRateBps: number
+    retentionReleasedAt: string | null
+    retentionReleasedBy: string | null
     estimateFileId: string | null
   }
   // Parent client of this job; surfaced by the API so cache
@@ -121,6 +128,18 @@ type TrackerData = {
     changeOrderApprovedCents: number
     contractWithChangesCents: number
     percentBilled: number
+    retention: {
+      enabled: boolean
+      rateBps: number
+      releasedAt: string | null
+      releasedBy: string | null
+      released: boolean
+      maxRetentionCents: number
+      retentionHeldCents: number
+      retentionOutstandingCents: number
+      netReceivedCents: number
+      invoiceNetPaidCents: number
+    }
   }
 }
 
@@ -129,6 +148,13 @@ type TrackerData = {
 // are always shown — invoice + SOV math is too sensitive to round to
 // whole dollars (#275).
 const formatCurrency = formatCurrencyCents
+const DEFAULT_RETENTION_RATE_BPS = 1000
+const RETENTION_RATE_OPTIONS = [500, 1000, 1500]
+
+function formatRetentionRate(rateBps: number) {
+  const pct = rateBps / 100
+  return Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(2)}%`
+}
 
 export type AiParseError = {
   file: File
@@ -137,9 +163,20 @@ export type AiParseError = {
 }
 
 function statusForPct(pct: number): { label: string; cls: string } {
-  if (pct >= 100) return { label: "Complete", cls: "bg-green-100 text-green-800 border-green-200" }
-  if (pct > 0) return { label: "In progress", cls: "bg-blue-100 text-blue-800 border-blue-200" }
-  return { label: "Not started", cls: "bg-slate-100 text-slate-700 border-slate-200" }
+  if (pct >= 100)
+    return {
+      label: "Complete",
+      cls: "bg-green-100 text-green-800 border-green-200",
+    }
+  if (pct > 0)
+    return {
+      label: "In progress",
+      cls: "bg-blue-100 text-blue-800 border-blue-200",
+    }
+  return {
+    label: "Not started",
+    cls: "bg-slate-100 text-slate-700 border-slate-200",
+  }
 }
 
 function csvEscape(v: string | number | null | undefined): string {
@@ -148,7 +185,10 @@ function csvEscape(v: string | number | null | undefined): string {
   return s
 }
 
-function downloadCsv(filename: string, rows: (string | number | null | undefined)[][]) {
+function downloadCsv(
+  filename: string,
+  rows: (string | number | null | undefined)[][],
+) {
   const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\n")
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
   const url = URL.createObjectURL(blob)
@@ -284,10 +324,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       </td>
       <td className="px-3 py-2 text-right tabular-nums">
         {formatCurrency(
-          Math.max(
-            0,
-            Number(li.scheduledValueCents) - Number(li.billedCents),
-          ),
+          Math.max(0, Number(li.scheduledValueCents) - Number(li.billedCents)),
         )}
       </td>
       <td className="px-3 py-2 text-right">
@@ -392,10 +429,7 @@ const SovAreaRow = memo(function SovAreaRow({
     (s, li) => s + Number(li.scheduledValueCents),
     0,
   )
-  const billed = area.lineItems.reduce(
-    (s, li) => s + Number(li.billedCents),
-    0,
-  )
+  const billed = area.lineItems.reduce((s, li) => s + Number(li.billedCents), 0)
   const pct = sched > 0 ? Math.round((billed / sched) * 100) : 0
   const status = statusForPct(pct)
   const isCO = area.isChangeOrderGroup
@@ -475,56 +509,58 @@ const SovAreaRow = memo(function SovAreaRow({
       </div>
       {collapsed ? null : (
         <>
-        <div className="px-3 pt-1 text-[10px] uppercase tracking-wide text-slate-400 md:hidden">
-          ← swipe to see more →
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-xs text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">Description</th>
-                <th className="px-3 py-2 text-right">Qty</th>
-                <th className="px-3 py-2 text-right">Rate</th>
-                <th className="px-3 py-2 text-right">Scheduled</th>
-                <th className="px-3 py-2 text-right">Billed</th>
-                <th className="px-3 py-2 text-right">Balance</th>
-                <th className="px-3 py-2 text-right">% Done</th>
-                {invoices.map((inv) => (
-                  <th
-                    key={inv.id}
-                    className="px-3 py-2 text-right whitespace-nowrap"
-                    title={inv.invoiceDate ?? ""}
-                  >
-                    Inv {inv.invoiceNumber ?? inv.id.slice(0, 6)}
-                  </th>
-                ))}
-                <th className="px-3 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {area.lineItems.map((li) => (
-                <SovLineItemRow
-                  key={li.id}
-                  li={li}
-                  invoices={invoices}
-                  onUpdate={onUpdateLineItem}
-                  onDelete={onDeleteLineItem}
-                />
-              ))}
-              {area.lineItems.length === 0 ? (
+          <div className="px-3 pt-1 text-[10px] uppercase tracking-wide text-slate-400 md:hidden">
+            ← swipe to see more →
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-muted-foreground">
                 <tr>
-                  <td
-                    colSpan={9 + invoices.length}
-                    className="px-3 py-4 text-center text-xs text-muted-foreground"
-                  >
-                    No line items
-                  </td>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">
+                    Description
+                  </th>
+                  <th className="px-3 py-2 text-right">Qty</th>
+                  <th className="px-3 py-2 text-right">Rate</th>
+                  <th className="px-3 py-2 text-right">Scheduled</th>
+                  <th className="px-3 py-2 text-right">Billed</th>
+                  <th className="px-3 py-2 text-right">Balance</th>
+                  <th className="px-3 py-2 text-right">% Done</th>
+                  {invoices.map((inv) => (
+                    <th
+                      key={inv.id}
+                      className="px-3 py-2 text-right whitespace-nowrap"
+                      title={inv.invoiceDate ?? ""}
+                    >
+                      Inv {inv.invoiceNumber ?? inv.id.slice(0, 6)}
+                    </th>
+                  ))}
+                  <th className="px-3 py-2"></th>
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {area.lineItems.map((li) => (
+                  <SovLineItemRow
+                    key={li.id}
+                    li={li}
+                    invoices={invoices}
+                    onUpdate={onUpdateLineItem}
+                    onDelete={onDeleteLineItem}
+                  />
+                ))}
+                {area.lineItems.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={9 + invoices.length}
+                      className="px-3 py-4 text-center text-xs text-muted-foreground"
+                    >
+                      No line items
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>
@@ -544,13 +580,27 @@ export default function JobFinancialsPage() {
   const [loading, setLoading] = useState(true)
   const [estimateUploading, setEstimateUploading] = useState(false)
   const [invoiceUploading, setInvoiceUploading] = useState(false)
-  const [pendingEstimateFile, setPendingEstimateFile] = useState<File | null>(null)
+  const [pendingEstimateFile, setPendingEstimateFile] = useState<File | null>(
+    null,
+  )
   const [editingProject, setEditingProject] = useState(false)
-  const [projectDraft, setProjectDraft] = useState({ projectName: "", contractDate: "" })
+  const [projectDraft, setProjectDraft] = useState({
+    projectName: "",
+    contractDate: "",
+  })
+  const [retentionDraft, setRetentionDraft] = useState({
+    enabled: false,
+    rateBps: DEFAULT_RETENTION_RATE_BPS,
+    customPct: "10",
+  })
+  const [savingRetention, setSavingRetention] = useState(false)
+  const [releasingRetention, setReleasingRetention] = useState(false)
   const [matchesInvoice, setMatchesInvoice] = useState<Invoice | null>(null)
   const [matchDraft, setMatchDraft] = useState<Record<string, string>>({})
   const [savingMatches, setSavingMatches] = useState(false)
-  const [collapsedAreas, setCollapsedAreas] = useState<Record<string, boolean>>({})
+  const [collapsedAreas, setCollapsedAreas] = useState<Record<string, boolean>>(
+    {},
+  )
   // Holds the last-failed AI parse so the user can hit "Try again"
   // without re-picking the file. Cleared on success or explicit
   // dismiss. Drift item from #269 / #275.
@@ -596,13 +646,15 @@ export default function JobFinancialsPage() {
           | undefined
         return {
           file,
-          code: detailCode ?? (status ? `HTTP_${status}` : err.code ?? "UNKNOWN"),
-          message:
-            data?.message ?? data?.error ?? err.message ?? fallback,
+          code:
+            detailCode ?? (status ? `HTTP_${status}` : (err.code ?? "UNKNOWN")),
+          message: data?.message ?? data?.error ?? err.message ?? fallback,
         }
       }
       if (err instanceof ApiError) {
-        const data = err.data as { message?: string; error?: string } | undefined
+        const data = err.data as
+          | { message?: string; error?: string }
+          | undefined
         return {
           file,
           code: `HTTP_${err.status}`,
@@ -634,15 +686,35 @@ export default function JobFinancialsPage() {
     void load()
   }, [load])
 
+  useEffect(() => {
+    if (!data) return
+    const rateBps = data.tracker.retentionRateBps ?? DEFAULT_RETENTION_RATE_BPS
+    setRetentionDraft({
+      enabled: Boolean(data.tracker.retentionEnabled),
+      rateBps,
+      customPct: String(rateBps / 100),
+    })
+  }, [
+    data?.tracker.id,
+    data?.tracker.retentionEnabled,
+    data?.tracker.retentionRateBps,
+  ])
+
   const performEstimateUpload = async (file: File) => {
     if (!jobId) return
     setEstimateUploading(true)
     try {
       const fd = new FormData()
       fd.append("file", file)
-      const res = await api.post<TrackerData>(`/jobs/${jobId}/financials/estimate`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
+      fd.append("retentionEnabled", String(retentionDraft.enabled))
+      fd.append("retentionRateBps", String(retentionDraft.rateBps))
+      const res = await api.post<TrackerData>(
+        `/jobs/${jobId}/financials/estimate`,
+        fd,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      )
       setData(res.data)
       setEstimateError(null)
       invalidate()
@@ -719,9 +791,16 @@ export default function JobFinancialsPage() {
 
   // Pending delete dialogs — converted from window.confirm so the
   // experience matches the AlertDialog pattern used elsewhere.
-  const [pendingDeleteLineItemId, setPendingDeleteLineItemId] = useState<string | null>(null)
-  const [pendingDeleteArea, setPendingDeleteArea] = useState<{ id: string; name: string } | null>(null)
-  const [pendingDeleteInvoiceId, setPendingDeleteInvoiceId] = useState<string | null>(null)
+  const [pendingDeleteLineItemId, setPendingDeleteLineItemId] = useState<
+    string | null
+  >(null)
+  const [pendingDeleteArea, setPendingDeleteArea] = useState<{
+    id: string
+    name: string
+  } | null>(null)
+  const [pendingDeleteInvoiceId, setPendingDeleteInvoiceId] = useState<
+    string | null
+  >(null)
   const [deletingFinancial, setDeletingFinancial] = useState(false)
 
   const performCoParse = async (file: File) => {
@@ -803,7 +882,10 @@ export default function JobFinancialsPage() {
     ) => {
       if (!jobId) return
       try {
-        await api.patch(`/jobs/${jobId}/financials/line-items/${lineItemId}`, patch)
+        await api.patch(
+          `/jobs/${jobId}/financials/line-items/${lineItemId}`,
+          patch,
+        )
         await load()
         invalidate()
       } catch (err) {
@@ -852,7 +934,9 @@ export default function JobFinancialsPage() {
       const next = window.prompt("Rename area", currentName)?.trim()
       if (!next || next === currentName) return
       try {
-        await api.patch(`/jobs/${jobId}/financials/areas/${areaId}`, { name: next })
+        await api.patch(`/jobs/${jobId}/financials/areas/${areaId}`, {
+          name: next,
+        })
         await load()
         invalidate()
       } catch (err) {
@@ -884,7 +968,9 @@ export default function JobFinancialsPage() {
 
   const openInvoiceFile = async (fileId: string) => {
     try {
-      const res = await api.post<{ url: string }>(`/files/${fileId}/signed-view`)
+      const res = await api.post<{ url: string }>(
+        `/files/${fileId}/signed-view`,
+      )
       window.open(res.data.url, "_blank", "noopener,noreferrer")
     } catch (err) {
       toastApiError(err, "Failed to open invoice file")
@@ -923,7 +1009,9 @@ export default function JobFinancialsPage() {
     if (areas.length > 0) {
       const list = areas.map((a, i) => `${i + 1}. ${a.name}`).join("\n")
       const pick = window
-        .prompt(`Assign to area? Enter number, or leave blank for none.\n${list}`)
+        .prompt(
+          `Assign to area? Enter number, or leave blank for none.\n${list}`,
+        )
         ?.trim()
       const idx = pick ? Number(pick) - 1 : NaN
       if (!Number.isNaN(idx) && idx >= 0 && idx < areas.length) {
@@ -950,7 +1038,9 @@ export default function JobFinancialsPage() {
   ) => {
     if (!jobId) return
     try {
-      await api.patch(`/jobs/${jobId}/financials/change-orders/${coId}`, { status })
+      await api.patch(`/jobs/${jobId}/financials/change-orders/${coId}`, {
+        status,
+      })
       await load()
       invalidate()
     } catch (err) {
@@ -993,6 +1083,51 @@ export default function JobFinancialsPage() {
     }
   }
 
+  const setRetentionRate = (rateBps: number) => {
+    setRetentionDraft((draft) => ({
+      ...draft,
+      rateBps,
+      customPct: String(rateBps / 100),
+    }))
+  }
+
+  const saveRetention = async () => {
+    if (!jobId) return
+    setSavingRetention(true)
+    try {
+      await api.patch(`/jobs/${jobId}/financials`, {
+        retentionEnabled: retentionDraft.enabled,
+        retentionRateBps: retentionDraft.enabled
+          ? retentionDraft.rateBps
+          : DEFAULT_RETENTION_RATE_BPS,
+      })
+      await load()
+      invalidate()
+      toast.success("Retention settings saved")
+    } catch (err) {
+      toastApiError(err, "Failed to update retention")
+    } finally {
+      setSavingRetention(false)
+    }
+  }
+
+  const releaseRetention = async () => {
+    if (!jobId) return
+    setReleasingRetention(true)
+    try {
+      const res = await api.post<TrackerData>(
+        `/jobs/${jobId}/financials/retention/release`,
+      )
+      setData(res.data)
+      invalidate()
+      toast.success("Retention marked as released")
+    } catch (err) {
+      toastApiError(err, "Failed to release retention")
+    } finally {
+      setReleasingRetention(false)
+    }
+  }
+
   const openMatchesEditor = (inv: Invoice) => {
     setMatchesInvoice(inv)
     const draft: Record<string, string> = {}
@@ -1010,7 +1145,9 @@ export default function JobFinancialsPage() {
         if (!Number.isFinite(n) || n <= 0) return null
         return { sovLineItemId, amountCents: Math.round(n * 100) }
       })
-      .filter((x): x is { sovLineItemId: string; amountCents: number } => x !== null)
+      .filter(
+        (x): x is { sovLineItemId: string; amountCents: number } => x !== null,
+      )
     setSavingMatches(true)
     try {
       const res = await api.patch<TrackerData>(
@@ -1045,8 +1182,13 @@ export default function JobFinancialsPage() {
     const rows: (string | number | null | undefined)[][] = [header]
     for (const area of data.areas) {
       for (const li of area.lineItems) {
-        const paid = new Map(li.payments.map((p) => [p.invoiceId, p.amountCents]))
-        const out = Math.max(0, Number(li.scheduledValueCents) - Number(li.billedCents))
+        const paid = new Map(
+          li.payments.map((p) => [p.invoiceId, p.amountCents]),
+        )
+        const out = Math.max(
+          0,
+          Number(li.scheduledValueCents) - Number(li.billedCents),
+        )
         rows.push([
           area.name,
           li.description,
@@ -1056,7 +1198,9 @@ export default function JobFinancialsPage() {
           (li.billedCents / 100).toFixed(2),
           (out / 100).toFixed(2),
           Number(li.percentComplete).toFixed(2),
-          ...invoices.map((i) => (((paid.get(i.id) ?? 0) as number) / 100).toFixed(2)),
+          ...invoices.map((i) =>
+            (((paid.get(i.id) ?? 0) as number) / 100).toFixed(2),
+          ),
         ])
       }
     }
@@ -1075,6 +1219,7 @@ export default function JobFinancialsPage() {
   }
 
   const totals = data?.totals
+  const retentionTotals = totals?.retention
   const totalsStrip = useMemo(() => {
     if (!totals) return null
     const balance = Math.max(
@@ -1082,7 +1227,7 @@ export default function JobFinancialsPage() {
       Number(totals.contractWithChangesCents) - Number(totals.billedCents),
     )
     const applications = data?.invoices.length ?? 0
-    return [
+    const base = [
       {
         label: "Contract Date",
         value: data?.tracker.contractDate ?? "—",
@@ -1095,14 +1240,60 @@ export default function JobFinancialsPage() {
         label: "Change Orders",
         value: formatCurrency(totals.changeOrderApprovedCents),
       },
-      { label: "Contract w/ COs", value: formatCurrency(totals.contractWithChangesCents) },
+      {
+        label: "Contract w/ COs",
+        value: formatCurrency(totals.contractWithChangesCents),
+      },
       { label: "Billed", value: formatCurrency(totals.billedCents) },
       { label: "Balance", value: formatCurrency(balance) },
       { label: "Applications", value: String(applications) },
       { label: "% Billed", value: `${totals.percentBilled}%` },
     ]
+    const retention = totals.retention
+    if (!retention?.enabled) return base
+    return [
+      {
+        label: "Contract",
+        value: formatCurrency(totals.contractWithChangesCents),
+      },
+      { label: "Billed", value: formatCurrency(totals.billedCents) },
+      { label: "Balance", value: formatCurrency(balance) },
+      {
+        label: "Max Retention",
+        value: formatCurrency(retention.maxRetentionCents),
+      },
+      {
+        label: "Retention Held",
+        value: formatCurrency(retention.retentionHeldCents),
+      },
+      {
+        label: "Net Received",
+        value: formatCurrency(retention.netReceivedCents),
+      },
+    ]
   }, [totals, data?.invoices.length, data?.tracker.contractDate])
 
+  const retentionLedger = useMemo(() => {
+    if (!data?.totals.retention?.enabled) return []
+    let gross = 0
+    let held = 0
+    let net = 0
+    return [...data.invoices]
+      .sort((a, b) => {
+        const aKey = a.invoiceDate ?? a.createdAt
+        const bKey = b.invoiceDate ?? b.createdAt
+        return aKey.localeCompare(bKey)
+      })
+      .map((inv) => {
+        gross += Number(inv.totalCents)
+        held += Number(inv.retentionHeldCents ?? 0)
+        net += Number(
+          inv.netPaidCents ??
+            Math.max(0, inv.totalCents - (inv.retentionHeldCents ?? 0)),
+        )
+        return { invoice: inv, gross, held, net }
+      })
+  }, [data?.invoices, data?.totals.retention.enabled])
 
   if (!canManage) {
     return (
@@ -1148,7 +1339,7 @@ export default function JobFinancialsPage() {
       {/* Overall % billed bar */}
       {totals ? (
         <Card>
-          <CardContent className="space-y-2 py-4">
+          <CardContent className="space-y-4 py-4">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>Overall progress</span>
               <span className="tabular-nums">
@@ -1165,6 +1356,38 @@ export default function JobFinancialsPage() {
                 }}
               />
             </div>
+            {retentionTotals?.enabled ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-amber-800">
+                  <span>
+                    Retention held (
+                    {formatRetentionRate(retentionTotals.rateBps)})
+                  </span>
+                  <span className="tabular-nums">
+                    {formatCurrency(retentionTotals.retentionHeldCents)} of{" "}
+                    {formatCurrency(retentionTotals.maxRetentionCents)}
+                    {retentionTotals.released ? " · Released" : ""}
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-amber-100">
+                  <div
+                    className={`h-full transition-all ${
+                      retentionTotals.released ? "bg-green-500" : "bg-amber-500"
+                    }`}
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        retentionTotals.maxRetentionCents > 0
+                          ? (retentionTotals.retentionHeldCents /
+                              retentionTotals.maxRetentionCents) *
+                              100
+                          : 0,
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
@@ -1204,7 +1427,9 @@ export default function JobFinancialsPage() {
               ) : (
                 <Sparkles className="mr-1 h-4 w-4" />
               )}
-              {data.tracker.estimateFileId ? "Re-parse PDF" : "Parse Estimate PDF"}
+              {data.tracker.estimateFileId
+                ? "Re-parse PDF"
+                : "Parse Estimate PDF"}
             </Button>
           </div>
         </CardHeader>
@@ -1251,7 +1476,110 @@ export default function JobFinancialsPage() {
             </div>
           </div>
         ) : null}
-        <CardContent>
+        <CardContent className="space-y-5">
+          <div className="rounded-md border border-amber-200 bg-amber-50/60 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-amber-950">
+                  Will this project have retention on invoices?
+                </div>
+                <p className="max-w-2xl text-xs text-amber-900">
+                  Turn this on for projects that hold back a percentage of each
+                  invoice until completion. It defaults to 10% and is tracked
+                  separately from gross billed work.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-amber-900">
+                  {retentionDraft.enabled ? "Retention on" : "Retention off"}
+                </span>
+                <Switch
+                  checked={retentionDraft.enabled}
+                  onCheckedChange={(checked) =>
+                    setRetentionDraft((draft) => ({
+                      ...draft,
+                      enabled: checked,
+                    }))
+                  }
+                  aria-label="Toggle retention"
+                />
+              </div>
+            </div>
+            {retentionDraft.enabled ? (
+              <div className="mt-4 flex flex-wrap items-end gap-3">
+                <div className="flex gap-2">
+                  {RETENTION_RATE_OPTIONS.map((rate) => (
+                    <Button
+                      key={rate}
+                      type="button"
+                      size="sm"
+                      variant={
+                        retentionDraft.rateBps === rate ? "default" : "outline"
+                      }
+                      className={
+                        retentionDraft.rateBps === rate
+                          ? "bg-amber-600 hover:bg-amber-700"
+                          : ""
+                      }
+                      onClick={() => setRetentionRate(rate)}
+                    >
+                      {formatRetentionRate(rate)}
+                    </Button>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-amber-950">
+                  Custom
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={retentionDraft.customPct}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      const pct = Number(raw)
+                      setRetentionDraft((draft) => ({
+                        ...draft,
+                        customPct: raw,
+                        rateBps: Number.isFinite(pct)
+                          ? Math.max(0, Math.min(10000, Math.round(pct * 100)))
+                          : draft.rateBps,
+                      }))
+                    }}
+                    className="h-8 w-24 bg-white text-right"
+                  />
+                  %
+                </label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={savingRetention}
+                  onClick={() => void saveRetention()}
+                >
+                  {savingRetention ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Save retention
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={savingRetention}
+                  onClick={() => void saveRetention()}
+                >
+                  {savingRetention ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Save retention off
+                </Button>
+              </div>
+            )}
+          </div>
           {editingProject ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
@@ -1259,17 +1587,25 @@ export default function JobFinancialsPage() {
                 <Input
                   value={projectDraft.projectName}
                   onChange={(e) =>
-                    setProjectDraft((p) => ({ ...p, projectName: e.target.value }))
+                    setProjectDraft((p) => ({
+                      ...p,
+                      projectName: e.target.value,
+                    }))
                   }
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Contract date</label>
+                <label className="text-xs text-muted-foreground">
+                  Contract date
+                </label>
                 <Input
                   type="date"
                   value={projectDraft.contractDate}
                   onChange={(e) =>
-                    setProjectDraft((p) => ({ ...p, contractDate: e.target.value }))
+                    setProjectDraft((p) => ({
+                      ...p,
+                      contractDate: e.target.value,
+                    }))
                   }
                 />
               </div>
@@ -1295,7 +1631,9 @@ export default function JobFinancialsPage() {
                 </div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Contract date</div>
+                <div className="text-xs text-muted-foreground">
+                  Contract date
+                </div>
                 <div className="text-sm font-medium">
                   {data.tracker.contractDate ?? "—"}
                 </div>
@@ -1303,7 +1641,9 @@ export default function JobFinancialsPage() {
               <div className="flex items-start justify-between">
                 <div>
                   <div className="text-xs text-muted-foreground">Currency</div>
-                  <div className="text-sm font-medium">{data.tracker.currency}</div>
+                  <div className="text-sm font-medium">
+                    {data.tracker.currency}
+                  </div>
                 </div>
                 <Button
                   size="sm"
@@ -1368,7 +1708,11 @@ export default function JobFinancialsPage() {
                 <div className="flex items-center gap-2">
                   <div className="text-sm font-semibold">Change Orders</div>
                   <Badge className="border-violet-300 bg-violet-100 text-violet-800 hover:bg-violet-100">
-                    {data.changeOrders.filter((co) => co.status === "approved").length} approved
+                    {
+                      data.changeOrders.filter((co) => co.status === "approved")
+                        .length
+                    }{" "}
+                    approved
                   </Badge>
                   <span className="text-xs text-muted-foreground tabular-nums">
                     {formatCurrency(totals?.changeOrderApprovedCents ?? 0)}
@@ -1388,7 +1732,11 @@ export default function JobFinancialsPage() {
                     )}
                     Upload CO
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void addChangeOrder()}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void addChangeOrder()}
+                  >
                     <Plus className="mr-1 h-4 w-4" /> Add CO
                   </Button>
                 </div>
@@ -1453,7 +1801,11 @@ export default function JobFinancialsPage() {
               )}
               Upload CO
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void addChangeOrder()}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void addChangeOrder()}
+            >
               <Plus className="mr-1 h-4 w-4" /> Add CO
             </Button>
           </div>
@@ -1503,7 +1855,9 @@ export default function JobFinancialsPage() {
         ) : null}
         <CardContent>
           {data.changeOrders.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No change orders.</div>
+            <div className="text-sm text-muted-foreground">
+              No change orders.
+            </div>
           ) : (
             <table className="w-full text-sm">
               <thead className="text-xs text-muted-foreground">
@@ -1542,7 +1896,9 @@ export default function JobFinancialsPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => void setChangeOrderStatus(co.id, "approved")}
+                            onClick={() =>
+                              void setChangeOrderStatus(co.id, "approved")
+                            }
                           >
                             Approve
                           </Button>
@@ -1551,7 +1907,9 @@ export default function JobFinancialsPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => void setChangeOrderStatus(co.id, "rejected")}
+                            onClick={() =>
+                              void setChangeOrderStatus(co.id, "rejected")
+                            }
                           >
                             Reject
                           </Button>
@@ -1640,79 +1998,259 @@ export default function JobFinancialsPage() {
             </div>
           </div>
         ) : null}
-        <CardContent>
+        <CardContent className="space-y-4">
+          {retentionTotals?.enabled ? (
+            <div
+              className={`rounded-md border p-4 ${
+                retentionTotals.released
+                  ? "border-green-300 bg-green-50"
+                  : "border-amber-300 bg-amber-50"
+              }`}
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div
+                    className={`text-sm font-semibold ${
+                      retentionTotals.released
+                        ? "text-green-900"
+                        : "text-amber-950"
+                    }`}
+                  >
+                    Retention summary
+                  </div>
+                  <div
+                    className={`mt-1 text-xs ${
+                      retentionTotals.released
+                        ? "text-green-800"
+                        : "text-amber-900"
+                    }`}
+                  >
+                    {formatRetentionRate(retentionTotals.rateBps)} holdback on
+                    invoice gross amounts.
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant={retentionTotals.released ? "outline" : "default"}
+                  className={
+                    retentionTotals.released
+                      ? ""
+                      : "bg-amber-600 hover:bg-amber-700"
+                  }
+                  disabled={retentionTotals.released || releasingRetention}
+                  onClick={() => void releaseRetention()}
+                >
+                  {releasingRetention ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : null}
+                  {retentionTotals.released ? "Released" : "Mark as released"}
+                </Button>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Max retention
+                  </div>
+                  <div className="font-semibold tabular-nums">
+                    {formatCurrency(retentionTotals.maxRetentionCents)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Held to date
+                  </div>
+                  <div className="font-semibold tabular-nums">
+                    {formatCurrency(retentionTotals.retentionHeldCents)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Still outstanding
+                  </div>
+                  <div
+                    className={`font-semibold tabular-nums ${
+                      retentionTotals.released
+                        ? "text-green-700 line-through"
+                        : ""
+                    }`}
+                  >
+                    {formatCurrency(retentionTotals.retentionOutstandingCents)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Net received
+                  </div>
+                  <div className="font-semibold tabular-nums">
+                    {formatCurrency(retentionTotals.netReceivedCents)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {data.invoices.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No invoices yet.</div>
+            <div className="text-sm text-muted-foreground">
+              No invoices yet.
+            </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-xs text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left">Invoice #</th>
-                  <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-right">Total</th>
-                  <th className="px-3 py-2 text-right">Applied</th>
-                  <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.invoices.map((inv) => {
-                  const applied = inv.payments.reduce(
-                    (s, p) => s + Number(p.amountCents),
-                    0,
-                  )
-                  return (
-                    <tr key={inv.id} className="border-t">
-                      <td className="px-3 py-2 font-medium">
-                        {inv.invoiceNumber ?? "—"}
-                      </td>
-                      <td className="px-3 py-2">{inv.invoiceDate ?? "—"}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatCurrency(inv.totalCents)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatCurrency(applied)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {inv.appliedAt ? (
-                          <Badge>Applied</Badge>
-                        ) : (
-                          <Badge variant="secondary">Pending</Badge>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex justify-end gap-1">
-                          {inv.fileId ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => void openInvoiceFile(inv.fileId!)}
-                              title="Open uploaded invoice file"
-                            >
-                              <FileText className="mr-1 h-4 w-4" /> File
-                            </Button>
-                          ) : null}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openMatchesEditor(inv)}
-                          >
-                            <Pencil className="mr-1 h-4 w-4" /> Edit matches
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => void deleteInvoice(inv.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
+            <div className="space-y-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Invoice #</th>
+                      <th className="px-3 py-2 text-left">Date</th>
+                      <th className="px-3 py-2 text-right">Gross</th>
+                      {retentionTotals?.enabled ? (
+                        <>
+                          <th className="px-3 py-2 text-right">Retention</th>
+                          <th className="px-3 py-2 text-right">Net Paid</th>
+                        </>
+                      ) : null}
+                      <th className="px-3 py-2 text-right">Applied</th>
+                      <th className="px-3 py-2 text-left">Status</th>
+                      <th className="px-3 py-2"></th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {data.invoices.map((inv) => {
+                      const applied = inv.payments.reduce(
+                        (s, p) => s + Number(p.amountCents),
+                        0,
+                      )
+                      return (
+                        <tr key={inv.id} className="border-t">
+                          <td className="px-3 py-2 font-medium">
+                            {inv.invoiceNumber ?? "—"}
+                          </td>
+                          <td className="px-3 py-2">
+                            {inv.invoiceDate ?? "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {formatCurrency(inv.totalCents)}
+                          </td>
+                          {retentionTotals?.enabled ? (
+                            <>
+                              <td className="px-3 py-2 text-right text-amber-700 tabular-nums">
+                                {formatCurrency(inv.retentionHeldCents ?? 0)}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {formatCurrency(
+                                  inv.netPaidCents ??
+                                    Math.max(
+                                      0,
+                                      inv.totalCents -
+                                        (inv.retentionHeldCents ?? 0),
+                                    ),
+                                )}
+                              </td>
+                            </>
+                          ) : null}
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {formatCurrency(applied)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {inv.appliedAt ? (
+                              <Badge>Applied</Badge>
+                            ) : (
+                              <Badge variant="secondary">Pending</Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex justify-end gap-1">
+                              {inv.fileId ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    void openInvoiceFile(inv.fileId!)
+                                  }
+                                  title="Open uploaded invoice file"
+                                >
+                                  <FileText className="mr-1 h-4 w-4" /> File
+                                </Button>
+                              ) : null}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openMatchesEditor(inv)}
+                              >
+                                <Pencil className="mr-1 h-4 w-4" /> Edit matches
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => void deleteInvoice(inv.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {retentionLedger.length >= 2 ? (
+                <div className="rounded-md border border-amber-200">
+                  <div className="border-b bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950">
+                    Retention running totals
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-xs text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Application</th>
+                          <th className="px-3 py-2 text-right">Gross</th>
+                          <th className="px-3 py-2 text-right">Retention</th>
+                          <th className="px-3 py-2 text-right">Net</th>
+                          <th className="px-3 py-2 text-right">
+                            Running Gross
+                          </th>
+                          <th className="px-3 py-2 text-right">
+                            Running Retention
+                          </th>
+                          <th className="px-3 py-2 text-right">Running Net</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {retentionLedger.map(
+                          ({ invoice, gross, held, net }) => (
+                            <tr key={invoice.id} className="border-t">
+                              <td className="px-3 py-2">
+                                {invoice.invoiceNumber ??
+                                  invoice.id.slice(0, 6)}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {formatCurrency(invoice.totalCents)}
+                              </td>
+                              <td className="px-3 py-2 text-right text-amber-700 tabular-nums">
+                                {formatCurrency(
+                                  invoice.retentionHeldCents ?? 0,
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {formatCurrency(invoice.netPaidCents ?? 0)}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {formatCurrency(gross)}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {formatCurrency(held)}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {formatCurrency(net)}
+                              </td>
+                            </tr>
+                          ),
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -1727,15 +2265,16 @@ export default function JobFinancialsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-orange-500" /> Replace existing estimate?
+              <AlertTriangle className="h-5 w-5 text-orange-500" /> Replace
+              existing estimate?
             </DialogTitle>
           </DialogHeader>
           <div className="text-sm text-muted-foreground">
             Re-parsing will replace the current Schedule of Values with the new
-            estimate. Existing invoices stay attached: matching line items
-            (same area + description) keep their billed amounts. Unmatched
-            invoices remain — you can re-link them via "Edit matches".
-            Approved change orders are never touched.
+            estimate. Existing invoices stay attached: matching line items (same
+            area + description) keep their billed amounts. Unmatched invoices
+            remain — you can re-link them via "Edit matches". Approved change
+            orders are never touched.
           </div>
           <DialogFooter>
             {/* Default focus on Cancel so an accidental Enter does not
@@ -1769,12 +2308,16 @@ export default function JobFinancialsPage() {
             <div className="text-xs text-muted-foreground">
               Allocate this invoice across SOV line items. Total invoice:{" "}
               <span className="font-semibold tabular-nums">
-                {matchesInvoice ? formatCurrency(matchesInvoice.totalCents) : ""}
+                {matchesInvoice
+                  ? formatCurrency(matchesInvoice.totalCents)
+                  : ""}
               </span>
             </div>
             {data.areas.map((area) => (
               <div key={area.id}>
-                <div className="text-xs font-semibold text-slate-500">{area.name}</div>
+                <div className="text-xs font-semibold text-slate-500">
+                  {area.name}
+                </div>
                 <div className="space-y-1">
                   {area.lineItems.map((li) => (
                     <div
@@ -1784,8 +2327,8 @@ export default function JobFinancialsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm">{li.description}</div>
                         <div className="text-xs text-muted-foreground">
-                          Sched {formatCurrency(li.scheduledValueCents)} · Billed{" "}
-                          {formatCurrency(li.billedCents)}
+                          Sched {formatCurrency(li.scheduledValueCents)} ·
+                          Billed {formatCurrency(li.billedCents)}
                         </div>
                       </div>
                       <Input
@@ -1795,7 +2338,10 @@ export default function JobFinancialsPage() {
                         placeholder="0.00"
                         value={matchDraft[li.id] ?? ""}
                         onChange={(e) =>
-                          setMatchDraft((d) => ({ ...d, [li.id]: e.target.value }))
+                          setMatchDraft((d) => ({
+                            ...d,
+                            [li.id]: e.target.value,
+                          }))
                         }
                         className="h-8 w-28 text-right"
                       />
@@ -1845,7 +2391,8 @@ export default function JobFinancialsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-orange-500" /> Confirm change order
+              <Sparkles className="h-5 w-5 text-orange-500" /> Confirm change
+              order
             </DialogTitle>
           </DialogHeader>
           {coDraft ? (
@@ -1862,12 +2409,16 @@ export default function JobFinancialsPage() {
                     aria-label="CO #"
                     value={coDraft.number}
                     onChange={(e) =>
-                      setCoDraft((d) => (d ? { ...d, number: e.target.value } : d))
+                      setCoDraft((d) =>
+                        d ? { ...d, number: e.target.value } : d,
+                      )
                     }
                   />
                 </label>
                 <label className="block">
-                  <span className="text-xs text-muted-foreground">Amount (USD)</span>
+                  <span className="text-xs text-muted-foreground">
+                    Amount (USD)
+                  </span>
                   <Input
                     aria-label="Amount (USD)"
                     type="number"
@@ -1883,7 +2434,9 @@ export default function JobFinancialsPage() {
                 </label>
               </div>
               <label className="block">
-                <span className="text-xs text-muted-foreground">Description</span>
+                <span className="text-xs text-muted-foreground">
+                  Description
+                </span>
                 <Input
                   aria-label="Description"
                   value={coDraft.description}
@@ -1902,7 +2455,9 @@ export default function JobFinancialsPage() {
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   value={coDraft.areaId}
                   onChange={(e) =>
-                    setCoDraft((d) => (d ? { ...d, areaId: e.target.value } : d))
+                    setCoDraft((d) =>
+                      d ? { ...d, areaId: e.target.value } : d,
+                    )
                   }
                 >
                   <option value="">— None —</option>
@@ -1916,11 +2471,20 @@ export default function JobFinancialsPage() {
             </div>
           ) : null}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setCoDraft(null)} disabled={coSaving}>
+            <Button
+              variant="ghost"
+              onClick={() => setCoDraft(null)}
+              disabled={coSaving}
+            >
               Cancel
             </Button>
-            <Button onClick={() => void saveParsedChangeOrder()} disabled={coSaving}>
-              {coSaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            <Button
+              onClick={() => void saveParsedChangeOrder()}
+              disabled={coSaving}
+            >
+              {coSaving ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
               Save change order
             </Button>
           </DialogFooter>
@@ -1940,7 +2504,9 @@ export default function JobFinancialsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingFinancial}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deletingFinancial}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               disabled={deletingFinancial}
               className="bg-red-600 text-white hover:bg-red-700"
@@ -1949,7 +2515,9 @@ export default function JobFinancialsPage() {
                 void confirmDeleteLineItem()
               }}
             >
-              {deletingFinancial ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              {deletingFinancial ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1971,7 +2539,9 @@ export default function JobFinancialsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingFinancial}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deletingFinancial}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               disabled={deletingFinancial}
               className="bg-red-600 text-white hover:bg-red-700"
@@ -1980,7 +2550,9 @@ export default function JobFinancialsPage() {
                 void confirmDeleteArea()
               }}
             >
-              {deletingFinancial ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              {deletingFinancial ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2000,7 +2572,9 @@ export default function JobFinancialsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingFinancial}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deletingFinancial}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               disabled={deletingFinancial}
               className="bg-red-600 text-white hover:bg-red-700"
@@ -2009,7 +2583,9 @@ export default function JobFinancialsPage() {
                 void confirmDeleteInvoice()
               }}
             >
-              {deletingFinancial ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              {deletingFinancial ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -153,6 +153,14 @@
       "tag": "0020_verify_auto_migrate",
       "breakpoints": true,
       "checksum": "b67dca6f24cb088f47afbfd6f8b42e825f5dc123bd0542467b552e3a5c5f038f"
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1778702400000,
+      "tag": "0021_financials_retention",
+      "breakpoints": true,
+      "checksum": "d429297a061583662b3329b0e2d3ef7d03f155237d2aab48f4a97b3332e657f3"
     }
   ]
 }

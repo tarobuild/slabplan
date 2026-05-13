@@ -27,7 +27,10 @@ const timestampTz = (name: string) => timestamp(name, { withTimezone: true });
 
 const baseTimestamps = {
   createdAt: timestampTz("created_at").defaultNow().notNull(),
-  updatedAt: timestampTz("updated_at").defaultNow().$onUpdateFn(() => new Date()).notNull(),
+  updatedAt: timestampTz("updated_at")
+    .defaultNow()
+    .$onUpdateFn(() => new Date())
+    .notNull(),
 };
 
 const softDeleteTimestamp = {
@@ -37,7 +40,13 @@ const softDeleteTimestamp = {
 export const userRoles = ["admin", "project_manager", "crew_member"] as const;
 export const jobStatuses = ["open", "closed", "archived"] as const;
 export const fileMediaTypes = ["document", "photo", "video"] as const;
-export const folderScopes = ["resource", "job", "lead", "daily_log", "schedule_item"] as const;
+export const folderScopes = [
+  "resource",
+  "job",
+  "lead",
+  "daily_log",
+  "schedule_item",
+] as const;
 export const folderScopeEnum = pgEnum("folder_scope", folderScopes);
 export const leadStatuses = [
   "open",
@@ -114,8 +123,13 @@ export const users = pgTable(
     ...softDeleteTimestamp,
   },
   (table) => [
-    uniqueIndex("users_email_unique").on(table.email).where(sql`${table.deletedAt} is null`),
-    check("users_role_check", sql`${table.role} in ('admin', 'project_manager', 'crew_member')`),
+    uniqueIndex("users_email_unique")
+      .on(table.email)
+      .where(sql`${table.deletedAt} is null`),
+    check(
+      "users_role_check",
+      sql`${table.role} in ('admin', 'project_manager', 'crew_member')`,
+    ),
     index("users_invite_token_hash_idx").on(table.inviteTokenHash),
   ],
 );
@@ -148,7 +162,9 @@ export const clients = pgTable(
     state: varchar("state", { length: 2 }),
     zipCode: varchar("zip_code", { length: 10 }),
     notes: text("notes"),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },
@@ -159,7 +175,9 @@ export const clientContacts = pgTable(
   "client_contacts",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
     firstName: varchar("first_name", { length: 100 }),
     lastName: varchar("last_name", { length: 100 }),
     title: varchar("title", { length: 100 }),
@@ -201,11 +219,15 @@ export const jobs = pgTable(
     subVendorNotes: text("sub_vendor_notes"),
     squareFeet: numeric("square_feet", { precision: 10, scale: 2 }),
     permitNumber: varchar("permit_number", { length: 100 }),
-    projectManagerId: uuid("project_manager_id").references(() => users.id, { onDelete: "set null" }),
+    projectManagerId: uuid("project_manager_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     clientId: uuid("client_id").references(() => clients.id),
     contractValueCents: bigint("contract_value_cents", { mode: "number" }),
     amountPaidCents: bigint("amount_paid_cents", { mode: "number" }),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },
@@ -213,7 +235,10 @@ export const jobs = pgTable(
     index("jobs_client_id_idx").on(table.clientId),
     index("jobs_created_by_idx").on(table.createdBy),
     index("jobs_project_manager_id_idx").on(table.projectManagerId),
-    check("jobs_status_check", sql`${table.status} in ('open', 'closed', 'archived')`),
+    check(
+      "jobs_status_check",
+      sql`${table.status} in ('open', 'closed', 'archived')`,
+    ),
     check(
       "jobs_contract_type_check",
       sql`${table.contractType} is null or ${table.contractType} in ('fixed_price', 'open_book')`,
@@ -233,8 +258,12 @@ export const jobAssignees = pgTable(
   "job_assignees",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
-    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    jobId: uuid("job_id")
+      .references(() => jobs.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -252,12 +281,23 @@ export const folders = pgTable(
     scope: folderScopeEnum("scope").notNull(),
     jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }),
     leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
-    dailyLogId: uuid("daily_log_id").references(() => dailyLogs.id, { onDelete: "cascade" }),
-    scheduleItemId: uuid("schedule_item_id").references(() => scheduleItems.id, { onDelete: "cascade" }),
+    dailyLogId: uuid("daily_log_id").references(() => dailyLogs.id, {
+      onDelete: "cascade",
+    }),
+    scheduleItemId: uuid("schedule_item_id").references(
+      () => scheduleItems.id,
+      { onDelete: "cascade" },
+    ),
     parentFolderId: uuid("parent_folder_id"),
     mediaType: varchar("media_type", { length: 50 }).notNull(),
-    viewingPermissions: json("viewing_permissions").$type<Record<string, unknown> | null>(),
-    uploadingPermissions: json("uploading_permissions").$type<Record<string, unknown> | null>(),
+    viewingPermissions: json("viewing_permissions").$type<Record<
+      string,
+      unknown
+    > | null>(),
+    uploadingPermissions: json("uploading_permissions").$type<Record<
+      string,
+      unknown
+    > | null>(),
     isGlobal: boolean("is_global").default(false),
     ...baseTimestamps,
     ...softDeleteTimestamp,
@@ -277,34 +317,26 @@ export const folders = pgTable(
     index("folders_daily_log_id_idx").on(table.dailyLogId),
     index("folders_schedule_item_id_idx").on(table.scheduleItemId),
     index("folders_parent_folder_id_idx").on(table.parentFolderId),
-    uniqueIndex("folders_job_title_parent_media_unique").on(
-      table.jobId,
-      table.title,
-      table.parentFolderId,
-      table.mediaType,
-    ).where(
-      sql`${table.deletedAt} is null and ${table.scope} = 'job' and ${table.jobId} is not null and ${table.parentFolderId} is not null`,
-    ),
-    uniqueIndex("folders_job_title_root_media_unique").on(
-      table.jobId,
-      table.title,
-      table.mediaType,
-    ).where(
-      sql`${table.deletedAt} is null and ${table.scope} = 'job' and ${table.jobId} is not null and ${table.parentFolderId} is null`,
-    ),
-    uniqueIndex("folders_resource_title_parent_media_unique").on(
-      table.title,
-      table.parentFolderId,
-      table.mediaType,
-    ).where(
-      sql`${table.deletedAt} is null and ${table.scope} = 'resource' and ${table.jobId} is null and ${table.parentFolderId} is not null`,
-    ),
-    uniqueIndex("folders_resource_title_root_media_unique").on(
-      table.title,
-      table.mediaType,
-    ).where(
-      sql`${table.deletedAt} is null and ${table.scope} = 'resource' and ${table.jobId} is null and ${table.parentFolderId} is null`,
-    ),
+    uniqueIndex("folders_job_title_parent_media_unique")
+      .on(table.jobId, table.title, table.parentFolderId, table.mediaType)
+      .where(
+        sql`${table.deletedAt} is null and ${table.scope} = 'job' and ${table.jobId} is not null and ${table.parentFolderId} is not null`,
+      ),
+    uniqueIndex("folders_job_title_root_media_unique")
+      .on(table.jobId, table.title, table.mediaType)
+      .where(
+        sql`${table.deletedAt} is null and ${table.scope} = 'job' and ${table.jobId} is not null and ${table.parentFolderId} is null`,
+      ),
+    uniqueIndex("folders_resource_title_parent_media_unique")
+      .on(table.title, table.parentFolderId, table.mediaType)
+      .where(
+        sql`${table.deletedAt} is null and ${table.scope} = 'resource' and ${table.jobId} is null and ${table.parentFolderId} is not null`,
+      ),
+    uniqueIndex("folders_resource_title_root_media_unique")
+      .on(table.title, table.mediaType)
+      .where(
+        sql`${table.deletedAt} is null and ${table.scope} = 'resource' and ${table.jobId} is null and ${table.parentFolderId} is null`,
+      ),
   ],
 );
 
@@ -312,14 +344,18 @@ export const files = pgTable(
   "files",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    folderId: uuid("folder_id").references(() => folders.id, { onDelete: "cascade" }).notNull(),
+    folderId: uuid("folder_id")
+      .references(() => folders.id, { onDelete: "cascade" })
+      .notNull(),
     filename: varchar("filename", { length: 255 }).notNull(),
     originalName: varchar("original_name", { length: 255 }).notNull(),
     fileUrl: varchar("file_url", { length: 500 }),
     fileSize: bigint("file_size", { mode: "number" }),
     mimeType: varchar("mime_type", { length: 100 }),
     note: text("note"),
-    uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    uploadedBy: uuid("uploaded_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     // Whole-second video length captured by the client's metadata probe at
     // upload time (Task #368). Null for non-video files and for older rows
     // that predate the column. Stored once so the Files > Videos browser
@@ -362,7 +398,9 @@ export const leads = pgTable(
     projectType: varchar("project_type", { length: 100 }),
     notes: text("notes"),
     leadSource: varchar("lead_source", { length: 255 }),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },
@@ -372,7 +410,10 @@ export const leads = pgTable(
       "leads_status_check",
       sql`${table.status} in ('open', 'in_negotiation', 'won', 'lost', 'archived', 'qualified')`,
     ),
-    check("leads_confidence_range", sql`${table.confidence} >= 0 and ${table.confidence} <= 100`),
+    check(
+      "leads_confidence_range",
+      sql`${table.confidence} >= 0 and ${table.confidence} <= 100`,
+    ),
   ],
 );
 
@@ -380,7 +421,9 @@ export const leadContacts = pgTable(
   "lead_contacts",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+    leadId: uuid("lead_id")
+      .references(() => leads.id, { onDelete: "cascade" })
+      .notNull(),
     firstName: varchar("first_name", { length: 100 }),
     lastName: varchar("last_name", { length: 100 }),
     displayName: varchar("display_name", { length: 255 }).notNull(),
@@ -402,8 +445,12 @@ export const leadSalespeople = pgTable(
   "lead_salespeople",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
-    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    leadId: uuid("lead_id")
+      .references(() => leads.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -416,30 +463,45 @@ export const leadTags = pgTable(
   "lead_tags",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+    leadId: uuid("lead_id")
+      .references(() => leads.id, { onDelete: "cascade" })
+      .notNull(),
     tagName: varchar("tag_name", { length: 100 }).notNull(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
-  (table) => [unique("lead_tags_lead_tag_unique").on(table.leadId, table.tagName)],
+  (table) => [
+    unique("lead_tags_lead_tag_unique").on(table.leadId, table.tagName),
+  ],
 );
 
 export const leadSources = pgTable(
   "lead_sources",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
+    leadId: uuid("lead_id")
+      .references(() => leads.id, { onDelete: "cascade" })
+      .notNull(),
     sourceName: varchar("source_name", { length: 100 }).notNull(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
-  (table) => [unique("lead_sources_lead_source_unique").on(table.leadId, table.sourceName)],
+  (table) => [
+    unique("lead_sources_lead_source_unique").on(
+      table.leadId,
+      table.sourceName,
+    ),
+  ],
 );
 
 export const leadAttachments = pgTable(
   "lead_attachments",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
-    fileId: uuid("file_id").references(() => files.id, { onDelete: "cascade" }).notNull(),
+    leadId: uuid("lead_id")
+      .references(() => leads.id, { onDelete: "cascade" })
+      .notNull(),
+    fileId: uuid("file_id")
+      .references(() => files.id, { onDelete: "cascade" })
+      .notNull(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -459,7 +521,9 @@ export const schedulePhases = pgTable(
     color: varchar("color", { length: 50 }).default("#e76f8a"),
     ...baseTimestamps,
   },
-  (table) => [unique("schedule_phases_job_name_unique").on(table.jobId, table.name)],
+  (table) => [
+    unique("schedule_phases_job_name_unique").on(table.jobId, table.name),
+  ],
 );
 
 export const scheduleTagSettings = pgTable(
@@ -472,19 +536,28 @@ export const scheduleTagSettings = pgTable(
     name: varchar("name", { length: 100 }).notNull(),
     ...baseTimestamps,
   },
-  (table) => [unique("schedule_tag_settings_job_name_unique").on(table.jobId, table.name)],
+  (table) => [
+    unique("schedule_tag_settings_job_name_unique").on(table.jobId, table.name),
+  ],
 );
 
 export const scheduleItems = pgTable(
   "schedule_items",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
-    schedulePhaseId: uuid("schedule_phase_id").references(() => schedulePhases.id, {
-      onDelete: "set null",
-    }),
+    jobId: uuid("job_id")
+      .references(() => jobs.id, { onDelete: "cascade" })
+      .notNull(),
+    schedulePhaseId: uuid("schedule_phase_id").references(
+      () => schedulePhases.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     title: varchar("title", { length: 255 }).notNull(),
-    displayColor: varchar("display_color", { length: 50 }).notNull().default("#2563eb"),
+    displayColor: varchar("display_color", { length: 50 })
+      .notNull()
+      .default("#2563eb"),
     startDate: date("start_date", { mode: "string" }).notNull(),
     workDays: integer("work_days").notNull(),
     endDate: date("end_date", { mode: "string" }).notNull(),
@@ -500,7 +573,9 @@ export const scheduleItems = pgTable(
     isComplete: boolean("is_complete").default(false),
     isPersonalTodo: boolean("is_personal_todo").default(false),
     notes: text("notes"),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },
@@ -508,7 +583,10 @@ export const scheduleItems = pgTable(
     index("schedule_items_created_by_idx").on(table.createdBy),
     index("schedule_items_job_id_idx").on(table.jobId),
     index("schedule_items_schedule_phase_id_idx").on(table.schedulePhaseId),
-    check("schedule_items_progress_range", sql`${table.progress} >= 0 and ${table.progress} <= 100`),
+    check(
+      "schedule_items_progress_range",
+      sql`${table.progress} >= 0 and ${table.progress} <= 100`,
+    ),
   ],
 );
 
@@ -516,10 +594,14 @@ export const scheduleItemAssignees = pgTable(
   "schedule_item_assignees",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    scheduleItemId: uuid("schedule_item_id").references(() => scheduleItems.id, {
-      onDelete: "cascade",
-    }).notNull(),
-    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    scheduleItemId: uuid("schedule_item_id")
+      .references(() => scheduleItems.id, {
+        onDelete: "cascade",
+      })
+      .notNull(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -539,7 +621,9 @@ export const scheduleItemNotes = pgTable(
       .references(() => scheduleItems.id, { onDelete: "cascade" })
       .notNull(),
     note: text("note").notNull(),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -561,7 +645,10 @@ export const scheduleItemAttachments = pgTable(
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
-    unique("schedule_item_attachments_item_file_unique").on(table.scheduleItemId, table.fileId),
+    unique("schedule_item_attachments_item_file_unique").on(
+      table.scheduleItemId,
+      table.fileId,
+    ),
     index("schedule_item_attachments_file_id_idx").on(table.fileId),
   ],
 );
@@ -575,7 +662,9 @@ export const scheduleItemTodos = pgTable(
       .notNull(),
     title: varchar("title", { length: 255 }).notNull(),
     isComplete: boolean("is_complete").default(false),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
   },
   (table) => [
@@ -590,11 +679,19 @@ export const scheduleSettings = pgTable("schedule_settings", {
     .references(() => jobs.id, { onDelete: "cascade" })
     .notNull()
     .unique(),
-  defaultView: varchar("default_view", { length: 100 }).default("calendar_month"),
+  defaultView: varchar("default_view", { length: 100 }).default(
+    "calendar_month",
+  ),
   showTimesOnMonthView: boolean("show_times_on_month_view").default(false),
-  showJobNameOnAllListedJobs: boolean("show_job_name_on_all_listed_jobs").default(true),
-  automaticallyMarkItemsComplete: boolean("automatically_mark_items_complete").default(false),
-  includeHeaderOnPdfExports: boolean("include_header_on_pdf_exports").default(true),
+  showJobNameOnAllListedJobs: boolean(
+    "show_job_name_on_all_listed_jobs",
+  ).default(true),
+  automaticallyMarkItemsComplete: boolean(
+    "automatically_mark_items_complete",
+  ).default(false),
+  includeHeaderOnPdfExports: boolean("include_header_on_pdf_exports").default(
+    true,
+  ),
   ...baseTimestamps,
 });
 
@@ -607,7 +704,9 @@ export const scheduleBaselines = pgTable(
       .notNull()
       .unique(),
     capturedAt: timestampTz("captured_at").defaultNow().notNull(),
-    capturedBy: uuid("captured_by").references(() => users.id, { onDelete: "set null" }),
+    capturedBy: uuid("captured_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     itemsSnapshot: json("items_snapshot").$type<
       Array<{
         scheduleItemId: string;
@@ -625,11 +724,18 @@ export const scheduleWorkdayExceptionCategories = pgTable(
   "schedule_workday_exception_categories",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+    jobId: uuid("job_id")
+      .references(() => jobs.id, { onDelete: "cascade" })
+      .notNull(),
     name: varchar("name", { length: 100 }).notNull(),
     ...baseTimestamps,
   },
-  (table) => [unique("schedule_workday_exception_categories_job_name_unique").on(table.jobId, table.name)],
+  (table) => [
+    unique("schedule_workday_exception_categories_job_name_unique").on(
+      table.jobId,
+      table.name,
+    ),
+  ],
 );
 
 export const scheduleWorkdayExceptions = pgTable(
@@ -641,13 +747,18 @@ export const scheduleWorkdayExceptions = pgTable(
     startDate: date("start_date", { mode: "string" }).notNull(),
     endDate: date("end_date", { mode: "string" }).notNull(),
     sameEveryYear: boolean("same_every_year").default(false),
-    categoryId: uuid("category_id").references(() => scheduleWorkdayExceptionCategories.id, {
-      onDelete: "set null",
-    }),
+    categoryId: uuid("category_id").references(
+      () => scheduleWorkdayExceptionCategories.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     appliesToAllJobs: boolean("applies_to_all_jobs").default(false),
     jobIds: json("job_ids").$type<string[] | null>(),
     notes: varchar("notes", { length: 500 }),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
   },
   (table) => [
@@ -670,14 +781,21 @@ export const scheduleItemPredecessors = pgTable(
     lagDays: integer("lag_days").default(0).notNull(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
-  (table) => [unique("schedule_item_predecessors_item_predecessor_unique").on(table.scheduleItemId, table.predecessorId)],
+  (table) => [
+    unique("schedule_item_predecessors_item_predecessor_unique").on(
+      table.scheduleItemId,
+      table.predecessorId,
+    ),
+  ],
 );
 
 export const dailyLogs = pgTable(
   "daily_logs",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+    jobId: uuid("job_id")
+      .references(() => jobs.id, { onDelete: "cascade" })
+      .notNull(),
     logDate: date("log_date", { mode: "string" }).notNull(),
     title: varchar("title", { length: 255 }),
     notes: text("notes").notNull(),
@@ -689,8 +807,13 @@ export const dailyLogs = pgTable(
     shareSubsVendors: boolean("share_subs_vendors").default(false),
     shareClient: boolean("share_client").default(false),
     isPrivate: boolean("is_private").default(false),
-    customFieldValues: json("custom_field_values").$type<Record<string, string | number | boolean | null> | null>(),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    customFieldValues: json("custom_field_values").$type<Record<
+      string,
+      string | number | boolean | null
+    > | null>(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     publishedAt: timestampTz("published_at"),
     ...baseTimestamps,
     ...softDeleteTimestamp,
@@ -708,14 +831,30 @@ export const dailyLogSettings = pgTable(
     singleton: boolean("singleton").notNull().default(true),
     stampLocation: boolean("stamp_location").default(false),
     defaultNotes: text("default_notes").default(""),
-    includeWeatherByDefault: boolean("include_weather_by_default").default(true),
-    includeWeatherNotesByDefault: boolean("include_weather_notes_by_default").default(false),
-    shareInternalUsersByDefault: boolean("share_internal_users_by_default").default(true),
-    notifyInternalUsersByDefault: boolean("notify_internal_users_by_default").default(false),
-    shareEstimatorsByDefault: boolean("share_estimators_by_default").default(false),
-    notifyEstimatorsByDefault: boolean("notify_estimators_by_default").default(false),
-    shareInstallersByDefault: boolean("share_installers_by_default").default(false),
-    notifyInstallersByDefault: boolean("notify_installers_by_default").default(false),
+    includeWeatherByDefault: boolean("include_weather_by_default").default(
+      true,
+    ),
+    includeWeatherNotesByDefault: boolean(
+      "include_weather_notes_by_default",
+    ).default(false),
+    shareInternalUsersByDefault: boolean(
+      "share_internal_users_by_default",
+    ).default(true),
+    notifyInternalUsersByDefault: boolean(
+      "notify_internal_users_by_default",
+    ).default(false),
+    shareEstimatorsByDefault: boolean("share_estimators_by_default").default(
+      false,
+    ),
+    notifyEstimatorsByDefault: boolean("notify_estimators_by_default").default(
+      false,
+    ),
+    shareInstallersByDefault: boolean("share_installers_by_default").default(
+      false,
+    ),
+    notifyInstallersByDefault: boolean("notify_installers_by_default").default(
+      false,
+    ),
     ...baseTimestamps,
   },
   (table) => [
@@ -741,14 +880,21 @@ export const dailyLogAttachments = pgTable(
   "daily_log_attachments",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    dailyLogId: uuid("daily_log_id").references(() => dailyLogs.id, {
-      onDelete: "cascade",
-    }).notNull(),
-    fileId: uuid("file_id").references(() => files.id, { onDelete: "cascade" }).notNull(),
+    dailyLogId: uuid("daily_log_id")
+      .references(() => dailyLogs.id, {
+        onDelete: "cascade",
+      })
+      .notNull(),
+    fileId: uuid("file_id")
+      .references(() => files.id, { onDelete: "cascade" })
+      .notNull(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
-    unique("daily_log_attachments_log_file_unique").on(table.dailyLogId, table.fileId),
+    unique("daily_log_attachments_log_file_unique").on(
+      table.dailyLogId,
+      table.fileId,
+    ),
     index("daily_log_attachments_file_id_idx").on(table.fileId),
   ],
 );
@@ -757,13 +903,17 @@ export const dailyLogTags = pgTable(
   "daily_log_tags",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    dailyLogId: uuid("daily_log_id").references(() => dailyLogs.id, {
-      onDelete: "cascade",
-    }).notNull(),
+    dailyLogId: uuid("daily_log_id")
+      .references(() => dailyLogs.id, {
+        onDelete: "cascade",
+      })
+      .notNull(),
     tagName: varchar("tag_name", { length: 100 }).notNull(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
-  (table) => [unique("daily_log_tags_log_tag_unique").on(table.dailyLogId, table.tagName)],
+  (table) => [
+    unique("daily_log_tags_log_tag_unique").on(table.dailyLogId, table.tagName),
+  ],
 );
 
 export const dailyLogLikes = pgTable(
@@ -779,7 +929,10 @@ export const dailyLogLikes = pgTable(
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
-    unique("daily_log_likes_log_user_unique").on(table.dailyLogId, table.userId),
+    unique("daily_log_likes_log_user_unique").on(
+      table.dailyLogId,
+      table.userId,
+    ),
     index("daily_log_likes_user_id_idx").on(table.userId),
   ],
 );
@@ -792,21 +945,21 @@ export const dailyLogComments = pgTable(
       .references(() => dailyLogs.id, { onDelete: "cascade" })
       .notNull(),
     parentCommentId: uuid("parent_comment_id"),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     body: text("body").notNull(),
     mentions: json("mentions").$type<string[] | null>(),
-    attachments: json("attachments").$type<
-      Array<{
-        name: string;
-        // Legacy base64 / inline data URL form. Newer comments persist a
-        // `fileId` and `fileUrl` instead and rely on the authenticated
-        // /uploads/... stream. Both shapes coexist on read.
-        url?: string | null;
-        mimeType: string | null;
-        fileId?: string | null;
-        fileUrl?: string | null;
-      }> | null
-    >(),
+    attachments: json("attachments").$type<Array<{
+      name: string;
+      // Legacy base64 / inline data URL form. Newer comments persist a
+      // `fileId` and `fileUrl` instead and rely on the authenticated
+      // /uploads/... stream. Both shapes coexist on read.
+      url?: string | null;
+      mimeType: string | null;
+      fileId?: string | null;
+      fileUrl?: string | null;
+    }> | null>(),
     links: json("links").$type<string[] | null>(),
     reactions: json("reactions").$type<Record<string, string[]> | null>(),
     ...baseTimestamps,
@@ -833,7 +986,9 @@ export const dailyLogTodos = pgTable(
       .notNull(),
     title: varchar("title", { length: 255 }).notNull(),
     isComplete: boolean("is_complete").default(false),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
   },
   (table) => [
@@ -888,10 +1043,7 @@ export const fileAnnotations = pgTable(
       "file_annotations_tool_type_check",
       sql`${table.toolType} in ('highlighter','pen','line','arrow','rectangle','ellipse','sticky_note','text_label')`,
     ),
-    check(
-      "file_annotations_page_positive",
-      sql`${table.page} >= 1`,
-    ),
+    check("file_annotations_page_positive", sql`${table.page} >= 1`),
   ],
 );
 
@@ -936,7 +1088,9 @@ export const idempotencyKeys = pgTable(
     requestHash: varchar("request_hash", { length: 128 }).notNull(),
     statusCode: integer("status_code").notNull(),
     responseBody: text("response_body").notNull(),
-    responseContentType: varchar("response_content_type", { length: 100 }).notNull().default("application/json"),
+    responseContentType: varchar("response_content_type", { length: 100 })
+      .notNull()
+      .default("application/json"),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
     expiresAt: timestampTz("expires_at").notNull(),
   },
@@ -958,7 +1112,9 @@ export const activityLog = pgTable(
     entityType: varchar("entity_type", { length: 100 }).notNull(),
     entityId: uuid("entity_id").notNull(),
     action: varchar("action", { length: 100 }).notNull(),
-    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    userId: uuid("user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     metadata: json("metadata").$type<Record<string, unknown> | null>(),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
@@ -994,13 +1150,17 @@ export type ScheduleTagSetting = typeof scheduleTagSettings.$inferSelect;
 export type ScheduleItem = typeof scheduleItems.$inferSelect;
 export type ScheduleItemAssignee = typeof scheduleItemAssignees.$inferSelect;
 export type ScheduleItemNote = typeof scheduleItemNotes.$inferSelect;
-export type ScheduleItemAttachment = typeof scheduleItemAttachments.$inferSelect;
+export type ScheduleItemAttachment =
+  typeof scheduleItemAttachments.$inferSelect;
 export type ScheduleItemTodo = typeof scheduleItemTodos.$inferSelect;
 export type ScheduleSetting = typeof scheduleSettings.$inferSelect;
 export type ScheduleBaseline = typeof scheduleBaselines.$inferSelect;
-export type ScheduleWorkdayExceptionCategory = typeof scheduleWorkdayExceptionCategories.$inferSelect;
-export type ScheduleWorkdayException = typeof scheduleWorkdayExceptions.$inferSelect;
-export type ScheduleItemPredecessor = typeof scheduleItemPredecessors.$inferSelect;
+export type ScheduleWorkdayExceptionCategory =
+  typeof scheduleWorkdayExceptionCategories.$inferSelect;
+export type ScheduleWorkdayException =
+  typeof scheduleWorkdayExceptions.$inferSelect;
+export type ScheduleItemPredecessor =
+  typeof scheduleItemPredecessors.$inferSelect;
 export type DailyLog = typeof dailyLogs.$inferSelect;
 export type DailyLogSettings = typeof dailyLogSettings.$inferSelect;
 export type DailyLogCustomField = typeof dailyLogCustomFields.$inferSelect;
@@ -1028,17 +1188,34 @@ export const financialTrackers = pgTable(
   "financial_trackers",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "cascade" }).notNull(),
+    jobId: uuid("job_id")
+      .references(() => jobs.id, { onDelete: "cascade" })
+      .notNull(),
     projectName: varchar("project_name", { length: 255 }),
     contractDate: date("contract_date", { mode: "string" }),
     currency: varchar("currency", { length: 8 }).notNull().default("USD"),
+    retentionEnabled: boolean("retention_enabled").notNull().default(false),
+    retentionRateBps: integer("retention_rate_bps").notNull().default(1000),
+    retentionReleasedAt: timestampTz("retention_released_at"),
+    retentionReleasedBy: uuid("retention_released_by").references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
     rawEstimateResponse: json("raw_estimate_response").$type<unknown>(),
-    estimateFileId: uuid("estimate_file_id").references(() => files.id, { onDelete: "set null" }),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    estimateFileId: uuid("estimate_file_id").references(() => files.id, {
+      onDelete: "set null",
+    }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
   },
   (table) => [
     uniqueIndex("financial_trackers_job_id_unique").on(table.jobId),
+    check(
+      "financial_trackers_retention_rate_range",
+      sql`${table.retentionRateBps} >= 0 AND ${table.retentionRateBps} <= 10000`,
+    ),
   ],
 );
 
@@ -1052,7 +1229,9 @@ export const sovAreas = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     floor: varchar("floor", { length: 100 }),
     sortOrder: integer("sort_order").notNull().default(0),
-    isChangeOrderGroup: boolean("is_change_order_group").notNull().default(false),
+    isChangeOrderGroup: boolean("is_change_order_group")
+      .notNull()
+      .default(false),
     ...baseTimestamps,
   },
   (table) => [index("sov_areas_tracker_id_idx").on(table.trackerId)],
@@ -1062,13 +1241,21 @@ export const sovLineItems = pgTable(
   "sov_line_items",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
-    areaId: uuid("area_id").references(() => sovAreas.id, { onDelete: "cascade" }).notNull(),
+    areaId: uuid("area_id")
+      .references(() => sovAreas.id, { onDelete: "cascade" })
+      .notNull(),
     description: text("description").notNull(),
     qty: numeric("qty", { precision: 12, scale: 3 }).notNull().default("1"),
     rateCents: bigint("rate_cents", { mode: "number" }).notNull().default(0),
-    scheduledValueCents: bigint("scheduled_value_cents", { mode: "number" }).notNull().default(0),
-    billedCents: bigint("billed_cents", { mode: "number" }).notNull().default(0),
-    percentComplete: numeric("percent_complete", { precision: 5, scale: 2 }).notNull().default("0"),
+    scheduledValueCents: bigint("scheduled_value_cents", { mode: "number" })
+      .notNull()
+      .default(0),
+    billedCents: bigint("billed_cents", { mode: "number" })
+      .notNull()
+      .default(0),
+    percentComplete: numeric("percent_complete", { precision: 5, scale: 2 })
+      .notNull()
+      .default("0"),
     isRemoved: boolean("is_removed").notNull().default(false),
     isChangeOrder: boolean("is_change_order").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -1092,9 +1279,13 @@ export const changeOrders = pgTable(
       .notNull(),
     number: varchar("number", { length: 64 }).notNull(),
     description: text("description"),
-    amountCents: bigint("amount_cents", { mode: "number" }).notNull().default(0),
+    amountCents: bigint("amount_cents", { mode: "number" })
+      .notNull()
+      .default(0),
     status: varchar("status", { length: 32 }).notNull().default("pending"),
-    areaId: uuid("area_id").references(() => sovAreas.id, { onDelete: "set null" }),
+    areaId: uuid("area_id").references(() => sovAreas.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
   },
   (table) => [index("change_orders_tracker_id_idx").on(table.trackerId)],
@@ -1110,10 +1301,20 @@ export const trackerInvoices = pgTable(
     invoiceNumber: varchar("invoice_number", { length: 128 }),
     invoiceDate: date("invoice_date", { mode: "string" }),
     totalCents: bigint("total_cents", { mode: "number" }).notNull().default(0),
-    fileId: uuid("file_id").references(() => files.id, { onDelete: "set null" }),
+    retentionHeldCents: bigint("retention_held_cents", { mode: "number" })
+      .notNull()
+      .default(0),
+    netPaidCents: bigint("net_paid_cents", { mode: "number" })
+      .notNull()
+      .default(0),
+    fileId: uuid("file_id").references(() => files.id, {
+      onDelete: "set null",
+    }),
     rawAiResponse: json("raw_ai_response").$type<unknown>(),
     appliedAt: timestampTz("applied_at"),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     ...baseTimestamps,
   },
   (table) => [
@@ -1135,7 +1336,9 @@ export const invoiceLinePayments = pgTable(
     lineItemId: uuid("line_item_id")
       .references(() => sovLineItems.id, { onDelete: "cascade" })
       .notNull(),
-    amountCents: bigint("amount_cents", { mode: "number" }).notNull().default(0),
+    amountCents: bigint("amount_cents", { mode: "number" })
+      .notNull()
+      .default(0),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -1168,13 +1371,15 @@ export type NewInvoiceLinePayment = typeof invoiceLinePayments.$inferInsert;
 // is one token bucket. `bucketKey` is the composite `${keyPrefix}:${key}`
 // the limiter already builds, so a single table covers every limiter
 // (login-by-IP, login-by-email, global IP, per-user, AI parse, uploads).
-export const rateLimitBuckets = pgTable("rate_limit_buckets", {
-  bucketKey: text("bucket_key").primaryKey(),
-  count: integer("count").notNull(),
-  resetAt: timestampTz("reset_at").notNull(),
-}, (table) => [
-  index("rate_limit_buckets_reset_at_idx").on(table.resetAt),
-]);
+export const rateLimitBuckets = pgTable(
+  "rate_limit_buckets",
+  {
+    bucketKey: text("bucket_key").primaryKey(),
+    count: integer("count").notNull(),
+    resetAt: timestampTz("reset_at").notNull(),
+  },
+  (table) => [index("rate_limit_buckets_reset_at_idx").on(table.resetAt)],
+);
 
 export type RateLimitBucket = typeof rateLimitBuckets.$inferSelect;
 export type NewRateLimitBucket = typeof rateLimitBuckets.$inferInsert;

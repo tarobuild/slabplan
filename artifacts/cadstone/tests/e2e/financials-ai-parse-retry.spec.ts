@@ -1,10 +1,6 @@
 import { expect, test, type Route } from "@playwright/test"
 import { CESAR, authHeaders, loginViaApi } from "./helpers/auth"
-import {
-  createCustomJob,
-  deleteJob,
-  requireAnyClient,
-} from "./helpers/api"
+import { createCustomJob, deleteJob, requireAnyClient } from "./helpers/api"
 import { CESAR_STATE } from "./helpers/storage"
 
 // Round-8 follow-up coverage for the inline "Try again" alert that
@@ -51,6 +47,8 @@ type Invoice = {
   invoiceNumber: string | null
   invoiceDate: string | null
   totalCents: number
+  retentionHeldCents: number
+  netPaidCents: number
   appliedAt: string | null
   createdAt: string
   fileId: string | null
@@ -64,6 +62,10 @@ type TrackerData = {
     contractDate: string | null
     currency: string
     estimateFileId: string | null
+    retentionEnabled: boolean
+    retentionRateBps: number
+    retentionReleasedAt: string | null
+    retentionReleasedBy: string | null
   }
   clientId: string | null
   areas: Area[]
@@ -76,6 +78,18 @@ type TrackerData = {
     changeOrderApprovedCents: number
     contractWithChangesCents: number
     percentBilled: number
+    retention: {
+      enabled: boolean
+      rateBps: number
+      releasedAt: string | null
+      releasedBy: string | null
+      released: boolean
+      maxRetentionCents: number
+      retentionHeldCents: number
+      retentionOutstandingCents: number
+      netReceivedCents: number
+      invoiceNetPaidCents: number
+    }
   }
 }
 
@@ -85,10 +99,19 @@ function buildTracker(opts: {
   areas?: Area[]
   invoices?: Invoice[]
   estimateFileId?: string | null
+  retentionEnabled?: boolean
+  retentionRateBps?: number
+  retentionReleasedAt?: string | null
+  retentionReleasedBy?: string | null
 }): TrackerData {
   const trackerId = opts.trackerId ?? "tracker-mock"
   const areas = opts.areas ?? []
   const invoices = opts.invoices ?? []
+  const retentionEnabled = opts.retentionEnabled ?? false
+  const retentionRateBps = opts.retentionRateBps ?? 1000
+  const retentionReleasedAt = opts.retentionReleasedAt ?? null
+  const retentionReleasedBy = opts.retentionReleasedBy ?? null
+  const retentionReleased = Boolean(retentionReleasedAt)
   const sched = areas.reduce(
     (s, a) => s + a.lineItems.reduce((x, l) => x + l.scheduledValueCents, 0),
     0,
@@ -97,6 +120,26 @@ function buildTracker(opts: {
     (s, a) => s + a.lineItems.reduce((x, l) => x + l.billedCents, 0),
     0,
   )
+  const retentionHeld = invoices.reduce(
+    (sum, inv) => sum + Number(inv.retentionHeldCents ?? 0),
+    0,
+  )
+  const invoiceNetPaid = invoices.reduce(
+    (sum, inv) =>
+      sum +
+      Number(
+        inv.netPaidCents ??
+          Math.max(0, inv.totalCents - (inv.retentionHeldCents ?? 0)),
+      ),
+    0,
+  )
+  const maxRetention = retentionEnabled
+    ? Math.round((sched * retentionRateBps) / 10_000)
+    : 0
+  const netReceived =
+    retentionEnabled && !retentionReleased
+      ? Math.max(0, billed - retentionHeld)
+      : billed
   return {
     tracker: {
       id: trackerId,
@@ -105,6 +148,10 @@ function buildTracker(opts: {
       contractDate: null,
       currency: "USD",
       estimateFileId: opts.estimateFileId ?? null,
+      retentionEnabled,
+      retentionRateBps,
+      retentionReleasedAt,
+      retentionReleasedBy,
     },
     clientId: null,
     areas,
@@ -117,6 +164,21 @@ function buildTracker(opts: {
       changeOrderApprovedCents: 0,
       contractWithChangesCents: sched,
       percentBilled: sched > 0 ? Math.round((billed / sched) * 100) : 0,
+      retention: {
+        enabled: retentionEnabled,
+        rateBps: retentionRateBps,
+        releasedAt: retentionReleasedAt,
+        releasedBy: retentionReleasedBy,
+        released: retentionReleased,
+        maxRetentionCents: maxRetention,
+        retentionHeldCents: retentionEnabled ? retentionHeld : 0,
+        retentionOutstandingCents:
+          retentionEnabled && !retentionReleased
+            ? Math.max(0, maxRetention - retentionHeld)
+            : 0,
+        netReceivedCents: netReceived,
+        invoiceNetPaidCents: invoiceNetPaid,
+      },
     },
   }
 }
@@ -217,9 +279,9 @@ test.describe("financials → AI parse error retry", () => {
 
     // The estimate file input is rendered with the `hidden` attribute;
     // setInputFiles works on hidden inputs.
-    const fileInput = page.locator(
-      'input[type="file"][accept*="application/pdf"]',
-    ).first()
+    const fileInput = page
+      .locator('input[type="file"][accept*="application/pdf"]')
+      .first()
     await fileInput.setInputFiles({
       name: "broken-estimate.pdf",
       mimeType: "application/pdf",
@@ -287,9 +349,7 @@ test.describe("financials → AI parse error retry", () => {
               isRemoved: false,
               isChangeOrder: false,
               sortOrder: 0,
-              payments: [
-                { id: "pay-1", invoiceId, amountCents: 500_000 },
-              ],
+              payments: [{ id: "pay-1", invoiceId, amountCents: 500_000 }],
             },
           ],
         },
@@ -300,12 +360,12 @@ test.describe("financials → AI parse error retry", () => {
           invoiceNumber,
           invoiceDate: "2025-01-15",
           totalCents: 500_000,
+          retentionHeldCents: 0,
+          netPaidCents: 500_000,
           appliedAt: "2025-01-15T00:00:00.000Z",
           createdAt: "2025-01-15T00:00:00.000Z",
           fileId: null,
-          payments: [
-            { id: "pay-1", lineItemId, amountCents: 500_000 },
-          ],
+          payments: [{ id: "pay-1", lineItemId, amountCents: 500_000 }],
         },
       ],
     })
@@ -364,5 +424,152 @@ test.describe("financials → AI parse error retry", () => {
     expect(message).toMatch(/already has/i)
     expect(message).toMatch(/50%/)
     expect(unexpectedPatch).toBe(false)
+  })
+
+  test("retention-enabled financials show summary, invoice breakdown, ledger, and release action", async ({
+    page,
+    request,
+  }) => {
+    const title = `E2E retention ${Date.now()}`
+    createdJobId = await createCustomJob(request, token, { title, clientId })
+    const jobId = createdJobId
+    const invoiceOneId = "inv-retention-1"
+    const invoiceTwoId = "inv-retention-2"
+
+    let tracker = buildTracker({
+      jobId,
+      trackerId: "tracker-retention",
+      retentionEnabled: true,
+      retentionRateBps: 1000,
+      areas: [
+        {
+          id: "area-retention",
+          trackerId: "tracker-retention",
+          name: "Retention Area",
+          floor: null,
+          sortOrder: 0,
+          isChangeOrderGroup: false,
+          lineItems: [
+            {
+              id: "line-retention",
+              areaId: "area-retention",
+              description: "Retention Scope",
+              qty: "1",
+              rateCents: 1_000_000,
+              scheduledValueCents: 1_000_000,
+              billedCents: 500_000,
+              percentComplete: "50",
+              isRemoved: false,
+              isChangeOrder: false,
+              sortOrder: 0,
+              payments: [
+                {
+                  id: "pay-retention-1",
+                  invoiceId: invoiceOneId,
+                  amountCents: 250_000,
+                },
+                {
+                  id: "pay-retention-2",
+                  invoiceId: invoiceTwoId,
+                  amountCents: 250_000,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      invoices: [
+        {
+          id: invoiceOneId,
+          invoiceNumber: "RET-001",
+          invoiceDate: "2025-02-01",
+          totalCents: 250_000,
+          retentionHeldCents: 25_000,
+          netPaidCents: 225_000,
+          appliedAt: "2025-02-01T00:00:00.000Z",
+          createdAt: "2025-02-01T00:00:00.000Z",
+          fileId: null,
+          payments: [
+            {
+              id: "pay-retention-1",
+              lineItemId: "line-retention",
+              amountCents: 250_000,
+            },
+          ],
+        },
+        {
+          id: invoiceTwoId,
+          invoiceNumber: "RET-002",
+          invoiceDate: "2025-03-01",
+          totalCents: 250_000,
+          retentionHeldCents: 25_000,
+          netPaidCents: 225_000,
+          appliedAt: "2025-03-01T00:00:00.000Z",
+          createdAt: "2025-03-01T00:00:00.000Z",
+          fileId: null,
+          payments: [
+            {
+              id: "pay-retention-2",
+              lineItemId: "line-retention",
+              amountCents: 250_000,
+            },
+          ],
+        },
+      ],
+    })
+
+    await page.route(
+      `**/api/jobs/${jobId}/financials`,
+      async (route: Route) => {
+        if (route.request().method() !== "GET") {
+          await route.fallback()
+          return
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(tracker),
+        })
+      },
+    )
+    await page.route(
+      `**/api/jobs/${jobId}/financials/retention/release`,
+      async (route: Route) => {
+        tracker = buildTracker({
+          ...tracker,
+          jobId,
+          trackerId: tracker.tracker.id,
+          areas: tracker.areas,
+          invoices: tracker.invoices,
+          estimateFileId: tracker.tracker.estimateFileId,
+          retentionEnabled: true,
+          retentionRateBps: 1000,
+          retentionReleasedAt: "2025-04-01T00:00:00.000Z",
+          retentionReleasedBy: "00000000-0000-0000-0000-000000000001",
+        })
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(tracker),
+        })
+      },
+    )
+
+    await page.goto(`/jobs/${jobId}/financials`)
+
+    await expect(
+      page.getByText("Retention summary", { exact: true }),
+    ).toBeVisible()
+    await expect(page.getByText("Retention running totals")).toBeVisible()
+    await expect(page.getByRole("cell", { name: "RET-001" }).first()).toBeVisible()
+    await expect(page.getByRole("cell", { name: "RET-002" }).first()).toBeVisible()
+    await expect(page.getByText("$500.00").first()).toBeVisible()
+    await expect(page.getByText("$4,500.00").first()).toBeVisible()
+
+    await page.getByRole("button", { name: /mark as released/i }).click()
+    await expect(
+      page.getByRole("button", { name: /^released$/i }),
+    ).toBeVisible()
+    await expect(page.getByText("$5,000.00").first()).toBeVisible()
   })
 })

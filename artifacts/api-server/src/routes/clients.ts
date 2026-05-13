@@ -23,7 +23,10 @@ import {
 } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
-import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
+import {
+  requireAdmin,
+  requireManagerOrAbove,
+} from "../middleware/require-auth";
 import { getTrackerTotalsByJobIds } from "./financials";
 
 const router: IRouter = Router();
@@ -112,7 +115,8 @@ router.get(
   "/",
   asyncHandler(async (req, res) => {
     const query = clientListQuerySchema.safeParse(req.query);
-    if (!query.success) throw new HttpError(400, "Invalid query.", query.error.flatten());
+    if (!query.success)
+      throw new HttpError(400, "Invalid query.", query.error.flatten());
 
     const { page, pageSize, search, status } = query.data;
     const offset = (page - 1) * pageSize;
@@ -224,7 +228,9 @@ router.get(
                 and(
                   isNull(jobs.deletedAt),
                   inArray(jobs.clientId, clientIds),
-                  accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+                  accessibleJobIds
+                    ? inArray(jobs.id, accessibleJobIds)
+                    : undefined,
                 ),
               );
 
@@ -240,8 +246,16 @@ router.get(
             isPrimary: clientContacts.isPrimary,
           })
           .from(clientContacts)
-          .where(and(isNull(clientContacts.deletedAt), inArray(clientContacts.clientId, clientIds)))
-          .orderBy(desc(clientContacts.isPrimary), asc(clientContacts.firstName)),
+          .where(
+            and(
+              isNull(clientContacts.deletedAt),
+              inArray(clientContacts.clientId, clientIds),
+            ),
+          )
+          .orderBy(
+            desc(clientContacts.isPrimary),
+            asc(clientContacts.firstName),
+          ),
         jobRowsPromise,
       ]);
     }
@@ -281,12 +295,16 @@ router.get(
       const tt = trackerTotals.get(j.id);
       if (tt) {
         r.contract += tt.contractWithChangesCents;
-        r.paid += tt.billedCents;
+        r.paid += tt.netReceivedCents;
       } else {
-        if (typeof j.contractValueCents === "number") r.contract += j.contractValueCents;
+        if (typeof j.contractValueCents === "number")
+          r.contract += j.contractValueCents;
         if (typeof j.amountPaidCents === "number") r.paid += j.amountPaidCents;
       }
-      if (j.updatedAt && (!r.lastActivityAt || j.updatedAt > r.lastActivityAt)) {
+      if (
+        j.updatedAt &&
+        (!r.lastActivityAt || j.updatedAt > r.lastActivityAt)
+      ) {
         r.lastActivityAt = j.updatedAt;
       }
     }
@@ -331,7 +349,8 @@ router.post(
   "/",
   asyncHandler(async (req, res) => {
     const body = clientPayloadSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid client payload.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid client payload.", body.error.flatten());
 
     const [client] = await db
       .insert(clients)
@@ -364,7 +383,12 @@ router.get(
       db
         .select()
         .from(clientContacts)
-        .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)))
+        .where(
+          and(
+            eq(clientContacts.clientId, clientId),
+            isNull(clientContacts.deletedAt),
+          ),
+        )
         .orderBy(desc(clientContacts.isPrimary), asc(clientContacts.firstName)),
       accessibleJobIds !== null && accessibleJobIds.length === 0
         ? Promise.resolve([])
@@ -394,7 +418,9 @@ router.get(
               and(
                 eq(jobs.clientId, clientId),
                 isNull(jobs.deletedAt),
-                accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+                accessibleJobIds
+                  ? inArray(jobs.id, accessibleJobIds)
+                  : undefined,
               ),
             )
             .orderBy(desc(jobs.createdAt)),
@@ -416,7 +442,7 @@ router.get(
           ? j.contractValueCents
           : 0;
       const paid = tt
-        ? tt.billedCents
+        ? tt.netReceivedCents
         : typeof j.amountPaidCents === "number"
           ? j.amountPaidCents
           : 0;
@@ -461,7 +487,8 @@ router.put(
     await getClientOrThrow(clientId);
 
     const body = clientPayloadSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid client payload.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(400, "Invalid client payload.", body.error.flatten());
 
     const [updated] = await db
       .update(clients)
@@ -500,7 +527,10 @@ router.delete(
     const now = new Date();
 
     if (clientId === UNKNOWN_CLIENT_ID) {
-      throw new HttpError(400, "The Unknown client placeholder cannot be deleted.");
+      throw new HttpError(
+        400,
+        "The Unknown client placeholder cannot be deleted.",
+      );
     }
 
     await db.transaction(async (tx) => {
@@ -515,7 +545,12 @@ router.delete(
       await tx
         .update(clientContacts)
         .set({ deletedAt: now, updatedAt: now })
-        .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
+        .where(
+          and(
+            eq(clientContacts.clientId, clientId),
+            isNull(clientContacts.deletedAt),
+          ),
+        );
 
       await tx
         .update(clients)
@@ -537,7 +572,12 @@ router.get(
     const contacts = await db
       .select()
       .from(clientContacts)
-      .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)))
+      .where(
+        and(
+          eq(clientContacts.clientId, clientId),
+          isNull(clientContacts.deletedAt),
+        ),
+      )
       .orderBy(desc(clientContacts.isPrimary), asc(clientContacts.firstName));
 
     res.json({ contacts });
@@ -588,7 +628,9 @@ router.get(
               and(
                 eq(jobs.clientId, clientId),
                 isNull(jobs.deletedAt),
-                accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
+                accessibleJobIds
+                  ? inArray(jobs.id, accessibleJobIds)
+                  : undefined,
               ),
             )
             .orderBy(desc(jobs.createdAt));
@@ -630,14 +672,24 @@ router.post(
     await getClientOrThrow(clientId);
 
     const body = contactPayloadSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid contact payload.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(
+        400,
+        "Invalid contact payload.",
+        body.error.flatten(),
+      );
 
     const [contact] = await db.transaction(async (tx) => {
       if (body.data.isPrimary) {
         await tx
           .update(clientContacts)
           .set({ isPrimary: false, updatedAt: new Date() })
-          .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
+          .where(
+            and(
+              eq(clientContacts.clientId, clientId),
+              isNull(clientContacts.deletedAt),
+            ),
+          );
       }
 
       return tx
@@ -670,19 +722,35 @@ router.put(
     const [existing] = await db
       .select()
       .from(clientContacts)
-      .where(and(eq(clientContacts.id, contactId), eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)))
+      .where(
+        and(
+          eq(clientContacts.id, contactId),
+          eq(clientContacts.clientId, clientId),
+          isNull(clientContacts.deletedAt),
+        ),
+      )
       .limit(1);
     if (!existing) throw new HttpError(404, "Contact not found.");
 
     const body = contactPayloadSchema.safeParse(req.body);
-    if (!body.success) throw new HttpError(400, "Invalid contact payload.", body.error.flatten());
+    if (!body.success)
+      throw new HttpError(
+        400,
+        "Invalid contact payload.",
+        body.error.flatten(),
+      );
 
     const [updated] = await db.transaction(async (tx) => {
       if (body.data.isPrimary) {
         await tx
           .update(clientContacts)
           .set({ isPrimary: false, updatedAt: new Date() })
-          .where(and(eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)));
+          .where(
+            and(
+              eq(clientContacts.clientId, clientId),
+              isNull(clientContacts.deletedAt),
+            ),
+          );
       }
 
       return tx
@@ -716,7 +784,13 @@ router.delete(
     const [existing] = await db
       .select()
       .from(clientContacts)
-      .where(and(eq(clientContacts.id, contactId), eq(clientContacts.clientId, clientId), isNull(clientContacts.deletedAt)))
+      .where(
+        and(
+          eq(clientContacts.id, contactId),
+          eq(clientContacts.clientId, clientId),
+          isNull(clientContacts.deletedAt),
+        ),
+      )
       .limit(1);
     if (!existing) throw new HttpError(404, "Contact not found.");
 

@@ -53,7 +53,10 @@ function parseBucketAndPrefix(fullPath: string) {
   return { bucketName, prefix };
 }
 
-function fileUrlToObject(fileUrl: string): { bucketName: string; objectName: string } {
+function fileUrlToObject(fileUrl: string): {
+  bucketName: string;
+  objectName: string;
+} {
   if (!fileUrl || typeof fileUrl !== "string") {
     throw new Error("Stored file URL is missing.");
   }
@@ -62,7 +65,11 @@ function fileUrlToObject(fileUrl: string): { bucketName: string; objectName: str
     throw new Error(`Invalid stored file URL: ${fileUrl}`);
   }
   const relative = match[1];
-  if (relative.includes("..") || relative.startsWith("/") || relative.includes("\0")) {
+  if (
+    relative.includes("..") ||
+    relative.startsWith("/") ||
+    relative.includes("\0")
+  ) {
     throw new Error(`Invalid stored file URL: ${fileUrl}`);
   }
   const { bucketName, prefix } = parseBucketAndPrefix(getPrivateObjectDir());
@@ -134,31 +141,47 @@ export function buildUploadPath(params: {
   mediaType: string;
   storedFileName: string;
 }) {
-  const relative = path.posix.join(params.jobId, params.mediaType, params.storedFileName);
+  const relative = path.posix.join(
+    params.jobId,
+    params.mediaType,
+    params.storedFileName,
+  );
   return {
     relative,
     fileUrl: `/uploads/${relative}`,
   };
 }
 
-export async function writeUploadedBuffer(
+type WriteUploadedBufferImpl = (
   fileUrl: string,
   buffer: Buffer,
   options?: { contentType?: string | null },
-): Promise<void> {
+) => Promise<void>;
+
+type WriteUploadedFromPathImpl = (
+  fileUrl: string,
+  sourcePath: string,
+  options?: { contentType?: string | null },
+) => Promise<void>;
+
+const defaultWriteUploadedBuffer: WriteUploadedBufferImpl = async (
+  fileUrl,
+  buffer,
+  options,
+) => {
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   const file = storageClient.bucket(bucketName).file(objectName);
   await file.save(buffer, {
     resumable: false,
     contentType: options?.contentType ?? "application/octet-stream",
   });
-}
+};
 
-export async function writeUploadedFromPath(
-  fileUrl: string,
-  sourcePath: string,
-  options?: { contentType?: string | null },
-): Promise<void> {
+const defaultWriteUploadedFromPath: WriteUploadedFromPathImpl = async (
+  fileUrl,
+  sourcePath,
+  options,
+) => {
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   const file = storageClient.bucket(bucketName).file(objectName);
   const writeStream = file.createWriteStream({
@@ -166,9 +189,45 @@ export async function writeUploadedFromPath(
     contentType: options?.contentType ?? "application/octet-stream",
   });
   await pipeline(createReadStream(sourcePath), writeStream);
+};
+
+let writeUploadedBufferImpl = defaultWriteUploadedBuffer;
+let writeUploadedFromPathImpl = defaultWriteUploadedFromPath;
+
+export async function writeUploadedBuffer(
+  fileUrl: string,
+  buffer: Buffer,
+  options?: { contentType?: string | null },
+): Promise<void> {
+  await writeUploadedBufferImpl(fileUrl, buffer, options);
 }
 
-export async function deletePhysicalFile(fileUrl: string | null | undefined): Promise<void> {
+export async function writeUploadedFromPath(
+  fileUrl: string,
+  sourcePath: string,
+  options?: { contentType?: string | null },
+): Promise<void> {
+  await writeUploadedFromPathImpl(fileUrl, sourcePath, options);
+}
+
+export const __storageWriteTesting = {
+  setImpls(impls: {
+    writeBuffer?: WriteUploadedBufferImpl;
+    writeFromPath?: WriteUploadedFromPathImpl;
+  }) {
+    writeUploadedBufferImpl = impls.writeBuffer ?? defaultWriteUploadedBuffer;
+    writeUploadedFromPathImpl =
+      impls.writeFromPath ?? defaultWriteUploadedFromPath;
+  },
+  reset() {
+    writeUploadedBufferImpl = defaultWriteUploadedBuffer;
+    writeUploadedFromPathImpl = defaultWriteUploadedFromPath;
+  },
+};
+
+export async function deletePhysicalFile(
+  fileUrl: string | null | undefined,
+): Promise<void> {
   if (!fileUrl) {
     return;
   }
@@ -183,16 +242,24 @@ export async function deletePhysicalFile(fileUrl: string | null | undefined): Pr
   }
 }
 
-export async function storedFileExists(fileUrl: string | null | undefined): Promise<boolean> {
+export async function storedFileExists(
+  fileUrl: string | null | undefined,
+): Promise<boolean> {
   if (!fileUrl) {
     return false;
   }
   try {
     const { bucketName, objectName } = fileUrlToObject(fileUrl);
-    const [exists] = await storageClient.bucket(bucketName).file(objectName).exists();
+    const [exists] = await storageClient
+      .bucket(bucketName)
+      .file(objectName)
+      .exists();
     return exists;
   } catch (error) {
-    logger.warn({ err: error, fileUrl }, "Failed to probe stored file existence");
+    logger.warn(
+      { err: error, fileUrl },
+      "Failed to probe stored file existence",
+    );
     return false;
   }
 }
@@ -211,7 +278,10 @@ type RawProbeResult = "ok" | "missing" | "error";
 async function rawProbeStorageStatus(fileUrl: string): Promise<RawProbeResult> {
   try {
     const { bucketName, objectName } = fileUrlToObject(fileUrl);
-    const [exists] = await storageClient.bucket(bucketName).file(objectName).exists();
+    const [exists] = await storageClient
+      .bucket(bucketName)
+      .file(objectName)
+      .exists();
     return exists ? "ok" : "missing";
   } catch (error) {
     logger.warn({ err: error, fileUrl }, "Failed to probe stored file status");
@@ -535,9 +605,7 @@ export async function streamStoredFileToResponse(
 
     stream.on("data", (chunk: Buffer | string) => {
       const len =
-        typeof chunk === "string"
-          ? Buffer.byteLength(chunk)
-          : chunk.length;
+        typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
       bytesStreamed += len;
       if (progress) {
         progress.bytesStreamed = bytesStreamed;

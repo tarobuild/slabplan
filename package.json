@@ -11,7 +11,7 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "check-api-codegen": "pnpm --filter @workspace/scripts run check-api-codegen",
-    "knip": "DATABASE_URL=postgres://knip:knip@localhost:5432/knip knip",
+    "knip": "knip",
     "setup-test-db": "pnpm --filter @workspace/db run setup-test-db",
     "validate": "pnpm run typecheck && pnpm run check-api-codegen"
   },

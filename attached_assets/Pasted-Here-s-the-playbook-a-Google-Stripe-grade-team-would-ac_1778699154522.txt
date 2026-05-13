@@ -1,0 +1,51 @@
+Here's the playbook a Google/Stripe-grade team would actually run, scaled to your two-tool setup. No drift possible if you follow these.
+
+The model (trunk-based development with PR review)
+One trunk: main on GitHub. The single source of truth. Always deployable.
+All work on short-lived branches. Named codex/<thing> or replit/<thing>. Branches live hours-to-days, never weeks.
+All merges via Pull Request. Codex opens them. You review and merge. No exceptions.
+Replit pulls main before every editing session. Muscle memory.
+This is literally the workflow used at Google, Meta, Stripe, Shopify, etc. The only difference: at Google a peer engineer reviews; here, you do.
+
+Step-by-step: what to do right now in Codex
+1. Point Codex at the repo
+In Codex's GitHub connection screen, select tarobuild/Cadstone-Works-Tool. Give it read + write access (it needs write to push branches, but with branch protection later it still can't touch main directly).
+
+2. Give it its standing instructions (one-time)
+In Codex's "instructions" / "system prompt" / "rules" field (whatever Codex calls it), paste this:
+
+This repo is a production codebase. Read AGENTS.md at the repo root before doing anything and follow it strictly.
+Workflow rules (non-negotiable):
+1. Never commit to main. Always create a branch named codex/<short-feature-name>.
+2. Always open a Pull Request — never merge yourself.
+3. Before starting work, run `git checkout main && git pull origin main` so your branch starts from the latest trunk.
+4. One feature/fix per branch. Don't bundle unrelated changes.
+5. Run `pnpm typecheck`, `pnpm check-api-codegen`, and `pnpm knip` before opening the PR. Fix anything red.
+6. PR description must list: what changed, why, manual test steps, and any follow-ups (env vars, DB migrations, owner decisions).
+
+That's it. Codex will obey on every task.
+
+3. Give it its first task
+Just describe what you want in plain English, e.g.:
+
+"Add a DELETE /users/:id endpoint to the API. Admin-only, soft-delete with audit log entry. Open a PR when done."
+
+Codex will: branch → code → push → PR.
+
+4. Your review loop (the only manual step)
+GitHub will email you (or just check https://github.com/tarobuild/Cadstone-Works-Tool/pulls).
+Open the PR, click Files changed tab, scan the diff.
+If it looks right → green Merge pull request button. If not → comment on the lines you want changed; Codex pushes a new commit to the same PR.
+5. Sync Replit (before you next edit here)
+Replit Git pane → click the refresh icon (top-right). Or Shell: git pull origin main. Done.
+
+Optional but recommended (turn on when ready)
+Branch protection on main — at https://github.com/tarobuild/Cadstone-Works-Tool/settings/branches click "Add branch ruleset", target main, check:
+
+☑ Require a pull request before merging
+☑ Require approvals (set to 0 since it's just you, or 1 if you want to force a self-review click)
+☑ Block force pushes
+This makes drift physically impossible — even Codex (or me, or you in a panic) can't push directly to main. Everything must flow through a PR. Tell me when you want to flip this on.
+
+The mental model
+main on GitHub is the only truth. Codex proposes (via PR). You decide (via Merge). Replit always catches up (via pull) before you touch anything here.

@@ -31,6 +31,25 @@ Centralizes and streamlines construction management operations, offering job tra
     - **Sentry plumbing (Task #348):** the web DSN, release SHA, and environment are injected into the client bundle via Vite `define` (`__SENTRY_DSN_WEB__`, `__SENTRY_RELEASE__`, `__SENTRY_ENVIRONMENT__`) — deliberately NOT via `envPrefix`, so `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT_WEB` never reach the browser. Source-map upload during web build requires those three; maps are emitted only when all three are set, uploaded to Sentry, then deleted from `dist/public/assets` so they never ship to end users. PII filter (`artifacts/api-server/src/lib/pii-filter.ts`, mirrored in `artifacts/cadstone/src/lib/sentry.ts`) drops events whose payload contains an email, phone number, or US street address. Runbook: when an error appears in Sentry, check `release`/`environment` tags and the attached `route`+`requestId` extras to correlate with Pino logs.
 - **Launch readiness:** see `docs/launch-checklist.md` for the cutover gate (automated gates, CI test runs, manual smoke, env-var audit, security scanners, architect sign-off).
 
+## Working with GitHub (anti-drift workflow)
+
+GitHub repo: **https://github.com/tarobuild/Cadstone-Works-Tool** (private). `main` is the single source of truth for both Replit and Codex.
+
+**Rules:**
+- **Codex** must always work on a branch and open a PR — never push to `main` directly. Rules live in `AGENTS.md` (Codex reads it automatically).
+- **Replit (owner edits + Replit Agent)** can commit to `main` via the Git pane's "Push branch as 'origin/main'" button.
+- **Always pull before editing in Replit** if Codex (or anyone else) may have merged a PR since the last sync. Either click the refresh icon (top-right of the Git pane) or run in Shell:
+  ```bash
+  git pull origin main
+  ```
+
+**Typical Codex loop:**
+1. Codex opens a PR on a `codex/<feature>` branch.
+2. Owner reviews on github.com → clicks **Merge pull request**.
+3. In Replit: `git pull origin main` (or refresh icon) before next edit session.
+
+**Optional hardening** (not yet enabled): GitHub branch protection on `main` requiring PRs — physically blocks direct pushes. Turn on at github.com → Settings → Branches when ready.
+
 ## Stack
 
 - **Monorepo Tool:** pnpm workspaces

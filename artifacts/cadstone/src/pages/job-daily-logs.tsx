@@ -140,6 +140,9 @@ type JobOption = {
   city: string | null
   state: string | null
   zipCode: string | null
+  access?: {
+    createDailyLogs?: boolean
+  }
 }
 
 type UserOption = {
@@ -1222,7 +1225,7 @@ function ActivityFeedItem({
   onEdit: (logId: string) => void
   onPrint: (logId: string) => void
   // Whether the current user is allowed to edit this specific log.
-  // True when they authored it OR they're admin/PM. The pencil button
+  // True when they authored it OR they're admin. The pencil button
   // is hidden — never just disabled — when false.
   canEdit: boolean
 }) {
@@ -3349,13 +3352,9 @@ export default function JobDailyLogsPage() {
   const { job, jobId } = useOutletContext<JobContext>()
   useDocumentTitle(job?.title ? `${job.title} · Daily logs` : "Daily logs")
   const currentUser = useAuthStore((state) => state.user)
-  // Daily log ownership: the author can always edit/delete their own log;
-  // admin/PM can edit/delete any log. Crew members never see the
-  // Edit/Delete affordances on logs they didn't author.
-  const isLogManager =
-    currentUser?.role === "admin" || currentUser?.role === "project_manager"
-  const canEditLog = (createdBy: string | null) =>
-    isLogManager || (createdBy !== null && createdBy === currentUser?.id)
+  const canEditDailyLogs = currentUser?.role === "admin"
+  const canCreateDailyLogs = canEditDailyLogs || job?.access?.createDailyLogs === true
+  const canEditLog = (_createdBy: string | null) => canEditDailyLogs
   const [settings, setSettings] = useState<DailyLogSettings>(DEFAULT_SETTINGS)
   const [customFields, setCustomFields] = useState<DailyLogCustomField[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -3642,6 +3641,7 @@ export default function JobDailyLogsPage() {
   }, [jobId, appliedFilters])
 
   function openCreateDialog() {
+    if (!canCreateDailyLogs) return
     setEditingLogId(null)
     setDialogOpen(true)
   }
@@ -3726,9 +3726,11 @@ export default function JobDailyLogsPage() {
             <h1 className="text-2xl font-semibold text-slate-950">Daily Logs</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
-              <Settings2 className="size-4" />
-            </Button>
+            {canEditDailyLogs ? (
+              <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+                <Settings2 className="size-4" />
+              </Button>
+            ) : null}
             <Button variant="outline" size="sm" onClick={() => runPrint("list")}>
               <Printer className="size-4" />
             </Button>
@@ -3740,10 +3742,12 @@ export default function JobDailyLogsPage() {
                 </Badge>
               ) : null}
             </Button>
-            <Button size="sm" onClick={openCreateDialog}>
-              <Plus className="size-4" />
-              Daily Log
-            </Button>
+            {canCreateDailyLogs ? (
+              <Button size="sm" onClick={openCreateDialog}>
+                <Plus className="size-4" />
+                Daily Log
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -3781,9 +3785,13 @@ export default function JobDailyLogsPage() {
               ) : (
                 <EmptyState
                   title="No daily logs yet"
-                  description="Create a daily log to capture site progress and observations."
-                  actionLabel="Daily Log"
-                  onAction={openCreateDialog}
+                  description={
+                    canCreateDailyLogs
+                      ? "Create a daily log to capture site progress and observations."
+                      : "No daily logs have been added for this job yet."
+                  }
+                  actionLabel={canCreateDailyLogs ? "Daily Log" : undefined}
+                  onAction={canCreateDailyLogs ? openCreateDialog : undefined}
                 />
               )
             ) : (
@@ -4112,4 +4120,3 @@ function DailyLogAttachmentCard({
     </button>
   )
 }
-

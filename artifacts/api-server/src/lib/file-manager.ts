@@ -65,6 +65,13 @@ const GLOBAL_SYSTEM_FOLDERS = [
     uploadingPermissions: { admin: true, project_manager: true },
   },
   {
+    mediaType: "photo",
+    title: "Global Photos",
+    isGlobal: true,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true, crew_member: true },
+  },
+  {
     mediaType: "video",
     title: "Global Videos",
     isGlobal: true,
@@ -898,8 +905,12 @@ export async function createFolder(params: {
       parentFolderId: params.parentFolderId,
       mediaType: params.mediaType,
       title: params.title,
-      viewingPermissions: { internal: true },
-      uploadingPermissions: { admin: true, project_manager: true },
+      viewingPermissions: { internal: true, users: { [params.userId]: true } },
+      uploadingPermissions: {
+        admin: true,
+        project_manager: true,
+        users: { [params.userId]: true },
+      },
     })
     .returning();
 

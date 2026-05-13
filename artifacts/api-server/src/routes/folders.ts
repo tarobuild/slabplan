@@ -2,6 +2,8 @@ import { z } from "zod";
 import { Router, type IRouter } from "express";
 import {
   assertCanAccessJob,
+  assertCanAccessJobFeature,
+  assertCanCreateJobFolder,
   assertCanManageJob,
   assertCanUploadToFolder,
   assertCanViewFolder,
@@ -21,7 +23,7 @@ import {
   streamFolderZip,
 } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
-import { requireManagerOrAbove } from "../middleware/require-auth";
+import { requireAdmin } from "../middleware/require-auth";
 
 const router: IRouter = Router();
 
@@ -37,10 +39,15 @@ const folderBodySchema = z.object({
   parentFolderId: z.string().uuid().nullable().optional().default(null),
 });
 
-const folderPermissionSchema = z.record(
-  z.enum(["admin", "project_manager", "crew_member", "internal"]),
-  z.boolean(),
-);
+const folderPermissionSchema = z
+  .object({
+    admin: z.boolean().optional(),
+    project_manager: z.boolean().optional(),
+    crew_member: z.boolean().optional(),
+    internal: z.boolean().optional(),
+    users: z.record(z.string().uuid(), z.boolean()).optional(),
+  })
+  .strict();
 
 const folderUpdateSchema = z.object({
   title: z.string().trim().min(1).max(255).optional(),
@@ -77,6 +84,7 @@ router.get(
 
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanAccessJob(req.auth!, jobId);
+    await assertCanAccessJobFeature(req.auth!, jobId, `${query.data.mediaType}s` as "documents" | "photos" | "videos");
 
     const result = await listFoldersForJob({
       jobId,
@@ -92,7 +100,6 @@ router.get(
 
 router.post(
   "/jobs/:jobId/folders",
-  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = folderBodySchema.safeParse(req.body);
 
@@ -101,9 +108,9 @@ router.post(
     }
 
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanManageJob(req.auth!, jobId);
+    await assertCanCreateJobFolder(req.auth!, jobId, body.data.mediaType);
     if (body.data.parentFolderId) {
-      await assertCanUploadToFolder(req.auth!, body.data.parentFolderId);
+      await assertCanViewFolder(req.auth!, body.data.parentFolderId);
     }
 
     const folder = await createFolder({
@@ -131,7 +138,7 @@ router.get(
 
 router.put(
   "/folders/:id",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const body = folderUpdateSchema.safeParse(req.body);
 
@@ -156,7 +163,7 @@ router.put(
 
 router.delete(
   "/folders/:id",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
     await assertCanUploadToFolder(req.auth!, folderId);
@@ -172,7 +179,7 @@ router.delete(
 
 router.post(
   "/folders/:id/copy",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
     await assertCanUploadToFolder(req.auth!, folderId);
@@ -188,7 +195,7 @@ router.post(
 
 router.put(
   "/folders/:id/move",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const body = moveFolderSchema.safeParse(req.body);
 
@@ -214,7 +221,7 @@ router.put(
 
 router.post(
   "/folders/:id/restore",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
     await assertCanUploadToFolder(req.auth!, folderId, true);
@@ -230,7 +237,7 @@ router.post(
 
 router.delete(
   "/folders/:id/purge",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
     await assertCanUploadToFolder(req.auth!, folderId, true);
@@ -260,7 +267,7 @@ router.get(
 
 router.get(
   "/jobs/:jobId/trash",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const query = trashQuerySchema.safeParse(req.query);
 
@@ -283,7 +290,7 @@ router.get(
 
 router.delete(
   "/jobs/:jobId/trash",
-  requireManagerOrAbove,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const query = trashQuerySchema.safeParse(req.query);
 

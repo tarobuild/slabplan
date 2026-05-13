@@ -60,6 +60,20 @@ type Job = {
   state: string | null
   clientId: string | null
   clientName: string | null
+  access?: {
+    financials: boolean
+    documents: boolean
+    photos: boolean
+    videos: boolean
+    dailyLogs: boolean
+    schedule: boolean
+    assistant: boolean
+    createDailyLogs: boolean
+    uploadDocuments: boolean
+    uploadPhotos: boolean
+    uploadVideos: boolean
+    createFolders: boolean
+  }
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -88,9 +102,27 @@ export default function JobDetailPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === "admin"
-  const isCrewMember = user?.role === "crew_member"
-  const visibleTabs = TABS.filter((t) => t.path !== "financials" || !isCrewMember)
+  const isFieldUser = user?.role === "project_manager" || user?.role === "crew_member"
   const [job, setJob] = useState<Job | null>(null)
+  const access = job?.access
+  const fileTabPath = isFieldUser
+    ? "files/documents"
+    : access?.documents
+    ? "files/documents"
+    : access?.photos
+      ? "files/photos"
+      : "files/videos"
+  const visibleTabs = TABS
+    .map((tab) => (tab.matchPrefix === "files/" ? { ...tab, path: fileTabPath } : tab))
+    .filter((tab) => {
+      if (tab.path === "financials") return access?.financials ?? isAdmin
+      if (tab.path === "daily-logs") return access?.dailyLogs ?? true
+      if (tab.path === "schedule") return access?.schedule ?? true
+      if (tab.matchPrefix === "files/") {
+        return access ? access.documents || access.photos || access.videos : true
+      }
+      return true
+    })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pageUploading, setPageUploading] = useState(false)
@@ -128,7 +160,7 @@ export default function JobDetailPage() {
 
   const onPageDrop = useCallback(
     async (droppedFiles: File[]) => {
-      if (!jobId || droppedFiles.length === 0) return
+      if (!isAdmin || !jobId || droppedFiles.length === 0) return
       const validationError = validateSelectedFiles(droppedFiles, "document")
       if (validationError) {
         toast.error(validationError)
@@ -167,14 +199,14 @@ export default function JobDetailPage() {
         setPageUploading(false)
       }
     },
-    [jobId],
+    [isAdmin, jobId],
   )
 
   const pageDropzone = useDropzone({
     onDrop: onPageDrop,
     noClick: true,
     noKeyboard: true,
-    disabled: !jobId || isOnFilesTab, // Disable on files tab since FileBrowser has its own drop zone
+    disabled: !isAdmin || !jobId || isOnFilesTab, // Disable on files tab since FileBrowser has its own drop zone
   })
 
   const loadJob = (showLoading = false) => {
@@ -312,7 +344,7 @@ export default function JobDetailPage() {
 
   return (
     <div {...pageDropzone.getRootProps()} className="relative space-y-0">
-      <input {...pageDropzone.getInputProps()} />
+      {isAdmin ? <input {...pageDropzone.getInputProps()} /> : null}
 
       {/* Page-level drop overlay */}
       {pageDropzone.isDragActive && !isOnFilesTab && (
@@ -334,7 +366,7 @@ export default function JobDetailPage() {
 
       {/* Row 1: back link / breadcrumb */}
       <div className="mb-2 flex items-center gap-2 text-xs">
-        {!isCrewMember && job?.clientId ? (
+        {!isFieldUser && job?.clientId ? (
           <>
             <Link
               to={`/clients/${job.clientId}`}
@@ -347,10 +379,10 @@ export default function JobDetailPage() {
           </>
         ) : null}
         <Link
-          to={isCrewMember || !job?.clientId ? "/jobs" : "/clients"}
+          to={isFieldUser || !job?.clientId ? "/jobs" : "/clients"}
           className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-700 transition-colors"
         >
-          {isCrewMember || !job?.clientId ? "All jobs" : "All clients"}
+          {isFieldUser || !job?.clientId ? "All jobs" : "All clients"}
         </Link>
       </div>
 

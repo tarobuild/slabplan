@@ -9,6 +9,20 @@ export type WorkerOption = {
   email: string
   role: string
   avatarUrl: string | null
+  access?: {
+    financials: boolean
+    documents: boolean
+    photos: boolean
+    videos: boolean
+    dailyLogs: boolean
+    schedule: boolean
+    assistant: boolean
+    createDailyLogs: boolean
+    uploadDocuments: boolean
+    uploadPhotos: boolean
+    uploadVideos: boolean
+    createFolders: boolean
+  }
 }
 
 function initials(name: string) {

@@ -98,7 +98,7 @@ function ProtectedRoute({ ready }: { ready: boolean }) {
 function FilesRedirect() {
   const user = useAuthStore((state) => state.user)
   const target =
-    user?.role === "crew_member" ? "/jobs" : "/clients"
+    user?.role === "admin" ? "/clients" : "/jobs"
   return <Navigate to={target} replace />
 }
 
@@ -179,8 +179,8 @@ function buildRouter(ready: boolean, basename: string | undefined) {
             {/*
               Top-level Files routes were removed in #318. Files are now
               accessed per-job (see /jobs/:jobId/files/*). Redirect any
-              lingering links so bookmarks don't 404 — admin/PM land on
-              /clients (their nav entry-point), crew lands on /jobs.
+              lingering links so bookmarks don't 404 — admins land on
+              /clients, field users land on /jobs.
             */}
             <Route path="/files" element={<FilesRedirect />} />
             <Route path="/files/documents" element={<FilesRedirect />} />

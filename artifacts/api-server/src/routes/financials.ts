@@ -465,7 +465,7 @@ router.post(
 // ---------------------------------------------------------------------------
 
 async function readFileBytes(fileUrl: string): Promise<Buffer> {
-  const stream = openStoredFileReadStream(fileUrl);
+  const stream = await openStoredFileReadStream(fileUrl);
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));

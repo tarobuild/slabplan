@@ -1995,7 +1995,9 @@ export async function streamFolderZip(params: {
       continue;
     }
 
-    archive.append(openStoredFileReadStream(entry.fileUrl), { name: entry.zipName });
+    archive.append(await openStoredFileReadStream(entry.fileUrl), {
+      name: entry.zipName,
+    });
   }
 
   await archive.finalize();

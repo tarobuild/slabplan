@@ -18,7 +18,8 @@ Centralizes and streamlines construction management operations, offering job tra
       - Email: `RESEND_API_KEY`, `EMAIL_FROM`, `APP_PUBLIC_URL` (invites, password resets, optional email transport for backup alerts)
       - CORS / origins: `CORS_ALLOWED_ORIGINS` *or* `APP_ORIGIN` (one must list the customer-facing origin — `artifacts/api-server/src/lib/cors.ts` reads both, plus `FRONTEND_ORIGIN` / `PUBLIC_APP_ORIGIN` / `CUSTOM_DOMAIN_ORIGIN` / Replit-managed domain vars, into one allow-list); `NODE_ENV=production`
       - AI: `AI_INTEGRATIONS_ANTHROPIC_API_KEY`, `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`
-      - Storage: `DEFAULT_OBJECT_STORAGE_BUCKET_ID`, `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS`
+      - Upload storage: `STORAGE_PROVIDER=supabase`, `SUPABASE_URL`, `SUPABASE_STORAGE_BUCKET`, `SUPABASE_SERVICE_ROLE_KEY`
+      - Legacy Replit upload storage (only when `STORAGE_PROVIDER` is unset/`replit`): `DEFAULT_OBJECT_STORAGE_BUCKET_ID`, `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS`
       - Monitoring: `SENTRY_DSN_API` (server boot fails without it in prod)
     - **Recommended:** `SENTRY_DSN_WEB` (warning-only if missing; client errors will not be captured)
     - **Optional / tunables:**

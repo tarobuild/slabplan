@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useEffect, useState } from "react"
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react"
 import { useOutletContext, useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import {
@@ -74,6 +74,27 @@ type Job = {
 }
 
 type ClientOption = { id: string; companyName: string }
+type FolderPermissions = {
+  admin?: boolean
+  project_manager?: boolean
+  crew_member?: boolean
+  internal?: boolean
+  users?: Record<string, boolean>
+} | null
+type AssignmentFolder = {
+  id: string
+  title: string
+  mediaType: "document" | "photo" | "video"
+  parentFolderId: string | null
+  isGlobal: boolean
+  viewingPermissions: FolderPermissions
+  uploadingPermissions: FolderPermissions
+}
+type FolderAccessDraft = { view: boolean; upload: boolean }
+type AssigneeAccessDraft = {
+  financials: boolean
+  folders: Record<string, FolderAccessDraft>
+}
 
 const JOB_TYPES = [
   "kitchen_countertops",
@@ -139,6 +160,55 @@ function initials(name: string) {
     .toUpperCase()
 }
 
+function roleLabel(role: string) {
+  return role.replaceAll("_", " ")
+}
+
+function mediaLabel(mediaType: AssignmentFolder["mediaType"]) {
+  if (mediaType === "document") return "Documents"
+  if (mediaType === "photo") return "Photos"
+  return "Videos"
+}
+
+function explicitFolderPermission(
+  permissions: FolderPermissions,
+  userId: string,
+) {
+  const value = permissions?.users?.[userId]
+  return typeof value === "boolean" ? value : null
+}
+
+function folderPermissionAllowsUser(
+  permissions: FolderPermissions,
+  user: Pick<WorkerOption, "id" | "role">,
+) {
+  if (permissions === null) return true
+  const explicit = explicitFolderPermission(permissions, user.id)
+  if (explicit !== null) return explicit
+  return (
+    permissions[user.role as keyof Omit<NonNullable<FolderPermissions>, "users">] === true ||
+    permissions.internal === true
+  )
+}
+
+function setFolderUserPermission(
+  permissions: FolderPermissions,
+  userId: string,
+  allowed: boolean,
+): FolderPermissions {
+  if (permissions === null && allowed) {
+    return null
+  }
+
+  return {
+    ...(permissions ?? { internal: true }),
+    users: {
+      ...(permissions?.users ?? {}),
+      [userId]: allowed,
+    },
+  }
+}
+
 type JobDetailContext = {
   setJob: Dispatch<SetStateAction<{
     id: string
@@ -164,12 +234,29 @@ export default function JobSummaryPage() {
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
   const [assigneePopoverOpen, setAssigneePopoverOpen] = useState(false)
   const [assigneeDraftIds, setAssigneeDraftIds] = useState<string[]>([])
+  const [assignmentFolders, setAssignmentFolders] = useState<AssignmentFolder[]>([])
+  const [assignmentFolderLoading, setAssignmentFolderLoading] = useState(false)
+  const [assigneeAccessDrafts, setAssigneeAccessDrafts] = useState<Record<string, AssigneeAccessDraft>>({})
   const [savingAssignees, setSavingAssignees] = useState(false)
   const [savingAccessUserId, setSavingAccessUserId] = useState<string | null>(null)
   const hasUnsavedChanges = canEditJob && !!job && !!savedJob && serializeJob(job) !== serializeJob(savedJob)
   const unsavedChanges = useUnsavedChangesGuard(hasUnsavedChanges && !saving)
   const projectManagerOptions = workerOptions.filter((option) => option.role === "project_manager")
   const updateJobMutation = useJobsPutJobsId()
+  const workerById = useMemo(() => {
+    const entries = [
+      ...workerOptions,
+      ...(job?.assignees ?? []),
+    ].map((worker) => [worker.id, worker] as const)
+    return new Map(entries)
+  }, [job?.assignees, workerOptions])
+  const selectedAssignmentWorkers = useMemo(
+    () =>
+      assigneeDraftIds
+        .map((id) => workerById.get(id))
+        .filter((worker): worker is WorkerOption => Boolean(worker)),
+    [assigneeDraftIds, workerById],
+  )
 
   useEffect(() => {
     // The OpenAPI spec for `/users` doesn't yet include the `roles`/`limit`
@@ -195,6 +282,34 @@ export default function JobSummaryPage() {
     return assignees
   }
 
+  const loadAssignmentFolders = async (targetJobId: string) => {
+    setAssignmentFolderLoading(true)
+    try {
+      const responses = await Promise.all(
+        (["document", "photo", "video"] as const).map((mediaType) =>
+          customFetch<{ folders?: AssignmentFolder[] }>(
+            `/api/jobs/${targetJobId}/folders?mediaType=${mediaType}&all=true`,
+            { method: "GET" },
+          ),
+        ),
+      )
+      const folders = responses
+        .flatMap((response) => response.folders ?? [])
+        .filter((folder) => !folder.isGlobal)
+        .sort((a, b) => {
+          const mediaCompare = mediaLabel(a.mediaType).localeCompare(mediaLabel(b.mediaType))
+          return mediaCompare || a.title.localeCompare(b.title)
+        })
+      setAssignmentFolders(folders)
+      return folders
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to load folder access")
+      return []
+    } finally {
+      setAssignmentFolderLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!jobId) return
     setLoading(true)
@@ -212,6 +327,40 @@ export default function JobSummaryPage() {
       .catch((err: unknown) => toastApiError(err, "Failed to load job"))
       .finally(() => setLoading(false))
   }, [jobId])
+
+  useEffect(() => {
+    if (!assigneePopoverOpen || !jobId) return
+    void loadAssignmentFolders(jobId)
+  }, [assigneePopoverOpen, jobId])
+
+  useEffect(() => {
+    if (!assigneePopoverOpen) return
+    setAssigneeAccessDrafts((current) => {
+      const next: Record<string, AssigneeAccessDraft> = {}
+      for (const worker of selectedAssignmentWorkers) {
+        const existing = current[worker.id]
+        const financials =
+          existing?.financials ??
+          worker.canViewFinancials ??
+          worker.access?.financials ??
+          false
+        const folders: Record<string, FolderAccessDraft> = {}
+        for (const folder of assignmentFolders) {
+          const existingFolder = existing?.folders[folder.id]
+          if (existingFolder) {
+            folders[folder.id] = existingFolder
+            continue
+          }
+          const view = folderPermissionAllowsUser(folder.viewingPermissions, worker)
+          const upload =
+            view && folderPermissionAllowsUser(folder.uploadingPermissions, worker)
+          folders[folder.id] = { view, upload }
+        }
+        next[worker.id] = { financials, folders }
+      }
+      return next
+    })
+  }, [assigneePopoverOpen, assignmentFolders, selectedAssignmentWorkers])
 
   const setField = (key: keyof Job, value: any) => {
     if (!canEditJob) return
@@ -279,6 +428,90 @@ export default function JobSummaryPage() {
     }
   }
 
+  const updateAssigneeFinancialsDraft = (userId: string, financials: boolean) => {
+    setAssigneeAccessDrafts((current) => ({
+      ...current,
+      [userId]: {
+        financials,
+        folders: current[userId]?.folders ?? {},
+      },
+    }))
+  }
+
+  const updateAssigneeFolderDraft = (
+    userId: string,
+    folderId: string,
+    key: keyof FolderAccessDraft,
+    value: boolean,
+  ) => {
+    setAssigneeAccessDrafts((current) => {
+      const currentUser = current[userId] ?? { financials: false, folders: {} }
+      const currentFolder = currentUser.folders[folderId] ?? { view: false, upload: false }
+      const nextFolder = {
+        ...currentFolder,
+        [key]: value,
+      }
+      if (key === "view" && value === false) {
+        nextFolder.upload = false
+      }
+      if (key === "upload" && value === true) {
+        nextFolder.view = true
+      }
+      return {
+        ...current,
+        [userId]: {
+          ...currentUser,
+          folders: {
+            ...currentUser.folders,
+            [folderId]: nextFolder,
+          },
+        },
+      }
+    })
+  }
+
+  const saveFolderAccessDrafts = async () => {
+    const selectedIds = new Set(assigneeDraftIds)
+    const updates: Promise<unknown>[] = []
+
+    for (const folder of assignmentFolders) {
+      let viewingPermissions = folder.viewingPermissions
+      let uploadingPermissions = folder.uploadingPermissions
+      let changed = false
+
+      for (const worker of selectedAssignmentWorkers) {
+        if (!selectedIds.has(worker.id)) continue
+        const draft = assigneeAccessDrafts[worker.id]?.folders[folder.id]
+        if (!draft) continue
+
+        if (explicitFolderPermission(viewingPermissions, worker.id) !== draft.view) {
+          viewingPermissions = setFolderUserPermission(viewingPermissions, worker.id, draft.view)
+          changed = true
+        }
+
+        const upload = draft.view && draft.upload
+        if (explicitFolderPermission(uploadingPermissions, worker.id) !== upload) {
+          uploadingPermissions = setFolderUserPermission(uploadingPermissions, worker.id, upload)
+          changed = true
+        }
+      }
+
+      if (changed) {
+        updates.push(
+          customFetch(`/api/folders/${folder.id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              viewingPermissions,
+              uploadingPermissions,
+            }),
+          }),
+        )
+      }
+    }
+
+    await Promise.all(updates)
+  }
+
   const handleSaveAssignees = async () => {
     if (!jobId || !job) return
 
@@ -308,10 +541,25 @@ export default function JobSummaryPage() {
           jobsDeleteJobsIdAssigneesUserid(jobId, userId),
         ),
       ])
+      await Promise.all(
+        selectedAssignmentWorkers.map((worker) => {
+          const draft = assigneeAccessDrafts[worker.id]
+          if (!draft) return Promise.resolve()
+          return customFetch(
+            `/api/jobs/${jobId}/assignees/${worker.id}/financials-access`,
+            {
+              method: "PATCH",
+              body: JSON.stringify({ canViewFinancials: draft.financials }),
+            },
+          )
+        }),
+      )
+      await saveFolderAccessDrafts()
       const assignees = await loadAssignees(jobId)
+      await loadAssignmentFolders(jobId)
       setAssigneeDraftIds(assignees.map((assignee: WorkerOption) => assignee.id))
       setAssigneePopoverOpen(false)
-      toast.success("Assigned workers updated")
+      toast.success("Assigned workers and access updated")
     } catch (err: unknown) {
       toastApiError(err, "Failed to update assigned workers")
     } finally {
@@ -650,15 +898,20 @@ export default function JobSummaryPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setAssigneeDraftIds(job.assignees.map((assignee) => assignee.id))}
+                      onClick={() => {
+                        setAssigneeDraftIds(job.assignees.map((assignee) => assignee.id))
+                        setAssigneeAccessDrafts({})
+                      }}
                     >
                       Add / Remove
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" className="w-[380px] space-y-3">
+                  <PopoverContent align="end" className="w-[min(760px,calc(100vw-2rem))] space-y-3">
                     <div>
                       <h4 className="text-sm font-medium text-slate-900">Assigned Workers</h4>
-                      <p className="text-xs text-slate-500">Project managers and crew members assigned to this job.</p>
+                      <p className="text-xs text-slate-500">
+                        Pick who is assigned, then choose their folder access before saving.
+                      </p>
                     </div>
                     <WorkerAssignmentPicker
                       options={workerOptions}
@@ -667,6 +920,109 @@ export default function JobSummaryPage() {
                       placeholder="Search workers"
                       className="border-0 px-0 py-0"
                     />
+                    <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                      {selectedAssignmentWorkers.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-400">
+                          Select a worker or project manager to configure access.
+                        </p>
+                      ) : assignmentFolderLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-20 w-full" />
+                          <Skeleton className="h-20 w-full" />
+                        </div>
+                      ) : (
+                        selectedAssignmentWorkers.map((assignee) => {
+                          const draft = assigneeAccessDrafts[assignee.id]
+                          return (
+                            <div key={assignee.id} className="rounded-lg border border-slate-200 p-3">
+                              <div className="mb-3 flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium text-slate-900">
+                                    {assignee.fullName}
+                                  </p>
+                                  <p className="text-xs capitalize text-slate-500">
+                                    {roleLabel(assignee.role)}
+                                  </p>
+                                </div>
+                                <label className="flex shrink-0 items-center gap-2 text-xs font-medium text-slate-600">
+                                  Financials
+                                  <Switch
+                                    checked={draft?.financials ?? false}
+                                    aria-label={`${assignee.fullName} can view financials`}
+                                    onCheckedChange={(checked) =>
+                                      updateAssigneeFinancialsDraft(assignee.id, checked)
+                                    }
+                                  />
+                                </label>
+                              </div>
+                              {assignmentFolders.length === 0 ? (
+                                <p className="rounded-md bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                                  No job folders have been created yet.
+                                </p>
+                              ) : (
+                                <div className="overflow-hidden rounded-md border border-slate-200">
+                                  <div className="grid grid-cols-[1fr_64px_72px] bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                    <span>Folder</span>
+                                    <span className="text-center">View</span>
+                                    <span className="text-center">Upload</span>
+                                  </div>
+                                  {assignmentFolders.map((folder) => {
+                                    const folderDraft = draft?.folders[folder.id] ?? {
+                                      view: false,
+                                      upload: false,
+                                    }
+                                    return (
+                                      <div
+                                        key={folder.id}
+                                        className="grid grid-cols-[1fr_64px_72px] items-center gap-2 border-t border-slate-100 px-3 py-2"
+                                      >
+                                        <div className="min-w-0">
+                                          <p className="truncate text-xs font-medium text-slate-700">
+                                            {folder.title}
+                                          </p>
+                                          <p className="text-[11px] text-slate-400">
+                                            {mediaLabel(folder.mediaType)}
+                                          </p>
+                                        </div>
+                                        <div className="flex justify-center">
+                                          <Switch
+                                            checked={folderDraft.view}
+                                            aria-label={`${assignee.fullName} can view ${folder.title}`}
+                                            onCheckedChange={(checked) =>
+                                              updateAssigneeFolderDraft(
+                                                assignee.id,
+                                                folder.id,
+                                                "view",
+                                                checked,
+                                              )
+                                            }
+                                          />
+                                        </div>
+                                        <div className="flex justify-center">
+                                          <Switch
+                                            checked={folderDraft.upload}
+                                            disabled={!folderDraft.view}
+                                            aria-label={`${assignee.fullName} can upload to ${folder.title}`}
+                                            onCheckedChange={(checked) =>
+                                              updateAssigneeFolderDraft(
+                                                assignee.id,
+                                                folder.id,
+                                                "upload",
+                                                checked,
+                                              )
+                                            }
+                                          />
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
                     <div className="flex justify-end gap-2">
                       <Button type="button" variant="outline" size="sm" onClick={() => setAssigneePopoverOpen(false)}>
                         Cancel

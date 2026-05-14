@@ -221,6 +221,17 @@ test("invite endpoint sends a transactional email with the setup link and report
     sent.text.includes(body.inviteUrl),
     "email body must include the absolute setup link",
   );
+
+  const { db } = await import("@workspace/db");
+  const { users } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const [stored] = await db
+    .select({ inviteToken: users.inviteToken, inviteTokenHash: users.inviteTokenHash })
+    .from(users)
+    .where(eq(users.email, inviteeEmail.toLowerCase()))
+    .limit(1);
+  assert.equal(stored?.inviteToken, null, "raw invite tokens must never be stored");
+  assert.ok(stored?.inviteTokenHash, "hashed invite token must be stored for acceptance");
 });
 
 test("invite endpoint surfaces email failure but still creates the user and returns the link", async () => {
@@ -277,6 +288,24 @@ test("reissue for a user who already set their password sends a password-reset e
     body: JSON.stringify({ token: inviteToken, password: "OnboardedPass#1" }),
   });
   assert.equal(accepted.status, 200, "user must complete onboarding before reset path triggers");
+  const onboardedSession = (await accepted.json()) as { accessToken: string };
+
+  const pats = await import("../src/lib/personal-access-tokens.ts");
+  const { db } = await import("@workspace/db");
+  const { personalAccessTokens } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const generatedPat = pats.generateRawToken();
+  const [patRow] = await db
+    .insert(personalAccessTokens)
+    .values({
+      userId: user.id,
+      name: "Revoked on reset",
+      scope: "read_write",
+      tokenHash: generatedPat.tokenHash,
+      tokenPrefix: generatedPat.prefix,
+      lastFour: generatedPat.lastFour,
+    })
+    .returning({ id: personalAccessTokens.id });
 
   const before = capturedEmails.length;
 
@@ -298,6 +327,20 @@ test("reissue for a user who already set their password sends a password-reset e
   assert.equal(sent.tag, "password-reset", "should route through sendPasswordReset, not sendInvite");
   assert.match(sent.subject, /reset your .* password/i);
   assert.ok(sent.text.includes(body.inviteUrl), "reset email body must include the absolute reset link");
+
+  const oldSession = await fetch(`${baseUrl}/api/users/me`, {
+    headers: {
+      authorization: `Bearer ${onboardedSession.accessToken}`,
+    },
+  });
+  assert.equal(oldSession.status, 401, "admin password reset must invalidate existing sessions");
+
+  const [revokedPat] = await db
+    .select({ revokedAt: personalAccessTokens.revokedAt })
+    .from(personalAccessTokens)
+    .where(eq(personalAccessTokens.id, patRow!.id))
+    .limit(1);
+  assert.ok(revokedPat?.revokedAt, "admin password reset must revoke live PATs");
 });
 
 test("only admins can invite users; crew members get 403", async () => {

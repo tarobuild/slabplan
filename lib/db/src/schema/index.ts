@@ -101,12 +101,9 @@ export const users = pgTable(
     phone: varchar("phone", { length: 20 }),
     isActive: boolean("is_active").notNull().default(true),
     inviteTokenHash: varchar("invite_token_hash", { length: 64 }),
-    // Raw, single-use invite token retained server-side so admins can
-    // re-send the existing setup email without minting a new token (which
-    // would invalidate any link already in flight). Cleared on accept.
-    // Stored alongside the hash because we never want acceptance lookups
-    // to depend on a plaintext value, but we need *some* way to recover
-    // the original raw token for transactional email resends.
+    // Legacy plaintext invite-token column. New code must leave this null:
+    // invite acceptance uses inviteTokenHash only, and resend/reissue flows
+    // mint a fresh raw token for one-time delivery instead of storing it.
     inviteToken: varchar("invite_token", { length: 128 }),
     inviteTokenExpiresAt: timestampTz("invite_token_expires_at"),
     passwordSetAt: timestampTz("password_set_at"),

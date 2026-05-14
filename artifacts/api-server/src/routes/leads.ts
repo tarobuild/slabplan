@@ -40,7 +40,7 @@ import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
-import { requireAdmin } from "../middleware/require-auth";
+import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -59,7 +59,7 @@ import { createUploadPerUserRateLimit } from "../lib/rate-limit";
 const uploadRateLimit = createUploadPerUserRateLimit();
 
 const router: IRouter = Router();
-router.use(requireAdmin);
+router.use(requireManagerOrAbove);
 
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
@@ -1504,7 +1504,7 @@ const convertToJobSchema = z
 router.post(
   "/:id/convert-to-job",
   // Job creation is admin-only (post-#277 owner directive). The leads
-  // router as a whole runs `requireAdmin`, but converting a lead
+  // router allows managers to manage scoped leads, but converting a lead
   // creates a job, so the stricter gate applies here too.
   requireAdmin,
   asyncHandler(async (req, res) => {

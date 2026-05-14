@@ -3,9 +3,8 @@
 // Loaded from src/index.ts BEFORE any module that registers route
 // handlers, so async errors raised during module evaluation are still
 // captured. Initialization is a no-op (with a warning) when
-// `SENTRY_DSN_API` is unset — including in production. Operators can
-// opt back into the strict-prod behavior by setting
-// `SENTRY_REQUIRED_IN_PROD=1` once a DSN is provisioned.
+// `SENTRY_DSN_API` is unset outside production. Production boot fails
+// loudly without the DSN, matching the launch checklist.
 //
 // PII protection lives in the `beforeSend` hook (see ./pii-filter.ts).
 // Pino remains the primary structured log; Sentry is purely additive.
@@ -42,9 +41,9 @@ export function initSentry(): void {
   const isProd = environment === "production";
 
   if (!dsn) {
-    if (isProd && process.env.SENTRY_REQUIRED_IN_PROD === "1") {
+    if (isProd) {
       throw new Error(
-        "SENTRY_DSN_API must be configured (SENTRY_REQUIRED_IN_PROD=1). Set the secret via the Replit secrets panel.",
+        "SENTRY_DSN_API must be configured in production. Set the secret via the Replit secrets panel.",
       );
     }
     // eslint-disable-next-line no-console

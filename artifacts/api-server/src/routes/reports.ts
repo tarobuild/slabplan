@@ -78,7 +78,8 @@ function parseQuery(req: Request) {
 // CSV helpers — kept small and dependency-free.
 function csvEscape(v: unknown): string {
   if (v === null || v === undefined) return "";
-  const s = String(v);
+  const raw = String(v);
+  const s = /^[\s]*[=+\-@]/.test(raw) ? `'${raw}` : raw;
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

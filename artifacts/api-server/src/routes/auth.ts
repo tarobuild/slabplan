@@ -3,7 +3,8 @@ import bcrypt from "bcrypt";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { safeUserColumns, users } from "@workspace/db/schema";
+import { personalAccessTokens, safeUserColumns, users } from "@workspace/db/schema";
+import { assertActiveAuthUser } from "../lib/active-user";
 import {
   clearRefreshTokenCookie,
   clearUploadTokenCookie,
@@ -176,12 +177,14 @@ router.post(
     const fullName = normalizeFullName(req.body.full_name);
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const now = new Date();
     const [user] = await db
       .insert(users)
       .values({
         email,
         passwordHash,
         fullName,
+        passwordSetAt: now,
       })
       .onConflictDoNothing({
         target: users.email,
@@ -293,23 +296,39 @@ router.post(
     // Atomic single-use: the WHERE clause repeats the token-hash so a
     // concurrent second request hitting the same token sees zero rows
     // updated and we know the token was already consumed.
-    const updated = await db
-      .update(users)
-      .set({
-        passwordHash,
-        passwordSetAt: now,
-        inviteTokenHash: null,
-        inviteToken: null,
-        inviteTokenExpiresAt: null,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(users.id, user.id),
-          eq(users.inviteTokenHash, tokenHash),
-        ),
-      )
-      .returning();
+    const updated = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(users)
+        .set({
+          passwordHash,
+          passwordSetAt: now,
+          inviteTokenHash: null,
+          inviteToken: null,
+          inviteTokenExpiresAt: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(users.id, user.id),
+            eq(users.inviteTokenHash, tokenHash),
+          ),
+        )
+        .returning();
+
+      if (rows.length > 0) {
+        await tx
+          .update(personalAccessTokens)
+          .set({ revokedAt: now })
+          .where(
+            and(
+              eq(personalAccessTokens.userId, user.id),
+              isNull(personalAccessTokens.revokedAt),
+            ),
+          );
+      }
+
+      return rows;
+    });
 
     if (updated.length === 0) {
       throw new HttpError(401, "Setup link is invalid or has expired.");
@@ -335,6 +354,14 @@ router.post(
     }
 
     const claims = verifyRefreshToken(refreshToken);
+    try {
+      await assertActiveAuthUser(claims);
+    } catch (error) {
+      clearRefreshTokenCookie(res);
+      clearUploadTokenCookie(res);
+      throw error;
+    }
+
     const user = await findActiveUserById(claims.userId);
 
     if (!user) {

@@ -165,7 +165,7 @@
     {
       "idx": 20,
       "version": "7",
-      "when": 1778711254617,
+      "when": 1778717111202,
       "tag": "0022_job_access_controls",
       "breakpoints": true,
       "checksum": "2d8fcd108bca29a3f63669419e88ade6fdc9ef65c5b3eb4ea0de121835a7f180"
@@ -173,7 +173,7 @@
     {
       "idx": 21,
       "version": "7",
-      "when": 1778711259573,
+      "when": 1778717111202,
       "tag": "0023_project_managers_field_access",
       "breakpoints": true,
       "checksum": "96ca75414e620af1dfb2b8121081427761f2ee9b9fd70dbaead5a4f63e44822b"
@@ -181,7 +181,7 @@
     {
       "idx": 22,
       "version": "7",
-      "when": 1778711968915,
+      "when": 1778717111203,
       "tag": "0024_job_contribution_permissions",
       "breakpoints": true,
       "checksum": "ad622d9e69f42cf6206937e2bd5e935c1c13db4caac75190dbfd629844e05711"
@@ -189,10 +189,18 @@
     {
       "idx": 23,
       "version": "7",
-      "when": 1778717256135,
+      "when": 1778729885064,
       "tag": "0025_simplify_job_access_controls",
       "breakpoints": true,
       "checksum": "70b865a371c15819ffdea49f4c8a8a9c039d3c6ae7128d8e5eae440c438e4adc"
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1778748242156,
+      "tag": "0026_clear_plaintext_invite_tokens",
+      "breakpoints": true,
+      "checksum": "27925509bdc79ae87d5998812e13f8a95d7ea16976d366cffe7de232250d59c1"
     }
   ]
 }

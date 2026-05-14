@@ -11,7 +11,7 @@ import {
   users,
   type User,
 } from "@workspace/db/schema";
-import { toPublicUser } from "../lib/auth";
+import { sendAuthResponse, toPublicUser } from "../lib/auth";
 import { sendInvite, sendPasswordReset, truncateEmailError } from "../lib/email";
 import { writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
@@ -489,24 +489,36 @@ router.post(
 
     const passwordHash = await bcrypt.hash(body.data.newPassword, 10);
 
-    await db
-      .update(users)
-      .set({ passwordHash, updatedAt: new Date(), passwordSetAt: new Date() })
-      .where(eq(users.id, user.id));
+    const now = new Date();
+    const [updated] = await db.transaction(async (tx) => {
+      const updatedRows = await tx
+        .update(users)
+        .set({ passwordHash, updatedAt: now, passwordSetAt: now })
+        .where(eq(users.id, user.id))
+        .returning();
 
-    res.json({ success: true });
+      await tx
+        .update(personalAccessTokens)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(personalAccessTokens.userId, user.id),
+            isNull(personalAccessTokens.revokedAt),
+          ),
+        );
+
+      return updatedRows;
+    });
+
+    sendAuthResponse(res, updated!);
   }),
 );
 
 // Admin: invite a new worker. We create the user with a random unguessable
-// placeholder password and a single-use setup token. The raw token is
-// returned in the response and also retained server-side (alongside its
-// sha256 hash) until the worker accepts the invite, so admins can re-send
-// the existing email via POST /users/:id/invite/resend without
-// invalidating any link already in flight. Both columns are cleared on
-// POST /auth/accept-invite. The admin hands the `invitePath` to the new
-// worker; the worker exchanges it for a real password via
-// POST /auth/accept-invite.
+// placeholder password and a single-use setup token. The raw token is returned
+// exactly once in the response and email pipeline; only its sha256 hash is
+// stored server-side. The admin hands the `invitePath` to the new worker; the
+// worker exchanges it for a real password via POST /auth/accept-invite.
 router.post(
   "/",
   requireAdmin,
@@ -541,7 +553,7 @@ router.post(
         passwordHash: placeholderHash,
         isActive: true,
         inviteTokenHash: invite.tokenHash,
-        inviteToken: invite.token,
+        inviteToken: null,
         inviteTokenExpiresAt: invite.expiresAt,
         passwordSetAt: null,
       })
@@ -619,17 +631,36 @@ router.post(
     }
 
     const invite = generateInvite();
+    const now = new Date();
+    const isPasswordReset = target.passwordSetAt !== null;
 
-    const [updated] = await db
-      .update(users)
-      .set({
-        inviteTokenHash: invite.tokenHash,
-        inviteToken: invite.token,
-        inviteTokenExpiresAt: invite.expiresAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, target.id))
-      .returning();
+    const [updated] = await db.transaction(async (tx) => {
+      const updatedRows = await tx
+        .update(users)
+        .set({
+          inviteTokenHash: invite.tokenHash,
+          inviteToken: null,
+          inviteTokenExpiresAt: invite.expiresAt,
+          passwordSetAt: isPasswordReset ? now : target.passwordSetAt,
+          updatedAt: now,
+        })
+        .where(eq(users.id, target.id))
+        .returning();
+
+      if (isPasswordReset) {
+        await tx
+          .update(personalAccessTokens)
+          .set({ revokedAt: now })
+          .where(
+            and(
+              eq(personalAccessTokens.userId, target.id),
+              isNull(personalAccessTokens.revokedAt),
+            ),
+          );
+      }
+
+      return updatedRows;
+    });
 
     await writeActivity({
       entityType: "user",
@@ -646,7 +677,6 @@ router.post(
     // If the user already finished setup (passwordSetAt is non-null), this
     // reissue is functioning as an admin-driven password reset. Send the
     // reworded password-reset email instead of the first-time invite email.
-    const isPasswordReset = target.passwordSetAt !== null;
     const delivery = await deliverInviteEmail({
       userId: target.id,
       to: target.email,
@@ -675,13 +705,9 @@ router.post(
   }),
 );
 
-// Admin: re-send the existing invite email WITHOUT minting a new token.
-// Useful when the invitee lost the email or it bounced — the original
-// link is still valid, so cycling the token (which would invalidate any
-// link already in flight) is overkill. We refuse to resend if the user
-// has already completed setup, has no pending invite, or the existing
-// token has expired — in those cases the admin must use the regular
-// reissue endpoint to mint a fresh one.
+// Admin: resend a pending invite email. Raw invite tokens are never stored, so
+// resend mints a fresh single-use token and invalidates any previous pending
+// setup link. Password resets still go through the reissue endpoint above.
 router.post(
   "/:id/invite/resend",
   requireAdmin,
@@ -709,11 +735,7 @@ router.post(
       );
     }
 
-    if (
-      !target.inviteToken ||
-      !target.inviteTokenHash ||
-      !target.inviteTokenExpiresAt
-    ) {
+    if (!target.inviteTokenHash || !target.inviteTokenExpiresAt) {
       throw new HttpError(
         400,
         "There is no pending invite to resend. Use reissue to generate a new setup link.",
@@ -727,6 +749,18 @@ router.post(
       );
     }
 
+    const invite = generateInvite();
+    const [updated] = await db
+      .update(users)
+      .set({
+        inviteTokenHash: invite.tokenHash,
+        inviteToken: null,
+        inviteTokenExpiresAt: invite.expiresAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, target.id))
+      .returning();
+
     await writeActivity({
       entityType: "user",
       entityId: target.id,
@@ -739,14 +773,12 @@ router.post(
     });
 
     const inviterName = await resolveInviterName(req.auth!.userId);
-    // Reuse the existing raw token — DB row is untouched aside from the
-    // delivery timestamp/error fields managed by deliverInviteEmail itself.
     const delivery = await deliverInviteEmail({
       userId: target.id,
       to: target.email,
       fullName: target.fullName,
       inviterName,
-      inviteToken: target.inviteToken,
+      inviteToken: invite.token,
       isPasswordReset: false,
     });
 
@@ -758,14 +790,14 @@ router.post(
 
     res.json({
       user: {
-        ...publicUserWithStatus(refreshed!),
+        ...publicUserWithStatus(refreshed ?? updated!),
         lastInviteEmailSentAt: delivery.lastInviteEmailSentAt,
         lastInviteEmailError: delivery.emailError,
       },
-      inviteToken: target.inviteToken,
-      invitePath: buildInvitePath(target.inviteToken),
-      inviteUrl: buildInviteUrl(target.inviteToken),
-      inviteTokenExpiresAt: target.inviteTokenExpiresAt.toISOString(),
+      inviteToken: invite.token,
+      invitePath: buildInvitePath(invite.token),
+      inviteUrl: buildInviteUrl(invite.token),
+      inviteTokenExpiresAt: invite.expiresAt.toISOString(),
       emailDelivery: {
         emailed: delivery.emailed,
         emailError: delivery.emailError,

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { assertCanViewFile, type AuthContext } from "../lib/authorization";
-import { assertActiveUserById } from "../lib/active-user";
+import { assertActiveAuthUser } from "../lib/active-user";
 import { verifyFileViewToken } from "../lib/auth";
 import { getFileOrThrow } from "../lib/file-manager";
 import { withFileViewLogging } from "../lib/file-view-log";
@@ -58,7 +58,7 @@ router.get(
 
         // Confirm the user still exists & is active. If they were deactivated
         // since the token was issued, deny access.
-        await assertActiveUserById(verified.userId);
+        await assertActiveAuthUser(verified);
 
         // Re-check access using the same authorization model that `/files/:id/view`
         // uses, so revoked permissions take effect even within the token TTL window.
@@ -67,6 +67,8 @@ router.get(
           email: verified.email,
           role: verified.role,
           type: "access",
+          iat: verified.iat,
+          authTime: verified.authTime,
         };
 
         await assertCanViewFile(auth, fileId);

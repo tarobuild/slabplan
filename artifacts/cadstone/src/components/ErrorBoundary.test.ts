@@ -36,7 +36,7 @@ defineGlobal("getComputedStyle", dom.window.getComputedStyle)
 const React = await import("react")
 const { createRoot } = await import("react-dom/client")
 const { act } = await import("react-dom/test-utils")
-const { ErrorBoundary } = await import("./ErrorBoundary.tsx")
+const { default: ErrorBoundary } = await import("./ErrorBoundary.tsx")
 
 function Boom(): React.ReactElement {
   throw new Error("kaboom")

@@ -170,6 +170,20 @@ function lowerExtension(fileName: string) {
   return path.extname(fileName).toLowerCase();
 }
 
+function safeZipPathComponent(value: string | null | undefined, fallback: string) {
+  const cleaned = (value ?? "")
+    .normalize("NFKC")
+    .replace(/[\\/:\x00-\x1f\x7f]+/g, "_")
+    .replace(/\.\./g, "__")
+    .trim();
+
+  if (!cleaned || cleaned === "." || cleaned === "..") {
+    return fallback;
+  }
+
+  return cleaned;
+}
+
 /**
  * Authoritative type gate for every upload route.
  *
@@ -1937,17 +1951,19 @@ export async function collectFolderZipEntries(params: {
     const trail = buildFolderPath(file.folderId, folderMap);
     const relativeTrail = trail
       .slice(1)
-      .map((item) => item.title)
+      .map((item) => safeZipPathComponent(item.title, "folder"))
       .filter(Boolean)
       .join("/");
+    const rootZipTitle = safeZipPathComponent(folder.title, "folder");
+    const fileZipName = safeZipPathComponent(file.originalName, "file");
     const zipName = relativeTrail
-      ? path.posix.join(folder.title, relativeTrail, file.originalName)
-      : path.posix.join(folder.title, file.originalName);
+      ? path.posix.join(rootZipTitle, relativeTrail, fileZipName)
+      : path.posix.join(rootZipTitle, fileZipName);
 
     entries.push({ fileId: file.id, fileUrl: file.fileUrl, zipName });
   }
 
-  return { rootTitle: folder.title, entries };
+  return { rootTitle: safeZipPathComponent(folder.title, "folder"), entries };
 }
 
 export async function streamFolderZip(params: {

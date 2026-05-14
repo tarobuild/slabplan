@@ -207,9 +207,10 @@ describe("validateSelectedFilesAsync (video)", () => {
 // silently regressing.
 import * as nodeFs from "node:fs/promises"
 import * as nodePath from "node:path"
+import { fileURLToPath } from "node:url"
 
 describe("upload pickers wire the async video-duration check", () => {
-  const here = nodePath.dirname(new URL(import.meta.url).pathname)
+  const here = nodePath.dirname(fileURLToPath(import.meta.url))
 
   test("FileBrowser routes the file picker through validateSelectedFilesAsync", async () => {
     const source = await nodeFs.readFile(

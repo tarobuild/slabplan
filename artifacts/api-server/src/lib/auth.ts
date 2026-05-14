@@ -11,6 +11,7 @@ type TokenClaims = {
   type: TokenType;
   email: string;
   role: string;
+  authTime?: number;
   fileId?: string;
 };
 
@@ -18,6 +19,8 @@ type VerifiedToken<TType extends TokenType = TokenType> = TokenClaims & {
   type: TType;
   userId: string;
   jti?: string;
+  iat?: number;
+  authTime?: number;
 };
 
 type PublicUser = Pick<
@@ -114,6 +117,7 @@ function buildTokenPayload(
     type,
     email: user.email,
     role: user.role,
+    authTime: Date.now(),
   };
 
   if (extra.fileId) {
@@ -174,6 +178,8 @@ function decodeVerifiedToken<TType extends TokenType>(
     type: payload.type,
     fileId: typeof payload.fileId === "string" ? payload.fileId : undefined,
     jti: typeof payload.jti === "string" ? payload.jti : undefined,
+    iat: typeof payload.iat === "number" ? payload.iat : undefined,
+    authTime: typeof payload.authTime === "number" ? payload.authTime : undefined,
   };
 }
 

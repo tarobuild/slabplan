@@ -1,0 +1,45 @@
+Best Long-Term Shape
+
+GitHub as the only source of truth.
+Codex builds features on branches/PRs.
+Production app hosted on a stable platform like Render, Railway, Fly.io, AWS, GCP, or Azure.
+Supabase Postgres for production database.
+Dedicated object storage: either Supabase Storage, S3, GCS, or Cloudflare R2.
+Separate staging environment that mirrors production.
+CI/CD pipeline that runs tests, builds, migrates, deploys, and smoke-tests.
+Monitoring + backups + restore process.
+For your specific situation, I’d rank the future upgrades like this:
+
+Add staging
+This is the biggest maturity jump. Every feature gets tested in a production-like place before the client sees it.
+
+Standardize deployment
+Main branch merge should trigger a predictable deploy process. No guessing whether Replit pulled latest code or env vars.
+
+Lock down secrets
+Production credentials should live only in the production host. Codex should use local/staging only. Replit Agent can see production only while Replit is the host.
+
+Make object storage deliberate
+Either:
+
+keep Replit/GCS object storage and document permissions clearly, or
+move to Supabase Storage/S3/R2 later if you want a more portable setup.
+Backups and restore drills
+Daily DB backups, file backup strategy, and an actual tested restore.
+
+Real monitoring
+Errors, failed uploads, failed migrations, uptime, and slow endpoints should notify you before the client does.
+
+Branch protection
+Require PRs, require selected checks, no direct main pushes once the flow is stable.
+
+Test suite cleanup
+Make GitHub checks match the current product rules so red means “real problem,” not “old test expectation.”
+
+My honest recommendation:
+
+Short term: stay on Replit + Supabase + Replit object storage. Stabilize it. Launch.
+Medium term: add staging and clean up CI.
+Long term: if Cadstone becomes core business infrastructure, move hosting to a more standard production platform and use Supabase or S3/R2-style storage deliberately.
+
+Supabase can remain the database forever. The part I would eventually outgrow is probably Replit as production hosting, not Supabase.

@@ -131,9 +131,13 @@ Vars"). Status reflects what is set on the
 | `SESSION_SECRET` | required | ✅ present |
 | `AI_INTEGRATIONS_ANTHROPIC_API_KEY` | required (AI assistant) | ✅ present |
 | `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` | required (AI proxy) | ✅ present |
-| `DEFAULT_OBJECT_STORAGE_BUCKET_ID` | required (uploads + DB backups) | ✅ present |
-| `PRIVATE_OBJECT_DIR` | required | ✅ present |
-| `PUBLIC_OBJECT_SEARCH_PATHS` | required | ✅ present |
+| `STORAGE_PROVIDER` | required for upload storage | ✅ `supabase` |
+| `SUPABASE_URL` | required when `STORAGE_PROVIDER=supabase` | ✅ present |
+| `SUPABASE_STORAGE_BUCKET` | required when `STORAGE_PROVIDER=supabase` | ✅ `cadstone-files` |
+| `SUPABASE_SERVICE_ROLE_KEY` | required when `STORAGE_PROVIDER=supabase` | ✅ present |
+| `DEFAULT_OBJECT_STORAGE_BUCKET_ID` | legacy Replit upload storage / DB backups only | optional when uploads use Supabase |
+| `PRIVATE_OBJECT_DIR` | legacy Replit upload storage only | optional when uploads use Supabase |
+| `PUBLIC_OBJECT_SEARCH_PATHS` | legacy Replit upload storage only | optional when uploads use Supabase |
 | `CORS_ALLOWED_ORIGINS` *or* `APP_ORIGIN` | required (one of them must list the customer-facing origin — `corsOrigin` in `artifacts/api-server/src/lib/cors.ts` reads both, plus several other aliases, into one allow-list) | ✅ satisfied via `CORS_ALLOWED_ORIGINS=https://cadstonesystems.com` (production scope). `APP_ORIGIN` is not separately set — that is fine because the same value is supplied via `CORS_ALLOWED_ORIGINS`. If you ever clear `CORS_ALLOWED_ORIGINS`, you **must** set `APP_ORIGIN` (or one of the documented aliases) instead, or the API will reject every browser request |
 | `NODE_ENV` | required | ✅ `production` (production scope) |
 | `RESEND_API_KEY` | required (transactional email — invites, password resets, backup alert email transport) | ❌ **MISSING — launch-blocker** |

@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 import { createReadStream } from "node:fs";
 import path from "node:path";
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { Response } from "express";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
+import type { Response as ExpressResponse } from "express";
 import { Storage } from "@google-cloud/storage";
 import {
   FILE_RESPONSE_CSP,
@@ -13,6 +14,8 @@ import { HttpError } from "./http";
 import { logger } from "./logger";
 
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+const SUPABASE_UPLOAD_PREFIX = "cadstone/uploads";
+const SUPABASE_OBJECT_MISSING_STATUSES = new Set([400, 404]);
 
 const storageClient = new Storage({
   credentials: {
@@ -42,6 +45,44 @@ function getPrivateObjectDir(): string {
   return dir;
 }
 
+type StorageProvider = "replit" | "supabase";
+
+function getStorageProvider(): StorageProvider {
+  const raw = (process.env.STORAGE_PROVIDER ?? "replit").trim().toLowerCase();
+  if (
+    raw === "" ||
+    raw === "replit" ||
+    raw === "gcs" ||
+    raw === "google-cloud-storage"
+  ) {
+    return "replit";
+  }
+  if (raw === "supabase") {
+    return "supabase";
+  }
+  throw new Error(
+    `Unsupported STORAGE_PROVIDER "${process.env.STORAGE_PROVIDER}". Use "replit" or "supabase".`,
+  );
+}
+
+function getRequiredEnv(key: string): string {
+  const value = process.env[key]?.trim();
+  if (!value) {
+    throw new Error(`${key} is not set.`);
+  }
+  return value;
+}
+
+function getSupabaseConfig() {
+  const rawUrl = getRequiredEnv("SUPABASE_URL");
+  const url = rawUrl.endsWith("/") ? rawUrl.slice(0, -1) : rawUrl;
+  return {
+    url,
+    bucketName: getRequiredEnv("SUPABASE_STORAGE_BUCKET"),
+    serviceRoleKey: getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
+  };
+}
+
 function parseBucketAndPrefix(fullPath: string) {
   const normalized = fullPath.startsWith("/") ? fullPath : `/${fullPath}`;
   const parts = normalized.split("/").filter(Boolean);
@@ -53,10 +94,7 @@ function parseBucketAndPrefix(fullPath: string) {
   return { bucketName, prefix };
 }
 
-function fileUrlToObject(fileUrl: string): {
-  bucketName: string;
-  objectName: string;
-} {
+function fileUrlToRelativePath(fileUrl: string): string {
   if (!fileUrl || typeof fileUrl !== "string") {
     throw new Error("Stored file URL is missing.");
   }
@@ -72,9 +110,72 @@ function fileUrlToObject(fileUrl: string): {
   ) {
     throw new Error(`Invalid stored file URL: ${fileUrl}`);
   }
+  return relative;
+}
+
+function fileUrlToObject(fileUrl: string): {
+  bucketName: string;
+  objectName: string;
+} {
+  const relative = fileUrlToRelativePath(fileUrl);
   const { bucketName, prefix } = parseBucketAndPrefix(getPrivateObjectDir());
   const segments = [prefix, "cadstone", "uploads", relative].filter(Boolean);
   return { bucketName, objectName: segments.join("/") };
+}
+
+function fileUrlToSupabaseObjectName(fileUrl: string): string {
+  const relative = fileUrlToRelativePath(fileUrl);
+  return path.posix.join(SUPABASE_UPLOAD_PREFIX, relative);
+}
+
+function encodeStoragePath(value: string): string {
+  return value.split("/").map(encodeURIComponent).join("/");
+}
+
+async function supabaseStorageRequest(
+  storagePath: string,
+  init: RequestInit & { duplex?: "half" } = {},
+  okStatuses: ReadonlySet<number> = new Set([200]),
+): Promise<globalThis.Response> {
+  const config = getSupabaseConfig();
+  const headers = new Headers(init.headers);
+  headers.set("apikey", config.serviceRoleKey);
+  headers.set("Authorization", `Bearer ${config.serviceRoleKey}`);
+
+  const response = await fetch(`${config.url}/storage/v1${storagePath}`, {
+    ...init,
+    headers,
+  });
+
+  if (!okStatuses.has(response.status)) {
+    let body = "";
+    try {
+      body = await response.text();
+    } catch {
+      body = "";
+    }
+    throw new Error(
+      `Supabase Storage request failed (${response.status}) for ${storagePath}${
+        body ? `: ${body.slice(0, 240)}` : ""
+      }`,
+    );
+  }
+
+  return response;
+}
+
+function supabaseObjectPath(fileUrl: string): {
+  bucketName: string;
+  objectName: string;
+  encodedPath: string;
+} {
+  const { bucketName } = getSupabaseConfig();
+  const objectName = fileUrlToSupabaseObjectName(fileUrl);
+  return {
+    bucketName,
+    objectName,
+    encodedPath: `${encodeURIComponent(bucketName)}/${encodeStoragePath(objectName)}`,
+  };
 }
 
 function normalizeFileComponent(value: string) {
@@ -94,6 +195,16 @@ export async function ensureUploadRoot(): Promise<void> {
 type HeadBucketImpl = () => Promise<void>;
 
 const defaultHeadBucket: HeadBucketImpl = async () => {
+  if (getStorageProvider() === "supabase") {
+    const { bucketName } = getSupabaseConfig();
+    await supabaseStorageRequest(
+      `/bucket/${encodeURIComponent(bucketName)}`,
+      { method: "HEAD" },
+      new Set([200]),
+    );
+    return;
+  }
+
   const { bucketName } = parseBucketAndPrefix(getPrivateObjectDir());
   const [exists] = await storageClient.bucket(bucketName).exists();
   if (!exists) {
@@ -169,6 +280,23 @@ const defaultWriteUploadedBuffer: WriteUploadedBufferImpl = async (
   buffer,
   options,
 ) => {
+  if (getStorageProvider() === "supabase") {
+    const { encodedPath } = supabaseObjectPath(fileUrl);
+    await supabaseStorageRequest(
+      `/object/${encodedPath}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": options?.contentType ?? "application/octet-stream",
+          "x-upsert": "true",
+        },
+        body: buffer,
+      },
+      new Set([200, 201]),
+    );
+    return;
+  }
+
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   const file = storageClient.bucket(bucketName).file(objectName);
   await file.save(buffer, {
@@ -182,6 +310,26 @@ const defaultWriteUploadedFromPath: WriteUploadedFromPathImpl = async (
   sourcePath,
   options,
 ) => {
+  if (getStorageProvider() === "supabase") {
+    const { encodedPath } = supabaseObjectPath(fileUrl);
+    await supabaseStorageRequest(
+      `/object/${encodedPath}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": options?.contentType ?? "application/octet-stream",
+          "x-upsert": "true",
+        },
+        body: Readable.toWeb(
+          createReadStream(sourcePath),
+        ) as unknown as NonNullable<RequestInit["body"]>,
+        duplex: "half",
+      },
+      new Set([200, 201]),
+    );
+    return;
+  }
+
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   const file = storageClient.bucket(bucketName).file(objectName);
   const writeStream = file.createWriteStream({
@@ -232,6 +380,16 @@ export async function deletePhysicalFile(
     return;
   }
   try {
+    if (getStorageProvider() === "supabase") {
+      const { encodedPath } = supabaseObjectPath(fileUrl);
+      await supabaseStorageRequest(
+        `/object/${encodedPath}`,
+        { method: "DELETE" },
+        new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+      );
+      return;
+    }
+
     const { bucketName, objectName } = fileUrlToObject(fileUrl);
     await storageClient
       .bucket(bucketName)
@@ -249,6 +407,16 @@ export async function storedFileExists(
     return false;
   }
   try {
+    if (getStorageProvider() === "supabase") {
+      const { encodedPath } = supabaseObjectPath(fileUrl);
+      const response = await supabaseStorageRequest(
+        `/object/info/${encodedPath}`,
+        { method: "HEAD" },
+        new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+      );
+      return response.status === 200;
+    }
+
     const { bucketName, objectName } = fileUrlToObject(fileUrl);
     const [exists] = await storageClient
       .bucket(bucketName)
@@ -277,6 +445,16 @@ type RawProbeResult = "ok" | "missing" | "error";
 
 async function rawProbeStorageStatus(fileUrl: string): Promise<RawProbeResult> {
   try {
+    if (getStorageProvider() === "supabase") {
+      const { encodedPath } = supabaseObjectPath(fileUrl);
+      const response = await supabaseStorageRequest(
+        `/object/info/${encodedPath}`,
+        { method: "HEAD" },
+        new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+      );
+      return response.status === 200 ? "ok" : "missing";
+    }
+
     const { bucketName, objectName } = fileUrlToObject(fileUrl);
     const [exists] = await storageClient
       .bucket(bucketName)
@@ -467,7 +645,25 @@ export const __probeCacheTesting = {
   },
 };
 
-export function openStoredFileReadStream(fileUrl: string): Readable {
+export async function openStoredFileReadStream(
+  fileUrl: string,
+): Promise<Readable> {
+  if (getStorageProvider() === "supabase") {
+    const { encodedPath } = supabaseObjectPath(fileUrl);
+    const response = await supabaseStorageRequest(
+      `/object/${encodedPath}`,
+      { method: "GET" },
+      new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+    );
+    if (SUPABASE_OBJECT_MISSING_STATUSES.has(response.status)) {
+      throw new HttpError(404, "Stored file missing.");
+    }
+    if (!response.body) {
+      throw new Error("Supabase Storage returned an empty response body.");
+    }
+    return Readable.fromWeb(response.body as unknown as WebReadableStream);
+  }
+
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   return storageClient.bucket(bucketName).file(objectName).createReadStream();
 }
@@ -510,7 +706,7 @@ export interface StreamStoredFileResult {
 }
 
 type StreamStoredFileImpl = (
-  res: Response,
+  res: ExpressResponse,
   fileUrl: string,
   opts: SendStoredFileOptions,
   progress?: StreamStoredFileProgress,
@@ -532,7 +728,7 @@ export const __streamStoredFileTesting = {
 };
 
 export async function streamStoredFileToResponse(
-  res: Response,
+  res: ExpressResponse,
   fileUrl: string,
   opts: SendStoredFileOptions,
   progress?: StreamStoredFileProgress,
@@ -540,6 +736,110 @@ export async function streamStoredFileToResponse(
   if (streamStoredFileImpl) {
     return streamStoredFileImpl(res, fileUrl, opts, progress);
   }
+
+  if (getStorageProvider() === "supabase") {
+    const { objectName, encodedPath } = supabaseObjectPath(fileUrl);
+    const response = await supabaseStorageRequest(
+      `/object/${encodedPath}`,
+      { method: "GET" },
+      new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+    );
+    if (SUPABASE_OBJECT_MISSING_STATUSES.has(response.status)) {
+      throw new HttpError(404, "Stored file missing.");
+    }
+    if (!response.body) {
+      throw new Error("Supabase Storage returned an empty response body.");
+    }
+
+    const filename = opts.filename || objectName.split("/").pop() || "file";
+    const headers = resolveSafeFileServingHeaders({
+      originalName: filename,
+      requestedDisposition: opts.disposition,
+    });
+
+    res.setHeader("Content-Type", headers.contentType);
+    res.setHeader("Content-Disposition", headers.contentDispositionHeader);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", FILE_RESPONSE_CSP);
+    res.setHeader(
+      "Cache-Control",
+      opts.cacheControl ?? "private, max-age=3600",
+    );
+    const size = response.headers.get("content-length");
+    if (size) {
+      res.setHeader("Content-Length", size);
+    }
+
+    let bytesStreamed = 0;
+    let aborted = false;
+    const stream = Readable.fromWeb(
+      response.body as unknown as WebReadableStream,
+    );
+
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
+      const cleanup = () => {
+        stream.removeAllListeners();
+        res.removeListener("close", onResClose);
+      };
+
+      const onResClose = () => {
+        if (!res.writableEnded) {
+          aborted = true;
+          stream.destroy();
+          settle(() => {
+            cleanup();
+            resolve();
+          });
+        }
+      };
+
+      stream.on("data", (chunk: Buffer | string) => {
+        const len =
+          typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+        bytesStreamed += len;
+        if (progress) {
+          progress.bytesStreamed = bytesStreamed;
+        }
+      });
+
+      stream.on("error", (err) => {
+        logger.error({ err, fileUrl }, "Stored file read stream error");
+        if (!res.headersSent) {
+          res.status(500).end();
+        } else {
+          res.destroy(err);
+        }
+        settle(() => {
+          cleanup();
+          reject(err);
+        });
+      });
+
+      stream.on("end", () => {
+        settle(() => {
+          cleanup();
+          resolve();
+        });
+      });
+
+      res.on("close", onResClose);
+      stream.pipe(res);
+    });
+
+    if (progress) {
+      progress.bytesStreamed = bytesStreamed;
+    }
+
+    return { bytesStreamed, aborted };
+  }
+
   const { bucketName, objectName } = fileUrlToObject(fileUrl);
   const file = storageClient.bucket(bucketName).file(objectName);
 

@@ -98,32 +98,6 @@ const WORK_DAYS_LABELS: Record<string, string> = {
   mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun"
 }
 
-const ACCESS_CONTROLS = [
-  { key: "financials", label: "Financials" },
-  { key: "documents", label: "Documents" },
-  { key: "photos", label: "Photos" },
-  { key: "videos", label: "Videos" },
-  { key: "dailyLogs", label: "Daily logs" },
-  { key: "schedule", label: "Schedule" },
-  { key: "assistant", label: "Assistant" },
-  { key: "createDailyLogs", label: "Create daily logs" },
-  { key: "uploadDocuments", label: "Upload documents" },
-  { key: "uploadPhotos", label: "Upload photos" },
-  { key: "uploadVideos", label: "Upload videos" },
-  { key: "createFolders", label: "Create folders" },
-] as const
-
-const ACCESS_CONTROL_GROUPS = [
-  {
-    title: "Can view",
-    controls: ACCESS_CONTROLS.slice(0, 7),
-  },
-  {
-    title: "Can add",
-    controls: ACCESS_CONTROLS.slice(7),
-  },
-] as const
-
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
@@ -345,30 +319,46 @@ export default function JobSummaryPage() {
     }
   }
 
-  const handleUpdateAssigneeAccess = async (
+  const handleUpdateAssigneeFinancialsAccess = async (
     assignee: WorkerOption,
-    key: (typeof ACCESS_CONTROLS)[number]["key"],
-    value: boolean,
+    canViewFinancials: boolean,
   ) => {
-    if (!jobId || !assignee.access) return
+    if (!jobId) return
 
-    const nextAccess = { ...assignee.access, [key]: value }
     setSavingAccessUserId(assignee.id)
     try {
-      const response = await customFetch<{ assignees?: WorkerOption[] }>(
-        `/api/jobs/${jobId}/assignees/${assignee.id}/access`,
+      const response = await customFetch<{ assignee?: WorkerOption }>(
+        `/api/jobs/${jobId}/assignees/${assignee.id}/financials-access`,
         {
           method: "PATCH",
-          body: JSON.stringify(nextAccess),
+          body: JSON.stringify({ canViewFinancials }),
           responseType: "json",
         },
       )
-      const assignees = response.assignees ?? []
-      setJob((current) => current ? { ...current, assignees } : current)
-      setSavedJob((current) => current ? { ...current, assignees } : current)
-      toast.success("Access updated")
+      const updated = response.assignee
+      setJob((current) =>
+        current
+          ? {
+              ...current,
+              assignees: current.assignees.map((candidate) =>
+                updated && candidate.id === updated.id ? updated : candidate,
+              ),
+            }
+          : current,
+      )
+      setSavedJob((current) =>
+        current
+          ? {
+              ...current,
+              assignees: current.assignees.map((candidate) =>
+                updated && candidate.id === updated.id ? updated : candidate,
+              ),
+            }
+          : current,
+      )
+      toast.success("Financials access updated")
     } catch (err: unknown) {
-      toastApiError(err, "Failed to update access")
+      toastApiError(err, "Failed to update financials access")
     } finally {
       setSavingAccessUserId(null)
     }
@@ -707,33 +697,17 @@ export default function JobSummaryPage() {
                         <p className="text-xs capitalize text-slate-500">{assignee.role.replaceAll("_", " ")}</p>
                       </div>
                     </div>
-                    {isAdmin && assignee.access ? (
-                      <div className="mt-3 space-y-3">
-                        {ACCESS_CONTROL_GROUPS.map((group) => (
-                          <div key={group.title} className="space-y-2">
-                            <p className="text-[11px] font-semibold uppercase text-slate-400">
-                              {group.title}
-                            </p>
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              {group.controls.map((control) => (
-                                <label
-                                  key={control.key}
-                                  className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2"
-                                >
-                                  <span className="text-xs font-medium text-slate-600">{control.label}</span>
-                                  <Switch
-                                    checked={assignee.access?.[control.key] ?? false}
-                                    disabled={savingAccessUserId === assignee.id}
-                                    onCheckedChange={(checked) =>
-                                      handleUpdateAssigneeAccess(assignee, control.key, checked)
-                                    }
-                                  />
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                    {isAdmin ? (
+                      <label className="mt-3 flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
+                        <span className="text-xs font-medium text-slate-600">Can view financials</span>
+                        <Switch
+                          checked={assignee.canViewFinancials ?? assignee.access?.financials ?? false}
+                          disabled={savingAccessUserId === assignee.id}
+                          onCheckedChange={(checked) =>
+                            handleUpdateAssigneeFinancialsAccess(assignee, checked)
+                          }
+                        />
+                      </label>
                     ) : null}
                   </div>
                 ))}

@@ -59,9 +59,11 @@ import type {
   HealthStatus,
   HealthStatusDeep,
   HomePayload,
+  JobAssigneeResponse,
   JobAssigneesResponse,
   JobDetailResponse,
   JobListResponse,
+  JobsAssigneeFinancialsAccessSchema,
   JobsAssigneePayloadSchema,
   JobsByStageResponse,
   JobsGetJobsParams,
@@ -3065,6 +3067,133 @@ export const useJobsDeleteJobsIdAssigneesUserid = <
 > => {
   return useMutation(
     getJobsDeleteJobsIdAssigneesUseridMutationOptions(options),
+  );
+};
+
+/**
+ * Toggle whether a job assignee can view the job financials tab. Requires admin role. Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with assigneeFinancialsAccessSchema.
+ * @summary PATCH /jobs/{id}/assignees/{userId}/financials-access
+ */
+export const getJobsPatchJobsIdAssigneesUseridFinancialsAccessUrl = (
+  id: string,
+  userId: string,
+) => {
+  return `/api/jobs/${id}/assignees/${userId}/financials-access`;
+};
+
+export const jobsPatchJobsIdAssigneesUseridFinancialsAccess = async (
+  id: string,
+  userId: string,
+  jobsAssigneeFinancialsAccessSchema: JobsAssigneeFinancialsAccessSchema,
+  options?: RequestInit,
+): Promise<JobAssigneeResponse> => {
+  return customFetch<JobAssigneeResponse>(
+    getJobsPatchJobsIdAssigneesUseridFinancialsAccessUrl(id, userId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(jobsAssigneeFinancialsAccessSchema),
+    },
+  );
+};
+
+export const getJobsPatchJobsIdAssigneesUseridFinancialsAccessMutationOptions =
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof jobsPatchJobsIdAssigneesUseridFinancialsAccess>
+      >,
+      TError,
+      {
+        id: string;
+        userId: string;
+        data: BodyType<JobsAssigneeFinancialsAccessSchema>;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<ReturnType<typeof jobsPatchJobsIdAssigneesUseridFinancialsAccess>>,
+    TError,
+    {
+      id: string;
+      userId: string;
+      data: BodyType<JobsAssigneeFinancialsAccessSchema>;
+    },
+    TContext
+  > => {
+    const mutationKey = ["jobsPatchJobsIdAssigneesUseridFinancialsAccess"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof jobsPatchJobsIdAssigneesUseridFinancialsAccess>
+      >,
+      {
+        id: string;
+        userId: string;
+        data: BodyType<JobsAssigneeFinancialsAccessSchema>;
+      }
+    > = (props) => {
+      const { id, userId, data } = props ?? {};
+
+      return jobsPatchJobsIdAssigneesUseridFinancialsAccess(
+        id,
+        userId,
+        data,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type JobsPatchJobsIdAssigneesUseridFinancialsAccessMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof jobsPatchJobsIdAssigneesUseridFinancialsAccess>>
+  >;
+export type JobsPatchJobsIdAssigneesUseridFinancialsAccessMutationBody =
+  BodyType<JobsAssigneeFinancialsAccessSchema>;
+export type JobsPatchJobsIdAssigneesUseridFinancialsAccessMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary PATCH /jobs/{id}/assignees/{userId}/financials-access
+ */
+export const useJobsPatchJobsIdAssigneesUseridFinancialsAccess = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsPatchJobsIdAssigneesUseridFinancialsAccess>>,
+    TError,
+    {
+      id: string;
+      userId: string;
+      data: BodyType<JobsAssigneeFinancialsAccessSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof jobsPatchJobsIdAssigneesUseridFinancialsAccess>>,
+  TError,
+  {
+    id: string;
+    userId: string;
+    data: BodyType<JobsAssigneeFinancialsAccessSchema>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getJobsPatchJobsIdAssigneesUseridFinancialsAccessMutationOptions(options),
   );
 };
 

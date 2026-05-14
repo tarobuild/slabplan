@@ -30,7 +30,6 @@ import {
 } from "@workspace/db/schema";
 import {
   assertCanAccessJob,
-  assertCanAccessJobFeature,
   assertCanCreateDailyLog,
   assertCanEditDailyLog,
   assertCanViewDailyLog,
@@ -239,7 +238,7 @@ function requireDailyLogJobId(dailyLog: { jobId: string | null }) {
 
 const requireDailyLogJobAccess = asyncHandler(async (req, _res, next) => {
   const jobId = getParam(req.params.jobId, "job id");
-  await assertCanAccessJobFeature(req.auth!, jobId, "dailyLogs");
+  await assertCanAccessJob(req.auth!, jobId);
   if (req.method !== "GET") {
     await assertCanCreateDailyLog(req.auth!, jobId);
   }
@@ -253,9 +252,6 @@ const requireDailyLogViewAccess = asyncHandler(async (req, _res, next) => {
 });
 
 const requireDailyLogEditAccess = asyncHandler(async (req, _res, next) => {
-  if (!isAdmin(req.auth!)) {
-    throw new HttpError(403, "Only admins can update daily logs.");
-  }
   const logId = getParam(req.params.id, "daily log id");
   await assertCanEditDailyLog(req.auth!, logId);
   next();
@@ -1600,7 +1596,7 @@ router.put(
     }
 
     await ensureJobExists(nextJobId);
-    await assertCanAccessJobFeature(req.auth!, nextJobId, "dailyLogs");
+    await assertCanAccessJob(req.auth!, nextJobId);
 
     await db
       .update(dailyLogs)

@@ -20,9 +20,7 @@ const crewUserId = crypto.randomUUID();
 const pmUserId = crypto.randomUUID();
 const clientId = crypto.randomUUID();
 const jobId = crypto.randomUUID();
-const pmManagedOnlyJobId = crypto.randomUUID();
-const documentsFolderId = crypto.randomUUID();
-const photosFolderId = crypto.randomUUID();
+const unassignedJobId = crypto.randomUUID();
 const hiddenPhotoFolderId = crypto.randomUUID();
 const uploadBlockedPhotoFolderId = crypto.randomUUID();
 
@@ -59,14 +57,14 @@ before(async () => {
       id: crewUserId,
       email: `crew-${runId}@job-access.local`,
       passwordHash: "test-not-a-real-hash",
-      fullName: "Restricted Crew",
+      fullName: "Assigned Crew",
       role: "crew_member",
     },
     {
       id: pmUserId,
       email: `pm-${runId}@job-access.local`,
       passwordHash: "test-not-a-real-hash",
-      fullName: "Restricted PM",
+      fullName: "Assigned PM",
       role: "project_manager",
     },
   ]);
@@ -76,75 +74,29 @@ before(async () => {
     companyName: `Access Client ${runId}`,
   });
 
-  await db.insert(jobs).values({
-    id: jobId,
-    title: `Access Job ${runId}`,
-    clientId,
-    createdBy: adminUserId,
-    projectManagerId: null,
-  });
-  await db.insert(jobs).values({
-    id: pmManagedOnlyJobId,
-    title: `PM Managed Only ${runId}`,
-    clientId,
-    createdBy: adminUserId,
-    projectManagerId: pmUserId,
-  });
-
-  await db.insert(jobAssignees).values([
+  await db.insert(jobs).values([
     {
-      jobId,
-      userId: crewUserId,
-      canViewFinancials: false,
-      canViewDocuments: false,
-      canViewPhotos: true,
-      canViewVideos: true,
-      canViewDailyLogs: true,
-      canViewSchedule: true,
-      canUseAssistant: false,
-      canCreateDailyLogs: true,
-      canUploadDocuments: false,
-      canUploadPhotos: true,
-      canUploadVideos: true,
-      canCreateFolders: false,
+      id: jobId,
+      title: `Access Job ${runId}`,
+      clientId,
+      createdBy: adminUserId,
+      projectManagerId: null,
     },
     {
-      jobId,
-      userId: pmUserId,
-      canViewFinancials: false,
-      canViewDocuments: true,
-      canViewPhotos: true,
-      canViewVideos: true,
-      canViewDailyLogs: true,
-      canViewSchedule: true,
-      canUseAssistant: false,
-      canCreateDailyLogs: true,
-      canUploadDocuments: false,
-      canUploadPhotos: true,
-      canUploadVideos: true,
-      canCreateFolders: false,
+      id: unassignedJobId,
+      title: `Unassigned Job ${runId}`,
+      clientId,
+      createdBy: adminUserId,
+      projectManagerId: null,
     },
   ]);
 
+  await db.insert(jobAssignees).values([
+    { jobId, userId: crewUserId, canViewFinancials: false },
+    { jobId, userId: pmUserId, canViewFinancials: false },
+  ]);
+
   await db.insert(folders).values([
-    {
-      id: documentsFolderId,
-      title: `Access Documents ${runId}`,
-      scope: "job",
-      jobId,
-      mediaType: "document",
-      viewingPermissions: null,
-      uploadingPermissions: null,
-    },
-    {
-      id: photosFolderId,
-      title: `Access Photos ${runId}`,
-      scope: "job",
-      jobId,
-      mediaType: "photo",
-      viewingPermissions: null,
-      uploadingPermissions: null,
-    },
     {
       id: hiddenPhotoFolderId,
       title: `Hidden Crew Photos ${runId}`,
@@ -178,7 +130,7 @@ before(async () => {
   crewToken = auth.signAccessToken({
     id: crewUserId,
     email: `crew-${runId}@job-access.local`,
-    fullName: "Restricted Crew",
+    fullName: "Assigned Crew",
     role: "crew_member",
     avatarUrl: null,
     phone: null,
@@ -188,7 +140,7 @@ before(async () => {
   pmToken = auth.signAccessToken({
     id: pmUserId,
     email: `pm-${runId}@job-access.local`,
-    fullName: "Restricted PM",
+    fullName: "Assigned PM",
     role: "project_manager",
     avatarUrl: null,
     phone: null,
@@ -210,155 +162,149 @@ after(async () => {
   }
 
   const { db } = await import("@workspace/db");
-  const { clients, jobs, users } = await import("@workspace/db/schema");
+  const { clients, folders, jobAssignees, jobs, users } = await import("@workspace/db/schema");
   const { eq, inArray } = await import("drizzle-orm");
 
-  await db.delete(jobs).where(inArray(jobs.id, [jobId, pmManagedOnlyJobId]));
+  await db.delete(folders).where(inArray(folders.id, [hiddenPhotoFolderId, uploadBlockedPhotoFolderId]));
+  await db.delete(jobAssignees).where(eq(jobAssignees.jobId, jobId));
+  await db.delete(jobs).where(inArray(jobs.id, [jobId, unassignedJobId]));
   await db.delete(clients).where(eq(clients.id, clientId));
   await db.delete(users).where(inArray(users.id, [adminUserId, crewUserId, pmUserId]));
 });
 
-test("restricted crew can see allowed media but not financials, documents, or assistant", async () => {
-  const financials = await fetch(`${baseUrl}/jobs/${jobId}/financials`, {
+test("assigned non-admins can view job field pages", async () => {
+  const job = await fetch(`${baseUrl}/jobs/${jobId}`, {
     headers: authHeaders(crewToken),
   });
-  assert.equal(financials.status, 403);
+  assert.equal(job.status, 200);
 
-  const documents = await fetch(`${baseUrl}/jobs/${jobId}/folders?mediaType=document`, {
+  const schedule = await fetch(`${baseUrl}/jobs/${jobId}/schedule`, {
     headers: authHeaders(crewToken),
   });
-  assert.equal(documents.status, 403);
+  assert.equal(schedule.status, 200);
 
-  const photos = await fetch(`${baseUrl}/jobs/${jobId}/folders?mediaType=photo`, {
+  const dailyLogs = await fetch(`${baseUrl}/jobs/${jobId}/daily-logs`, {
     headers: authHeaders(crewToken),
   });
-  assert.equal(photos.status, 200);
-  const photosBody = (await photos.json()) as { folders: Array<{ title: string }> };
-  assert.ok(
-    photosBody.folders.some((folder) => folder.title === "Global Photos"),
-    "photo uploads should always have a visible default folder",
-  );
+  assert.equal(dailyLogs.status, 200);
 
-  const deniedFolder = await fetch(`${baseUrl}/jobs/${jobId}/folders`, {
-    method: "POST",
-    headers: {
-      ...authHeaders(crewToken),
-      "content-type": "application/json",
-      "x-requested-with": "XMLHttpRequest",
-    },
-    body: JSON.stringify({
-      title: `Crew denied folder ${runId}`,
-      mediaType: "photo",
-      parentFolderId: null,
-    }),
-  });
-  assert.equal(deniedFolder.status, 403);
-
-  const createdLog = await fetch(`${baseUrl}/jobs/${jobId}/daily-logs`, {
-    method: "POST",
-    headers: {
-      ...authHeaders(crewToken),
-      "content-type": "application/json",
-      "x-requested-with": "XMLHttpRequest",
-    },
-    body: JSON.stringify({
-      jobId,
-      logDate: "2026-05-13",
-      title: `Crew field update ${runId}`,
-      notes: "Finished templating and uploaded photos from the field.",
-      weatherData: null,
-      includeWeather: false,
-      includeWeatherNotes: false,
-      weatherNotes: null,
-      shareInternalUsers: true,
-      shareSubsVendors: false,
-      shareClient: false,
-      isPrivate: false,
-      notifyUserIds: [],
-      tags: ["field"],
-      customFieldValues: {},
-    }),
-  });
-  assert.equal(createdLog.status, 201);
-  const createdLogBody = (await createdLog.json()) as { log: { id: string } };
-
-  const publishedLog = await fetch(`${baseUrl}/daily-logs/${createdLogBody.log.id}/publish`, {
-    method: "POST",
-    headers: {
-      ...authHeaders(crewToken),
-      "x-requested-with": "XMLHttpRequest",
-    },
-  });
-  assert.equal(publishedLog.status, 200);
-
-  const assistantAccess = await fetch(`${baseUrl}/agent/access`, {
+  const unassignedJob = await fetch(`${baseUrl}/jobs/${unassignedJobId}`, {
     headers: authHeaders(crewToken),
   });
-  assert.deepEqual(await assistantAccess.json(), { canUseAssistant: false });
-
-  const conversations = await fetch(`${baseUrl}/agent/conversations`, {
-    headers: authHeaders(crewToken),
-  });
-  assert.equal(conversations.status, 403);
+  assert.equal(unassignedJob.status, 403);
 });
 
-test("admin toggles give a crew member financials, documents, and assistant access", async () => {
-  const update = await fetch(`${baseUrl}/jobs/${jobId}/assignees/${crewUserId}/access`, {
+test("non-admins cannot create, edit, delete, or assign jobs", async () => {
+  const create = await fetch(`${baseUrl}/jobs`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(crewToken),
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+    },
+    body: JSON.stringify({ title: `Denied Job ${runId}` }),
+  });
+  assert.equal(create.status, 403);
+
+  const edit = await fetch(`${baseUrl}/jobs/${jobId}`, {
+    method: "PUT",
+    headers: {
+      ...authHeaders(crewToken),
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+    },
+    body: JSON.stringify({ title: `Denied Edit ${runId}` }),
+  });
+  assert.equal(edit.status, 403);
+
+  const remove = await fetch(`${baseUrl}/jobs/${jobId}`, {
+    method: "DELETE",
+    headers: {
+      ...authHeaders(crewToken),
+      "x-requested-with": "XMLHttpRequest",
+    },
+  });
+  assert.equal(remove.status, 403);
+
+  const assign = await fetch(`${baseUrl}/jobs/${jobId}/assignees`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(crewToken),
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+    },
+    body: JSON.stringify({ userId: pmUserId }),
+  });
+  assert.equal(assign.status, 403);
+});
+
+test("financials require the per-job financials grant", async () => {
+  const denied = await fetch(`${baseUrl}/jobs/${jobId}/financials`, {
+    headers: authHeaders(crewToken),
+  });
+  assert.equal(denied.status, 403);
+
+  const blockedToggle = await fetch(`${baseUrl}/jobs/${jobId}/assignees/${crewUserId}/financials-access`, {
+    method: "PATCH",
+    headers: {
+      ...authHeaders(crewToken),
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+    },
+    body: JSON.stringify({ canViewFinancials: true }),
+  });
+  assert.equal(blockedToggle.status, 403);
+
+  const adminToggle = await fetch(`${baseUrl}/jobs/${jobId}/assignees/${crewUserId}/financials-access`, {
     method: "PATCH",
     headers: {
       ...authHeaders(adminToken),
       "content-type": "application/json",
       "x-requested-with": "XMLHttpRequest",
     },
-    body: JSON.stringify({
-      financials: true,
-      documents: true,
-      photos: true,
-      videos: true,
-      dailyLogs: true,
-      schedule: true,
-      assistant: true,
-      createDailyLogs: true,
-      uploadDocuments: true,
-      uploadPhotos: true,
-      uploadVideos: true,
-      createFolders: true,
-    }),
+    body: JSON.stringify({ canViewFinancials: true }),
   });
-  assert.equal(update.status, 200);
+  assert.equal(adminToggle.status, 200);
+  const adminToggleBody = (await adminToggle.json()) as {
+    assignee: { id: string; canViewFinancials: boolean; access: { financials: boolean } };
+  };
+  assert.equal(adminToggleBody.assignee.id, crewUserId);
+  assert.equal(adminToggleBody.assignee.canViewFinancials, true);
+  assert.equal(adminToggleBody.assignee.access.financials, true);
 
+  const allowed = await fetch(`${baseUrl}/jobs/${jobId}/financials`, {
+    headers: authHeaders(crewToken),
+  });
+  assert.equal(allowed.status, 200);
+});
+
+test("project managers and crew share the same field-user model", async () => {
   const financials = await fetch(`${baseUrl}/jobs/${jobId}/financials`, {
-    headers: authHeaders(crewToken),
+    headers: authHeaders(pmToken),
   });
-  assert.equal(financials.status, 200);
+  assert.equal(financials.status, 403);
 
-  const documents = await fetch(`${baseUrl}/jobs/${jobId}/folders?mediaType=document`, {
-    headers: authHeaders(crewToken),
-  });
-  assert.equal(documents.status, 200);
-
-  const assistantAccess = await fetch(`${baseUrl}/agent/access`, {
-    headers: authHeaders(crewToken),
-  });
-  assert.deepEqual(await assistantAccess.json(), { canUseAssistant: true });
-
-  const createdFolder = await fetch(`${baseUrl}/jobs/${jobId}/folders`, {
+  const scheduleWrite = await fetch(`${baseUrl}/jobs/${jobId}/schedule`, {
     method: "POST",
     headers: {
-      ...authHeaders(crewToken),
+      ...authHeaders(pmToken),
       "content-type": "application/json",
       "x-requested-with": "XMLHttpRequest",
     },
     body: JSON.stringify({
-      title: `Crew allowed folder ${runId}`,
-      mediaType: "photo",
-      parentFolderId: null,
+      title: `Denied schedule item ${runId}`,
+      startDate: "2026-05-13",
     }),
   });
-  assert.equal(createdFolder.status, 201);
+  assert.equal(scheduleWrite.status, 403);
+
+  const clients = await fetch(`${baseUrl}/clients`, {
+    headers: authHeaders(pmToken),
+  });
+  assert.equal(clients.status, 403);
 });
 
-test("folder-level access hides restricted folders and blocks upload actions", async () => {
+test("folder per-user overrides control what assignees can see and upload", async () => {
   const adminPhotos = await fetch(`${baseUrl}/jobs/${jobId}/folders?mediaType=photo`, {
     headers: authHeaders(adminToken),
   });
@@ -375,11 +321,11 @@ test("folder-level access hides restricted folders and blocks upload actions", a
   const crewPhotosBody = (await crewPhotos.json()) as { folders: Array<{ title: string }> };
   assert.ok(
     !crewPhotosBody.folders.some((folder) => folder.title === `Hidden Crew Photos ${runId}`),
-    "explicit folder deny should hide the folder even when internal defaults allow it",
+    "explicit folder deny should hide the folder from the worker",
   );
   assert.ok(
     crewPhotosBody.folders.some((folder) => folder.title === `View Only Crew Photos ${runId}`),
-    "explicit view allow should keep the folder visible",
+    "explicit folder allow should show the folder to the worker",
   );
 
   const hiddenDirect = await fetch(`${baseUrl}/folders/${hiddenPhotoFolderId}`, {
@@ -415,67 +361,4 @@ test("folder-level access hides restricted folders and blocks upload actions", a
     { headers: authHeaders(crewToken) },
   );
   assert.equal(allowedUploadScopedList.status, 200);
-});
-
-test("project managers can also be explicitly denied financials", async () => {
-  const denied = await fetch(`${baseUrl}/jobs/${jobId}/financials`, {
-    headers: authHeaders(pmToken),
-  });
-  assert.equal(denied.status, 403);
-
-  const update = await fetch(`${baseUrl}/jobs/${jobId}/assignees/${pmUserId}/access`, {
-    method: "PATCH",
-    headers: {
-      ...authHeaders(adminToken),
-      "content-type": "application/json",
-      "x-requested-with": "XMLHttpRequest",
-    },
-    body: JSON.stringify({
-      financials: true,
-      documents: true,
-      photos: true,
-      videos: true,
-      dailyLogs: true,
-      schedule: true,
-      assistant: false,
-      createDailyLogs: true,
-      uploadDocuments: false,
-      uploadPhotos: true,
-      uploadVideos: true,
-      createFolders: false,
-    }),
-  });
-  assert.equal(update.status, 200);
-
-  const allowed = await fetch(`${baseUrl}/jobs/${jobId}/financials`, {
-    headers: authHeaders(pmToken),
-  });
-  assert.equal(allowed.status, 200);
-});
-
-test("project managers share the same field-user access model as crew", async () => {
-  const clients = await fetch(`${baseUrl}/clients`, {
-    headers: authHeaders(pmToken),
-  });
-  assert.equal(clients.status, 403);
-
-  const leads = await fetch(`${baseUrl}/leads`, {
-    headers: authHeaders(pmToken),
-  });
-  assert.equal(leads.status, 403);
-
-  const companySchedule = await fetch(`${baseUrl}/schedule`, {
-    headers: authHeaders(pmToken),
-  });
-  assert.equal(companySchedule.status, 403);
-
-  const companyDailyLogs = await fetch(`${baseUrl}/daily-logs/feed`, {
-    headers: authHeaders(pmToken),
-  });
-  assert.equal(companyDailyLogs.status, 403);
-
-  const managedOnlyJob = await fetch(`${baseUrl}/jobs/${pmManagedOnlyJobId}`, {
-    headers: authHeaders(pmToken),
-  });
-  assert.equal(managedOnlyJob.status, 403);
 });

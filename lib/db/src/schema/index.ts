@@ -265,17 +265,6 @@ export const jobAssignees = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     canViewFinancials: boolean("can_view_financials").notNull().default(false),
-    canViewDocuments: boolean("can_view_documents").notNull().default(false),
-    canViewPhotos: boolean("can_view_photos").notNull().default(true),
-    canViewVideos: boolean("can_view_videos").notNull().default(true),
-    canViewDailyLogs: boolean("can_view_daily_logs").notNull().default(true),
-    canViewSchedule: boolean("can_view_schedule").notNull().default(true),
-    canUseAssistant: boolean("can_use_assistant").notNull().default(false),
-    canCreateDailyLogs: boolean("can_create_daily_logs").notNull().default(true),
-    canUploadDocuments: boolean("can_upload_documents").notNull().default(false),
-    canUploadPhotos: boolean("can_upload_photos").notNull().default(true),
-    canUploadVideos: boolean("can_upload_videos").notNull().default(true),
-    canCreateFolders: boolean("can_create_folders").notNull().default(false),
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [

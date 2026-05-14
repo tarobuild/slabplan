@@ -2812,12 +2812,12 @@ function DailyLogDialog({
             id: currentLog.id,
             data: (validatePayload(DailyLogsPutDailyLogsIdBody, payload) ??
               payload) as DailyLogsPutDailyLogsIdMutationBody,
-          })) as { log: DailyLogDetail })
+          })) as unknown as { log: DailyLogDetail })
         : ((await createLogMutation.mutateAsync({
             jobId: values.jobId,
             data: (validatePayload(DailyLogsPostJobsJobIdDailyLogsBody, payload) ??
               payload) as DailyLogsPostJobsJobIdDailyLogsMutationBody,
-          })) as { log: DailyLogDetail })
+          })) as unknown as { log: DailyLogDetail })
 
       const savedId = response.log.id
       await uploadPendingFiles(savedId)
@@ -3353,8 +3353,9 @@ export default function JobDailyLogsPage() {
   useDocumentTitle(job?.title ? `${job.title} · Daily logs` : "Daily logs")
   const currentUser = useAuthStore((state) => state.user)
   const canEditDailyLogs = currentUser?.role === "admin"
-  const canCreateDailyLogs = canEditDailyLogs || job?.access?.createDailyLogs === true
-  const canEditLog = (_createdBy: string | null) => canEditDailyLogs
+  const canCreateDailyLogs = Boolean(currentUser)
+  const canEditLog = (createdBy: string | null) =>
+    canEditDailyLogs || (Boolean(createdBy) && createdBy === currentUser?.id)
   const [settings, setSettings] = useState<DailyLogSettings>(DEFAULT_SETTINGS)
   const [customFields, setCustomFields] = useState<DailyLogCustomField[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)

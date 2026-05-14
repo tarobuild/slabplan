@@ -24,7 +24,6 @@ import { ApiError } from "@workspace/api-client-react"
 import { isAxiosError } from "axios"
 import { apiErrorDetailCode, toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
-import { canWriteRole } from "@/lib/role-access"
 import { invalidateFinancialsRollups } from "@/lib/query-client"
 import { formatCurrencyCents } from "@/lib/format"
 import { describePercentLowering } from "@/lib/percent-confirm"
@@ -224,6 +223,7 @@ type LineItemPatch = Partial<{
 type SovLineItemRowProps = {
   li: LineItem
   invoices: Invoice[]
+  canManage: boolean
   onUpdate: (id: string, patch: LineItemPatch) => void
   onDelete: (id: string) => void
 }
@@ -231,6 +231,7 @@ type SovLineItemRowProps = {
 const SovLineItemRow = memo(function SovLineItemRow({
   li,
   invoices,
+  canManage,
   onUpdate,
   onDelete,
 }: SovLineItemRowProps) {
@@ -248,76 +249,92 @@ const SovLineItemRow = memo(function SovLineItemRow({
         </Badge>
       </td>
       <td className="sticky left-0 z-10 bg-white px-3 py-2 shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">
-        <Input
-          defaultValue={li.description}
-          onBlur={(e) => {
-            if (e.target.value !== li.description) {
-              onUpdate(li.id, { description: e.target.value })
-            }
-          }}
-          className="h-8"
-        />
+        {canManage ? (
+          <Input
+            defaultValue={li.description}
+            onBlur={(e) => {
+              if (e.target.value !== li.description) {
+                onUpdate(li.id, { description: e.target.value })
+              }
+            }}
+            className="h-8"
+          />
+        ) : (
+          <span className="text-sm">{li.description}</span>
+        )}
       </td>
       <td className="px-3 py-2 text-right">
-        <Input
-          type="number"
-          inputMode="decimal"
-          defaultValue={String(Number(li.qty))}
-          onBlur={(e) => {
-            const v = Number(e.target.value)
-            if (!Number.isNaN(v) && v !== Number(li.qty)) {
-              onUpdate(li.id, { qty: v })
-            }
-          }}
-          className="h-8 w-20 text-right"
-        />
+        {canManage ? (
+          <Input
+            type="number"
+            inputMode="decimal"
+            defaultValue={String(Number(li.qty))}
+            onBlur={(e) => {
+              const v = Number(e.target.value)
+              if (!Number.isNaN(v) && v !== Number(li.qty)) {
+                onUpdate(li.id, { qty: v })
+              }
+            }}
+            className="h-8 w-20 text-right"
+          />
+        ) : (
+          <span className="tabular-nums">{Number(li.qty)}</span>
+        )}
       </td>
       <td className="px-3 py-2 text-right tabular-nums">
-        <Input
-          type="number"
-          inputMode="decimal"
-          step="0.01"
-          defaultValue={(li.rateCents / 100).toFixed(2)}
-          onBlur={(e) => {
-            const v = Number(e.target.value)
-            const cents = Math.round(v * 100)
-            if (!Number.isNaN(v) && cents !== Number(li.rateCents)) {
-              onUpdate(li.id, { rateCents: cents })
-            }
-          }}
-          className="h-8 w-24 text-right"
-        />
+        {canManage ? (
+          <Input
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            defaultValue={(li.rateCents / 100).toFixed(2)}
+            onBlur={(e) => {
+              const v = Number(e.target.value)
+              const cents = Math.round(v * 100)
+              if (!Number.isNaN(v) && cents !== Number(li.rateCents)) {
+                onUpdate(li.id, { rateCents: cents })
+              }
+            }}
+            className="h-8 w-24 text-right"
+          />
+        ) : (
+          formatCurrency(li.rateCents)
+        )}
       </td>
       <td className="px-3 py-2 text-right tabular-nums">
-        <Input
-          key={`sched-${li.scheduledValueCents}`}
-          type="number"
-          inputMode="decimal"
-          step="0.01"
-          defaultValue={(li.scheduledValueCents / 100).toFixed(2)}
-          onBlur={(e) => {
-            const v = Number(e.target.value)
-            const cents = Math.round(v * 100)
-            if (Number.isNaN(v) || cents === Number(li.scheduledValueCents)) {
-              return
-            }
-            // Lowering scheduled below the current billed will cap
-            // billed down to the new scheduled → confirm.
-            const currentBilled = Number(li.billedCents)
-            const projectedBilled = Math.min(currentBilled, cents)
-            if (projectedBilled < currentBilled) {
-              const ok = window.confirm(
-                `Lowering scheduled value will reduce billed from ${formatCurrency(currentBilled)} to ${formatCurrency(projectedBilled)}. Continue?`,
-              )
-              if (!ok) {
-                e.target.value = (li.scheduledValueCents / 100).toFixed(2)
+        {canManage ? (
+          <Input
+            key={`sched-${li.scheduledValueCents}`}
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            defaultValue={(li.scheduledValueCents / 100).toFixed(2)}
+            onBlur={(e) => {
+              const v = Number(e.target.value)
+              const cents = Math.round(v * 100)
+              if (Number.isNaN(v) || cents === Number(li.scheduledValueCents)) {
                 return
               }
-            }
-            onUpdate(li.id, { scheduledValueCents: cents })
-          }}
-          className="h-8 w-28 text-right"
-        />
+              // Lowering scheduled below the current billed will cap
+              // billed down to the new scheduled → confirm.
+              const currentBilled = Number(li.billedCents)
+              const projectedBilled = Math.min(currentBilled, cents)
+              if (projectedBilled < currentBilled) {
+                const ok = window.confirm(
+                  `Lowering scheduled value will reduce billed from ${formatCurrency(currentBilled)} to ${formatCurrency(projectedBilled)}. Continue?`,
+                )
+                if (!ok) {
+                  e.target.value = (li.scheduledValueCents / 100).toFixed(2)
+                  return
+                }
+              }
+              onUpdate(li.id, { scheduledValueCents: cents })
+            }}
+            className="h-8 w-28 text-right"
+          />
+        ) : (
+          formatCurrency(li.scheduledValueCents)
+        )}
       </td>
       <td className="px-3 py-2 text-right tabular-nums">
         {formatCurrency(li.billedCents)}
@@ -328,52 +345,56 @@ const SovLineItemRow = memo(function SovLineItemRow({
         )}
       </td>
       <td className="px-3 py-2 text-right">
-        <Input
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={100}
-          step="1"
-          defaultValue={Number(li.percentComplete).toFixed(0)}
-          aria-label={`Percent complete for ${li.description}`}
-          onBlur={(e) => {
-            const v = Number(e.target.value)
-            if (
-              Number.isNaN(v) ||
-              v.toFixed(2) === Number(li.percentComplete).toFixed(2)
-            ) {
-              return
-            }
-            // Safety check: dropping % below already-applied invoice
-            // payments would silently shrink billed under the matched
-            // amount. Predicate lives in lib/percent-confirm.ts so it
-            // can be unit-tested apart from React.
-            const conflict = describePercentLowering({
-              scheduledValueCents: Number(li.scheduledValueCents) || 0,
-              newPercent: v,
-              payments: li.payments,
-            })
-            if (conflict.needsConfirm) {
-              const invNos = li.payments
-                .map((p) => {
-                  const inv = invoices.find((x) => x.id === p.invoiceId)
-                  return inv?.invoiceNumber ?? inv?.id.slice(0, 6) ?? "?"
-                })
-                .join(", ")
-              const ok = window.confirm(
-                `This line already has ${formatCurrency(conflict.appliedCents)} applied from invoice(s) ${invNos}. ` +
-                  `Setting % complete to ${v}% would lower billed to ${formatCurrency(conflict.proposedBilledCents)}, which is below the matched amount.\n\n` +
-                  `Continue anyway?`,
-              )
-              if (!ok) {
-                e.target.value = Number(li.percentComplete).toFixed(0)
+        {canManage ? (
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={100}
+            step="1"
+            defaultValue={Number(li.percentComplete).toFixed(0)}
+            aria-label={`Percent complete for ${li.description}`}
+            onBlur={(e) => {
+              const v = Number(e.target.value)
+              if (
+                Number.isNaN(v) ||
+                v.toFixed(2) === Number(li.percentComplete).toFixed(2)
+              ) {
                 return
               }
-            }
-            onUpdate(li.id, { percentComplete: v })
-          }}
-          className="h-8 w-16 text-right"
-        />
+              // Safety check: dropping % below already-applied invoice
+              // payments would silently shrink billed under the matched
+              // amount. Predicate lives in lib/percent-confirm.ts so it
+              // can be unit-tested apart from React.
+              const conflict = describePercentLowering({
+                scheduledValueCents: Number(li.scheduledValueCents) || 0,
+                newPercent: v,
+                payments: li.payments,
+              })
+              if (conflict.needsConfirm) {
+                const invNos = li.payments
+                  .map((p) => {
+                    const inv = invoices.find((x) => x.id === p.invoiceId)
+                    return inv?.invoiceNumber ?? inv?.id.slice(0, 6) ?? "?"
+                  })
+                  .join(", ")
+                const ok = window.confirm(
+                  `This line already has ${formatCurrency(conflict.appliedCents)} applied from invoice(s) ${invNos}. ` +
+                    `Setting % complete to ${v}% would lower billed to ${formatCurrency(conflict.proposedBilledCents)}, which is below the matched amount.\n\n` +
+                    `Continue anyway?`,
+                )
+                if (!ok) {
+                  e.target.value = Number(li.percentComplete).toFixed(0)
+                  return
+                }
+              }
+              onUpdate(li.id, { percentComplete: v })
+            }}
+            className="h-8 w-16 text-right"
+          />
+        ) : (
+          <span className="tabular-nums">{Number(li.percentComplete).toFixed(0)}%</span>
+        )}
       </td>
       {invoices.map((inv) => {
         const amt = paymentByInv.get(inv.id) ?? 0
@@ -388,15 +409,17 @@ const SovLineItemRow = memo(function SovLineItemRow({
         )
       })}
       <td className="px-3 py-2 text-right">
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-label={`Delete line item: ${li.description}`}
-          onClick={() => onDelete(li.id)}
-          className="min-h-10 min-w-10 md:min-h-9 md:min-w-9"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        {canManage ? (
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={`Delete line item: ${li.description}`}
+            onClick={() => onDelete(li.id)}
+            className="min-h-10 min-w-10 md:min-h-9 md:min-w-9"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ) : null}
       </td>
     </tr>
   )
@@ -406,6 +429,7 @@ type SovAreaRowProps = {
   area: Area
   invoices: Invoice[]
   collapsed: boolean
+  canManage: boolean
   onToggle: (id: string) => void
   onAddLineItem: (id: string) => void
   onRenameArea: (id: string, name: string) => void
@@ -418,6 +442,7 @@ const SovAreaRow = memo(function SovAreaRow({
   area,
   invoices,
   collapsed,
+  canManage,
   onToggle,
   onAddLineItem,
   onRenameArea,
@@ -477,35 +502,37 @@ const SovAreaRow = memo(function SovAreaRow({
             />
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onAddLineItem(area.id)}
-          >
-            <Plus className="mr-1 h-4 w-4" /> Line item
-          </Button>
-          {isCO ? null : (
-            <>
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label="Rename area"
-                onClick={() => onRenameArea(area.id, area.name)}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label="Delete area"
-                onClick={() => onDeleteArea(area.id, area.name)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </>
-          )}
-        </div>
+        {canManage ? (
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onAddLineItem(area.id)}
+            >
+              <Plus className="mr-1 h-4 w-4" /> Line item
+            </Button>
+            {isCO ? null : (
+              <>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Rename area"
+                  onClick={() => onRenameArea(area.id, area.name)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Delete area"
+                  onClick={() => onDeleteArea(area.id, area.name)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
       {collapsed ? null : (
         <>
@@ -544,6 +571,7 @@ const SovAreaRow = memo(function SovAreaRow({
                     key={li.id}
                     li={li}
                     invoices={invoices}
+                    canManage={canManage}
                     onUpdate={onUpdateLineItem}
                     onDelete={onDeleteLineItem}
                   />
@@ -570,10 +598,9 @@ const SovAreaRow = memo(function SovAreaRow({
 export default function JobFinancialsPage() {
   const { jobId } = useParams<{ jobId: string }>()
   const user = useAuthStore((s) => s.user)
-  // canWrite is the canonical write-affordance gate (admin | PM). A user can
-  // now be granted read-only financials access per job, but editing remains
-  // limited to admins and PMs.
-  const canManage = canWriteRole(user?.role)
+  // Non-admin assignees can be granted read-only financials access per job,
+  // but every financial write remains admin-only.
+  const canManage = user?.role === "admin"
   const queryClient = useQueryClient()
   const [data, setData] = useState<TrackerData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1403,30 +1430,34 @@ export default function JobFinancialsPage() {
             >
               <RefreshCw className="mr-1 h-4 w-4" /> Refresh
             </Button>
-            <input
-              ref={estimateInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.rtf,.md,.json,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,application/pdf,image/*,text/*"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (f) onEstimatePicked(f)
-              }}
-            />
-            <Button
-              size="sm"
-              onClick={() => estimateInputRef.current?.click()}
-              disabled={estimateUploading}
-            >
-              {estimateUploading ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="mr-1 h-4 w-4" />
-              )}
-              {data.tracker.estimateFileId
-                ? "Re-parse PDF"
-                : "Parse Estimate PDF"}
-            </Button>
+            {canManage ? (
+              <>
+                <input
+                  ref={estimateInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.rtf,.md,.json,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,application/pdf,image/*,text/*"
+                  hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) onEstimatePicked(f)
+                  }}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => estimateInputRef.current?.click()}
+                  disabled={estimateUploading}
+                >
+                  {estimateUploading ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-1 h-4 w-4" />
+                  )}
+                  {data.tracker.estimateFileId
+                    ? "Re-parse PDF"
+                    : "Parse Estimate PDF"}
+                </Button>
+              </>
+            ) : null}
           </div>
         </CardHeader>
         {estimateError ? (
@@ -1473,6 +1504,7 @@ export default function JobFinancialsPage() {
           </div>
         ) : null}
         <CardContent className="space-y-5">
+          {canManage ? (
           <div className="rounded-md border border-amber-200 bg-amber-50/60 p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="space-y-1">
@@ -1576,6 +1608,7 @@ export default function JobFinancialsPage() {
               </div>
             )}
           </div>
+          ) : null}
           {editingProject ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
@@ -1641,19 +1674,21 @@ export default function JobFinancialsPage() {
                     {data.tracker.currency}
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setProjectDraft({
-                      projectName: data.tracker.projectName ?? "",
-                      contractDate: data.tracker.contractDate ?? "",
-                    })
-                    setEditingProject(true)
-                  }}
-                >
-                  <Pencil className="mr-1 h-4 w-4" /> Edit
-                </Button>
+                {canManage ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setProjectDraft({
+                        projectName: data.tracker.projectName ?? "",
+                        contractDate: data.tracker.contractDate ?? "",
+                      })
+                      setEditingProject(true)
+                    }}
+                  >
+                    <Pencil className="mr-1 h-4 w-4" /> Edit
+                  </Button>
+                ) : null}
               </div>
             </div>
           )}
@@ -1670,9 +1705,11 @@ export default function JobFinancialsPage() {
             <Button size="sm" variant="outline" onClick={exportCsv}>
               <Download className="mr-1 h-4 w-4" /> Export CSV
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void addArea()}>
-              <Plus className="mr-1 h-4 w-4" /> Add Area
-            </Button>
+            {canManage ? (
+              <Button size="sm" variant="outline" onClick={() => void addArea()}>
+                <Plus className="mr-1 h-4 w-4" /> Add Area
+              </Button>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -1687,6 +1724,7 @@ export default function JobFinancialsPage() {
                 area={area}
                 invoices={data.invoices}
                 collapsed={!!collapsedAreas[area.id]}
+                canManage={canManage}
                 onToggle={toggleArea}
                 onAddLineItem={addLineItem}
                 onRenameArea={renameArea}
@@ -1714,28 +1752,30 @@ export default function JobFinancialsPage() {
                     {formatCurrency(totals?.changeOrderApprovedCents ?? 0)}
                   </span>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={coUploading}
-                    onClick={() => coInputRef.current?.click()}
-                  >
-                    {coUploading ? (
-                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="mr-1 h-4 w-4" />
-                    )}
-                    Upload CO
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => void addChangeOrder()}
-                  >
-                    <Plus className="mr-1 h-4 w-4" /> Add CO
-                  </Button>
-                </div>
+                {canManage ? (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={coUploading}
+                      onClick={() => coInputRef.current?.click()}
+                    >
+                      {coUploading ? (
+                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="mr-1 h-4 w-4" />
+                      )}
+                      Upload CO
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void addChangeOrder()}
+                    >
+                      <Plus className="mr-1 h-4 w-4" /> Add CO
+                    </Button>
+                  </div>
+                ) : null}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1774,37 +1814,39 @@ export default function JobFinancialsPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg">Change Orders</CardTitle>
-          <div className="flex gap-2">
-            <input
-              ref={coInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.rtf,.md,.json,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,application/pdf,image/*,text/*"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (f) onCoPicked(f)
-              }}
-            />
-            <Button
-              size="sm"
-              onClick={() => coInputRef.current?.click()}
-              disabled={coUploading}
-            >
-              {coUploading ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="mr-1 h-4 w-4" />
-              )}
-              Upload CO
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void addChangeOrder()}
-            >
-              <Plus className="mr-1 h-4 w-4" /> Add CO
-            </Button>
-          </div>
+          {canManage ? (
+            <div className="flex gap-2">
+              <input
+                ref={coInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.rtf,.md,.json,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,application/pdf,image/*,text/*"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) onCoPicked(f)
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => coInputRef.current?.click()}
+                disabled={coUploading}
+              >
+                {coUploading ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1 h-4 w-4" />
+                )}
+                Upload CO
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void addChangeOrder()}
+              >
+                <Plus className="mr-1 h-4 w-4" /> Add CO
+              </Button>
+            </div>
+          ) : null}
         </CardHeader>
         {coParseError ? (
           <div
@@ -1887,30 +1929,32 @@ export default function JobFinancialsPage() {
                       </Badge>
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <div className="flex justify-end gap-1">
-                        {co.status !== "approved" ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              void setChangeOrderStatus(co.id, "approved")
-                            }
-                          >
-                            Approve
-                          </Button>
-                        ) : null}
-                        {co.status !== "rejected" ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              void setChangeOrderStatus(co.id, "rejected")
-                            }
-                          >
-                            Reject
-                          </Button>
-                        ) : null}
-                      </div>
+                      {canManage ? (
+                        <div className="flex justify-end gap-1">
+                          {co.status !== "approved" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                void setChangeOrderStatus(co.id, "approved")
+                              }
+                            >
+                              Approve
+                            </Button>
+                          ) : null}
+                          {co.status !== "rejected" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                void setChangeOrderStatus(co.id, "rejected")
+                              }
+                            >
+                              Reject
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -1926,30 +1970,32 @@ export default function JobFinancialsPage() {
           <CardTitle className="flex items-center gap-2 text-lg">
             <Receipt className="h-5 w-5" /> Invoices
           </CardTitle>
-          <div>
-            <input
-              ref={invoiceInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.rtf,.md,.json,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,application/pdf,image/*,text/*"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (f) void onInvoicePicked(f)
-              }}
-            />
-            <Button
-              size="sm"
-              onClick={() => invoiceInputRef.current?.click()}
-              disabled={invoiceUploading}
-            >
-              {invoiceUploading ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-1 h-4 w-4" />
-              )}
-              Upload Invoice PDF
-            </Button>
-          </div>
+          {canManage ? (
+            <div>
+              <input
+                ref={invoiceInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.tsv,.txt,.rtf,.md,.json,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,application/pdf,image/*,text/*"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) void onInvoicePicked(f)
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => invoiceInputRef.current?.click()}
+                disabled={invoiceUploading}
+              >
+                {invoiceUploading ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="mr-1 h-4 w-4" />
+                )}
+                Upload Invoice PDF
+              </Button>
+            </div>
+          ) : null}
         </CardHeader>
         {invoiceError ? (
           <div
@@ -2025,22 +2071,24 @@ export default function JobFinancialsPage() {
                     invoice gross amounts.
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant={retentionTotals.released ? "outline" : "default"}
-                  className={
-                    retentionTotals.released
-                      ? ""
-                      : "bg-amber-600 hover:bg-amber-700"
-                  }
-                  disabled={retentionTotals.released || releasingRetention}
-                  onClick={() => void releaseRetention()}
-                >
-                  {releasingRetention ? (
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  ) : null}
-                  {retentionTotals.released ? "Released" : "Mark as released"}
-                </Button>
+                {canManage ? (
+                  <Button
+                    size="sm"
+                    variant={retentionTotals.released ? "outline" : "default"}
+                    className={
+                      retentionTotals.released
+                        ? ""
+                        : "bg-amber-600 hover:bg-amber-700"
+                    }
+                    disabled={retentionTotals.released || releasingRetention}
+                    onClick={() => void releaseRetention()}
+                  >
+                    {releasingRetention ? (
+                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                    ) : null}
+                    {retentionTotals.released ? "Released" : "Mark as released"}
+                  </Button>
+                ) : null}
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                 <div>
@@ -2166,20 +2214,24 @@ export default function JobFinancialsPage() {
                                   <FileText className="mr-1 h-4 w-4" /> File
                                 </Button>
                               ) : null}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => openMatchesEditor(inv)}
-                              >
-                                <Pencil className="mr-1 h-4 w-4" /> Edit matches
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => void deleteInvoice(inv.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {canManage ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => openMatchesEditor(inv)}
+                                  >
+                                    <Pencil className="mr-1 h-4 w-4" /> Edit matches
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={() => void deleteInvoice(inv.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              ) : null}
                             </div>
                           </td>
                         </tr>

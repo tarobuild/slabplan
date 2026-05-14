@@ -54,7 +54,9 @@ before(async () => {
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
   process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL ??= "http://stub.invalid";
   process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY ??= "test-key";
-  process.env.PRIVATE_OBJECT_DIR ??= "/test-bucket/test-prefix";
+  process.env.SUPABASE_URL ??= "https://storage.example.invalid";
+  process.env.SUPABASE_STORAGE_BUCKET ??= "cadstone-files";
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-role-key";
 
   const storageMod = await import("../src/lib/storage.ts");
   storageMod.__storageWriteTesting.setImpls({

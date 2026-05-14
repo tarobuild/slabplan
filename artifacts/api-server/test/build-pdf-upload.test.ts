@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createServer, type Server as HttpServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
@@ -45,6 +46,8 @@ let baseUrl = "";
 let adminToken = "";
 let teardownDb: (() => Promise<void>) | null = null;
 let bootSkipReason: string | null = null;
+let storageServer: HttpServer | null = null;
+let storageBaseUrl = "";
 
 const PDF_BYTES = Buffer.from(
   "%PDF-1.4\n%\xC4\xE5\xF2\xE5\xEB\xA7\n%%EOF\n",
@@ -86,6 +89,38 @@ async function waitForHealth(url: string, timeoutMs: number) {
   throw new Error(
     `Bundled server never became healthy at ${url}. lastErr=${String(lastErr)}`,
   );
+}
+
+async function startFakeSupabaseStorage(): Promise<string> {
+  storageServer = createServer((req, res) => {
+    const url = req.url ?? "";
+    if (req.method === "HEAD" && url === "/storage/v1/bucket/cadstone-files") {
+      res.writeHead(200).end();
+      return;
+    }
+    if (
+      req.method === "POST" &&
+      url.startsWith("/storage/v1/object/cadstone-files/cadstone/uploads/")
+    ) {
+      req.resume();
+      req.on("end", () => {
+        res
+          .writeHead(201, { "content-type": "application/json" })
+          .end(JSON.stringify({ Key: url }));
+      });
+      return;
+    }
+    res.writeHead(404, { "content-type": "application/json" }).end(
+      JSON.stringify({ message: "not found" }),
+    );
+  });
+  await new Promise<void>((resolve, reject) => {
+    storageServer?.once("error", reject);
+    storageServer?.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = storageServer.address();
+  assert.ok(address && typeof address === "object");
+  return `http://127.0.0.1:${address.port}`;
 }
 
 before(async () => {
@@ -163,6 +198,7 @@ before(async () => {
 
   const port = await pickPort();
   baseUrl = `http://127.0.0.1:${port}`;
+  storageBaseUrl = await startFakeSupabaseStorage();
 
   serverProcess = spawn(process.execPath, [distEntry], {
     cwd: apiServerDir,
@@ -177,6 +213,9 @@ before(async () => {
       JWT_ACCESS_SECRET: sharedAccessSecret,
       JWT_REFRESH_SECRET: sharedRefreshSecret,
       JWT_UPLOAD_SECRET: sharedUploadSecret,
+      SUPABASE_URL: storageBaseUrl,
+      SUPABASE_STORAGE_BUCKET: "cadstone-files",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key",
       CORS_ALLOWED_ORIGINS: "https://app.example.com",
     },
   });
@@ -209,6 +248,11 @@ after(async () => {
         clearTimeout(t);
         resolve();
       });
+    });
+  }
+  if (storageServer) {
+    await new Promise<void>((resolve, reject) => {
+      storageServer?.close((error) => (error ? reject(error) : resolve()));
     });
   }
   if (teardownDb) {

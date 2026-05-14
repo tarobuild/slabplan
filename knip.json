@@ -49,7 +49,6 @@
       "ignoreDependencies": [
         "@tokenizer/inflate",
         "@tokenizer/token",
-        "google-auth-library",
         "peek-readable",
         "strtok3",
         "token-types"

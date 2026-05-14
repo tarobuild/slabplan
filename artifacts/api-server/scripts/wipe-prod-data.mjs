@@ -1,7 +1,7 @@
 /**
  * wipe-prod-data.mjs — destructively clear ALL application data from a
  * target database AND empty the cadstone uploads prefix in object
- * storage. Schema, migrations metadata, the bucket itself, and IAM are
+ * storage. Schema, migrations metadata, and the bucket itself are
  * all preserved — only rows and uploaded files are removed.
  *
  * This script is intended for a "blank slate" reseed (see
@@ -21,7 +21,7 @@
  * Safety properties:
  *   - Production target requires the explicit --i-know-what-im-doing
  *     confirmation flag, mirroring seed-users.mjs.
- *   - Lists what is about to be wiped (table count + row totals, GCS
+ *   - Lists what is about to be wiped (table count + row totals, storage
  *     object count + bytes) BEFORE writing, then pauses 3 s on
  *     production so an operator can Ctrl-C.
  *   - Preserves `workspace_schema_migrations` and any other system
@@ -29,14 +29,11 @@
  *   - Truncate runs inside a single transaction (BEGIN / TRUNCATE
  *     ALL ... CASCADE / verify all-zero / COMMIT). A failure rolls
  *     everything back so we never end up half-wiped.
- *   - GCS deletion is scoped to the cadstone uploads prefix only
- *     (`<PRIVATE_OBJECT_DIR>/cadstone/uploads/`). Anything outside
- *     that prefix (bucket root, public/, restore-drill artefacts under
- *     a sibling prefix, etc.) is NOT touched.
- *   - GCS deletion runs ONLY when --db=production. The Replit App
- *     Storage bucket is shared workspace-wide (one bucket per Repl;
- *     env vars are not per-environment), so wiping it from a "local"
- *     run would silently destroy real production uploads.
+ *   - Storage deletion is scoped to the cadstone uploads prefix only
+ *     (`cadstone/uploads/`). Anything outside that prefix is NOT touched.
+ *   - Storage deletion runs ONLY when --db=production. The Supabase bucket
+ *     is production data, so wiping it from a "local" run would silently
+ *     destroy real uploads.
  *
  * After running this script you almost certainly want to re-seed:
  *   node artifacts/api-server/scripts/seed-users.mjs \
@@ -47,7 +44,10 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Storage } from "@google-cloud/storage";
+import {
+  createSupabaseStorage,
+  uploadsObjectPrefix,
+} from "./lib/supabase-storage.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbRequire = createRequire(
@@ -57,7 +57,6 @@ const { Client } = dbRequire("pg");
 
 const PROTECTED_TABLES = new Set(["workspace_schema_migrations"]);
 const PRODUCTION_PAUSE_MS = 3000;
-const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
 
 const TARGETS = {
   local: { label: "LOCAL", envVar: "DATABASE_URL" },
@@ -212,46 +211,17 @@ async function planAndWipeDatabase(target) {
   }
 }
 
-function makeStorageClient() {
-  return new Storage({
-    credentials: {
-      audience: "replit",
-      subject_token_type: "access_token",
-      token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
-      type: "external_account",
-      credential_source: {
-        url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
-        format: { type: "json", subject_token_field_name: "access_token" },
-      },
-      universe_domain: "googleapis.com",
-    },
-    projectId: "",
-  });
-}
-
 async function planAndWipeBucket(targetLabel) {
-  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  const privateDir = process.env.PRIVATE_OBJECT_DIR;
-  if (!bucketId || !privateDir) {
-    console.log(
-      `\n[${targetLabel}/gcs] Skipping bucket wipe — DEFAULT_OBJECT_STORAGE_BUCKET_ID or PRIVATE_OBJECT_DIR not set.`,
-    );
-    return { deleted: 0, bytes: 0 };
-  }
-
-  // Mirrors src/lib/storage.ts and storage-restore-drill.mjs.
-  const cadstoneUploadsPrefix =
-    privateDir.replace(`/${bucketId}/`, "") + "/cadstone/uploads/";
+  const storage = createSupabaseStorage();
+  const cadstoneUploadsPrefix = uploadsObjectPrefix();
 
   console.log(
-    `\n[${targetLabel}/gcs] Bucket=${bucketId} Prefix=${cadstoneUploadsPrefix}`,
+    `\n[${targetLabel}/storage] Bucket=${storage.bucketName} Prefix=${cadstoneUploadsPrefix}`,
   );
 
-  const storage = makeStorageClient();
-  const bucket = storage.bucket(bucketId);
-  const [files] = await bucket.getFiles({ prefix: cadstoneUploadsPrefix });
+  const files = await storage.listAllObjects(cadstoneUploadsPrefix);
   if (files.length === 0) {
-    console.log(`[${targetLabel}/gcs] Prefix already empty.`);
+    console.log(`[${targetLabel}/storage] Prefix already empty.`);
     return { deleted: 0, bytes: 0 };
   }
 
@@ -260,37 +230,31 @@ async function planAndWipeBucket(targetLabel) {
     0,
   );
   console.log(
-    `[${targetLabel}/gcs] About to delete ${files.length} objects (${totalBytes} bytes total).`,
+    `[${targetLabel}/storage] About to delete ${files.length} objects (${totalBytes} bytes total).`,
   );
-  console.log(`[${targetLabel}/gcs] Sample (first 5):`);
+  console.log(`[${targetLabel}/storage] Sample (first 5):`);
   for (const f of files.slice(0, 5)) {
     console.log(`  - ${f.name} (size=${f.metadata?.size ?? "?"})`);
   }
 
   if (targetLabel === "PRODUCTION") {
     console.log(
-      `[${targetLabel}/gcs] Pausing ${PRODUCTION_PAUSE_MS}ms before deleting — Ctrl-C now to abort.`,
+      `[${targetLabel}/storage] Pausing ${PRODUCTION_PAUSE_MS}ms before deleting — Ctrl-C now to abort.`,
     );
     await sleep(PRODUCTION_PAUSE_MS);
   }
 
-  // bucket.deleteFiles deletes everything matching the prefix in parallel
-  // batches. Force=true makes 404s non-fatal (race-safe). Anything outside
-  // cadstoneUploadsPrefix is untouched because it's the prefix arg here.
-  await bucket.deleteFiles({
-    prefix: cadstoneUploadsPrefix,
-    force: true,
-  });
+  await storage.deleteObjects(files.map((file) => file.name));
 
   // Verify.
-  const [after] = await bucket.getFiles({ prefix: cadstoneUploadsPrefix });
+  const after = await storage.listAllObjects(cadstoneUploadsPrefix);
   if (after.length > 0) {
     throw new Error(
       `Bucket still has ${after.length} objects under ${cadstoneUploadsPrefix} after delete.`,
     );
   }
   console.log(
-    `[${targetLabel}/gcs] Deleted ${files.length} objects (${totalBytes} bytes). Prefix now empty.`,
+    `[${targetLabel}/storage] Deleted ${files.length} objects (${totalBytes} bytes). Prefix now empty.`,
   );
   return { deleted: files.length, bytes: totalBytes };
 }
@@ -302,14 +266,13 @@ async function main() {
   console.log(`Wipe target: ${target.label} (${target.envVar})`);
 
   const dbResult = await planAndWipeDatabase(target);
-  // The GCS bucket is workspace-shared (env vars are not per-environment),
-  // so only wipe it when explicitly targeting production. A local-target
-  // run would otherwise silently destroy real production uploads.
-  const gcsResult =
+  // Only wipe Supabase Storage when explicitly targeting production. A local
+  // target run should never clear real uploads.
+  const storageResult =
     target.label === "PRODUCTION"
       ? await planAndWipeBucket(target.label)
       : (console.log(
-          `\n[${target.label}/gcs] Skipping bucket wipe — bucket is shared with production. ` +
+          `\n[${target.label}/storage] Skipping bucket wipe — bucket is production data. ` +
             `Use --db=production to clear uploads.`,
         ),
         { deleted: 0, bytes: 0 });
@@ -320,7 +283,10 @@ async function main() {
       {
         target: target.label,
         db: { tablesWiped: dbResult.tables.length, rowsRemoved: dbResult.totalRows },
-        gcs: { objectsDeleted: gcsResult.deleted, bytesDeleted: gcsResult.bytes },
+        storage: {
+          objectsDeleted: storageResult.deleted,
+          bytesDeleted: storageResult.bytes,
+        },
       },
       null,
       2,

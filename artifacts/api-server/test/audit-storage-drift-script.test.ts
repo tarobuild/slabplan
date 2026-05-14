@@ -70,59 +70,34 @@ test("parseArgs: --max-bucket-objects rejects junk values", async () => {
   }
 });
 
-test("parsePrivateDir: extracts bucket segment and prefix", async () => {
-  const mod = await loadScript();
-  assert.deepEqual(mod.parsePrivateDir("/replit-objstore-abc/.private"), {
-    bucketSegment: "replit-objstore-abc",
-    prefix: ".private",
-  });
-  // Tolerates a missing leading slash.
-  assert.deepEqual(mod.parsePrivateDir("replit-objstore-abc/.private"), {
-    bucketSegment: "replit-objstore-abc",
-    prefix: ".private",
-  });
-});
-
-test("parsePrivateDir: rejects empty input", async () => {
-  const mod = await loadScript();
-  assert.throws(() => mod.parsePrivateDir(""), /PRIVATE_OBJECT_DIR is missing/);
-  assert.throws(
-    () => mod.parsePrivateDir(undefined),
-    /PRIVATE_OBJECT_DIR is missing/,
-  );
-});
-
 test("uploadsObjectPrefix: includes trailing slash and cadstone/uploads/", async () => {
   const mod = await loadScript();
-  const prefix = mod.uploadsObjectPrefix("/replit-objstore-abc/.private");
-  assert.equal(prefix, ".private/cadstone/uploads/");
+  const prefix = mod.uploadsObjectPrefix();
+  assert.equal(prefix, "cadstone/uploads/");
 });
 
 test("fileUrlToObjectName: round-trips with objectNameToFileUrl", async () => {
   const mod = await loadScript();
-  const privateDir = "/replit-objstore-abc/.private";
   const fileUrl = "/uploads/job-1/photo/1700000000000-uuid-foo.jpg";
-  const objectName = mod.fileUrlToObjectName({ fileUrl, privateDir });
+  const objectName = mod.fileUrlToObjectName({ fileUrl });
   assert.equal(
     objectName,
-    ".private/cadstone/uploads/job-1/photo/1700000000000-uuid-foo.jpg",
+    "cadstone/uploads/job-1/photo/1700000000000-uuid-foo.jpg",
   );
-  const back = mod.objectNameToFileUrl({ objectName, privateDir });
+  const back = mod.objectNameToFileUrl({ objectName });
   assert.equal(back, fileUrl);
 });
 
 test("fileUrlToObjectName: rejects malformed urls", async () => {
   const mod = await loadScript();
-  const privateDir = "/replit-objstore-abc/.private";
   assert.throws(
-    () => mod.fileUrlToObjectName({ fileUrl: "", privateDir }),
+    () => mod.fileUrlToObjectName({ fileUrl: "" }),
     /Stored file URL is missing/,
   );
   assert.throws(
     () =>
       mod.fileUrlToObjectName({
         fileUrl: "/not-uploads/foo.jpg",
-        privateDir,
       }),
     /Invalid stored file URL/,
   );
@@ -132,7 +107,7 @@ test("fileUrlToObjectName: rejects malformed urls", async () => {
     "/uploads/ok\0nul",
   ]) {
     assert.throws(
-      () => mod.fileUrlToObjectName({ fileUrl: bad, privateDir }),
+      () => mod.fileUrlToObjectName({ fileUrl: bad }),
       /Invalid stored file URL/,
       `expected reject: ${JSON.stringify(bad)}`,
     );
@@ -141,34 +116,30 @@ test("fileUrlToObjectName: rejects malformed urls", async () => {
 
 test("objectNameToFileUrl: returns null for objects outside the cadstone uploads prefix", async () => {
   const mod = await loadScript();
-  const privateDir = "/replit-objstore-abc/.private";
   // Sibling prefixes — restore-drill, public placeholders — must be
   // ignored so they don't show up as "bucket_only" false positives.
   assert.equal(
     mod.objectNameToFileUrl({
-      objectName: ".private/cadstone/restore-drill/roundtrip-1.bin",
-      privateDir,
+      objectName: "cadstone/restore-drill/roundtrip-1.bin",
     }),
     null,
   );
   assert.equal(
     mod.objectNameToFileUrl({
       objectName: "public/placeholder.txt",
-      privateDir,
     }),
     null,
   );
   // Empty / non-string defenses.
   assert.equal(
-    mod.objectNameToFileUrl({ objectName: "", privateDir }),
+    mod.objectNameToFileUrl({ objectName: "" }),
     null,
   );
   // Exact prefix match with no relative tail is also not a real
   // upload, so it must not be classified as such.
   assert.equal(
     mod.objectNameToFileUrl({
-      objectName: ".private/cadstone/uploads/",
-      privateDir,
+      objectName: "cadstone/uploads/",
     }),
     null,
   );

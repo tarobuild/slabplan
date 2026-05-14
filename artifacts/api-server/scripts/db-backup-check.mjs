@@ -5,7 +5,7 @@
  *
  * Two checks, both alert on failure:
  *   1. **Existence:** an object named `backups/db/YYYY-MM-DD.sql.gz`
- *      exists for today (UTC) in the configured bucket. Catches the
+ *      exists for today (UTC) in the configured Supabase Storage bucket. Catches the
  *      "the cron silently never ran" failure mode.
  *   2. **Size sanity:** today's compressed size is within ±50 % of the
  *      median compressed size of the trailing 7 days (excluding today).
@@ -22,7 +22,9 @@
  *   1 — at least one check failed; an alert was attempted.
  *
  * Required env: same as `db-backup.mjs`.
- *   - `DEFAULT_OBJECT_STORAGE_BUCKET_ID`
+ *   - `SUPABASE_URL`
+ *   - `SUPABASE_STORAGE_BUCKET`
+ *   - `SUPABASE_SERVICE_ROLE_KEY`
  * Optional env:
  *   - `BACKUP_PREFIX`                 (default: "backups/db")
  *   - `BACKUP_SIZE_TOLERANCE_PCT`     (default: 50)
@@ -30,9 +32,9 @@
  *   - `LOG_LEVEL`                     (default: "info")
  *   - Alert env: see `lib/backup-alerts.mjs`.
  */
-import { Storage } from "@google-cloud/storage";
 import pino from "pino";
 import { sendBackupAlert } from "./lib/backup-alerts.mjs";
+import { createSupabaseStorage } from "./lib/supabase-storage.mjs";
 
 const pinoLogger = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -44,8 +46,6 @@ function log(level, event, extra = {}) {
   fn.call(pinoLogger, { event, ...extra }, event);
 }
 
-const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
-const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
 const backupPrefix = (process.env.BACKUP_PREFIX ?? "backups/db").replace(
   /\/+$/,
   "",
@@ -55,10 +55,6 @@ const historyWindowDays = Number(
   process.env.BACKUP_HISTORY_WINDOW_DAYS ?? "7",
 );
 
-if (!bucketId) {
-  log("error", "missing_env", { var: "DEFAULT_OBJECT_STORAGE_BUCKET_ID" });
-  process.exit(1);
-}
 if (!Number.isFinite(tolerancePct) || tolerancePct <= 0 || tolerancePct >= 100) {
   log("error", "bad_env", {
     var: "BACKUP_SIZE_TOLERANCE_PCT",
@@ -67,22 +63,7 @@ if (!Number.isFinite(tolerancePct) || tolerancePct <= 0 || tolerancePct >= 100) 
   process.exit(1);
 }
 
-const storage = new Storage({
-  credentials: {
-    audience: "replit",
-    subject_token_type: "access_token",
-    token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
-    type: "external_account",
-    credential_source: {
-      url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
-      format: { type: "json", subject_token_field_name: "access_token" },
-    },
-    universe_domain: "googleapis.com",
-  },
-  projectId: "",
-});
-
-const bucket = storage.bucket(bucketId);
+const storage = createSupabaseStorage();
 
 function todayUtc() {
   const now = new Date();
@@ -113,7 +94,7 @@ function median(values) {
  * Build a date → sizeBytes map of all backup objects under the prefix.
  */
 async function loadBackupIndex() {
-  const [files] = await bucket.getFiles({ prefix: `${backupPrefix}/` });
+  const files = await storage.listAllObjects(`${backupPrefix}/`);
   const byDate = new Map();
   for (const f of files) {
     const m = /\/(\d{4}-\d{2}-\d{2})\.sql\.gz$/.exec(f.name);
@@ -127,7 +108,7 @@ async function loadBackupIndex() {
 
 async function main() {
   const today = todayUtc();
-  log("info", "check_start", { today, bucketId, backupPrefix });
+  log("info", "check_start", { today, bucket: storage.bucketName, backupPrefix });
 
   const index = await loadBackupIndex();
   const failures = [];
@@ -137,7 +118,7 @@ async function main() {
   if (!todayEntry) {
     failures.push({
       code: "missing_today",
-      message: `Expected ${backupPrefix}/${today}.sql.gz to exist in bucket ${bucketId}, but it was not found. The daily backup may not have run.`,
+      message: `Expected ${backupPrefix}/${today}.sql.gz to exist in bucket ${storage.bucketName}, but it was not found. The daily backup may not have run.`,
     });
     log("error", "missing_today", { today, expected: `${backupPrefix}/${today}.sql.gz` });
   } else {
@@ -209,7 +190,7 @@ async function main() {
     ].join("\n"),
     context: {
       date: today,
-      bucketId,
+      bucket: storage.bucketName,
       backupPrefix,
       failures,
       sizeReport,

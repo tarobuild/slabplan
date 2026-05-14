@@ -2,7 +2,7 @@
  * cleanup-orphan-file-rows.mjs — remove `files` rows whose underlying
  * object in the cadstone uploads bucket no longer exists.
  *
- * Context: on 2026-04-30 the GCS uploads prefix was emptied as part of
+ * Context: on 2026-04-30 the uploads prefix was emptied as part of
  * the account-cleanup task (see docs/runbook.md § 9, 2026-04-30 entry),
  * but the database was deliberately left intact. The result is that
  * `files` rows from before the wipe still point at storage keys that
@@ -12,8 +12,8 @@
  * What this script does:
  *   1. SELECT every `files` row created on/before --cutoff (default
  *      2026-05-01 UTC; pre-cutoff is the "before the wipe" cohort).
- *   2. Probe each row's storage object via the same App Storage sidecar
- *      that `src/lib/storage.ts` uses.
+ *   2. Probe each row's storage object via the same Supabase Storage
+ *      bucket that `src/lib/storage.ts` uses.
  *   3. Hard-delete the rows whose object is missing. Foreign keys on
  *      `file_annotations.file_id`, `lead_attachments.file_id`,
  *      `daily_log_attachments.file_id`, and
@@ -63,7 +63,7 @@
  *     pauses 3 s before the DELETE so an operator can Ctrl-C.
  *   - DELETE runs inside one transaction; either every orphan row goes
  *     or nothing does.
- *   - Storage probe uses GCS `file.exists()` with `ignoreNotFound`-style
+ *   - Storage probe uses Supabase Storage with `ignoreNotFound`-style
  *     semantics (a missing object is a clean `false`, a transient API
  *     error is treated as "unknown" and the row is LEFT ALONE — we
  *     never delete a row on the basis of a network blip).
@@ -74,7 +74,10 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Storage } from "@google-cloud/storage";
+import {
+  createSupabaseStorage,
+  fileUrlToObjectName,
+} from "./lib/supabase-storage.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbRequire = createRequire(
@@ -82,7 +85,6 @@ const dbRequire = createRequire(
 );
 const { Client } = dbRequire("pg");
 
-const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
 const PRODUCTION_PAUSE_MS = 3000;
 const DEFAULT_CUTOFF = "2026-05-01T00:00:00Z";
 
@@ -126,47 +128,7 @@ function parseArgs(argv) {
   return { db, dryRun, cutoff };
 }
 
-function makeStorageClient() {
-  return new Storage({
-    credentials: {
-      audience: "replit",
-      subject_token_type: "access_token",
-      token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
-      type: "external_account",
-      credential_source: {
-        url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
-        format: { type: "json", subject_token_field_name: "access_token" },
-      },
-      universe_domain: "googleapis.com",
-    },
-    projectId: "",
-  });
-}
-
-function fileUrlToObject(fileUrl, bucketId, privateDir) {
-  // Mirrors src/lib/storage.ts:fileUrlToObject so this script and the
-  // serve path agree on which object backs which DB row.
-  if (!fileUrl || typeof fileUrl !== "string") {
-    throw new Error("Stored file URL is missing.");
-  }
-  const match = /^\/uploads\/(.+)$/.exec(fileUrl);
-  if (!match) {
-    throw new Error(`Invalid stored file URL: ${fileUrl}`);
-  }
-  const relative = match[1];
-  if (relative.includes("..") || relative.startsWith("/") || relative.includes("\0")) {
-    throw new Error(`Invalid stored file URL: ${fileUrl}`);
-  }
-  // privateDir is "/<bucketId>/<prefix>" — strip the leading bucket
-  // segment so the result matches storage.ts.
-  const normalized = privateDir.startsWith("/") ? privateDir : `/${privateDir}`;
-  const parts = normalized.split("/").filter(Boolean);
-  const prefix = parts.slice(1).join("/");
-  const segments = [prefix, "cadstone", "uploads", relative].filter(Boolean);
-  return { bucketName: bucketId, objectName: segments.join("/") };
-}
-
-async function classifyRows({ rows, bucket, bucketId, privateDir }) {
+async function classifyRows({ rows, storage }) {
   const orphans = [];
   const present = [];
   const indeterminate = [];
@@ -181,7 +143,7 @@ async function classifyRows({ rows, bucket, bucketId, privateDir }) {
 
     let objectName;
     try {
-      ({ objectName } = fileUrlToObject(row.file_url, bucketId, privateDir));
+      objectName = fileUrlToObjectName({ fileUrl: row.file_url });
     } catch (error) {
       // Malformed file_url — the serve path will already throw. Treat
       // as orphan since it can never load.
@@ -193,7 +155,7 @@ async function classifyRows({ rows, bucket, bucketId, privateDir }) {
     }
 
     try {
-      const [exists] = await bucket.file(objectName).exists();
+      const exists = await storage.objectExists(objectName);
       if (exists) {
         present.push({ row, objectName });
       } else {
@@ -247,38 +209,12 @@ async function main() {
       `${target.envVar} must be set to inspect the ${target.label} database.`,
     );
   }
-  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  const privateDir = process.env.PRIVATE_OBJECT_DIR;
-  if (!bucketId || !privateDir) {
-    throw new Error(
-      "DEFAULT_OBJECT_STORAGE_BUCKET_ID and PRIVATE_OBJECT_DIR must both be " +
-        "set so the storage probe matches the runtime serve path.",
-    );
-  }
-  // Runtime `src/lib/storage.ts` derives the bucket from the *first
-  // segment* of PRIVATE_OBJECT_DIR — not from DEFAULT_OBJECT_STORAGE_BUCKET_ID
-  // — so if the two ever drift this script could otherwise probe a
-  // bucket the serve path never touches and falsely flag every row as
-  // orphaned. Assert they agree before doing anything destructive.
-  const privateDirNormalized = privateDir.startsWith("/")
-    ? privateDir
-    : `/${privateDir}`;
-  const privateDirBucket = privateDirNormalized.split("/").filter(Boolean)[0];
-  if (privateDirBucket !== bucketId) {
-    throw new Error(
-      `PRIVATE_OBJECT_DIR bucket segment (${privateDirBucket}) does not ` +
-        `match DEFAULT_OBJECT_STORAGE_BUCKET_ID (${bucketId}). Refusing to ` +
-        `probe — fix the env config first.`,
-    );
-  }
+  const storage = createSupabaseStorage();
 
   console.log(`Target: ${target.label} (${target.envVar})`);
-  console.log(`Bucket: ${bucketId}`);
+  console.log(`Bucket: ${storage.bucketName}`);
   console.log(`Cutoff (created_at <=): ${cutoff}`);
   console.log(`Mode:   ${dryRun ? "DRY-RUN (no writes)" : "WRITE"}`);
-
-  const storage = makeStorageClient();
-  const bucket = storage.bucket(bucketId);
 
   const client = new Client({ connectionString });
   await client.connect();
@@ -294,9 +230,7 @@ async function main() {
 
     const { orphans, present, indeterminate } = await classifyRows({
       rows,
-      bucket,
-      bucketId,
-      privateDir,
+      storage,
     });
 
     console.log(

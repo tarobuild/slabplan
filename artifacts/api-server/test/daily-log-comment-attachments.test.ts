@@ -29,11 +29,20 @@ before(async () => {
   process.env.DATABASE_URL ??= testDatabaseUrl;
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
   process.env.REPLIT_DEV_DOMAIN = "workspace.kirk.replit.dev";
+  process.env.SUPABASE_URL ??= "https://storage.example.invalid";
+  process.env.SUPABASE_STORAGE_BUCKET ??= "cadstone-files";
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-role-key";
 
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
+  const storageMod = await import("../src/lib/storage.ts");
   const { db } = await import("@workspace/db");
   const { users, jobs, dailyLogs } = await import("@workspace/db/schema");
+
+  storageMod.__storageWriteTesting.setImpls({
+    writeBuffer: async () => undefined,
+    writeFromPath: async () => undefined,
+  });
 
   await prepareApp();
 
@@ -102,6 +111,8 @@ after(async () => {
       });
     }
     await pool.end();
+    const storageMod = await import("../src/lib/storage.ts");
+    storageMod.__storageWriteTesting.reset();
   }
 });
 

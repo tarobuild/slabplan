@@ -1,6 +1,6 @@
 /**
  * audit-storage-drift.mjs — read-only check that the `files` table and
- * the App Storage uploads bucket agree on what exists.
+ * the Supabase Storage uploads bucket agree on what exists.
  *
  * Why this script exists:
  *   The 26 orphan rows cleaned up on 2026-04-30 (see docs/runbook.md
@@ -23,8 +23,7 @@
  *      deleted rows are restorable from the trash UI, and a restore
  *      against a missing object is exactly the broken-tile scenario
  *      we want to prevent).
- *   2. List every object in the bucket under the cadstone uploads
- *      prefix (`<privateDir>/cadstone/uploads/`).
+ *   2. List every object in the bucket under `cadstone/uploads/`.
  *   3. Compare the two sides and report:
  *        - db_only   : `files` rows whose object is missing from the
  *                      bucket (the same condition cleanup-orphan-file-
@@ -49,9 +48,7 @@
  *     by hand because the right fix depends on whether the file was
  *     deleted on purpose or the row was lost).
  *   - It never touches the bucket at all beyond listing keys.
- *   - It does not consider any prefix outside `<privateDir>/cadstone/
- *     uploads/`. The restore-drill prefix and the public/ placeholder
- *     are intentionally ignored.
+ *   - It does not consider any prefix outside `cadstone/uploads/`.
  *
  * Usage:
  *   node artifacts/api-server/scripts/audit-storage-drift.mjs --db=production
@@ -91,7 +88,12 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Storage } from "@google-cloud/storage";
+import {
+  createSupabaseStorage,
+  fileUrlToObjectName,
+  objectNameToFileUrl,
+  uploadsObjectPrefix,
+} from "./lib/supabase-storage.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbRequire = createRequire(
@@ -99,7 +101,6 @@ const dbRequire = createRequire(
 );
 const { Client } = dbRequire("pg");
 
-const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
 const DEFAULT_MAX_BUCKET_OBJECTS = 500_000;
 
 const TARGETS = {
@@ -141,58 +142,7 @@ export function parseArgs(argv) {
   return { db, format, maxBucketObjects };
 }
 
-export function parsePrivateDir(privateDir) {
-  if (!privateDir || typeof privateDir !== "string") {
-    throw new Error("PRIVATE_OBJECT_DIR is missing.");
-  }
-  const normalized = privateDir.startsWith("/") ? privateDir : `/${privateDir}`;
-  const parts = normalized.split("/").filter(Boolean);
-  if (parts.length < 1) {
-    throw new Error(`Invalid PRIVATE_OBJECT_DIR: ${privateDir}`);
-  }
-  const bucketSegment = parts[0];
-  const prefix = parts.slice(1).join("/");
-  return { bucketSegment, prefix };
-}
-
-export function uploadsObjectPrefix(privateDir) {
-  const { prefix } = parsePrivateDir(privateDir);
-  // Trailing slash matters: it stops `getFiles({prefix})` from
-  // matching sibling prefixes like `cadstone/restore-drill/` if some
-  // future entry happens to share a leading substring.
-  return [prefix, "cadstone", "uploads"].filter(Boolean).join("/") + "/";
-}
-
-export function fileUrlToObjectName({ fileUrl, privateDir }) {
-  if (!fileUrl || typeof fileUrl !== "string") {
-    throw new Error("Stored file URL is missing.");
-  }
-  const match = /^\/uploads\/(.+)$/.exec(fileUrl);
-  if (!match) {
-    throw new Error(`Invalid stored file URL: ${fileUrl}`);
-  }
-  const relative = match[1];
-  if (
-    relative.includes("..") ||
-    relative.startsWith("/") ||
-    relative.includes("\0")
-  ) {
-    throw new Error(`Invalid stored file URL: ${fileUrl}`);
-  }
-  return uploadsObjectPrefix(privateDir) + relative;
-}
-
-export function objectNameToFileUrl({ objectName, privateDir }) {
-  // Inverse of fileUrlToObjectName. Returns null for objects that
-  // don't live under the cadstone uploads prefix (they are not
-  // expected to have a corresponding `files` row).
-  if (!objectName || typeof objectName !== "string") return null;
-  const prefix = uploadsObjectPrefix(privateDir);
-  if (!objectName.startsWith(prefix)) return null;
-  const relative = objectName.slice(prefix.length);
-  if (!relative) return null;
-  return `/uploads/${relative}`;
-}
+export { fileUrlToObjectName, objectNameToFileUrl, uploadsObjectPrefix };
 
 export function diffSides({ dbFileUrls, bucketFileUrls }) {
   // Returns { dbOnly, bucketOnly } as sorted arrays of fileUrl
@@ -212,53 +162,6 @@ export function diffSides({ dbFileUrls, bucketFileUrls }) {
   dbOnly.sort();
   bucketOnly.sort();
   return { dbOnly, bucketOnly };
-}
-
-function makeStorageClient() {
-  return new Storage({
-    credentials: {
-      audience: "replit",
-      subject_token_type: "access_token",
-      token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
-      type: "external_account",
-      credential_source: {
-        url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
-        format: { type: "json", subject_token_field_name: "access_token" },
-      },
-      universe_domain: "googleapis.com",
-    },
-    projectId: "",
-  });
-}
-
-async function listAllUploadObjects({ bucket, privateDir, maxBucketObjects }) {
-  const prefix = uploadsObjectPrefix(privateDir);
-  const objectNames = [];
-  let pageToken = undefined;
-  // Manual pagination so we can enforce maxBucketObjects without
-  // pulling the entire result set into memory at once.
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const [files, nextQuery] = await bucket.getFiles({
-      prefix,
-      autoPaginate: false,
-      maxResults: 1000,
-      pageToken,
-    });
-    for (const f of files) {
-      objectNames.push(f.name);
-      if (objectNames.length > maxBucketObjects) {
-        throw new Error(
-          `Bucket listing exceeded --max-bucket-objects=${maxBucketObjects}. ` +
-            `Refusing to continue. Re-run with a higher cap or investigate ` +
-            `why the bucket has so many objects.`,
-        );
-      }
-    }
-    if (!nextQuery || !nextQuery.pageToken) break;
-    pageToken = nextQuery.pageToken;
-  }
-  return { objectNames, prefix };
 }
 
 async function loadDbFileUrls(client) {
@@ -303,41 +206,18 @@ async function runAudit({ db, format, maxBucketObjects }) {
       `${target.envVar} must be set to inspect the ${target.label} database.`,
     );
   }
-  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  const privateDir = process.env.PRIVATE_OBJECT_DIR;
-  if (!bucketId || !privateDir) {
-    throw new Error(
-      "DEFAULT_OBJECT_STORAGE_BUCKET_ID and PRIVATE_OBJECT_DIR must both be " +
-        "set so the audit probes the same bucket the serve path uses.",
-    );
-  }
-  // Same defensive cross-check the cleanup script does: storage.ts
-  // derives the bucket from the *first segment of PRIVATE_OBJECT_DIR*,
-  // not from DEFAULT_OBJECT_STORAGE_BUCKET_ID. If the two ever drift
-  // we'd otherwise audit a bucket the serve path never touches and
-  // misreport the entire `files` table as "db_only" orphans.
-  const { bucketSegment } = parsePrivateDir(privateDir);
-  if (bucketSegment !== bucketId) {
-    throw new Error(
-      `PRIVATE_OBJECT_DIR bucket segment (${bucketSegment}) does not match ` +
-        `DEFAULT_OBJECT_STORAGE_BUCKET_ID (${bucketId}). Refusing to audit ` +
-        `— fix the env config first.`,
-    );
-  }
+  const storage = createSupabaseStorage();
 
   if (format === "human") {
     // eslint-disable-next-line no-console
     console.log(`Target:  ${target.label} (${target.envVar})`);
     // eslint-disable-next-line no-console
-    console.log(`Bucket:  ${bucketId}`);
+    console.log(`Bucket:  ${storage.bucketName}`);
     // eslint-disable-next-line no-console
-    console.log(`Prefix:  ${uploadsObjectPrefix(privateDir)}`);
+    console.log(`Prefix:  ${uploadsObjectPrefix()}`);
     // eslint-disable-next-line no-console
     console.log(`Mode:    AUDIT (read-only)`);
   }
-
-  const storage = makeStorageClient();
-  const bucket = storage.bucket(bucketId);
 
   const client = new Client({ connectionString });
   await client.connect();
@@ -345,11 +225,13 @@ async function runAudit({ db, format, maxBucketObjects }) {
   let listResult;
   try {
     dbRows = await loadDbFileUrls(client);
-    listResult = await listAllUploadObjects({
-      bucket,
-      privateDir,
-      maxBucketObjects,
+    const objects = await storage.listAllObjects(uploadsObjectPrefix(), {
+      maxObjects: maxBucketObjects,
     });
+    listResult = {
+      objectNames: objects.map((object) => object.name),
+      prefix: uploadsObjectPrefix(),
+    };
   } finally {
     await client.end();
   }
@@ -367,7 +249,7 @@ async function runAudit({ db, format, maxBucketObjects }) {
       // is malformed — the serve path would 500 on it. We surface
       // these in the JSON summary so an operator can clean them up
       // (they are a separate failure mode from "object is missing").
-      fileUrlToObjectName({ fileUrl: row.fileUrl, privateDir });
+      fileUrlToObjectName({ fileUrl: row.fileUrl });
       dbFileUrls.push(row.fileUrl);
     } catch (error) {
       dbInvalid.push({
@@ -383,7 +265,6 @@ async function runAudit({ db, format, maxBucketObjects }) {
   for (const objectName of listResult.objectNames) {
     const url = objectNameToFileUrl({
       objectName,
-      privateDir,
     });
     if (url) {
       bucketFileUrls.push(url);
@@ -399,7 +280,7 @@ async function runAudit({ db, format, maxBucketObjects }) {
 
   const summary = {
     target: target.label,
-    bucket: bucketId,
+    bucket: storage.bucketName,
     prefix: listResult.prefix,
     inspected: {
       db_rows: dbRows.length,

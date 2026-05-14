@@ -49,13 +49,9 @@ async function bootstrap() {
       nodeEnv: process.env["NODE_ENV"] ?? null,
       hasSupabaseDb: Boolean(process.env["SUPABASE_DATABASE_URL"]),
       hasJwtUpload: Boolean(process.env["JWT_UPLOAD_SECRET"]),
-      storageProvider: process.env["STORAGE_PROVIDER"] ?? "replit",
       hasSupabaseUrl: Boolean(process.env["SUPABASE_URL"]),
       hasSupabaseStorageBucket: Boolean(process.env["SUPABASE_STORAGE_BUCKET"]),
       hasSupabaseServiceRoleKey: Boolean(process.env["SUPABASE_SERVICE_ROLE_KEY"]),
-      hasPrivateObjectDir: Boolean(process.env["PRIVATE_OBJECT_DIR"]),
-      hasPublicObjectSearchPaths: Boolean(process.env["PUBLIC_OBJECT_SEARCH_PATHS"]),
-      hasDefaultObjectBucket: Boolean(process.env["DEFAULT_OBJECT_STORAGE_BUCKET_ID"]),
     },
     "boot",
   );

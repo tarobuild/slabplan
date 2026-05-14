@@ -55,8 +55,8 @@ after(async () => {
 
 // /livez is the always-200 shallow liveness probe; /healthz performs the
 // deep DB+storage readiness check (covered separately in healthz-deep.test.ts).
-// We use /livez here so these smoke tests don't depend on a configured
-// PRIVATE_OBJECT_DIR or test-database wiring beyond a TCP listener.
+// We use /livez here so these smoke tests don't depend on configured
+// Supabase Storage or test-database wiring beyond a TCP listener.
 
 test("liveness endpoint stays public", async () => {
   const response = await fetch(`${baseUrl}/api/livez`);

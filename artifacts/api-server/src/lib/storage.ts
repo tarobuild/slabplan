@@ -2,10 +2,8 @@ import crypto from "node:crypto";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import type { Response as ExpressResponse } from "express";
-import { Storage } from "@google-cloud/storage";
 import {
   FILE_RESPONSE_CSP,
   resolveSafeFileServingHeaders,
@@ -13,57 +11,8 @@ import {
 import { HttpError } from "./http";
 import { logger } from "./logger";
 
-const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
 const SUPABASE_UPLOAD_PREFIX = "cadstone/uploads";
 const SUPABASE_OBJECT_MISSING_STATUSES = new Set([400, 404]);
-
-const storageClient = new Storage({
-  credentials: {
-    audience: "replit",
-    subject_token_type: "access_token",
-    token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
-    type: "external_account",
-    credential_source: {
-      url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
-      format: {
-        type: "json",
-        subject_token_field_name: "access_token",
-      },
-    },
-    universe_domain: "googleapis.com",
-  },
-  projectId: "",
-});
-
-function getPrivateObjectDir(): string {
-  const dir = process.env.PRIVATE_OBJECT_DIR;
-  if (!dir) {
-    throw new Error(
-      "PRIVATE_OBJECT_DIR is not set. Provision object storage before serving uploads.",
-    );
-  }
-  return dir;
-}
-
-type StorageProvider = "replit" | "supabase";
-
-function getStorageProvider(): StorageProvider {
-  const raw = (process.env.STORAGE_PROVIDER ?? "replit").trim().toLowerCase();
-  if (
-    raw === "" ||
-    raw === "replit" ||
-    raw === "gcs" ||
-    raw === "google-cloud-storage"
-  ) {
-    return "replit";
-  }
-  if (raw === "supabase") {
-    return "supabase";
-  }
-  throw new Error(
-    `Unsupported STORAGE_PROVIDER "${process.env.STORAGE_PROVIDER}". Use "replit" or "supabase".`,
-  );
-}
 
 function getRequiredEnv(key: string): string {
   const value = process.env[key]?.trim();
@@ -83,17 +32,6 @@ function getSupabaseConfig() {
   };
 }
 
-function parseBucketAndPrefix(fullPath: string) {
-  const normalized = fullPath.startsWith("/") ? fullPath : `/${fullPath}`;
-  const parts = normalized.split("/").filter(Boolean);
-  if (parts.length < 1) {
-    throw new Error(`Invalid PRIVATE_OBJECT_DIR: ${fullPath}`);
-  }
-  const bucketName = parts[0];
-  const prefix = parts.slice(1).join("/");
-  return { bucketName, prefix };
-}
-
 function fileUrlToRelativePath(fileUrl: string): string {
   if (!fileUrl || typeof fileUrl !== "string") {
     throw new Error("Stored file URL is missing.");
@@ -111,16 +49,6 @@ function fileUrlToRelativePath(fileUrl: string): string {
     throw new Error(`Invalid stored file URL: ${fileUrl}`);
   }
   return relative;
-}
-
-function fileUrlToObject(fileUrl: string): {
-  bucketName: string;
-  objectName: string;
-} {
-  const relative = fileUrlToRelativePath(fileUrl);
-  const { bucketName, prefix } = parseBucketAndPrefix(getPrivateObjectDir());
-  const segments = [prefix, "cadstone", "uploads", relative].filter(Boolean);
-  return { bucketName, objectName: segments.join("/") };
 }
 
 function fileUrlToSupabaseObjectName(fileUrl: string): string {
@@ -188,28 +116,19 @@ function normalizeFileComponent(value: string) {
 }
 
 export async function ensureUploadRoot(): Promise<void> {
-  // Object storage requires no filesystem preparation; retained for backwards
-  // compatibility with existing startup code.
+  // Supabase Storage requires no local filesystem preparation; retained for
+  // backwards compatibility with existing startup code.
 }
 
 type HeadBucketImpl = () => Promise<void>;
 
 const defaultHeadBucket: HeadBucketImpl = async () => {
-  if (getStorageProvider() === "supabase") {
-    const { bucketName } = getSupabaseConfig();
-    await supabaseStorageRequest(
-      `/bucket/${encodeURIComponent(bucketName)}`,
-      { method: "HEAD" },
-      new Set([200]),
-    );
-    return;
-  }
-
-  const { bucketName } = parseBucketAndPrefix(getPrivateObjectDir());
-  const [exists] = await storageClient.bucket(bucketName).exists();
-  if (!exists) {
-    throw new Error(`Upload bucket '${bucketName}' is not reachable.`);
-  }
+  const { bucketName } = getSupabaseConfig();
+  await supabaseStorageRequest(
+    `/bucket/${encodeURIComponent(bucketName)}`,
+    { method: "HEAD" },
+    new Set([200]),
+  );
 };
 
 let headBucketImpl: HeadBucketImpl = defaultHeadBucket;
@@ -280,29 +199,19 @@ const defaultWriteUploadedBuffer: WriteUploadedBufferImpl = async (
   buffer,
   options,
 ) => {
-  if (getStorageProvider() === "supabase") {
-    const { encodedPath } = supabaseObjectPath(fileUrl);
-    await supabaseStorageRequest(
-      `/object/${encodedPath}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": options?.contentType ?? "application/octet-stream",
-          "x-upsert": "true",
-        },
-        body: buffer,
+  const { encodedPath } = supabaseObjectPath(fileUrl);
+  await supabaseStorageRequest(
+    `/object/${encodedPath}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": options?.contentType ?? "application/octet-stream",
+        "x-upsert": "true",
       },
-      new Set([200, 201]),
-    );
-    return;
-  }
-
-  const { bucketName, objectName } = fileUrlToObject(fileUrl);
-  const file = storageClient.bucket(bucketName).file(objectName);
-  await file.save(buffer, {
-    resumable: false,
-    contentType: options?.contentType ?? "application/octet-stream",
-  });
+      body: buffer,
+    },
+    new Set([200, 201]),
+  );
 };
 
 const defaultWriteUploadedFromPath: WriteUploadedFromPathImpl = async (
@@ -310,33 +219,22 @@ const defaultWriteUploadedFromPath: WriteUploadedFromPathImpl = async (
   sourcePath,
   options,
 ) => {
-  if (getStorageProvider() === "supabase") {
-    const { encodedPath } = supabaseObjectPath(fileUrl);
-    await supabaseStorageRequest(
-      `/object/${encodedPath}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": options?.contentType ?? "application/octet-stream",
-          "x-upsert": "true",
-        },
-        body: Readable.toWeb(
-          createReadStream(sourcePath),
-        ) as unknown as NonNullable<RequestInit["body"]>,
-        duplex: "half",
+  const { encodedPath } = supabaseObjectPath(fileUrl);
+  await supabaseStorageRequest(
+    `/object/${encodedPath}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": options?.contentType ?? "application/octet-stream",
+        "x-upsert": "true",
       },
-      new Set([200, 201]),
-    );
-    return;
-  }
-
-  const { bucketName, objectName } = fileUrlToObject(fileUrl);
-  const file = storageClient.bucket(bucketName).file(objectName);
-  const writeStream = file.createWriteStream({
-    resumable: false,
-    contentType: options?.contentType ?? "application/octet-stream",
-  });
-  await pipeline(createReadStream(sourcePath), writeStream);
+      body: Readable.toWeb(
+        createReadStream(sourcePath),
+      ) as unknown as NonNullable<RequestInit["body"]>,
+      duplex: "half",
+    },
+    new Set([200, 201]),
+  );
 };
 
 let writeUploadedBufferImpl = defaultWriteUploadedBuffer;
@@ -380,21 +278,12 @@ export async function deletePhysicalFile(
     return;
   }
   try {
-    if (getStorageProvider() === "supabase") {
-      const { encodedPath } = supabaseObjectPath(fileUrl);
-      await supabaseStorageRequest(
-        `/object/${encodedPath}`,
-        { method: "DELETE" },
-        new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
-      );
-      return;
-    }
-
-    const { bucketName, objectName } = fileUrlToObject(fileUrl);
-    await storageClient
-      .bucket(bucketName)
-      .file(objectName)
-      .delete({ ignoreNotFound: true });
+    const { encodedPath } = supabaseObjectPath(fileUrl);
+    await supabaseStorageRequest(
+      `/object/${encodedPath}`,
+      { method: "DELETE" },
+      new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+    );
   } catch (error) {
     logger.warn({ err: error, fileUrl }, "Failed to delete stored file");
   }
@@ -407,22 +296,13 @@ export async function storedFileExists(
     return false;
   }
   try {
-    if (getStorageProvider() === "supabase") {
-      const { encodedPath } = supabaseObjectPath(fileUrl);
-      const response = await supabaseStorageRequest(
-        `/object/info/${encodedPath}`,
-        { method: "HEAD" },
-        new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
-      );
-      return response.status === 200;
-    }
-
-    const { bucketName, objectName } = fileUrlToObject(fileUrl);
-    const [exists] = await storageClient
-      .bucket(bucketName)
-      .file(objectName)
-      .exists();
-    return exists;
+    const { encodedPath } = supabaseObjectPath(fileUrl);
+    const response = await supabaseStorageRequest(
+      `/object/info/${encodedPath}`,
+      { method: "HEAD" },
+      new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+    );
+    return response.status === 200;
   } catch (error) {
     logger.warn(
       { err: error, fileUrl },
@@ -435,7 +315,7 @@ export async function storedFileExists(
 export type StorageStatus = "ok" | "missing";
 
 /**
- * Result of a single uncached round-trip to GCS. Distinct from
+ * Result of a single uncached round-trip to Supabase Storage. Distinct from
  * {@link StorageStatus} so we can tell a definitive "object missing" response
  * apart from a transient failure that we want to fail-open on but explicitly
  * not cache (otherwise a 30-second outage would freeze every probed URL into
@@ -445,31 +325,22 @@ type RawProbeResult = "ok" | "missing" | "error";
 
 async function rawProbeStorageStatus(fileUrl: string): Promise<RawProbeResult> {
   try {
-    if (getStorageProvider() === "supabase") {
-      const { encodedPath } = supabaseObjectPath(fileUrl);
-      const response = await supabaseStorageRequest(
-        `/object/info/${encodedPath}`,
-        { method: "HEAD" },
-        new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
-      );
-      return response.status === 200 ? "ok" : "missing";
-    }
-
-    const { bucketName, objectName } = fileUrlToObject(fileUrl);
-    const [exists] = await storageClient
-      .bucket(bucketName)
-      .file(objectName)
-      .exists();
-    return exists ? "ok" : "missing";
+    const { encodedPath } = supabaseObjectPath(fileUrl);
+    const response = await supabaseStorageRequest(
+      `/object/info/${encodedPath}`,
+      { method: "HEAD" },
+      new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+    );
+    return response.status === 200 ? "ok" : "missing";
   } catch (error) {
     logger.warn({ err: error, fileUrl }, "Failed to probe stored file status");
     return "error";
   }
 }
 
-// Indirection so tests can swap in a stub probe without having to mock the
-// GCS SDK. Production code always calls this through
-// {@link probeStorageStatus}, which adds the cache and inflight coalescing.
+// Indirection so tests can swap in a stub probe without mocking fetch.
+// Production code always calls this through {@link probeStorageStatus}, which
+// adds the cache and inflight coalescing.
 let probeImpl: (fileUrl: string) => Promise<RawProbeResult> =
   rawProbeStorageStatus;
 
@@ -483,8 +354,8 @@ interface ProbeCacheEntry {
 const probeCache = new Map<string, ProbeCacheEntry>();
 
 // Concurrent probes for the same URL share a single inflight promise so a
-// burst of listings (or a single listing with many duplicates) only hits GCS
-// once even before the cache has been populated.
+// burst of listings (or a single listing with many duplicates) only hits
+// storage once even before the cache has been populated.
 const probeInflight = new Map<string, Promise<StorageStatus>>();
 
 // Hard upper bound to keep the cache from growing unboundedly in long-lived
@@ -518,7 +389,7 @@ function pruneProbeCache() {
     }
   }
   if (probeCache.size <= PROBE_CACHE_MAX_ENTRIES) return;
-  // Still over the cap — drop entries with the soonest expiry first.
+  // Still over the cap: drop entries with the soonest expiry first.
   const sorted = Array.from(probeCache.entries()).sort(
     (a, b) => a[1].expiresAt - b[1].expiresAt,
   );
@@ -529,13 +400,13 @@ function pruneProbeCache() {
 }
 
 /**
- * Probe whether a stored file is still backed by an object in GCS.
+ * Probe whether a stored file is still backed by an object in Supabase Storage.
  *
  * Distinct from {@link storedFileExists} in how errors are handled: this is the
  * helper used by listing endpoints to surface a "file unavailable" badge in the
  * UI, and we never want to label a file as missing because of a transient
  * network/permissions blip. Only a definitive "object does not exist" response
- * from GCS produces "missing"; everything else (including thrown errors and
+ * from storage produces "missing"; everything else (including thrown errors and
  * an empty/invalid fileUrl that we still need to render somehow) collapses to
  * "ok" so the row continues to behave normally.
  *
@@ -588,7 +459,7 @@ export async function probeStorageStatus(
       return "missing";
     }
     // Transient error: fail-open to "ok" but skip the cache so the next
-    // probe re-checks against GCS.
+    // probe re-checks against storage.
     return "ok";
   })();
 
@@ -626,8 +497,9 @@ export async function probeStorageStatuses(
 }
 
 /**
- * Internal hooks used by the test suite to swap the underlying GCS probe with
- * a stub and to reset cache state between tests. Not part of the public API.
+ * Internal hooks used by the test suite to swap the underlying storage probe
+ * with a stub and to reset cache state between tests. Not part of the public
+ * API.
  */
 export const __probeCacheTesting = {
   setProbeImpl(fn: (fileUrl: string) => Promise<RawProbeResult>) {
@@ -648,24 +520,19 @@ export const __probeCacheTesting = {
 export async function openStoredFileReadStream(
   fileUrl: string,
 ): Promise<Readable> {
-  if (getStorageProvider() === "supabase") {
-    const { encodedPath } = supabaseObjectPath(fileUrl);
-    const response = await supabaseStorageRequest(
-      `/object/${encodedPath}`,
-      { method: "GET" },
-      new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
-    );
-    if (SUPABASE_OBJECT_MISSING_STATUSES.has(response.status)) {
-      throw new HttpError(404, "Stored file missing.");
-    }
-    if (!response.body) {
-      throw new Error("Supabase Storage returned an empty response body.");
-    }
-    return Readable.fromWeb(response.body as unknown as WebReadableStream);
+  const { encodedPath } = supabaseObjectPath(fileUrl);
+  const response = await supabaseStorageRequest(
+    `/object/${encodedPath}`,
+    { method: "GET" },
+    new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+  );
+  if (SUPABASE_OBJECT_MISSING_STATUSES.has(response.status)) {
+    throw new HttpError(404, "Stored file missing.");
   }
-
-  const { bucketName, objectName } = fileUrlToObject(fileUrl);
-  return storageClient.bucket(bucketName).file(objectName).createReadStream();
+  if (!response.body) {
+    throw new Error("Supabase Storage returned an empty response body.");
+  }
+  return Readable.fromWeb(response.body as unknown as WebReadableStream);
 }
 
 export interface SendStoredFileOptions {
@@ -686,8 +553,8 @@ export interface StreamStoredFileProgress {
   /**
    * Bytes that have actually been piped to the response so far. Caller
    * passes a mutable object so the running count is observable from
-   * outside the promise — including from the catch path of the caller
-   * when the GCS read stream errors mid-transfer.
+   * outside the promise, including from the catch path of the caller
+   * when the storage read stream errors mid-transfer.
    */
   bytesStreamed: number;
 }
@@ -715,7 +582,7 @@ type StreamStoredFileImpl = (
 let streamStoredFileImpl: StreamStoredFileImpl | null = null;
 
 /**
- * Internal hook used by the test suite to swap the GCS-backed streaming
+ * Internal hook used by the test suite to swap the storage-backed streaming
  * implementation with a stub. Not part of the public API.
  */
 export const __streamStoredFileTesting = {
@@ -727,159 +594,17 @@ export const __streamStoredFileTesting = {
   },
 };
 
-export async function streamStoredFileToResponse(
-  res: ExpressResponse,
-  fileUrl: string,
-  opts: SendStoredFileOptions,
-  progress?: StreamStoredFileProgress,
-): Promise<StreamStoredFileResult> {
-  if (streamStoredFileImpl) {
-    return streamStoredFileImpl(res, fileUrl, opts, progress);
-  }
-
-  if (getStorageProvider() === "supabase") {
-    const { objectName, encodedPath } = supabaseObjectPath(fileUrl);
-    const response = await supabaseStorageRequest(
-      `/object/${encodedPath}`,
-      { method: "GET" },
-      new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
-    );
-    if (SUPABASE_OBJECT_MISSING_STATUSES.has(response.status)) {
-      throw new HttpError(404, "Stored file missing.");
-    }
-    if (!response.body) {
-      throw new Error("Supabase Storage returned an empty response body.");
-    }
-
-    const filename = opts.filename || objectName.split("/").pop() || "file";
-    const headers = resolveSafeFileServingHeaders({
-      originalName: filename,
-      requestedDisposition: opts.disposition,
-    });
-
-    res.setHeader("Content-Type", headers.contentType);
-    res.setHeader("Content-Disposition", headers.contentDispositionHeader);
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Content-Security-Policy", FILE_RESPONSE_CSP);
-    res.setHeader(
-      "Cache-Control",
-      opts.cacheControl ?? "private, max-age=3600",
-    );
-    const size = response.headers.get("content-length");
-    if (size) {
-      res.setHeader("Content-Length", size);
-    }
-
-    let bytesStreamed = 0;
-    let aborted = false;
-    const stream = Readable.fromWeb(
-      response.body as unknown as WebReadableStream,
-    );
-
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const settle = (fn: () => void) => {
-        if (settled) return;
-        settled = true;
-        fn();
-      };
-
-      const cleanup = () => {
-        stream.removeAllListeners();
-        res.removeListener("close", onResClose);
-      };
-
-      const onResClose = () => {
-        if (!res.writableEnded) {
-          aborted = true;
-          stream.destroy();
-          settle(() => {
-            cleanup();
-            resolve();
-          });
-        }
-      };
-
-      stream.on("data", (chunk: Buffer | string) => {
-        const len =
-          typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
-        bytesStreamed += len;
-        if (progress) {
-          progress.bytesStreamed = bytesStreamed;
-        }
-      });
-
-      stream.on("error", (err) => {
-        logger.error({ err, fileUrl }, "Stored file read stream error");
-        if (!res.headersSent) {
-          res.status(500).end();
-        } else {
-          res.destroy(err);
-        }
-        settle(() => {
-          cleanup();
-          reject(err);
-        });
-      });
-
-      stream.on("end", () => {
-        settle(() => {
-          cleanup();
-          resolve();
-        });
-      });
-
-      res.on("close", onResClose);
-      stream.pipe(res);
-    });
-
-    if (progress) {
-      progress.bytesStreamed = bytesStreamed;
-    }
-
-    return { bytesStreamed, aborted };
-  }
-
-  const { bucketName, objectName } = fileUrlToObject(fileUrl);
-  const file = storageClient.bucket(bucketName).file(objectName);
-
-  let size: string | number | undefined;
-  try {
-    const [metadata] = await file.getMetadata();
-    size = metadata.size;
-  } catch (error) {
-    const code = (error as { code?: number })?.code;
-    if (code === 404) {
-      throw new HttpError(404, "Stored file missing.");
-    }
-    throw error;
-  }
-
-  const filename = opts.filename || objectName.split("/").pop() || "file";
-  const headers = resolveSafeFileServingHeaders({
-    originalName: filename,
-    requestedDisposition: opts.disposition,
-  });
-
-  res.setHeader("Content-Type", headers.contentType);
-  res.setHeader("Content-Disposition", headers.contentDispositionHeader);
-  // nosniff stops browsers from second-guessing our Content-Type and
-  // running an HTML payload that we served as application/octet-stream.
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  // Even when a browser ignores the disposition (e.g. a user opens the
-  // download in a new tab and the type happens to be renderable), this
-  // CSP keeps any embedded scripts from running.
-  res.setHeader("Content-Security-Policy", FILE_RESPONSE_CSP);
-  res.setHeader("Cache-Control", opts.cacheControl ?? "private, max-age=3600");
-  if (size !== undefined && size !== null) {
-    res.setHeader("Content-Length", String(size));
-  }
-
+async function streamReadableToResponse(params: {
+  stream: Readable;
+  res: ExpressResponse;
+  fileUrl: string;
+  progress?: StreamStoredFileProgress;
+}): Promise<StreamStoredFileResult> {
   let bytesStreamed = 0;
   let aborted = false;
 
   await new Promise<void>((resolve, reject) => {
-    const stream = file.createReadStream();
+    const { stream, res, fileUrl, progress } = params;
     let settled = false;
     const settle = (fn: () => void) => {
       if (settled) return;
@@ -913,10 +638,9 @@ export async function streamStoredFileToResponse(
     });
 
     stream.on("error", (err) => {
-      const code = (err as { code?: number })?.code;
       logger.error({ err, fileUrl }, "Stored file read stream error");
       if (!res.headersSent) {
-        res.status(code === 404 ? 404 : 500).end();
+        res.status(500).end();
       } else {
         res.destroy(err);
       }
@@ -937,11 +661,63 @@ export async function streamStoredFileToResponse(
     stream.pipe(res);
   });
 
-  if (progress) {
-    progress.bytesStreamed = bytesStreamed;
+  if (params.progress) {
+    params.progress.bytesStreamed = bytesStreamed;
   }
 
   return { bytesStreamed, aborted };
+}
+
+export async function streamStoredFileToResponse(
+  res: ExpressResponse,
+  fileUrl: string,
+  opts: SendStoredFileOptions,
+  progress?: StreamStoredFileProgress,
+): Promise<StreamStoredFileResult> {
+  if (streamStoredFileImpl) {
+    return streamStoredFileImpl(res, fileUrl, opts, progress);
+  }
+
+  const { objectName, encodedPath } = supabaseObjectPath(fileUrl);
+  const response = await supabaseStorageRequest(
+    `/object/${encodedPath}`,
+    { method: "GET" },
+    new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+  );
+  if (SUPABASE_OBJECT_MISSING_STATUSES.has(response.status)) {
+    throw new HttpError(404, "Stored file missing.");
+  }
+  if (!response.body) {
+    throw new Error("Supabase Storage returned an empty response body.");
+  }
+
+  const filename = opts.filename || objectName.split("/").pop() || "file";
+  const headers = resolveSafeFileServingHeaders({
+    originalName: filename,
+    requestedDisposition: opts.disposition,
+  });
+
+  res.setHeader("Content-Type", headers.contentType);
+  res.setHeader("Content-Disposition", headers.contentDispositionHeader);
+  // nosniff stops browsers from second-guessing our Content-Type and
+  // running an HTML payload that we served as application/octet-stream.
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  // Even when a browser ignores the disposition (e.g. a user opens the
+  // download in a new tab and the type happens to be renderable), this
+  // CSP keeps any embedded scripts from running.
+  res.setHeader("Content-Security-Policy", FILE_RESPONSE_CSP);
+  res.setHeader("Cache-Control", opts.cacheControl ?? "private, max-age=3600");
+  const size = response.headers.get("content-length");
+  if (size) {
+    res.setHeader("Content-Length", size);
+  }
+
+  return streamReadableToResponse({
+    stream: Readable.fromWeb(response.body as unknown as WebReadableStream),
+    res,
+    fileUrl,
+    progress,
+  });
 }
 
 function resolveAbsolutePathFromFileUrl(_fileUrl: string): never {

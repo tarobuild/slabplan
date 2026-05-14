@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 const originalFetch = globalThis.fetch;
 
 function installSupabaseEnv() {
-  process.env.STORAGE_PROVIDER = "supabase";
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_STORAGE_BUCKET = "cadstone-files";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
@@ -38,7 +37,6 @@ describe("Supabase storage provider", () => {
     storage.__probeCacheTesting.clearCache();
     storage.__streamStoredFileTesting.reset();
     globalThis.fetch = originalFetch;
-    delete process.env.STORAGE_PROVIDER;
     delete process.env.SUPABASE_URL;
     delete process.env.SUPABASE_STORAGE_BUCKET;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -73,7 +71,7 @@ describe("Supabase storage provider", () => {
     assert.equal(headers.get("Authorization"), "Bearer test-service-role-key");
   });
 
-  test("probes and deletes files without falling back to Replit object storage", async () => {
+  test("probes and deletes files through Supabase Storage", async () => {
     const requests: Array<{ url: string; method: string | undefined }> = [];
     mockFetch((input, init) => {
       requests.push({ url: String(input), method: init?.method });

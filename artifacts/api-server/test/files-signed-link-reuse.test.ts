@@ -40,7 +40,7 @@ before(async () => {
 
   await prepareApp();
 
-  // Replace GCS streaming with an in-process stub so the success path
+  // Replace storage streaming with an in-process stub so the success path
   // does not require object storage. The route must still pass token
   // verification, user lookup, and authorization to reach this stub.
   storage.__streamStoredFileTesting.setImpl(async (res, _url, opts) => {

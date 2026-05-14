@@ -73,7 +73,7 @@ export function logFileViewFailure(
 
 /**
  * Sentinel reason emitted on view.fail when the response socket closed
- * before the GCS read stream finished. Used so dashboards can distinguish
+ * before the storage read stream finished. Used so dashboards can distinguish
  * "user navigated away from a slow PDF" from a real backend failure.
  */
 export const VIEW_FAIL_REASON_CLIENT_ABORTED = "client_aborted";
@@ -93,7 +93,7 @@ class FileViewClientAbortError extends Error {
  *
  * The wrapped function receives a mutable {@link StreamStoredFileProgress}
  * counter that it threads into {@link streamStoredFileToResponse}. This
- * lets the failure path report partial bytes streamed when GCS errors
+ * lets the failure path report partial bytes streamed when storage errors
  * mid-transfer or when the client disconnects before the stream
  * finishes.
  *

@@ -6,9 +6,11 @@ before(() => {
   // silence any pino warnings the lib might emit on import.
   process.env.NODE_ENV = "test";
   process.env.LOG_LEVEL = "silent";
-  // Provide a placeholder so storage.ts can be imported even though the
-  // tests below never actually hit GCS.
-  process.env.PRIVATE_OBJECT_DIR ??= "/test-bucket/test-prefix";
+  // Provide placeholders so storage.ts can be imported even though the tests
+  // below stub the probe and never actually hit Supabase Storage.
+  process.env.SUPABASE_URL ??= "https://storage.example.invalid";
+  process.env.SUPABASE_STORAGE_BUCKET ??= "cadstone-files";
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-role-key";
 });
 
 describe("probeStorageStatus cache", () => {
@@ -63,8 +65,8 @@ describe("probeStorageStatus cache", () => {
 
   test("transient errors fail-open to 'ok' but are NOT cached", async () => {
     // Caching a fail-open "ok" would freeze every URL into a stale healthy
-    // state for the entire TTL whenever GCS hiccups. The next request must
-    // get a real probe instead.
+    // state for the entire TTL whenever storage hiccups. The next request
+    // must get a real probe instead.
     const storage = await import("../src/lib/storage.ts");
     storage.__probeCacheTesting.setProbeImpl(async (fileUrl) => {
       calls.push(fileUrl);

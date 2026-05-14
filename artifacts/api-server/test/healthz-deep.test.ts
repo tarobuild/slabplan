@@ -95,7 +95,7 @@ test("healthz reports db:false + 503 when the database check fails", async () =>
   assert.equal(body.errors[0].code, "ECONNREFUSED");
 });
 
-test("healthz reports storage:false + 503 when the bucket head check fails", async () => {
+test("healthz reports storage:false but stays routable when the bucket head check fails", async () => {
   healthTesting.setChecks({
     db: async () => undefined,
     storage: async () => {
@@ -104,7 +104,7 @@ test("healthz reports storage:false + 503 when the bucket head check fails", asy
   });
 
   const response = await fetch(`${baseUrl}/api/healthz`);
-  assert.equal(response.status, 503);
+  assert.equal(response.status, 200);
   const body = (await response.json()) as {
     status: string;
     db: boolean;

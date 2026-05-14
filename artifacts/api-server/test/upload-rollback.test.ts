@@ -39,13 +39,11 @@ test("deletePhysicalFileBestEffort is a no-op for null/undefined/empty", async (
 
 test("deletePhysicalFileBestEffort never throws even when the storage call would fail", async () => {
   // Force the underlying storage helper down a failure path:
-  // PRIVATE_OBJECT_DIR is required to translate a /uploads/... URL into
-  // a bucket/object pair, and an unset value makes the translation
-  // throw synchronously. The wrapper must swallow that error so the
-  // caller — already on the failure path — is never derailed by the
-  // rollback itself.
-  const previous = process.env.PRIVATE_OBJECT_DIR;
-  delete process.env.PRIVATE_OBJECT_DIR;
+  // SUPABASE_URL is required to reach object storage, and an unset value makes
+  // the helper throw synchronously. The wrapper must swallow that error so the
+  // caller — already on the failure path — is never derailed by rollback.
+  const previous = process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_URL;
 
   try {
     await assert.doesNotReject(
@@ -56,7 +54,7 @@ test("deletePhysicalFileBestEffort never throws even when the storage call would
     );
   } finally {
     if (previous !== undefined) {
-      process.env.PRIVATE_OBJECT_DIR = previous;
+      process.env.SUPABASE_URL = previous;
     }
   }
 });
@@ -112,12 +110,11 @@ test("simulated DB persist failure deletes the storage object and skips rollback
   const calls: string[] = [];
   const fileUrl = "/uploads/lead-deadbeef/document/persist-fail.pdf";
 
-  // Force the storage delete to attempt real work, then fail in a
-  // controlled way. PRIVATE_OBJECT_DIR unset makes deletePhysicalFile
-  // throw synchronously — proving the helper still calls it and that
-  // the rollback itself is best-effort.
-  const previous = process.env.PRIVATE_OBJECT_DIR;
-  delete process.env.PRIVATE_OBJECT_DIR;
+  // Force the storage delete to attempt real work, then fail in a controlled
+  // way. SUPABASE_URL unset makes deletePhysicalFile throw synchronously,
+  // proving the helper still calls it and that rollback itself is best-effort.
+  const previous = process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_URL;
 
   try {
     await assert.rejects(
@@ -139,7 +136,7 @@ test("simulated DB persist failure deletes the storage object and skips rollback
     );
   } finally {
     if (previous !== undefined) {
-      process.env.PRIVATE_OBJECT_DIR = previous;
+      process.env.SUPABASE_URL = previous;
     }
   }
 

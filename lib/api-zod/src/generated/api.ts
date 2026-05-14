@@ -1647,6 +1647,11 @@ export const JobsGetJobsIdResponse = zod.object({
           avatarUrl: zod.string().nullish(),
         }),
       ),
+      access: zod
+        .object({
+          financials: zod.boolean(),
+        })
+        .optional(),
     })
     .describe(
       "Hydrated job returned by `GET \/jobs\/{id}`, `POST \/jobs`, and `PUT \/jobs\/{id}`.",
@@ -1916,6 +1921,11 @@ export const JobsPutJobsIdResponse = zod.object({
           avatarUrl: zod.string().nullish(),
         }),
       ),
+      access: zod
+        .object({
+          financials: zod.boolean(),
+        })
+        .optional(),
     })
     .describe(
       "Hydrated job returned by `GET \/jobs\/{id}`, `POST \/jobs`, and `PUT \/jobs\/{id}`.",
@@ -2066,6 +2076,65 @@ export const JobsDeleteJobsIdAssigneesUseridResponse = zod.object({
     }),
   ),
 });
+
+/**
+ * Toggle whether a job assignee can view the job financials tab. Requires admin role. Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with assigneeFinancialsAccessSchema.
+ * @summary PATCH /jobs/{id}/assignees/{userId}/financials-access
+ */
+export const jobsPatchJobsIdAssigneesUseridFinancialsAccessPathIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const jobsPatchJobsIdAssigneesUseridFinancialsAccessPathUserIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const JobsPatchJobsIdAssigneesUseridFinancialsAccessParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(jobsPatchJobsIdAssigneesUseridFinancialsAccessPathIdRegExp),
+  userId: zod.coerce
+    .string()
+    .uuid()
+    .regex(jobsPatchJobsIdAssigneesUseridFinancialsAccessPathUserIdRegExp),
+});
+
+export const jobsPatchJobsIdAssigneesUseridFinancialsAccessHeaderIdempotencyKeyMin = 8;
+export const jobsPatchJobsIdAssigneesUseridFinancialsAccessHeaderIdempotencyKeyMax = 255;
+
+export const JobsPatchJobsIdAssigneesUseridFinancialsAccessHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(jobsPatchJobsIdAssigneesUseridFinancialsAccessHeaderIdempotencyKeyMin)
+    .max(jobsPatchJobsIdAssigneesUseridFinancialsAccessHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const JobsPatchJobsIdAssigneesUseridFinancialsAccessBody = zod
+  .object({
+    canViewFinancials: zod
+      .boolean()
+      .describe("Whether the assignee can view this job's financials."),
+  })
+  .describe(
+    "Request body for `PATCH \/jobs\/{id}\/assignees\/{userId}\/financials-access`.",
+  );
+
+export const JobsPatchJobsIdAssigneesUseridFinancialsAccessResponse =
+  zod.object({
+    assignee: zod.object({
+      id: zod.string().uuid(),
+      fullName: zod.string().nullish(),
+      email: zod.string(),
+      role: zod.string(),
+      avatarUrl: zod.string().nullish(),
+    }),
+  });
 
 /**
  * List lead contacts across the workspace, optionally filtered by `search` (case-insensitive contains over name/email/phone/lead title). Only contacts whose lead the caller can access are returned; admins see every lead's contacts. Requires manager role or above.
@@ -4116,6 +4185,10 @@ export const DailyLogsGetDailyLogsIdResponse = zod.object({
               email: zod.string(),
               role: zod.string(),
               avatarUrl: zod.string().nullish(),
+              canViewFinancials: zod.boolean(),
+              access: zod.object({
+                financials: zod.boolean(),
+              }),
             })
             .describe(
               "A user assigned to or notified about a job, schedule item, or daily log.",
@@ -4324,6 +4397,10 @@ export const DailyLogsPutDailyLogsIdResponse = zod.object({
               email: zod.string(),
               role: zod.string(),
               avatarUrl: zod.string().nullish(),
+              canViewFinancials: zod.boolean(),
+              access: zod.object({
+                financials: zod.boolean(),
+              }),
             })
             .describe(
               "A user assigned to or notified about a job, schedule item, or daily log.",
@@ -4482,6 +4559,10 @@ export const DailyLogsPostDailyLogsIdPublishResponse = zod.object({
               email: zod.string(),
               role: zod.string(),
               avatarUrl: zod.string().nullish(),
+              canViewFinancials: zod.boolean(),
+              access: zod.object({
+                financials: zod.boolean(),
+              }),
             })
             .describe(
               "A user assigned to or notified about a job, schedule item, or daily log.",
@@ -6549,6 +6630,10 @@ export const SchedulePostJobsJobIdScheduleTrackConflictsResponse = zod.object({
               email: zod.string(),
               role: zod.string(),
               avatarUrl: zod.string().nullish(),
+              canViewFinancials: zod.boolean(),
+              access: zod.object({
+                financials: zod.boolean(),
+              }),
             })
             .describe(
               "A user assigned to or notified about a job, schedule item, or daily log.",
@@ -6748,6 +6833,10 @@ export const ScheduleGetJobsJobIdScheduleResponse = zod.object({
               email: zod.string(),
               role: zod.string(),
               avatarUrl: zod.string().nullish(),
+              canViewFinancials: zod.boolean(),
+              access: zod.object({
+                financials: zod.boolean(),
+              }),
             })
             .describe(
               "A user assigned to or notified about a job, schedule item, or daily log.",
@@ -7040,6 +7129,10 @@ export const ScheduleGetScheduleResponse = zod.object({
               email: zod.string(),
               role: zod.string(),
               avatarUrl: zod.string().nullish(),
+              canViewFinancials: zod.boolean(),
+              access: zod.object({
+                financials: zod.boolean(),
+              }),
             })
             .describe(
               "A user assigned to or notified about a job, schedule item, or daily log.",
@@ -7173,6 +7266,10 @@ export const ScheduleGetScheduleItemsIdResponse = zod.object({
             email: zod.string(),
             role: zod.string(),
             avatarUrl: zod.string().nullish(),
+            canViewFinancials: zod.boolean(),
+            access: zod.object({
+              financials: zod.boolean(),
+            }),
           })
           .describe(
             "A user assigned to or notified about a job, schedule item, or daily log.",
@@ -7448,6 +7545,10 @@ export const SchedulePutScheduleItemsIdResponse = zod.object({
             email: zod.string(),
             role: zod.string(),
             avatarUrl: zod.string().nullish(),
+            canViewFinancials: zod.boolean(),
+            access: zod.object({
+              financials: zod.boolean(),
+            }),
           })
           .describe(
             "A user assigned to or notified about a job, schedule item, or daily log.",

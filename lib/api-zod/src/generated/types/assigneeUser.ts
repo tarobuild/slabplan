@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AssigneeUserAccess } from "./assigneeUserAccess";
 
 /**
  * A user assigned to or notified about a job, schedule item, or daily log.
@@ -15,4 +16,6 @@ export interface AssigneeUser {
   email: string;
   role: string;
   avatarUrl?: string | null;
+  canViewFinancials: boolean;
+  access: AssigneeUserAccess;
 }

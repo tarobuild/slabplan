@@ -165,6 +165,14 @@ export interface JobsAssigneePayloadSchema {
   userId: string;
 }
 
+/**
+ * Request body for `PATCH /jobs/{id}/assignees/{userId}/financials-access`.
+ */
+export interface JobsAssigneeFinancialsAccessSchema {
+  /** Whether the assignee can view this job's financials. */
+  canViewFinancials: boolean;
+}
+
 export type JobsJobPayloadSchemaStatus =
   (typeof JobsJobPayloadSchemaStatus)[keyof typeof JobsJobPayloadSchemaStatus];
 
@@ -1142,6 +1150,10 @@ export interface WorkdayExceptionUpdatePayload {
   notes?: string | null;
 }
 
+export type AssigneeUserAccess = {
+  financials: boolean;
+};
+
 /**
  * A user assigned to or notified about a job, schedule item, or daily log.
  */
@@ -1151,6 +1163,8 @@ export interface AssigneeUser {
   email: string;
   role: string;
   avatarUrl?: string | null;
+  canViewFinancials: boolean;
+  access: AssigneeUserAccess;
 }
 
 export interface JobAssignee {
@@ -1228,6 +1242,10 @@ export const JobDetailJobType = {
   custom: "custom",
 } as const;
 
+export type JobDetailAccess = {
+  financials: boolean;
+};
+
 /**
  * Hydrated job returned by `GET /jobs/{id}`, `POST /jobs`, and `PUT /jobs/{id}`.
  */
@@ -1276,6 +1294,7 @@ export interface JobDetail {
   createdById?: string | null;
   createdByName?: string | null;
   assignees: JobAssignee[];
+  access?: JobDetailAccess;
 }
 
 export interface JobListResponse {
@@ -1289,6 +1308,10 @@ export interface JobDetailResponse {
 
 export interface JobAssigneesResponse {
   assignees: JobAssignee[];
+}
+
+export interface JobAssigneeResponse {
+  assignee: JobAssignee;
 }
 
 export interface LeadGlobalContact {

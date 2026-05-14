@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { JobAssignee } from "./jobAssignee";
+import type { JobDetailAccess } from "./jobDetailAccess";
 import type { JobDetailJobType } from "./jobDetailJobType";
 
 /**
@@ -56,4 +57,5 @@ export interface JobDetail {
   createdById?: string | null;
   createdByName?: string | null;
   assignees: JobAssignee[];
+  access?: JobDetailAccess;
 }

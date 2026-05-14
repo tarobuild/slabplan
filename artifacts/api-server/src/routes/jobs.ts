@@ -24,7 +24,6 @@ import {
 } from "@workspace/db/schema";
 import {
   assertCanAccessJob,
-  defaultJobAccessForRole,
   getJobAccess,
   listAccessibleJobIds,
   type AuthContext,
@@ -260,17 +259,6 @@ async function listJobAssignees(jobId: string) {
       role: users.role,
       avatarUrl: users.avatarUrl,
       canViewFinancials: jobAssignees.canViewFinancials,
-      canViewDocuments: jobAssignees.canViewDocuments,
-      canViewPhotos: jobAssignees.canViewPhotos,
-      canViewVideos: jobAssignees.canViewVideos,
-      canViewDailyLogs: jobAssignees.canViewDailyLogs,
-      canViewSchedule: jobAssignees.canViewSchedule,
-      canUseAssistant: jobAssignees.canUseAssistant,
-      canCreateDailyLogs: jobAssignees.canCreateDailyLogs,
-      canUploadDocuments: jobAssignees.canUploadDocuments,
-      canUploadPhotos: jobAssignees.canUploadPhotos,
-      canUploadVideos: jobAssignees.canUploadVideos,
-      canCreateFolders: jobAssignees.canCreateFolders,
     })
     .from(jobAssignees)
     .innerJoin(users, eq(jobAssignees.userId, users.id))
@@ -283,19 +271,9 @@ async function listJobAssignees(jobId: string) {
     email: row.email,
     role: row.role,
     avatarUrl: row.avatarUrl,
+    canViewFinancials: row.canViewFinancials,
     access: {
       financials: row.canViewFinancials,
-      documents: row.canViewDocuments,
-      photos: row.canViewPhotos,
-      videos: row.canViewVideos,
-      dailyLogs: row.canViewDailyLogs,
-      schedule: row.canViewSchedule,
-      assistant: row.canUseAssistant,
-      createDailyLogs: row.canCreateDailyLogs,
-      uploadDocuments: row.canUploadDocuments,
-      uploadPhotos: row.canUploadPhotos,
-      uploadVideos: row.canUploadVideos,
-      createFolders: row.canCreateFolders,
     },
   }));
 }
@@ -340,36 +318,7 @@ async function insertJobAssignees(
 
   await executor
     .insert(jobAssignees)
-    .values(
-      await Promise.all(
-        uniqueUserIds.map(async (userId) => {
-          const [user] = await db
-            .select({ role: users.role })
-            .from(users)
-            .where(eq(users.id, userId))
-            .limit(1);
-          const access = defaultJobAccessForRole(
-            user?.role === "project_manager" ? "project_manager" : "crew_member",
-          );
-          return {
-            jobId,
-            userId,
-            canViewFinancials: access.financials,
-            canViewDocuments: access.documents,
-            canViewPhotos: access.photos,
-            canViewVideos: access.videos,
-            canViewDailyLogs: access.dailyLogs,
-            canViewSchedule: access.schedule,
-            canUseAssistant: access.assistant,
-            canCreateDailyLogs: access.createDailyLogs,
-            canUploadDocuments: access.uploadDocuments,
-            canUploadPhotos: access.uploadPhotos,
-            canUploadVideos: access.uploadVideos,
-            canCreateFolders: access.createFolders,
-          };
-        }),
-      ),
-    )
+    .values(uniqueUserIds.map((userId) => ({ jobId, userId })))
     .onConflictDoNothing();
 }
 
@@ -676,19 +625,8 @@ const assigneePayloadSchema = z.object({
   userId: z.string().uuid(),
 });
 
-const assigneeAccessSchema = z.object({
-  financials: z.boolean(),
-  documents: z.boolean(),
-  photos: z.boolean(),
-  videos: z.boolean(),
-  dailyLogs: z.boolean(),
-  schedule: z.boolean(),
-  assistant: z.boolean(),
-  createDailyLogs: z.boolean(),
-  uploadDocuments: z.boolean(),
-  uploadPhotos: z.boolean(),
-  uploadVideos: z.boolean(),
-  createFolders: z.boolean(),
+const assigneeFinancialsAccessSchema = z.object({
+  canViewFinancials: z.boolean(),
 });
 
 router.get(
@@ -763,15 +701,15 @@ router.delete(
 );
 
 router.patch(
-  "/:id/assignees/:userId/access",
+  "/:id/assignees/:userId/financials-access",
   requireAdmin,
   asyncHandler(async (req, res) => {
-    const body = assigneeAccessSchema.safeParse(req.body);
+    const body = assigneeFinancialsAccessSchema.safeParse(req.body);
 
     if (!body.success) {
       throw new HttpError(
         400,
-        "Invalid assignee access payload.",
+        "Invalid assignee financials access payload.",
         body.error.flatten(),
       );
     }
@@ -787,18 +725,7 @@ router.patch(
     const [updated] = await db
       .update(jobAssignees)
       .set({
-        canViewFinancials: body.data.financials,
-        canViewDocuments: body.data.documents,
-        canViewPhotos: body.data.photos,
-        canViewVideos: body.data.videos,
-        canViewDailyLogs: body.data.dailyLogs,
-        canViewSchedule: body.data.schedule,
-        canUseAssistant: body.data.assistant,
-        canCreateDailyLogs: body.data.createDailyLogs,
-        canUploadDocuments: body.data.uploadDocuments,
-        canUploadPhotos: body.data.uploadPhotos,
-        canUploadVideos: body.data.uploadVideos,
-        canCreateFolders: body.data.createFolders,
+        canViewFinancials: body.data.canViewFinancials,
       })
       .where(and(eq(jobAssignees.jobId, jobId), eq(jobAssignees.userId, userId)))
       .returning({ id: jobAssignees.id });
@@ -807,9 +734,8 @@ router.patch(
       throw new HttpError(404, "Assignee not found.");
     }
 
-    res.json({
-      assignees: await listJobAssignees(jobId),
-    });
+    const assignee = (await listJobAssignees(jobId)).find((candidate) => candidate.id === userId);
+    res.json({ assignee });
   }),
 );
 

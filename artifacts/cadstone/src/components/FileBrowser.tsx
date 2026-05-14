@@ -266,16 +266,12 @@ export default function FileBrowser({
   jobIdOverride,
   scope = "job",
   rootLabel,
-  canUpload,
-  canCreateFolders,
 }: {
   mediaType: MediaType
   defaultView?: ViewMode
   jobIdOverride?: string
   scope?: ScopeMode
   rootLabel?: string
-  canUpload?: boolean
-  canCreateFolders?: boolean
 }) {
   const { jobId: jobIdParam } = useParams<{ jobId: string }>()
   const jobId = jobIdOverride ?? jobIdParam
@@ -812,8 +808,7 @@ export default function FileBrowser({
 	  const rootFolderLabel = rootLabel ?? mediaLabel
 	  const canToggleView = true
 	  const canManageFolders = user?.role === "admin"
-	  const canCreateFoldersForScope =
-	    user?.role === "admin" || (!isResourceScope && canCreateFolders === true)
+	  const canCreateFoldersForScope = user?.role === "admin"
 	  const currentUserForFolder =
 	    user ? { id: user.id, role: user.role } : null
 	  const currentFolderAllowsUpload =
@@ -822,7 +817,7 @@ export default function FileBrowser({
 	  const canUploadFiles =
 	    !!currentFolderId &&
 	    (user?.role === "admin" ||
-	      (!isResourceScope && canUpload === true && currentFolderAllowsUpload))
+	      (!isResourceScope && currentFolderAllowsUpload))
 
   async function uploadFilesImmediately(files: File[], note?: string) {
     if (!currentFolderId || files.length === 0) return

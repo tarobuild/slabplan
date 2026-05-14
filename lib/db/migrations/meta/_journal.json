@@ -185,6 +185,14 @@
       "tag": "0024_job_contribution_permissions",
       "breakpoints": true,
       "checksum": "ad622d9e69f42cf6206937e2bd5e935c1c13db4caac75190dbfd629844e05711"
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1778717256135,
+      "tag": "0025_simplify_job_access_controls",
+      "breakpoints": true,
+      "checksum": "70b865a371c15819ffdea49f4c8a8a9c039d3c6ae7128d8e5eae440c438e4adc"
     }
   ]
 }

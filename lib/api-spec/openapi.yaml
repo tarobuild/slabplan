@@ -2732,6 +2732,105 @@ paths:
         - $ref: "#/components/parameters/IdempotencyKey"
       security:
         - bearerAuth: []
+  /jobs/{id}/assignees/{userId}/financials-access:
+    patch:
+      operationId: jobs_patch_jobs_id_assignees_userid_financials_access
+      tags:
+        - jobs
+      summary: PATCH /jobs/{id}/assignees/{userId}/financials-access
+      description: Toggle whether a job assignee can view the job financials tab. Requires admin role. Route defined in artifacts/api-server/src/routes/jobs.ts. Validated request body with assigneeFinancialsAccessSchema.
+      responses:
+        "200":
+          description: Updated assignee row.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAssigneeResponse"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "400":
+          description: Invalid financials access payload.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "403":
+          description: Returned when the caller does not have the admin role required to manage assignee financials access.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "404":
+          description: Job or assignee not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+      x-source-file: artifacts/api-server/src/routes/jobs.ts
+      x-zod-body-schema: assigneeFinancialsAccessSchema
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/jobs_assigneeFinancialsAccessSchema"
   /leads/contacts:
     get:
       operationId: leads_get_leads_contacts
@@ -11845,6 +11944,15 @@ components:
           description: Identifier of the user to attach as a job assignee. Must reference an assignable user (admin, manager, or staff).
       required:
         - userId
+    jobs_assigneeFinancialsAccessSchema:
+      type: object
+      description: Request body for `PATCH /jobs/{id}/assignees/{userId}/financials-access`.
+      properties:
+        canViewFinancials:
+          type: boolean
+          description: Whether the assignee can view this job's financials.
+      required:
+        - canViewFinancials
     jobs_jobPayloadSchema:
       type: object
       description: Request body for creating or updating a job. `POST /jobs` additionally accepts `assigneeIds`. Money fields (`contractPrice`, `squareFeet`) are accepted as either string or number and serialized as decimal strings.
@@ -13470,10 +13578,21 @@ components:
         avatarUrl:
           type: string
           nullable: true
+        canViewFinancials:
+          type: boolean
+        access:
+          type: object
+          properties:
+            financials:
+              type: boolean
+          required:
+            - financials
       required:
         - id
         - email
         - role
+        - canViewFinancials
+        - access
     JobAssignee:
       type: object
       properties:
@@ -13709,6 +13828,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/JobAssignee"
+        access:
+          type: object
+          properties:
+            financials:
+              type: boolean
+          required:
+            - financials
       required:
         - id
         - title
@@ -13744,6 +13870,13 @@ components:
             $ref: "#/components/schemas/JobAssignee"
       required:
         - assignees
+    JobAssigneeResponse:
+      type: object
+      properties:
+        assignee:
+          $ref: "#/components/schemas/JobAssignee"
+      required:
+        - assignee
     LeadGlobalContact:
       type: object
       properties:

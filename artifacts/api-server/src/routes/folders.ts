@@ -2,7 +2,6 @@ import { z } from "zod";
 import { Router, type IRouter } from "express";
 import {
   assertCanAccessJob,
-  assertCanAccessJobFeature,
   assertCanCreateJobFolder,
   assertCanManageJob,
   assertCanUploadToFolder,
@@ -84,7 +83,6 @@ router.get(
 
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanAccessJob(req.auth!, jobId);
-    await assertCanAccessJobFeature(req.auth!, jobId, `${query.data.mediaType}s` as "documents" | "photos" | "videos");
 
     const result = await listFoldersForJob({
       jobId,

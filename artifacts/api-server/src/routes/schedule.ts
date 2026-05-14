@@ -37,7 +37,6 @@ import {
 } from "@workspace/db/schema";
 import {
   assertCanAccessJob,
-  assertCanAccessJobFeature,
   assertCanViewScheduleItem,
   isAdmin,
   listAccessibleJobIds,
@@ -305,9 +304,9 @@ const requireScheduleJobRouteAccess = asyncHandler(async (req, _res, next) => {
   const jobId = getParam(req.params.jobId, "job id");
 
   if (req.method === "GET") {
-    await assertCanAccessJobFeature(req.auth!, jobId, "schedule");
+    await assertCanAccessJob(req.auth!, jobId);
   } else {
-    await assertCanAccessJobFeature(req.auth!, jobId, "schedule");
+    await assertCanAccessJob(req.auth!, jobId);
     if (!isAdmin(req.auth!)) {
       throw new HttpError(403, "Only admins can update job schedules.");
     }

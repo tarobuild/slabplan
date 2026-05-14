@@ -19,7 +19,7 @@ import {
   type ContentBlockParam,
 } from "@workspace/integrations-anthropic-ai";
 import {
-  assertCanAccessJobFeature,
+  assertCanViewJobFinancials,
   isAdmin,
   type AuthContext,
 } from "../lib/authorization";
@@ -396,7 +396,7 @@ router.get(
   "/:jobId/financials",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const data = await loadTrackerWithChildren(tracker.id);
     res.json(data);
@@ -419,7 +419,7 @@ router.patch(
   "/:jobId/financials",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const body = trackerPatchSchema.safeParse(req.body);
@@ -444,7 +444,7 @@ router.post(
   "/:jobId/financials/retention/release",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     await db
@@ -679,7 +679,7 @@ router.post(
   uploadSingle("file"),
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
 
     const upload = (req.file ?? null) as Express.Multer.File | null;
@@ -1007,7 +1007,7 @@ router.post(
   uploadSingle("file"),
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
 
     const upload = (req.file ?? null) as Express.Multer.File | null;
@@ -1128,7 +1128,7 @@ router.post(
   "/:jobId/financials/areas",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const body = areaCreateSchema.safeParse(req.body);
@@ -1152,7 +1152,7 @@ router.patch(
   "/:jobId/financials/areas/:areaId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const areaId = getParam(req.params.areaId, "area id");
     await assertAreaInJob(areaId, jobId);
@@ -1173,7 +1173,7 @@ router.delete(
   "/:jobId/financials/areas/:areaId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const areaId = getParam(req.params.areaId, "area id");
     await assertAreaInJob(areaId, jobId);
@@ -1201,7 +1201,7 @@ router.post(
   "/:jobId/financials/line-items",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const body = lineItemCreateSchema.safeParse(req.body);
     if (!body.success)
@@ -1240,7 +1240,7 @@ router.patch(
   "/:jobId/financials/line-items/:lineItemId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const lineItemId = getParam(req.params.lineItemId, "line item id");
     await assertLineItemInJob(lineItemId, jobId);
@@ -1331,7 +1331,7 @@ router.delete(
   "/:jobId/financials/line-items/:lineItemId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const lineItemId = getParam(req.params.lineItemId, "line item id");
     await assertLineItemInJob(lineItemId, jobId);
@@ -1355,7 +1355,7 @@ router.post(
   "/:jobId/financials/change-orders",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
     const body = changeOrderSchema.safeParse(req.body);
@@ -1381,7 +1381,7 @@ router.patch(
   "/:jobId/financials/change-orders/:coId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const coId = getParam(req.params.coId, "change order id");
     await assertChangeOrderInJob(coId, jobId);
@@ -1403,7 +1403,7 @@ router.delete(
   "/:jobId/financials/change-orders/:coId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const coId = getParam(req.params.coId, "change order id");
     await assertChangeOrderInJob(coId, jobId);
@@ -1622,7 +1622,7 @@ router.post(
   uploadSingle("file"),
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
 
     const upload = (req.file ?? null) as Express.Multer.File | null;
@@ -1806,7 +1806,7 @@ router.patch(
   "/:jobId/financials/invoices/:invoiceId/matches",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const invoiceId = getParam(req.params.invoiceId, "invoice id");
     await assertInvoiceInJob(invoiceId, jobId);
@@ -1831,7 +1831,7 @@ router.delete(
   "/:jobId/financials/invoices/:invoiceId",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await assertCanAccessJobFeature(req.auth!, jobId, "financials");
+    await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
     const invoiceId = getParam(req.params.invoiceId, "invoice id");
     await assertInvoiceInJob(invoiceId, jobId);

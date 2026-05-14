@@ -62,17 +62,6 @@ type Job = {
   clientName: string | null
   access?: {
     financials: boolean
-    documents: boolean
-    photos: boolean
-    videos: boolean
-    dailyLogs: boolean
-    schedule: boolean
-    assistant: boolean
-    createDailyLogs: boolean
-    uploadDocuments: boolean
-    uploadPhotos: boolean
-    uploadVideos: boolean
-    createFolders: boolean
   }
 }
 
@@ -105,22 +94,9 @@ export default function JobDetailPage() {
   const isFieldUser = user?.role === "project_manager" || user?.role === "crew_member"
   const [job, setJob] = useState<Job | null>(null)
   const access = job?.access
-  const fileTabPath = isFieldUser
-    ? "files/documents"
-    : access?.documents
-    ? "files/documents"
-    : access?.photos
-      ? "files/photos"
-      : "files/videos"
   const visibleTabs = TABS
-    .map((tab) => (tab.matchPrefix === "files/" ? { ...tab, path: fileTabPath } : tab))
     .filter((tab) => {
       if (tab.path === "financials") return access?.financials ?? isAdmin
-      if (tab.path === "daily-logs") return access?.dailyLogs ?? true
-      if (tab.path === "schedule") return access?.schedule ?? true
-      if (tab.matchPrefix === "files/") {
-        return access ? access.documents || access.photos || access.videos : true
-      }
       return true
     })
   const [loading, setLoading] = useState(true)

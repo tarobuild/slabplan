@@ -95,6 +95,8 @@ jobs:
       JWT_SECRET: ${{ secrets.E2E_JWT_SECRET || '7f57998c3d5c4bcba2f9b99893d5f4bfb6c5d544a8d5efcad3c2d657d4a21450' }}
       # Disable the daily-backup webhook + outbound Resend email in tests.
       RESEND_API_KEY: ""
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: "http://127.0.0.1:9"
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: "ci-e2e-key-not-used"
       EMAIL_FROM: "noreply@cadstone.test"
       APP_PUBLIC_URL: http://127.0.0.1:21903
     steps:

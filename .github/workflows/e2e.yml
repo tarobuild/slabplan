@@ -28,7 +28,7 @@
 #   7. Uploads the HTML report and any failure traces / screenshots so
 #      a red run is debuggable without re-running locally.
 #
-# Required GitHub Action repository secrets:
+# Optional GitHub Action repository secrets:
 #   - SEED_ADMIN_CESAR_PASSWORD       Cesar's seed-time password.
 #   - SEED_ADMIN_ANWAR_PASSWORD       Anwar's seed-time password.
 #   - SEED_WORKER_FIXTURE_PASSWORD    worker@cadstone.works fixture password.
@@ -39,8 +39,10 @@
 #                                     production. Generate with e.g.
 #                                     `openssl rand -hex 32`.
 #
-# All four password secrets must satisfy the API password policy
-# (>= 12 chars, no obvious weak patterns); see seed-users.mjs header.
+# When these secrets are absent, CI falls back to fixed non-production
+# fixture values for this ephemeral database only. All fixture passwords must
+# still satisfy the API password policy (>= 12 chars, no obvious weak
+# patterns); see seed-users.mjs header.
 #
 name: E2E (Playwright)
 
@@ -83,12 +85,14 @@ jobs:
       PORT: 8080
       E2E_BASE_URL: http://127.0.0.1:21903
       NODE_ENV: development
-      # Seed + auth secrets (all from repo secrets — see header).
-      SEED_ADMIN_CESAR_PASSWORD: ${{ secrets.SEED_ADMIN_CESAR_PASSWORD }}
-      SEED_ADMIN_ANWAR_PASSWORD: ${{ secrets.SEED_ADMIN_ANWAR_PASSWORD }}
-      SEED_WORKER_FIXTURE_PASSWORD: ${{ secrets.SEED_WORKER_FIXTURE_PASSWORD }}
-      SEED_PM_FIXTURE_PASSWORD: ${{ secrets.SEED_PM_FIXTURE_PASSWORD }}
-      JWT_SECRET: ${{ secrets.E2E_JWT_SECRET }}
+      # Seed + auth secrets. Repo secrets override the fixed CI fixture values
+      # below. The fallbacks are only used against this throwaway Postgres
+      # service, never production or Supabase.
+      SEED_ADMIN_CESAR_PASSWORD: ${{ secrets.SEED_ADMIN_CESAR_PASSWORD || 'QuarryMint!2026-Cesar' }}
+      SEED_ADMIN_ANWAR_PASSWORD: ${{ secrets.SEED_ADMIN_ANWAR_PASSWORD || 'QuarryMint!2026-Anwar' }}
+      SEED_WORKER_FIXTURE_PASSWORD: ${{ secrets.SEED_WORKER_FIXTURE_PASSWORD || 'QuarryMint!2026-Worker' }}
+      SEED_PM_FIXTURE_PASSWORD: ${{ secrets.SEED_PM_FIXTURE_PASSWORD || 'QuarryMint!2026-Pm' }}
+      JWT_SECRET: ${{ secrets.E2E_JWT_SECRET || '7f57998c3d5c4bcba2f9b99893d5f4bfb6c5d544a8d5efcad3c2d657d4a21450' }}
       # Disable the daily-backup webhook + outbound Resend email in tests.
       RESEND_API_KEY: ""
       EMAIL_FROM: "noreply@cadstone.test"

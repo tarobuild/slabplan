@@ -19,6 +19,9 @@ Last updated: 2026-05-17
 - Sentry projects exist in the Tarobuild org: `slabplan-web` and
   `slabplan-api`.
 - Sentry env vars are configured for Vercel web and Railway API.
+- Sentry API events are verified from Railway production and staging.
+- Sentry web project ingestion is verified, and the live Vercel bundle contains
+  the `slabplan-web` DSN.
 - Stripe test-mode SlabPlan products/prices exist in the Tarobuild Stripe
   account.
 - Stripe checkout, customer portal, and signed webhook API endpoints exist.
@@ -35,7 +38,7 @@ These require owner/vendor setup before SlabPlan is ready for paying users:
 - Add Anthropic API key to Railway production and staging.
 - Configure transactional email and sender domain.
 - Add billing UI entry points after account/workspace smoke testing.
-- Verify Sentry events from both web and API after the next frontend deployment.
+- Verify a real browser-origin Sentry event from the production web app.
 - Verify Supabase production backups and restore process.
 - Run a tenant-isolation and file-access security pass.
 - Run the full manual smoke test with real seed users.

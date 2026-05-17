@@ -52,7 +52,9 @@ Required API readiness:
 - [x] Configure Stripe test keys, price env vars, webhook endpoint, and webhook secret in Railway.
 - [ ] Add billing UI entry points after account/workspace smoke testing.
 - [x] Create Sentry SlabPlan web/API projects and configure deployment env vars.
-- [ ] Verify Sentry event capture from web and API.
+- [x] Verify Sentry API event capture from Railway production and staging.
+- [x] Verify Sentry web project ingestion and deployed web DSN.
+- [ ] Verify a real browser-origin Sentry event from the production web app.
 - [ ] Confirm Supabase production backups and retention.
 - [ ] Perform restore drill against a non-production database.
 

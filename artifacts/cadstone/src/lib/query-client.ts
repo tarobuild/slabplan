@@ -1,7 +1,8 @@
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query"
-import { ApiError, setAuthTokenGetter } from "@workspace/api-client-react"
+import { ApiError, setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react"
 import { useAuthStore } from "@/store/auth"
 import { refreshSession } from "@/lib/api"
+import { apiOrigin } from "@/lib/api-origin"
 import {
   invalidateAppData,
   subscribeToDataRefresh,
@@ -143,6 +144,7 @@ export function configureApiClient(): void {
   }
   initialized = true
 
+  setBaseUrl(apiOrigin || null)
   setAuthTokenGetter(() => useAuthStore.getState().accessToken)
   bridgeDataRefreshToReactQuery()
 }

@@ -97,7 +97,7 @@ const secureCookies = process.env.NODE_ENV === "production";
 
 const refreshCookieOptions: CookieOptions = {
   httpOnly: true,
-  sameSite: "lax",
+  sameSite: secureCookies ? "none" : "lax",
   secure: secureCookies,
   path: "/api/auth",
   maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
@@ -105,7 +105,7 @@ const refreshCookieOptions: CookieOptions = {
 
 const uploadCookieOptions: CookieOptions = {
   httpOnly: true,
-  sameSite: "lax",
+  sameSite: secureCookies ? "none" : "lax",
   secure: secureCookies,
   path: "/uploads",
   maxAge: UPLOAD_TOKEN_TTL_SECONDS * 1000,

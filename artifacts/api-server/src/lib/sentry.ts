@@ -3,8 +3,9 @@
 // Loaded from src/index.ts BEFORE any module that registers route
 // handlers, so async errors raised during module evaluation are still
 // captured. Initialization is a no-op (with a warning) when
-// `SENTRY_DSN_API` is unset outside production. Production boot fails
-// loudly without the DSN, matching the launch checklist.
+// `SENTRY_DSN_API` is unset. Sentry is recommended for production, but
+// it must not be a hard boot dependency for hosted environments that
+// rely on platform logs during early launch.
 //
 // PII protection lives in the `beforeSend` hook (see ./pii-filter.ts).
 // Pino remains the primary structured log; Sentry is purely additive.
@@ -16,10 +17,12 @@ import { APP_MCP_NAME } from "./brand";
 let initialized = false;
 
 export function getRelease(): string | undefined {
-  // Replit injects REPLIT_GIT_COMMIT_SHA at build/runtime when
-  // available; fall back to GIT_COMMIT or RELEASE_SHA so the same
-  // identifier flows through the source-map upload step on the web.
+  // Hosting providers often inject the current Git SHA at build/runtime;
+  // fall back to generic release env vars so the same identifier can flow
+  // through the source-map upload step on the web.
   const sha =
+    process.env.RAILWAY_GIT_COMMIT_SHA ||
+    process.env.VERCEL_GIT_COMMIT_SHA ||
     process.env.REPLIT_GIT_COMMIT_SHA ||
     process.env.GIT_COMMIT ||
     process.env.RELEASE_SHA;
@@ -39,14 +42,8 @@ export function initSentry(): void {
 
   const dsn = process.env.SENTRY_DSN_API?.trim();
   const environment = getEnvironment();
-  const isProd = environment === "production";
 
   if (!dsn) {
-    if (isProd) {
-      throw new Error(
-        "SENTRY_DSN_API must be configured in production. Set the secret via the Replit secrets panel.",
-      );
-    }
     // eslint-disable-next-line no-console
     console.warn(
       `[sentry] SENTRY_DSN_API not set — error monitoring is disabled (env=${environment}).`,
@@ -58,7 +55,11 @@ export function initSentry(): void {
     dsn,
     environment,
     release: getRelease(),
-    serverName: process.env.REPL_SLUG || process.env.HOSTNAME || `${APP_MCP_NAME}-api`,
+    serverName:
+      process.env.RAILWAY_SERVICE_NAME ||
+      process.env.REPL_SLUG ||
+      process.env.HOSTNAME ||
+      `${APP_MCP_NAME}-api`,
     tracesSampleRate: 0.1,
     // Keep request bodies / headers off Sentry by default — the PII
     // filter is a defence-in-depth, not the primary control.

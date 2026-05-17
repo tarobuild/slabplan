@@ -25,6 +25,10 @@ Earlier failure emails came from workflow runs before those secrets were set.
 The latest manual Daily DB backup workflow run completed successfully on
 2026-05-17.
 
+The latest manual DB restore drill workflow run completed successfully on
+2026-05-17. It restored `backups/db/2026-05-17.sql.gz` into a temporary
+PostgreSQL 17 database and completed the core table sanity checks.
+
 Production dashboard status checked on 2026-05-17:
 
 - Supabase org: `slabplan`

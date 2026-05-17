@@ -58,7 +58,7 @@ Required API readiness:
 - [x] Verify a real browser-origin Sentry event from the production web app.
 - [ ] Confirm Supabase production backups and retention. Production is
       currently on Supabase Free and shows `Last backup: No backups`.
-- [ ] Perform restore drill against a non-production database.
+- [x] Perform restore drill against a non-production database.
 
 ## 4. App Smoke Test
 

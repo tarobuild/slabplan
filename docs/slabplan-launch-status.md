@@ -49,6 +49,8 @@ Last updated: 2026-05-17
   latest manual backup workflow run completed successfully.
 - GitHub DB restore drill workflow exists and restores the latest backup into a
   temporary PostgreSQL 17 database for repeatable recovery checks.
+- The 2026-05-17 manual DB restore drill run passed after refreshing the daily
+  backup object.
 - No mocked production-path data was found after removing an unused scaffold
   component and keeping development seed data off the main DB package export.
 - Sentry is optional at boot, so missing Sentry config cannot take the API down.
@@ -64,7 +66,6 @@ These require owner/vendor setup before SlabPlan is ready for paying users:
 - Upgrade or otherwise cover Supabase native backup retention. The
   `slabplan-production` dashboard currently shows Free plan and
   `Last backup: No backups`.
-- Run the DB restore drill workflow on the launch commit after it is merged.
 - Run email invite/password-reset smoke tests after email is configured.
 - Run AI assistant smoke test after the AI provider key is installed.
 

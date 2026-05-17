@@ -51,6 +51,7 @@ const sanityTables = [
 
 const allowedRestoreErrorPatterns = [
   /extension "supabase_vault" is not available/i,
+  /extension "supabase_vault" does not exist/i,
   /schema "vault" does not exist/i,
   /relation "vault\.secrets" does not exist/i,
 ];

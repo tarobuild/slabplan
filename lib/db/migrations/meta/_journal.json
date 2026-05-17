@@ -233,6 +233,14 @@
       "tag": "0030_agent_usage_tenant_unique",
       "breakpoints": true,
       "checksum": "256d9d30a325dd1390611d0fe36b5ab6f83aee2f1cb2669cebc0edb03712ca6e"
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1779036480000,
+      "tag": "0031_billing_events",
+      "breakpoints": true,
+      "checksum": "b4fd7d5783fd795a54d1f8509664fdf724464bda7a183d7cdfe58263fcf9f0b4"
     }
   ]
 }

@@ -2363,6 +2363,67 @@ export type CursorParamParameter = string;
  */
 export type CursorLimitParamParameter = number;
 
+export type BillingGetStatus200Organization = {
+  id: string;
+  name: string;
+  planKey: string | null;
+  subscriptionStatus: string | null;
+  billingEmail: string | null;
+  hasStripeCustomer: boolean;
+  hasStripeSubscription: boolean;
+  trialEndsAt: string | null;
+};
+
+export type BillingGetStatus200PlansItemKey =
+  (typeof BillingGetStatus200PlansItemKey)[keyof typeof BillingGetStatus200PlansItemKey];
+
+export const BillingGetStatus200PlansItemKey = {
+  starter: "starter",
+  team: "team",
+  pro: "pro",
+} as const;
+
+export type BillingGetStatus200PlansItem = {
+  key: BillingGetStatus200PlansItemKey;
+  name: string;
+  monthlyUsd: number;
+  maxUsers: number;
+  features: string[];
+  configured: boolean;
+};
+
+export type BillingGetStatus200 = {
+  organization: BillingGetStatus200Organization;
+  plans: BillingGetStatus200PlansItem[];
+  billingConfigured: boolean;
+};
+
+export type BillingPostCheckoutSessionsBodyPlanKey =
+  (typeof BillingPostCheckoutSessionsBodyPlanKey)[keyof typeof BillingPostCheckoutSessionsBodyPlanKey];
+
+export const BillingPostCheckoutSessionsBodyPlanKey = {
+  starter: "starter",
+  team: "team",
+  pro: "pro",
+} as const;
+
+export type BillingPostCheckoutSessionsBody = {
+  planKey: BillingPostCheckoutSessionsBodyPlanKey;
+};
+
+export type BillingPostCheckoutSessions201 = {
+  url: string;
+};
+
+export type BillingPostCustomerPortalSessions201 = {
+  url: string;
+};
+
+export type BillingPostStripeWebhook200 = {
+  received: boolean;
+  duplicate?: boolean;
+};
+
 export type FinancialsPostJobsJobidFinancialsChangeOrdersParseBody = {
   file: Blob;
 };

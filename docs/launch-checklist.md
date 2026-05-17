@@ -48,7 +48,9 @@ Required API readiness:
 - [ ] Add Anthropic API key to Railway production and staging.
 - [ ] Configure transactional email provider and verified sender domain.
 - [x] Create Stripe test-mode SlabPlan products and prices.
-- [ ] Configure Stripe checkout, customer portal, webhook endpoint, webhook secret, and billing state.
+- [x] Add Stripe checkout, customer portal, signed webhook, and billing state API foundation.
+- [x] Configure Stripe test keys, price env vars, webhook endpoint, and webhook secret in Railway.
+- [ ] Add billing UI entry points after account/workspace smoke testing.
 - [x] Create Sentry SlabPlan web/API projects and configure deployment env vars.
 - [ ] Verify Sentry event capture from web and API.
 - [ ] Confirm Supabase production backups and retention.

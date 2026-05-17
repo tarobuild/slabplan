@@ -3,6 +3,7 @@ import accountTokensRouter from "./account-tokens";
 import activityRouter from "./activity";
 import agentRouter from "./agent";
 import authRouter from "./auth";
+import billingRouter from "./billing";
 import clientErrorsRouter from "./client-errors";
 import clientsRouter from "./clients";
 import dashboardRouter from "./dashboard";
@@ -74,6 +75,7 @@ router.use(captureMcpContext);
 // have already executed.
 router.use(idempotencyMiddleware());
 router.use("/account/tokens", accountTokensRouter);
+router.use("/billing", billingRouter);
 router.use(activityRouter);
 router.use("/agent", agentRouter);
 router.use(dashboardRouter);

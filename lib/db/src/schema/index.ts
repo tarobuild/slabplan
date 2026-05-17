@@ -208,6 +208,23 @@ export const organizationMemberships = pgTable(
   ],
 );
 
+export const billingEvents = pgTable(
+  "billing_events",
+  {
+    id: varchar("id", { length: 255 }).primaryKey(),
+    provider: varchar("provider", { length: 50 }).notNull().default("stripe"),
+    type: varchar("type", { length: 255 }).notNull(),
+    livemode: boolean("livemode").notNull().default(false),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    processedAt: timestampTz("processed_at").defaultNow().notNull(),
+    ...baseTimestamps,
+  },
+  (table) => [
+    index("billing_events_provider_type_idx").on(table.provider, table.type),
+    index("billing_events_processed_at_idx").on(table.processedAt),
+  ],
+);
+
 export const safeUserColumns = {
   id: users.id,
   email: users.email,
@@ -1295,6 +1312,8 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Organization = typeof organizations.$inferSelect;
 export type NewOrganization = typeof organizations.$inferInsert;
+export type BillingEvent = typeof billingEvents.$inferSelect;
+export type NewBillingEvent = typeof billingEvents.$inferInsert;
 export type OrganizationMembership = typeof organizationMemberships.$inferSelect;
 export type NewOrganizationMembership = typeof organizationMemberships.$inferInsert;
 export type Client = typeof clients.$inferSelect;

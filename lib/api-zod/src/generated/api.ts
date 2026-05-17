@@ -8,6 +8,51 @@
 import * as zod from "zod";
 
 /**
+ * Returns the active organization's billing state and configured self-serve plans.
+ * @summary GET /billing/status
+ */
+export const BillingGetStatusResponse = zod.object({
+  organization: zod.object({
+    id: zod.string().uuid(),
+    name: zod.string(),
+    planKey: zod.string().nullable(),
+    subscriptionStatus: zod.string().nullable(),
+    billingEmail: zod.string().nullable(),
+    hasStripeCustomer: zod.boolean(),
+    hasStripeSubscription: zod.boolean(),
+    trialEndsAt: zod.coerce.date().nullable(),
+  }),
+  plans: zod.array(
+    zod.object({
+      key: zod.enum(["starter", "team", "pro"]),
+      name: zod.string(),
+      monthlyUsd: zod.number(),
+      maxUsers: zod.number(),
+      features: zod.array(zod.string()),
+      configured: zod.boolean(),
+    }),
+  ),
+  billingConfigured: zod.boolean(),
+});
+
+/**
+ * Creates a Stripe Checkout subscription session for the active organization.
+ * @summary POST /billing/checkout-sessions
+ */
+export const BillingPostCheckoutSessionsBodySchema = zod.object({
+  planKey: zod.enum(["starter", "team", "pro"]),
+});
+
+/**
+ * Stripe signed webhook endpoint. Mounted with raw JSON body parsing.
+ * @summary POST /billing/stripe/webhook
+ */
+export const BillingPostStripeWebhookResponse = zod.object({
+  received: zod.boolean(),
+  duplicate: zod.boolean().optional(),
+});
+
+/**
  * Upload a single change-order document (PDF, image, DOCX, XLSX,
 CSV, or text) and have Claude extract `{ number, description,
 amountCents }`. The file is saved to the job's "11. FINANCIALS"

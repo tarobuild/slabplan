@@ -21,6 +21,11 @@ import type {
   AnyValue,
   ArAgingResponse,
   AuthAcceptInviteSchema,
+  BillingGetStatus200,
+  BillingPostCheckoutSessions201,
+  BillingPostCheckoutSessionsBody,
+  BillingPostCustomerPortalSessions201,
+  BillingPostStripeWebhook200,
   ClientDetailResponse,
   ClientErrorsClientErrorPayload,
   ClientJobsResponse,
@@ -138,6 +143,345 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+/**
+ * Returns the active organization's billing state and configured self-serve plans.
+ * @summary GET /billing/status
+ */
+export const getBillingGetStatusUrl = () => {
+  return `/api/billing/status`;
+};
+
+export const billingGetStatus = async (
+  options?: RequestInit,
+): Promise<BillingGetStatus200> => {
+  return customFetch<BillingGetStatus200>(getBillingGetStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getBillingGetStatusQueryKey = () => {
+  return [`/api/billing/status`] as const;
+};
+
+export const getBillingGetStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof billingGetStatus>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof billingGetStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getBillingGetStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof billingGetStatus>>
+  > = ({ signal }) => billingGetStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof billingGetStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type BillingGetStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof billingGetStatus>>
+>;
+export type BillingGetStatusQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /billing/status
+ */
+
+export function useBillingGetStatus<
+  TData = Awaited<ReturnType<typeof billingGetStatus>>,
+  TError = ErrorType<Problem>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof billingGetStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getBillingGetStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Creates a Stripe Checkout subscription session for the active organization.
+ * @summary POST /billing/checkout-sessions
+ */
+export const getBillingPostCheckoutSessionsUrl = () => {
+  return `/api/billing/checkout-sessions`;
+};
+
+export const billingPostCheckoutSessions = async (
+  billingPostCheckoutSessionsBody: BillingPostCheckoutSessionsBody,
+  options?: RequestInit,
+): Promise<BillingPostCheckoutSessions201> => {
+  return customFetch<BillingPostCheckoutSessions201>(
+    getBillingPostCheckoutSessionsUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(billingPostCheckoutSessionsBody),
+    },
+  );
+};
+
+export const getBillingPostCheckoutSessionsMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof billingPostCheckoutSessions>>,
+    TError,
+    { data: BodyType<BillingPostCheckoutSessionsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof billingPostCheckoutSessions>>,
+  TError,
+  { data: BodyType<BillingPostCheckoutSessionsBody> },
+  TContext
+> => {
+  const mutationKey = ["billingPostCheckoutSessions"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof billingPostCheckoutSessions>>,
+    { data: BodyType<BillingPostCheckoutSessionsBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return billingPostCheckoutSessions(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BillingPostCheckoutSessionsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof billingPostCheckoutSessions>>
+>;
+export type BillingPostCheckoutSessionsMutationBody =
+  BodyType<BillingPostCheckoutSessionsBody>;
+export type BillingPostCheckoutSessionsMutationError = ErrorType<Problem>;
+
+/**
+ * @summary POST /billing/checkout-sessions
+ */
+export const useBillingPostCheckoutSessions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof billingPostCheckoutSessions>>,
+    TError,
+    { data: BodyType<BillingPostCheckoutSessionsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof billingPostCheckoutSessions>>,
+  TError,
+  { data: BodyType<BillingPostCheckoutSessionsBody> },
+  TContext
+> => {
+  return useMutation(getBillingPostCheckoutSessionsMutationOptions(options));
+};
+
+/**
+ * Creates a Stripe customer portal session for the active organization.
+ * @summary POST /billing/customer-portal-sessions
+ */
+export const getBillingPostCustomerPortalSessionsUrl = () => {
+  return `/api/billing/customer-portal-sessions`;
+};
+
+export const billingPostCustomerPortalSessions = async (
+  options?: RequestInit,
+): Promise<BillingPostCustomerPortalSessions201> => {
+  return customFetch<BillingPostCustomerPortalSessions201>(
+    getBillingPostCustomerPortalSessionsUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getBillingPostCustomerPortalSessionsMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof billingPostCustomerPortalSessions>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof billingPostCustomerPortalSessions>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["billingPostCustomerPortalSessions"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof billingPostCustomerPortalSessions>>,
+    void
+  > = () => {
+    return billingPostCustomerPortalSessions(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BillingPostCustomerPortalSessionsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof billingPostCustomerPortalSessions>>
+>;
+
+export type BillingPostCustomerPortalSessionsMutationError = ErrorType<Problem>;
+
+/**
+ * @summary POST /billing/customer-portal-sessions
+ */
+export const useBillingPostCustomerPortalSessions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof billingPostCustomerPortalSessions>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof billingPostCustomerPortalSessions>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(
+    getBillingPostCustomerPortalSessionsMutationOptions(options),
+  );
+};
+
+/**
+ * Stripe signed webhook endpoint. Mounted with raw JSON body parsing.
+ * @summary POST /billing/stripe/webhook
+ */
+export const getBillingPostStripeWebhookUrl = () => {
+  return `/api/billing/stripe/webhook`;
+};
+
+export const billingPostStripeWebhook = async (
+  options?: RequestInit,
+): Promise<BillingPostStripeWebhook200> => {
+  return customFetch<BillingPostStripeWebhook200>(
+    getBillingPostStripeWebhookUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getBillingPostStripeWebhookMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof billingPostStripeWebhook>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof billingPostStripeWebhook>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["billingPostStripeWebhook"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof billingPostStripeWebhook>>,
+    void
+  > = () => {
+    return billingPostStripeWebhook(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BillingPostStripeWebhookMutationResult = NonNullable<
+  Awaited<ReturnType<typeof billingPostStripeWebhook>>
+>;
+
+export type BillingPostStripeWebhookMutationError = ErrorType<Problem>;
+
+/**
+ * @summary POST /billing/stripe/webhook
+ */
+export const useBillingPostStripeWebhook = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof billingPostStripeWebhook>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof billingPostStripeWebhook>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getBillingPostStripeWebhookMutationOptions(options));
+};
 
 /**
  * Upload a single change-order document (PDF, image, DOCX, XLSX,

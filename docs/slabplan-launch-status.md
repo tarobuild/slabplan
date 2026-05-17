@@ -21,6 +21,9 @@ Last updated: 2026-05-17
 - Sentry env vars are configured for Vercel web and Railway API.
 - Stripe test-mode SlabPlan products/prices exist in the Tarobuild Stripe
   account.
+- Stripe checkout, customer portal, and signed webhook API endpoints exist.
+- Stripe test keys, price env vars, webhook endpoints, and webhook secrets are
+  configured in Railway production/staging.
 - Sentry is optional at boot, so missing Sentry config cannot take the API down.
 - Anthropic config is deferred until AI usage, so missing Anthropic key cannot take the API down.
 
@@ -31,7 +34,7 @@ These require owner/vendor setup before SlabPlan is ready for paying users:
 - Buy/connect custom domains.
 - Add Anthropic API key to Railway production and staging.
 - Configure transactional email and sender domain.
-- Wire Stripe checkout/customer portal/webhooks and internal billing state.
+- Add billing UI entry points after account/workspace smoke testing.
 - Verify Sentry events from both web and API after the next frontend deployment.
 - Verify Supabase production backups and restore process.
 - Run a tenant-isolation and file-access security pass.

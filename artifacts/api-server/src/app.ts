@@ -22,6 +22,7 @@ import { createGlobalApiRateLimit } from "./lib/rate-limit";
 import { readBearerToken } from "./middleware/require-auth";
 import publicSpecRouter from "./routes/public-spec";
 import sentryTestRouter from "./routes/sentry-test";
+import stripeWebhookRouter from "./routes/stripe-webhook";
 import { ensureUploadRoot, streamStoredFileToResponse } from "./lib/storage";
 import { ensureTempUploadDir } from "./lib/uploads";
 import { assertActiveAuthUser } from "./lib/active-user";
@@ -93,6 +94,10 @@ app.use(
 // `requireAuth` inside the API router (see routes/index.ts); when both
 // fire, the visible headers reflect the stricter (binding) constraint.
 app.use("/api", createGlobalApiRateLimit());
+
+// Stripe signs the exact raw JSON bytes. Mount this before the CSRF gate and
+// before express.json() so webhook verification is possible.
+app.use("/api/billing/stripe/webhook", express.raw({ type: "application/json" }), stripeWebhookRouter);
 
 app.use((req, _res, next) => {
   const method = req.method.toUpperCase();

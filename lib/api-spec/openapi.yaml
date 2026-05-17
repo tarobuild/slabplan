@@ -42,9 +42,200 @@ tags:
     description: Client-side error reporting
   - name: account-tokens
     description: Personal access token operations
+  - name: billing
+    description: Organization billing operations
   - name: reports
     description: Admin business reports (A/R, revenue, pipeline, etc.)
 paths:
+  /billing/status:
+    get:
+      operationId: billing_get_status
+      tags:
+        - billing
+      summary: GET /billing/status
+      description: Returns the active organization's billing state and configured self-serve plans.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Billing state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organization:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      name: { type: string }
+                      planKey: { type: string, nullable: true }
+                      subscriptionStatus: { type: string, nullable: true }
+                      billingEmail: { type: string, nullable: true }
+                      hasStripeCustomer: { type: boolean }
+                      hasStripeSubscription: { type: boolean }
+                      trialEndsAt: { type: string, format: date-time, nullable: true }
+                    required:
+                      - id
+                      - name
+                      - planKey
+                      - subscriptionStatus
+                      - billingEmail
+                      - hasStripeCustomer
+                      - hasStripeSubscription
+                      - trialEndsAt
+                  plans:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                          enum: [starter, team, pro]
+                        name: { type: string }
+                        monthlyUsd: { type: integer }
+                        maxUsers: { type: integer }
+                        features:
+                          type: array
+                          items: { type: string }
+                        configured: { type: boolean }
+                      required: [key, name, monthlyUsd, maxUsers, features, configured]
+                  billingConfigured: { type: boolean }
+                required: [organization, plans, billingConfigured]
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /billing/checkout-sessions:
+    post:
+      operationId: billing_post_checkout_sessions
+      tags:
+        - billing
+      summary: POST /billing/checkout-sessions
+      description: Creates a Stripe Checkout subscription session for the active organization.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                planKey:
+                  type: string
+                  enum: [starter, team, pro]
+              required: [planKey]
+      responses:
+        "201":
+          description: Checkout URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, format: uri }
+                required: [url]
+        "400":
+          description: Invalid plan.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Caller cannot manage billing.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: Stripe is not configured.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /billing/customer-portal-sessions:
+    post:
+      operationId: billing_post_customer_portal_sessions
+      tags:
+        - billing
+      summary: POST /billing/customer-portal-sessions
+      description: Creates a Stripe customer portal session for the active organization.
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Portal URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, format: uri }
+                required: [url]
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Caller cannot manage billing.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Billing has not started for this organization.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: Stripe is not configured.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /billing/stripe/webhook:
+    post:
+      operationId: billing_post_stripe_webhook
+      tags:
+        - billing
+      summary: POST /billing/stripe/webhook
+      description: Stripe signed webhook endpoint. Mounted with raw JSON body parsing.
+      security: []
+      responses:
+        "200":
+          description: Event received.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: { type: boolean }
+                  duplicate: { type: boolean }
+                required: [received]
+        "400":
+          description: Missing or invalid Stripe signature.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: Stripe webhook is not configured.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /jobs/{jobId}/financials/change-orders/parse:
     post:
       operationId: financials_post_jobs_jobid_financials_change_orders_parse

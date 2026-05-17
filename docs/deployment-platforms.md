@@ -64,6 +64,11 @@ AI_INTEGRATIONS_ANTHROPIC_API_KEY=
 AGENT_MODEL=claude-sonnet-4-6
 SENTRY_DSN_API=
 SENTRY_ENVIRONMENT=production
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_PRICE_STARTER=
+STRIPE_PRICE_TEAM=
+STRIPE_PRICE_PRO=
 ```
 
 `AI_INTEGRATIONS_ANTHROPIC_API_KEY` is still pending. The API boots without it,
@@ -119,15 +124,38 @@ upload is still optional and requires a future `SENTRY_AUTH_TOKEN`,
 Stripe is configured under the Tarobuild Stripe account in **test mode only**.
 No live products or prices were created.
 
-| Plan | Test product ID | Test price ID | Monthly test price |
-|---|---|---|---|
-| Starter | `prod_UXC3SwEZDX6hJE` | `price_1TY7fCGReLNurDCdu2o5AJII` | `$149` |
-| Pro | `prod_UXC3xIgyI9GFGj` | `price_1TY7fWGReLNurDCd36O1iv3r` | `$299` |
-| Business | `prod_UXC3xvOD1NxktO` | `price_1TY7fjGReLNurDCdmPFh6FET` | `$599` |
+Recommended self-serve tiers are capped at `$249/mo`:
 
-Keep Stripe in test mode until checkout, customer portal, subscription status,
-failed-payment behavior, cancellation behavior, and tenant access gating are
-implemented and verified.
+| Plan | Test product ID | Test price ID | Monthly test price | Intended fit |
+|---|---|---|---:|---|
+| Starter | `prod_UXCaQQajw04YXP` | `price_1TY8B5GReLNurDCd7A4G2wEK` | `$79` | Small shop getting organized |
+| Team | `prod_UXCaWRSA5OBBGi` | `price_1TY8BHGReLNurDCdda2gcHwR` | `$149` | Active fabrication team |
+| Pro | `prod_UXCatr5E30rz7o` | `price_1TY8BSGReLNurDCdXFEB32u8` | `$249` | Established shop needing more control |
+
+Feature posture:
+
+- Starter: jobs, clients, leads, schedule, files, basic reports, limited AI parsing.
+- Team: Starter plus daily logs, team activity, financial tracker, standard AI usage.
+- Pro: Team plus advanced reports/exports, higher AI allowance, priority support.
+
+Stripe env vars point the app at the test-mode prices:
+
+```text
+STRIPE_PRICE_STARTER=
+STRIPE_PRICE_TEAM=
+STRIPE_PRICE_PRO=
+```
+
+Checkout, customer portal, and signed webhook endpoints exist in the API. Keep
+Stripe in test mode until cancellation behavior, failed-payment behavior, and
+tenant access gating are fully smoke-tested.
+
+Test-mode Stripe webhook endpoints:
+
+| Environment | Endpoint ID | URL |
+|---|---|---|
+| Production | `we_1TY8DOGReLNurDCdWveX0DpN` | `https://slabplan-api-production.up.railway.app/api/billing/stripe/webhook` |
+| Staging | `we_1TY8DOGReLNurDCdys8AAMlb` | `https://slabplan-api-staging.up.railway.app/api/billing/stripe/webhook` |
 
 ## Email
 

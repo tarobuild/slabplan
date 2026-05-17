@@ -64,8 +64,26 @@ test("valueContainsPii returns false for clean events", () => {
     message: "Internal server error",
     tags: { route: "/api/jobs/:id", status: 500 },
     user: { id: "u_abc123", role: "project_manager" },
+    event_id: "12345678-1234-5678-9012-123456789012",
+    contexts: {
+      trace: {
+        trace_id: "12345678901234567890123456789012",
+        span_id: "1234567890123456",
+      },
+    },
   };
   assert.equal(valueContainsPii(event), false);
+});
+
+test("valueContainsPii strips URL query strings before scanning", () => {
+  assert.equal(
+    valueContainsPii({
+      request: {
+        url: "https://api.example.test/api/_sentry-test?token=555-123-4567",
+      },
+    }),
+    false,
+  );
 });
 
 test("valueContainsPii survives circular references without throwing", () => {

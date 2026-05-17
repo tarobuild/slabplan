@@ -62,26 +62,57 @@ export function containsPii(text: string): boolean {
 }
 
 /**
- * Walk an arbitrary value, JSON-serialize it (with a circular-safe
- * replacer), and check the resulting string for PII. Used by the
- * Sentry `beforeSend` hook on the entire event payload.
+ * Walk an arbitrary value and check meaningful string fields for PII.
+ *
+ * Sentry events contain a lot of operational identifiers (event ids,
+ * trace ids, release hashes, request tokens). Scanning the whole event
+ * as one serialized blob creates false positives because UUID-like
+ * values can look phone-ish. We still scan developer-controlled
+ * message, breadcrumb, extra, context, and stack-frame values, but we
+ * skip known identifier/secret metadata and strip URL query strings.
  */
 export function valueContainsPii(value: unknown): boolean {
   const seen = new WeakSet<object>();
-  let serialized: string;
+
+  function shouldSkipKey(key: string): boolean {
+    return /(^|_)(id|uuid|hash|token|secret|key|dsn)$/i.test(key);
+  }
+
+  function normalizeString(key: string, text: string): string {
+    if (/url$/i.test(key)) return text.split(/[?#]/, 1)[0] ?? "";
+    return text;
+  }
+
+  function visit(val: unknown, key = ""): boolean {
+    if (val === null || val === undefined) return false;
+    if (typeof val === "string") {
+      if (shouldSkipKey(key)) return false;
+      return containsPii(normalizeString(key, val));
+    }
+    if (typeof val !== "object") return false;
+    if (seen.has(val as object)) return false;
+    seen.add(val as object);
+
+    if (val instanceof Error) {
+      return containsPii(val.message);
+    }
+
+    if (Array.isArray(val)) return val.some((item) => visit(item, key));
+
+    for (const [childKey, childValue] of Object.entries(
+      val as Record<string, unknown>,
+    )) {
+      if (shouldSkipKey(childKey)) continue;
+      if (visit(childValue, childKey)) return true;
+    }
+    return false;
+  }
+
   try {
-    serialized = JSON.stringify(value, (_key, val) => {
-      if (typeof val === "object" && val !== null) {
-        if (seen.has(val as object)) return "[Circular]";
-        seen.add(val as object);
-      }
-      return val;
-    });
+    return visit(value);
   } catch {
-    // If we can't serialize the event, refuse to send — better safe
+    // If we can't inspect the event, refuse to send — better safe
     // than sorry.
     return true;
   }
-  if (!serialized) return false;
-  return containsPii(serialized);
 }

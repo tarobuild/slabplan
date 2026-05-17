@@ -18,22 +18,47 @@ const PII_PATTERNS = [
 ]
 
 function eventContainsPii(event: unknown): boolean {
-  let serialized: string
+  const seen = new WeakSet<object>()
+
+  function shouldSkipKey(key: string): boolean {
+    return /(^|_)(id|uuid|hash|token|secret|key|dsn)$/i.test(key)
+  }
+
+  function normalizeString(key: string, text: string): string {
+    if (/url$/i.test(key)) return text.split(/[?#]/, 1)[0] ?? ""
+    return text
+  }
+
+  function visit(value: unknown, key = ""): boolean {
+    if (value === null || value === undefined) return false
+    if (typeof value === "string") {
+      if (shouldSkipKey(key)) return false
+      return PII_PATTERNS.some((re) => re.test(normalizeString(key, value)))
+    }
+    if (typeof value !== "object") return false
+    if (seen.has(value as object)) return false
+    seen.add(value as object)
+
+    if (value instanceof Error) {
+      return PII_PATTERNS.some((re) => re.test(value.message))
+    }
+
+    if (Array.isArray(value)) return value.some((item) => visit(item, key))
+
+    for (const [childKey, childValue] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      if (shouldSkipKey(childKey)) continue
+      if (visit(childValue, childKey)) return true
+    }
+    return false
+  }
+
   try {
-    const seen = new WeakSet<object>()
-    serialized = JSON.stringify(event, (_k, v) => {
-      if (typeof v === "object" && v !== null) {
-        if (seen.has(v as object)) return "[Circular]"
-        seen.add(v as object)
-      }
-      return v
-    })
+    return visit(event)
   } catch {
     return true
   }
-  if (!serialized) return false
-  for (const re of PII_PATTERNS) if (re.test(serialized)) return true
-  return false
 }
 
 test("web PII filter drops events with email addresses", () => {
@@ -60,6 +85,24 @@ test("web PII filter passes clean events", () => {
       message: "TypeError: cannot read property 'foo' of undefined",
       tags: { route: "/jobs/:id", env: "production" },
       user: { id: "u_abc123", role: "project_manager" },
+      event_id: "12345678-1234-5678-9012-123456789012",
+      contexts: {
+        trace: {
+          trace_id: "12345678901234567890123456789012",
+          span_id: "1234567890123456",
+        },
+      },
+    }),
+    false,
+  )
+})
+
+test("web PII filter strips URL query strings before scanning", () => {
+  assert.equal(
+    eventContainsPii({
+      request: {
+        url: "https://api.example.test/api/_sentry-test?token=555-123-4567",
+      },
     }),
     false,
   )

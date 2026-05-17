@@ -84,9 +84,7 @@ async function processStripeEvent(event: Stripe.Event) {
   }
 }
 
-router.post(
-  "/",
-  asyncHandler(async (req, res) => {
+const handleStripeWebhook = asyncHandler(async (req, res) => {
     const signature = req.get("stripe-signature");
     if (!signature) {
       throw new HttpError(400, "Missing Stripe signature.", undefined, "validation");
@@ -118,7 +116,11 @@ router.post(
 
     await processStripeEvent(event);
     res.json({ received: true });
-  }),
-);
+  });
+
+// Express 5 leaves the mounted URL as either "" or "/" depending on the
+// exact caller path. Register both so the webhook stays ahead of auth/CSRF.
+router.post("", handleStripeWebhook);
+router.post("/", handleStripeWebhook);
 
 export default router;

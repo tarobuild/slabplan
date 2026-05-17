@@ -65,7 +65,9 @@ const PasswordSection = lazy(() => import("@/pages/settings/PasswordSection"))
 const TokensSection = lazy(() => import("@/pages/settings/TokensSection"))
 const NotificationsSection = lazy(() => import("@/pages/settings/NotificationsSection"))
 const CompanySection = lazy(() => import("@/pages/settings/CompanySection"))
+const BillingSection = lazy(() => import("@/pages/settings/BillingSection"))
 const IntegrationsSection = lazy(() => import("@/pages/settings/IntegrationsSection"))
+const DiagnosticsSection = lazy(() => import("@/pages/settings/DiagnosticsSection"))
 const UsersPage = lazy(() => import("@/pages/users"))
 const AcceptInvitePage = lazy(() => import("@/pages/accept-invite"))
 
@@ -228,9 +230,13 @@ function buildRouter(ready: boolean, basename: string | undefined) {
               <Route element={<AdminRoute />}>
                 <Route path="team" element={<UsersPage />} />
                 <Route path="company" element={<CompanySection />} />
+                <Route path="billing" element={<BillingSection />} />
                 <Route path="integrations" element={<IntegrationsSection />} />
+                <Route path="diagnostics" element={<DiagnosticsSection />} />
               </Route>
             </Route>
+            <Route path="/billing" element={<Navigate to="/settings/billing" replace />} />
+            <Route path="/billing/success" element={<Navigate to="/settings/billing" replace />} />
             {/* Backward-compat redirect: the standalone /settings/users
                 route was moved into the new Settings shell as
                 /settings/team. Keep the old URL working for bookmarks

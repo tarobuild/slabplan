@@ -141,8 +141,8 @@ router.post(
       mode: "subscription",
       customer: customerId,
       line_items: [{ price: getStripePriceId(plan.key), quantity: 1 }],
-      success_url: `${publicUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${publicUrl}/billing`,
+      success_url: `${publicUrl}/settings/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${publicUrl}/settings/billing?checkout=cancelled`,
       client_reference_id: organization.id,
       metadata: {
         organizationId: organization.id,
@@ -183,7 +183,7 @@ router.post(
     const publicUrl = getAppPublicUrl();
     const session = await stripe.billingPortal.sessions.create({
       customer: organization.stripeCustomerId,
-      return_url: `${publicUrl}/billing`,
+      return_url: `${publicUrl}/settings/billing`,
     });
 
     res.status(201).json({ url: session.url });

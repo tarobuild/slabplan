@@ -6,11 +6,13 @@ import {
   useNavigate,
 } from "react-router-dom"
 import {
+  Activity,
   Building2,
   Bell,
   KeyRound,
   Lock,
   Plug,
+  CreditCard,
   User,
   Users as UsersIcon,
 } from "lucide-react"
@@ -32,7 +34,9 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/settings/tokens", label: "API Tokens", icon: KeyRound },
   { to: "/settings/team", label: "Team", icon: UsersIcon, adminOnly: true },
   { to: "/settings/company", label: "Company", icon: Building2, adminOnly: true },
+  { to: "/settings/billing", label: "Billing", icon: CreditCard, adminOnly: true },
   { to: "/settings/integrations", label: "Integrations", icon: Plug, adminOnly: true },
+  { to: "/settings/diagnostics", label: "Diagnostics", icon: Activity, adminOnly: true },
 ]
 
 export default function SettingsLayout() {

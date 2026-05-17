@@ -3,6 +3,29 @@
   "installCommand": "corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --frozen-lockfile",
   "buildCommand": "corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm run build:web",
   "outputDirectory": "artifacts/cadstone/dist/public",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://slabplan-api-production.up.railway.app https://slabplan-api-staging.up.railway.app https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io wss: ws: blob:; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

@@ -6,8 +6,9 @@ Date: 2026-05-17
 
 Result: passed for the tested production and staging paths.
 
-This smoke test excluded the deferred AI-provider key and transactional email
-setup.
+This smoke test excluded transactional email setup. The AI provider smoke was
+run after installing and rotating the Anthropic key; it reached Anthropic but
+was blocked by Anthropic account credits.
 
 ## Staging API Workflow
 
@@ -83,7 +84,9 @@ required while the temporary frontend/API hosts are on different sites.
 
 ## Residual Gaps
 
-- AI assistant smoke test waits on the real AI provider key.
+- AI assistant full completion waits on Anthropic credits / billing resolution.
+  Staging no longer fails with an invalid or missing API key; Anthropic returns
+  a low-credit billing error.
 - Invite/password-reset email smoke test waits on transactional email setup.
 - Supabase production is currently on the Free plan and the dashboard reports
   `Last backup: No backups`; native backup retention requires a paid Supabase

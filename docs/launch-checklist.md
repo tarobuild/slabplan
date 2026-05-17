@@ -46,7 +46,9 @@ Required API readiness:
 
 - [ ] Connect custom domains. `slabplan.com` is not registered yet, so DNS
       cannot be connected.
-- [ ] Add Anthropic API key to Railway production and staging.
+- [x] Add Anthropic API key to Railway production and staging.
+- [ ] Add Anthropic credits / resolve the Anthropic billing balance so AI
+      requests can complete.
 - [ ] Configure transactional email provider and verified sender domain.
 - [x] Create Stripe test-mode SlabPlan products and prices.
 - [x] Add Stripe checkout, customer portal, signed webhook, and billing state API foundation.
@@ -73,7 +75,7 @@ Required API readiness:
 - [x] Verify admin-only billing management is blocked from non-admin users.
 - [x] Verify mobile layout at 390px width.
 - [x] Sign out.
-- [ ] Test AI assistant after the Anthropic key is installed.
+- [ ] Test AI assistant after Anthropic credits are available.
 - [ ] Test invite/password-reset email after email is installed.
 
 ## 5. Security Gate

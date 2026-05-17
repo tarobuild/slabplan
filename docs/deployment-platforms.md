@@ -71,8 +71,9 @@ STRIPE_PRICE_TEAM=
 STRIPE_PRICE_PRO=
 ```
 
-`AI_INTEGRATIONS_ANTHROPIC_API_KEY` is still pending. The API boots without it,
-but AI features fail until it is set.
+`AI_INTEGRATIONS_ANTHROPIC_API_KEY` is installed in Railway production and
+staging. The API still boots without it by design, but live AI completion also
+requires Anthropic account credits.
 
 Railway production uses `SENTRY_ENVIRONMENT=production`; Railway staging uses
 `SENTRY_ENVIRONMENT=staging`.

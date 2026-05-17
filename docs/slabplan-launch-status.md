@@ -54,20 +54,25 @@ Last updated: 2026-05-17
 - No mocked production-path data was found after removing an unused scaffold
   component and keeping development seed data off the main DB package export.
 - Sentry is optional at boot, so missing Sentry config cannot take the API down.
-- Anthropic config is deferred until AI usage, so missing Anthropic key cannot take the API down.
+- Anthropic API key is installed in Railway production and staging. The first
+  generated key was rotated after setup, and the active key is deployed.
+- Anthropic config remains isolated from API boot, so a provider or billing
+  issue cannot take the rest of the API down.
 
 ## Not Launch-Ready Yet
 
 These require owner/vendor setup before SlabPlan is ready for paying users:
 
 - Buy/connect custom domains.
-- Add Anthropic API key to Railway production and staging.
+- Add Anthropic credits / resolve the Anthropic billing balance. The staging
+  AI smoke reaches Anthropic with a valid key but Anthropic returns a
+  low-credit billing error.
 - Configure transactional email and sender domain.
 - Upgrade or otherwise cover Supabase native backup retention. The
   `slabplan-production` dashboard currently shows Free plan and
   `Last backup: No backups`.
 - Run email invite/password-reset smoke tests after email is configured.
-- Run AI assistant smoke test after the AI provider key is installed.
+- Re-run AI assistant smoke test after Anthropic credits are available.
 
 ## Current Health Probes
 

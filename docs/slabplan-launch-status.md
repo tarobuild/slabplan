@@ -16,6 +16,11 @@ Last updated: 2026-05-17
 - Vercel production builds point at Railway production API.
 - Vercel preview builds point at Railway staging API.
 - Production and staging API health checks return `db:true` and `storage:true`.
+- Sentry projects exist in the Tarobuild org: `slabplan-web` and
+  `slabplan-api`.
+- Sentry env vars are configured for Vercel web and Railway API.
+- Stripe test-mode SlabPlan products/prices exist in the Tarobuild Stripe
+  account.
 - Sentry is optional at boot, so missing Sentry config cannot take the API down.
 - Anthropic config is deferred until AI usage, so missing Anthropic key cannot take the API down.
 
@@ -26,8 +31,8 @@ These require owner/vendor setup before SlabPlan is ready for paying users:
 - Buy/connect custom domains.
 - Add Anthropic API key to Railway production and staging.
 - Configure transactional email and sender domain.
-- Configure Stripe products, prices, webhooks, and billing state.
-- Configure monitoring/alerting.
+- Wire Stripe checkout/customer portal/webhooks and internal billing state.
+- Verify Sentry events from both web and API after the next frontend deployment.
 - Verify Supabase production backups and restore process.
 - Run a tenant-isolation and file-access security pass.
 - Run the full manual smoke test with real seed users.

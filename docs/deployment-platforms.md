@@ -6,8 +6,9 @@ SlabPlan is deployed with a split-hosting setup:
 - Vercel: React/Vite frontend
 - Railway: Express API server
 - Supabase: Postgres and private object storage
-- Stripe: pending, for billing
+- Stripe: Tarobuild account, test-mode SlabPlan catalog created
 - Anthropic: pending API key, for AI features
+- Sentry: Tarobuild org, SlabPlan web/API projects created
 
 ## Live Environments
 
@@ -61,10 +62,15 @@ CORS_ALLOWED_ORIGINS=
 AI_INTEGRATIONS_ANTHROPIC_BASE_URL=https://api.anthropic.com
 AI_INTEGRATIONS_ANTHROPIC_API_KEY=
 AGENT_MODEL=claude-sonnet-4-6
+SENTRY_DSN_API=
+SENTRY_ENVIRONMENT=production
 ```
 
 `AI_INTEGRATIONS_ANTHROPIC_API_KEY` is still pending. The API boots without it,
 but AI features fail until it is set.
+
+Railway production uses `SENTRY_ENVIRONMENT=production`; Railway staging uses
+`SENTRY_ENVIRONMENT=staging`.
 
 ## Vercel Web
 
@@ -88,6 +94,54 @@ Current Vercel variable split:
 |---|---|---|
 | `VITE_API_ORIGIN` | Production | `https://slabplan-api-production.up.railway.app` |
 | `VITE_API_ORIGIN` | Preview | `https://slabplan-api-staging.up.railway.app` |
+| `SENTRY_DSN_WEB` | Production + Preview | SlabPlan web project DSN |
+| `SENTRY_ENVIRONMENT` | Production | `production` |
+| `SENTRY_ENVIRONMENT` | Preview | `staging` |
+
+Vercel needs a new deployment after Sentry env changes because the web DSN is
+compiled into the Vite build.
+
+## Monitoring
+
+Sentry is configured in the Tarobuild Sentry organization:
+
+| Project | Runtime | Env var |
+|---|---|---|
+| `slabplan-web` | Vercel React/Vite frontend | `SENTRY_DSN_WEB` |
+| `slabplan-api` | Railway Express API | `SENTRY_DSN_API` |
+
+Default Sentry email issue alerts are enabled through project setup. Source map
+upload is still optional and requires a future `SENTRY_AUTH_TOKEN`,
+`SENTRY_ORG`, and `SENTRY_PROJECT_WEB` build-time setup.
+
+## Stripe Billing
+
+Stripe is configured under the Tarobuild Stripe account in **test mode only**.
+No live products or prices were created.
+
+| Plan | Test product ID | Test price ID | Monthly test price |
+|---|---|---|---|
+| Starter | `prod_UXC3SwEZDX6hJE` | `price_1TY7fCGReLNurDCdu2o5AJII` | `$149` |
+| Pro | `prod_UXC3xIgyI9GFGj` | `price_1TY7fWGReLNurDCd36O1iv3r` | `$299` |
+| Business | `prod_UXC3xvOD1NxktO` | `price_1TY7fjGReLNurDCdmPFh6FET` | `$599` |
+
+Keep Stripe in test mode until checkout, customer portal, subscription status,
+failed-payment behavior, cancellation behavior, and tenant access gating are
+implemented and verified.
+
+## Email
+
+Use the existing Tarobuild Resend account, but verify a SlabPlan sender domain
+after the domain is purchased. Preferred sender shape:
+
+```text
+SlabPlan <noreply@slabplan.com>
+support@slabplan.com
+billing@slabplan.com
+```
+
+Email can wait until domain setup. Until then, invites, password resets, and
+billing emails are not production-like.
 
 ## Supabase
 

@@ -6,20 +6,17 @@ throwaway database and sanity-checking the row counts. Run it at least
 once per quarter so the recovery story is exercised before we actually
 need it.
 
-> **Scheduling.** Two options ship in the repo, either is fine:
-> 1. The GitHub Action at `.github/workflows/db-backup.yml`, which POSTs
->    to the api-server's `/api/internal/run-db-backup` webhook so the
->    backup actually runs *inside* the production deployment (where the
->    object-storage sidecar lives). Requires repo secrets
->    `BACKUP_WEBHOOK_URL` and `BACKUP_TRIGGER_SECRET`, plus the matching
->    `BACKUP_TRIGGER_SECRET` on the api-server deployment.
-> 2. A Replit Scheduled Deployment (build: `pnpm --filter
->    @workspace/api-server install --frozen-lockfile`, run: `pnpm
->    --filter @workspace/api-server run backup:db`, schedule: `0 9 * *
->    *`, same secrets as the api-server deployment).
+> **Scheduling.** The GitHub Action at `.github/workflows/db-backup.yml`
+> is the production scheduler. It runs at `0 9 * * *`, installs the app
+> dependencies, uses a PostgreSQL 17 `pg_dump` wrapper, uploads
+> `backups/db/YYYY-MM-DD.sql.gz` to Supabase Storage, and verifies that
+> today's backup exists. Required GitHub Action repo secrets:
+> `SUPABASE_DATABASE_URL`, `SUPABASE_URL`,
+> `SUPABASE_STORAGE_BUCKET`, and `SUPABASE_SERVICE_ROLE_KEY`.
 >
-> The script is idempotent per UTC day, so running both schedulers is
-> harmless if you want belt-and-braces.
+> The script is idempotent per UTC day, so manual reruns are safe: they
+> overwrite the same `backups/db/YYYY-MM-DD.sql.gz` object and then run
+> verification again.
 >
 > **Alerting.** Both the backup script (`db-backup.mjs`) and a separate
 > nightly verifier (`db-backup-check.mjs`, run via
@@ -248,14 +245,12 @@ Repl against the live Supabase database (read-only via `pg_dump`) and a
 throwaway Postgres 17 instance launched on `127.0.0.1:5433` with
 `PGDATA=/tmp/drill-pg`.
 
-**Tooling note.** Production Supabase is Postgres 17.6 but the workspace
-default `pg_dump` is 16.10, which aborts with `server version mismatch`.
-Installed `postgresql_17` as a system dependency and used the 17.6
-`pg_dump` binary at
-`/nix/store/269nimkimaaivb4z46bjc1rnjv9jpc0l-postgresql-17.6/bin/pg_dump`.
-The deployed `db-backup.mjs` runs under the api-server's own
-`postgresql-17` module so it does not have this problem in production —
-only the local drill needed the manual install.
+**Tooling note.** Production Supabase is Postgres 17.6. Backups must use
+a matching major-version `pg_dump`; older local clients abort with
+`server version mismatch`. The GitHub Action solves this with a
+PostgreSQL 17 Docker wrapper. Local drills can either install
+PostgreSQL 17 and set `PG_DUMP_BIN` to that binary, or use an equivalent
+Docker wrapper.
 
 **1. Backup** — two independent runs, both green:
 
@@ -376,54 +371,36 @@ HTTP listener that captured the POST body to disk). Result:
   the three env vars on the deployment and re-run with a deliberately
   bad bucket as above.
 
-**6. Production schedule — explicitly deferred (backlog)**
+**6. Production schedule**
 
-CAD Stone Networks is an internal tool with two admin users and no
-client data yet, so the operator has chosen **not** to arm an
-automated daily schedule at this time. Current backup strategy:
+The automated daily schedule is armed through GitHub Actions:
+`.github/workflows/db-backup.yml`.
 
-- **Manual, on-demand:** run
-  `pnpm --filter @workspace/api-server run backup:db`
-  before any risky migration or roughly weekly while the dataset is
-  still small. Each run is idempotent per UTC day (same
-  `backups/db/YYYY-MM-DD.sql.gz` object name) and goes through the
-  same `scripts/db-backup.mjs` path that this drill verified
-  end-to-end.
-- **Automated daily cron — backlog item.** When the first real client
-  is onboarded (or sooner if the operator prefers), pick one of:
-  1. **Replit Scheduled Deployment** running
-     `pnpm --filter @workspace/api-server run backup:db`. No extra
-     secrets needed. Replit emails the workspace owner if the
-     scheduled run fails. (Recommended for an internal tool.)
-  2. **The pre-wired GitHub Actions cron** at
-     `.github/workflows/db-backup.yml`. Requires three things to be
-     set together:
-     - `BACKUP_TRIGGER_SECRET` (32+ char random string) as **both** a
-       Replit deployment secret on the api-server AND a GitHub
-       Actions repo secret.
-     - `BACKUP_WEBHOOK_URL` on GitHub pointing at the production
-       `/api/internal/run-db-backup` URL.
-     - The handler at
-       `artifacts/api-server/src/routes/internal-backup.ts` returns
-       503 until `BACKUP_TRIGGER_SECRET` is set on the deployment, so
-       that env var is the single "arm" switch.
+- It runs at `09:00 UTC`.
+- It uses the production Supabase GitHub repo secrets.
+- It runs `pnpm --filter @workspace/api-server run backup:db`.
+- It then runs `pnpm --filter @workspace/api-server run backup:check`.
+- GitHub emails the repo owner if the real backup or verification step
+  fails.
 
-Either scheduler is fine; the script is idempotent so running both is
-harmless. **Alerting:** for an internal tool, GitHub Actions' default
-email-on-workflow-failure (or a Replit Scheduled Deployment's
-failure email) is sufficient — `BACKUP_ALERT_WEBHOOK_URL` /
+Manual, on-demand runs are still appropriate before risky migrations:
+run `pnpm --filter @workspace/api-server run backup:db` with the same
+production Supabase env vars and a PostgreSQL 17 `pg_dump` binary.
+
+**Alerting:** for the current launch stage, GitHub Actions' default
+email-on-workflow-failure is sufficient. `BACKUP_ALERT_WEBHOOK_URL` /
 `BACKUP_ALERT_EMAIL` are only worth wiring up once there is a paging
 rotation worth waking. The fan-out path itself was verified in §5.
 
 **7. Retention check (live pruning verified against the real bucket)**
 
-Listed the production object-storage bucket under `backups/db/` before
-the drill: **0 objects** (cron not yet armed for real — see §6). To
-exercise pruning end-to-end against the real bucket without polluting
-`backups/db/`, seeded 20 placeholder `.sql.gz` objects under a separate
-prefix `backups/db-drill-retention-test/` covering dates `2026-01-30`
-through `2026-05-05` at 5-day stride, then ran the real backup script
-with `BACKUP_PREFIX=backups/db-drill-retention-test`:
+During the initial drill, the production object-storage bucket had no
+existing objects under `backups/db/`. To exercise pruning end-to-end
+against the real bucket without polluting `backups/db/`, seeded 20
+placeholder `.sql.gz` objects under a separate prefix
+`backups/db-drill-retention-test/` covering dates `2026-01-30` through
+`2026-05-05` at 5-day stride, then ran the real backup script with
+`BACKUP_PREFIX=backups/db-drill-retention-test`:
 
 ```
 event=backup_uploaded   objectName=…/2026-05-06.sql.gz  sizeBytes=38267  elapsedMs=4161

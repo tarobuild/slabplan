@@ -112,6 +112,9 @@ export function createSupabaseStorage(env = process.env) {
         headers: {
           "Content-Type": options.contentType ?? "application/octet-stream",
           "x-upsert": options.upsert === false ? "false" : "true",
+          ...(options.contentLengthBytes !== undefined
+            ? { "Content-Length": String(options.contentLengthBytes) }
+            : {}),
           ...(options.cacheControl
             ? { "Cache-Control": options.cacheControl }
             : {}),
@@ -145,7 +148,7 @@ export function createSupabaseStorage(env = process.env) {
   async function getObjectInfo(objectName) {
     const response = await supabaseStorageRequest(
       config,
-      `/object/info/${objectPath(objectName)}`,
+      `/object/${objectPath(objectName)}`,
       { method: "HEAD" },
       new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
     );

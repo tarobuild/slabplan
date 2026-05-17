@@ -3,19 +3,18 @@
 # This workflow is the "scheduled" half of the backup story. It runs once
 # per day at 09:00 UTC and triggers the backup by POSTing to the api-server's
 # `/api/internal/run-db-backup` webhook. The actual `pg_dump | gzip | upload`
-# is performed inside the Replit deployment itself (it has the sidecar
-# credentials a GitHub runner cannot get), so this workflow only needs the
-# public webhook URL and the shared secret.
+# is performed inside the Railway deployment itself, so this workflow only
+# needs the public webhook URL and the shared secret.
 #
 # Required GitHub Action repository secrets:
 #   - BACKUP_WEBHOOK_URL    — full https URL to /api/internal/run-db-backup
 #                             on the production deployment, e.g.
-#                             https://api.cadstoneworks.com/api/internal/run-db-backup
+#                             https://slabplan-api-production.up.railway.app/api/internal/run-db-backup
 #   - BACKUP_TRIGGER_SECRET — 32+ char shared secret. Must match the value
 #                             of the same env var inside the production
 #                             api-server deployment.
 #
-# Operator alternative: a Replit Scheduled Deployment running
+# Operator alternative: a Railway cron service running
 # `pnpm --filter @workspace/api-server run backup:db` works too. Either
 # scheduler is fine; running both is harmless (the script is idempotent
 # per UTC day — same `backups/db/YYYY-MM-DD.sql.gz` object name).

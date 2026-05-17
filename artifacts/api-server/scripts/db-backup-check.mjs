@@ -16,7 +16,7 @@
  * trailing window (not enough history to compute a meaningful median —
  * very early in the deployment's life). The existence check still runs.
  *
- * Designed to run from a Replit Scheduled Deployment after the backup
+ * Designed to run from a scheduler after the backup
  * cron — e.g. backup at 09:00 UTC, check at 12:00 UTC. Exit code:
  *   0 — checks passed (or skipped with sufficient logging).
  *   1 — at least one check failed; an alert was attempted.
@@ -180,7 +180,7 @@ async function main() {
   // Alert with combined failure summary.
   const summary = failures.map((f) => `- [${f.code}] ${f.message}`).join("\n");
   await sendBackupAlert({
-    subject: `[Stone Track] Daily DB backup VERIFICATION failed for ${today}`,
+    subject: `[SlabPlan] Daily DB backup VERIFICATION failed for ${today}`,
     message: [
       `The nightly verification of the ${today} Postgres backup found problems:`,
       "",
@@ -211,7 +211,7 @@ main()
     });
     // Try to alert on the crash too — something is very broken.
     sendBackupAlert({
-      subject: `[Stone Track] Daily DB backup CHECK crashed for ${todayUtc()}`,
+      subject: `[SlabPlan] Daily DB backup CHECK crashed for ${todayUtc()}`,
       message: `The backup verification script itself threw an exception: ${err?.message ?? String(err)}`,
       context: { error: err?.message ?? String(err), stack: err?.stack },
       log,

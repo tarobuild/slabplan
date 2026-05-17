@@ -11,8 +11,8 @@
  *   - weekly  : keep the last 12 (one per ISO week)
  *   - monthly : keep the last 12 (one per calendar month)
  *
- * Designed to run from a Replit Scheduled Deployment ("cron") once per
- * day. Uses the same Supabase Storage env vars as the production API server.
+ * Designed to run from a scheduler once per day. Uses the same Supabase
+ * Storage env vars as the production API server.
  *
  * Required env:
  *   - SUPABASE_DATABASE_URL or DATABASE_URL — Postgres connection string
@@ -26,10 +26,15 @@
  *   - LOG_LEVEL      (default: "info")
  *
  * Output is one structured JSON object per significant step on stdout, so
- * `pino-http`'s consumers and Replit's deployment logs can ingest it
+ * `pino-http`'s consumers and deployment logs can ingest it
  * without parsing a wall of pg_dump chatter.
  */
 import { spawn } from "node:child_process";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
 import pino from "pino";
 import { sendBackupAlert } from "./lib/backup-alerts.mjs";
@@ -127,57 +132,69 @@ function monthKey(d) {
 async function runBackup() {
   const { iso } = todayUtc();
   const objectName = `${backupPrefix}/${iso}.sql.gz`;
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "slabplan-db-backup-"));
+  const tempFile = path.join(tempDir, `${iso}.sql.gz`);
 
   log("info", "backup_start", { objectName, bucket: storage.bucketName });
 
-  const dump = spawn(
-    pgDumpBin,
-    ["--no-owner", "--no-privileges", "--format=plain", dbUrl],
-    { stdio: ["ignore", "pipe", "pipe"] },
-  );
+  try {
+    const dump = spawn(
+      pgDumpBin,
+      ["--no-owner", "--no-privileges", "--format=plain", dbUrl],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
 
-  let stderrTail = "";
-  dump.stderr.on("data", (chunk) => {
-    stderrTail += chunk.toString();
-    if (stderrTail.length > 8000) {
-      stderrTail = stderrTail.slice(-8000);
-    }
-  });
-
-  const dumpExit = new Promise((resolve, reject) => {
-    dump.on("error", reject);
-    dump.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`pg_dump exited with code ${code}: ${stderrTail.trim()}`));
+    let stderrTail = "";
+    dump.stderr.on("data", (chunk) => {
+      stderrTail += chunk.toString();
+      if (stderrTail.length > 8000) {
+        stderrTail = stderrTail.slice(-8000);
+      }
     });
-  });
 
-  const gzip = createGzip({ level: 6 });
+    const dumpExit = new Promise((resolve, reject) => {
+      dump.on("error", reject);
+      dump.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`pg_dump exited with code ${code}: ${stderrTail.trim()}`));
+      });
+    });
 
-  const t0 = Date.now();
-  await Promise.all([
-    dumpExit,
-    storage.uploadStream(objectName, dump.stdout.pipe(gzip), {
+    const t0 = Date.now();
+    await Promise.all([
+      dumpExit,
+      pipeline(dump.stdout, createGzip({ level: 6 }), createWriteStream(tempFile)),
+    ]);
+
+    const { size } = await stat(tempFile);
+    if (!size) {
+      throw new Error(
+        "Compressed backup is zero bytes; treating as failure even though pg_dump exited 0.",
+      );
+    }
+
+    await storage.uploadStream(objectName, createReadStream(tempFile), {
       contentType: "application/gzip",
       cacheControl: "private, max-age=0",
-    }),
-  ]);
+      contentLengthBytes: size,
+    });
 
-  const meta = await storage.getObjectInfo(objectName);
-  const sizeBytes = Number(meta?.sizeBytes ?? 0);
-  if (!sizeBytes) {
-    throw new Error(
-      "Uploaded backup is zero bytes; treating as failure even though pg_dump exited 0.",
-    );
+    const meta = await storage.getObjectInfo(objectName);
+    const sizeBytes = Number(meta?.sizeBytes ?? 0);
+    if (!sizeBytes) {
+      throw new Error("Uploaded backup is zero bytes.");
+    }
+
+    log("info", "backup_uploaded", {
+      objectName,
+      sizeBytes,
+      elapsedMs: Date.now() - t0,
+    });
+
+    return { objectName, sizeBytes };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
   }
-
-  log("info", "backup_uploaded", {
-    objectName,
-    sizeBytes,
-    elapsedMs: Date.now() - t0,
-  });
-
-  return { objectName, sizeBytes };
 }
 
 function classifyForRetention(files, today) {
@@ -264,7 +281,7 @@ async function pruneOldBackups() {
     const lastGood = await findMostRecentSuccessfulBackup(todayIso);
 
     await sendBackupAlert({
-      subject: `[Stone Track] Daily DB backup FAILED for ${todayIso}`,
+      subject: `[SlabPlan] Daily DB backup FAILED for ${todayIso}`,
       message: [
         `The scheduled Postgres backup for ${todayIso} did not complete.`,
         "",

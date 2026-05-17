@@ -64,7 +64,7 @@ async function sendEmailAlert({ subject, message, context, log }) {
     "Context:",
     JSON.stringify(context, null, 2),
     "",
-    "- Stone Track db-backup pipeline",
+    "- SlabPlan db-backup pipeline",
   ].join("\n");
 
   try {

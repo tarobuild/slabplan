@@ -48,6 +48,7 @@ jobs:
             --output /tmp/resp.json --write-out "%{http_code}" \
             -X POST "${BACKUP_WEBHOOK_URL}" \
             -H "x-backup-secret: ${BACKUP_TRIGGER_SECRET}" \
+            -H "x-requested-with: XMLHttpRequest" \
             -H "content-type: application/json" \
             --data '{}')
           echo "HTTP ${status}"

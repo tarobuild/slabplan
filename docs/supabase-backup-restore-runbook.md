@@ -25,6 +25,17 @@ Earlier failure emails came from workflow runs before those secrets were set.
 The latest manual Daily DB backup workflow run completed successfully on
 2026-05-17.
 
+Production dashboard status checked on 2026-05-17:
+
+- Supabase org: `slabplan`
+- Plan: Free
+- Project: `slabplan-production`
+- Dashboard status: `Last backup: No backups`
+
+That means native Supabase backup retention is not currently available for
+paid-launch readiness. Until the project is upgraded, SlabPlan relies on the
+GitHub/Supabase Storage logical backup workflow as the off-site recovery path.
+
 ## Backup Policy
 
 Supabase automatically creates daily database backups for Free, Pro, Team, and
@@ -66,6 +77,12 @@ Before paid customer launch, SlabPlan should have one of these:
 Do not restore over production for a drill. Use restore-to-new-project or a
 fresh non-production Supabase project.
 
+The repository includes a manual GitHub Action for the logical-backup drill:
+`.github/workflows/db-restore-drill.yml`. It downloads the latest
+`backups/db/YYYY-MM-DD.sql.gz` object, restores it into a temporary PostgreSQL
+17 service database, checks core SlabPlan tables, and drops the throwaway
+database when the job finishes.
+
 1. In `slabplan-production`, open `Database > Backups`.
 2. Confirm at least one usable backup exists.
 3. Restore the selected backup into a new project when using Supabase's
@@ -94,6 +111,6 @@ recovery drill must include at least one uploaded file:
 
 ## Open Owner Action
 
-Confirm the production Supabase project's paid plan and visible backup retention
-in the Supabase Dashboard. If the project is still on a free tier, upgrade or
-add external dumps before treating the app as paid-launch ready.
+Upgrade the production Supabase project if native dashboard backups are required
+before paid launch. The 2026-05-17 dashboard check shows the project is still on
+Free with no visible native backups.

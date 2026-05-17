@@ -14,7 +14,8 @@
     "typecheck": "tsc --build ../../lib/db ../../lib/api-zod && tsc -p tsconfig.json --noEmit",
     "backfill-comment-attachments": "tsx ./src/scripts/backfill-comment-attachments.ts",
     "backup:db": "node ./scripts/db-backup.mjs",
-    "backup:check": "node ./scripts/db-backup-check.mjs"
+    "backup:check": "node ./scripts/db-backup-check.mjs",
+    "restore:drill": "node ./scripts/db-restore-drill.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

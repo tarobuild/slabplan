@@ -50,6 +50,7 @@ Environment: `https://slabplan.vercel.app`
 Temporary workspace:
 
 - Admin: `slabplan.browser.final+20260517190653@tarobuild.com`
+- Sign-out check admin: `slabplan.signout+20260517192207@tarobuild.com`
 
 Passed checks:
 
@@ -64,6 +65,9 @@ Passed checks:
   `o4511406173061120.ingest.us.sentry.io`.
 - Verified mobile login layout at `390px` width has no horizontal overflow:
   `scrollWidth=390`, `clientWidth=390`.
+- Created a fresh production workspace and signed out through the account menu.
+- Confirmed the logout route cleared the session and returned the browser to
+  `/login`.
 
 ## Production Fixes Found During Smoke
 
@@ -81,5 +85,6 @@ required while the temporary frontend/API hosts are on different sites.
 
 - AI assistant smoke test waits on the real AI provider key.
 - Invite/password-reset email smoke test waits on transactional email setup.
-- Supabase dashboard backup retention and restore drill still require owner
-  confirmation/execution before paid launch.
+- Supabase production is currently on the Free plan and the dashboard reports
+  `Last backup: No backups`; native backup retention requires a paid Supabase
+  plan or a separate backup policy before paid launch.

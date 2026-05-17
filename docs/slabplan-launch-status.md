@@ -33,6 +33,8 @@ Last updated: 2026-05-17
   Pro plans.
 - Production browser smoke test passes for workspace creation, sign-in,
   dashboard load, billing, diagnostics, and 390px mobile login layout.
+- Production sign-out smoke test passes through the account menu and returns to
+  `/login`.
 - Staging API smoke test passes for workspace, client, job, private file,
   schedule item, daily log, lead conversion, invite acceptance, and non-admin
   billing checkout protection.
@@ -45,6 +47,10 @@ Last updated: 2026-05-17
 - GitHub Daily DB backup workflow repository secrets are now present. The
   failure emails seen earlier were from runs before those secrets were set; the
   latest manual backup workflow run completed successfully.
+- GitHub DB restore drill workflow exists and restores the latest backup into a
+  temporary PostgreSQL 17 database for repeatable recovery checks.
+- No mocked production-path data was found after removing an unused scaffold
+  component and keeping development seed data off the main DB package export.
 - Sentry is optional at boot, so missing Sentry config cannot take the API down.
 - Anthropic config is deferred until AI usage, so missing Anthropic key cannot take the API down.
 
@@ -55,12 +61,12 @@ These require owner/vendor setup before SlabPlan is ready for paying users:
 - Buy/connect custom domains.
 - Add Anthropic API key to Railway production and staging.
 - Configure transactional email and sender domain.
-- Confirm Supabase production backup retention in the Supabase Dashboard.
-- Perform a restore drill against a non-production database/project.
-- Run sign-out and email invite/password-reset smoke tests after email is
-  configured.
+- Upgrade or otherwise cover Supabase native backup retention. The
+  `slabplan-production` dashboard currently shows Free plan and
+  `Last backup: No backups`.
+- Run the DB restore drill workflow on the launch commit after it is merged.
+- Run email invite/password-reset smoke tests after email is configured.
 - Run AI assistant smoke test after the AI provider key is installed.
-- Run one final no-mocked-production-path review before paid launch.
 
 ## Current Health Probes
 

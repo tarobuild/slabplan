@@ -1,0 +1,76 @@
+# Manual SlabPlan backup restore drill.
+#
+# Restores the newest `backups/db/YYYY-MM-DD.sql.gz` object from Supabase
+# Storage into a temporary PostgreSQL 17 service database and sanity-checks
+# core SlabPlan tables. This workflow is intentionally manual so it can be run
+# before launch and during quarterly recovery drills without touching
+# production.
+name: DB restore drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_object:
+        description: "Optional exact backup object, e.g. backups/db/2026-05-17.sql.gz"
+        required: false
+        type: string
+
+jobs:
+  restore-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Install PostgreSQL 17 psql wrapper
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.github/bin"
+          cat > "$GITHUB_WORKSPACE/.github/bin/psql17" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          docker run --rm --network host -i postgres:17 psql "$@"
+          EOF
+          chmod +x "$GITHUB_WORKSPACE/.github/bin/psql17"
+
+      - name: Run restore drill
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESTORE_ADMIN_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+          RESTORE_BACKUP_OBJECT: ${{ inputs.backup_object }}
+          PSQL_BIN: ${{ github.workspace }}/.github/bin/psql17
+          LOG_LEVEL: info
+        run: |
+          set -euo pipefail
+          pnpm --filter @workspace/api-server run restore:drill

@@ -114,4 +114,3 @@ pool.on("connect", (client) => {
 export const db = drizzle(pool, { schema });
 
 export * from "./schema/index.js";
-export { DEFAULT_SEED_PASSWORD, SEED_USERS, seedDatabase } from "./seed";

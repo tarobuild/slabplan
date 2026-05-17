@@ -44,7 +44,8 @@ Required API readiness:
 
 ## 3. Owner Setup
 
-- [ ] Connect custom domains.
+- [ ] Connect custom domains. `slabplan.com` is not registered yet, so DNS
+      cannot be connected.
 - [ ] Add Anthropic API key to Railway production and staging.
 - [ ] Configure transactional email provider and verified sender domain.
 - [x] Create Stripe test-mode SlabPlan products and prices.
@@ -55,7 +56,8 @@ Required API readiness:
 - [x] Verify Sentry API event capture from Railway production and staging.
 - [x] Verify Sentry web project ingestion and deployed web DSN.
 - [x] Verify a real browser-origin Sentry event from the production web app.
-- [ ] Confirm Supabase production backups and retention.
+- [ ] Confirm Supabase production backups and retention. Production is
+      currently on Supabase Free and shows `Last backup: No backups`.
 - [ ] Perform restore drill against a non-production database.
 
 ## 4. App Smoke Test
@@ -70,7 +72,7 @@ Required API readiness:
 - [x] Create and convert a lead.
 - [x] Verify admin-only billing management is blocked from non-admin users.
 - [x] Verify mobile layout at 390px width.
-- [ ] Sign out.
+- [x] Sign out.
 - [ ] Test AI assistant after the Anthropic key is installed.
 - [ ] Test invite/password-reset email after email is installed.
 
@@ -82,7 +84,7 @@ Required API readiness:
 - [x] Tenant admin permissions cannot read or mutate another tenant.
 - [x] AI usage is tenant-metered before broad customer usage.
 - [x] No production secrets are committed.
-- [ ] No mocked data exists in production paths.
+- [x] No mocked data exists in production paths.
 
 ## 6. Go / No-Go
 

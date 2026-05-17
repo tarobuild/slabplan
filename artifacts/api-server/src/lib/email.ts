@@ -14,7 +14,7 @@ import { APP_NAME } from "./brand";
  * Required env vars in production:
  *   - `RESEND_API_KEY` — the Resend API key (set via Replit secrets).
  *   - `EMAIL_FROM`     — the verified "From" address, e.g.
- *                        `Stone Track <noreply@mail.example.com>`.
+ *                        `SlabPlan <noreply@mail.example.com>`.
  *
  * Optional:
  *   - `EMAIL_REPLY_TO` — defaults to unset.
@@ -68,7 +68,7 @@ function getFromAddress(): string {
   const from = process.env.EMAIL_FROM?.trim();
   if (!from) {
     throw new Error(
-      "EMAIL_FROM is not configured. Set it to a verified sender, e.g. 'Stone Track <noreply@mail.example.com>'.",
+      "EMAIL_FROM is not configured. Set it to a verified sender, e.g. 'SlabPlan <noreply@mail.example.com>'.",
     );
   }
   return from;

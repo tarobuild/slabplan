@@ -1,4 +1,4 @@
-// Sentry initialization for the Stone Track web app.
+// Sentry initialization for the SlabPlan web app.
 //
 // Initialized in src/main.tsx BEFORE React renders so the
 // `Sentry.ErrorBoundary` (and our existing class-based ErrorBoundary)

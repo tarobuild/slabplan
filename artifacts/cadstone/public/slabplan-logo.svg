@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" role="img" aria-labelledby="title">
-  <title id="title">Stone Track</title>
+  <title id="title">SlabPlan</title>
   <rect width="240" height="64" rx="10" fill="#111827"/>
   <path d="M24 42 42 18h34L58 42H24Z" fill="#f97316"/>
   <path d="M62 42 80 18h34L96 42H62Z" fill="#94a3b8"/>
-  <text x="124" y="39" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700">Stone Track</text>
+  <text x="124" y="39" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">SlabPlan</text>
 </svg>

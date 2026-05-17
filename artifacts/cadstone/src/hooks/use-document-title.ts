@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { APP_NAME } from "@/lib/brand"
 
 /**
- * Sets `document.title` to `"<title> · Stone Track"` while the
+ * Sets `document.title` to `"<title> · SlabPlan"` while the
  * calling component is mounted. Restores the previous title on unmount
  * so stale page titles don't leak between route transitions when the
  * next page is a tick slow to mount.

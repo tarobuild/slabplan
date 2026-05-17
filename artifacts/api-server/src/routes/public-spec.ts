@@ -104,7 +104,7 @@ router.get("/.well-known/ai-plugin.json", (req, res) => {
     // replit.md → "MCP server (Task #108)" for client examples.
     mcp_server_url: `${base}/api/mcp`,
     logo_url: `${base}/favicon.ico`,
-    contact_email: "support@stone-track.invalid",
+    contact_email: "support@slabplan.com",
     legal_info_url: `${base}/`,
   });
 });

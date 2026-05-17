@@ -50,37 +50,38 @@ Required API readiness:
 - [x] Create Stripe test-mode SlabPlan products and prices.
 - [x] Add Stripe checkout, customer portal, signed webhook, and billing state API foundation.
 - [x] Configure Stripe test keys, price env vars, webhook endpoint, and webhook secret in Railway.
-- [ ] Add billing UI entry points after account/workspace smoke testing.
+- [x] Add billing UI entry points after account/workspace smoke testing.
 - [x] Create Sentry SlabPlan web/API projects and configure deployment env vars.
 - [x] Verify Sentry API event capture from Railway production and staging.
 - [x] Verify Sentry web project ingestion and deployed web DSN.
-- [ ] Verify a real browser-origin Sentry event from the production web app.
+- [x] Verify a real browser-origin Sentry event from the production web app.
 - [ ] Confirm Supabase production backups and retention.
 - [ ] Perform restore drill against a non-production database.
 
 ## 4. App Smoke Test
 
-- [ ] Create a workspace.
-- [ ] Sign in and sign out.
-- [ ] Create a client.
-- [ ] Create a job.
-- [ ] Upload and view a private file.
-- [ ] Create a schedule item.
-- [ ] Create a daily log.
-- [ ] Create and convert a lead.
-- [ ] Verify admin-only pages are hidden from non-admin users.
-- [ ] Verify mobile layout at 390px width.
+- [x] Create a workspace.
+- [x] Sign in.
+- [x] Create a client.
+- [x] Create a job.
+- [x] Upload and list a private file.
+- [x] Create a schedule item.
+- [x] Create a daily log.
+- [x] Create and convert a lead.
+- [x] Verify admin-only billing management is blocked from non-admin users.
+- [x] Verify mobile layout at 390px width.
+- [ ] Sign out.
 - [ ] Test AI assistant after the Anthropic key is installed.
 - [ ] Test invite/password-reset email after email is installed.
 
 ## 5. Security Gate
 
-- [ ] Tenant scoping reviewed for clients, jobs, leads, schedule, daily logs,
+- [x] Tenant scoping reviewed for clients, jobs, leads, schedule, daily logs,
       files, reports, search, users, and AI tools.
-- [ ] File object paths and signed links are tenant-isolated.
-- [ ] Tenant admin permissions cannot read or mutate another tenant.
-- [ ] AI usage is tenant-metered before broad customer usage.
-- [ ] No production secrets are committed.
+- [x] File object paths and signed links are tenant-isolated.
+- [x] Tenant admin permissions cannot read or mutate another tenant.
+- [x] AI usage is tenant-metered before broad customer usage.
+- [x] No production secrets are committed.
 - [ ] No mocked data exists in production paths.
 
 ## 6. Go / No-Go

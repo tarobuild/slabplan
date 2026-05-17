@@ -22,11 +22,29 @@ Last updated: 2026-05-17
 - Sentry API events are verified from Railway production and staging.
 - Sentry web project ingestion is verified, and the live Vercel bundle contains
   the `slabplan-web` DSN.
+- Browser-origin Sentry delivery is verified from the production web app using
+  the Diagnostics settings page.
 - Stripe test-mode SlabPlan products/prices exist in the Tarobuild Stripe
   account.
 - Stripe checkout, customer portal, and signed webhook API endpoints exist.
 - Stripe test keys, price env vars, webhook endpoints, and webhook secrets are
   configured in Railway production/staging.
+- Billing UI is live under `/settings/billing` and renders Starter, Team, and
+  Pro plans.
+- Production browser smoke test passes for workspace creation, sign-in,
+  dashboard load, billing, diagnostics, and 390px mobile login layout.
+- Staging API smoke test passes for workspace, client, job, private file,
+  schedule item, daily log, lead conversion, invite acceptance, and non-admin
+  billing checkout protection.
+- Vercel CSP allows only the SlabPlan API hosts and Sentry ingestion in
+  addition to same-origin connections.
+- Generated React API hooks use the configured API origin instead of relative
+  Vercel `/api` paths.
+- Production auth/upload cookies use secure cross-site settings while the
+  temporary Vercel and Railway hosts are on different sites.
+- GitHub Daily DB backup workflow repository secrets are now present. The
+  failure emails seen earlier were from runs before those secrets were set; the
+  latest manual backup workflow run completed successfully.
 - Sentry is optional at boot, so missing Sentry config cannot take the API down.
 - Anthropic config is deferred until AI usage, so missing Anthropic key cannot take the API down.
 
@@ -37,11 +55,12 @@ These require owner/vendor setup before SlabPlan is ready for paying users:
 - Buy/connect custom domains.
 - Add Anthropic API key to Railway production and staging.
 - Configure transactional email and sender domain.
-- Add billing UI entry points after account/workspace smoke testing.
-- Verify a real browser-origin Sentry event from the production web app.
-- Verify Supabase production backups and restore process.
-- Run a tenant-isolation and file-access security pass.
-- Run the full manual smoke test with real seed users.
+- Confirm Supabase production backup retention in the Supabase Dashboard.
+- Perform a restore drill against a non-production database/project.
+- Run sign-out and email invite/password-reset smoke tests after email is
+  configured.
+- Run AI assistant smoke test after the AI provider key is installed.
+- Run one final no-mocked-production-path review before paid launch.
 
 ## Current Health Probes
 

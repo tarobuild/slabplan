@@ -13,6 +13,18 @@ Both projects use the private `slabplan-files` storage bucket. The application
 database and private storage are intentionally separate from other Tarobuild
 apps.
 
+GitHub Actions also has a Daily DB backup workflow for SlabPlan. Required
+repository secrets are present as of 2026-05-17:
+
+- `SUPABASE_DATABASE_URL`
+- `SUPABASE_URL`
+- `SUPABASE_STORAGE_BUCKET`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Earlier failure emails came from workflow runs before those secrets were set.
+The latest manual Daily DB backup workflow run completed successfully on
+2026-05-17.
+
 ## Backup Policy
 
 Supabase automatically creates daily database backups for Free, Pro, Team, and

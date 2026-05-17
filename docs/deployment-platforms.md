@@ -1,12 +1,24 @@
 # SlabPlan Deployment Platform Notes
 
-SlabPlan's preferred production shape is split by responsibility:
+SlabPlan is deployed with a split-hosting setup:
 
-- GitHub: source of truth.
-- Supabase: Postgres and private object storage.
-- Railway: Express API server.
-- Vercel: React/Vite frontend.
-- Stripe: billing, when subscription enforcement is ready.
+- GitHub: `tarobuild/slabplan`
+- Vercel: React/Vite frontend
+- Railway: Express API server
+- Supabase: Postgres and private object storage
+- Stripe: pending, for billing
+- Anthropic: pending API key, for AI features
+
+## Live Environments
+
+| Environment | Frontend | API | Supabase |
+|---|---|---|---|
+| Production | `https://slabplan.vercel.app` | `https://slabplan-api-production.up.railway.app` | `slabplan-production` / `ifwxnudtubuvntsyfvor` |
+| Staging | Vercel preview builds | `https://slabplan-api-staging.up.railway.app` | `slabplan-staging` / `grpjbugdrnqbtglyujqg` |
+
+Production and staging use separate Supabase databases and separate Railway
+environments. Keep it that way; do not point staging services at production
+Supabase secrets.
 
 ## Railway API
 
@@ -24,15 +36,20 @@ Start command:
 NODE_ENV=production node --enable-source-maps artifacts/api-server/dist/index.mjs
 ```
 
-The start command intentionally invokes `node` directly so the API process receives shutdown signals cleanly.
+Healthcheck:
 
-Required Railway variables for staging:
+```text
+/api/livez
+```
+
+Required Railway variables:
 
 ```text
 NODE_ENV=production
+LOG_LEVEL=info
 SUPABASE_DATABASE_URL=
 SUPABASE_URL=
-SUPABASE_STORAGE_BUCKET=
+SUPABASE_STORAGE_BUCKET=slabplan-files
 SUPABASE_SERVICE_ROLE_KEY=
 JWT_ACCESS_SECRET=
 JWT_REFRESH_SECRET=
@@ -41,13 +58,13 @@ JWT_RESET_SECRET=
 SESSION_SECRET=
 APP_PUBLIC_URL=
 CORS_ALLOWED_ORIGINS=
-EMAIL_FROM=
-EMAIL_REPLY_TO=
+AI_INTEGRATIONS_ANTHROPIC_BASE_URL=https://api.anthropic.com
 AI_INTEGRATIONS_ANTHROPIC_API_KEY=
-AI_INTEGRATIONS_ANTHROPIC_BASE_URL=
+AGENT_MODEL=claude-sonnet-4-6
 ```
 
-Use the transaction-pooled Supabase URL for `SUPABASE_DATABASE_URL` unless Railway networking requires the session pooler. Keep `SUPABASE_DIRECT_DATABASE_URL` out of runtime unless a one-off admin script needs it.
+`AI_INTEGRATIONS_ANTHROPIC_API_KEY` is still pending. The API boots without it,
+but AI features fail until it is set.
 
 ## Vercel Web
 
@@ -65,21 +82,71 @@ Output directory:
 artifacts/cadstone/dist/public
 ```
 
-The frontend defaults to same-origin `/api`. For a split-origin deployment, set:
+Current Vercel variable split:
+
+| Variable | Scope | Value |
+|---|---|---|
+| `VITE_API_ORIGIN` | Production | `https://slabplan-api-production.up.railway.app` |
+| `VITE_API_ORIGIN` | Preview | `https://slabplan-api-staging.up.railway.app` |
+
+## Supabase
+
+Production project:
 
 ```text
-VITE_API_ORIGIN=https://api.slabplan.com
+Name: slabplan-production
+Ref: ifwxnudtubuvntsyfvor
+URL: https://ifwxnudtubuvntsyfvor.supabase.co
+Region: us-east-2
+Storage bucket: slabplan-files
 ```
 
-For preview deployments without a shared parent domain, prefer a Vercel external rewrite from `/api/:path*` to the Railway API so refresh cookies remain same-origin to the browser.
+Staging project:
+
+```text
+Name: slabplan-staging
+Ref: grpjbugdrnqbtglyujqg
+URL: https://grpjbugdrnqbtglyujqg.supabase.co
+Region: us-west-1
+Storage bucket: slabplan-files
+```
+
+Both projects use hand-written SQL migrations from `lib/db/migrations`.
+
+Apply migrations intentionally:
+
+```bash
+set -a
+. ./.env.supabase-production
+set +a
+NODE_ENV=production pnpm --filter @workspace/db run migrate
+```
+
+Use the matching `.env.supabase` file for staging. Local env files are ignored
+by Git and must not be committed.
 
 ## Domain Shape
 
-Preferred production domains:
+Current temporary domains:
+
+```text
+slabplan.vercel.app
+slabplan-api-production.up.railway.app
+slabplan-api-staging.up.railway.app
+```
+
+Preferred custom domains before public launch:
 
 ```text
 app.slabplan.com -> Vercel frontend
-api.slabplan.com -> Railway API
+api.slabplan.com -> Railway production API
+staging.slabplan.com -> Vercel preview/staging frontend
+staging-api.slabplan.com -> Railway staging API
 ```
 
-Railway must allow the frontend origin in `CORS_ALLOWED_ORIGINS`, and `APP_PUBLIC_URL` should point at the user-facing frontend origin.
+When custom domains are added, update:
+
+- Railway `APP_PUBLIC_URL`
+- Railway `CORS_ALLOWED_ORIGINS`
+- Vercel `VITE_API_ORIGIN`
+- Email link generation settings

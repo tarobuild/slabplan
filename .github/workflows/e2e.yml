@@ -18,7 +18,7 @@
 #   2. Installs pnpm deps with a frozen lockfile.
 #   3. Recreates the test DB schema via `pnpm setup-test-db`
 #      (drizzle-kit push --force into cadstone_test).
-#   4. Seeds Cesar / Anwar / worker fixture + the baseline E2E client
+#   4. Seeds primary admin / secondary admin / worker fixture + the baseline E2E client
 #      and open job that the suite's beforeAll hooks require.
 #   5. Boots the api-server (:8080) and Vite dev server (:21903) in
 #      the background and waits for both to respond.
@@ -29,8 +29,8 @@
 #      a red run is debuggable without re-running locally.
 #
 # Optional GitHub Action repository secrets:
-#   - SEED_ADMIN_CESAR_PASSWORD       Cesar's seed-time password.
-#   - SEED_ADMIN_ANWAR_PASSWORD       Anwar's seed-time password.
+#   - SEED_ADMIN_PRIMARY_PASSWORD     Primary admin seed-time password.
+#   - SEED_ADMIN_SECONDARY_PASSWORD   Secondary admin seed-time password.
 #   - SEED_WORKER_FIXTURE_PASSWORD    worker@cadstone.works fixture password.
 #   - SEED_PM_FIXTURE_PASSWORD        fixture-pm@cadstone.test password.
 #   - E2E_JWT_SECRET                  any 32+ char string; only used to
@@ -51,6 +51,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   playwright:
@@ -88,8 +91,8 @@ jobs:
       # Seed + auth secrets. Repo secrets override the fixed CI fixture values
       # below. The fallbacks are only used against this throwaway Postgres
       # service, never production or Supabase.
-      SEED_ADMIN_CESAR_PASSWORD: ${{ secrets.SEED_ADMIN_CESAR_PASSWORD || 'QuarryMint!2026-Cesar' }}
-      SEED_ADMIN_ANWAR_PASSWORD: ${{ secrets.SEED_ADMIN_ANWAR_PASSWORD || 'QuarryMint!2026-Anwar' }}
+      SEED_ADMIN_PRIMARY_PASSWORD: ${{ secrets.SEED_ADMIN_PRIMARY_PASSWORD || 'QuarryMint!2026-Primary' }}
+      SEED_ADMIN_SECONDARY_PASSWORD: ${{ secrets.SEED_ADMIN_SECONDARY_PASSWORD || 'QuarryMint!2026-Secondary' }}
       SEED_WORKER_FIXTURE_PASSWORD: ${{ secrets.SEED_WORKER_FIXTURE_PASSWORD || 'QuarryMint!2026-Worker' }}
       SEED_PM_FIXTURE_PASSWORD: ${{ secrets.SEED_PM_FIXTURE_PASSWORD || 'QuarryMint!2026-Pm' }}
       JWT_SECRET: ${{ secrets.E2E_JWT_SECRET || '7f57998c3d5c4bcba2f9b99893d5f4bfb6c5d544a8d5efcad3c2d657d4a21450' }}

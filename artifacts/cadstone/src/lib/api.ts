@@ -7,6 +7,7 @@ import axios from "axios"
 import { toast } from "sonner"
 import { useAuthStore, type AuthUser } from "@/store/auth"
 import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
+import { apiBasePath } from "@/lib/api-origin"
 
 declare module "axios" {
   // Lets call sites opt out of the global "/403" navigation when they
@@ -30,13 +31,13 @@ const defaultApiHeaders = {
 }
 
 export const authApi = axios.create({
-  baseURL: "/api",
+  baseURL: apiBasePath("/api"),
   headers: { ...defaultApiHeaders },
   withCredentials: true,
 })
 
 export const api = axios.create({
-  baseURL: "/api",
+  baseURL: apiBasePath("/api"),
   headers: { ...defaultApiHeaders },
   withCredentials: true,
 })

@@ -6,6 +6,7 @@ void React
 import * as Sentry from "@sentry/react"
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { apiUrl } from "@/lib/api-origin"
 import { Card, CardContent } from "@/components/ui/card"
 
 type Props = {
@@ -73,7 +74,7 @@ class ErrorBoundary extends Component<Props, State> {
             ?.env?.VITE_RELEASE_SHA ?? null,
       })
       if (typeof fetch === "function") {
-        void fetch("/api/_client-error", {
+        void fetch(apiUrl("/api/_client-error"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

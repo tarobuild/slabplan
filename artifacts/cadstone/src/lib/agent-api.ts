@@ -1,4 +1,5 @@
 import { api } from "./api"
+import { apiUrl } from "./api-origin"
 import { useAuthStore } from "@/store/auth"
 
 export type AgentCitation = {
@@ -181,7 +182,7 @@ export function streamSendMessage(
 
   void (async () => {
     try {
-      const res = await fetch(`/api/agent/conversations/${conversationId}/messages`, {
+      const res = await fetch(apiUrl(`/api/agent/conversations/${conversationId}/messages`), {
         method: "POST",
         headers,
         credentials: "include",

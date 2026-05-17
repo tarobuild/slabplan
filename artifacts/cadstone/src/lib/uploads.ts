@@ -273,6 +273,7 @@ export async function validateSelectedFilesAsync(
 
 import { refreshSession } from "./api"
 import { useAuthStore } from "@/store/auth"
+import { apiUrl } from "./api-origin"
 
 export interface UploadProgress {
   loaded: number
@@ -353,7 +354,7 @@ function sendOnce<T>(opts: UploadOptions): Promise<XhrAttemptResult<T> | XhrAtte
     const xhr = new XMLHttpRequest()
     const token = useAuthStore.getState().accessToken
 
-    xhr.open("POST", `/api${opts.url}`, true)
+    xhr.open("POST", apiUrl(`/api${opts.url}`), true)
     xhr.withCredentials = true
     xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest")
     if (token) {

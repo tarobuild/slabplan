@@ -7,8 +7,8 @@ Date: 2026-05-17
 Result: passed for the tested production and staging paths.
 
 This smoke test excluded transactional email setup. The AI provider smoke was
-run after installing and rotating the Anthropic key; it reached Anthropic but
-was blocked by Anthropic account credits.
+run after installing and rotating the Anthropic key and adding Anthropic
+credits; it completed successfully and recorded organization token usage.
 
 ## Staging API Workflow
 
@@ -84,10 +84,29 @@ required while the temporary frontend/API hosts are on different sites.
 
 ## Residual Gaps
 
-- AI assistant full completion waits on Anthropic credits / billing resolution.
-  Staging no longer fails with an invalid or missing API key; Anthropic returns
-  a low-credit billing error.
 - Invite/password-reset email smoke test waits on transactional email setup.
-- Supabase production is currently on the Free plan and the dashboard reports
-  `Last backup: No backups`; native backup retention requires a paid Supabase
-  plan or a separate backup policy before paid launch.
+- Custom domains are intentionally deferred.
+
+## Follow-up AI Smoke
+
+Environment: `https://slabplan-api-staging.up.railway.app/api`
+
+Temporary workspace:
+
+- Admin: `slabplan.ai.20260517204747@tarobuild.com`
+
+Passed checks:
+
+- Created workspace/admin.
+- Created AI conversation.
+- Sent assistant message through the real Anthropic provider.
+- Received the expected response text: `SlabPlan AI smoke passed`.
+- Verified organization AI usage metering:
+  `inputTokens=2946`, `outputTokens=10`, `requests=1`,
+  `totalTokens=2956`.
+
+## Supabase Backup Follow-up
+
+- Supabase org `slabplan` is upgraded to Pro.
+- `slabplan-production` scheduled backups page shows a physical backup dated
+  `2026-05-17 07:52:07 +0000`.

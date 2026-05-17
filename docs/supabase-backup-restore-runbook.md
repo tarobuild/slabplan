@@ -32,18 +32,19 @@ PostgreSQL 17 database and completed the core table sanity checks.
 Production dashboard status checked on 2026-05-17:
 
 - Supabase org: `slabplan`
-- Plan: Free
+- Plan: Pro
 - Project: `slabplan-production`
-- Dashboard status: `Last backup: No backups`
+- Dashboard status: scheduled physical backup available,
+  `2026-05-17 07:52:07 +0000`
 
-That means native Supabase backup retention is not currently available for
-paid-launch readiness. Until the project is upgraded, SlabPlan relies on the
-GitHub/Supabase Storage logical backup workflow as the off-site recovery path.
+That means native Supabase daily backup retention is available for early
+production readiness. SlabPlan still keeps the GitHub/Supabase Storage logical
+backup workflow as the off-site recovery path and restore-drill source.
 
 ## Backup Policy
 
-Supabase automatically creates daily database backups for Free, Pro, Team, and
-Enterprise projects. Backup access and retention depend on the paid plan:
+Supabase paid plans provide restorable daily database backups with retention
+depending on the plan:
 
 - Pro: last 7 days of daily backups.
 - Team: last 14 days of daily backups.

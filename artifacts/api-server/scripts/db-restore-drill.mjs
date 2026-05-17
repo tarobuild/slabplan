@@ -46,7 +46,6 @@ const sanityTables = [
   "files",
   "agent_messages",
   "agent_usage_monthly",
-  "billing_events",
 ];
 
 const allowedRestoreErrorPatterns = [

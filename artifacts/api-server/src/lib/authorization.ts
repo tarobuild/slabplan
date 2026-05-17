@@ -16,6 +16,7 @@ import {
   scheduleItems,
 } from "@workspace/db/schema";
 import { HttpError } from "./http";
+import { organizationScopeCondition } from "./tenant-scope";
 
 export type AppRole = "admin" | "project_manager" | "crew_member";
 export type AuthContext = NonNullable<Express.Request["auth"]>;
@@ -147,6 +148,7 @@ export async function listManagedJobIds(auth: AuthContext): Promise<string[] | n
     .where(
       and(
         isNull(jobs.deletedAt),
+        organizationScopeCondition(auth, jobs.organizationId),
         or(eq(jobs.projectManagerId, auth.userId), eq(jobs.createdBy, auth.userId)),
       ),
     );
@@ -167,6 +169,7 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
     .where(
       and(
         eq(jobAssignees.userId, auth.userId),
+        organizationScopeCondition(auth, jobs.organizationId),
         isNull(jobs.deletedAt),
       ),
     );
@@ -175,7 +178,13 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
     db
       .select({ id: jobs.id })
       .from(jobs)
-      .where(and(isNull(jobs.deletedAt), eq(jobs.createdBy, auth.userId))),
+      .where(
+        and(
+          isNull(jobs.deletedAt),
+          organizationScopeCondition(auth, jobs.organizationId),
+          eq(jobs.createdBy, auth.userId),
+        ),
+      ),
     db
       .select({ id: scheduleItems.jobId })
       .from(scheduleItemAssignees)
@@ -184,6 +193,7 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
       .where(
         and(
           eq(scheduleItemAssignees.userId, auth.userId),
+          organizationScopeCondition(auth, jobs.organizationId),
           isNull(scheduleItems.deletedAt),
           isNull(jobs.deletedAt),
         ),
@@ -195,6 +205,7 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
       .where(
         and(
           eq(dailyLogs.createdBy, auth.userId),
+          organizationScopeCondition(auth, jobs.organizationId),
           isNull(dailyLogs.deletedAt),
           isNull(jobs.deletedAt),
         ),
@@ -207,6 +218,7 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
       .where(
         and(
           eq(files.uploadedBy, auth.userId),
+          organizationScopeCondition(auth, jobs.organizationId),
           isNull(files.deletedAt),
           isNull(folders.deletedAt),
           isNull(jobs.deletedAt),
@@ -237,7 +249,13 @@ export async function listAccessibleLeadIds(auth: AuthContext): Promise<string[]
     db
       .select({ id: leads.id })
       .from(leads)
-      .where(and(isNull(leads.deletedAt), eq(leads.createdBy, auth.userId))),
+      .where(
+        and(
+          isNull(leads.deletedAt),
+          organizationScopeCondition(auth, leads.organizationId),
+          eq(leads.createdBy, auth.userId),
+        ),
+      ),
     db
       .select({ id: leads.id })
       .from(leadSalespeople)
@@ -245,6 +263,7 @@ export async function listAccessibleLeadIds(auth: AuthContext): Promise<string[]
       .where(
         and(
           eq(leadSalespeople.userId, auth.userId),
+          organizationScopeCondition(auth, leads.organizationId),
           isNull(leads.deletedAt),
         ),
       ),
@@ -269,7 +288,13 @@ export async function listAccessibleClientIds(auth: AuthContext): Promise<string
   const createdClients = await db
     .select({ id: clients.id })
     .from(clients)
-    .where(and(isNull(clients.deletedAt), eq(clients.createdBy, auth.userId)));
+    .where(
+      and(
+        isNull(clients.deletedAt),
+        organizationScopeCondition(auth, clients.organizationId),
+        eq(clients.createdBy, auth.userId),
+      ),
+    );
 
   if (!managedJobIds || managedJobIds.length === 0) {
     return uniqueIds(createdClients.map((row) => row.id));
@@ -281,6 +306,7 @@ export async function listAccessibleClientIds(auth: AuthContext): Promise<string
     .where(
       and(
         isNull(jobs.deletedAt),
+        organizationScopeCondition(auth, jobs.organizationId),
         inArray(jobs.id, managedJobIds),
         isNull(jobs.deletedAt),
       ),
@@ -294,6 +320,20 @@ export async function listAccessibleClientIds(auth: AuthContext): Promise<string
 
 export async function assertCanAccessJob(auth: AuthContext, jobId: string) {
   if (isAdmin(auth)) {
+    const [row] = await db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.id, jobId),
+          organizationScopeCondition(auth, jobs.organizationId),
+          isNull(jobs.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw new HttpError(404, "Job not found.");
+    }
     return;
   }
 
@@ -321,7 +361,18 @@ export async function assertCanCreateJobFolder(
 
 export async function canViewJobFinancials(auth: AuthContext, jobId: string) {
   if (isAdmin(auth)) {
-    return true;
+    const [row] = await db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.id, jobId),
+          organizationScopeCondition(auth, jobs.organizationId),
+          isNull(jobs.deletedAt),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
   }
 
   const [row] = await db
@@ -364,6 +415,20 @@ export async function assertCanManageJob(auth: AuthContext, _jobId: string) {
 
 export async function assertCanAccessLead(auth: AuthContext, leadId: string) {
   if (isAdmin(auth)) {
+    const [row] = await db
+      .select({ id: leads.id })
+      .from(leads)
+      .where(
+        and(
+          eq(leads.id, leadId),
+          organizationScopeCondition(auth, leads.organizationId),
+          isNull(leads.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw new HttpError(404, "Lead not found.");
+    }
     return;
   }
 
@@ -392,6 +457,20 @@ export async function assertCanManageLead(auth: AuthContext, leadId: string) {
 
 export async function assertCanAccessClient(auth: AuthContext, clientId: string) {
   if (isAdmin(auth)) {
+    const [row] = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(
+        and(
+          eq(clients.id, clientId),
+          organizationScopeCondition(auth, clients.organizationId),
+          isNull(clients.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw new HttpError(404, "Client not found.");
+    }
     return;
   }
 
@@ -780,6 +859,12 @@ export async function assertCanViewDailyLog(auth: AuthContext, logId: string) {
 
 export async function assertCanEditDailyLog(auth: AuthContext, logId: string) {
   const log = await getDailyLogAccessOrThrow(logId);
+
+  if (!log.jobId) {
+    throw new HttpError(403, "You do not have access to that daily log.");
+  }
+
+  await assertCanAccessJob(auth, log.jobId);
 
   if (isAdmin(auth) || log.createdBy === auth.userId) {
     return log;

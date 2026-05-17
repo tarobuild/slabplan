@@ -1,6 +1,6 @@
 /**
  * cleanup-orphan-file-rows.mjs — remove `files` rows whose underlying
- * object in the cadstone uploads bucket no longer exists.
+ * object in the Stone Track uploads bucket no longer exists.
  *
  * Context: on 2026-04-30 the uploads prefix was emptied as part of
  * the account-cleanup task (see docs/runbook.md § 9, 2026-04-30 entry),

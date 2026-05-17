@@ -180,7 +180,7 @@ async function main() {
   // Alert with combined failure summary.
   const summary = failures.map((f) => `- [${f.code}] ${f.message}`).join("\n");
   await sendBackupAlert({
-    subject: `[CAD Stone] Daily DB backup VERIFICATION failed for ${today}`,
+    subject: `[Stone Track] Daily DB backup VERIFICATION failed for ${today}`,
     message: [
       `The nightly verification of the ${today} Postgres backup found problems:`,
       "",
@@ -211,7 +211,7 @@ main()
     });
     // Try to alert on the crash too — something is very broken.
     sendBackupAlert({
-      subject: `[CAD Stone] Daily DB backup CHECK crashed for ${todayUtc()}`,
+      subject: `[Stone Track] Daily DB backup CHECK crashed for ${todayUtc()}`,
       message: `The backup verification script itself threw an exception: ${err?.message ?? String(err)}`,
       context: { error: err?.message ?? String(err), stack: err?.stack },
       log,

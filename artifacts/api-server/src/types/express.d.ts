@@ -5,6 +5,10 @@ declare namespace Express {
       email: string;
       role: string;
       type: "access" | "upload";
+      organizationId?: string;
+      organizationRole?: string;
+      organizationMembershipId?: string;
+      organizationStatus?: string;
       iat?: number;
       authTime?: number;
       patId?: string;

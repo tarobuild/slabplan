@@ -55,27 +55,27 @@ test("parseArgs: rejects unknown arguments", async () => {
 test("validatePassword: rejects missing password", async () => {
   const mod = await loadScript();
   assert.throws(
-    () => mod.validatePassword(undefined, "SEED_ADMIN_CESAR_PASSWORD"),
-    /Missing required env var SEED_ADMIN_CESAR_PASSWORD/,
+    () => mod.validatePassword(undefined, "SEED_ADMIN_PRIMARY_PASSWORD"),
+    /Missing required env var SEED_ADMIN_PRIMARY_PASSWORD/,
   );
   assert.throws(
-    () => mod.validatePassword("", "SEED_ADMIN_CESAR_PASSWORD"),
-    /Missing required env var SEED_ADMIN_CESAR_PASSWORD/,
+    () => mod.validatePassword("", "SEED_ADMIN_PRIMARY_PASSWORD"),
+    /Missing required env var SEED_ADMIN_PRIMARY_PASSWORD/,
   );
 });
 
 test("validatePassword: rejects passwords shorter than 12 chars", async () => {
   const mod = await loadScript();
   assert.throws(
-    () => mod.validatePassword("Sh0rt!aB", "SEED_ADMIN_CESAR_PASSWORD"),
-    /SEED_ADMIN_CESAR_PASSWORD is too short/,
+    () => mod.validatePassword("Sh0rt!aB", "SEED_ADMIN_PRIMARY_PASSWORD"),
+    /SEED_ADMIN_PRIMARY_PASSWORD is too short/,
   );
 });
 
 test("validatePassword: rejects all-numeric passwords", async () => {
   const mod = await loadScript();
   assert.throws(
-    () => mod.validatePassword("123456789012345", "SEED_ADMIN_CESAR_PASSWORD"),
+    () => mod.validatePassword("123456789012345", "SEED_ADMIN_PRIMARY_PASSWORD"),
     /all numeric/,
   );
 });
@@ -86,11 +86,11 @@ test("validatePassword: rejects weak/blocked patterns", async () => {
     "Test1!Test1!Test1!",
     "MyAdminPassw0rd!!",
     "passwordIsLongNow1!",
-    "CadStoneRulesForever!",
+    "StoneTrackRulesForever!",
     "ChangemePleaseNow1!",
   ]) {
     assert.throws(
-      () => mod.validatePassword(weak, "SEED_ADMIN_CESAR_PASSWORD"),
+      () => mod.validatePassword(weak, "SEED_ADMIN_PRIMARY_PASSWORD"),
       /weak\/blocked pattern/,
       `expected weak: ${weak}`,
     );
@@ -100,7 +100,7 @@ test("validatePassword: rejects weak/blocked patterns", async () => {
 test("validatePassword: accepts a strong password", async () => {
   const mod = await loadScript();
   assert.doesNotThrow(() =>
-    mod.validatePassword(STRONG_PASSWORD_A, "SEED_ADMIN_CESAR_PASSWORD"),
+    mod.validatePassword(STRONG_PASSWORD_A, "SEED_ADMIN_PRIMARY_PASSWORD"),
   );
 });
 
@@ -109,29 +109,29 @@ test("resolveSeedUsers: throws if either env var is missing", async () => {
   assert.throws(
     () =>
       mod.resolveSeedUsers({
-        SEED_ADMIN_CESAR_PASSWORD: STRONG_PASSWORD_A,
-        // SEED_ADMIN_ANWAR_PASSWORD intentionally absent
+        SEED_ADMIN_PRIMARY_PASSWORD: STRONG_PASSWORD_A,
+        // SEED_ADMIN_SECONDARY_PASSWORD intentionally absent
       }),
-    /SEED_ADMIN_ANWAR_PASSWORD/,
+    /SEED_ADMIN_SECONDARY_PASSWORD/,
   );
 });
 
 test("resolveSeedUsers: returns identities with passwords when both env vars are valid", async () => {
   const mod = await loadScript();
   const users = mod.resolveSeedUsers({
-    SEED_ADMIN_CESAR_PASSWORD: STRONG_PASSWORD_A,
-    SEED_ADMIN_ANWAR_PASSWORD: STRONG_PASSWORD_B,
+    SEED_ADMIN_PRIMARY_PASSWORD: STRONG_PASSWORD_A,
+    SEED_ADMIN_SECONDARY_PASSWORD: STRONG_PASSWORD_B,
   });
 
   assert.equal(users.length, 2);
-  const cesar = users.find((u) => u.email === "cesar@cadstone.works");
-  const anwar = users.find((u) => u.email === "anwar@cadstone.works");
-  assert.ok(cesar);
-  assert.ok(anwar);
-  assert.equal(cesar.role, "admin");
-  assert.equal(anwar.role, "admin");
-  assert.equal(cesar.password, STRONG_PASSWORD_A);
-  assert.equal(anwar.password, STRONG_PASSWORD_B);
+  const primary = users.find((u) => u.email === "admin-primary@stone-track.test");
+  const secondary = users.find((u) => u.email === "admin-secondary@stone-track.test");
+  assert.ok(primary);
+  assert.ok(secondary);
+  assert.equal(primary.role, "admin");
+  assert.equal(secondary.role, "admin");
+  assert.equal(primary.password, STRONG_PASSWORD_A);
+  assert.equal(secondary.password, STRONG_PASSWORD_B);
 });
 
 test("SEED_USER_IDENTITIES does not contain any password literals", async () => {

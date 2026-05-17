@@ -26,7 +26,7 @@ router.post(
       );
     }
     const id = Sentry.captureException(
-      new Error("Cadstone API Sentry smoke test (Task #348)"),
+      new Error("Stone Track API Sentry smoke test (Task #348)"),
       { tags: { smoke: "true" } },
     );
     await Sentry.flush(2000);

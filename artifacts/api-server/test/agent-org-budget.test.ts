@@ -133,19 +133,19 @@ before(async () => {
     updatedAt: new Date(),
   });
 
-  // Two pre-seeded conversations so the send-handler tests can hit a real
-  // owned row. Both have nothing fancy — the cap check fires before any
-  // history-load logic does anything interesting.
+  // Two pre-seeded conversations so the admin-only send-handler tests can
+  // hit real owned rows. Both have nothing fancy — the cap check fires
+  // before any history-load logic does anything interesting.
   const [c1] = await db
     .insert(agentConversations)
-    .values({ userId: userAUserId, title: "Org budget test convo" })
+    .values({ userId: adminUserId, title: "Org budget test convo" })
     .returning();
   conversationId = c1!.id;
   conversationIdsToClean.push(conversationId);
 
   const [c2] = await db
     .insert(agentConversations)
-    .values({ userId: userAUserId, title: "Per-user cap test convo" })
+    .values({ userId: adminUserId, title: "Per-user cap test convo" })
     .returning();
   nonAdminConversationId = c2!.id;
   conversationIdsToClean.push(nonAdminConversationId);
@@ -321,7 +321,7 @@ test("POST /agent/conversations/:id/messages returns 429 (org-usage-limit) when 
     // counter past it before this user's own per-user cap is anywhere
     // close. That isolates the org-cap firing path from the per-user one.
     process.env.AGENT_MONTHLY_TOKEN_BUDGET = "500";
-    process.env.AGENT_MONTHLY_TOKEN_CAP = "999999"; // user A is far under
+    process.env.AGENT_MONTHLY_TOKEN_CAP = "999999"; // calling admin is far under
     await setUsageRow(adminUserId, ym, 400, 200, 1); // org=600 > 500
 
     const res = await fetch(
@@ -331,7 +331,7 @@ test("POST /agent/conversations/:id/messages returns 429 (org-usage-limit) when 
         headers: {
           "content-type": "application/json",
           "x-requested-with": "XMLHttpRequest",
-          authorization: `Bearer ${userAccessJwt}`,
+          authorization: `Bearer ${adminAccessJwt}`,
         },
         body: JSON.stringify({ content: "hello" }),
       },
@@ -363,7 +363,7 @@ test("POST /agent/conversations/:id/messages still returns 429 (usage-limit) for
     // unchanged by the new org cap.
     process.env.AGENT_MONTHLY_TOKEN_BUDGET = "999999999";
     process.env.AGENT_MONTHLY_TOKEN_CAP = "100";
-    await setUsageRow(userAUserId, ym, 80, 30, 1); // user total 110 > 100
+    await setUsageRow(adminUserId, ym, 80, 30, 1); // user total 110 > 100
 
     const res = await fetch(
       `${baseUrl}/api/agent/conversations/${nonAdminConversationId}/messages`,
@@ -372,7 +372,7 @@ test("POST /agent/conversations/:id/messages still returns 429 (usage-limit) for
         headers: {
           "content-type": "application/json",
           "x-requested-with": "XMLHttpRequest",
-          authorization: `Bearer ${userAccessJwt}`,
+          authorization: `Bearer ${adminAccessJwt}`,
         },
         body: JSON.stringify({ content: "hello again" }),
       },

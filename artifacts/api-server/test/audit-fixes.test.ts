@@ -297,14 +297,15 @@ before(async () => {
     },
   ]);
 
-  // Agent conversations seed — half pinned, all owned by `pmUserId`.
+  // Agent conversations seed — half pinned, all owned by the admin account
+  // because the assistant surface is admin-only.
   // lastMessageAt strictly decreasing so the (pinned, lastMessageAt, id)
   // walk is fully deterministic. Pinned rows sort to page 1 first.
   const baseTime = Date.now();
   await db.insert(agentConversations).values(
     conversationIds.map((id, i) => ({
       id,
-      userId: pmUserId,
+      userId: adminUserId,
       title: `ZZZ Audit Conv ${i}`,
       pinned: i < 4, // first four are pinned
       lastMessageAt: new Date(baseTime - i * 1000),
@@ -639,7 +640,7 @@ test(
   "GET /agent/conversations — legacy mode (no cursor) returns up to 100 rows without pagination block",
   async () => {
     const res = await fetch(`${baseUrl}/api/agent/conversations`, {
-      headers: authHeaders(pmToken),
+      headers: authHeaders(adminToken),
     });
     assert.equal(res.status, 200);
     const body = (await res.json()) as {
@@ -665,7 +666,7 @@ test(
       const url = new URL(`${baseUrl}/api/agent/conversations`);
       url.searchParams.set("cursor", cursor);
       url.searchParams.set("limit", "3");
-      const res = await fetch(url, { headers: authHeaders(pmToken) });
+      const res = await fetch(url, { headers: authHeaders(adminToken) });
       assert.equal(res.status, 200);
       const body = (await res.json()) as {
         conversations: Array<{
@@ -708,7 +709,7 @@ test(
   async () => {
     const res = await fetch(
       `${baseUrl}/api/agent/conversations?cursor=not-a-real-cursor`,
-      { headers: authHeaders(pmToken) },
+      { headers: authHeaders(adminToken) },
     );
     assert.equal(res.status, 400);
   },

@@ -1,9 +1,9 @@
-// Sentry initialization for the Cadstone web app.
+// Sentry initialization for the Stone Track web app.
 //
 // Initialized in src/main.tsx BEFORE React renders so the
 // `Sentry.ErrorBoundary` (and our existing class-based ErrorBoundary)
 // see a configured client. Replay is intentionally disabled — it
-// captures form data which on Cadstone routinely contains client
+// captures form data which routinely contains client
 // emails, addresses, and phone numbers (PII risk). Performance
 // tracing runs at 10% to match the API server.
 //

@@ -6,6 +6,7 @@ import {
 import axios from "axios"
 import { toast } from "sonner"
 import { useAuthStore, type AuthUser } from "@/store/auth"
+import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
 
 declare module "axios" {
   // Lets call sites opt out of the global "/403" navigation when they
@@ -16,7 +17,7 @@ declare module "axios" {
   }
 }
 
-export const FORBIDDEN_EVENT = "cadstone:forbidden"
+export const FORBIDDEN_EVENT = `${APP_STORAGE_NAMESPACE}:forbidden`
 
 type AuthResponse = {
   accessToken: string

@@ -19,6 +19,7 @@ import {
   folders,
   jobAssignees,
   jobs,
+  organizationMemberships,
   type NewJob,
   users,
 } from "@workspace/db/schema";
@@ -34,6 +35,10 @@ import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
 import { requireAdmin } from "../middleware/require-auth";
+import {
+  getActiveOrganizationId,
+  organizationScopeCondition,
+} from "../lib/tenant-scope";
 import {
   decodeCursor,
   encodeCursor,
@@ -222,8 +227,10 @@ function getParam(value: string | string[] | undefined, label: string) {
 function toJobInsert(
   data: z.infer<typeof jobPayloadBaseSchema>,
   createdBy: string,
+  organizationId: string | null,
 ): NewJob {
   return {
+    organizationId,
     title: data.title,
     status: data.status,
     streetAddress: data.streetAddress,
@@ -250,7 +257,7 @@ function toJobInsert(
   };
 }
 
-async function listJobAssignees(jobId: string) {
+async function listJobAssignees(jobId: string, auth?: AuthContext) {
   const rows = await db
     .select({
       id: users.id,
@@ -262,7 +269,13 @@ async function listJobAssignees(jobId: string) {
     })
     .from(jobAssignees)
     .innerJoin(users, eq(jobAssignees.userId, users.id))
-    .where(and(eq(jobAssignees.jobId, jobId), isNull(users.deletedAt)))
+    .where(
+      and(
+        eq(jobAssignees.jobId, jobId),
+        auth ? organizationScopeCondition(auth, jobAssignees.organizationId) : undefined,
+        isNull(users.deletedAt),
+      ),
+    )
     .orderBy(asc(users.fullName));
 
   return rows.map((row) => ({
@@ -278,25 +291,42 @@ async function listJobAssignees(jobId: string) {
   }));
 }
 
-async function ensureAssignableUserIds(userIds: string[]) {
+async function ensureAssignableUserIds(userIds: string[], auth?: AuthContext) {
   const uniqueUserIds = Array.from(new Set(userIds));
 
   if (uniqueUserIds.length === 0) {
     return [];
   }
 
-  const rows = await db
-    .select({
-      id: users.id,
-    })
-    .from(users)
-    .where(
-      and(
-        inArray(users.id, uniqueUserIds),
-        inArray(users.role, ["project_manager", "crew_member"]),
-        isNull(users.deletedAt),
-      ),
-    );
+  const organizationId = auth ? getActiveOrganizationId(auth) : null;
+  const rows = organizationId
+    ? await db
+        .select({
+          id: users.id,
+        })
+        .from(users)
+        .innerJoin(organizationMemberships, eq(organizationMemberships.userId, users.id))
+        .where(
+          and(
+            inArray(users.id, uniqueUserIds),
+            inArray(users.role, ["project_manager", "crew_member"]),
+            eq(organizationMemberships.organizationId, organizationId),
+            isNull(organizationMemberships.deletedAt),
+            isNull(users.deletedAt),
+          ),
+        )
+    : await db
+        .select({
+          id: users.id,
+        })
+        .from(users)
+        .where(
+          and(
+            inArray(users.id, uniqueUserIds),
+            inArray(users.role, ["project_manager", "crew_member"]),
+            isNull(users.deletedAt),
+          ),
+        );
 
   if (rows.length !== uniqueUserIds.length) {
     throw new HttpError(400, "One or more assignees are invalid.");
@@ -308,6 +338,7 @@ async function ensureAssignableUserIds(userIds: string[]) {
 async function insertJobAssignees(
   jobId: string,
   userIds: string[],
+  organizationId: string | null,
   executor: DbExecutor = db,
 ) {
   const uniqueUserIds = Array.from(new Set(userIds));
@@ -318,8 +349,33 @@ async function insertJobAssignees(
 
   await executor
     .insert(jobAssignees)
-    .values(uniqueUserIds.map((userId) => ({ jobId, userId })))
+    .values(uniqueUserIds.map((userId) => ({ jobId, userId, organizationId })))
     .onConflictDoNothing();
+}
+
+async function assertClientBelongsToActiveOrganization(
+  clientId: string | null,
+  auth: AuthContext,
+) {
+  if (!clientId) {
+    return;
+  }
+
+  const [client] = await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(
+      and(
+        eq(clients.id, clientId),
+        organizationScopeCondition(auth, clients.organizationId),
+        isNull(clients.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!client) {
+    throw new HttpError(400, "Client is invalid for this organization.", undefined, "validation");
+  }
 }
 
 async function findJobById(id: string, auth?: AuthContext) {
@@ -359,15 +415,27 @@ async function findJobById(id: string, auth?: AuthContext) {
     .from(jobs)
     .leftJoin(users, eq(jobs.createdBy, users.id))
     .leftJoin(projectManagers, eq(jobs.projectManagerId, projectManagers.id))
-    .leftJoin(clients, eq(jobs.clientId, clients.id))
-    .where(and(eq(jobs.id, id), isNull(jobs.deletedAt)))
+    .leftJoin(
+      clients,
+      and(
+        eq(jobs.clientId, clients.id),
+        auth ? organizationScopeCondition(auth, clients.organizationId) : undefined,
+      ),
+    )
+    .where(
+      and(
+        eq(jobs.id, id),
+        isNull(jobs.deletedAt),
+        auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined,
+      ),
+    )
     .limit(1);
 
   if (!job) {
     return null;
   }
 
-  const assignees = await listJobAssignees(id);
+  const assignees = await listJobAssignees(id, auth);
   const trackerMap = await getTrackerTotalsByJobIds([id]);
   const trackerTotals = trackerMap.get(id) ?? null;
 
@@ -433,6 +501,8 @@ router.get(
     }
 
     const conditions = [isNull(jobs.deletedAt)];
+    const orgCondition = organizationScopeCondition(req.auth!, jobs.organizationId);
+    if (orgCondition) conditions.push(orgCondition);
     if (accessibleJobIds) {
       conditions.push(inArray(jobs.id, accessibleJobIds));
     }
@@ -506,7 +576,13 @@ router.get(
         updatedAt: jobs.updatedAt,
       })
       .from(jobs)
-      .leftJoin(clients, eq(jobs.clientId, clients.id))
+      .leftJoin(
+        clients,
+        and(
+          eq(jobs.clientId, clients.id),
+          organizationScopeCondition(req.auth!, clients.organizationId),
+        ),
+      )
       .where(whereClause)
       .orderBy(desc(jobs.createdAt), desc(jobs.id))
       .limit(fetchLimit)
@@ -592,15 +668,17 @@ router.post(
     // people. The router-level `requireAdmin` enforces this; anything below
     // can assume `req.auth!.role === "admin"`.
     const payload = body.data;
-    const assigneeIds = await ensureAssignableUserIds(payload.assigneeIds);
+    await assertClientBelongsToActiveOrganization(payload.clientId, req.auth!);
+    const assigneeIds = await ensureAssignableUserIds(payload.assigneeIds, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
 
     const job = await db.transaction(async (tx) => {
       const [createdJob] = await tx
         .insert(jobs)
-        .values(toJobInsert(payload, req.auth!.userId))
+        .values(toJobInsert(payload, req.auth!.userId, organizationId))
         .returning();
 
-      await insertJobAssignees(createdJob.id, assigneeIds, tx);
+      await insertJobAssignees(createdJob.id, assigneeIds, organizationId, tx);
 
       return createdJob;
     });
@@ -667,11 +745,12 @@ router.post(
       throw new HttpError(404, "Job not found.");
     }
 
-    const [userId] = await ensureAssignableUserIds([body.data.userId]);
-    await insertJobAssignees(jobId, [userId]);
+    const organizationId = getActiveOrganizationId(req.auth!);
+    const [userId] = await ensureAssignableUserIds([body.data.userId], req.auth!);
+    await insertJobAssignees(jobId, [userId], organizationId);
 
     res.status(201).json({
-      assignees: await listJobAssignees(jobId),
+      assignees: await listJobAssignees(jobId, req.auth!),
     });
   }),
 );
@@ -691,11 +770,15 @@ router.delete(
     await db
       .delete(jobAssignees)
       .where(
-        and(eq(jobAssignees.jobId, jobId), eq(jobAssignees.userId, userId)),
+        and(
+          eq(jobAssignees.jobId, jobId),
+          eq(jobAssignees.userId, userId),
+          organizationScopeCondition(req.auth!, jobAssignees.organizationId),
+        ),
       );
 
     res.json({
-      assignees: await listJobAssignees(jobId),
+      assignees: await listJobAssignees(jobId, req.auth!),
     });
   }),
 );
@@ -727,14 +810,20 @@ router.patch(
       .set({
         canViewFinancials: body.data.canViewFinancials,
       })
-      .where(and(eq(jobAssignees.jobId, jobId), eq(jobAssignees.userId, userId)))
+      .where(
+        and(
+          eq(jobAssignees.jobId, jobId),
+          eq(jobAssignees.userId, userId),
+          organizationScopeCondition(req.auth!, jobAssignees.organizationId),
+        ),
+      )
       .returning({ id: jobAssignees.id });
 
     if (!updated) {
       throw new HttpError(404, "Assignee not found.");
     }
 
-    const assignee = (await listJobAssignees(jobId)).find((candidate) => candidate.id === userId);
+    const assignee = (await listJobAssignees(jobId, req.auth!)).find((candidate) => candidate.id === userId);
     res.json({ assignee });
   }),
 );
@@ -771,13 +860,20 @@ router.put(
       throw new HttpError(404, "Job not found.");
     }
 
+    await assertClientBelongsToActiveOrganization(body.data.clientId, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
     const [updated] = await db
       .update(jobs)
       .set({
-        ...toJobInsert(body.data, existing.createdById ?? req.auth!.userId),
+        ...toJobInsert(body.data, existing.createdById ?? req.auth!.userId, organizationId),
         updatedAt: new Date(),
       })
-      .where(eq(jobs.id, jobId))
+      .where(
+        and(
+          eq(jobs.id, jobId),
+          organizationScopeCondition(req.auth!, jobs.organizationId),
+        ),
+      )
       .returning();
 
     await ensureSystemFolders(updated.id);
@@ -827,12 +923,22 @@ router.delete(
       await tx
         .update(jobs)
         .set({ deletedAt, updatedAt: deletedAt })
-        .where(eq(jobs.id, jobId));
+        .where(
+          and(
+            eq(jobs.id, jobId),
+            organizationScopeCondition(req.auth!, jobs.organizationId),
+          ),
+        );
 
       const relatedFolders = await tx
         .select({ id: folders.id })
         .from(folders)
-        .where(eq(folders.jobId, jobId));
+        .where(
+          and(
+            eq(folders.jobId, jobId),
+            organizationScopeCondition(req.auth!, folders.organizationId),
+          ),
+        );
 
       if (relatedFolders.length === 0) {
         return;
@@ -842,11 +948,21 @@ router.delete(
       await tx
         .update(folders)
         .set({ deletedAt, updatedAt: deletedAt })
-        .where(inArray(folders.id, folderIds));
+        .where(
+          and(
+            inArray(folders.id, folderIds),
+            organizationScopeCondition(req.auth!, folders.organizationId),
+          ),
+        );
       await tx
         .update(files)
         .set({ deletedAt, updatedAt: deletedAt })
-        .where(inArray(files.folderId, folderIds));
+        .where(
+          and(
+            inArray(files.folderId, folderIds),
+            organizationScopeCondition(req.auth!, files.organizationId),
+          ),
+        );
     });
 
     await writeActivity({

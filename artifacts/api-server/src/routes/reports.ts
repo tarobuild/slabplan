@@ -13,7 +13,9 @@ import {
   sovLineItems,
   trackerInvoices,
 } from "@workspace/db/schema";
+import type { AuthContext } from "../lib/authorization";
 import { HttpError, asyncHandler } from "../lib/http";
+import { organizationScopeCondition } from "../lib/tenant-scope";
 import { requireAdmin } from "../middleware/require-auth";
 
 const router: IRouter = Router();
@@ -163,7 +165,7 @@ export const jobsByStageResponseSchema = z.object({ rows: z.array(jobsByStageRow
 
 type ArAgingRow = z.infer<typeof arAgingRowSchema>;
 
-async function loadArAging(): Promise<ArAgingRow[]> {
+async function loadArAging(auth?: AuthContext): Promise<ArAgingRow[]> {
   const rows = await db
     .select({
       clientId: jobs.clientId,
@@ -177,7 +179,7 @@ async function loadArAging(): Promise<ArAgingRow[]> {
     .innerJoin(jobs, eq(financialTrackers.jobId, jobs.id))
     .leftJoin(clients, eq(jobs.clientId, clients.id))
     .leftJoin(invoiceLinePayments, eq(invoiceLinePayments.invoiceId, trackerInvoices.id))
-    .where(isNull(jobs.deletedAt))
+    .where(and(isNull(jobs.deletedAt), auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined))
     .groupBy(
       trackerInvoices.id,
       jobs.clientId,
@@ -226,7 +228,7 @@ router.get(
   "/ar-aging",
   asyncHandler(async (req, res) => {
     parseQuery(req); // validate even though aging is range-independent
-    const data = await loadArAging();
+    const data = await loadArAging(req.auth);
     const fmt = (req.query.format as string) ?? "json";
     if (fmt === "csv") {
       // Append a TOTALS row at the bottom so the CSV mirrors the UI's
@@ -280,7 +282,7 @@ router.get(
 
 type RevenueMonth = z.infer<typeof revenueMonthSchema>;
 
-async function loadRevenue(range: Range): Promise<RevenueMonth[]> {
+async function loadRevenue(range: Range, auth?: AuthContext): Promise<RevenueMonth[]> {
   // Build a 12-month skeleton ending today (or end of range).
   const months: string[] = [];
   const end = new Date(`${range.to}T00:00:00Z`);
@@ -304,6 +306,7 @@ async function loadRevenue(range: Range): Promise<RevenueMonth[]> {
     .where(
       and(
         isNull(jobs.deletedAt),
+        auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined,
         gte(trackerInvoices.invoiceDate, startDate),
         lte(trackerInvoices.invoiceDate, range.to),
       ),
@@ -322,6 +325,7 @@ async function loadRevenue(range: Range): Promise<RevenueMonth[]> {
     .where(
       and(
         isNull(jobs.deletedAt),
+        auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined,
         gte(invoiceLinePayments.createdAt, new Date(`${startDate}T00:00:00Z`)),
         // Upper bound = end-of-day on `range.to` so payments outside a
         // custom window can't leak into the included month buckets.
@@ -369,7 +373,7 @@ router.get(
   "/revenue",
   asyncHandler(async (req, res) => {
     const q = parseQuery(req);
-    const data = await loadRevenue(q);
+    const data = await loadRevenue(q, req.auth);
     if (q.format === "csv") {
       sendCsv(
         res,
@@ -390,7 +394,7 @@ router.get(
 const PIPELINE_STAGES = ["open", "qualified", "in_negotiation", "won", "lost"] as const;
 type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
-async function loadPipeline(range: Range) {
+async function loadPipeline(range: Range, auth?: AuthContext) {
   // Funnel counts honor the date-range picker by filtering on
   // leads.createdAt, so the funnel reflects the selected window
   // (not all-time totals).
@@ -405,6 +409,7 @@ async function loadPipeline(range: Range) {
     .where(
       and(
         isNull(leads.deletedAt),
+        auth ? organizationScopeCondition(auth, leads.organizationId) : undefined,
         gte(leads.createdAt, fromDate),
         lte(leads.createdAt, toDate),
       ),
@@ -429,6 +434,7 @@ async function loadPipeline(range: Range) {
     .where(
       and(
         isNull(leads.deletedAt),
+        auth ? organizationScopeCondition(auth, leads.organizationId) : undefined,
         inArray(leads.status, ["won", "lost"]),
         gte(leads.updatedAt, fromDate),
         lte(leads.updatedAt, toDate),
@@ -467,7 +473,7 @@ router.get(
   "/pipeline",
   asyncHandler(async (req, res) => {
     const q = parseQuery(req);
-    const data = await loadPipeline(q);
+    const data = await loadPipeline(q, req.auth);
     if (q.format === "csv") {
       sendCsv(
         res,
@@ -491,7 +497,7 @@ function percentile(sorted: number[], p: number): number {
   return sorted[Math.max(0, idx)];
 }
 
-async function loadDaysToPayment(range: Range) {
+async function loadDaysToPayment(range: Range, auth?: AuthContext) {
   const fromDate = new Date(`${range.from}T00:00:00Z`);
   const toDate = new Date(`${range.to}T23:59:59Z`);
   const rows = await db
@@ -509,6 +515,7 @@ async function loadDaysToPayment(range: Range) {
     .where(
       and(
         isNull(jobs.deletedAt),
+        auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined,
         gte(trackerInvoices.appliedAt, fromDate),
         lte(trackerInvoices.appliedAt, toDate),
       ),
@@ -562,7 +569,7 @@ router.get(
   "/days-to-payment",
   asyncHandler(async (req, res) => {
     const q = parseQuery(req);
-    const data = await loadDaysToPayment(q);
+    const data = await loadDaysToPayment(q, req.auth);
     if (q.format === "csv") {
       const rows: unknown[][] = [];
       for (const r of data.byClient) rows.push(["client", r.label, r.count, r.avgDays, r.p90Days]);
@@ -578,7 +585,7 @@ router.get(
 // 5. Jobs by Stage (counts of jobs by status sliced by client)
 // ---------------------------------------------------------------------------
 
-async function loadJobsByStage() {
+async function loadJobsByStage(auth?: AuthContext) {
   const rows = await db
     .select({
       clientId: jobs.clientId,
@@ -588,7 +595,7 @@ async function loadJobsByStage() {
     })
     .from(jobs)
     .leftJoin(clients, eq(jobs.clientId, clients.id))
-    .where(isNull(jobs.deletedAt))
+    .where(and(isNull(jobs.deletedAt), auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined))
     .groupBy(jobs.clientId, clients.companyName, jobs.status);
 
   const byClient = new Map<
@@ -620,7 +627,7 @@ router.get(
   "/jobs-by-stage",
   asyncHandler(async (req, res) => {
     const q = parseQuery(req);
-    const data = await loadJobsByStage();
+    const data = await loadJobsByStage(req.auth);
     if (q.format === "csv") {
       sendCsv(
         res,

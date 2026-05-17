@@ -2,6 +2,7 @@ import { Calculator, CalendarDays, CreditCard, Mail, Plug } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useDocumentTitle } from "@/hooks/use-document-title"
+import { APP_NAME } from "@/lib/brand"
 
 type Integration = {
   key: string
@@ -61,7 +62,7 @@ export default function IntegrationsSection() {
 
         <div className="px-6 py-6 space-y-4">
           <p className="text-sm text-slate-600">
-            Connect CAD Stone Networks to the tools your business already uses. Only admins can
+            Connect {APP_NAME} to the tools your business already uses. Only admins can
             manage integrations.
           </p>
 

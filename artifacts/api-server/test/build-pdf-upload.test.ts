@@ -100,7 +100,7 @@ async function startFakeSupabaseStorage(): Promise<string> {
     }
     if (
       req.method === "POST" &&
-      url.startsWith("/storage/v1/object/cadstone-files/cadstone/uploads/")
+      url.startsWith("/storage/v1/object/cadstone-files/stone-track/uploads/")
     ) {
       req.resume();
       req.on("end", () => {

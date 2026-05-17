@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
+import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
 import type { CrewForecast, CrewHome } from "./types"
 
 function formatTime(t: string | null): string | null {
@@ -18,7 +19,7 @@ function formatTime(t: string | null): string | null {
 }
 
 const FORECAST_TTL_MS = 60 * 60 * 1000
-const DEVICE_FORECAST_STORAGE_KEY = "cadstone:home:deviceForecast"
+const DEVICE_FORECAST_STORAGE_KEY = `${APP_STORAGE_NAMESPACE}:home:deviceForecast`
 
 type DeviceForecastState =
   | { status: "idle" }

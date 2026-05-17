@@ -1,146 +1,115 @@
-# CAD Stone Networks
+# Stone Track
 
-Centralizes and streamlines construction management operations, offering job tracking, lead management, scheduling, daily logging, and file management for Cadstone Works.
+Stone Track is a local white-label SaaS conversion of the former single-company construction-management platform. The target product is a multi-tenant operations platform for job tracking, lead management, scheduling, daily logs, file management, AI assistance, and financial workflows.
+
+This workspace is local-only until the owner approves a new Stone Track repository. Do not connect it to the original CAD Stone production repo.
 
 ## Run & Operate
 
 - **Run Dev Server:** `pnpm dev`
 - **Build:** `pnpm build`
 - **Typecheck:** `pnpm typecheck`
-- **Codegen (API):** `pnpm --filter @workspace/api-spec run codegen` (regenerates API client and Zod schemas)
+- **Codegen (API):** `pnpm --filter @workspace/api-spec run codegen`
 - **Codegen drift check:** `pnpm check-api-codegen`
-- **Unused-code sweep:** `pnpm knip` (config in `knip.json`; registered as a CI validation step — must exit clean)
-- **DB Push:** `drizzle-kit push --force` (for schema changes)
-- **Env Vars (canonical list — checked into `docs/launch-checklist.md` §4.1):**
-    - **Required in production (cutover-blocking if missing):**
-      - DB: `SUPABASE_DATABASE_URL` (and dev/test fallback `DATABASE_URL`)
-      - Auth: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_UPLOAD_SECRET`, `JWT_RESET_SECRET`, `SESSION_SECRET`
-      - Email: `RESEND_API_KEY`, `EMAIL_FROM`, `APP_PUBLIC_URL` (invites, password resets, optional email transport for backup alerts)
-      - CORS / origins: `CORS_ALLOWED_ORIGINS` *or* `APP_ORIGIN` (one must list the customer-facing origin — `artifacts/api-server/src/lib/cors.ts` reads both, plus `FRONTEND_ORIGIN` / `PUBLIC_APP_ORIGIN` / `CUSTOM_DOMAIN_ORIGIN` / Replit-managed domain vars, into one allow-list); `NODE_ENV=production`
-      - AI: `AI_INTEGRATIONS_ANTHROPIC_API_KEY`, `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`
-      - Upload storage: `SUPABASE_URL`, `SUPABASE_STORAGE_BUCKET`, `SUPABASE_SERVICE_ROLE_KEY`
-      - Monitoring: `SENTRY_DSN_API` (server boot fails without it in prod)
-    - **Recommended:** `SENTRY_DSN_WEB` (warning-only if missing; client errors will not be captured)
-    - **Optional / tunables:**
-      - `AGENT_MODEL` (AI Assistant model override)
-      - `BACKUP_TRIGGER_SECRET`, `BACKUP_WEBHOOK_URL` (arms the GitHub Actions DB backup cron — see `docs/restore-drill.md` §6)
-      - `BACKUP_ALERT_EMAIL`, `BACKUP_ALERT_WEBHOOK_URL` (backup alert fan-out; see `docs/restore-drill.md`)
-      - `BACKUP_SIZE_TOLERANCE_PCT`, `BACKUP_HISTORY_WINDOW_DAYS` (backup-size sanity check tuning)
-      - Rate limits: `LOGIN_IP_MAX`, `LOGIN_IP_WINDOW_MS`, `LOGIN_EMAIL_MAX`, `LOGIN_EMAIL_WINDOW_MS`, `AI_PARSE_PER_USER_MAX`, `AI_PARSE_PER_USER_WINDOW_MS`, `UPLOAD_PER_USER_MAX`, `UPLOAD_PER_USER_WINDOW_MS`
-      - Sentry build-time (web source-map upload only — never reach the browser): `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT_WEB`; runtime tag overrides: `SENTRY_ENVIRONMENT` / `VITE_SENTRY_ENVIRONMENT`, `VITE_RELEASE_SHA` / `REPLIT_GIT_COMMIT_SHA`; smoke endpoint: `SENTRY_TEST_TOKEN`
-    - **Sentry plumbing (Task #348):** the web DSN, release SHA, and environment are injected into the client bundle via Vite `define` (`__SENTRY_DSN_WEB__`, `__SENTRY_RELEASE__`, `__SENTRY_ENVIRONMENT__`) — deliberately NOT via `envPrefix`, so `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT_WEB` never reach the browser. Source-map upload during web build requires those three; maps are emitted only when all three are set, uploaded to Sentry, then deleted from `dist/public/assets` so they never ship to end users. PII filter (`artifacts/api-server/src/lib/pii-filter.ts`, mirrored in `artifacts/cadstone/src/lib/sentry.ts`) drops events whose payload contains an email, phone number, or US street address. Runbook: when an error appears in Sentry, check `release`/`environment` tags and the attached `route`+`requestId` extras to correlate with Pino logs.
-- **Launch readiness:** see `docs/launch-checklist.md` for the cutover gate (automated gates, CI test runs, manual smoke, env-var audit, security scanners, architect sign-off).
+- **Unused-code sweep:** `pnpm knip`
+- **Frontend bundle health:** `pnpm --filter @workspace/cadstone run check-eager-bundle`
 
-## Working with GitHub (anti-drift workflow)
-
-GitHub repo: **https://github.com/tarobuild/Cadstone-Works-Tool** (private). `main` is the single source of truth for both Replit and Codex.
-
-**Rules:**
-- **Codex** must always work on a branch and open a PR — never push to `main` directly. Rules live in `AGENTS.md` (Codex reads it automatically).
-- **Replit (owner edits + Replit Agent)** can commit to `main` via the Git pane's "Push branch as 'origin/main'" button.
-- **Always pull before editing in Replit** if Codex (or anyone else) may have merged a PR since the last sync. Either click the refresh icon (top-right of the Git pane) or run in Shell:
-  ```bash
-  git pull origin main
-  ```
-
-**Typical Codex loop:**
-1. Codex opens a PR on a `codex/<feature>` branch.
-2. Owner reviews on github.com → clicks **Merge pull request**.
-3. In Replit: `git pull origin main` (or refresh icon) before next edit session.
-
-**Optional hardening** (not yet enabled): GitHub branch protection on `main` requiring PRs — physically blocks direct pushes. Turn on at github.com → Settings → Branches when ready.
-
-## Stack
+## Current Stack
 
 - **Monorepo Tool:** pnpm workspaces
 - **Runtime:** Node.js 24
 - **Language:** TypeScript 5.9
 - **Backend:** Express 5
-- **Frontend:** React, Vite
-- **Styling:** Tailwind CSS v4, shadcn/ui
+- **Frontend:** React + Vite
+- **Styling:** Tailwind CSS v4 + shadcn/ui
 - **ORM:** Drizzle ORM
-- **Database:** PostgreSQL (Supabase/Helium PG)
+- **Database:** PostgreSQL
+- **Storage:** Supabase-compatible private object storage
 - **Validation:** Zod
-- **AI Model:** Anthropic Claude
+- **AI Model:** Anthropic Claude through the existing integration package
 
-## Where things live
+## Where Things Live
 
 - **Backend API:** `artifacts/api-server`
 - **Frontend App:** `artifacts/cadstone`
-- **DB Schema:** `lib/db/schema.ts`
-- **API Contract (Source of Truth):** `lib/api-spec/openapi.yaml`
+- **DB Schema:** `lib/db/src/schema`
+- **DB Migrations:** `lib/db/migrations`
+- **API Contract:** `lib/api-spec/openapi.yaml`
 - **Generated API Client:** `lib/api-client-react/src/generated/`
 - **Generated API Zod Schemas:** `lib/api-zod/src/generated/`
 - **Transactional Email:** `artifacts/api-server/src/lib/email.ts`
-- **DB Backup Script:** `artifacts/api-server/scripts/db-backup.mjs`
+- **Storage Helpers:** `artifacts/api-server/src/lib/storage.ts`
 - **MCP Server:** `lib/mcp-server`
-- **Frontend Role Access Helpers:** `src/lib/role-access.ts`
-- **Frontend Global Error Boundary:** `src/components/ErrorBoundary.tsx`
-- **Sentry Init (server):** `artifacts/api-server/src/lib/sentry.ts` (loaded first in `src/index.ts`)
-- **Sentry Init (web):** `artifacts/cadstone/src/lib/sentry.ts` (loaded first in `src/main.tsx`)
-- **Sentry PII filter + tests:** `artifacts/api-server/src/lib/pii-filter.ts`, `test/pii-filter.test.ts`
-- **Contract Tests:** `artifacts/api-server/test/*-contract.test.ts`
+- **Frontend Role Access Helpers:** `artifacts/cadstone/src/lib/role-access.ts`
+- **Frontend Global Error Boundary:** `artifacts/cadstone/src/components/ErrorBoundary.tsx`
+- **Sentry Init (server):** `artifacts/api-server/src/lib/sentry.ts`
+- **Sentry Init (web):** `artifacts/cadstone/src/lib/sentry.ts`
 - **E2E Playwright Tests:** `artifacts/cadstone/tests/e2e/`
-- **App Layout / Top Nav / Mobile Bottom Nav / Breadcrumbs:** `artifacts/cadstone/src/components/layout/{AppLayout,TopNav,MobileBottomNav,Breadcrumbs}.tsx`
-- **Breadcrumbs Hook:** `artifacts/cadstone/src/hooks/use-breadcrumbs.tsx`
-- **Feature Flags:** `artifacts/cadstone/src/lib/features.ts`
-- **Reusable Create Job Dialog:** `artifacts/cadstone/src/components/jobs/CreateJobDialog.tsx`
+- **Migration Plan:** `docs/stone-track-saas-migration-plan.md`
 
-## Architecture decisions
+## Environment Variables
 
-- **API Contract First:** `openapi.yaml` is the single source of truth for the API, with generated clients and Zod schemas ensuring consistency. Manual edits to generated files are forbidden.
-- **Robust Authentication & Authorization:** JWT with in-memory access tokens and HTTP-only refresh cookies. Role-based access control (admin, project_manager, crew_member) enforced server-side, with corresponding UI affordance hiding for read-only roles.
-- **Database Integrity:** Schema-level `CHECK` and `FOREIGN KEY` constraints enforce critical invariants directly in PostgreSQL.
-- **Schema migrations are the source of truth (Task #346):** Hand-written idempotent SQL files in `lib/db/migrations/*.sql` are applied by the custom runner in `lib/db/src/migrate.ts` (ledger table `workspace_schema_migrations`). `scripts/post-merge.sh` runs `pnpm --filter db check-migrations-journal && pnpm --filter db migrate` on every merge — `drizzle-kit push --force` is **never** used in CI/post-merge because it can silently turn a column rename into a destructive drop-and-recreate. `migrations/meta/_journal.json` is kept 1:1 with the SQL files (regen with `pnpm --filter db rebuild-migrations-journal`); the post-merge check fails loudly if the two drift apart. See `lib/db/README.md` for the full workflow.
-- **Schema migrations run on deploy (Task #385):** Pending migrations are applied automatically on every production boot — the api-server's `bootstrap()` (in `artifacts/api-server/src/index.ts`) calls `applyMigrations(pool, { migrationsDir })` BEFORE `server.listen(...)`, using the same connection pool as the rest of the server (so prod hits `SUPABASE_DATABASE_URL`, dev hits the runtime-managed `DATABASE_URL`). The runner is idempotent and bails on checksum drift. The api-server's `build.mjs` copies `lib/db/migrations` into `dist/migrations`; the boot resolves that path relative to `import.meta.url`. **No manual `pnpm migrate` step is needed for production** — publishing the deploy is the deploy-time apply trigger. The boot log line is `"Migrations applied"` (with the file list) or `"No pending migrations"`.
-- **Atomic Rate Limiting:** All API rate limits use token buckets stored in a shared Postgres table, ensuring global budget enforcement across multiple API instances and preventing race conditions.
-- **Decoupled DB Backups:** A dedicated Node script performs `pg_dump | gzip` and uploads to object storage, with robust alerting and pruning, designed for scheduled deployment or GitHub Actions trigger.
-- **Admin Reports (Task #322):** `/reports/*` is admin-only (`ROLE_GATES.reports = ["admin"]`, backend `requireAdmin`). Five reports under one shell with left-rail subnav: A/R Aging, Revenue by Month, Pipeline & Win Rate, Days to Payment, Jobs by Stage. Each report fetches `/api/reports/<slug>?range=last_30|last_90|ytd|custom[&from&to]` via direct axios (not in `openapi.yaml`); CSV export reuses the same endpoint with `format=csv`. SQL aggregates use `tracker_invoices` / `invoice_line_payments` joined to `financial_trackers → jobs → clients`; lead funnel maps `open→New, qualified→Qualified, in_negotiation→Proposal, won, lost`. Charts are inline SVG (no recharts dep).
-- **Role-aware Home (Task #321):** `/` and `/dashboard` both render `src/pages/home/index.tsx`, which fetches `GET /dashboard/home` and dispatches by role to `MyDayPage` (crew), `PMHomePage` (PM), or `AdminHomePage` (admin). The endpoint returns a discriminated union `{ role, data }`. Pure at-risk classifiers live in `artifacts/api-server/src/lib/at-risk.ts` (overdue schedule items, pending COs, past-due invoices via `invoiceDate + netDays`, missing daily logs by working-day window) with unit tests in `test/at-risk.test.ts`. Old all-roles dashboard is reachable at `/dashboard/legacy`.
-- **Role-aware Information Architecture (Task #318):** Top nav exposes role-specific primary destinations (admin/PM: Home·Clients·Schedule·Daily Logs·Sales·Reports·Resources; crew: Home·My Jobs·Resources; Reports gated behind `FEATURES.reports`). On `<md` viewports a fixed bottom-tab navigator (`MobileBottomNav`, `aria-label="Primary mobile navigation"`) replaces the hamburger drawer; admin/PM mobile tabs link to `/schedule` and `/daily-logs`. Persistent breadcrumbs render under the top nav, auto-derived from the route and overridable per-page via `useSetBreadcrumbs`. Top-level `/files/*` routes were removed in favor of role-based `<FilesRedirect>` (crew → `/jobs`, others → `/clients`); per-job `/jobs/:jobId/files/*` is unchanged. The Create Job dialog is a reusable component so client-detail can launch it in place with `defaultClientId` + `lockClient`.
-- **Company-wide Schedule & Daily Logs (Task #323):** `/schedule` and `/daily-logs` are admin/PM-only aggregate views (gated by `ROLE_GATES.companyViews` + server `requireManagerOrAbove`; crew gets 403 / route redirect to `/403`). Both back ends are single-page paginated SQL with hydrated client/job context (jobTitle, clientId, clientName) attached inline so the client doesn't N+1; both endpoints support `?cursor=&limit=` (cursor mode) and `?page=&pageSize=` (page mode). Client pages persist filters and view choice in the URL.
-- **Playwright e2e in CI (Task #344):** The Playwright-bundled chromium can't load its shared libs on Nix. Two supported entry points: (1) CI — `.github/workflows/e2e.yml` runs the suite inside `mcr.microsoft.com/playwright:v1.59.1-jammy` against a Postgres 17 service container; required repo secrets are `SEED_ADMIN_CESAR_PASSWORD`, `SEED_ADMIN_ANWAR_PASSWORD`, `SEED_WORKER_FIXTURE_PASSWORD`, `SEED_PM_FIXTURE_PASSWORD`, `E2E_JWT_SECRET`. (2) Local — `scripts/run-e2e-local.sh` recreates the test DB, seeds users + the baseline E2E client/job, boots api-server + Vite, and runs the suite. The local script auto-points at `pkgs.chromium` from `replit.nix` via `CHROMIUM_PATH` (the playwright config already honors it).
+Canonical production env vars will be finalized as Stone Track moves toward staging. Existing inherited env names remain until the related subsystem is migrated.
 
-## Product
+Expected categories:
 
-- **Job Management:** Create (admin-only), edit, assign, track status, and complete jobs.
-- **Lead Management:** Track and manage sales leads.
-- **Scheduling:** Create and manage project schedules.
-- **Daily Logging:** Record daily activities and attach files.
-- **File Management:** Upload, store, and access project-related documents.
-- **AI Assistant:** In-app AI agent (Anthropic Claude) for read-only MCP tool access, conversation persistence, and usage tracking.
-- **User & Team Management:** Seeded user accounts, in-app team management, role-based access.
-- **Financials:** Estimate and invoice spreadsheet parsing for jobs.
+- **DB:** `SUPABASE_DATABASE_URL` or `DATABASE_URL`
+- **Auth:** `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_UPLOAD_SECRET`, `JWT_RESET_SECRET`, `SESSION_SECRET`
+- **Email:** provider API key, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `APP_PUBLIC_URL`
+- **CORS / origins:** `CORS_ALLOWED_ORIGINS` or `APP_ORIGIN`
+- **AI:** `AI_INTEGRATIONS_ANTHROPIC_API_KEY`, `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`, optional `AGENT_MODEL`
+- **Upload storage:** `SUPABASE_URL`, `SUPABASE_STORAGE_BUCKET`, `SUPABASE_SERVICE_ROLE_KEY`
+- **Monitoring:** existing Sentry env vars are grandfathered; do not add new Sentry instrumentation without owner approval
+- **Rate limits:** existing login, AI parse, upload, and API rate-limit tunables
 
-## User preferences
+Do not copy env values from the original production project. Stone Track needs fresh Supabase, storage, auth, billing, and monitoring secrets before production.
 
-I want iterative development.
-I prefer detailed explanations.
-Ask before making major changes.
-Do not make changes to folder `artifacts/mockup-sandbox`.
-Do not make changes to files related to `mcp.test.ts`.
+## Architecture Decisions
+
+- **API Contract First:** `openapi.yaml` is the source of truth for generated clients and Zod schemas.
+- **Migrations Are Source of Truth:** hand-written SQL migrations in `lib/db/migrations` are applied by the custom runner. Avoid `drizzle-kit push --force` unless explicitly approved.
+- **No Silent Fallbacks:** missing required services and env vars should throw instead of pretending work succeeded.
+- **Tenant Isolation Is A Security Boundary:** do not ship tenant code unless schema, auth context, route predicates, storage paths, and tests agree.
+- **Provider Adapters:** billing and AI providers should sit behind internal app abstractions so Stone Track is not locked to one hosting or connector platform.
+
+## SaaS Target
+
+The intended production architecture is:
+
+- Multi-tenant Postgres schema with tenant-scoped business records.
+- Supabase-compatible private storage with tenant-prefixed object paths.
+- Tenant-aware auth context and tenant-scoped roles.
+- Tenant-scoped invitations and team management.
+- Tenant-isolated search, reports, file access, signed links, AI tools, and MCP access.
+- Subscription and entitlement tables, with Stripe Billing as the likely first provider for web-first B2B SaaS.
+- Tenant-level AI metering, budgets, and audit logs.
+
+Detailed phases are documented in `docs/stone-track-saas-migration-plan.md`.
+
+## Product Modules
+
+- **Job Management:** create, edit, assign, track status, and complete jobs.
+- **Lead Management:** track sales leads and convert them to jobs.
+- **Scheduling:** project schedules, phases, dependencies, and workday exceptions.
+- **Daily Logging:** field logs with attachments, comments, tags, and visibility controls.
+- **File Management:** private project and resource files.
+- **AI Assistant:** in-app assistant with auditable tool usage.
+- **User & Team Management:** invitations, roles, profiles, and personal access tokens.
+- **Financials:** estimate and invoice spreadsheet parsing for jobs.
+
+## User Preferences
+
+- Use iterative development.
+- Prefer detailed explanations.
+- Ask before irreversible or broad architectural changes.
+- Do not modify `artifacts/mockup-sandbox`.
+- Do not modify files related to `mcp.test.ts`.
 
 ## Gotchas
 
-- **File Type Bundling:** Ensure `file-type` and `exceljs` dependencies are correctly bundled and externalized for production deploys to avoid `415 Unsupported file type` or `Cannot find package 'exceljs'` errors.
-- **API Contract Discrepancies:** If the API handler and `openapi.yaml` disagree, **always fix the spec** first, then regenerate.
-- **Money Fields:** Always use `type: integer` with `maximum: 9007199254740991` for money fields in `openapi.yaml` to avoid `bigint` issues.
-- **Date Fields:** Use `type: string` with `pattern: ^\\d{4}-\\d{2}-\\d{2}$` and **no** `format: date` for calendar dates in `openapi.yaml` to prevent silent `Date` object coercion.
-- **Old `.xls` Files:** Legacy `.xls` (binary BIFF) uploads are not supported; users must "Save As .xlsx" and re-upload.
-- **No Manual API Client Calls for Generated Hooks:** New code must use generated mutation hooks (e.g., `useClientsPostClients`) for endpoints with generated hooks, centralizing cache invalidation and error handling. Direct `api.post/put/patch/delete` calls are only for endpoints not yet in `openapi.yaml`.
-
-## Pointers
-
-
-- **Supabase Storage:** private bucket for uploaded files.
-- **pnpm workspaces:** [https://pnpm.io/workspaces](https://pnpm.io/workspaces)
-- **Drizzle ORM:** [https://orm.drizzle.team/](https://orm.drizzle.team/)
-- **Zod:** [https://zod.dev/](https://zod.dev/)
-- **Tailwind CSS:** [https://tailwindcss.com/docs](https://tailwindcss.com/docs)
-- **shadcn/ui:** [https://ui.shadcn.com/docs](https://ui.shadcn.com/docs)
-- **Resend:** [https://resend.com/](https://resend.com/)
-- **Anthropic Claude:** _Populate as you build_
-- **Playwright:** [https://playwright.dev/docs/](https://playwright.dev/docs/)
-- **Postgres `pg_dump`:** [https://www.postgresql.org/docs/current/app-pgdump.html](https://www.postgresql.org/docs/current/app-pgdump.html)
-- **Restore Drill Documentation:** `docs/restore-drill.md`
-- **Launch Readiness Checklist:** `docs/launch-checklist.md`
+- **API Contract Discrepancies:** if a handler and `openapi.yaml` disagree, fix the spec first, then regenerate.
+- **Money Fields:** use integer cents or safe integer OpenAPI definitions where possible.
+- **Date Fields:** use `YYYY-MM-DD` strings with explicit regex patterns in OpenAPI.
+- **Old `.xls` Files:** legacy binary BIFF uploads are not supported.
+- **Generated Files:** do not hand-edit generated API client or generated Zod files.
+- **File Storage:** storage paths must become tenant-prefixed before real multi-tenant production use.

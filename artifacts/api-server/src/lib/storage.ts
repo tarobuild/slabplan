@@ -10,8 +10,9 @@ import {
 } from "./file-serving";
 import { HttpError } from "./http";
 import { logger } from "./logger";
+import { APP_STORAGE_PREFIX } from "./brand";
 
-const SUPABASE_UPLOAD_PREFIX = "cadstone/uploads";
+const SUPABASE_UPLOAD_PREFIX = APP_STORAGE_PREFIX;
 const SUPABASE_OBJECT_MISSING_STATUSES = new Set([400, 404]);
 
 function getRequiredEnv(key: string): string {
@@ -167,15 +168,24 @@ export function buildStoredFileName(originalName: string) {
 }
 
 export function buildUploadPath(params: {
+  organizationId?: string | null;
   jobId: string;
   mediaType: string;
   storedFileName: string;
 }) {
-  const relative = path.posix.join(
-    params.jobId,
-    params.mediaType,
-    params.storedFileName,
-  );
+  const relative = params.organizationId
+    ? path.posix.join(
+        "organizations",
+        params.organizationId,
+        params.jobId,
+        params.mediaType,
+        params.storedFileName,
+      )
+    : path.posix.join(
+        params.jobId,
+        params.mediaType,
+        params.storedFileName,
+      );
   return {
     relative,
     fileUrl: `/uploads/${relative}`,

@@ -29,6 +29,7 @@ import {
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
+import { getActiveOrganizationId, organizationScopeCondition } from "../lib/tenant-scope";
 import { requireAdmin } from "../middleware/require-auth";
 
 const router: IRouter = Router();
@@ -234,10 +235,21 @@ async function loadMyDailyLogEngagement(logIds: string[], currentUserId: string)
   };
 }
 
-async function ensureSettingsRow() {
+function requireActiveOrganizationId(req: Express.Request) {
+  const organizationId = getActiveOrganizationId(req.auth!);
+
+  if (!organizationId) {
+    throw new HttpError(403, "No active organization selected.", undefined, "forbidden");
+  }
+
+  return organizationId;
+}
+
+async function ensureSettingsRow(organizationId: string) {
   const [existing] = await db
     .select()
     .from(dailyLogSettings)
+    .where(eq(dailyLogSettings.organizationId, organizationId))
     .orderBy(asc(dailyLogSettings.createdAt))
     .limit(1);
 
@@ -249,6 +261,7 @@ async function ensureSettingsRow() {
     .insert(dailyLogSettings)
     .values({
       id: crypto.randomUUID(),
+      organizationId,
       stampLocation: false,
       defaultNotes: "",
       includeWeatherByDefault: true,
@@ -265,14 +278,20 @@ async function ensureSettingsRow() {
   return created;
 }
 
-async function assertCustomFieldNameUnique(name: string, excludeId?: string) {
+async function assertCustomFieldNameUnique(
+  organizationId: string,
+  name: string,
+  excludeId?: string,
+) {
   const [existing] = await db
     .select({ id: dailyLogCustomFields.id })
     .from(dailyLogCustomFields)
     .where(
-      excludeId
-        ? and(eq(dailyLogCustomFields.name, name), sql`${dailyLogCustomFields.id} <> ${excludeId}`)
-        : eq(dailyLogCustomFields.name, name),
+      and(
+        eq(dailyLogCustomFields.organizationId, organizationId),
+        eq(dailyLogCustomFields.name, name),
+        excludeId ? sql`${dailyLogCustomFields.id} <> ${excludeId}` : undefined,
+      ),
     )
     .limit(1);
 
@@ -284,8 +303,8 @@ async function assertCustomFieldNameUnique(name: string, excludeId?: string) {
 router.get(
   "/daily-logs/settings",
   requireAdmin,
-  asyncHandler(async (_req, res) => {
-    const settings = await ensureSettingsRow();
+  asyncHandler(async (req, res) => {
+    const settings = await ensureSettingsRow(requireActiveOrganizationId(req));
     res.json({ settings });
   }),
 );
@@ -300,7 +319,8 @@ router.put(
       throw new HttpError(400, "Invalid daily log settings payload.", body.error.flatten());
     }
 
-    const existing = await ensureSettingsRow();
+    const organizationId = requireActiveOrganizationId(req);
+    const existing = await ensureSettingsRow(organizationId);
 
     const [settings] = await db
       .update(dailyLogSettings)
@@ -324,7 +344,12 @@ router.put(
           body.data.notifyInstallersByDefault ?? existing.notifyInstallersByDefault,
         updatedAt: new Date(),
       })
-      .where(eq(dailyLogSettings.id, existing.id))
+      .where(
+        and(
+          eq(dailyLogSettings.id, existing.id),
+          eq(dailyLogSettings.organizationId, organizationId),
+        ),
+      )
       .returning();
 
     res.json({ settings });
@@ -334,7 +359,8 @@ router.put(
 router.get(
   "/daily-logs/custom-fields",
   requireAdmin,
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    const organizationId = requireActiveOrganizationId(req);
     const fields = await db
       .select({
         id: dailyLogCustomFields.id,
@@ -346,6 +372,7 @@ router.get(
         updatedAt: dailyLogCustomFields.updatedAt,
       })
       .from(dailyLogCustomFields)
+      .where(eq(dailyLogCustomFields.organizationId, organizationId))
       .orderBy(asc(dailyLogCustomFields.displayOrder), asc(dailyLogCustomFields.createdAt));
 
     res.json({ fields });
@@ -362,16 +389,19 @@ router.post(
       throw new HttpError(400, "Invalid daily log custom field payload.", body.error.flatten());
     }
 
-    await assertCustomFieldNameUnique(body.data.name);
+    const organizationId = requireActiveOrganizationId(req);
+    await assertCustomFieldNameUnique(organizationId, body.data.name);
 
     const [maxOrderRow] = await db
       .select({ value: max(dailyLogCustomFields.displayOrder) })
-      .from(dailyLogCustomFields);
+      .from(dailyLogCustomFields)
+      .where(eq(dailyLogCustomFields.organizationId, organizationId));
 
     const [field] = await db
       .insert(dailyLogCustomFields)
       .values({
         id: crypto.randomUUID(),
+        organizationId,
         name: body.data.name,
         fieldType: body.data.fieldType,
         options: body.data.fieldType === "dropdown" ? normalizeUniqueStrings(body.data.options) : [],
@@ -399,17 +429,23 @@ router.put(
       throw new HttpError(400, "Missing custom field id.");
     }
 
+    const organizationId = requireActiveOrganizationId(req);
     const [existing] = await db
       .select()
       .from(dailyLogCustomFields)
-      .where(eq(dailyLogCustomFields.id, fieldId))
+      .where(
+        and(
+          eq(dailyLogCustomFields.id, fieldId),
+          eq(dailyLogCustomFields.organizationId, organizationId),
+        ),
+      )
       .limit(1);
 
     if (!existing) {
       throw new HttpError(404, "Daily log custom field not found.");
     }
 
-    await assertCustomFieldNameUnique(body.data.name, fieldId);
+    await assertCustomFieldNameUnique(organizationId, body.data.name, fieldId);
 
     const [field] = await db
       .update(dailyLogCustomFields)
@@ -420,7 +456,12 @@ router.put(
         displayOrder: body.data.displayOrder ?? existing.displayOrder,
         updatedAt: new Date(),
       })
-      .where(eq(dailyLogCustomFields.id, fieldId))
+      .where(
+        and(
+          eq(dailyLogCustomFields.id, fieldId),
+          eq(dailyLogCustomFields.organizationId, organizationId),
+        ),
+      )
       .returning();
 
     res.json({ field });
@@ -437,17 +478,30 @@ router.delete(
       throw new HttpError(400, "Missing custom field id.");
     }
 
+    const organizationId = requireActiveOrganizationId(req);
     const [existing] = await db
       .select({ id: dailyLogCustomFields.id })
       .from(dailyLogCustomFields)
-      .where(eq(dailyLogCustomFields.id, fieldId))
+      .where(
+        and(
+          eq(dailyLogCustomFields.id, fieldId),
+          eq(dailyLogCustomFields.organizationId, organizationId),
+        ),
+      )
       .limit(1);
 
     if (!existing) {
       throw new HttpError(404, "Daily log custom field not found.");
     }
 
-    await db.delete(dailyLogCustomFields).where(eq(dailyLogCustomFields.id, fieldId));
+    await db
+      .delete(dailyLogCustomFields)
+      .where(
+        and(
+          eq(dailyLogCustomFields.id, fieldId),
+          eq(dailyLogCustomFields.organizationId, organizationId),
+        ),
+      );
     res.json({ success: true });
   }),
 );
@@ -465,6 +519,22 @@ router.get(
       eq(dailyLogs.createdBy, req.auth!.userId),
       isNull(dailyLogs.deletedAt),
     ];
+    const dailyLogsOrganizationCondition = organizationScopeCondition(
+      req.auth!,
+      dailyLogs.organizationId,
+    );
+    const jobsOrganizationCondition = organizationScopeCondition(
+      req.auth!,
+      jobs.organizationId,
+    );
+
+    if (dailyLogsOrganizationCondition) {
+      conditions.push(dailyLogsOrganizationCondition);
+    }
+
+    if (jobsOrganizationCondition) {
+      conditions.push(jobsOrganizationCondition);
+    }
 
     if (query.data.clientId) {
       conditions.push(eq(jobs.clientId, query.data.clientId));

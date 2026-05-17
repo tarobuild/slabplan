@@ -50,6 +50,7 @@ import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
+import { getActiveOrganizationId, organizationScopeCondition } from "../lib/tenant-scope";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -206,7 +207,7 @@ const weatherQuerySchema = z
     { message: "Provide either `address` or both `lat` and `lng`." },
   );
 
-const weatherMetaKey = "__cadstoneMeta";
+const weatherMetaKey = "__stoneTrackMeta";
 
 function getParam(value: string | string[] | undefined, label: string) {
   const normalized = Array.isArray(value) ? value[0] : value;
@@ -342,6 +343,7 @@ async function ensureJobExists(jobId: string) {
     .select({
       id: jobs.id,
       title: jobs.title,
+      organizationId: jobs.organizationId,
       city: jobs.city,
       state: jobs.state,
       streetAddress: jobs.streetAddress,
@@ -377,7 +379,7 @@ async function getDailyLogOrThrow(id: string) {
 // stays scoped: when /comments validates an incoming `fileId`, it only
 // considers files that were uploaded into THIS folder, which means a user
 // cannot attach an arbitrary file they happen to have access to elsewhere.
-async function ensureDailyLogCommentAttachmentFolder(dailyLogId: string) {
+async function ensureDailyLogCommentAttachmentFolder(dailyLogId: string, organizationId: string | null) {
   const title = `Daily Log ${dailyLogId} Comment Attachments`;
 
   const [existing] = await db
@@ -388,6 +390,7 @@ async function ensureDailyLogCommentAttachmentFolder(dailyLogId: string) {
         isNull(folders.jobId),
         eq(folders.scope, "daily_log"),
         eq(folders.dailyLogId, dailyLogId),
+        organizationId ? eq(folders.organizationId, organizationId) : undefined,
         eq(folders.title, title),
         eq(folders.mediaType, "photo"),
         isNull(folders.deletedAt),
@@ -402,6 +405,7 @@ async function ensureDailyLogCommentAttachmentFolder(dailyLogId: string) {
   const [created] = await db
     .insert(folders)
     .values({
+      organizationId,
       jobId: sql<string>`null`,
       scope: "daily_log",
       dailyLogId,
@@ -415,7 +419,7 @@ async function ensureDailyLogCommentAttachmentFolder(dailyLogId: string) {
   return created;
 }
 
-async function ensureDailyLogAttachmentFolder(dailyLogId: string) {
+async function ensureDailyLogAttachmentFolder(dailyLogId: string, organizationId: string | null) {
   const title = `Daily Log ${dailyLogId} Attachments`;
 
   const [existing] = await db
@@ -426,6 +430,7 @@ async function ensureDailyLogAttachmentFolder(dailyLogId: string) {
         isNull(folders.jobId),
         eq(folders.scope, "daily_log"),
         eq(folders.dailyLogId, dailyLogId),
+        organizationId ? eq(folders.organizationId, organizationId) : undefined,
         eq(folders.title, title),
         eq(folders.mediaType, "document"),
         isNull(folders.deletedAt),
@@ -440,6 +445,7 @@ async function ensureDailyLogAttachmentFolder(dailyLogId: string) {
   const [created] = await db
     .insert(folders)
     .values({
+      organizationId,
       jobId: sql<string>`null`,
       scope: "daily_log",
       dailyLogId,
@@ -468,7 +474,7 @@ async function maybeDeletePhysicalFile(fileUrl: string | null | undefined, fileI
   }
 }
 
-async function syncDailyLogTags(dailyLogId: string, tags: string[]) {
+async function syncDailyLogTags(dailyLogId: string, tags: string[], organizationId: string | null) {
   await db
     .delete(dailyLogTags)
     .where(eq(dailyLogTags.dailyLogId, dailyLogId));
@@ -478,6 +484,7 @@ async function syncDailyLogTags(dailyLogId: string, tags: string[]) {
   if (normalized.length > 0) {
     await db.insert(dailyLogTags).values(
       normalized.map((tagName) => ({
+        organizationId,
         dailyLogId,
         tagName,
       })),
@@ -891,7 +898,11 @@ router.get(
     const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
     const cursorLimit = query.data.limit ?? 25;
 
-    const baseConditions = [eq(dailyLogs.jobId, jobId), isNull(dailyLogs.deletedAt)];
+    const baseConditions = [
+      eq(dailyLogs.jobId, jobId),
+      organizationScopeCondition(req.auth!, dailyLogs.organizationId),
+      isNull(dailyLogs.deletedAt),
+    ];
 
     if (query.data.createdBy) {
       baseConditions.push(eq(dailyLogs.createdBy, query.data.createdBy));
@@ -1271,11 +1282,13 @@ router.post(
     }
 
     const jobId = body.data.jobId ?? getParam(req.params.jobId, "job id");
-    await ensureJobExists(jobId);
+    const job = await ensureJobExists(jobId);
+    await assertCanCreateDailyLog(req.auth!, jobId);
 
     const [log] = await db
       .insert(dailyLogs)
       .values({
+        organizationId: job.organizationId ?? getActiveOrganizationId(req.auth!),
         jobId,
         logDate: body.data.logDate,
         title: body.data.title,
@@ -1293,7 +1306,7 @@ router.post(
       })
       .returning();
 
-    await syncDailyLogTags(log.id, body.data.tags);
+    await syncDailyLogTags(log.id, body.data.tags, log.organizationId);
 
     await writeActivity({
       entityType: "daily_log",
@@ -1360,6 +1373,8 @@ router.get(
     const baseConditions: unknown[] = [
       isNull(dailyLogs.deletedAt),
       isNull(jobs.deletedAt),
+      organizationScopeCondition(auth, dailyLogs.organizationId),
+      organizationScopeCondition(auth, jobs.organizationId),
     ];
     const visibilityFilter = buildDailyLogVisibilityFilter(auth);
     if (visibilityFilter) baseConditions.push(visibilityFilter);
@@ -1595,13 +1610,15 @@ router.put(
       throw new HttpError(400, "Daily log is missing a job.");
     }
 
-    await ensureJobExists(nextJobId);
+    const nextJob = await ensureJobExists(nextJobId);
     await assertCanAccessJob(req.auth!, nextJobId);
+    await assertCanCreateDailyLog(req.auth!, nextJobId);
 
     await db
       .update(dailyLogs)
       .set({
         jobId: nextJobId,
+        organizationId: nextJob.organizationId ?? getActiveOrganizationId(req.auth!),
         logDate: body.data.logDate,
         title: body.data.title,
         notes: body.data.notes,
@@ -1618,7 +1635,7 @@ router.put(
       })
       .where(eq(dailyLogs.id, logId));
 
-    await syncDailyLogTags(logId, body.data.tags);
+    await syncDailyLogTags(logId, body.data.tags, existing.organizationId ?? nextJob.organizationId ?? getActiveOrganizationId(req.auth!));
 
     await writeActivity({
       entityType: "daily_log",
@@ -1793,6 +1810,7 @@ router.post(
       } else {
         await tx.insert(dailyLogLikes).values({
           id: crypto.randomUUID(),
+          organizationId: dailyLog.organizationId,
           dailyLogId: logId,
           userId: req.auth!.userId,
         });
@@ -1886,7 +1904,7 @@ router.post(
 
     if (body.data.attachments.length > 0) {
       const fileIds = body.data.attachments.map((a) => a.fileId);
-      const commentFolder = await ensureDailyLogCommentAttachmentFolder(logId);
+      const commentFolder = await ensureDailyLogCommentAttachmentFolder(logId, dailyLog.organizationId);
       const fileRows = await db
         .select({
           id: files.id,
@@ -1942,6 +1960,7 @@ router.post(
       .insert(dailyLogComments)
       .values({
         id: crypto.randomUUID(),
+        organizationId: dailyLog.organizationId,
         dailyLogId: logId,
         parentCommentId: body.data.parentCommentId,
         createdBy: req.auth!.userId,
@@ -2052,6 +2071,7 @@ router.post(
       .insert(dailyLogTodos)
       .values({
         id: crypto.randomUUID(),
+        organizationId: dailyLog.organizationId,
         dailyLogId: logId,
         title: body.data.title,
         isComplete: false,
@@ -2137,8 +2157,8 @@ router.post(
   }),
   asyncHandler(async (req, res) => {
     const logId = getParam(req.params.id, "daily log id");
-    await getDailyLogOrThrow(logId);
-    const commentFolder = await ensureDailyLogCommentAttachmentFolder(logId);
+    const dailyLog = await getDailyLogOrThrow(logId);
+    const commentFolder = await ensureDailyLogCommentAttachmentFolder(logId, dailyLog.organizationId);
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
 
     if (uploadedFiles.length === 0) {
@@ -2192,6 +2212,7 @@ router.post(
           const [createdFile] = await db
             .insert(files)
             .values({
+              organizationId: commentFolder.organizationId,
               folderId: commentFolder.id,
               filename: storedFileName,
               originalName: uploadedFile.originalname,
@@ -2231,7 +2252,7 @@ router.post(
     const logId = getParam(req.params.id, "daily log id");
     const dailyLog = await getDailyLogOrThrow(logId);
     const dailyLogJobId = requireDailyLogJobId(dailyLog);
-    const attachmentFolder = await ensureDailyLogAttachmentFolder(logId);
+    const attachmentFolder = await ensureDailyLogAttachmentFolder(logId, dailyLog.organizationId);
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
 
     if (uploadedFiles.length === 0) {
@@ -2290,6 +2311,7 @@ router.post(
             const [createdFile] = await tx
               .insert(files)
               .values({
+                organizationId: attachmentFolder.organizationId,
                 folderId: attachmentFolder.id,
                 filename: storedFileName,
                 originalName: uploadedFile.originalname,
@@ -2303,6 +2325,7 @@ router.post(
             const [createdAttachment] = await tx
               .insert(dailyLogAttachments)
               .values({
+                organizationId: dailyLog.organizationId,
                 dailyLogId: logId,
                 fileId: createdFile.id,
               })

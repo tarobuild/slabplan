@@ -21,6 +21,7 @@ import { redactActivityRowsForAuth } from "./activity-visibility";
 import { encodeCursor, type CursorPayload } from "./cursor";
 import { FILE_RESPONSE_CSP } from "./file-serving";
 import { HttpError } from "./http";
+import { organizationScopeCondition } from "./tenant-scope";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -230,6 +231,7 @@ export async function ensureJobExists(jobId: string) {
     .select({
       id: jobs.id,
       title: jobs.title,
+      organizationId: jobs.organizationId,
       deletedAt: jobs.deletedAt,
     })
     .from(jobs)
@@ -243,7 +245,12 @@ export async function ensureJobExists(jobId: string) {
   return job;
 }
 
-async function findRootSystemFolder(jobId: string | null, mediaType: string, title: string) {
+async function findRootSystemFolder(
+  jobId: string | null,
+  mediaType: string,
+  title: string,
+  organizationId?: string | null,
+) {
   const [folder] = await db
     .select()
     .from(folders)
@@ -253,6 +260,7 @@ async function findRootSystemFolder(jobId: string | null, mediaType: string, tit
         eq(folders.scope, jobId ? "job" : "resource"),
         eq(folders.mediaType, mediaType),
         eq(folders.title, title),
+        organizationId ? eq(folders.organizationId, organizationId) : undefined,
         isNull(folders.parentFolderId),
         isNull(folders.deletedAt),
       ),
@@ -268,17 +276,18 @@ export async function ensureSystemFolders(
     includeJobTemplates?: boolean;
   },
 ) {
-  await ensureJobExists(jobId);
+  const job = await ensureJobExists(jobId);
   const values = [
     ...GLOBAL_SYSTEM_FOLDERS,
     ...(options?.includeJobTemplates ? JOB_TEMPLATE_FOLDERS : []),
   ];
 
   for (const value of values) {
-    const existing = await findRootSystemFolder(jobId, value.mediaType, value.title);
+    const existing = await findRootSystemFolder(jobId, value.mediaType, value.title, job.organizationId);
 
     if (!existing) {
       await db.insert(folders).values({
+        organizationId: job.organizationId,
         jobId,
         scope: "job",
         title: value.title,
@@ -478,6 +487,7 @@ export async function writeActivity(params: {
   folderId?: string | null;
   fileId?: string | null;
   description: string;
+  organizationId?: string | null;
   extra?: Record<string, unknown>;
 }) {
   const [jobRecord, userRecord] = await Promise.all([
@@ -485,6 +495,7 @@ export async function writeActivity(params: {
       ? db
           .select({
             title: jobs.title,
+            organizationId: jobs.organizationId,
           })
           .from(jobs)
           .where(eq(jobs.id, params.jobId))
@@ -527,6 +538,7 @@ export async function writeActivity(params: {
   };
 
   const [created] = await db.insert(activityLog).values({
+    organizationId: params.organizationId ?? jobRecord?.organizationId ?? null,
     entityType: params.entityType,
     entityId: params.entityId,
     action: params.action,
@@ -900,7 +912,7 @@ export async function createFolder(params: {
   title: string;
   userId: string;
 }) {
-  await ensureJobExists(params.jobId);
+  const job = await ensureJobExists(params.jobId);
   await ensureSystemFolders(params.jobId);
   assertNestedFolderAllowed(params.mediaType, params.parentFolderId);
 
@@ -914,6 +926,7 @@ export async function createFolder(params: {
   const [folder] = await db
     .insert(folders)
     .values({
+      organizationId: job.organizationId,
       jobId: params.jobId,
       scope: "job",
       parentFolderId: params.parentFolderId,
@@ -1323,6 +1336,7 @@ export async function saveUploadedFiles(params: {
 
     const storedName = buildStoredFileName(uploadedFile.originalname);
     const { fileUrl } = buildUploadPath({
+      organizationId: folder.organizationId,
       jobId: folder.jobId ?? "resources",
       mediaType: folder.mediaType,
       storedFileName: storedName,
@@ -1359,6 +1373,7 @@ export async function saveUploadedFiles(params: {
         tx
           .insert(files)
           .values({
+            organizationId: folder.organizationId,
             folderId: folder.id,
             filename: storedName,
             originalName: uploadedFile.originalname,
@@ -1731,6 +1746,10 @@ export async function getActivityEntries(params: {
   const metadataFolderId = sql<string | null>`${activityLog.metadata} ->> 'folderId'`;
   const metadataDescription = sql<string | null>`${activityLog.metadata} ->> 'description'`;
   const conditions: SQL[] = [];
+  const orgCondition = organizationScopeCondition(params.auth, activityLog.organizationId);
+  if (orgCondition) {
+    conditions.push(orgCondition);
+  }
 
   if (params.entityType) {
     conditions.push(eq(activityLog.entityType, params.entityType));

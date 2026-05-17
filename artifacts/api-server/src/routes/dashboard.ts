@@ -32,6 +32,7 @@ import {
 import { buildDailyLogVisibilityFilter } from "../lib/daily-log-visibility";
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildScheduleListVisibilityFilter } from "../lib/schedule-visibility";
+import { organizationScopeCondition } from "../lib/tenant-scope";
 import { getCachedForecastForAddress, type WeatherSnapshot } from "../lib/weather";
 
 const router: IRouter = Router();
@@ -95,6 +96,7 @@ router.get(
           .where(
             and(
               isNull(jobs.deletedAt),
+              organizationScopeCondition(req.auth!, jobs.organizationId),
               eq(jobs.status, "open"),
               accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
             ),
@@ -106,6 +108,7 @@ router.get(
           .where(
             and(
               isNull(leads.deletedAt),
+              organizationScopeCondition(req.auth!, leads.organizationId),
               inArray(leads.status, ["open", "in_negotiation"]),
               accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
             ),
@@ -117,6 +120,7 @@ router.get(
           .where(
             and(
               isNull(scheduleItems.deletedAt),
+              organizationScopeCondition(req.auth!, scheduleItems.organizationId),
               or(isNull(scheduleItems.progress), lt(scheduleItems.progress, 100)),
               accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
               buildScheduleListVisibilityFilter(req.auth!),
@@ -129,6 +133,7 @@ router.get(
           .where(
             and(
               isNull(dailyLogs.deletedAt),
+              organizationScopeCondition(req.auth!, dailyLogs.organizationId),
               eq(dailyLogs.createdBy, req.auth!.userId),
               accessibleJobIds ? inArray(dailyLogs.jobId, accessibleJobIds) : undefined,
             ),
@@ -182,6 +187,7 @@ router.get(
         .where(
           and(
             isNull(scheduleItems.deletedAt),
+            organizationScopeCondition(req.auth!, scheduleItems.organizationId),
             gte(scheduleItems.startDate, today),
             lte(scheduleItems.startDate, in14Days),
             or(isNull(scheduleItems.isComplete), eq(scheduleItems.isComplete, false)),
@@ -208,6 +214,7 @@ router.get(
         .where(
           and(
             isNull(dailyLogs.deletedAt),
+            organizationScopeCondition(req.auth!, dailyLogs.organizationId),
             accessibleJobIds ? inArray(dailyLogs.jobId, accessibleJobIds) : undefined,
             dailyLogVisibilityFilter,
           ),
@@ -228,6 +235,7 @@ router.get(
         .where(
           and(
             isNull(jobs.deletedAt),
+            organizationScopeCondition(req.auth!, jobs.organizationId),
             eq(jobs.status, "open"),
             accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
           ),
@@ -292,6 +300,8 @@ router.get(
         and(
           isNull(scheduleItems.deletedAt),
           isNull(jobs.deletedAt),
+          organizationScopeCondition(req.auth!, scheduleItems.organizationId),
+          organizationScopeCondition(req.auth!, jobs.organizationId),
           accessibleJobIds ? inArray(scheduleItems.jobId, accessibleJobIds) : undefined,
           clientFilter,
           // items that overlap the requested range
@@ -328,6 +338,7 @@ router.get(
       .where(
         and(
           isNull(jobs.deletedAt),
+          organizationScopeCondition(req.auth!, jobs.organizationId),
           accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
           clientFilter,
           // The job has at least one date that lets it appear on the calendar.

@@ -24,6 +24,7 @@ import { useAgentPanelStore } from "@/store/agent"
 import { hasRoleAccess, ROLE_GATES, type AppRole } from "@/lib/role-access"
 import { isFeatureEnabled } from "@/lib/features"
 import { cn } from "@/lib/utils"
+import { APP_LOGO_PATH, APP_NAME, APP_SHORT_NAME, APP_STORAGE_NAMESPACE } from "@/lib/brand"
 
 function initials(name: string) {
   return name
@@ -116,7 +117,7 @@ export default function TopNav() {
   useEffect(() => {
     function handleFocusSearch() {
       const desktopInput = document.querySelector<HTMLInputElement>(
-        '#cadstone-topbar-search input[type="search"]',
+        '#stone-track-topbar-search input[type="search"]',
       )
       if (desktopInput && desktopInput.offsetParent !== null) {
         desktopInput.focus()
@@ -125,10 +126,10 @@ export default function TopNav() {
       }
       setSearchOpen(true)
     }
-    window.addEventListener("cadstone:focus-global-search", handleFocusSearch)
+    window.addEventListener(`${APP_STORAGE_NAMESPACE}:focus-global-search`, handleFocusSearch)
     return () =>
       window.removeEventListener(
-        "cadstone:focus-global-search",
+        `${APP_STORAGE_NAMESPACE}:focus-global-search`,
         handleFocusSearch,
       )
   }, [])
@@ -140,8 +141,8 @@ export default function TopNav() {
         <Link to="/dashboard" className="flex items-center shrink-0 mr-3">
           <div className="flex items-center bg-white rounded px-2 py-1">
             <img
-              src="/cad-logo.png"
-              alt="CAD Stone Networks"
+              src={APP_LOGO_PATH}
+              alt={APP_NAME}
               className="h-6 w-auto"
             />
           </div>
@@ -170,7 +171,7 @@ export default function TopNav() {
         <div className="flex-1" />
 
         {/* Global search — desktop only */}
-        <div id="cadstone-topbar-search" className="hidden md:block w-72 mr-1">
+        <div id="stone-track-topbar-search" className="hidden md:block w-72 mr-1">
           <GlobalSearch />
         </div>
 
@@ -209,7 +210,7 @@ export default function TopNav() {
                   className="text-[10px] font-semibold text-white"
                   style={{ backgroundColor: "#E85D04" }}
                 >
-                  {user ? initials(user.fullName) : "CS"}
+                  {user ? initials(user.fullName) : APP_SHORT_NAME}
                 </AvatarFallback>
               </Avatar>
               <span className="hidden text-sm font-medium sm:block">

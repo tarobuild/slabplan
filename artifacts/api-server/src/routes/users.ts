@@ -5,6 +5,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
+  organizationMemberships,
   personalAccessTokens,
   safeUserColumns,
   userRoles,
@@ -15,6 +16,7 @@ import { sendAuthResponse, toPublicUser } from "../lib/auth";
 import { sendInvite, sendPasswordReset, truncateEmailError } from "../lib/email";
 import { writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
+import { getActiveOrganizationId } from "../lib/tenant-scope";
 import {
   requireAdmin,
   requireManagerOrAbove,
@@ -33,7 +35,7 @@ function buildInvitePath(token: string) {
 }
 
 // Resolve an absolute URL for the invitee. Production sets APP_PUBLIC_URL
-// (e.g. https://cadstone.example.com) to the canonical host; in dev we
+// (e.g. https://app.stonetrack.example) to the canonical host; in dev we
 // fall back to the REPLIT_DEV_DOMAIN proxy host. We always return a URL
 // with an `https://` scheme so the email is clickable from any client —
 // if neither env var is set we throw, because emailing a relative path
@@ -267,6 +269,35 @@ async function findActiveUserWithPasswordHash(id: string) {
   return user ?? null;
 }
 
+function organizationRoleFromUserRole(role: string) {
+  return role === "admin" ? "admin" : role;
+}
+
+async function findActiveUserInOrganization(id: string, organizationId: string | null) {
+  if (!organizationId) {
+    return findActiveUserWithPasswordHash(id);
+  }
+
+  const [row] = await db
+    .select()
+    .from(users)
+    .innerJoin(
+      organizationMemberships,
+      eq(organizationMemberships.userId, users.id),
+    )
+    .where(
+      and(
+        eq(users.id, id),
+        isNull(users.deletedAt),
+        eq(organizationMemberships.organizationId, organizationId),
+        isNull(organizationMemberships.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  return row?.users ?? null;
+}
+
 function publicUserWithStatus(user: Pick<User,
   "id" | "email" | "fullName" | "role" | "avatarUrl" | "phone" | "createdAt" | "updatedAt"
 > & {
@@ -308,6 +339,7 @@ router.get(
     // Only admins are allowed to see inactive users (the column is meaningful
     // for managing the team; managers and crew members never need that view).
     const effectiveIncludeInactive = includeInactive && isAdmin;
+    const organizationId = getActiveOrganizationId(req.auth!);
 
     const baseConditions = [
       isNull(users.deletedAt),
@@ -315,19 +347,53 @@ router.get(
       effectiveIncludeInactive ? undefined : eq(users.isActive, true),
     ];
 
-    const [[totalRow], rows] = await Promise.all([
-      db
-        .select({ total: count() })
-        .from(users)
-        .where(and(...baseConditions)),
-      db
-        .select(safeUserColumns)
-        .from(users)
-        .where(and(...baseConditions))
-        .orderBy(asc(users.fullName))
-        .limit(limit)
-        .offset(offset),
-    ]);
+    const [[totalRow], rows] = organizationId
+      ? await Promise.all([
+          db
+            .select({ total: count() })
+            .from(users)
+            .innerJoin(
+              organizationMemberships,
+              eq(organizationMemberships.userId, users.id),
+            )
+            .where(
+              and(
+                ...baseConditions,
+                eq(organizationMemberships.organizationId, organizationId),
+                isNull(organizationMemberships.deletedAt),
+              ),
+            ),
+          db
+            .select(safeUserColumns)
+            .from(users)
+            .innerJoin(
+              organizationMemberships,
+              eq(organizationMemberships.userId, users.id),
+            )
+            .where(
+              and(
+                ...baseConditions,
+                eq(organizationMemberships.organizationId, organizationId),
+                isNull(organizationMemberships.deletedAt),
+              ),
+            )
+            .orderBy(asc(users.fullName))
+            .limit(limit)
+            .offset(offset),
+        ])
+      : await Promise.all([
+          db
+            .select({ total: count() })
+            .from(users)
+            .where(and(...baseConditions)),
+          db
+            .select(safeUserColumns)
+            .from(users)
+            .where(and(...baseConditions))
+            .orderBy(asc(users.fullName))
+            .limit(limit)
+            .offset(offset),
+        ]);
 
     const total = Number(totalRow?.total ?? 0);
     const publicUsers = rows.map((row) =>
@@ -543,21 +609,38 @@ router.post(
 
     const placeholderHash = await generatePlaceholderPasswordHash();
     const invite = generateInvite();
+    const organizationId = getActiveOrganizationId(req.auth!);
 
-    const [created] = await db
-      .insert(users)
-      .values({
-        email,
-        fullName,
-        role,
-        passwordHash: placeholderHash,
-        isActive: true,
-        inviteTokenHash: invite.tokenHash,
-        inviteToken: null,
-        inviteTokenExpiresAt: invite.expiresAt,
-        passwordSetAt: null,
-      })
-      .returning();
+    const [created] = await db.transaction(async (tx) => {
+      const createdRows = await tx
+        .insert(users)
+        .values({
+          email,
+          fullName,
+          role,
+          defaultOrganizationId: organizationId,
+          passwordHash: placeholderHash,
+          isActive: true,
+          inviteTokenHash: invite.tokenHash,
+          inviteToken: null,
+          inviteTokenExpiresAt: invite.expiresAt,
+          passwordSetAt: null,
+        })
+        .returning();
+
+      const createdUser = createdRows[0];
+      if (createdUser && organizationId) {
+        await tx.insert(organizationMemberships).values({
+          organizationId,
+          userId: createdUser.id,
+          role: organizationRoleFromUserRole(role),
+          isDefault: true,
+          invitedBy: req.auth!.userId,
+        });
+      }
+
+      return createdRows;
+    });
 
     if (!created) {
       throw new HttpError(500, "Failed to create user.");
@@ -620,11 +703,8 @@ router.post(
       throw new HttpError(400, "Invalid user id.");
     }
 
-    const [target] = await db
-      .select()
-      .from(users)
-      .where(and(eq(users.id, id.data), isNull(users.deletedAt)))
-      .limit(1);
+    const organizationId = getActiveOrganizationId(req.auth!);
+    const target = await findActiveUserInOrganization(id.data, organizationId);
 
     if (!target) {
       throw new HttpError(404, "User not found.");
@@ -718,11 +798,8 @@ router.post(
       throw new HttpError(400, "Invalid user id.");
     }
 
-    const [target] = await db
-      .select()
-      .from(users)
-      .where(and(eq(users.id, id.data), isNull(users.deletedAt)))
-      .limit(1);
+    const organizationId = getActiveOrganizationId(req.auth!);
+    const target = await findActiveUserInOrganization(id.data, organizationId);
 
     if (!target) {
       throw new HttpError(404, "User not found.");
@@ -826,11 +903,8 @@ router.patch(
       throw new HttpError(400, "Invalid user payload.", parsed.error.flatten());
     }
 
-    const [target] = await db
-      .select()
-      .from(users)
-      .where(and(eq(users.id, id.data), isNull(users.deletedAt)))
-      .limit(1);
+    const organizationId = getActiveOrganizationId(req.auth!);
+    const target = await findActiveUserInOrganization(id.data, organizationId);
 
     if (!target) {
       throw new HttpError(404, "User not found.");
@@ -846,25 +920,47 @@ router.patch(
     const nextRole = parsed.data.role ?? target.role;
     const nextIsActive = parsed.data.isActive ?? target.isActive;
 
+    if (target.id === req.auth!.userId && nextRole !== target.role) {
+      throw new HttpError(400, "You cannot change your own role.");
+    }
+
     const [updated] = await db.transaction(async (tx) => {
       if (
         target.role === "admin" &&
         target.isActive &&
         (nextRole !== "admin" || nextIsActive === false)
       ) {
-        const [remainingAdmin] = await tx
-          .select({ total: count() })
-          .from(users)
-          .where(
-            and(
-              eq(users.role, "admin"),
-              eq(users.isActive, true),
-              isNull(users.deletedAt),
-              ne(users.id, target.id),
-            ),
-          );
+        const [remainingAdmin] = organizationId
+          ? await tx
+              .select({ total: count() })
+              .from(users)
+              .innerJoin(
+                organizationMemberships,
+                eq(organizationMemberships.userId, users.id),
+              )
+              .where(
+                and(
+                  eq(users.role, "admin"),
+                  eq(users.isActive, true),
+                  isNull(users.deletedAt),
+                  ne(users.id, target.id),
+                  eq(organizationMemberships.organizationId, organizationId),
+                  isNull(organizationMemberships.deletedAt),
+                ),
+              )
+          : await tx
+              .select({ total: count() })
+              .from(users)
+              .where(
+                and(
+                  eq(users.role, "admin"),
+                  eq(users.isActive, true),
+                  isNull(users.deletedAt),
+                  ne(users.id, target.id),
+                ),
+              );
 
-        if ((remainingAdmin?.total ?? 0) === 0) {
+        if (Number(remainingAdmin?.total ?? 0) === 0) {
           throw new HttpError(400, "Cannot demote or deactivate the last active admin.");
         }
       }
@@ -880,6 +976,22 @@ router.patch(
         })
         .where(eq(users.id, target.id))
         .returning();
+
+      if (organizationId && parsed.data.role) {
+        await tx
+          .update(organizationMemberships)
+          .set({
+            role: organizationRoleFromUserRole(nextRole),
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(organizationMemberships.organizationId, organizationId),
+              eq(organizationMemberships.userId, target.id),
+              isNull(organizationMemberships.deletedAt),
+            ),
+          );
+      }
 
       if (target.isActive && nextIsActive === false) {
         await tx

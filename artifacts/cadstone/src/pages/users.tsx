@@ -93,7 +93,7 @@ function roleLabel(role: AdminUser["role"]) {
 
 function buildAbsoluteInviteLink(invitePath: string): string {
   if (typeof window === "undefined") return invitePath
-  // BASE_URL is something like "/cadstone/" — strip the trailing "/"
+  // BASE_URL may include a deployed subpath; strip the trailing "/"
   // and prepend it to the relative invitePath ("/accept-invite?token=…")
   // so we don't double-up slashes when combining with origin.
   const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "")

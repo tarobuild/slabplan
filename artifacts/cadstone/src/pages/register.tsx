@@ -7,12 +7,14 @@ import { Label } from "@/components/ui/label"
 import { authApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { useDocumentTitle } from "@/hooks/use-document-title"
+import { APP_LOGO_PATH, APP_NAME } from "@/lib/brand"
 import { toast } from "sonner"
 
 export default function RegisterPage() {
   useDocumentTitle("Create account")
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
+  const [organizationName, setOrganizationName] = useState("")
   const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -23,6 +25,7 @@ export default function RegisterPage() {
     setLoading(true)
     try {
       const { data } = await authApi.post("/auth/register", {
+        organization_name: organizationName,
         full_name: fullName,
         email,
         password,
@@ -42,17 +45,30 @@ export default function RegisterPage() {
       <Card className="w-full max-w-sm border-[#E5E7EB] bg-white shadow-sm">
         <CardHeader className="space-y-3 items-center text-center">
           <img
-            src="/cad-logo.png"
-            alt="CAD Stone Networks"
+            src={APP_LOGO_PATH}
+            alt={APP_NAME}
             className="h-12 w-auto mx-auto"
           />
           <div>
             <CardTitle className="text-lg text-slate-900">Create an account</CardTitle>
-            <CardDescription className="text-sm text-slate-500 mt-0.5">CAD Stone Networks — internal tool</CardDescription>
+            <CardDescription className="text-sm text-slate-500 mt-0.5">{APP_NAME}</CardDescription>
           </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="organizationName">Company name</Label>
+              <Input
+                id="organizationName"
+                type="text"
+                autoComplete="organization"
+                value={organizationName}
+                onChange={(e) => setOrganizationName(e.target.value)}
+                placeholder="Stone Works Co."
+                required
+                autoFocus
+              />
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="fullName">Full Name</Label>
               <Input
@@ -63,7 +79,6 @@ export default function RegisterPage() {
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Jane Smith"
                 required
-                autoFocus
               />
             </div>
             <div className="space-y-1.5">

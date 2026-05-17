@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { agentUsageMonthly } from "@workspace/db/schema";
 
@@ -55,14 +55,23 @@ export type UsageSnapshot = {
   exceeded: boolean;
 };
 
-export async function loadUsageSnapshot(userId: string): Promise<UsageSnapshot> {
+export async function loadUsageSnapshot(
+  userId: string,
+  organizationId?: string | null,
+): Promise<UsageSnapshot> {
   const ym = currentYearMonth();
   const cap = monthlyTokenCap();
   const [row] = await db
     .select()
     .from(agentUsageMonthly)
     .where(
-      and(eq(agentUsageMonthly.userId, userId), eq(agentUsageMonthly.yearMonth, ym)),
+      and(
+        eq(agentUsageMonthly.userId, userId),
+        eq(agentUsageMonthly.yearMonth, ym),
+        organizationId
+          ? eq(agentUsageMonthly.organizationId, organizationId)
+          : isNull(agentUsageMonthly.organizationId),
+      ),
     )
     .limit(1);
   const input = row?.inputTokens ?? 0;
@@ -98,7 +107,9 @@ export type OrgUsageSnapshot = {
  * the per-user snapshot uses — just summed across all users for the
  * current `year_month` bucket.
  */
-export async function loadOrgUsageSnapshot(): Promise<OrgUsageSnapshot> {
+export async function loadOrgUsageSnapshot(
+  organizationId?: string | null,
+): Promise<OrgUsageSnapshot> {
   const ym = currentYearMonth();
   const budget = monthlyTokenBudget();
   const [row] = await db
@@ -109,7 +120,14 @@ export async function loadOrgUsageSnapshot(): Promise<OrgUsageSnapshot> {
       userCount: sql<number>`COUNT(DISTINCT ${agentUsageMonthly.userId})::int`,
     })
     .from(agentUsageMonthly)
-    .where(eq(agentUsageMonthly.yearMonth, ym));
+    .where(
+      and(
+        eq(agentUsageMonthly.yearMonth, ym),
+        organizationId
+          ? eq(agentUsageMonthly.organizationId, organizationId)
+          : isNull(agentUsageMonthly.organizationId),
+      ),
+    );
   const input = row?.input ?? 0;
   const output = row?.output ?? 0;
   const total = input + output;
@@ -128,26 +146,46 @@ export async function loadOrgUsageSnapshot(): Promise<OrgUsageSnapshot> {
 
 export async function recordUsage(
   userId: string,
+  organizationId: string | null | undefined,
   inputTokens: number,
   outputTokens: number,
 ): Promise<void> {
   const ym = currentYearMonth();
-  await db
-    .insert(agentUsageMonthly)
-    .values({
+  await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ id: agentUsageMonthly.id })
+      .from(agentUsageMonthly)
+      .where(
+        and(
+          eq(agentUsageMonthly.userId, userId),
+          eq(agentUsageMonthly.yearMonth, ym),
+          organizationId
+            ? eq(agentUsageMonthly.organizationId, organizationId)
+            : isNull(agentUsageMonthly.organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      await tx
+        .update(agentUsageMonthly)
+        .set({
+          inputTokens: sql`${agentUsageMonthly.inputTokens} + ${inputTokens}`,
+          outputTokens: sql`${agentUsageMonthly.outputTokens} + ${outputTokens}`,
+          requests: sql`${agentUsageMonthly.requests} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(agentUsageMonthly.id, existing.id));
+      return;
+    }
+
+    await tx.insert(agentUsageMonthly).values({
+      organizationId: organizationId ?? null,
       userId,
       yearMonth: ym,
       inputTokens,
       outputTokens,
       requests: 1,
-    })
-    .onConflictDoUpdate({
-      target: [agentUsageMonthly.userId, agentUsageMonthly.yearMonth],
-      set: {
-        inputTokens: sql`${agentUsageMonthly.inputTokens} + ${inputTokens}`,
-        outputTokens: sql`${agentUsageMonthly.outputTokens} + ${outputTokens}`,
-        requests: sql`${agentUsageMonthly.requests} + 1`,
-        updatedAt: new Date(),
-      },
     });
+  });
 }

@@ -1,14 +1,14 @@
 /**
- * seed-users.mjs — upsert the CAD Stone admin users into a database, plus
+ * seed-users.mjs - upsert Stone Track admin fixtures into a database, plus
  * a synthetic crew_member fixture and a baseline E2E client + open job
  * for the Playwright e2e suite when seeding the local database.
  *
  * Usage:
- *   SEED_ADMIN_CESAR_PASSWORD=... SEED_ADMIN_ANWAR_PASSWORD=... \
+ *   SEED_ADMIN_PRIMARY_PASSWORD=... SEED_ADMIN_SECONDARY_PASSWORD=... \
  *     SEED_WORKER_FIXTURE_PASSWORD=... \
  *     node artifacts/api-server/scripts/seed-users.mjs --db=local
  *
- *   SEED_ADMIN_CESAR_PASSWORD=... SEED_ADMIN_ANWAR_PASSWORD=... \
+ *   SEED_ADMIN_PRIMARY_PASSWORD=... SEED_ADMIN_SECONDARY_PASSWORD=... \
  *     node artifacts/api-server/scripts/seed-users.mjs \
  *     --db=production --i-know-what-im-doing
  *
@@ -23,11 +23,11 @@
  *                     and ALSO requires --i-know-what-im-doing.
  *
  * Required env vars (admins, both targets):
- *   SEED_ADMIN_CESAR_PASSWORD   password for cesar@cadstone.works
- *   SEED_ADMIN_ANWAR_PASSWORD   password for anwar@cadstone.works
+ *   SEED_ADMIN_PRIMARY_PASSWORD     password for admin-primary@stone-track.test
+ *   SEED_ADMIN_SECONDARY_PASSWORD   password for admin-secondary@stone-track.test
  *
  * Required env vars (local only — worker fixture):
- *   SEED_WORKER_FIXTURE_PASSWORD  password for worker@cadstone.works
+ *   SEED_WORKER_FIXTURE_PASSWORD  password for worker@stone-track.test
  *                                 (the synthetic crew_member account used
  *                                 by the Playwright suite). The Playwright
  *                                 helpers in artifacts/cadstone/tests/e2e/
@@ -73,22 +73,22 @@ const SALT_ROUNDS = 10;
 const MIN_PASSWORD_LENGTH = 12;
 const PRODUCTION_PAUSE_MS = 3000;
 
-// Admin identities. Cesar and Anwar are real admins on the team; they
-// invite workers through the in-app flow. Passwords are intentionally
-// NOT in this file — they come from environment variables at runtime.
+// Admin fixture identities. Production onboarding should create real
+// tenant users through the app flow. Passwords are intentionally NOT in
+// this file; they come from environment variables at runtime.
 // See file header for usage.
 export const SEED_USER_IDENTITIES = [
   {
-    fullName: "Cesar",
-    email: "cesar@cadstone.works",
+    fullName: "Primary Admin",
+    email: "admin-primary@stone-track.test",
     role: "admin",
-    passwordEnvVar: "SEED_ADMIN_CESAR_PASSWORD",
+    passwordEnvVar: "SEED_ADMIN_PRIMARY_PASSWORD",
   },
   {
-    fullName: "Anwar",
-    email: "anwar@cadstone.works",
+    fullName: "Secondary Admin",
+    email: "admin-secondary@stone-track.test",
     role: "admin",
-    passwordEnvVar: "SEED_ADMIN_ANWAR_PASSWORD",
+    passwordEnvVar: "SEED_ADMIN_SECONDARY_PASSWORD",
   },
 ];
 
@@ -100,7 +100,7 @@ export const SEED_USER_IDENTITIES = [
 // validated through validatePassword, no fallback.
 export const WORKER_FIXTURE_IDENTITY = {
   fullName: "Worker Fixture",
-  email: "worker@cadstone.works",
+  email: "worker@stone-track.test",
   role: "crew_member",
   passwordEnvVar: "SEED_WORKER_FIXTURE_PASSWORD",
 };
@@ -114,7 +114,7 @@ export const WORKER_FIXTURE_IDENTITY = {
 // `seedsLocalFixtures` flag below.
 export const LOCAL_FIXTURE_CLIENT = {
   companyName: "E2E Fixture Client",
-  email: "fixture-client@cadstone.test",
+  email: "fixture-client@stone-track.test",
 };
 
 export const LOCAL_FIXTURE_JOB = {
@@ -154,7 +154,8 @@ const WEAK_PASSWORD_PATTERNS = [
   "letmein",
   "welcome",
   "qwerty",
-  "cadstone",
+  "stone track",
+  "stonetrack",
   "changeme",
   "default",
 ];

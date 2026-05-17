@@ -264,7 +264,7 @@ async function pruneOldBackups() {
     const lastGood = await findMostRecentSuccessfulBackup(todayIso);
 
     await sendBackupAlert({
-      subject: `[CAD Stone] Daily DB backup FAILED for ${todayIso}`,
+      subject: `[Stone Track] Daily DB backup FAILED for ${todayIso}`,
       message: [
         `The scheduled Postgres backup for ${todayIso} did not complete.`,
         "",

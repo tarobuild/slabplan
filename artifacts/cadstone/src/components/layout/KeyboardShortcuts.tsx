@@ -8,8 +8,9 @@ import {
 } from "@/components/ui/dialog"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { useAuthStore } from "@/store/auth"
+import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
 
-const FOCUS_GLOBAL_SEARCH_EVENT = "cadstone:focus-global-search"
+const FOCUS_GLOBAL_SEARCH_EVENT = `${APP_STORAGE_NAMESPACE}:focus-global-search`
 
 type ShortcutDef = {
   keys: string[]

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
 import {
   classifyWorkday,
   dateKey,
@@ -228,7 +229,7 @@ export function CalendarView({
                   setCalendarHintDismissed(true)
                   if (typeof window !== "undefined" && jobId) {
                     try {
-                      window.sessionStorage.setItem(`cadstone:job-schedule:hint-dismissed:${jobId}`, "1")
+                      window.sessionStorage.setItem(`${APP_STORAGE_NAMESPACE}:job-schedule:hint-dismissed:${jobId}`, "1")
                     } catch {
                       /* ignore storage errors */
                     }

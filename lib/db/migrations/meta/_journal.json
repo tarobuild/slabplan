@@ -201,6 +201,38 @@
       "tag": "0026_clear_plaintext_invite_tokens",
       "breakpoints": true,
       "checksum": "27925509bdc79ae87d5998812e13f8a95d7ea16976d366cffe7de232250d59c1"
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1778892550424,
+      "tag": "0027_tenant_foundation",
+      "breakpoints": true,
+      "checksum": "32444f1903958eca54645c0c20cf8972501c7f4aee73d92d487b19be443395ec"
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1778894697202,
+      "tag": "0028_tenant_business_table_columns",
+      "breakpoints": true,
+      "checksum": "09ee42ff507692c8502d3e1ee976ece7ea6bc32ffd4a45ccd0a47e1eec070228"
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1778897440000,
+      "tag": "0029_daily_log_admin_tenant_uniques",
+      "breakpoints": true,
+      "checksum": "c00d0b4c96c2b8445b62c1764d0f1f04cb50d269e61f2d8fd2b4697ecc9df0b2"
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1778899120000,
+      "tag": "0030_agent_usage_tenant_unique",
+      "breakpoints": true,
+      "checksum": "256d9d30a325dd1390611d0fe36b5ab6f83aee2f1cb2669cebc0edb03712ca6e"
     }
   ]
 }

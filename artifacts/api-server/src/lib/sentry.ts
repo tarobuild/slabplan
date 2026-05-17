@@ -11,6 +11,7 @@
 
 import * as Sentry from "@sentry/node";
 import { valueContainsPii } from "./pii-filter";
+import { APP_MCP_NAME } from "./brand";
 
 let initialized = false;
 
@@ -57,7 +58,7 @@ export function initSentry(): void {
     dsn,
     environment,
     release: getRelease(),
-    serverName: process.env.REPL_SLUG || process.env.HOSTNAME || "cadstone-api",
+    serverName: process.env.REPL_SLUG || process.env.HOSTNAME || `${APP_MCP_NAME}-api`,
     tracesSampleRate: 0.1,
     // Keep request bodies / headers off Sentry by default — the PII
     // filter is a defence-in-depth, not the primary control.

@@ -12,13 +12,14 @@ import { normalizeStoppedReason } from "./stopped-reason";
 import { buildAnthropicTools, findAgentTool } from "./tools";
 import { recordUsage } from "./usage";
 import { logger } from "../logger";
+import { APP_NAME } from "../brand";
 
 const AGENT_MODEL = process.env.AGENT_MODEL || "claude-sonnet-4-6";
 const MAX_OUTPUT_TOKENS = 4096;
 const MAX_TOOL_ITERATIONS = 8;
 const MAX_HISTORY_MESSAGES = 30;
 
-const SYSTEM_PROMPT = `You are the in-app assistant for CAD Stone Networks, a construction management platform. You help signed-in users find and understand information across jobs, leads, files, daily logs, schedule items, contacts, clients, and activity.
+const SYSTEM_PROMPT = `You are the in-app assistant for ${APP_NAME}, a construction management platform. You help signed-in users find and understand information across jobs, leads, files, daily logs, schedule items, contacts, clients, and activity.
 
 CRITICAL RULES:
 1. You are READ-ONLY. You cannot create, modify, move, rename, or delete anything. Tools you have access to only fetch data. If a user asks to make a change, tell them they need to do it themselves in the UI and (if possible) point them to the right page.
@@ -74,6 +75,7 @@ export type AgentOrchestratorEvent =
 
 export type AgentOrchestratorOptions = {
   userId: string;
+  organizationId?: string | null;
   bearerToken: string;
   baseUrl: string;
   history: AgentMessage[];
@@ -128,7 +130,7 @@ export async function runAgentTurn(
   const apiClient = new ApiClient({
     baseUrl: opts.baseUrl,
     token: opts.bearerToken,
-    userAgent: "cadstone-in-app-agent/0.1",
+    userAgent: "stone-track-in-app-agent/0.1",
     signal,
   });
 
@@ -374,7 +376,12 @@ export async function runAgentTurn(
   // monthly cap must reflect that, or aborting becomes a free retry.
   if (totalInputTokens > 0 || totalOutputTokens > 0) {
     try {
-      await recordUsage(opts.userId, totalInputTokens, totalOutputTokens);
+      await recordUsage(
+        opts.userId,
+        opts.organizationId,
+        totalInputTokens,
+        totalOutputTokens,
+      );
     } catch (err) {
       logger.warn({ err }, "Agent: failed to record usage");
     }

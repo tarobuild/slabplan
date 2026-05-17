@@ -1,7 +1,7 @@
 // Regression coverage for Task #330 (the violet "Converted" badge and the
 // "Converted" entry in the Leads status filter).
 //
-// The cadstone Leads page sends:
+// The Stone Track Leads page sends:
 //   * `?onlyConverted=true` when the user picks "Converted" from the
 //     status dropdown, and
 //   * `?excludeConverted=true` (the default) so converted leads are

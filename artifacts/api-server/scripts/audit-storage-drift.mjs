@@ -23,7 +23,7 @@
  *      deleted rows are restorable from the trash UI, and a restore
  *      against a missing object is exactly the broken-tile scenario
  *      we want to prevent).
- *   2. List every object in the bucket under `cadstone/uploads/`.
+ *   2. List every object in the bucket under `stone-track/uploads/`.
  *   3. Compare the two sides and report:
  *        - db_only   : `files` rows whose object is missing from the
  *                      bucket (the same condition cleanup-orphan-file-
@@ -48,7 +48,7 @@
  *     by hand because the right fix depends on whether the file was
  *     deleted on purpose or the row was lost).
  *   - It never touches the bucket at all beyond listing keys.
- *   - It does not consider any prefix outside `cadstone/uploads/`.
+ *   - It does not consider any prefix outside `stone-track/uploads/`.
  *
  * Usage:
  *   node artifacts/api-server/scripts/audit-storage-drift.mjs --db=production
@@ -69,8 +69,8 @@
  *                     prelude). Useful for piping into other tools.
  *   --max-bucket-objects=N
  *                     fail fast if the bucket has more than N objects
- *                     under the cadstone uploads prefix. Defaults to
- *                     500_000 — well above any plausible Cadstone
+ *                     under the Stone Track uploads prefix. Defaults to
+ *                     500_000 — well above any plausible Stone Track
  *                     fleet size, but low enough that a runaway
  *                     listing doesn't burn the scheduled job's
  *                     wall-clock budget.

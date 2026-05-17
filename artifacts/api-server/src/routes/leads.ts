@@ -42,6 +42,10 @@ import { buildContainsLikePattern } from "../lib/search";
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
 import {
+  getActiveOrganizationId,
+  organizationScopeCondition,
+} from "../lib/tenant-scope";
+import {
   buildStoredFileName,
   buildUploadPath,
   deletePhysicalFile,
@@ -147,7 +151,7 @@ const leadListQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
   search: z.string().trim().optional(),
   status: z.enum(LEAD_STATUS_VALUES).optional(),
-  // Comma-separated list of statuses to exclude. Used by the cadstone
+  // Comma-separated list of statuses to exclude. Used by the Stone Track
   // Leads list to default-hide converted (`won`) leads while still
   // allowing them to be revealed via the "Show converted" toggle. When
   // a `status` is also provided, that wins (no implicit exclusion).
@@ -167,14 +171,14 @@ const leadListQuerySchema = z.object({
       return valid.length > 0 ? valid : undefined;
     }),
   // Exclude leads that have a live converted_to_job activity. The
-  // cadstone Leads list passes `excludeConverted=true` by default and
+  // Stone Track Leads list passes `excludeConverted=true` by default and
   // flips it off when the "Show converted" toggle is checked.
   excludeConverted: z
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
   // When true, the result is restricted to leads that have been converted
-  // to a job. Used by the cadstone Leads list when the user picks the
+  // to a job. Used by the Stone Track Leads list when the user picks the
   // "Converted" entry in the status filter dropdown. Takes precedence over
   // `excludeConverted` if both are sent.
   onlyConverted: z
@@ -289,8 +293,13 @@ function normalizeUniqueStrings(values: string[]) {
   );
 }
 
-function toLeadValues(data: z.infer<typeof leadPayloadSchema>, createdBy: string) {
+function toLeadValues(
+  data: z.infer<typeof leadPayloadSchema>,
+  createdBy: string,
+  organizationId: string | null,
+) {
   return {
+    organizationId,
     title: data.title,
     streetAddress: data.streetAddress,
     city: data.city,
@@ -308,8 +317,14 @@ function toLeadValues(data: z.infer<typeof leadPayloadSchema>, createdBy: string
   };
 }
 
-async function getLeadOrThrow(id: string, includeDeleted = false) {
+async function getLeadOrThrow(
+  id: string,
+  includeDeleted = false,
+  auth?: NonNullable<Express.Request["auth"]>,
+) {
   const conditions = [eq(leads.id, id)];
+  const orgCondition = auth ? organizationScopeCondition(auth, leads.organizationId) : undefined;
+  if (orgCondition) conditions.push(orgCondition);
 
   if (!includeDeleted) {
     conditions.push(isNull(leads.deletedAt));
@@ -328,8 +343,14 @@ async function getLeadOrThrow(id: string, includeDeleted = false) {
   return lead;
 }
 
-async function getContactOrThrow(contactId: string, includeDeleted = false) {
+async function getContactOrThrow(
+  contactId: string,
+  includeDeleted = false,
+  auth?: NonNullable<Express.Request["auth"]>,
+) {
   const conditions = [eq(leadContacts.id, contactId)];
+  const orgCondition = auth ? organizationScopeCondition(auth, leadContacts.organizationId) : undefined;
+  if (orgCondition) conditions.push(orgCondition);
 
   if (!includeDeleted) {
     conditions.push(isNull(leadContacts.deletedAt));
@@ -348,8 +369,12 @@ async function getContactOrThrow(contactId: string, includeDeleted = false) {
   return contact;
 }
 
-async function ensureLeadAttachmentFolder(leadId: string) {
+async function ensureLeadAttachmentFolder(
+  leadId: string,
+  auth: NonNullable<Express.Request["auth"]>,
+) {
   const title = `Lead ${leadId} Attachments`;
+  const organizationId = getActiveOrganizationId(auth);
 
   const [existing] = await db
     .select()
@@ -361,6 +386,7 @@ async function ensureLeadAttachmentFolder(leadId: string) {
         eq(folders.leadId, leadId),
         eq(folders.title, title),
         eq(folders.mediaType, "document"),
+        organizationScopeCondition(auth, folders.organizationId),
         isNull(folders.deletedAt),
       ),
     )
@@ -373,6 +399,7 @@ async function ensureLeadAttachmentFolder(leadId: string) {
   const [created] = await db
     .insert(folders)
     .values({
+      organizationId,
       jobId: sql<string>`null`,
       scope: "lead",
       leadId,
@@ -401,7 +428,32 @@ async function maybeDeletePhysicalFile(fileUrl: string | null | undefined, fileI
   }
 }
 
-async function syncLeadSalespeople(leadId: string, userIds: string[]) {
+async function assertClientBelongsToActiveOrganization(
+  clientId: string,
+  auth: NonNullable<Express.Request["auth"]>,
+) {
+  const [client] = await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(
+      and(
+        eq(clients.id, clientId),
+        organizationScopeCondition(auth, clients.organizationId),
+        isNull(clients.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!client) {
+    throw new HttpError(400, "Client is invalid for this organization.", undefined, "validation");
+  }
+}
+
+async function syncLeadSalespeople(
+  leadId: string,
+  userIds: string[],
+  organizationId: string | null,
+) {
   await db.delete(leadSalespeople).where(eq(leadSalespeople.leadId, leadId));
 
   const uniqueUserIds = Array.from(new Set(userIds));
@@ -409,6 +461,7 @@ async function syncLeadSalespeople(leadId: string, userIds: string[]) {
   if (uniqueUserIds.length > 0) {
     await db.insert(leadSalespeople).values(
       uniqueUserIds.map((userId) => ({
+        organizationId,
         leadId,
         userId,
       })),
@@ -416,7 +469,11 @@ async function syncLeadSalespeople(leadId: string, userIds: string[]) {
   }
 }
 
-async function syncLeadTags(leadId: string, tags: string[]) {
+async function syncLeadTags(
+  leadId: string,
+  tags: string[],
+  organizationId: string | null,
+) {
   await db.delete(leadTags).where(eq(leadTags.leadId, leadId));
 
   const normalized = normalizeUniqueStrings(tags);
@@ -424,6 +481,7 @@ async function syncLeadTags(leadId: string, tags: string[]) {
   if (normalized.length > 0) {
     await db.insert(leadTags).values(
       normalized.map((tagName) => ({
+        organizationId,
         leadId,
         tagName,
       })),
@@ -431,7 +489,12 @@ async function syncLeadTags(leadId: string, tags: string[]) {
   }
 }
 
-async function syncLeadSources(leadId: string, leadSource: string | null, sources: string[]) {
+async function syncLeadSources(
+  leadId: string,
+  leadSource: string | null,
+  sources: string[],
+  organizationId: string | null,
+) {
   await db.delete(leadSources).where(eq(leadSources.leadId, leadId));
 
   const normalized = normalizeUniqueStrings([
@@ -442,6 +505,7 @@ async function syncLeadSources(leadId: string, leadSource: string | null, source
   if (normalized.length > 0) {
     await db.insert(leadSources).values(
       normalized.map((sourceName) => ({
+        organizationId,
         leadId,
         sourceName,
       })),
@@ -462,6 +526,7 @@ type ConvertedJobRef = {
 
 async function lookupConvertedJobsByLeadIds(
   leadIds: string[],
+  auth?: NonNullable<Express.Request["auth"]>,
 ): Promise<Map<string, ConvertedJobRef>> {
   const result = new Map<string, ConvertedJobRef>();
   if (leadIds.length === 0) return result;
@@ -479,6 +544,7 @@ async function lookupConvertedJobsByLeadIds(
       jobs,
       and(
         eq(jobs.id, sql`(${activityLog.metadata}->>'convertedJobId')::uuid`),
+        auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined,
         isNull(jobs.deletedAt),
       ),
     )
@@ -486,6 +552,7 @@ async function lookupConvertedJobsByLeadIds(
       and(
         eq(activityLog.entityType, "lead"),
         eq(activityLog.action, "converted_to_job"),
+        auth ? organizationScopeCondition(auth, activityLog.organizationId) : undefined,
         inArray(activityLog.entityId, leadIds),
       ),
     )
@@ -515,12 +582,15 @@ async function lookupConvertedJobsByLeadIds(
 // converted, so a status filter alone is too coarse).
 async function listConvertedLeadIds(
   accessibleLeadIds: string[] | null,
+  auth: NonNullable<Express.Request["auth"]>,
 ): Promise<Set<string>> {
   const result = new Set<string>();
   const conditions = [
     eq(activityLog.entityType, "lead"),
     eq(activityLog.action, "converted_to_job"),
   ];
+  const activityOrgCondition = organizationScopeCondition(auth, activityLog.organizationId);
+  if (activityOrgCondition) conditions.push(activityOrgCondition);
   if (accessibleLeadIds && accessibleLeadIds.length > 0) {
     conditions.push(inArray(activityLog.entityId, accessibleLeadIds));
   } else if (accessibleLeadIds && accessibleLeadIds.length === 0) {
@@ -533,6 +603,7 @@ async function listConvertedLeadIds(
       jobs,
       and(
         eq(jobs.id, sql`(${activityLog.metadata}->>'convertedJobId')::uuid`),
+        organizationScopeCondition(auth, jobs.organizationId),
         isNull(jobs.deletedAt),
       ),
     )
@@ -568,7 +639,13 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
     })
     .from(leads)
     .leftJoin(users, eq(leads.createdBy, users.id))
-    .where(and(eq(leads.id, leadId), isNull(leads.deletedAt)))
+    .where(
+      and(
+        eq(leads.id, leadId),
+        organizationScopeCondition(auth, leads.organizationId),
+        isNull(leads.deletedAt),
+      ),
+    )
     .limit(1);
 
   if (!lead) {
@@ -596,7 +673,13 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
           updatedAt: leadContacts.updatedAt,
         })
         .from(leadContacts)
-        .where(and(eq(leadContacts.leadId, leadId), isNull(leadContacts.deletedAt)))
+        .where(
+          and(
+            eq(leadContacts.leadId, leadId),
+            organizationScopeCondition(auth, leadContacts.organizationId),
+            isNull(leadContacts.deletedAt),
+          ),
+        )
         .orderBy(asc(leadContacts.displayName)),
       db
         .select({
@@ -608,7 +691,12 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
         })
         .from(leadSalespeople)
         .innerJoin(users, eq(leadSalespeople.userId, users.id))
-        .where(eq(leadSalespeople.leadId, leadId))
+        .where(
+          and(
+            eq(leadSalespeople.leadId, leadId),
+            organizationScopeCondition(auth, leadSalespeople.organizationId),
+          ),
+        )
         .orderBy(asc(users.fullName)),
       db
         .select({
@@ -616,7 +704,12 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
           tagName: leadTags.tagName,
         })
         .from(leadTags)
-        .where(eq(leadTags.leadId, leadId))
+        .where(
+          and(
+            eq(leadTags.leadId, leadId),
+            organizationScopeCondition(auth, leadTags.organizationId),
+          ),
+        )
         .orderBy(asc(leadTags.tagName)),
       db
         .select({
@@ -624,7 +717,12 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
           sourceName: leadSources.sourceName,
         })
         .from(leadSources)
-        .where(eq(leadSources.leadId, leadId))
+        .where(
+          and(
+            eq(leadSources.leadId, leadId),
+            organizationScopeCondition(auth, leadSources.organizationId),
+          ),
+        )
         .orderBy(asc(leadSources.sourceName)),
       db
         .select({
@@ -640,7 +738,13 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
         .from(leadAttachments)
         .innerJoin(files, eq(leadAttachments.fileId, files.id))
         .leftJoin(users, eq(files.uploadedBy, users.id))
-        .where(eq(leadAttachments.leadId, leadId))
+        .where(
+          and(
+            eq(leadAttachments.leadId, leadId),
+            organizationScopeCondition(auth, leadAttachments.organizationId),
+            organizationScopeCondition(auth, files.organizationId),
+          ),
+        )
         .orderBy(desc(files.createdAt)),
       db
         .select({
@@ -659,6 +763,8 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
           and(
             isNull(leadContacts.deletedAt),
             isNull(leads.deletedAt),
+            organizationScopeCondition(auth, leadContacts.organizationId),
+            organizationScopeCondition(auth, leads.organizationId),
             accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
           ),
         )
@@ -676,7 +782,7 @@ async function hydrateLead(auth: NonNullable<Express.Request["auth"]>, leadId: s
         : ("missing" as const),
   }));
 
-  const convertedJobs = await lookupConvertedJobsByLeadIds([leadId]);
+  const convertedJobs = await lookupConvertedJobsByLeadIds([leadId], auth);
 
   return {
     lead: {
@@ -722,6 +828,8 @@ router.get(
         and(
           isNull(leadContacts.deletedAt),
           isNull(leads.deletedAt),
+          organizationScopeCondition(req.auth!, leadContacts.organizationId),
+          organizationScopeCondition(req.auth!, leads.organizationId),
           accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
         ),
       )
@@ -782,6 +890,8 @@ router.get(
     }
 
     const conditions = [isNull(leads.deletedAt)];
+    const listOrgCondition = organizationScopeCondition(req.auth!, leads.organizationId);
+    if (listOrgCondition) conditions.push(listOrgCondition);
     if (accessibleLeadIds) {
       conditions.push(inArray(leads.id, accessibleLeadIds));
     }
@@ -799,7 +909,7 @@ router.get(
       // "Converted" filter — restrict to leads that have a live
       // converted_to_job activity. If there are none, short-circuit to
       // an empty result so we don't need to round-trip the main query.
-      const convertedIds = await listConvertedLeadIds(accessibleLeadIds);
+      const convertedIds = await listConvertedLeadIds(accessibleLeadIds, req.auth!);
       if (convertedIds.size === 0) {
         // Mirror the cursor/offset envelope used by the empty
         // `accessibleLeadIds` short-circuit above so the response shape
@@ -831,7 +941,7 @@ router.get(
         inArray(leads.id, Array.from(convertedIds)),
       );
     } else if (query.data.excludeConverted) {
-      const convertedIds = await listConvertedLeadIds(accessibleLeadIds);
+      const convertedIds = await listConvertedLeadIds(accessibleLeadIds, req.auth!);
       if (convertedIds.size > 0) {
         conditions.push(
           sql`${leads.id} not in (${sql.join(
@@ -926,7 +1036,13 @@ router.get(
               label: leadContacts.label,
             })
             .from(leadContacts)
-            .where(and(inArray(leadContacts.leadId, leadIds), isNull(leadContacts.deletedAt)))
+            .where(
+              and(
+                inArray(leadContacts.leadId, leadIds),
+                organizationScopeCondition(req.auth!, leadContacts.organizationId),
+                isNull(leadContacts.deletedAt),
+              ),
+            )
             .orderBy(asc(leadContacts.createdAt))
         : [];
 
@@ -943,7 +1059,7 @@ router.get(
       primaryContactByLeadId.set(contact.leadId, contact);
     }
 
-    const convertedJobByLeadId = await lookupConvertedJobsByLeadIds(leadIds);
+    const convertedJobByLeadId = await lookupConvertedJobsByLeadIds(leadIds, req.auth!);
 
     if (isCursorMode) {
       const hasMore = rows.length > effectiveLimit;
@@ -995,15 +1111,16 @@ router.post(
       throw new HttpError(400, "Invalid lead payload.", body.error.flatten());
     }
 
+    const organizationId = getActiveOrganizationId(req.auth!);
     const [lead] = await db
       .insert(leads)
-      .values(toLeadValues(body.data, req.auth!.userId))
+      .values(toLeadValues(body.data, req.auth!.userId, organizationId))
       .returning();
 
     await Promise.all([
-      syncLeadSalespeople(lead.id, body.data.salespeople),
-      syncLeadTags(lead.id, body.data.tags),
-      syncLeadSources(lead.id, body.data.leadSource, body.data.sources),
+      syncLeadSalespeople(lead.id, body.data.salespeople, organizationId),
+      syncLeadTags(lead.id, body.data.tags, organizationId),
+      syncLeadSources(lead.id, body.data.leadSource, body.data.sources, organizationId),
     ]);
 
     await writeActivity({
@@ -1014,6 +1131,7 @@ router.post(
       jobId: null,
       leadId: lead.id,
       description: `Created lead ${lead.title}`,
+      organizationId,
     });
 
     res.status(201).json(await hydrateLead(req.auth!, lead.id));
@@ -1040,20 +1158,26 @@ router.put(
 
     const leadId = getParam(req.params.id, "lead id");
     await assertCanManageLead(req.auth!, leadId);
-    const existing = await getLeadOrThrow(leadId);
+    const existing = await getLeadOrThrow(leadId, false, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
 
     await db
       .update(leads)
       .set({
-        ...toLeadValues(body.data, existing.createdBy ?? req.auth!.userId),
+        ...toLeadValues(body.data, existing.createdBy ?? req.auth!.userId, organizationId),
         updatedAt: new Date(),
       })
-      .where(eq(leads.id, leadId));
+      .where(
+        and(
+          eq(leads.id, leadId),
+          organizationScopeCondition(req.auth!, leads.organizationId),
+        ),
+      );
 
     await Promise.all([
-      syncLeadSalespeople(leadId, body.data.salespeople),
-      syncLeadTags(leadId, body.data.tags),
-      syncLeadSources(leadId, body.data.leadSource, body.data.sources),
+      syncLeadSalespeople(leadId, body.data.salespeople, organizationId),
+      syncLeadTags(leadId, body.data.tags, organizationId),
+      syncLeadSources(leadId, body.data.leadSource, body.data.sources, organizationId),
     ]);
 
     await writeActivity({
@@ -1064,6 +1188,7 @@ router.put(
       jobId: null,
       leadId,
       description: `Updated lead ${body.data.title}`,
+      organizationId,
     });
 
     if (existing.status !== body.data.status) {
@@ -1084,7 +1209,8 @@ router.delete(
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     await assertCanManageLead(req.auth!, leadId);
-    const lead = await getLeadOrThrow(leadId);
+    const lead = await getLeadOrThrow(leadId, false, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
     const deletedAt = new Date();
 
     await db
@@ -1093,7 +1219,12 @@ router.delete(
         deletedAt,
         updatedAt: deletedAt,
       })
-      .where(eq(leads.id, leadId));
+      .where(
+        and(
+          eq(leads.id, leadId),
+          organizationScopeCondition(req.auth!, leads.organizationId),
+        ),
+      );
 
     await db
       .update(leadContacts)
@@ -1101,7 +1232,12 @@ router.delete(
         deletedAt,
         updatedAt: deletedAt,
       })
-      .where(eq(leadContacts.leadId, leadId));
+      .where(
+        and(
+          eq(leadContacts.leadId, leadId),
+          organizationScopeCondition(req.auth!, leadContacts.organizationId),
+        ),
+      );
 
     await writeActivity({
       entityType: "lead",
@@ -1111,6 +1247,7 @@ router.delete(
       jobId: null,
       leadId,
       description: `Deleted lead ${lead.title}`,
+      organizationId,
     });
 
     res.json({ success: true });
@@ -1128,14 +1265,16 @@ router.post(
 
     const leadId = getParam(req.params.id, "lead id");
     await assertCanManageLead(req.auth!, leadId);
-    await getLeadOrThrow(leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
 
     let values;
 
     if (body.data.sourceContactId) {
-      const source = await getContactOrThrow(body.data.sourceContactId);
+      const source = await getContactOrThrow(body.data.sourceContactId, false, req.auth!);
       await assertCanAccessLead(req.auth!, source.leadId);
       values = {
+        organizationId,
         leadId,
         firstName: source.firstName,
         lastName: source.lastName,
@@ -1151,6 +1290,7 @@ router.post(
       };
     } else {
       values = {
+        organizationId,
         leadId,
         firstName: body.data.firstName,
         lastName: body.data.lastName,
@@ -1176,6 +1316,7 @@ router.post(
       jobId: null,
       leadId,
       description: `Added contact ${contact.displayName}`,
+      organizationId,
       extra: {
         contactId: contact.id,
       },
@@ -1197,9 +1338,10 @@ router.put(
     const leadId = getParam(req.params.id, "lead id");
     const contactId = getParam(req.params.contactId, "contact id");
     await assertCanManageLead(req.auth!, leadId);
-    await getLeadOrThrow(leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
 
-    const existing = await getContactOrThrow(contactId);
+    const existing = await getContactOrThrow(contactId, false, req.auth!);
 
     if (existing.leadId !== leadId) {
       throw new HttpError(400, "Contact does not belong to this lead.");
@@ -1221,7 +1363,12 @@ router.put(
         label: body.data.label ?? existing.label,
         updatedAt: new Date(),
       })
-      .where(eq(leadContacts.id, contactId))
+      .where(
+        and(
+          eq(leadContacts.id, contactId),
+          organizationScopeCondition(req.auth!, leadContacts.organizationId),
+        ),
+      )
       .returning();
 
     await writeActivity({
@@ -1232,6 +1379,7 @@ router.put(
       jobId: null,
       leadId,
       description: `Updated contact ${contact.displayName}`,
+      organizationId,
       extra: {
         contactId: contact.id,
       },
@@ -1247,9 +1395,10 @@ router.delete(
     const leadId = getParam(req.params.id, "lead id");
     const contactId = getParam(req.params.contactId, "contact id");
     await assertCanManageLead(req.auth!, leadId);
-    await getLeadOrThrow(leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
 
-    const contact = await getContactOrThrow(contactId);
+    const contact = await getContactOrThrow(contactId, false, req.auth!);
 
     if (contact.leadId !== leadId) {
       throw new HttpError(400, "Contact does not belong to this lead.");
@@ -1261,7 +1410,12 @@ router.delete(
         deletedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(leadContacts.id, contactId));
+      .where(
+        and(
+          eq(leadContacts.id, contactId),
+          organizationScopeCondition(req.auth!, leadContacts.organizationId),
+        ),
+      );
 
     await writeActivity({
       entityType: "lead",
@@ -1271,6 +1425,7 @@ router.delete(
       jobId: null,
       leadId,
       description: `Deleted contact ${contact.displayName}`,
+      organizationId,
       extra: {
         contactId,
       },
@@ -1287,7 +1442,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     await assertCanManageLead(req.auth!, leadId);
-    await getLeadOrThrow(leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
 
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
 
@@ -1295,7 +1451,7 @@ router.post(
       throw new HttpError(400, "At least one attachment is required.");
     }
 
-    const folder = await ensureLeadAttachmentFolder(leadId);
+    const folder = await ensureLeadAttachmentFolder(leadId, req.auth!);
     const attachments = [];
 
     for (const uploadedFile of uploadedFiles) {
@@ -1337,6 +1493,7 @@ router.post(
             const [createdFile] = await tx
               .insert(files)
               .values({
+                organizationId,
                 folderId: folder.id,
                 filename: storedName,
                 originalName: uploadedFile.originalname,
@@ -1350,6 +1507,7 @@ router.post(
             const [createdAttachment] = await tx
               .insert(leadAttachments)
               .values({
+                organizationId,
                 leadId,
                 fileId: createdFile.id,
               })
@@ -1366,6 +1524,7 @@ router.post(
             jobId: null,
             leadId,
             description: `Uploaded attachment ${createdFile.originalName}`,
+            organizationId,
             extra: {
               fileId: createdFile.id,
               attachmentId: createdAttachment.id,
@@ -1402,7 +1561,8 @@ router.delete(
     const leadId = getParam(req.params.id, "lead id");
     const attachmentId = getParam(req.params.attachmentId, "attachment id");
     await assertCanManageLead(req.auth!, leadId);
-    await getLeadOrThrow(leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
 
     const [attachment] = await db
       .select({
@@ -1413,15 +1573,36 @@ router.delete(
       })
       .from(leadAttachments)
       .innerJoin(files, eq(leadAttachments.fileId, files.id))
-      .where(and(eq(leadAttachments.id, attachmentId), eq(leadAttachments.leadId, leadId)))
+      .where(
+        and(
+          eq(leadAttachments.id, attachmentId),
+          eq(leadAttachments.leadId, leadId),
+          organizationScopeCondition(req.auth!, leadAttachments.organizationId),
+          organizationScopeCondition(req.auth!, files.organizationId),
+        ),
+      )
       .limit(1);
 
     if (!attachment) {
       throw new HttpError(404, "Attachment not found.");
     }
 
-    await db.delete(leadAttachments).where(eq(leadAttachments.id, attachmentId));
-    await db.delete(files).where(eq(files.id, attachment.fileId));
+    await db
+      .delete(leadAttachments)
+      .where(
+        and(
+          eq(leadAttachments.id, attachmentId),
+          organizationScopeCondition(req.auth!, leadAttachments.organizationId),
+        ),
+      );
+    await db
+      .delete(files)
+      .where(
+        and(
+          eq(files.id, attachment.fileId),
+          organizationScopeCondition(req.auth!, files.organizationId),
+        ),
+      );
     await maybeDeletePhysicalFile(attachment.fileUrl, attachment.fileId);
 
     await writeActivity({
@@ -1432,6 +1613,7 @@ router.delete(
       jobId: null,
       leadId,
       description: `Deleted attachment ${attachment.originalName}`,
+      organizationId,
       extra: {
         fileId: attachment.fileId,
         attachmentId,
@@ -1510,7 +1692,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     await assertCanManageLead(req.auth!, leadId);
-    const lead = await getLeadOrThrow(leadId);
+    const lead = await getLeadOrThrow(leadId, false, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
 
     // Body is optional for backwards compatibility (the original endpoint
     // accepted an empty `{}` body and still does — see audit-fixes test).
@@ -1530,7 +1713,7 @@ router.post(
     // while the lead row is locked, so two concurrent calls cannot both
     // pass.
     {
-      const existing = await lookupConvertedJobsByLeadIds([leadId]);
+      const existing = await lookupConvertedJobsByLeadIds([leadId], req.auth!);
       const alreadyConverted = existing.get(leadId);
       if (alreadyConverted) {
         throw new HttpError(
@@ -1546,6 +1729,7 @@ router.post(
     // lookup for defense-in-depth).
     if (body.clientId) {
       await assertCanAccessClient(req.auth!, body.clientId);
+      await assertClientBelongsToActiveOrganization(body.clientId, req.auth!);
     }
 
     const overrides = body.job ?? {};
@@ -1576,6 +1760,7 @@ router.post(
           jobs,
           and(
             eq(jobs.id, sql`(${activityLog.metadata}->>'convertedJobId')::uuid`),
+            organizationScopeCondition(req.auth!, jobs.organizationId),
             isNull(jobs.deletedAt),
           ),
         )
@@ -1584,6 +1769,7 @@ router.post(
             eq(activityLog.entityType, "lead"),
             eq(activityLog.action, "converted_to_job"),
             eq(activityLog.entityId, leadId),
+            organizationScopeCondition(req.auth!, activityLog.organizationId),
           ),
         )
         .orderBy(desc(activityLog.createdAt))
@@ -1615,6 +1801,7 @@ router.post(
         const [createdClient] = await tx
           .insert(clients)
           .values({
+            organizationId,
             companyName: body.newClient.companyName,
             phone: body.newClient.phone,
             email: body.newClient.email,
@@ -1632,6 +1819,7 @@ router.post(
       // 2. Insert the job, applying overrides on top of the lead's
       // pre-fill values.
       const jobValues = {
+        organizationId,
         title: overrides.title ?? lead.title,
         status: "open" as const,
         streetAddress: overrides.streetAddress ?? lead.streetAddress,
@@ -1665,7 +1853,7 @@ router.post(
       if (assigneeIds.length > 0) {
         await tx
           .insert(jobAssignees)
-          .values(assigneeIds.map((userId) => ({ jobId: createdJob.id, userId })))
+          .values(assigneeIds.map((userId) => ({ organizationId, jobId: createdJob.id, userId })))
           .onConflictDoNothing();
       }
 
@@ -1678,7 +1866,12 @@ router.post(
           status: "won",
           updatedAt: new Date(),
         })
-        .where(eq(leads.id, leadId));
+        .where(
+          and(
+            eq(leads.id, leadId),
+            organizationScopeCondition(req.auth!, leads.organizationId),
+          ),
+        );
 
       // 5. Insert the converted_to_job activity INSIDE the tx so the
       // marker that drives dedupe / list filtering / link-back lives or
@@ -1697,6 +1890,7 @@ router.post(
       const [activityRow] = await tx
         .insert(activityLog)
         .values({
+          organizationId,
           entityType: "lead",
           entityId: leadId,
           action: "converted_to_job",
@@ -1771,7 +1965,8 @@ router.post(
 
     const leadId = getParam(req.params.id, "lead id");
     await assertCanManageLead(req.auth!, leadId);
-    await getLeadOrThrow(leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const organizationId = getActiveOrganizationId(req.auth!);
 
     await writeActivity({
       entityType: "lead",
@@ -1783,6 +1978,7 @@ router.post(
       description: body.data.notes
         ? `${body.data.title}: ${body.data.notes}`
         : body.data.title,
+      organizationId,
     });
 
     res.status(201).json({ success: true });

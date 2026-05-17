@@ -21,6 +21,7 @@ import {
 import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
 import { classifyApiError } from "@/lib/api-errors"
+import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
 
 type Job = {
   id: string
@@ -54,10 +55,10 @@ const EMPTY_COPY: Record<StatusFilter, string> = {
   all: "No jobs yet",
 }
 
-const STATUS_FILTER_STORAGE_KEY = "cadstone:sidebar:statusFilter"
-const SEARCH_STORAGE_KEY = "cadstone:sidebar:search"
-const SORT_ASC_STORAGE_KEY = "cadstone:sidebar:sortAsc"
-const COLLAPSED_CLIENTS_STORAGE_KEY = "cadstone:sidebar:collapsedClients"
+const STATUS_FILTER_STORAGE_KEY = `${APP_STORAGE_NAMESPACE}:sidebar:statusFilter`
+const SEARCH_STORAGE_KEY = `${APP_STORAGE_NAMESPACE}:sidebar:search`
+const SORT_ASC_STORAGE_KEY = `${APP_STORAGE_NAMESPACE}:sidebar:sortAsc`
+const COLLAPSED_CLIENTS_STORAGE_KEY = `${APP_STORAGE_NAMESPACE}:sidebar:collapsedClients`
 
 const UNASSIGNED_KEY = "__unassigned__"
 

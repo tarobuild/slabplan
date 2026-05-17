@@ -123,7 +123,7 @@ test("state-changing requests require the XMLHttpRequest header", async () => {
   assert.equal(response.status, 403);
 });
 
-test("register endpoint rejects unauthenticated callers", async () => {
+test("register endpoint validates organization name", async () => {
   const response = await fetch(`${baseUrl}/api/auth/register`, {
     method: "POST",
     headers: {
@@ -137,7 +137,7 @@ test("register endpoint rejects unauthenticated callers", async () => {
     }),
   });
 
-  assert.equal(response.status, 401);
+  assert.equal(response.status, 400);
 });
 
 test("uploads require authentication", async () => {

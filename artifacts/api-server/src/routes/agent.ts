@@ -21,6 +21,7 @@ import {
 import { createRateLimit } from "../lib/rate-limit";
 import { logger } from "../lib/logger";
 import { isAdmin } from "../lib/authorization";
+import { getActiveOrganizationId } from "../lib/tenant-scope";
 
 const router: IRouter = Router();
 
@@ -88,12 +89,20 @@ router.use(asyncHandler(async (req, _res, next) => {
   next();
 }));
 
-async function loadOwnedConversation(userId: string, id: string) {
+async function loadOwnedConversation(
+  userId: string,
+  id: string,
+  organizationId?: string | null,
+) {
   const [row] = await db
     .select()
     .from(agentConversations)
     .where(
-      and(eq(agentConversations.id, id), eq(agentConversations.userId, userId)),
+      and(
+        eq(agentConversations.id, id),
+        eq(agentConversations.userId, userId),
+        organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+      ),
     )
     .limit(1);
   if (!row) {
@@ -106,7 +115,7 @@ router.get(
   "/usage",
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
-    const snapshot = await loadUsageSnapshot(userId);
+    const snapshot = await loadUsageSnapshot(userId, getActiveOrganizationId(req.auth!));
     res.json(snapshot);
   }),
 );
@@ -119,8 +128,8 @@ router.get(
 router.get(
   "/usage/org",
   requireAdmin,
-  asyncHandler(async (_req, res) => {
-    const snapshot = await loadOrgUsageSnapshot();
+  asyncHandler(async (req, res) => {
+    const snapshot = await loadOrgUsageSnapshot(getActiveOrganizationId(req.auth!));
     res.json(snapshot);
   }),
 );
@@ -162,13 +171,19 @@ router.get(
   "/conversations",
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
+    const organizationId = getActiveOrganizationId(req.auth!);
     const cursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
 
     if (!cursorMode) {
       const rows = await db
         .select()
         .from(agentConversations)
-        .where(eq(agentConversations.userId, userId))
+        .where(
+          and(
+            eq(agentConversations.userId, userId),
+            organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+          ),
+        )
         .orderBy(
           desc(agentConversations.pinned),
           desc(agentConversations.lastMessageAt),
@@ -227,8 +242,15 @@ router.get(
       .from(agentConversations)
       .where(
         cursorPredicate
-          ? and(eq(agentConversations.userId, userId), cursorPredicate)
-          : eq(agentConversations.userId, userId),
+          ? and(
+              eq(agentConversations.userId, userId),
+              organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+              cursorPredicate,
+            )
+          : and(
+              eq(agentConversations.userId, userId),
+              organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+            ),
       )
       .orderBy(
         desc(agentConversations.pinned),
@@ -260,11 +282,12 @@ router.post(
   "/conversations",
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
+    const organizationId = getActiveOrganizationId(req.auth!);
     const body = createConversationSchema.parse(req.body ?? {});
     const title = body.title ?? "New conversation";
     const [row] = await db
       .insert(agentConversations)
-      .values({ userId, title })
+      .values({ organizationId, userId, title })
       .returning();
     res.status(201).json({ conversation: row });
   }),
@@ -274,9 +297,10 @@ router.patch(
   "/conversations/:id",
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
+    const organizationId = getActiveOrganizationId(req.auth!);
     const { id } = conversationIdParam.parse(req.params);
     const body = patchConversationSchema.parse(req.body ?? {});
-    await loadOwnedConversation(userId, id);
+    await loadOwnedConversation(userId, id, organizationId);
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (body.title !== undefined) updates.title = body.title;
@@ -285,7 +309,12 @@ router.patch(
     const [row] = await db
       .update(agentConversations)
       .set(updates)
-      .where(eq(agentConversations.id, id))
+      .where(
+        and(
+          eq(agentConversations.id, id),
+          organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+        ),
+      )
       .returning();
     res.json({ conversation: row });
   }),
@@ -295,9 +324,15 @@ router.delete(
   "/conversations/:id",
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
+    const organizationId = getActiveOrganizationId(req.auth!);
     const { id } = conversationIdParam.parse(req.params);
-    await loadOwnedConversation(userId, id);
-    await db.delete(agentConversations).where(eq(agentConversations.id, id));
+    await loadOwnedConversation(userId, id, organizationId);
+    await db.delete(agentConversations).where(
+      and(
+        eq(agentConversations.id, id),
+        organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+      ),
+    );
     res.status(204).end();
   }),
 );
@@ -306,8 +341,9 @@ router.get(
   "/conversations/:id/messages",
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
+    const organizationId = getActiveOrganizationId(req.auth!);
     const { id } = conversationIdParam.parse(req.params);
-    await loadOwnedConversation(userId, id);
+    await loadOwnedConversation(userId, id, organizationId);
     const rows = await db
       .select()
       .from(agentMessages)
@@ -323,16 +359,17 @@ router.post(
   agentSendRateLimit,
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
+    const organizationId = getActiveOrganizationId(req.auth!);
     const { id } = conversationIdParam.parse(req.params);
     const body = sendMessageSchema.parse(req.body ?? {});
-    const conversation = await loadOwnedConversation(userId, id);
+    const conversation = await loadOwnedConversation(userId, id, organizationId);
 
     // Token cap checks. Per-user and org-wide are independent budgets —
     // either one tripping blocks the send. Run them in parallel since
     // both are single DB round-trips against the same usage table.
     const [usage, orgUsage] = await Promise.all([
-      loadUsageSnapshot(userId),
-      loadOrgUsageSnapshot(),
+      loadUsageSnapshot(userId, organizationId),
+      loadOrgUsageSnapshot(organizationId),
     ]);
     if (orgUsage.exceeded) {
       // Org-level budget is the global kill switch; surface it with a
@@ -384,6 +421,7 @@ router.post(
         .insert(agentMessages)
         .values({
           conversationId: id,
+          organizationId: conversation.organizationId,
           role: "user",
           content: body.content,
         })
@@ -396,7 +434,12 @@ router.post(
           await db
             .update(agentConversations)
             .set({ title: newTitle, updatedAt: new Date() })
-            .where(eq(agentConversations.id, id));
+            .where(
+              and(
+                eq(agentConversations.id, id),
+                organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+              ),
+            );
         }
       }
 
@@ -448,6 +491,7 @@ router.post(
       try {
         await runAgentTurn({
           userId,
+          organizationId,
           bearerToken,
           baseUrl,
           history,
@@ -469,6 +513,7 @@ router.post(
               .insert(agentMessages)
               .values({
                 conversationId: id,
+                organizationId: conversation.organizationId,
                 role: "assistant",
                 content: text,
                 toolCalls: toolCalls.length > 0 ? (toolCalls as AgentToolCall[]) : null,
@@ -482,7 +527,12 @@ router.post(
             await db
               .update(agentConversations)
               .set({ lastMessageAt: new Date(), updatedAt: new Date() })
-              .where(eq(agentConversations.id, id));
+              .where(
+                and(
+                  eq(agentConversations.id, id),
+                  organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+                ),
+              );
             return { id: row!.id };
           },
         });

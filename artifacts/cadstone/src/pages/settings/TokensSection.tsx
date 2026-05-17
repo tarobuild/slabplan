@@ -27,6 +27,7 @@ import { Separator } from "@/components/ui/separator"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
+import { APP_NAME } from "@/lib/brand"
 import { validatePayload } from "@/lib/validate-payload"
 
 type ApiToken = PersonalAccessToken
@@ -135,7 +136,7 @@ export default function TokensSection() {
 
       <div className="px-6 py-6 space-y-6">
         <p className="text-sm text-slate-600">
-          Personal access tokens let scripts and AI agents call the CAD Stone API on your behalf.
+          Personal access tokens let scripts and AI agents call the {APP_NAME} API on your behalf.
           Each token starts with <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs">cs_pat_</code>.
           Use it as a Bearer token. The token is shown once at creation — keep it secret.
         </p>

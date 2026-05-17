@@ -10,10 +10,11 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import { users } from "./index";
+import { organizations, users } from "./index";
 
 const createId = () => crypto.randomUUID();
 const timestampTz = (name: string) => timestamp(name, { withTimezone: true });
@@ -53,6 +54,9 @@ export const agentConversations = pgTable(
   "agent_conversations",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "cascade",
+    }),
     userId: uuid("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
@@ -62,6 +66,7 @@ export const agentConversations = pgTable(
     ...baseTimestamps,
   },
   (table) => [
+    index("agent_conversations_organization_id_idx").on(table.organizationId),
     index("agent_conversations_user_id_idx").on(table.userId),
     index("agent_conversations_user_last_message_idx").on(
       table.userId,
@@ -101,6 +106,9 @@ export const agentMessages = pgTable(
   "agent_messages",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "cascade",
+    }),
     conversationId: uuid("conversation_id")
       .references(() => agentConversations.id, { onDelete: "cascade" })
       .notNull(),
@@ -119,6 +127,7 @@ export const agentMessages = pgTable(
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
+    index("agent_messages_organization_id_idx").on(table.organizationId),
     index("agent_messages_conversation_id_idx").on(
       table.conversationId,
       sql`${table.createdAt} ASC`,
@@ -138,6 +147,9 @@ export const agentUsageMonthly = pgTable(
   "agent_usage_monthly",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "cascade",
+    }),
     userId: uuid("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
@@ -149,7 +161,13 @@ export const agentUsageMonthly = pgTable(
     ...baseTimestamps,
   },
   (table) => [
-    unique("agent_usage_monthly_user_month_unique").on(table.userId, table.yearMonth),
+    uniqueIndex("agent_usage_monthly_org_user_month_unique")
+      .on(table.organizationId, table.userId, table.yearMonth)
+      .where(sql`${table.organizationId} is not null`),
+    uniqueIndex("agent_usage_monthly_legacy_user_month_unique")
+      .on(table.userId, table.yearMonth)
+      .where(sql`${table.organizationId} is null`),
+    index("agent_usage_monthly_organization_id_idx").on(table.organizationId),
   ],
 );
 

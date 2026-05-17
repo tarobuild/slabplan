@@ -156,7 +156,7 @@ after(async () => {
 test("refresh is denied for an inactive user", async () => {
   const response = await fetch(`${baseUrl}/api/auth/refresh`, {
     method: "POST",
-    headers: { "x-requested-with": "XMLHttpRequest", cookie: `cadstone_refresh_token=${inactiveRefreshJwt}` },
+    headers: { "x-requested-with": "XMLHttpRequest", cookie: `stone_track_refresh_token=${inactiveRefreshJwt}` },
   });
 
   assert.equal(response.status, 401);
@@ -193,7 +193,7 @@ test("admin deactivation revokes outstanding PATs in the same transaction", asyn
 
 test("upload-token middleware rejects an inactive user", async () => {
   const response = await fetch(`${baseUrl}/uploads/deactivation-lockout/nonexistent.pdf`, {
-    headers: { cookie: `cadstone_upload_token=${inactiveUploadJwt}` },
+    headers: { cookie: `stone_track_upload_token=${inactiveUploadJwt}` },
   });
 
   assert.equal(response.status, 401);

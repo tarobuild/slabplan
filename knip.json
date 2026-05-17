@@ -8,8 +8,7 @@
         "src/components/ui/**",
         "src/hooks/use-mobile.tsx",
         "src/hooks/use-toast.ts",
-        "src/components/page-stub.tsx",
-        "src/pages/register.tsx"
+        "src/components/page-stub.tsx"
       ],
       "ignoreDependencies": [
         "@hookform/resolvers",

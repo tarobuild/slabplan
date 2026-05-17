@@ -23,6 +23,7 @@ import {
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
+import { organizationScopeCondition } from "../lib/tenant-scope";
 
 function fingerprintQuery(q: string) {
   return createHash("sha256").update(q).digest("base64url").slice(0, 12);
@@ -181,10 +182,17 @@ router.get(
               clientName: clients.companyName,
             })
             .from(jobs)
-            .leftJoin(clients, eq(jobs.clientId, clients.id))
+            .leftJoin(
+              clients,
+              and(
+                eq(jobs.clientId, clients.id),
+                organizationScopeCondition(req.auth!, clients.organizationId),
+              ),
+            )
             .where(
               and(
                 isNull(jobs.deletedAt),
+                organizationScopeCondition(req.auth!, jobs.organizationId),
                 accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
                 or(
                   ilike(jobs.title, search),
@@ -210,6 +218,7 @@ router.get(
             .where(
               and(
                 isNull(leads.deletedAt),
+                organizationScopeCondition(req.auth!, leads.organizationId),
                 accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
                 or(
                   ilike(leads.title, search),
@@ -238,6 +247,8 @@ router.get(
               and(
                 isNull(leadContacts.deletedAt),
                 isNull(leads.deletedAt),
+                organizationScopeCondition(req.auth!, leadContacts.organizationId),
+                organizationScopeCondition(req.auth!, leads.organizationId),
                 accessibleLeadIds ? inArray(leads.id, accessibleLeadIds) : undefined,
                 or(
                   ilike(leadContacts.displayName, search),
@@ -269,6 +280,9 @@ router.get(
                 isNull(files.deletedAt),
                 isNull(folders.deletedAt),
                 isNull(jobs.deletedAt),
+                organizationScopeCondition(req.auth!, files.organizationId),
+                organizationScopeCondition(req.auth!, folders.organizationId),
+                organizationScopeCondition(req.auth!, jobs.organizationId),
                 accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
                 or(ilike(files.originalName, search), ilike(files.filename, search)),
               ),
@@ -292,6 +306,8 @@ router.get(
               and(
                 isNull(scheduleItems.deletedAt),
                 isNull(jobs.deletedAt),
+                organizationScopeCondition(req.auth!, scheduleItems.organizationId),
+                organizationScopeCondition(req.auth!, jobs.organizationId),
                 accessibleJobIds ? inArray(jobs.id, accessibleJobIds) : undefined,
                 ilike(scheduleItems.title, search),
                 or(
@@ -318,6 +334,7 @@ router.get(
             .where(
               and(
                 isNull(clients.deletedAt),
+                organizationScopeCondition(req.auth!, clients.organizationId),
                 accessibleClientIds
                   ? inArray(clients.id, accessibleClientIds)
                   : undefined,
@@ -347,11 +364,18 @@ router.get(
               contactLastName: clientContacts.lastName,
             })
             .from(clientContacts)
-            .innerJoin(clients, eq(clientContacts.clientId, clients.id))
+            .innerJoin(
+              clients,
+              and(
+                eq(clientContacts.clientId, clients.id),
+                organizationScopeCondition(req.auth!, clients.organizationId),
+              ),
+            )
             .where(
               and(
                 isNull(clientContacts.deletedAt),
                 isNull(clients.deletedAt),
+                organizationScopeCondition(req.auth!, clientContacts.organizationId),
                 accessibleClientIds
                   ? inArray(clients.id, accessibleClientIds)
                   : undefined,

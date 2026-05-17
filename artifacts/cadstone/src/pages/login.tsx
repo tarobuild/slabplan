@@ -1,11 +1,12 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { authApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { useDocumentTitle } from "@/hooks/use-document-title"
+import { APP_DESCRIPTION, APP_LOGO_PATH, APP_NAME, APP_TAGLINE } from "@/lib/brand"
 import { toast } from "sonner"
 
 export default function LoginPage() {
@@ -45,8 +46,8 @@ export default function LoginPage() {
         {/* Top: logo */}
         <div>
           <img
-            src="/cad-logo.png"
-            alt="CAD Stone Networks"
+            src={APP_LOGO_PATH}
+            alt={APP_NAME}
             className="h-14 w-auto"
           />
         </div>
@@ -54,10 +55,10 @@ export default function LoginPage() {
         {/* Center: headline + descriptor */}
         <div className="max-w-md">
           <h1 className="text-3xl font-bold leading-tight text-white">
-            Built for the stone trade.
+            {APP_TAGLINE}
           </h1>
           <p className="mt-3 text-sm text-white/60">
-            Manage every job, crew, and deadline — from the office or the field.
+            {APP_DESCRIPTION}
           </p>
         </div>
 
@@ -81,8 +82,8 @@ export default function LoginPage() {
           {/* Logo — mobile only (left panel shows it on lg) */}
           <div className="mb-8 flex justify-center lg:hidden">
             <img
-              src="/cad-logo.png"
-              alt="CAD Stone Networks"
+              src={APP_LOGO_PATH}
+              alt={APP_NAME}
               className="h-12 w-auto"
             />
           </div>
@@ -91,7 +92,7 @@ export default function LoginPage() {
           <div className="mb-6">
             <h1 className="text-2xl font-semibold text-slate-900">Sign in</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Welcome back to CAD Stone Networks.
+              Welcome back to {APP_NAME}.
             </p>
           </div>
 
@@ -130,6 +131,12 @@ export default function LoginPage() {
               {loading ? "Signing in…" : "Sign in"}
             </Button>
           </form>
+          <p className="mt-5 text-center text-sm text-slate-500">
+            New to {APP_NAME}?{" "}
+            <Link to="/register" className="font-medium text-orange-600 hover:underline">
+              Create a workspace
+            </Link>
+          </p>
         </div>
       </div>
     </div>

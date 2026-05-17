@@ -46,7 +46,7 @@ describe("Supabase storage provider", () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     mockFetch((input, init) => {
       requests.push({ url: String(input), init });
-      return new Response(JSON.stringify({ Key: "cadstone/uploads/job-a/document/file.pdf" }), {
+      return new Response(JSON.stringify({ Key: "stone-track/uploads/job-a/document/file.pdf" }), {
         status: 200,
       });
     });
@@ -61,7 +61,7 @@ describe("Supabase storage provider", () => {
     assert.equal(requests.length, 1);
     assert.equal(
       requests[0].url,
-      "https://example.supabase.co/storage/v1/object/cadstone-files/cadstone/uploads/job-a/document/file.pdf",
+      "https://example.supabase.co/storage/v1/object/cadstone-files/stone-track/uploads/job-a/document/file.pdf",
     );
     assert.equal(requests[0].init?.method, "POST");
     const headers = new Headers(requests[0].init?.headers);
@@ -88,7 +88,7 @@ describe("Supabase storage provider", () => {
       requests.map((request) => request.method),
       ["HEAD", "DELETE"],
     );
-    assert.ok(requests.every((request) => request.url.includes("/cadstone/uploads/")));
+    assert.ok(requests.every((request) => request.url.includes("/stone-track/uploads/")));
   });
 
   test("opens Supabase objects as Node read streams", async () => {

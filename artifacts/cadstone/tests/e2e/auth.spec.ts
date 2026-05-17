@@ -27,7 +27,7 @@ test.describe("auth", () => {
       }>
     }
     const refresh = state.cookies?.find(
-      (c) => c.name === "cadstone_refresh_token",
+      (c) => c.name === "stone_track_refresh_token",
     )
     // The Playwright `chromium` project depends on the `setup` project
     // (see playwright.config.ts), which provisions cesar.json before any
@@ -36,7 +36,7 @@ test.describe("auth", () => {
     // on, not a silent skip.
     if (!refresh) {
       throw new Error(
-        `Missing ${"cadstone_refresh_token"} in ${CESAR_STATE}. ` +
+        `Missing ${"stone_track_refresh_token"} in ${CESAR_STATE}. ` +
           `auth.setup.ts is wired as a project dependency; if this fires, ` +
           `the setup project failed (check seed passwords / API server).`,
       )

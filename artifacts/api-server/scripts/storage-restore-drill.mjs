@@ -2,8 +2,8 @@
 /**
  * Supabase Storage restore drill.
  *
- * Lists the first N objects under the cadstone uploads prefix, downloads the
- * smallest one, re-uploads it under cadstone/restore-drill/ to prove the
+ * Lists the first N objects under the Stone Track uploads prefix, downloads the
+ * smallest one, re-uploads it under stone-track/restore-drill/ to prove the
  * round-trip works, verifies bytes match, then deletes the round-trip object
  * so no test cruft is left in the live bucket.
  *
@@ -20,14 +20,14 @@ import {
 } from "./lib/supabase-storage.mjs";
 
 const storage = createSupabaseStorage();
-const cadstoneUploadsPrefix = uploadsObjectPrefix();
-const drillPrefix = "cadstone/restore-drill";
+const stoneTrackUploadsPrefix = uploadsObjectPrefix();
+const drillPrefix = "stone-track/restore-drill";
 
 async function listSome() {
   console.log(
-    `[list] bucket=${storage.bucketName} prefix=${cadstoneUploadsPrefix}`,
+    `[list] bucket=${storage.bucketName} prefix=${stoneTrackUploadsPrefix}`,
   );
-  const files = await storage.listAllObjects(cadstoneUploadsPrefix, {
+  const files = await storage.listAllObjects(stoneTrackUploadsPrefix, {
     maxObjects: 25,
   });
   console.log(`[list] returned=${files.length}`);

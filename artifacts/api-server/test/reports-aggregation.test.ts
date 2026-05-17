@@ -32,7 +32,7 @@ let __testing: typeof import("../src/routes/reports.ts")["__testing"];
 
 const today = new Date();
 const todayStr = today.toISOString().slice(0, 10);
-const ninetyDaysAgo = new Date(Date.now() - 90 * 86_400_000);
+const ninetyFiveDaysAgo = new Date(Date.now() - 95 * 86_400_000);
 const fortyFiveDaysAgo = new Date(Date.now() - 45 * 86_400_000);
 
 before(async () => {
@@ -73,7 +73,7 @@ before(async () => {
     clientId,
     createdBy: adminUserId,
     projectManagerId: adminUserId,
-    jobType: "interior",
+    jobType: "custom",
     contractValueCents: 0,
   });
   await db.insert(financialTrackers).values({
@@ -95,7 +95,7 @@ before(async () => {
     id: oldInvoiceId,
     trackerId,
     invoiceNumber: "INV-OLD",
-    invoiceDate: ninetyDaysAgo.toISOString().slice(0, 10),
+    invoiceDate: ninetyFiveDaysAgo.toISOString().slice(0, 10),
     totalCents: 40_000,
     appliedAt: fortyFiveDaysAgo,
     createdBy: adminUserId,

@@ -1,7 +1,7 @@
 // Defensive PII scrubber for Sentry events.
 //
 // Sentry events naturally include extras (request body fragments, error
-// messages, breadcrumbs). Cadstone handles construction client data — we
+// messages, breadcrumbs). Stone Track handles construction client data, so we
 // must NEVER let an email, phone number, or street address land in the
 // Sentry project even if a developer mistakenly attaches the wrong
 // `extra` field. The filter walks the entire event payload as a JSON

@@ -17,6 +17,7 @@ import {
 import { useAuthStore } from "@/store/auth"
 import { canWriteRole } from "@/lib/role-access"
 import { invalidateAppData } from "@/lib/data-refresh"
+import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
 import { ScheduleItemDialog, type SchedulePreview } from "@/components/schedule/ScheduleItemDialog"
 import { ScheduleQuickCreate, type QuickCreateState } from "@/components/schedule/ScheduleQuickCreate"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -227,7 +228,7 @@ export default function JobSchedulePage() {
 
     if (typeof window !== "undefined") {
       try {
-        const dismissed = window.sessionStorage.getItem(`cadstone:job-schedule:hint-dismissed:${jobId}`) === "1"
+        const dismissed = window.sessionStorage.getItem(`${APP_STORAGE_NAMESPACE}:job-schedule:hint-dismissed:${jobId}`) === "1"
         setCalendarHintDismissed(dismissed)
       } catch {
         setCalendarHintDismissed(false)
@@ -1064,7 +1065,7 @@ export default function JobSchedulePage() {
       })
 
       pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height)
-      pdf.save(`cadstone-${kind}-${jobId || "job"}.pdf`)
+      pdf.save(`stone-track-${kind}-${jobId || "job"}.pdf`)
       toast.success("PDF export ready")
     } catch (error) {
       toastApiError(error, "Failed to export PDF")

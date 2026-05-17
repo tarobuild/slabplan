@@ -1,3 +1,5 @@
+import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
+
 export type AppDataResource =
   | "jobs"
   | "clients"
@@ -9,7 +11,7 @@ export type AppDataResource =
 const refreshTarget = new EventTarget()
 
 function refreshEventName(resource: AppDataResource) {
-  return `cadstone:data-refresh:${resource}`
+  return `${APP_STORAGE_NAMESPACE}:data-refresh:${resource}`
 }
 
 export function invalidateAppData(resources: AppDataResource | AppDataResource[]) {

@@ -3,6 +3,7 @@ import path from "node:path";
 import { Router, type IRouter, type Request } from "express";
 import YAML from "yaml";
 import { logger } from "../lib/logger";
+import { APP_MCP_NAME, APP_NAME } from "../lib/brand";
 
 const router: IRouter = Router();
 
@@ -78,12 +79,12 @@ router.get("/.well-known/ai-plugin.json", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.json({
     schema_version: "v1",
-    name_for_human: "CAD Stone Networks",
-    name_for_model: "cadstone",
+    name_for_human: APP_NAME,
+    name_for_model: APP_MCP_NAME,
     description_for_human:
-      "Manage clients, jobs, leads, schedule, daily logs, and files for CAD Stone Networks.",
+      `Manage clients, jobs, leads, schedule, daily logs, and files for ${APP_NAME}.`,
     description_for_model:
-      "Programmatic access to the CAD Stone Networks platform for AI agents. Authenticate using a personal access token (Bearer cs_pat_…). Tokens are issued from the user settings page. All endpoints accept and return JSON. Errors follow RFC 7807 (application/problem+json). Long lists support both page-based (page,pageSize) and cursor-based (cursor,limit) pagination. Supply Idempotency-Key on POST/PUT/PATCH/DELETE to safely retry. Rate limits are signaled via X-RateLimit-* response headers and Retry-After on 429.",
+      `Programmatic access to the ${APP_NAME} platform for AI agents. Authenticate using a personal access token (Bearer cs_pat_...). Tokens are issued from the user settings page. All endpoints accept and return JSON. Errors follow RFC 7807 (application/problem+json). Long lists support both page-based (page,pageSize) and cursor-based (cursor,limit) pagination. Supply Idempotency-Key on POST/PUT/PATCH/DELETE to safely retry. Rate limits are signaled via X-RateLimit-* response headers and Retry-After on 429.`,
     auth: {
       type: "user_http",
       authorization_type: "bearer",
@@ -103,7 +104,7 @@ router.get("/.well-known/ai-plugin.json", (req, res) => {
     // replit.md → "MCP server (Task #108)" for client examples.
     mcp_server_url: `${base}/api/mcp`,
     logo_url: `${base}/favicon.ico`,
-    contact_email: "support@cadstonesystems.com",
+    contact_email: "support@stone-track.invalid",
     legal_info_url: `${base}/`,
   });
 });

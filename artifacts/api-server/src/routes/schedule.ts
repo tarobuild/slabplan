@@ -68,6 +68,15 @@ const uploadRateLimit = createUploadPerUserRateLimit();
 const router: IRouter = Router();
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete" | "execute">;
 
+async function getJobOrganizationId(jobId: string, executor: DbExecutor = db) {
+  const [job] = await executor
+    .select({ organizationId: jobs.organizationId })
+    .from(jobs)
+    .where(eq(jobs.id, jobId))
+    .limit(1);
+  return job?.organizationId ?? null;
+}
+
 const dependencyTypes = [
   "finish_to_start",
   "start_to_start",
@@ -278,7 +287,7 @@ type ScheduleMeta = {
   predecessors: Array<z.infer<typeof predecessorSchema>>;
 };
 
-const scheduleMetaMarker = "__cadstoneScheduleMeta";
+const scheduleMetaMarker = "__stoneTrackScheduleMeta";
 
 function getParam(value: string | string[] | undefined, label: string) {
   const normalized = Array.isArray(value) ? value[0] : value;
@@ -694,6 +703,7 @@ async function ensureJobExists(jobId: string) {
     .select({
       id: jobs.id,
       title: jobs.title,
+      organizationId: jobs.organizationId,
     })
     .from(jobs)
     .where(and(eq(jobs.id, jobId), isNull(jobs.deletedAt)))
@@ -718,6 +728,7 @@ async function verifyJobExists(jobId: string) {
     .select({
       id: jobs.id,
       title: jobs.title,
+      organizationId: jobs.organizationId,
     })
     .from(jobs)
     .where(and(eq(jobs.id, jobId), isNull(jobs.deletedAt)))
@@ -784,9 +795,11 @@ async function assertPhaseBelongsToJob(jobId: string, phaseId: string | null) {
 }
 
 async function ensureDefaultPhase(jobId: string) {
+  const organizationId = await getJobOrganizationId(jobId);
   await db
     .insert(schedulePhases)
     .values({
+      organizationId,
       jobId,
       name: "Pre-Construction",
       color: "#e76f8a",
@@ -816,10 +829,12 @@ async function ensureDefaultScheduleSettings(
   jobId: string,
   executor: DbExecutor = db,
 ) {
+  const organizationId = await getJobOrganizationId(jobId, executor);
   await executor
     .insert(scheduleSettings)
     .values({
       id: crypto.randomUUID(),
+      organizationId,
       jobId,
       defaultView: "calendar_month",
       showTimesOnMonthView: false,
@@ -912,6 +927,7 @@ async function getWorkdayExceptionsByJob(
 async function syncPredecessors(
   scheduleItemId: string,
   predecessors: Array<z.infer<typeof predecessorSchema>>,
+  organizationId: string | null,
   executor: DbExecutor = db,
 ) {
   await executor
@@ -929,6 +945,7 @@ async function syncPredecessors(
   await executor.insert(scheduleItemPredecessors).values(
     predecessors.map((predecessor) => ({
       id: crypto.randomUUID(),
+      organizationId,
       scheduleItemId,
       predecessorId: predecessor.scheduleItemId,
       dependencyType: predecessor.dependencyType,
@@ -1079,6 +1096,7 @@ function predecessorConflictReasons(
 async function syncAssignees(
   scheduleItemId: string,
   assigneeIds: string[],
+  organizationId: string | null,
   executor: DbExecutor = db,
 ) {
   await executor
@@ -1090,6 +1108,7 @@ async function syncAssignees(
   if (uniqueUserIds.length > 0) {
     await executor.insert(scheduleItemAssignees).values(
       uniqueUserIds.map((userId) => ({
+        organizationId,
         scheduleItemId,
         userId,
       })),
@@ -1117,8 +1136,10 @@ async function ensureTagSettings(jobId: string, tagNames: string[], executor: Db
     return;
   }
 
+  const organizationId = await getJobOrganizationId(jobId, executor);
   await executor.insert(scheduleTagSettings).values(
     missing.map((name) => ({
+      organizationId,
       jobId,
       name,
     })),
@@ -1471,7 +1492,11 @@ async function synchronizeJobSchedule(
   await applyAutomaticCompletionIfEnabled(jobId, executor);
 }
 
-async function ensureScheduleAttachmentFolder(scheduleItemId: string, jobId: string) {
+async function ensureScheduleAttachmentFolder(
+  scheduleItemId: string,
+  jobId: string,
+  organizationId: string | null,
+) {
   const title = `Schedule Item ${scheduleItemId} Attachments`;
 
   const [existing] = await db
@@ -1482,6 +1507,7 @@ async function ensureScheduleAttachmentFolder(scheduleItemId: string, jobId: str
         eq(folders.jobId, jobId),
         eq(folders.scope, "schedule_item"),
         eq(folders.scheduleItemId, scheduleItemId),
+        organizationId ? eq(folders.organizationId, organizationId) : undefined,
         eq(folders.title, title),
         eq(folders.mediaType, "document"),
         isNull(folders.deletedAt),
@@ -1496,6 +1522,7 @@ async function ensureScheduleAttachmentFolder(scheduleItemId: string, jobId: str
   const [created] = await db
     .insert(folders)
     .values({
+      organizationId,
       jobId,
       scope: "schedule_item",
       scheduleItemId,
@@ -2333,7 +2360,7 @@ router.get(
   "/jobs/:jobId/schedule/settings",
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
-    await ensureJobExists(jobId);
+    const job = await ensureJobExists(jobId);
 
     const [storedSettings, phases, tags, categories] = await Promise.all([
       ensureDefaultScheduleSettings(jobId),
@@ -2469,7 +2496,7 @@ router.put(
 
     const jobId = getParam(req.params.jobId, "job id");
     const phaseId = getParam(req.params.phaseId, "phase id");
-    await ensureJobExists(jobId);
+    const job = await ensureJobExists(jobId);
     await getPhaseOrThrow(jobId, phaseId);
     await assertUniquePhaseName(jobId, body.data.name, phaseId);
 
@@ -2521,7 +2548,7 @@ router.post(
     }
 
     const jobId = getParam(req.params.jobId, "job id");
-    await ensureJobExists(jobId);
+    const job = await ensureJobExists(jobId);
     await assertUniquePhaseName(jobId, body.data.name);
 
     const [phase] = await db
@@ -3477,7 +3504,7 @@ router.post(
     }
 
     const jobId = getParam(req.params.jobId, "job id");
-    await ensureJobExists(jobId);
+    const job = await ensureJobExists(jobId);
     const exceptions = await getWorkdayExceptionsForJob(jobId);
     await assertPredecessorsBelongToJob(
       jobId,
@@ -3511,6 +3538,7 @@ router.post(
       const [createdItem] = await tx
         .insert(scheduleItems)
         .values({
+          organizationId: job.organizationId,
           jobId,
           schedulePhaseId: normalizedPayload.phaseId,
           title: normalizedPayload.title,
@@ -3538,8 +3566,8 @@ router.post(
         })
         .returning();
 
-      await syncAssignees(createdItem.id, normalizedPayload.assigneeIds, tx);
-      await syncPredecessors(createdItem.id, normalizedPayload.predecessors, tx);
+      await syncAssignees(createdItem.id, normalizedPayload.assigneeIds, job.organizationId, tx);
+      await syncPredecessors(createdItem.id, normalizedPayload.predecessors, job.organizationId, tx);
 
       // Cascade persistence and auto-complete sweep run inside the same
       // transaction as the user's insert, so a failure in either step
@@ -3805,8 +3833,8 @@ router.put(
         })
         .where(eq(scheduleItems.id, itemId));
 
-      await syncAssignees(itemId, normalizedPayload.assigneeIds, tx);
-      await syncPredecessors(itemId, normalizedPayload.predecessors, tx);
+      await syncAssignees(itemId, normalizedPayload.assigneeIds, existing.organizationId, tx);
+      await syncPredecessors(itemId, normalizedPayload.predecessors, existing.organizationId, tx);
 
       // Same atomicity guarantee as the POST handler — cascade
       // persistence shares this transaction with the user's update.
@@ -3880,6 +3908,7 @@ router.post(
     const [todo] = await db
       .insert(scheduleItemTodos)
       .values({
+        organizationId: item.organizationId,
         scheduleItemId: itemId,
         title: body.data.title ?? item.title,
         createdBy: req.auth!.userId,
@@ -4048,6 +4077,7 @@ router.post(
     const [note] = await db
       .insert(scheduleItemNotes)
       .values({
+        organizationId: item.organizationId,
         scheduleItemId: itemId,
         note: body.data.note,
         createdBy: req.auth!.userId,
@@ -4106,7 +4136,7 @@ router.post(
       throw new HttpError(400, "Schedule item is missing a job.");
     }
 
-    const attachmentFolder = await ensureScheduleAttachmentFolder(itemId, item.jobId);
+    const attachmentFolder = await ensureScheduleAttachmentFolder(itemId, item.jobId, item.organizationId);
     const uploadedFiles = Array.isArray(req.files) ? req.files : [];
 
     if (uploadedFiles.length === 0) {
@@ -4147,6 +4177,7 @@ router.post(
           const [createdFile] = await tx
             .insert(files)
             .values({
+              organizationId: attachmentFolder.organizationId,
               folderId: attachmentFolder.id,
               filename: storedFileName,
               originalName: uploadedFile.originalname,
@@ -4160,6 +4191,7 @@ router.post(
           const [createdAttachment] = await tx
             .insert(scheduleItemAttachments)
             .values({
+              organizationId: item.organizationId,
               scheduleItemId: itemId,
               fileId: createdFile.id,
             })
@@ -4278,7 +4310,7 @@ router.post(
       throw new HttpError(400, "Schedule item is missing a job.");
     }
 
-    const attachmentFolder = await ensureScheduleAttachmentFolder(itemId, item.jobId);
+    const attachmentFolder = await ensureScheduleAttachmentFolder(itemId, item.jobId, item.organizationId);
     const requestedTitle = body.data.title?.trim() || `${item.title} Notes`;
     const originalName = requestedTitle.toLowerCase().endsWith(".txt")
       ? requestedTitle
@@ -4326,6 +4358,7 @@ router.post(
         const [createdFile] = await tx
           .insert(files)
           .values({
+            organizationId: attachmentFolder.organizationId,
             folderId: attachmentFolder.id,
             filename: storedFileName,
             originalName,
@@ -4339,6 +4372,7 @@ router.post(
         const [createdAttachment] = await tx
           .insert(scheduleItemAttachments)
           .values({
+            organizationId: item.organizationId,
             scheduleItemId: itemId,
             fileId: createdFile.id,
           })

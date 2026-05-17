@@ -24,6 +24,10 @@ import {
 import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
 import {
+  getActiveOrganizationId,
+  organizationScopeCondition,
+} from "../lib/tenant-scope";
+import {
   requireAdmin,
   requireManagerOrAbove,
 } from "../middleware/require-auth";
@@ -33,8 +37,7 @@ const router: IRouter = Router();
 
 router.use(requireManagerOrAbove);
 
-// Deterministic UUIDv5 sentinel (derived from `cadstone:unknown-client`
-// in the DNS namespace) for the "Unknown client" placeholder created
+// Deterministic UUIDv5 sentinel for the "Unknown client" placeholder created
 // by migration 0010. Jobs without a real client (legacy NULL rows or
 // rows orphaned by a client deletion) are assigned to this client so
 // the clients-first navigation always has somewhere to land. Must stay
@@ -89,11 +92,17 @@ function getParam(value: string | string[] | undefined, label: string) {
   return normalized;
 }
 
-async function getClientOrThrow(id: string) {
+async function getClientOrThrow(id: string, auth = null as Express.Request["auth"] | null) {
   const [client] = await db
     .select()
     .from(clients)
-    .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
+    .where(
+      and(
+        eq(clients.id, id),
+        isNull(clients.deletedAt),
+        auth ? organizationScopeCondition(auth, clients.organizationId) : undefined,
+      ),
+    )
     .limit(1);
   if (!client) throw new HttpError(404, "Client not found.");
   return client;
@@ -101,11 +110,16 @@ async function getClientOrThrow(id: string) {
 
 // Detail variant that allows opening archived (soft-deleted) clients so
 // the Archived/All chips can navigate into the same Client Detail page.
-async function getClientForDetail(id: string) {
+async function getClientForDetail(id: string, auth = null as Express.Request["auth"] | null) {
   const [client] = await db
     .select()
     .from(clients)
-    .where(eq(clients.id, id))
+    .where(
+      and(
+        eq(clients.id, id),
+        auth ? organizationScopeCondition(auth, clients.organizationId) : undefined,
+      ),
+    )
     .limit(1);
   if (!client) throw new HttpError(404, "Client not found.");
   return client;
@@ -144,6 +158,8 @@ router.get(
     //   archived → soft-deleted only
     //   all      → no status filter
     const conditions: SQL[] = [];
+    const orgCondition = organizationScopeCondition(req.auth!, clients.organizationId);
+    if (orgCondition) conditions.push(orgCondition);
     if (status === "active") {
       conditions.push(isNull(clients.deletedAt));
     } else if (status === "archived") {
@@ -227,6 +243,7 @@ router.get(
               .where(
                 and(
                   isNull(jobs.deletedAt),
+                  organizationScopeCondition(req.auth!, jobs.organizationId),
                   inArray(jobs.clientId, clientIds),
                   accessibleJobIds
                     ? inArray(jobs.id, accessibleJobIds)
@@ -249,6 +266,7 @@ router.get(
           .where(
             and(
               isNull(clientContacts.deletedAt),
+              organizationScopeCondition(req.auth!, clientContacts.organizationId),
               inArray(clientContacts.clientId, clientIds),
             ),
           )
@@ -355,6 +373,7 @@ router.post(
     const [client] = await db
       .insert(clients)
       .values({
+        organizationId: getActiveOrganizationId(req.auth!),
         companyName: body.data.companyName,
         phone: body.data.phone,
         email: body.data.email,
@@ -376,7 +395,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     await assertCanAccessClient(req.auth!, clientId);
-    const client = await getClientForDetail(clientId);
+    const client = await getClientForDetail(clientId, req.auth);
     const accessibleJobIds = await listAccessibleJobIds(req.auth!);
 
     const [contacts, jobList] = await Promise.all([
@@ -387,6 +406,7 @@ router.get(
           and(
             eq(clientContacts.clientId, clientId),
             isNull(clientContacts.deletedAt),
+            organizationScopeCondition(req.auth!, clientContacts.organizationId),
           ),
         )
         .orderBy(desc(clientContacts.isPrimary), asc(clientContacts.firstName)),
@@ -418,6 +438,7 @@ router.get(
               and(
                 eq(jobs.clientId, clientId),
                 isNull(jobs.deletedAt),
+                organizationScopeCondition(req.auth!, jobs.organizationId),
                 accessibleJobIds
                   ? inArray(jobs.id, accessibleJobIds)
                   : undefined,
@@ -484,7 +505,7 @@ router.put(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     await assertCanManageClient(req.auth!, clientId);
-    await getClientOrThrow(clientId);
+    await getClientOrThrow(clientId, req.auth);
 
     const body = clientPayloadSchema.safeParse(req.body);
     if (!body.success)
@@ -503,7 +524,12 @@ router.put(
         notes: body.data.notes,
         updatedAt: new Date(),
       })
-      .where(eq(clients.id, clientId))
+      .where(
+        and(
+          eq(clients.id, clientId),
+          organizationScopeCondition(req.auth!, clients.organizationId),
+        ),
+      )
       .returning();
 
     res.json({ client: updated });
@@ -522,7 +548,7 @@ router.delete(
     // by `audit-fixes.test.ts` so a future regression that drops it
     // surfaces immediately.
     await assertCanAccessClient(req.auth!, clientId);
-    await getClientOrThrow(clientId);
+    await getClientOrThrow(clientId, req.auth);
 
     const now = new Date();
 
@@ -537,10 +563,17 @@ router.delete(
       // Reassign live jobs to the Unknown client placeholder so they
       // remain reachable through the clients-first navigation instead
       // of being orphaned with a NULL client_id.
+      const organizationId = getActiveOrganizationId(req.auth!);
       await tx
         .update(jobs)
-        .set({ clientId: UNKNOWN_CLIENT_ID, updatedAt: now })
-        .where(and(eq(jobs.clientId, clientId), isNull(jobs.deletedAt)));
+        .set({ clientId: organizationId ? null : UNKNOWN_CLIENT_ID, updatedAt: now })
+        .where(
+          and(
+            eq(jobs.clientId, clientId),
+            isNull(jobs.deletedAt),
+            organizationScopeCondition(req.auth!, jobs.organizationId),
+          ),
+        );
 
       await tx
         .update(clientContacts)
@@ -549,13 +582,19 @@ router.delete(
           and(
             eq(clientContacts.clientId, clientId),
             isNull(clientContacts.deletedAt),
+            organizationScopeCondition(req.auth!, clientContacts.organizationId),
           ),
         );
 
       await tx
         .update(clients)
         .set({ deletedAt: now, updatedAt: now })
-        .where(eq(clients.id, clientId));
+        .where(
+          and(
+            eq(clients.id, clientId),
+            organizationScopeCondition(req.auth!, clients.organizationId),
+          ),
+        );
     });
 
     res.json({ success: true });
@@ -567,7 +606,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     await assertCanAccessClient(req.auth!, clientId);
-    await getClientOrThrow(clientId);
+    await getClientOrThrow(clientId, req.auth);
 
     const contacts = await db
       .select()
@@ -576,6 +615,7 @@ router.get(
         and(
           eq(clientContacts.clientId, clientId),
           isNull(clientContacts.deletedAt),
+          organizationScopeCondition(req.auth!, clientContacts.organizationId),
         ),
       )
       .orderBy(desc(clientContacts.isPrimary), asc(clientContacts.firstName));
@@ -589,7 +629,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     await assertCanAccessClient(req.auth!, clientId);
-    await getClientOrThrow(clientId);
+    await getClientOrThrow(clientId, req.auth);
     const accessibleJobIds = await listAccessibleJobIds(req.auth!);
 
     const jobList =
@@ -628,6 +668,7 @@ router.get(
               and(
                 eq(jobs.clientId, clientId),
                 isNull(jobs.deletedAt),
+                organizationScopeCondition(req.auth!, jobs.organizationId),
                 accessibleJobIds
                   ? inArray(jobs.id, accessibleJobIds)
                   : undefined,
@@ -645,7 +686,7 @@ router.get(
     const clientId = getParam(req.params.id, "client id");
     const contactId = getParam(req.params.contactId, "contact id");
     await assertCanAccessClient(req.auth!, clientId);
-    await getClientOrThrow(clientId);
+    await getClientOrThrow(clientId, req.auth);
 
     const [contact] = await db
       .select()
@@ -655,6 +696,7 @@ router.get(
           eq(clientContacts.id, contactId),
           eq(clientContacts.clientId, clientId),
           isNull(clientContacts.deletedAt),
+          organizationScopeCondition(req.auth!, clientContacts.organizationId),
         ),
       )
       .limit(1);
@@ -669,7 +711,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
     await assertCanManageClient(req.auth!, clientId);
-    await getClientOrThrow(clientId);
+    await getClientOrThrow(clientId, req.auth);
 
     const body = contactPayloadSchema.safeParse(req.body);
     if (!body.success)
@@ -688,6 +730,7 @@ router.post(
             and(
               eq(clientContacts.clientId, clientId),
               isNull(clientContacts.deletedAt),
+              organizationScopeCondition(req.auth!, clientContacts.organizationId),
             ),
           );
       }
@@ -695,6 +738,7 @@ router.post(
       return tx
         .insert(clientContacts)
         .values({
+          organizationId: getActiveOrganizationId(req.auth!),
           clientId,
           firstName: body.data.firstName,
           lastName: body.data.lastName,
@@ -717,7 +761,7 @@ router.put(
     const clientId = getParam(req.params.id, "client id");
     const contactId = getParam(req.params.contactId, "contact id");
     await assertCanManageClient(req.auth!, clientId);
-    await getClientOrThrow(clientId);
+    await getClientOrThrow(clientId, req.auth);
 
     const [existing] = await db
       .select()
@@ -727,6 +771,7 @@ router.put(
           eq(clientContacts.id, contactId),
           eq(clientContacts.clientId, clientId),
           isNull(clientContacts.deletedAt),
+          organizationScopeCondition(req.auth!, clientContacts.organizationId),
         ),
       )
       .limit(1);
@@ -749,6 +794,7 @@ router.put(
             and(
               eq(clientContacts.clientId, clientId),
               isNull(clientContacts.deletedAt),
+              organizationScopeCondition(req.auth!, clientContacts.organizationId),
             ),
           );
       }
@@ -765,7 +811,12 @@ router.put(
           isPrimary: body.data.isPrimary,
           updatedAt: new Date(),
         })
-        .where(eq(clientContacts.id, contactId))
+        .where(
+          and(
+            eq(clientContacts.id, contactId),
+            organizationScopeCondition(req.auth!, clientContacts.organizationId),
+          ),
+        )
         .returning();
     });
 
@@ -779,7 +830,7 @@ router.delete(
     const clientId = getParam(req.params.id, "client id");
     const contactId = getParam(req.params.contactId, "contact id");
     await assertCanManageClient(req.auth!, clientId);
-    await getClientOrThrow(clientId);
+    await getClientOrThrow(clientId, req.auth);
 
     const [existing] = await db
       .select()
@@ -789,6 +840,7 @@ router.delete(
           eq(clientContacts.id, contactId),
           eq(clientContacts.clientId, clientId),
           isNull(clientContacts.deletedAt),
+          organizationScopeCondition(req.auth!, clientContacts.organizationId),
         ),
       )
       .limit(1);
@@ -797,7 +849,12 @@ router.delete(
     await db
       .update(clientContacts)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(eq(clientContacts.id, contactId));
+      .where(
+        and(
+          eq(clientContacts.id, contactId),
+          organizationScopeCondition(req.auth!, clientContacts.organizationId),
+        ),
+      );
 
     res.json({ success: true });
   }),

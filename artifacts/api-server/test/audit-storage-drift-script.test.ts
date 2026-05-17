@@ -70,10 +70,10 @@ test("parseArgs: --max-bucket-objects rejects junk values", async () => {
   }
 });
 
-test("uploadsObjectPrefix: includes trailing slash and cadstone/uploads/", async () => {
+test("uploadsObjectPrefix: includes trailing slash and stone-track/uploads/", async () => {
   const mod = await loadScript();
   const prefix = mod.uploadsObjectPrefix();
-  assert.equal(prefix, "cadstone/uploads/");
+  assert.equal(prefix, "stone-track/uploads/");
 });
 
 test("fileUrlToObjectName: round-trips with objectNameToFileUrl", async () => {
@@ -82,7 +82,7 @@ test("fileUrlToObjectName: round-trips with objectNameToFileUrl", async () => {
   const objectName = mod.fileUrlToObjectName({ fileUrl });
   assert.equal(
     objectName,
-    "cadstone/uploads/job-1/photo/1700000000000-uuid-foo.jpg",
+    "stone-track/uploads/job-1/photo/1700000000000-uuid-foo.jpg",
   );
   const back = mod.objectNameToFileUrl({ objectName });
   assert.equal(back, fileUrl);
@@ -114,13 +114,13 @@ test("fileUrlToObjectName: rejects malformed urls", async () => {
   }
 });
 
-test("objectNameToFileUrl: returns null for objects outside the cadstone uploads prefix", async () => {
+test("objectNameToFileUrl: returns null for objects outside the Stone Track uploads prefix", async () => {
   const mod = await loadScript();
   // Sibling prefixes — restore-drill, public placeholders — must be
   // ignored so they don't show up as "bucket_only" false positives.
   assert.equal(
     mod.objectNameToFileUrl({
-      objectName: "cadstone/restore-drill/roundtrip-1.bin",
+      objectName: "stone-track/restore-drill/roundtrip-1.bin",
     }),
     null,
   );
@@ -139,7 +139,7 @@ test("objectNameToFileUrl: returns null for objects outside the cadstone uploads
   // upload, so it must not be classified as such.
   assert.equal(
     mod.objectNameToFileUrl({
-      objectName: "cadstone/uploads/",
+      objectName: "stone-track/uploads/",
     }),
     null,
   );

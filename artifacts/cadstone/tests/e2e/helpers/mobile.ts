@@ -3,7 +3,7 @@ import { expect, type Page } from "@playwright/test"
 /**
  * Mobile-viewport helpers for the golden-path specs.
  *
- * Post-#318 the CAD Stone app renders a fixed bottom-tab navigator
+ * Post-#318 the app renders a fixed bottom-tab navigator
  * below the Tailwind `md` breakpoint (768px) instead of a hamburger
  * drawer. The bottom nav surfaces 4 role-based tabs + a "More" sheet
  * (Crew: Home·My Jobs·Logs·More; Admin/PM: Home·Clients·Schedule·

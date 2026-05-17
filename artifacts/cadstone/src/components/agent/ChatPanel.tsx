@@ -38,6 +38,7 @@ import {
   type StreamHandle,
 } from "@/lib/agent-api"
 import { useAgentPanelStore } from "@/store/agent"
+import { APP_NAME } from "@/lib/brand"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import ChatMessage from "./ChatMessage"
@@ -361,7 +362,7 @@ export default function ChatPanel() {
           {activeConversation?.title ?? "Assistant"}
         </SheetTitle>
         <SheetDescription className="sr-only">
-          Read-only assistant for CAD Stone. Ask about jobs, leads, files, daily
+          Read-only assistant for {APP_NAME}. Ask about jobs, leads, files, daily
           logs, schedule items, clients, or activity.
         </SheetDescription>
         {/* Header */}
@@ -492,7 +493,7 @@ export default function ChatPanel() {
             <div className="mx-auto mt-8 max-w-xs space-y-3 text-center text-sm text-slate-500">
               <Sparkles className="mx-auto size-6 text-orange-400" />
               <p className="font-semibold text-slate-700">
-                Read-only assistant for CAD Stone
+                Read-only assistant for {APP_NAME}
               </p>
               <p className="text-xs">
                 Ask about your jobs, leads, files, daily logs, schedule items,

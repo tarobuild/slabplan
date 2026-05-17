@@ -1,6 +1,6 @@
 /**
  * wipe-prod-data.mjs — destructively clear ALL application data from a
- * target database AND empty the cadstone uploads prefix in object
+ * target database AND empty the Stone Track uploads prefix in object
  * storage. Schema, migrations metadata, and the bucket itself are
  * all preserved — only rows and uploaded files are removed.
  *
@@ -29,8 +29,8 @@
  *   - Truncate runs inside a single transaction (BEGIN / TRUNCATE
  *     ALL ... CASCADE / verify all-zero / COMMIT). A failure rolls
  *     everything back so we never end up half-wiped.
- *   - Storage deletion is scoped to the cadstone uploads prefix only
- *     (`cadstone/uploads/`). Anything outside that prefix is NOT touched.
+ *   - Storage deletion is scoped to the Stone Track uploads prefix only
+ *     (`stone-track/uploads/`). Anything outside that prefix is NOT touched.
  *   - Storage deletion runs ONLY when --db=production. The Supabase bucket
  *     is production data, so wiping it from a "local" run would silently
  *     destroy real uploads.
@@ -213,13 +213,13 @@ async function planAndWipeDatabase(target) {
 
 async function planAndWipeBucket(targetLabel) {
   const storage = createSupabaseStorage();
-  const cadstoneUploadsPrefix = uploadsObjectPrefix();
+  const stoneTrackUploadsPrefix = uploadsObjectPrefix();
 
   console.log(
-    `\n[${targetLabel}/storage] Bucket=${storage.bucketName} Prefix=${cadstoneUploadsPrefix}`,
+    `\n[${targetLabel}/storage] Bucket=${storage.bucketName} Prefix=${stoneTrackUploadsPrefix}`,
   );
 
-  const files = await storage.listAllObjects(cadstoneUploadsPrefix);
+  const files = await storage.listAllObjects(stoneTrackUploadsPrefix);
   if (files.length === 0) {
     console.log(`[${targetLabel}/storage] Prefix already empty.`);
     return { deleted: 0, bytes: 0 };
@@ -247,10 +247,10 @@ async function planAndWipeBucket(targetLabel) {
   await storage.deleteObjects(files.map((file) => file.name));
 
   // Verify.
-  const after = await storage.listAllObjects(cadstoneUploadsPrefix);
+  const after = await storage.listAllObjects(stoneTrackUploadsPrefix);
   if (after.length > 0) {
     throw new Error(
-      `Bucket still has ${after.length} objects under ${cadstoneUploadsPrefix} after delete.`,
+      `Bucket still has ${after.length} objects under ${stoneTrackUploadsPrefix} after delete.`,
     );
   }
   console.log(

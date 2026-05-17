@@ -2,8 +2,9 @@ import type { Request, Response } from "express";
 import { HttpError } from "./http";
 import { logger } from "./logger";
 import { Sentry, isSentryInitialized } from "./sentry";
+import { APP_PROBLEM_TYPE_BASE } from "./brand";
 
-export const PROBLEM_TYPE_BASE = "https://cadstonesystems.com/errors";
+export const PROBLEM_TYPE_BASE = APP_PROBLEM_TYPE_BASE;
 
 const STATUS_TITLES: Record<number, string> = {
   400: "Bad Request",

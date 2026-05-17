@@ -26,6 +26,7 @@ import {
 import { HttpError, asyncHandler } from "../lib/http";
 import { uploadSingle } from "../lib/uploads";
 import { createAiParsePerUserRateLimit } from "../lib/rate-limit";
+import { getActiveOrganizationId } from "../lib/tenant-scope";
 
 // Per-user rate limiter for AI-backed parses. Mounted on the two
 // endpoints that actually call Anthropic (estimate + invoice). Keep the
@@ -198,17 +199,28 @@ async function assertInvoiceInJob(invoiceId: string, jobId: string) {
     throw new HttpError(404, "Invoice not found.");
 }
 
-async function getOrCreateTracker(jobId: string, userId: string) {
+async function getOrCreateTracker(jobId: string, userId: string, auth?: AuthContext) {
+  const organizationId = auth ? getActiveOrganizationId(auth) : null;
   const existing = await db
     .select()
     .from(financialTrackers)
     .where(eq(financialTrackers.jobId, jobId))
     .limit(1);
-  if (existing[0]) return existing[0];
+  if (existing[0]) {
+    if (organizationId && existing[0].organizationId === null) {
+      const [updated] = await db
+        .update(financialTrackers)
+        .set({ organizationId, updatedAt: new Date() })
+        .where(eq(financialTrackers.id, existing[0].id))
+        .returning();
+      return updated ?? existing[0];
+    }
+    return existing[0];
+  }
 
   const [created] = await db
     .insert(financialTrackers)
-    .values({ jobId, createdBy: userId })
+    .values({ organizationId, jobId, createdBy: userId })
     .returning();
   return created;
 }
@@ -397,7 +409,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanViewJobFinancials(req.auth!, jobId);
-    const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
     const data = await loadTrackerWithChildren(tracker.id);
     res.json(data);
   }),
@@ -421,7 +433,7 @@ router.patch(
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
-    const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
     const body = trackerPatchSchema.safeParse(req.body);
     if (!body.success)
       throw new HttpError(400, "Invalid payload.", body.error.flatten());
@@ -446,7 +458,7 @@ router.post(
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
-    const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
     await db
       .update(financialTrackers)
       .set({
@@ -693,7 +705,7 @@ router.post(
       if (err instanceof HttpError) throw err;
       throw new HttpError(400, "Unsupported estimate file type.");
     }
-    const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
     const retentionUpload = retentionUploadSchema.safeParse(req.body ?? {});
     if (!retentionUpload.success) {
       throw new HttpError(
@@ -817,6 +829,7 @@ router.post(
         const [createdArea] = await tx
           .insert(sovAreas)
           .values({
+            organizationId: tracker.organizationId,
             trackerId: tracker.id,
             name: area.name,
             floor: area.floor ?? null,
@@ -830,6 +843,7 @@ router.post(
             .insert(sovLineItems)
             .values(
               area.lineItems.map((li) => ({
+                organizationId: tracker.organizationId,
                 areaId: createdArea.id,
                 description: li.description,
                 qty: String(li.qty ?? 1),
@@ -915,7 +929,12 @@ router.post(
           }
         }
         if (cappedReattach.length > 0) {
-          await tx.insert(invoiceLinePayments).values(cappedReattach);
+          await tx.insert(invoiceLinePayments).values(
+            cappedReattach.map((payment) => ({
+              ...payment,
+              organizationId: tracker.organizationId,
+            })),
+          );
           for (const r of cappedReattach) {
             await tx
               .update(sovLineItems)
@@ -1022,7 +1041,7 @@ router.post(
 
     // Lazy-create the tracker so subsequent CO insert from the
     // confirm dialog has somewhere to land.
-    await getOrCreateTracker(jobId, req.auth!.userId);
+    await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
 
     // Read bytes BEFORE saveUploadedFiles consumes the multer temp file.
     let bytes: Buffer;
@@ -1130,13 +1149,14 @@ router.post(
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
-    const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
     const body = areaCreateSchema.safeParse(req.body);
     if (!body.success)
       throw new HttpError(400, "Invalid area payload.", body.error.flatten());
     const [area] = await db
       .insert(sovAreas)
       .values({
+        organizationId: tracker.organizationId,
         trackerId: tracker.id,
         name: body.data.name,
         floor: body.data.floor ?? null,
@@ -1207,12 +1227,14 @@ router.post(
     if (!body.success)
       throw new HttpError(400, "Invalid line item.", body.error.flatten());
     await assertAreaInJob(body.data.areaId, jobId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
     const scheduled =
       body.data.scheduledValueCents ||
       Math.round((body.data.qty ?? 1) * (body.data.rateCents ?? 0));
     const [item] = await db
       .insert(sovLineItems)
       .values({
+        organizationId: tracker.organizationId ?? getActiveOrganizationId(req.auth!),
         areaId: body.data.areaId,
         description: body.data.description,
         qty: String(body.data.qty ?? 1),
@@ -1357,7 +1379,7 @@ router.post(
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanViewJobFinancials(req.auth!, jobId);
     assertCanEditFinancials(req.auth!);
-    const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
     const body = changeOrderSchema.safeParse(req.body);
     if (!body.success)
       throw new HttpError(400, "Invalid change order.", body.error.flatten());
@@ -1365,6 +1387,7 @@ router.post(
     const [co] = await db
       .insert(changeOrders)
       .values({
+        organizationId: tracker.organizationId,
         trackerId: tracker.id,
         number: body.data.number,
         description: body.data.description ?? null,
@@ -1460,6 +1483,13 @@ async function applyInvoiceMatches(
 ) {
   const startedAt = Date.now();
   await db.transaction(async (tx) => {
+    const [invoiceRow] = await tx
+      .select({ organizationId: trackerInvoices.organizationId })
+      .from(trackerInvoices)
+      .where(eq(trackerInvoices.id, invoiceId))
+      .limit(1);
+    const organizationId = invoiceRow?.organizationId ?? null;
+
     // Reverse any existing payments for this invoice first. Net the
     // reversals per line item so a single batched UPDATE replaces what
     // used to be N sequential per-row UPDATEs holding row locks for the
@@ -1535,6 +1565,7 @@ async function applyInvoiceMatches(
     if (cappedMatches.length > 0) {
       await tx.insert(invoiceLinePayments).values(
         cappedMatches.map((m) => ({
+          organizationId,
           invoiceId,
           lineItemId: m.sovLineItemId,
           amountCents: m.amountCents,
@@ -1634,7 +1665,7 @@ router.post(
       if (err instanceof HttpError) throw err;
       throw new HttpError(400, "Unsupported invoice file type.");
     }
-    const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
 
     // Read bytes BEFORE saveUploadedFiles consumes the multer temp file.
     let bytes: Buffer;
@@ -1763,6 +1794,7 @@ router.post(
     const [invoice] = await db
       .insert(trackerInvoices)
       .values({
+        organizationId: tracker.organizationId,
         trackerId: tracker.id,
         invoiceNumber: validated.data.invoiceNumber ?? null,
         invoiceDate: validated.data.invoiceDate ?? null,
@@ -1821,7 +1853,7 @@ router.patch(
       jobId,
     );
     await applyInvoiceMatches(invoiceId, body.data.matches);
-    const tracker = await getOrCreateTracker(jobId, req.auth!.userId);
+    const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
     const data = await loadTrackerWithChildren(tracker.id);
     res.json(data);
   }),

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { assertCanViewFile, type AuthContext } from "../lib/authorization";
 import { assertActiveAuthUser } from "../lib/active-user";
+import { attachOrganizationContext } from "../lib/auth-organization";
 import { verifyFileViewToken } from "../lib/auth";
 import { getFileOrThrow } from "../lib/file-manager";
 import { withFileViewLogging } from "../lib/file-view-log";
@@ -67,11 +68,13 @@ router.get(
           email: verified.email,
           role: verified.role,
           type: "access",
+          organizationId: verified.organizationId,
           iat: verified.iat,
           authTime: verified.authTime,
         };
 
-        await assertCanViewFile(auth, fileId);
+        const authWithOrganization = await attachOrganizationContext(auth);
+        await assertCanViewFile(authWithOrganization, fileId);
 
         const file = await getFileOrThrow(fileId);
 

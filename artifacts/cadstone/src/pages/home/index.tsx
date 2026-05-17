@@ -21,7 +21,7 @@ export default function HomePage() {
     query: { queryKey: ["dashboard-home", user?.id ?? "anon"] },
   })
 
-  useDocumentTitle("Home — CAD Stone Networks")
+  useDocumentTitle("Home")
 
   useEffect(() => {
     if (error) toastApiError(error, "Failed to load Home")

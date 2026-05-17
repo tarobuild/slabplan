@@ -11,6 +11,7 @@ type TokenClaims = {
   type: TokenType;
   email: string;
   role: string;
+  organizationId?: string;
   authTime?: number;
   fileId?: string;
 };
@@ -26,7 +27,9 @@ type VerifiedToken<TType extends TokenType = TokenType> = TokenClaims & {
 type PublicUser = Pick<
   User,
   "id" | "email" | "fullName" | "role" | "avatarUrl" | "phone" | "createdAt" | "updatedAt"
->;
+> & {
+  defaultOrganizationId?: User["defaultOrganizationId"];
+};
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -55,7 +58,7 @@ function readJwtSecret(envName: JwtSecretEnvName) {
   }
 
   // JWT_UPLOAD_SECRET is now advisory — it only protects the legacy
-  // `cadstone_upload_token` cookie used as a fallback for unauthenticated
+  // `stone_track_upload_token` cookie used as a fallback for unauthenticated
   // `<img>`/`<iframe>` access to /uploads/*. Standard upload routes use
   // the access-token Bearer auth like every other API endpoint, so a
   // missing upload secret no longer blocks uploads or views.
@@ -87,8 +90,8 @@ const accessSecret = readJwtSecret("JWT_ACCESS_SECRET");
 const refreshSecret = readJwtSecret("JWT_REFRESH_SECRET");
 const uploadSecret = readUploadSecret(accessSecret);
 
-export const refreshCookieName = "cadstone_refresh_token";
-export const uploadCookieName = "cadstone_upload_token";
+export const refreshCookieName = "stone_track_refresh_token";
+export const uploadCookieName = "stone_track_upload_token";
 
 const secureCookies = process.env.NODE_ENV === "production";
 
@@ -117,6 +120,7 @@ function buildTokenPayload(
     type,
     email: user.email,
     role: user.role,
+    organizationId: user.defaultOrganizationId ?? undefined,
     authTime: Date.now(),
   };
 
@@ -175,6 +179,7 @@ function decodeVerifiedToken<TType extends TokenType>(
     userId: payload.sub,
     email: payload.email,
     role: payload.role,
+    organizationId: typeof payload.organizationId === "string" ? payload.organizationId : undefined,
     type: payload.type,
     fileId: typeof payload.fileId === "string" ? payload.fileId : undefined,
     jti: typeof payload.jti === "string" ? payload.jti : undefined,
@@ -203,6 +208,7 @@ export function toPublicUser(user: PublicUser | User): PublicUser {
     role: user.role,
     avatarUrl: user.avatarUrl,
     phone: user.phone,
+    defaultOrganizationId: "defaultOrganizationId" in user ? user.defaultOrganizationId : null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };

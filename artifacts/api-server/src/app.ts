@@ -25,6 +25,7 @@ import sentryTestRouter from "./routes/sentry-test";
 import { ensureUploadRoot, streamStoredFileToResponse } from "./lib/storage";
 import { ensureTempUploadDir } from "./lib/uploads";
 import { assertActiveAuthUser } from "./lib/active-user";
+import { attachOrganizationContext } from "./lib/auth-organization";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -139,6 +140,7 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
     }
 
     await assertActiveAuthUser(auth);
+    const authWithOrganization = await attachOrganizationContext(auth);
 
     const pathname = typeof req.params[0] === "string" ? req.params[0] : "";
 
@@ -147,7 +149,7 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
     }
 
     const fileUrl = `/uploads/${pathname}`;
-    await assertCanAccessUploadPath(auth, fileUrl);
+    await assertCanAccessUploadPath(authWithOrganization, fileUrl);
     const [storedFile] = await db
       .select({
         originalName: files.originalName,
@@ -199,10 +201,10 @@ app.use("/api", (req, _res, next) => {
 });
 
 // Serve the compiled React frontend whenever the build output is present.
-// In production the build is always present (build:prod runs the cadstone
-// vite build and copies its dist into ./public). In development this is a
-// no-op: the api-server dev script intentionally skips the cadstone build
-// to avoid racing with `check-api-codegen`, and the cadstone vite dev
+// In production the build is always present (build:prod runs the web
+// Vite build and copies its dist into ./public). In development this is a
+// no-op: the api-server dev script intentionally skips the web build
+// to avoid racing with `check-api-codegen`, and the Vite dev
 // server runs as its own workflow to serve the SPA.
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(currentDir, "public");

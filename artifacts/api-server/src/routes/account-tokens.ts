@@ -51,7 +51,7 @@ router.get(
   "/",
   asyncHandler(async (req, res) => {
     const userId = req.auth!.userId;
-    const rows = await listPersonalAccessTokens(userId);
+    const rows = await listPersonalAccessTokens(userId, req.auth?.organizationId);
     res.json({ tokens: rows.map(serializePat) });
   }),
 );
@@ -78,11 +78,13 @@ router.post(
 
     const { name, scope, expiresAt } = parsed.data;
     const generated = generateRawToken();
+    const organizationId = req.auth?.organizationId ?? null;
 
     const [row] = await db
       .insert(personalAccessTokens)
       .values({
         userId,
+        organizationId,
         name,
         scope,
         tokenHash: generated.tokenHash,
@@ -126,7 +128,7 @@ router.delete(
       throw new HttpError(400, "Token id is required.", undefined, "validation");
     }
 
-    const ok = await revokeToken(userId, tokenId);
+    const ok = await revokeToken(userId, tokenId, req.auth?.organizationId);
     if (!ok) {
       throw new HttpError(404, "Token not found.", undefined, "not-found");
     }

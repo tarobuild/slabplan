@@ -25,7 +25,7 @@ for (const stateFile of [CESAR_STATE, ANWAR_STATE, WORKER_STATE, PM_STATE]) {
   fs.mkdirSync(path.dirname(stateFile), { recursive: true })
 }
 
-const REFRESH_COOKIE = "cadstone_refresh_token"
+const REFRESH_COOKIE = "stone_track_refresh_token"
 
 function readRefreshCookieFrom(
   file: string,
@@ -204,7 +204,7 @@ setup("authenticate PM fixture (project_manager)", async ({ context }) => {
 
   // Consume the invite to set a known password. This response sets the
   // refresh cookie on the context (replacing Cesar's cookie from the
-  // login above, since both endpoints use cadstone_refresh_token).
+  // login above, since both endpoints use stone_track_refresh_token).
   const acceptRes = await context.request.post("/api/auth/accept-invite", {
     data: { token: inviteToken, password: pmCreds.password },
     headers: { "X-Requested-With": "XMLHttpRequest" },

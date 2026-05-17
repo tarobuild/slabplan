@@ -2,6 +2,7 @@ import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 import { ACCESS_TOKEN_TTL_SECONDS, verifyAccessToken } from "./auth";
 import { assertActiveAuthUser } from "./active-user";
+import { attachOrganizationContext } from "./auth-organization";
 import { redactRealtimePayloadForAuth } from "./activity-visibility";
 import {
   isAdmin,
@@ -12,7 +13,7 @@ import { corsOrigin } from "./cors";
 import { logger } from "./logger";
 
 let io: Server | null = null;
-const adminRoom = "__cadstone_admins__";
+const adminRoom = "__stone_track_admins__";
 const REALTIME_TOKEN_REVALIDATION_INTERVAL_MS = ACCESS_TOKEN_TTL_SECONDS * 1000;
 
 async function listRealtimeScopeIds(auth: NonNullable<Express.Request["auth"]>) {
@@ -54,9 +55,9 @@ export function initRealtime(server: HttpServer) {
 
         const auth = verifyAccessToken(token);
         await assertActiveAuthUser(auth);
-        socket.data.auth = auth;
+        socket.data.auth = await attachOrganizationContext(auth);
         socket.data.accessToken = token;
-        socket.data.scopeIds = await listRealtimeScopeIds(auth);
+        socket.data.scopeIds = await listRealtimeScopeIds(socket.data.auth);
       })
       .then(() => next())
       .catch(() => next(new Error("Unauthorized")));
@@ -75,8 +76,8 @@ export function initRealtime(server: HttpServer) {
       try {
         const auth = verifyAccessToken(token);
         await assertActiveAuthUser(auth);
-        socket.data.auth = auth;
-        socket.data.scopeIds = await listRealtimeScopeIds(auth);
+        socket.data.auth = await attachOrganizationContext(auth);
+        socket.data.scopeIds = await listRealtimeScopeIds(socket.data.auth);
         return true;
       } catch (error) {
         logger.info(

@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { logger } from "./logger";
+import { APP_NAME } from "./brand";
 
 /**
  * Transactional email service.
@@ -13,7 +14,7 @@ import { logger } from "./logger";
  * Required env vars in production:
  *   - `RESEND_API_KEY` — the Resend API key (set via Replit secrets).
  *   - `EMAIL_FROM`     — the verified "From" address, e.g.
- *                        `Cadstone <noreply@mail.cadstoneworks.com>`.
+ *                        `Stone Track <noreply@mail.example.com>`.
  *
  * Optional:
  *   - `EMAIL_REPLY_TO` — defaults to unset.
@@ -67,7 +68,7 @@ function getFromAddress(): string {
   const from = process.env.EMAIL_FROM?.trim();
   if (!from) {
     throw new Error(
-      "EMAIL_FROM is not configured. Set it to a verified Resend sender, e.g. 'Cadstone <noreply@mail.example.com>'.",
+      "EMAIL_FROM is not configured. Set it to a verified sender, e.g. 'Stone Track <noreply@mail.example.com>'.",
     );
   }
   return from;
@@ -118,35 +119,35 @@ export function __setEmailSenderForTests(stub: EmailSender | null): EmailSender 
 
 function buildInviteEmail(params: SendInviteParams) {
   const greeting = params.inviteeName ? `Hi ${params.inviteeName},` : "Hi,";
-  const subject = `${params.inviterName} invited you to Cadstone Networks`;
+  const subject = `${params.inviterName} invited you to ${APP_NAME}`;
   const text = [
     greeting,
     "",
-    `${params.inviterName} has set up an account for you on Cadstone Networks.`,
+    `${params.inviterName} has set up an account for you on ${APP_NAME}.`,
     "Use the link below to set your password and sign in:",
     "",
     params.inviteLink,
     "",
     "This link expires in 7 days and can only be used once. If you weren't expecting this, you can safely ignore this email.",
     "",
-    "— Cadstone Networks",
+    `- ${APP_NAME}`,
   ].join("\n");
   return { subject, text };
 }
 
 function buildPasswordResetEmail(params: SendPasswordResetParams) {
-  const subject = "Reset your Cadstone Networks password";
+  const subject = `Reset your ${APP_NAME} password`;
   const text = [
     "Hi,",
     "",
-    "We received a request to reset the password for your Cadstone Networks account.",
+    `We received a request to reset the password for your ${APP_NAME} account.`,
     "Use the link below to choose a new password:",
     "",
     params.resetLink,
     "",
     "This link expires in 7 days and can only be used once. If you didn't request a reset, you can safely ignore this email.",
     "",
-    "— Cadstone Networks",
+    `- ${APP_NAME}`,
   ].join("\n");
   return { subject, text };
 }

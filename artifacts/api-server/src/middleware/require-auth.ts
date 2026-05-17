@@ -4,6 +4,7 @@ import { HttpError } from "../lib/http";
 import { verifyAccessToken } from "../lib/auth";
 import { isPatToken, resolvePersonalAccessToken } from "../lib/personal-access-tokens";
 import { assertActiveAuthUser } from "../lib/active-user";
+import { attachOrganizationContext } from "../lib/auth-organization";
 
 export function readBearerToken(req: Request) {
   const authHeader = req.headers.authorization;
@@ -47,6 +48,10 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
           userId: pat.userId,
           email: pat.email,
           role: pat.role,
+          organizationId: pat.organizationId,
+          organizationRole: pat.organizationRole,
+          organizationMembershipId: pat.organizationMembershipId,
+          organizationStatus: pat.organizationStatus,
           patId: pat.patId,
           patScope: pat.patScope,
         };
@@ -61,8 +66,9 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   try {
     const auth = verifyAccessToken(token);
     assertActiveAuthUser(auth)
-      .then(() => {
-        req.auth = auth;
+      .then(() => attachOrganizationContext(auth))
+      .then((authWithOrganization) => {
+        req.auth = authWithOrganization;
         next();
       })
       .catch((error) => {

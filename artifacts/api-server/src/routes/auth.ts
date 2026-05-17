@@ -3,7 +3,13 @@ import bcrypt from "bcrypt";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { personalAccessTokens, safeUserColumns, users } from "@workspace/db/schema";
+import {
+  organizationMemberships,
+  organizations,
+  personalAccessTokens,
+  safeUserColumns,
+  users,
+} from "@workspace/db/schema";
 import { assertActiveAuthUser } from "../lib/active-user";
 import {
   clearRefreshTokenCookie,
@@ -15,7 +21,7 @@ import {
 } from "../lib/auth";
 import { HttpError, asyncHandler } from "../lib/http";
 import { clearRateLimitBucket, createRateLimit } from "../lib/rate-limit";
-import { requireAdmin, requireAuth } from "../middleware/require-auth";
+import { requireAuth } from "../middleware/require-auth";
 
 // NOTE: There is no public `/forgot-password` or `/reset-password` route by design.
 // Admins force a password reset by reissuing the invite token via
@@ -147,6 +153,55 @@ function normalizeFullName(value: unknown): string {
   return trimmed;
 }
 
+function normalizeOrganizationName(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new HttpError(400, "Organization name is required.");
+  }
+
+  const trimmed = value.trim().replace(/\s+/g, " ");
+
+  if (trimmed.length < 2) {
+    throw new HttpError(400, "Organization name must be at least 2 characters.");
+  }
+
+  if (trimmed.length > 255) {
+    throw new HttpError(400, "Organization name must be 255 characters or fewer.");
+  }
+
+  return trimmed;
+}
+
+function slugifyOrganizationName(value: string) {
+  const slug = value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 96);
+
+  return slug || "workspace";
+}
+
+async function buildUniqueOrganizationSlug(name: string) {
+  const base = slugifyOrganizationName(name);
+  for (let i = 0; i < 20; i += 1) {
+    const suffix = i === 0 ? "" : `-${i + 1}`;
+    const slug = `${base}${suffix}`.slice(0, 120);
+    const [existing] = await db
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(and(eq(organizations.slug, slug), isNull(organizations.deletedAt)))
+      .limit(1);
+
+    if (!existing) {
+      return slug;
+    }
+  }
+
+  return `${base.slice(0, 83)}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
 async function findActiveUserByEmailWithPasswordHash(email: string) {
   const [user] = await db
     .select()
@@ -169,34 +224,63 @@ async function findActiveUserById(id: string) {
 
 router.post(
   "/register",
-  requireAuth,
-  requireAdmin,
   asyncHandler(async (req, res) => {
     const email = normalizeEmail(req.body.email);
     const password = normalizePassword(req.body.password);
     const fullName = normalizeFullName(req.body.full_name);
+    const organizationName = normalizeOrganizationName(req.body.organization_name);
 
     const passwordHash = await bcrypt.hash(password, 10);
     const now = new Date();
-    const [user] = await db
-      .insert(users)
-      .values({
-        email,
-        passwordHash,
-        fullName,
-        passwordSetAt: now,
-      })
-      .onConflictDoNothing({
-        target: users.email,
-        where: sql`${users.deletedAt} IS NULL`,
-      })
-      .returning();
+    const slug = await buildUniqueOrganizationSlug(organizationName);
 
-    if (!user) {
-      throw new HttpError(409, "An account with that email already exists.");
-    }
+    const user = await db.transaction(async (tx) => {
+      const [organization] = await tx
+        .insert(organizations)
+        .values({
+          id: crypto.randomUUID(),
+          name: organizationName,
+          slug,
+          status: "trialing",
+        })
+        .returning();
 
-    res.status(201).json({ user: toPublicUser(user) });
+      if (!organization) {
+        throw new HttpError(500, "Failed to create organization.");
+      }
+
+      const [createdUser] = await tx
+        .insert(users)
+        .values({
+          email,
+          passwordHash,
+          fullName,
+          role: "admin",
+          defaultOrganizationId: organization.id,
+          passwordSetAt: now,
+        })
+        .onConflictDoNothing({
+          target: users.email,
+          where: sql`${users.deletedAt} IS NULL`,
+        })
+        .returning();
+
+      if (!createdUser) {
+        throw new HttpError(409, "An account with that email already exists.");
+      }
+
+      await tx.insert(organizationMemberships).values({
+        organizationId: organization.id,
+        userId: createdUser.id,
+        role: "owner",
+        isDefault: true,
+      });
+
+      return createdUser;
+    });
+
+    res.status(201);
+    sendAuthResponse(res, user);
   }),
 );
 

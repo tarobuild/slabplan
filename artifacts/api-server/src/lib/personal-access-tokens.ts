@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { personalAccessTokens, users, type PersonalAccessToken } from "@workspace/db/schema";
+import { resolveOrganizationContextForUser } from "./auth-organization";
 import { HttpError } from "./http";
 
 export const PAT_PREFIX = "cs_pat_";
@@ -15,6 +16,10 @@ export type ResolvedPat = {
   userId: string;
   email: string;
   role: string;
+  organizationId?: string;
+  organizationRole?: string;
+  organizationMembershipId?: string;
+  organizationStatus?: string;
 };
 
 export function isPatToken(token: string): boolean {
@@ -46,11 +51,13 @@ export async function resolvePersonalAccessToken(token: string): Promise<Resolve
     .select({
       id: personalAccessTokens.id,
       userId: personalAccessTokens.userId,
+      organizationId: personalAccessTokens.organizationId,
       scope: personalAccessTokens.scope,
       expiresAt: personalAccessTokens.expiresAt,
       revokedAt: personalAccessTokens.revokedAt,
       email: users.email,
       role: users.role,
+      defaultOrganizationId: users.defaultOrganizationId,
       userIsActive: users.isActive,
       userDeletedAt: users.deletedAt,
     })
@@ -83,6 +90,10 @@ export async function resolvePersonalAccessToken(token: string): Promise<Resolve
     });
 
   const scope: PatScope = row.scope === "read" ? "read" : "read_write";
+  const organization = await resolveOrganizationContextForUser(
+    row.userId,
+    row.organizationId ?? row.defaultOrganizationId,
+  );
 
   return {
     type: "pat",
@@ -91,12 +102,22 @@ export async function resolvePersonalAccessToken(token: string): Promise<Resolve
     userId: row.userId,
     email: row.email,
     role: row.role,
+    ...(organization ?? {}),
   };
 }
 
-export type SafePatRow = Omit<PersonalAccessToken, "tokenHash">;
+export type SafePatRow = Omit<PersonalAccessToken, "tokenHash" | "organizationId">;
 
-export async function listPersonalAccessTokens(userId: string): Promise<SafePatRow[]> {
+function buildPatOwnerConditions(userId: string, organizationId?: string) {
+  return organizationId
+    ? and(eq(personalAccessTokens.userId, userId), eq(personalAccessTokens.organizationId, organizationId))
+    : eq(personalAccessTokens.userId, userId);
+}
+
+export async function listPersonalAccessTokens(
+  userId: string,
+  organizationId?: string,
+): Promise<SafePatRow[]> {
   const rows = await db
     .select({
       id: personalAccessTokens.id,
@@ -111,20 +132,24 @@ export async function listPersonalAccessTokens(userId: string): Promise<SafePatR
       createdAt: personalAccessTokens.createdAt,
     })
     .from(personalAccessTokens)
-    .where(eq(personalAccessTokens.userId, userId))
+    .where(buildPatOwnerConditions(userId, organizationId))
     .orderBy(sql`${personalAccessTokens.createdAt} desc`);
 
   return rows;
 }
 
-export async function revokeToken(userId: string, tokenId: string): Promise<boolean> {
+export async function revokeToken(
+  userId: string,
+  tokenId: string,
+  organizationId?: string,
+): Promise<boolean> {
   const result = await db
     .update(personalAccessTokens)
     .set({ revokedAt: new Date() })
     .where(
       and(
         eq(personalAccessTokens.id, tokenId),
-        eq(personalAccessTokens.userId, userId),
+        buildPatOwnerConditions(userId, organizationId),
         isNull(personalAccessTokens.revokedAt),
       ),
     )

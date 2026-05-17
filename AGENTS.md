@@ -1,93 +1,91 @@
-# AGENTS.md — Rules for AI Coding Agents (Codex, etc.)
+# AGENTS.md - Rules for AI Coding Agents
 
-This file is read automatically by Codex and other AI coding agents at the start of every session. **Follow these rules without exception.**
+This is the **Stone Track** local conversion workspace. It started as a duplicate of the CAD Stone Networks platform, but it is being converted into a new white-label SaaS product.
 
-This is the **CAD Stone Networks** production codebase, owned by Tarobuild and operated for the client Cadstone. Real users depend on it. Treat every change as production-grade.
-
----
+The original production CAD Stone repo lives outside this folder. Do not read from it, edit it, push from it, copy secrets from it, or reconnect this duplicate to it unless the owner explicitly asks.
 
 ## Golden Rules
 
-1. **Never push directly to `main`.** Always work on a branch and open a Pull Request.
-2. **One feature / fix per branch.** Don't bundle unrelated changes.
-3. **Read `replit.md` first.** It contains the project overview, run commands, env vars, stack, and conventions. Conform to them.
-4. **No mocked/placeholder data in production paths.** If something can't be wired up cleanly, fail loudly rather than silently fall back.
-5. **No new dependencies without justification.** Prefer existing libraries already in the monorepo.
-6. **No Resend, no Sentry additions.** Owner has explicitly excluded these from new work. (Existing Sentry plumbing is grandfathered — do not extend it.)
+1. **Do not push anything** unless the owner explicitly asks.
+2. **Do not add a Git remote** unless the owner provides the new repo URL and explicitly approves.
+3. **Do not connect this folder back to the CAD Stone GitHub repo.**
+4. **Read `replit.md` first.** It contains the current project overview, stack, run commands, env vars, and conventions.
+5. **No mocked or placeholder data in production paths.** If something cannot be wired cleanly, fail loudly.
+6. **No production secrets or customer data.** Never copy `.env` values, Supabase secrets, object-storage data, or real customer records from another project.
+7. **No new dependencies without justification.** Prefer existing libraries already in the monorepo.
+8. **No Resend or new Sentry additions.** Existing plumbing is grandfathered, but do not extend it casually.
+9. **Do not change `artifacts/mockup-sandbox`.**
+10. **Do not change files related to `mcp.test.ts`.**
 
----
+## Local Workflow
 
-## Branch & PR Workflow
-
-```bash
-# 1. Always start from latest main
-git checkout main
-git pull origin main
-
-# 2. Create a descriptive branch
-git checkout -b codex/<short-feature-name>
-#   examples: codex/delete-user-endpoint, codex/fix-daily-log-comment-delete
-
-# 3. Make your changes, commit with a clear message
-git add -A
-git commit -m "feat(api): add DELETE /users/:id endpoint with audit log"
-
-# 4. Push the branch (NEVER to main)
-git push -u origin codex/<short-feature-name>
-
-# 5. Open a Pull Request on github.com/tarobuild/Cadstone-Works-Tool
-#    - Title: short summary
-#    - Description: what changed, why, and any manual test steps
-```
-
-The owner reviews and merges PRs manually. **Do not self-merge.**
-
----
-
-## Before You Code — Required Checks
-
-Run these commands and ensure they pass before opening a PR:
+Work in this duplicate only:
 
 ```bash
-pnpm install                       # ensure deps are in sync
-pnpm typecheck                     # must be clean
-pnpm check-api-codegen             # API client must be in sync with the spec
-pnpm knip                          # no dead/unused code
-pnpm --filter @workspace/cadstone run check-eager-bundle  # frontend bundle health
+pwd
+# /Users/cruz/Documents/stone track
 ```
 
-If you change the API spec (`artifacts/api-spec`), regenerate the client:
+Before major changes, inspect the current branch and dirty state:
+
+```bash
+git status --short --branch
+```
+
+Do not run `git pull`, `git push`, or remote-management commands unless the owner explicitly asks. This workspace is intentionally local-only until a new Stone Track repository is approved.
+
+## Required Checks
+
+Run the relevant checks before considering a change complete:
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm check-api-codegen
+pnpm knip
+pnpm --filter @workspace/cadstone run check-eager-bundle
+```
+
+If API spec files change, regenerate generated clients and schemas:
+
 ```bash
 pnpm --filter @workspace/api-spec run codegen
 ```
 
----
+## Project Conventions
 
-## Project Conventions (read `replit.md` for the full list)
+- **Monorepo:** pnpm workspaces.
+- **Packages:** `artifacts/api-server`, `artifacts/cadstone`, `artifacts/api-spec`, and supporting packages under `lib/`.
+- **Runtime:** Node.js 24.
+- **Language:** TypeScript 5.9.
+- **Backend:** Express 5.
+- **Frontend:** React + Vite.
+- **Database:** PostgreSQL through Drizzle ORM.
+- **Storage:** Private object storage via Supabase-compatible APIs.
+- **Validation:** Zod.
+- **API contract:** OpenAPI spec in `lib/api-spec/openapi.yaml`; generated files must not be hand-edited.
+- **Migrations:** Hand-written SQL migrations in `lib/db/migrations`; do not use `drizzle-kit push --force` without explicit owner approval.
 
-- **Monorepo:** pnpm workspaces. Packages live under `artifacts/` (`api-server`, `cadstone` web app, `api-spec`, `mockup-sandbox`).
-- **Stack:** Node.js 24 + TypeScript 5.9, Express 5 backend, React + Vite frontend, Drizzle ORM, PostgreSQL (Supabase), Zod, Tailwind v4 + shadcn/ui, Anthropic Claude for AI features.
-- **API contract:** OpenAPI spec in `artifacts/api-spec` is the source of truth. Generated client lives alongside; never hand-edit generated files.
-- **Auth:** JWT-based (access + refresh + upload + reset secrets). Personal Access Tokens are scoped per-user.
-- **Database:** Drizzle migrations via `drizzle-kit`. Use `drizzle-kit push --force` only with explicit owner approval.
-- **No silent fallbacks.** If an env var or service is missing, throw — don't pretend.
+## Stone Track SaaS Direction
 
----
+The target product is a multi-tenant SaaS platform. Treat tenant isolation as a security boundary:
 
-## Things That Will Get a PR Rejected
+- Add tenant/company scoping deliberately, with migrations and tests.
+- Every authenticated request should eventually carry an active tenant.
+- Admin access must mean tenant-admin access, not all database rows.
+- Files and signed links must be tenant-isolated.
+- Billing and AI usage must be tenant-metered before broad production use.
 
-- Pushing directly to `main`
-- Adding Resend or new Sentry instrumentation
-- Hard-coded secrets, API keys, or production URLs
-- Disabling typecheck, knip, or codegen-drift checks to make CI pass
-- Mocked/dummy data in code paths that ship to production
-- Unrelated formatting churn mixed into a feature PR
-- Schema changes without a corresponding Drizzle migration plan
+See `docs/stone-track-saas-migration-plan.md` for the detailed migration plan.
 
----
+## Rejection Criteria
 
-## Communication
+Changes should be rejected or reworked if they:
 
-- Be explicit about trade-offs in PR descriptions.
-- Flag anything that needs a follow-up (env var, manual DB step, owner decision) at the top of the PR body.
-- If a task is ambiguous, open a draft PR with questions rather than guessing.
+- Push or reconnect this duplicate to the original CAD Stone repo.
+- Add hard-coded secrets, production URLs, or customer data.
+- Add mocked data to production paths.
+- Disable typecheck, knip, or codegen checks to make CI pass.
+- Add billing, auth, or tenant isolation only partially without tests.
+- Mix unrelated formatting churn with feature work.
+- Change schema without a migration plan.

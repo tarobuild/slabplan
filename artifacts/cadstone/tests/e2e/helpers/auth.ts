@@ -4,7 +4,7 @@ import { ANWAR_STATE, CESAR_STATE, PM_STATE, WORKER_STATE } from "./storage"
 
 export type Credentials = { email: string; password: string }
 
-const REFRESH_COOKIE = "cadstone_refresh_token"
+const REFRESH_COOKIE = "stone_track_refresh_token"
 
 function requireSeedPassword(envVar: string, who: string): string {
   const value = process.env[envVar]
@@ -19,16 +19,16 @@ function requireSeedPassword(envVar: string, who: string): string {
 }
 
 export const CESAR: Credentials = {
-  email: "cesar@cadstone.works",
+  email: "admin-primary@stone-track.test",
   get password() {
-    return requireSeedPassword("SEED_ADMIN_CESAR_PASSWORD", "Cesar")
+    return requireSeedPassword("SEED_ADMIN_PRIMARY_PASSWORD", "primary admin")
   },
 }
 
 export const ANWAR: Credentials = {
-  email: "anwar@cadstone.works",
+  email: "admin-secondary@stone-track.test",
   get password() {
-    return requireSeedPassword("SEED_ADMIN_ANWAR_PASSWORD", "Anwar")
+    return requireSeedPassword("SEED_ADMIN_SECONDARY_PASSWORD", "secondary admin")
   },
 }
 
@@ -38,14 +38,14 @@ export const ANWAR: Credentials = {
 // helper reads the same env var so the password used at seed time matches
 // the password used at login time. There is intentionally no fallback —
 // missing env var fails loudly here too.
-export const WORKER_EMAIL = "worker@cadstone.works"
+export const WORKER_EMAIL = "worker@stone-track.test"
 
 export function getWorkerCredentials(): Credentials {
   const password = process.env.SEED_WORKER_FIXTURE_PASSWORD
   if (!password) {
     throw new Error(
       "SEED_WORKER_FIXTURE_PASSWORD is not set. The Playwright worker " +
-        "fixture (worker@cadstone.works) requires this env var. Set it to " +
+        "fixture (worker@stone-track.test) requires this env var. Set it to " +
         "the same value passed to seed-users.mjs --db=local.",
     )
   }
@@ -61,14 +61,14 @@ export function getWorkerCredentials(): Credentials {
 // /auth/accept-invite to set the password to SEED_PM_FIXTURE_PASSWORD).
 // The Playwright suite is the only consumer that needs a logged-in PM,
 // so production never gets this user.
-export const PM_EMAIL = "fixture-pm@cadstone.test"
+export const PM_EMAIL = "fixture-pm@stone-track.test"
 
 export function getPmCredentials(): Credentials {
   const password = process.env.SEED_PM_FIXTURE_PASSWORD
   if (!password) {
     throw new Error(
       "SEED_PM_FIXTURE_PASSWORD is not set. The Playwright PM fixture " +
-        "(fixture-pm@cadstone.test) requires this env var so auth.setup " +
+        "(fixture-pm@stone-track.test) requires this env var so auth.setup " +
         "can consume the invite token and so loginViaApi can fall back " +
         "to /auth/login if the refresh cookie is invalidated. Pick any " +
         "password that satisfies the API's password policy (>= 12 chars, " +

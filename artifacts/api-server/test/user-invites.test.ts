@@ -216,7 +216,7 @@ test("invite endpoint sends a transactional email with the setup link and report
   const sent = capturedEmails[capturedEmails.length - 1]!;
   assert.equal(sent.to, inviteeEmail.toLowerCase());
   assert.equal(sent.tag, "invite");
-  assert.match(sent.subject, /invited you to Cadstone/i);
+  assert.match(sent.subject, /invited you to Stone Track/i);
   assert.ok(
     sent.text.includes(body.inviteUrl),
     "email body must include the absolute setup link",

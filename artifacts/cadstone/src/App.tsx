@@ -47,6 +47,7 @@ const JobFinancialsPage = lazy(() => import("@/pages/job-financials"))
 const JobsPage = lazy(() => import("@/pages/jobs"))
 const LeadsPage = lazy(() => import("@/pages/leads"))
 const LoginPage = lazy(() => import("@/pages/login"))
+const RegisterPage = lazy(() => import("@/pages/register"))
 const MyDailyLogsPage = lazy(() => import("@/pages/my-daily-logs"))
 const CompanySchedulePage = lazy(() => import("@/pages/schedule"))
 const CompanyDailyLogsPage = lazy(() => import("@/pages/daily-logs"))
@@ -150,7 +151,7 @@ function buildRouter(ready: boolean, basename: string | undefined) {
       <Route element={<RootShell />}>
         <Route element={<PublicOnlyRoute ready={ready} />}>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<Navigate to="/login" replace />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
         </Route>
 

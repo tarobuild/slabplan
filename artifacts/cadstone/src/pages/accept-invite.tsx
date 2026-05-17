@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toastApiError } from "@/lib/api-errors"
+import { APP_NAME } from "@/lib/brand"
 import { validatePayload } from "@/lib/validate-payload"
 import { useAuthStore } from "@/store/auth"
 import type { AuthUser } from "@/store/auth"
@@ -95,7 +96,7 @@ export default function AcceptInvitePage() {
         validated,
       )) as AcceptInviteResponse
       setAuth(response.user, response.accessToken)
-      toast.success(`Welcome to CAD Stone Networks, ${response.user.fullName}.`)
+      toast.success(`Welcome to ${APP_NAME}, ${response.user.fullName}.`)
       navigate("/dashboard", { replace: true })
     } catch (err: unknown) {
       toastApiError(err, "Could not accept invite")
@@ -114,7 +115,7 @@ export default function AcceptInvitePage() {
           Set your password
         </h1>
         <p className="text-sm text-slate-600">
-          Choose a password to finish setting up your CAD Stone account. You'll
+          Choose a password to finish setting up your {APP_NAME} account. You'll
           use it together with your work email to sign in.
         </p>
       </div>

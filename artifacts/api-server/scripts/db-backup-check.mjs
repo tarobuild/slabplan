@@ -63,7 +63,14 @@ if (!Number.isFinite(tolerancePct) || tolerancePct <= 0 || tolerancePct >= 100) 
   process.exit(1);
 }
 
-const storage = createSupabaseStorage();
+let storage;
+
+function getStorage() {
+  if (!storage) {
+    storage = createSupabaseStorage();
+  }
+  return storage;
+}
 
 function todayUtc() {
   const now = new Date();
@@ -94,7 +101,7 @@ function median(values) {
  * Build a date → sizeBytes map of all backup objects under the prefix.
  */
 async function loadBackupIndex() {
-  const files = await storage.listAllObjects(`${backupPrefix}/`);
+  const files = await getStorage().listAllObjects(`${backupPrefix}/`);
   const byDate = new Map();
   for (const f of files) {
     const m = /\/(\d{4}-\d{2}-\d{2})\.sql\.gz$/.exec(f.name);
@@ -108,7 +115,8 @@ async function loadBackupIndex() {
 
 async function main() {
   const today = todayUtc();
-  log("info", "check_start", { today, bucket: storage.bucketName, backupPrefix });
+  const storageClient = getStorage();
+  log("info", "check_start", { today, bucket: storageClient.bucketName, backupPrefix });
 
   const index = await loadBackupIndex();
   const failures = [];
@@ -118,7 +126,7 @@ async function main() {
   if (!todayEntry) {
     failures.push({
       code: "missing_today",
-      message: `Expected ${backupPrefix}/${today}.sql.gz to exist in bucket ${storage.bucketName}, but it was not found. The daily backup may not have run.`,
+      message: `Expected ${backupPrefix}/${today}.sql.gz to exist in bucket ${storageClient.bucketName}, but it was not found. The daily backup may not have run.`,
     });
     log("error", "missing_today", { today, expected: `${backupPrefix}/${today}.sql.gz` });
   } else {
@@ -190,7 +198,7 @@ async function main() {
     ].join("\n"),
     context: {
       date: today,
-      bucket: storage.bucketName,
+      bucket: storageClient.bucketName,
       backupPrefix,
       failures,
       sizeReport,

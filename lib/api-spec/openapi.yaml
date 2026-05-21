@@ -2316,6 +2316,10 @@ paths:
           description: Optional status filter.
           schema:
             type: string
+            enum:
+              - open
+              - closed
+              - archived
         - name: clientId
           in: query
           required: false
@@ -11442,7 +11446,7 @@ paths:
                           nullable: true
                           description: For job results, the linked client's company name (or null when unassigned). Omitted for non-job results.
                   pagination:
-                    description: Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`.
+                    description: Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied an explicit `cursor` parameter. Cursor-mode pagination uses `CursorPagination`.
                     oneOf:
                       - type: object
                         required:
@@ -11778,6 +11782,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ArAgingResponse"
+            text/csv:
+              schema:
+                type: string
         "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
@@ -11803,6 +11810,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RevenueResponse"
+            text/csv:
+              schema:
+                type: string
         "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
@@ -11828,6 +11838,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PipelineResponse"
+            text/csv:
+              schema:
+                type: string
         "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
@@ -11853,6 +11866,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DaysToPaymentResponse"
+            text/csv:
+              schema:
+                type: string
         "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
@@ -11878,6 +11894,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JobsByStageResponse"
+            text/csv:
+              schema:
+                type: string
         "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
         "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
@@ -12010,12 +12029,40 @@ components:
       additionalProperties: true
     users_updateProfileSchema:
       type: object
-      additionalProperties: true
-      description: Request schema derived from updateProfileSchema in artifacts/api-server/src/routes/users.ts.
+      additionalProperties: false
+      description: Request body for `PATCH /users/me/profile`.
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        currentPassword:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
     users_changePasswordSchema:
       type: object
-      additionalProperties: true
-      description: Request schema derived from changePasswordSchema in artifacts/api-server/src/routes/users.ts.
+      additionalProperties: false
+      description: Request body for `POST /users/me/change-password`.
+      properties:
+        currentPassword:
+          type: string
+          minLength: 1
+        newPassword:
+          type: string
+          minLength: 8
+      required:
+        - currentPassword
+        - newPassword
     users_inviteUserSchema:
       type: object
       description: Request body for `POST /users` — admin invites a new worker. The user is created with a random placeholder password and the response contains a one-time setup token & path that must be handed to the invitee out of band.
@@ -12040,6 +12087,7 @@ components:
         - role
     users_updateUserSchema:
       type: object
+      additionalProperties: false
       description: Request body for `PATCH /users/{id}` — admin updates a worker's full name, role, or active flag. At least one field must be provided. An admin cannot deactivate their own account through this endpoint.
       properties:
         fullName:
@@ -12054,6 +12102,10 @@ components:
             - crew_member
         isActive:
           type: boolean
+      anyOf:
+        - required: [fullName]
+        - required: [role]
+        - required: [isActive]
     auth_acceptInviteSchema:
       type: object
       description: Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link plus the password they want to use. On success the user is logged in (refresh cookie + access token in response).
@@ -12413,6 +12465,9 @@ components:
         label:
           type: string
           nullable: true
+      oneOf:
+        - required: [sourceContactId]
+        - required: [displayName, email]
     leads_contactUpdateSchema:
       type: object
       description: Request body for updating a lead contact (`PUT /leads/{id}/contacts/{contactId}`).
@@ -12467,20 +12522,74 @@ components:
         - title
     folders_folderBodySchema:
       type: object
-      additionalProperties: true
-      description: Request schema derived from folderBodySchema in artifacts/api-server/src/routes/folders.ts.
+      additionalProperties: false
+      description: Request body for creating a job folder.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        mediaType:
+          type: string
+          enum: [document, photo, video]
+        parentFolderId:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+        - title
+        - mediaType
     folders_folderUpdateSchema:
       type: object
-      additionalProperties: true
-      description: Request schema derived from folderUpdateSchema in artifacts/api-server/src/routes/folders.ts.
+      additionalProperties: false
+      description: Request body for renaming a folder or updating folder permissions.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        viewingPermissions:
+          nullable: true
+          $ref: "#/components/schemas/FolderPermission"
+        uploadingPermissions:
+          nullable: true
+          $ref: "#/components/schemas/FolderPermission"
     folders_moveFolderSchema:
       type: object
-      additionalProperties: true
-      description: Request schema derived from moveFolderSchema in artifacts/api-server/src/routes/folders.ts.
+      additionalProperties: false
+      description: Request body for moving a folder.
+      properties:
+        destinationFolderId:
+          type: string
+          format: uuid
+          nullable: true
     files_renameFileSchema:
       type: object
-      additionalProperties: true
-      description: Request schema derived from renameFileSchema in artifacts/api-server/src/routes/files.ts.
+      additionalProperties: false
+      description: Request body for renaming a file.
+      properties:
+        originalName:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+        - originalName
+    FolderPermission:
+      type: object
+      additionalProperties: false
+      properties:
+        admin:
+          type: boolean
+        project_manager:
+          type: boolean
+        crew_member:
+          type: boolean
+        internal:
+          type: boolean
+        users:
+          type: object
+          additionalProperties:
+            type: boolean
     daily_logs_dailyLogPayloadSchema:
       type: object
       description: Request body for creating or updating a daily log (`POST /jobs/{jobId}/daily-logs`, `PUT /daily-logs/{id}`). On create, `jobId` is taken from the URL; on update the URL identifies the log directly. `customFieldValues` is a free-form object whose values are scalar (string, number, boolean, or null).
@@ -12824,14 +12933,16 @@ components:
           description: Decimal price serialized as string.
         contractValueCents:
           type: integer
-          format: int64
           nullable: true
           minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
         amountPaidCents:
           type: integer
-          format: int64
           nullable: true
           minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
         projectedStart:
           type: string
           format: date
@@ -12974,19 +13085,19 @@ components:
           description: Total number of jobs for this client visible to the caller (regardless of status).
         contractValueCents:
           type: integer
-          format: int64
           minimum: 0
-          description: Sum of `contractValueCents` across all caller-visible jobs for this client. Cents.
+          maximum: 9007199254740991
+          description: Sum of `contractValueCents` across all caller-visible jobs for this client. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
         amountPaidCents:
           type: integer
-          format: int64
           minimum: 0
-          description: Sum of `amountPaidCents` across all caller-visible jobs for this client. Cents.
+          maximum: 9007199254740991
+          description: Sum of `amountPaidCents` across all caller-visible jobs for this client. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
         outstandingCents:
           type: integer
-          format: int64
           minimum: 0
-          description: "AR rollup: `max(0, contractValueCents - amountPaidCents)`. Cents."
+          maximum: 9007199254740991
+          description: "AR rollup: `max(0, contractValueCents - amountPaidCents)`. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`."
         lastActivityAt:
           type: string
           format: date-time
@@ -13090,16 +13201,19 @@ components:
           properties:
             contractValueCents:
               type: integer
-              format: int64
               minimum: 0
+              maximum: 9007199254740991
+              description: Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
             amountPaidCents:
               type: integer
-              format: int64
               minimum: 0
+              maximum: 9007199254740991
+              description: Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
             outstandingCents:
               type: integer
-              format: int64
               minimum: 0
+              maximum: 9007199254740991
+              description: Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
             activeJobCount:
               type: integer
               minimum: 0
@@ -13643,49 +13757,98 @@ components:
       required:
         - exception
     WorkdayExceptionPayload:
-      type: object
       description: Request body for `POST /jobs/{jobId}/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.
-      properties:
-        title:
-          type: string
-          minLength: 1
-          maxLength: 255
-        type:
-          type: string
-          enum:
-            - non_workday
-            - extra_workday
-        startDate:
-          type: string
-          pattern: ^\d{4}-\d{2}-\d{2}$
-        endDate:
-          type: string
-          pattern: ^\d{4}-\d{2}-\d{2}$
-        sameEveryYear:
-          type: boolean
-          default: false
-        categoryId:
-          type: string
-          format: uuid
-          nullable: true
-        appliesToAllJobs:
-          type: boolean
-          default: false
-          description: When true, applies the exception to every active job. Admin role required.
-        jobIds:
-          type: array
-          items:
-            type: string
-            format: uuid
-          default: []
-        notes:
-          type: string
-          nullable: true
-      required:
-        - title
-        - type
-        - startDate
-        - endDate
+      oneOf:
+        - type: object
+          properties:
+            title:
+              type: string
+              minLength: 1
+              maxLength: 255
+            type:
+              type: string
+              enum:
+                - non_workday
+                - extra_workday
+            startDate:
+              type: string
+              pattern: ^\d{4}-\d{2}-\d{2}$
+            endDate:
+              type: string
+              pattern: ^\d{4}-\d{2}-\d{2}$
+            sameEveryYear:
+              type: boolean
+              default: false
+            categoryId:
+              type: string
+              format: uuid
+              nullable: true
+            appliesToAllJobs:
+              type: boolean
+              enum:
+                - true
+              description: When true, applies the exception to every active job. Admin role required.
+            jobIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+              maxItems: 0
+              default: []
+            notes:
+              type: string
+              nullable: true
+          required:
+            - title
+            - type
+            - startDate
+            - endDate
+            - appliesToAllJobs
+        - type: object
+          properties:
+            title:
+              type: string
+              minLength: 1
+              maxLength: 255
+            type:
+              type: string
+              enum:
+                - non_workday
+                - extra_workday
+            startDate:
+              type: string
+              pattern: ^\d{4}-\d{2}-\d{2}$
+            endDate:
+              type: string
+              pattern: ^\d{4}-\d{2}-\d{2}$
+            sameEveryYear:
+              type: boolean
+              default: false
+            categoryId:
+              type: string
+              format: uuid
+              nullable: true
+            appliesToAllJobs:
+              type: boolean
+              enum:
+                - false
+              default: false
+              description: When false or omitted, `jobIds` must contain at least one job.
+            jobIds:
+              type: array
+              minItems: 1
+              items:
+                type: string
+                format: uuid
+            notes:
+              type: string
+              nullable: true
+          required:
+            - title
+            - type
+            - startDate
+            - endDate
+            - jobIds
     WorkdayExceptionUpdatePayload:
       type: object
       description: Request body for `PUT /jobs/{jobId}/workday-exceptions/{exceptionId}`. All fields are optional; omitted fields keep their previous value. Toggling `appliesToAllJobs` is admin-only.
@@ -14270,12 +14433,19 @@ components:
           type: string
         url:
           type: string
+          nullable: true
         mimeType:
+          type: string
+          nullable: true
+        fileId:
+          type: string
+          format: uuid
+          nullable: true
+        fileUrl:
           type: string
           nullable: true
       required:
         - name
-        - url
     DailyLogComment:
       type: object
       description: Comment on a daily log. Replies are nested via `replies` (recursive).
@@ -14603,7 +14773,7 @@ components:
         - updatedAt
     DailyLogListResponse:
       type: object
-      description: Paged daily-log list. The `pagination` field uses `Pagination` (page mode) or `CursorPagination` (cursor mode) depending on whether the request supplied `?cursor=` / `?limit=`.
+      description: Paged daily-log list. The `pagination` field uses `Pagination` in page mode and `CursorPagination` only when the request supplies an explicit `cursor` parameter.
       properties:
         logs:
           type: array
@@ -14705,7 +14875,7 @@ components:
         - files
     MyDailyLogsResponse:
       type: object
-      description: Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) when the request used `?page=`/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.
+      description: Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.
       properties:
         logs:
           type: array
@@ -14893,6 +15063,9 @@ components:
           type: string
         endDate:
           type: string
+        manualEndDate:
+          type: string
+          nullable: true
         workDays:
           type: integer
         isHourly:
@@ -14994,6 +15167,7 @@ components:
         - title
         - startDate
         - endDate
+        - manualEndDate
         - tags
         - assignees
         - assigneeIds
@@ -15015,27 +15189,30 @@ components:
         - item
     ScheduleListResponse:
       type: object
+      description: Schedule list response. `pagination` is page-mode unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.
       properties:
         data:
           type: array
           items:
             $ref: "#/components/schemas/ScheduleItem"
         pagination:
-          type: object
-          properties:
-            page:
-              type: integer
-            limit:
-              type: integer
-            totalItems:
-              type: integer
-            totalPages:
-              type: integer
-          required:
-            - page
-            - limit
-            - totalItems
-            - totalPages
+          oneOf:
+            - type: object
+              properties:
+                page:
+                  type: integer
+                limit:
+                  type: integer
+                totalItems:
+                  type: integer
+                totalPages:
+                  type: integer
+              required:
+                - page
+                - limit
+                - totalItems
+                - totalPages
+            - $ref: "#/components/schemas/CursorPagination"
       required:
         - data
         - pagination
@@ -16052,11 +16229,11 @@ components:
       description: |
         Opaque cursor for stable cursor-based pagination. To bootstrap the
         first cursor page, send `?cursor=&limit=N` (cursor present with no
-        value) or simply `?limit=N` with no `page`/`pageSize` — the server
-        returns the first page in the cursor envelope along with
-        `pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-        on subsequent calls. While in cursor mode `page`/`pageSize` are
-        ignored.
+        value). Requests that only send `?limit=N` remain in page mode unless
+        the endpoint explicitly documents a different bootstrap. Cursor
+        responses include `pagination.nextCursor`; echo that value back as
+        `?cursor=<token>` on subsequent calls. While in cursor mode
+        `page`/`pageSize` are ignored.
       schema:
         type: string
     CursorLimitParam:

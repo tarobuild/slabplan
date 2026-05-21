@@ -10,6 +10,8 @@ import type { DayTimelineSegment, MonthWeekSegment, TimelineHeaderUnit } from ".
 import type { GanttScale } from "./types"
 import { DAY_END_HOUR, DAY_START_HOUR } from "./drag"
 
+const DAY_END_EXCLUSIVE_HOUR = DAY_END_HOUR + 1
+
 export function parseDate(value: string) {
   return new Date(`${value}T12:00:00`)
 }
@@ -238,11 +240,11 @@ function getDaySegmentBounds(item: ScheduleItemRecord, day: string) {
 
   if (item.isHourly) {
     const boundedStart = item.startDate === day ? startHour ?? 8 : DAY_START_HOUR
-    const boundedEnd = itemEndDate(item) === day ? endHour ?? boundedStart + 1 : DAY_END_HOUR
+    const boundedEnd = itemEndDate(item) === day ? endHour ?? boundedStart + 1 : DAY_END_EXCLUSIVE_HOUR
 
     return {
       startHour: Math.max(DAY_START_HOUR, boundedStart),
-      endHour: Math.max(boundedStart + 0.75, Math.min(DAY_END_HOUR, boundedEnd || DAY_END_HOUR)),
+      endHour: Math.max(boundedStart + 0.75, Math.min(DAY_END_EXCLUSIVE_HOUR, boundedEnd || DAY_END_EXCLUSIVE_HOUR)),
     }
   }
 
@@ -278,9 +280,9 @@ export function previewBoundsForDay(day: string, preview: SchedulePreview) {
 
   if (preview.isHourly) {
     const startHour = preview.startDate === day ? parseTimeToHour(preview.startTime) ?? DAY_START_HOUR : DAY_START_HOUR
-    const endHour = preview.endDate === day ? parseTimeToHour(preview.endTime) ?? startHour + 1 : DAY_END_HOUR
+    const endHour = preview.endDate === day ? parseTimeToHour(preview.endTime) ?? startHour + 1 : DAY_END_EXCLUSIVE_HOUR
     const boundedStart = Math.max(DAY_START_HOUR, Math.min(DAY_END_HOUR, startHour))
-    const boundedEnd = Math.max(boundedStart + 0.5, Math.min(DAY_END_HOUR, endHour || boundedStart + 1))
+    const boundedEnd = Math.max(boundedStart + 0.5, Math.min(DAY_END_EXCLUSIVE_HOUR, endHour || boundedStart + 1))
 
     return { startHour: boundedStart, endHour: boundedEnd }
   }

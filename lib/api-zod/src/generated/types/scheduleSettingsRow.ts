@@ -17,6 +17,6 @@ export interface ScheduleSettingsRow {
   showJobNameOnAllListedJobs?: boolean;
   automaticallyMarkItemsComplete?: boolean;
   includeHeaderOnPdfExports?: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }

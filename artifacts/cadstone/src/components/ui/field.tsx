@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import type * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
@@ -194,20 +195,23 @@ function FieldError({
       return children
     }
 
-    if (!errors) {
+    const messages = errors
+      ?.map((error) => error?.message?.trim())
+      .filter((message): message is string => Boolean(message))
+
+    if (!messages?.length) {
       return null
     }
 
-    if (errors?.length === 1 && errors[0]?.message) {
-      return errors[0].message
+    if (messages.length === 1) {
+      return messages[0]
     }
 
     return (
       <ul className="ml-4 flex list-disc flex-col gap-1">
-        {errors.map(
-          (error, index) =>
-            error?.message && <li key={index}>{error.message}</li>
-        )}
+        {messages.map((message, index) => (
+          <li key={index}>{message}</li>
+        ))}
       </ul>
     )
   }, [children, errors])

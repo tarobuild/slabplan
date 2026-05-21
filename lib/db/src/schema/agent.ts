@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   json,
@@ -21,10 +22,18 @@ const timestampTz = (name: string) => timestamp(name, { withTimezone: true });
 
 const baseTimestamps = {
   createdAt: timestampTz("created_at").defaultNow().notNull(),
-  updatedAt: timestampTz("updated_at").defaultNow().$onUpdateFn(() => new Date()).notNull(),
+  updatedAt: timestampTz("updated_at")
+    .defaultNow()
+    .$onUpdateFn(() => new Date())
+    .notNull(),
 };
 
-export const agentMessageRoles = ["user", "assistant", "system", "tool"] as const;
+export const agentMessageRoles = [
+  "user",
+  "assistant",
+  "system",
+  "tool",
+] as const;
 
 // Allowed values for `agent_messages.stopped_reason`. Includes both the
 // Anthropic SDK stop_reason values that the orchestrator forwards verbatim
@@ -48,7 +57,8 @@ export const agentMessageStoppedReasons = [
 ] as const;
 
 export type AgentMessageRole = (typeof agentMessageRoles)[number];
-export type AgentMessageStoppedReason = (typeof agentMessageStoppedReasons)[number];
+export type AgentMessageStoppedReason =
+  (typeof agentMessageStoppedReasons)[number];
 
 export const agentConversations = pgTable(
   "agent_conversations",
@@ -60,12 +70,18 @@ export const agentConversations = pgTable(
     userId: uuid("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
-    title: varchar("title", { length: 255 }).notNull().default("New conversation"),
+    title: varchar("title", { length: 255 })
+      .notNull()
+      .default("New conversation"),
     pinned: boolean("pinned").default(false).notNull(),
     lastMessageAt: timestampTz("last_message_at").defaultNow().notNull(),
     ...baseTimestamps,
   },
   (table) => [
+    unique("agent_conversations_id_organization_id_unique").on(
+      table.id,
+      table.organizationId,
+    ),
     index("agent_conversations_organization_id_idx").on(table.organizationId),
     index("agent_conversations_user_id_idx").on(table.userId),
     index("agent_conversations_user_last_message_idx").on(
@@ -109,9 +125,7 @@ export const agentMessages = pgTable(
     organizationId: uuid("organization_id").references(() => organizations.id, {
       onDelete: "cascade",
     }),
-    conversationId: uuid("conversation_id")
-      .references(() => agentConversations.id, { onDelete: "cascade" })
-      .notNull(),
+    conversationId: uuid("conversation_id").notNull(),
     role: varchar("role", { length: 20 }).notNull(),
     // The displayed text for the message (assistant text or user prompt).
     content: text("content").notNull().default(""),
@@ -127,6 +141,14 @@ export const agentMessages = pgTable(
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      columns: [table.conversationId, table.organizationId],
+      foreignColumns: [
+        agentConversations.id,
+        agentConversations.organizationId,
+      ],
+      name: "agent_messages_conversation_org_fkey",
+    }).onDelete("cascade"),
     index("agent_messages_organization_id_idx").on(table.organizationId),
     index("agent_messages_conversation_id_idx").on(
       table.conversationId,

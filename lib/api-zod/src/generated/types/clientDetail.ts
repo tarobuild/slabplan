@@ -23,9 +23,9 @@ export interface ClientDetail {
   zipCode?: string | null;
   notes?: string | null;
   createdBy?: string | null;
-  createdAt: Date;
-  updatedAt?: Date | null;
-  deletedAt?: Date | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  deletedAt?: string | null;
   contacts: ClientContact[];
   /** Jobs for this client filtered to those the caller can access (admins see all). */
   jobs: JobSummary[];

@@ -23,13 +23,14 @@ import {
 } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { requireAdmin } from "../middleware/require-auth";
+import { stringBoolean } from "../lib/zod-helpers";
 
 const router: IRouter = Router();
 
 const folderListQuerySchema = z.object({
   mediaType: z.enum(["document", "photo", "video"]),
   parentId: z.string().uuid().optional(),
-  all: z.coerce.boolean().optional().default(false),
+  all: stringBoolean.optional().default(false),
 });
 
 const folderBodySchema = z.object({

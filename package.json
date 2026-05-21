@@ -8,19 +8,18 @@
     "pnpm": "10.x"
   },
   "scripts": {
-    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "postinstall": "node scripts/patch-drizzle-errors.mjs",
-    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "preinstall": "sh -c 'case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
+    "build": "node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm run typecheck && node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm run build:web && node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm run build:api",
     "build:api": "pnpm --filter @workspace/api-server run build:server",
     "build:web": "pnpm --filter @workspace/cadstone run build",
     "start:api": "NODE_ENV=production node --enable-source-maps artifacts/api-server/dist/index.mjs",
     "test": "pnpm -r --if-present run test",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "typecheck": "node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm run typecheck:libs && node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "check-api-codegen": "pnpm --filter @workspace/scripts run check-api-codegen",
     "knip": "knip",
     "setup-test-db": "pnpm --filter @workspace/db run setup-test-db",
-    "validate": "pnpm run typecheck && pnpm run check-api-codegen"
+    "validate": "pnpm run typecheck && pnpm run check-api-codegen && pnpm run knip && pnpm --filter @workspace/cadstone run check-eager-bundle"
   },
   "private": true,
   "devDependencies": {

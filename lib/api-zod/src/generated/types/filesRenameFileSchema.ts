@@ -7,8 +7,12 @@
  */
 
 /**
- * Request schema derived from renameFileSchema in artifacts/api-server/src/routes/files.ts.
+ * Request body for renaming a file.
  */
 export interface FilesRenameFileSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  originalName: string;
 }

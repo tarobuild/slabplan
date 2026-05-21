@@ -24,6 +24,7 @@ import {
   leadContacts,
   leadSalespeople,
   leadSources,
+  leadStatuses,
   leadTags,
   leads,
   users,
@@ -137,20 +138,11 @@ function midpointMoney(
   return null;
 }
 
-const LEAD_STATUS_VALUES = [
-  "open",
-  "qualified",
-  "in_negotiation",
-  "won",
-  "lost",
-  "archived",
-] as const;
-
 const leadListQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
   search: z.string().trim().optional(),
-  status: z.enum(LEAD_STATUS_VALUES).optional(),
+  status: z.enum(leadStatuses).optional(),
   // Comma-separated list of statuses to exclude. Used by the Stone Track
   // Leads list to default-hide converted (`won`) leads while still
   // allowing them to be revealed via the "Show converted" toggle. When
@@ -165,8 +157,8 @@ const leadListQuerySchema = z.object({
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
-      const valid = parts.filter((s): s is (typeof LEAD_STATUS_VALUES)[number] =>
-        (LEAD_STATUS_VALUES as readonly string[]).includes(s),
+      const valid = parts.filter((s): s is (typeof leadStatuses)[number] =>
+        (leadStatuses as readonly string[]).includes(s),
       );
       return valid.length > 0 ? valid : undefined;
     }),
@@ -202,7 +194,7 @@ const leadPayloadSchema = z.object({
   estimatedRevenueMin: optionalMoney,
   estimatedRevenueMax: optionalMoney,
   status: z
-    .enum(LEAD_STATUS_VALUES)
+    .enum(leadStatuses)
     .optional()
     .default("open"),
   projectType: optionalString,
@@ -296,7 +288,7 @@ function normalizeUniqueStrings(values: string[]) {
 function toLeadValues(
   data: z.infer<typeof leadPayloadSchema>,
   createdBy: string,
-  organizationId: string | null,
+  organizationId: string,
 ) {
   return {
     organizationId,
@@ -373,7 +365,8 @@ async function ensureLeadAttachmentFolder(
   leadId: string,
   auth: NonNullable<Express.Request["auth"]>,
 ) {
-  const title = `Lead ${leadId} Attachments`;
+  const lead = await getLeadOrThrow(leadId, false, auth);
+  const title = `${lead.title} Attachments`;
   const organizationId = getActiveOrganizationId(auth);
 
   const [existing] = await db
@@ -452,7 +445,7 @@ async function assertClientBelongsToActiveOrganization(
 async function syncLeadSalespeople(
   leadId: string,
   userIds: string[],
-  organizationId: string | null,
+  organizationId: string,
 ) {
   await db.delete(leadSalespeople).where(eq(leadSalespeople.leadId, leadId));
 
@@ -472,7 +465,7 @@ async function syncLeadSalespeople(
 async function syncLeadTags(
   leadId: string,
   tags: string[],
-  organizationId: string | null,
+  organizationId: string,
 ) {
   await db.delete(leadTags).where(eq(leadTags.leadId, leadId));
 
@@ -493,7 +486,7 @@ async function syncLeadSources(
   leadId: string,
   leadSource: string | null,
   sources: string[],
-  organizationId: string | null,
+  organizationId: string,
 ) {
   await db.delete(leadSources).where(eq(leadSources.leadId, leadId));
 

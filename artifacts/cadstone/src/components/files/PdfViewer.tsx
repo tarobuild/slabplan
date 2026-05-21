@@ -224,7 +224,7 @@ export default function PdfViewer({ src, fileId }: { src: string; fileId: string
               onClick={() => setMarkupMode((value) => !value)}
               className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
                 markupMode
-                  ? "bg-blue-600 text-white shadow"
+                  ? "bg-primary text-white shadow"
                   : "text-white/80 hover:bg-white/10"
               }`}
               title={markupMode ? "Exit markup mode" : "Enter markup mode"}

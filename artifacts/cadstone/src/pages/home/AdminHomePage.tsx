@@ -11,8 +11,8 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
   return (
     <div className="space-y-5" data-testid="home-admin">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Business Pulse</h1>
-        <p className="mt-1 text-sm text-slate-500">{prettyDate(today)}</p>
+        <h1 className="text-2xl font-semibold text-foreground">Business Pulse</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{prettyDate(today)}</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -24,14 +24,14 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
           data-testid="home-admin-kpi-ar"
         />
         <Kpi
-          icon={<TrendingUp className="size-4 text-orange-600" />}
+          icon={<TrendingUp className="size-4 text-[hsl(var(--oxide))]" />}
           label="New contract value (MTD)"
           value={formatCents(kpis.newContractValueThisMonthCents)}
           sub={`${kpis.newJobsThisMonth} new job${kpis.newJobsThisMonth === 1 ? "" : "s"}`}
           to="/clients"
         />
         <MobileDrillTile
-          icon={<Briefcase className="size-4 text-sky-600" />}
+          icon={<Briefcase className="size-4 text-stone-600" />}
           label="Active jobs"
           value={String(kpis.activeJobs)}
           to="/clients"
@@ -40,7 +40,7 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
           testId="home-admin-kpi-active-jobs"
         />
         <MobileDrillTile
-          icon={<Users2 className="size-4 text-indigo-600" />}
+          icon={<Users2 className="size-4 text-primary" />}
           label="Open leads"
           value={String(kpis.openLeads)}
           to="/sales/leads"
@@ -51,7 +51,7 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <Card className="border-[#E5E7EB] lg:col-span-2">
+        <Card className="border-border lg:col-span-2">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Top clients by open balance</CardTitle>
           </CardHeader>
@@ -64,7 +64,7 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
                   key={c.clientId ?? "none"}
                   to={c.clientId ? `/clients/${c.clientId}` : "/clients"}
                   data-testid="home-admin-top-client"
-                  className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] px-3 py-2 transition hover:border-orange-300 hover:bg-orange-50/40"
+                  className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 transition hover:border-primary/35 hover:bg-accent/40"
                 >
                   <span className="truncate text-sm font-medium text-slate-900">
                     {c.clientName}
@@ -78,7 +78,7 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
           </CardContent>
         </Card>
 
-        <Card className="border-[#E5E7EB]">
+        <Card className="border-border">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Jobs by stage</CardTitle>
           </CardHeader>
@@ -96,10 +96,7 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
                       <span className="tabular-nums">{row.total}</span>
                     </div>
                     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-orange-500"
-                        style={{ width: `${pct}%` }}
-                      />
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 )
@@ -110,7 +107,7 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card className="border-[#E5E7EB]">
+        <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <FileWarning className="size-4 text-amber-600" />
@@ -128,7 +125,7 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
                   <Link
                     key={inv.id}
                     to={`/jobs/${inv.jobId}/financials`}
-                    className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] px-3 py-2 transition hover:border-orange-300 hover:bg-orange-50/40"
+                    className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 transition hover:border-primary/35 hover:bg-accent/40"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-900">
@@ -148,7 +145,7 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
           </CardContent>
         </Card>
 
-        <Card className="border-[#E5E7EB]">
+        <Card className="border-border">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Recent leads</CardTitle>
           </CardHeader>
@@ -159,8 +156,8 @@ export default function AdminHomePage({ data }: { data: AdminHome }) {
               recentLeads.map((lead) => (
                 <Link
                   key={lead.id}
-                  to="/sales/leads"
-                  className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] px-3 py-2 transition hover:border-orange-300 hover:bg-orange-50/40"
+                  to={`/sales/leads?lead=${encodeURIComponent(lead.id)}`}
+                  className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 transition hover:border-primary/35 hover:bg-accent/40"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-900">{lead.title}</p>
@@ -203,7 +200,7 @@ function Kpi({
     <Link
       to={to}
       {...rest}
-      className="rounded-lg border border-[#E5E7EB] bg-white p-4 transition hover:border-orange-300 hover:bg-orange-50/40"
+      className="rounded-lg border border-border bg-white p-4 transition hover:border-primary/35 hover:bg-accent/40"
     >
       <div className="flex items-center gap-2">
         {icon}
@@ -217,7 +214,7 @@ function Kpi({
 
 function EmptyHint({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-md border border-dashed border-[#E5E7EB] p-3 text-center text-xs text-slate-500">
+    <p className="rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
       {children}
     </p>
   )

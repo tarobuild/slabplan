@@ -13,6 +13,6 @@ export interface DailyLogAttachment {
   fileUrl: string;
   fileSize: number;
   mimeType?: string | null;
-  createdAt: Date;
+  createdAt: string;
   uploadedByName?: string | null;
 }

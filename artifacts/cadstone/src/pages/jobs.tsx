@@ -79,7 +79,7 @@ function StatusPopoverBadge({
           }}
           onKeyDown={(e) => e.stopPropagation()}
           aria-label={`Change status (currently ${STATUS_LABELS[status] ?? status})`}
-          className="group inline-flex items-center gap-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-1"
+          className="group inline-flex items-center gap-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
         >
           <Badge
             variant="outline"
@@ -111,7 +111,7 @@ function StatusPopoverBadge({
             >
               <span className="capitalize">{STATUS_LABELS[option]}</span>
               {status === option ? (
-                <Check className="size-3.5 text-orange-600" />
+                <Check className="size-3.5 text-primary" />
               ) : null}
             </button>
           ))}
@@ -162,7 +162,7 @@ function ProjectManagerPopover({
           }}
           onKeyDown={(e) => e.stopPropagation()}
           aria-label={`Change project manager (currently ${label})`}
-          className="group inline-flex max-w-[160px] items-center gap-1 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+          className="group inline-flex max-w-[160px] items-center gap-1 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <User className="size-3.5 text-slate-400 shrink-0" />
           <span className={`truncate ${current ? "" : "text-slate-400 italic"}`}>
@@ -197,7 +197,7 @@ function ProjectManagerPopover({
             className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none"
           >
             <span className="italic text-slate-500">Unassigned</span>
-            {!projectManagerId ? <Check className="size-3.5 text-orange-600" /> : null}
+            {!projectManagerId ? <Check className="size-3.5 text-primary" /> : null}
           </button>
           {filtered.map((option) => (
             <button
@@ -214,7 +214,7 @@ function ProjectManagerPopover({
             >
               <span className="truncate">{option.fullName}</span>
               {projectManagerId === option.id ? (
-                <Check className="size-3.5 text-orange-600 shrink-0" />
+                <Check className="size-3.5 text-primary shrink-0" />
               ) : null}
             </button>
           ))}
@@ -269,7 +269,7 @@ function DatePopover({
           }}
           onKeyDown={(e) => e.stopPropagation()}
           aria-label={ariaLabel}
-          className="group inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+          className="group inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <Calendar className="size-3.5 text-slate-400 shrink-0" />
           <span className={value ? "" : "text-slate-400"}>{display}</span>
@@ -305,7 +305,6 @@ function DatePopover({
           <Button
             type="button"
             size="sm"
-            style={{ backgroundColor: "#E85D04", color: "#fff" }}
             className="hover:opacity-90 transition-opacity"
             onClick={(e) => {
               e.stopPropagation()
@@ -362,6 +361,7 @@ export default function JobsPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
+  const inlineUpdateQueuesRef = useRef(new Map<string, Promise<void>>())
 
   const [pickerOpen, setPickerOpen] = useState(false)
 
@@ -574,9 +574,11 @@ export default function JobsPage() {
     },
   ) => {
     const snapshots = applyOptimisticPatch(job.id, patch)
-    try {
-      const detail = await jobsGetJobsId(job.id)
-      const current = detail?.job as unknown as Record<string, unknown> | undefined
+    const previousUpdate = inlineUpdateQueuesRef.current.get(job.id) ?? Promise.resolve()
+    const queuedUpdate = previousUpdate.catch(() => undefined).then(async () => {
+      try {
+        const detail = await jobsGetJobsId(job.id)
+        const current = detail?.job as unknown as Record<string, unknown> | undefined
       if (!current) throw new Error("Job not found")
 
       const payload = {
@@ -598,16 +600,26 @@ export default function JobsPage() {
         permitNumber: current.permitNumber ?? null,
         clientId: current.clientId ?? null,
         projectManagerId: current.projectManagerId ?? null,
+        contractValueCents: current.contractValueCents ?? null,
+        amountPaidCents: current.amountPaidCents ?? null,
         ...payloadOverride,
       } as JobsJobPayloadSchema
       await updateJobMutation.mutateAsync({ id: job.id, data: payload })
       toast.success(successMessage)
       invalidateJobsList()
       invalidateAppData(["jobs"])
-    } catch (err: unknown) {
-      rollbackOptimisticPatch(snapshots)
-      toastApiError(err, errorMessage)
-    }
+      } catch (err: unknown) {
+        rollbackOptimisticPatch(snapshots)
+        toastApiError(err, errorMessage)
+      }
+    })
+    inlineUpdateQueuesRef.current.set(job.id, queuedUpdate)
+    queuedUpdate.finally(() => {
+      if (inlineUpdateQueuesRef.current.get(job.id) === queuedUpdate) {
+        inlineUpdateQueuesRef.current.delete(job.id)
+      }
+    })
+    return queuedUpdate
   }
 
   const handleInlineStatusChange = (
@@ -772,7 +784,7 @@ export default function JobsPage() {
                   <TableCell>
                     <Link
                       to={`/jobs/${job.id}`}
-                      className="font-medium text-orange-600 hover:underline"
+                      className="font-medium text-primary hover:underline"
                       onClick={(e) => e.stopPropagation()}
                     >
                       {job.title}
@@ -923,7 +935,7 @@ export default function JobsPage() {
               <div className="min-w-0 flex-1">
                 <Link
                   to={`/jobs/${job.id}`}
-                  className="block truncate text-sm font-medium text-orange-600 hover:underline"
+                  className="block truncate text-sm font-medium text-primary hover:underline"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {job.title}
@@ -1034,4 +1046,3 @@ export default function JobsPage() {
     </div>
   )
 }
-

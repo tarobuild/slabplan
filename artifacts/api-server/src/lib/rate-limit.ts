@@ -164,6 +164,35 @@ function setBindingRateLimitHeaders(
 const GLOBAL_IP_MAX = 10_000;
 const PER_USER_MAX = 2_000;
 
+function positiveIntegerFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+
+  const value = Number(raw);
+  if (Number.isFinite(value) && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+
+  logger.warn(
+    { env: name, value: raw, fallback },
+    "invalid rate-limit environment value; using default",
+  );
+  return fallback;
+}
+
+function assertValidRateLimitOptions(options: RateLimitOptions): void {
+  if (!Number.isFinite(options.max) || !Number.isInteger(options.max) || options.max <= 0) {
+    throw new Error(`Invalid rate limit max for ${options.keyPrefix}`);
+  }
+  if (
+    !Number.isFinite(options.windowMs) ||
+    !Number.isInteger(options.windowMs) ||
+    options.windowMs <= 0
+  ) {
+    throw new Error(`Invalid rate limit windowMs for ${options.keyPrefix}`);
+  }
+}
+
 /**
  * IP-keyed limiter for the entire `/api` surface. Mounted BEFORE
  * `requireAuth`, so `req.auth` is not populated yet — keyed strictly on
@@ -234,9 +263,13 @@ function perUserBucketKey(req: Request) {
 // tight — `AI_PARSE_PER_USER_MAX` (default 20) parses per
 // `AI_PARSE_PER_USER_WINDOW_MS` (default 1 hour). Override via env when
 // load-testing or for one-off bulk imports.
-const AI_PARSE_PER_USER_MAX = Number(process.env.AI_PARSE_PER_USER_MAX ?? 20);
-const AI_PARSE_PER_USER_WINDOW_MS = Number(
-  process.env.AI_PARSE_PER_USER_WINDOW_MS ?? 60 * 60 * 1000,
+const AI_PARSE_PER_USER_MAX = positiveIntegerFromEnv(
+  "AI_PARSE_PER_USER_MAX",
+  20,
+);
+const AI_PARSE_PER_USER_WINDOW_MS = positiveIntegerFromEnv(
+  "AI_PARSE_PER_USER_WINDOW_MS",
+  60 * 60 * 1000,
 );
 
 export function createAiParsePerUserRateLimit(): RequestHandler {
@@ -254,9 +287,13 @@ export function createAiParsePerUserRateLimit(): RequestHandler {
 // schedule, resources, etc.). Defaults to 100 uploads per hour per
 // identity — enough headroom for a normal day on site, low enough that
 // a stuck client loop can't fill object storage. Override via env.
-const UPLOAD_PER_USER_MAX = Number(process.env.UPLOAD_PER_USER_MAX ?? 100);
-const UPLOAD_PER_USER_WINDOW_MS = Number(
-  process.env.UPLOAD_PER_USER_WINDOW_MS ?? 60 * 60 * 1000,
+const UPLOAD_PER_USER_MAX = positiveIntegerFromEnv(
+  "UPLOAD_PER_USER_MAX",
+  100,
+);
+const UPLOAD_PER_USER_WINDOW_MS = positiveIntegerFromEnv(
+  "UPLOAD_PER_USER_WINDOW_MS",
+  60 * 60 * 1000,
 );
 
 export function createUploadPerUserRateLimit(): RequestHandler {
@@ -302,6 +339,7 @@ export async function clearRateLimitBucket(
 }
 
 export function createRateLimit(options: RateLimitOptions): RequestHandler {
+  assertValidRateLimitOptions(options);
   return (req: Request, res: Response, next: NextFunction) => {
     const key = options.resolveKey(req);
 

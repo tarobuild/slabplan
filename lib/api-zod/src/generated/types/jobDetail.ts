@@ -52,8 +52,8 @@ export interface JobDetail {
    * @maximum 9007199254740991
    */
   amountPaidCents?: number | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
   createdById?: string | null;
   createdByName?: string | null;
   assignees: JobAssignee[];

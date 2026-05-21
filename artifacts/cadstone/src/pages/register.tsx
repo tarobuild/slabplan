@@ -41,8 +41,8 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] px-4 py-10">
-      <Card className="w-full max-w-sm border-[#E5E7EB] bg-white shadow-sm">
+    <div className="app-surface flex min-h-screen items-center justify-center px-4 py-10">
+      <Card className="w-full max-w-sm border-border bg-card shadow-sm">
         <CardHeader className="space-y-3 items-center text-center">
           <img
             src={APP_LOGO_PATH}
@@ -50,8 +50,8 @@ export default function RegisterPage() {
             className="h-12 w-auto mx-auto"
           />
           <div>
-            <CardTitle className="text-lg text-slate-900">Create an account</CardTitle>
-            <CardDescription className="text-sm text-slate-500 mt-0.5">{APP_NAME}</CardDescription>
+            <CardTitle className="text-lg text-foreground">Create an account</CardTitle>
+            <CardDescription className="mt-0.5 text-sm text-muted-foreground">{APP_NAME}</CardDescription>
           </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -111,9 +111,9 @@ export default function RegisterPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Creating account…" : "Create account"}
             </Button>
-            <p className="text-sm text-slate-500 text-center">
+            <p className="text-center text-sm text-muted-foreground">
               Already have an account?{" "}
-              <Link to="/login" className="text-orange-600 hover:underline">
+              <Link to="/login" className="text-primary hover:underline">
                 Sign in
               </Link>
             </p>

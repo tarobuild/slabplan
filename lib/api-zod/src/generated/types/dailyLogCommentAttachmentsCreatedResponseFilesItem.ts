@@ -12,5 +12,5 @@ export type DailyLogCommentAttachmentsCreatedResponseFilesItem = {
   mimeType: string | null;
   fileSize: number | null;
   fileUrl: string | null;
-  createdAt: Date | null;
+  createdAt: string | null;
 };

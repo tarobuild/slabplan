@@ -4,7 +4,9 @@ import { and, asc, count, desc, eq, inArray, isNotNull, isNull, notInArray, sql,
 import type { Response } from "express";
 import {
   DANGEROUS_UPLOAD_EXTENSIONS,
+  VIDEO_UPLOAD_EXTENSIONS,
   dangerousUploadMessage,
+  extensionOf,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import {
@@ -21,7 +23,7 @@ import { redactActivityRowsForAuth } from "./activity-visibility";
 import { encodeCursor, type CursorPayload } from "./cursor";
 import { FILE_RESPONSE_CSP } from "./file-serving";
 import { HttpError } from "./http";
-import { organizationScopeCondition } from "./tenant-scope";
+import { getActiveOrganizationId, organizationScopeCondition } from "./tenant-scope";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -55,7 +57,7 @@ export const photoExtensions = [
   ".bmp",
   ".svg",
 ];
-export const videoExtensions = [".mp4", ".mov", ".avi", ".webm", ".m4v"];
+export const videoExtensions = [...VIDEO_UPLOAD_EXTENSIONS];
 
 const GLOBAL_SYSTEM_FOLDERS = [
   {
@@ -168,7 +170,7 @@ const JOB_TEMPLATE_FOLDERS: Array<{
 ];
 
 function lowerExtension(fileName: string) {
-  return path.extname(fileName).toLowerCase();
+  return extensionOf(fileName);
 }
 
 function safeZipPathComponent(value: string | null | undefined, fallback: string) {
@@ -350,6 +352,12 @@ function assertNestedFolderAllowed(mediaType: string, parentFolderId: string | n
   if (parentFolderId && mediaType !== "document") {
     throw new HttpError(400, "Nested folders are only supported in Documents.");
   }
+}
+
+function folderOrganizationCondition(folder: Pick<Folder, "organizationId">): SQL {
+  return folder.organizationId
+    ? eq(folders.organizationId, folder.organizationId)
+    : isNull(folders.organizationId);
 }
 
 export async function getAllFoldersForJob(
@@ -604,7 +612,10 @@ async function listFoldersForScope(params: {
   // trees stay performant — for non-admins this filters out folders with
   // restrictive `viewingPermissions` before they ever reach JS.
   const visibilityCondition = buildFolderVisibilityCondition(params.auth);
-  const extraConditions: SQL[] = visibilityCondition ? [visibilityCondition] : [];
+  const extraConditions: SQL[] = [
+    organizationScopeCondition(params.auth, folders.organizationId),
+    ...(visibilityCondition ? [visibilityCondition] : []),
+  ];
   const allFolders = await getAllFoldersForJob(
     params.jobId,
     params.mediaType,
@@ -959,10 +970,20 @@ export async function createResourceFolder(params: {
   parentFolderId: string | null;
   title: string;
   userId: string;
+  auth: AuthContext;
 }) {
+  const organizationId = getActiveOrganizationId(params.auth);
+  if (!organizationId) {
+    throw new HttpError(400, "An active organization is required.", undefined, "organization-required");
+  }
+
   if (params.parentFolderId) {
     const parentFolder = await getFolderOrThrow(params.parentFolderId);
-    if (parentFolder.jobId !== null || parentFolder.mediaType !== "document") {
+    if (
+      parentFolder.jobId !== null ||
+      parentFolder.mediaType !== "document" ||
+      parentFolder.organizationId !== organizationId
+    ) {
       throw new HttpError(400, "Parent folder must be a resource folder.");
     }
   }
@@ -970,6 +991,7 @@ export async function createResourceFolder(params: {
   const [folder] = await db
     .insert(folders)
     .values({
+      organizationId,
       jobId: null,
       scope: "resource",
       parentFolderId: params.parentFolderId,
@@ -987,6 +1009,7 @@ export async function createResourceFolder(params: {
     action: "created",
     userId: params.userId,
     jobId: null,
+    organizationId,
     mediaType: folder.mediaType,
     folderId: folder.id,
     description: `Created resource folder ${folder.title}`,
@@ -1054,11 +1077,20 @@ export async function moveFolder(params: {
 
   if (params.destinationFolderId) {
     const destination = await getFolderOrThrow(params.destinationFolderId);
-    if (destination.jobId !== folder.jobId || destination.mediaType !== folder.mediaType) {
+    if (
+      destination.jobId !== folder.jobId ||
+      destination.mediaType !== folder.mediaType ||
+      destination.organizationId !== folder.organizationId
+    ) {
       throw new HttpError(400, "Destination folder does not match the selected job and media type.");
     }
 
-    const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
+    const allFolders = await getAllFoldersForJob(
+      folder.jobId ?? null,
+      folder.mediaType,
+      true,
+      [folderOrganizationCondition(folder)],
+    );
     const subtreeIds = new Set(collectDescendantFolderIds(folder.id, allFolders));
 
     if (subtreeIds.has(destination.id)) {
@@ -1096,7 +1128,12 @@ export async function copyFolder(params: {
   const folder = await getFolderOrThrow(params.folderId);
   // Walk only live (non-deleted) descendants so a copy never resurrects rows
   // that were soft-deleted from the source tree.
-  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, false);
+  const allFolders = await getAllFoldersForJob(
+    folder.jobId ?? null,
+    folder.mediaType,
+    false,
+    [folderOrganizationCondition(folder)],
+  );
   const subtreeIds = collectDescendantFolderIds(folder.id, allFolders);
   const subtreeFolders = allFolders.filter((candidate) => subtreeIds.includes(candidate.id));
   const subtreeFiles = await getAllFilesForFolderIds(subtreeIds, false);
@@ -1112,6 +1149,7 @@ export async function copyFolder(params: {
       const [created] = await tx
         .insert(folders)
         .values({
+          organizationId: currentFolder.organizationId,
           jobId: currentFolder.jobId,
           scope: currentFolder.scope,
           leadId: currentFolder.leadId,
@@ -1142,6 +1180,7 @@ export async function copyFolder(params: {
       }
 
       await tx.insert(files).values({
+        organizationId: currentFile.organizationId,
         folderId: nextFolderId,
         filename: currentFile.filename,
         originalName: currentFile.originalName,
@@ -1180,7 +1219,12 @@ export async function softDeleteFolder(params: {
   const folder = await getFolderOrThrow(params.folderId);
   assertFolderEditable(folder);
 
-  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
+  const allFolders = await getAllFoldersForJob(
+    folder.jobId ?? null,
+    folder.mediaType,
+    true,
+    [folderOrganizationCondition(folder)],
+  );
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
   const deletedAt = new Date();
 
@@ -1221,7 +1265,12 @@ export async function restoreFolder(params: {
     return folder;
   }
 
-  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
+  const allFolders = await getAllFoldersForJob(
+    folder.jobId ?? null,
+    folder.mediaType,
+    true,
+    [folderOrganizationCondition(folder)],
+  );
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
   const folderMap = new Map(allFolders.map((currentFolder) => [currentFolder.id, currentFolder]));
   const ancestorIdsToRestore: string[] = [];
@@ -1288,7 +1337,12 @@ export async function purgeFolder(params: {
   userId: string;
 }) {
   const folder = await getFolderOrThrow(params.folderId, true);
-  const allFolders = await getAllFoldersForJob(folder.jobId ?? null, folder.mediaType, true);
+  const allFolders = await getAllFoldersForJob(
+    folder.jobId ?? null,
+    folder.mediaType,
+    true,
+    [folderOrganizationCondition(folder)],
+  );
   const folderIds = collectDescendantFolderIds(folder.id, allFolders);
   const subtreeFiles = await getAllFilesForFolderIds(folderIds, true);
   const fileUrlsToDelete = await listExclusiveFileUrlsToDelete(subtreeFiles);
@@ -1935,7 +1989,10 @@ export async function collectFolderZipEntries(params: {
   // (the route already verified the root) and drop soft-deleted folders so
   // trashed subtrees never get re-zipped behind the user's back.
   const visibilityCondition = buildFolderVisibilityCondition(params.auth);
-  const extraConditions: SQL[] = visibilityCondition ? [visibilityCondition] : [];
+  const extraConditions: SQL[] = [
+    folderOrganizationCondition(folder),
+    ...(visibilityCondition ? [visibilityCondition] : []),
+  ];
   const allFolders = await getAllFoldersForJob(
     folder.jobId ?? null,
     folder.mediaType,

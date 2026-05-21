@@ -5,10 +5,17 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { FoldersFolderBodySchemaMediaType } from "./foldersFolderBodySchemaMediaType";
 
 /**
- * Request schema derived from folderBodySchema in artifacts/api-server/src/routes/folders.ts.
+ * Request body for creating a job folder.
  */
 export interface FoldersFolderBodySchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  mediaType: FoldersFolderBodySchemaMediaType;
+  parentFolderId?: string | null;
 }

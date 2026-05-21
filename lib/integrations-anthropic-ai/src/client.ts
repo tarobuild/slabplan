@@ -22,4 +22,9 @@ export const anthropic = new Proxy({} as Anthropic, {
   get(_target, property, receiver) {
     return Reflect.get(getAnthropicClient(), property, receiver);
   },
+  set(_target, property, value) {
+    (getAnthropicClient() as unknown as Record<PropertyKey, unknown>)[property] =
+      value;
+    return true;
+  },
 });

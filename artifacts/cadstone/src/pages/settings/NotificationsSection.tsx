@@ -92,6 +92,7 @@ export default function NotificationsSection() {
   }
 
   const handleToggle = async (event: NotificationEvent, next: boolean) => {
+    if (savingKey) return
     const previous = valueFor(event)
     setPrefs((p) => ({ ...p, [event.key]: next }))
     setSavingKey(event.key)
@@ -136,6 +137,7 @@ export default function NotificationsSection() {
             {EVENTS.map((event) => {
               const checked = valueFor(event)
               const isSaving = savingKey === event.key
+              const saveInProgress = savingKey !== null
               return (
                 <li
                   key={event.key}
@@ -159,7 +161,7 @@ export default function NotificationsSection() {
                     <Switch
                       checked={checked}
                       onCheckedChange={(v) => handleToggle(event, v)}
-                      disabled={isSaving}
+                      disabled={saveInProgress}
                       aria-label={`${event.label}: ${checked ? "on" : "off"}`}
                     />
                   </div>

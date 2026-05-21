@@ -37,32 +37,34 @@ const LABELS: Record<AgentCitation["kind"], string> = {
   activity: "Activity",
 }
 
-function hrefFor(citation: AgentCitation): string | null {
+export function hrefFor(citation: AgentCitation): string | null {
+  const id = encodeURIComponent(citation.id)
+  const jobId = citation.jobId ? encodeURIComponent(citation.jobId) : null
   switch (citation.kind) {
     case "job":
-      return `/jobs/${citation.id}`
+      return `/jobs/${id}`
     case "lead":
-      return `/sales/leads?lead=${citation.id}`
+      return `/sales/leads?lead=${id}`
     case "client":
-      return `/clients?client=${citation.id}`
+      return `/clients?client=${id}`
     case "folder":
-      return citation.jobId
-        ? `/jobs/${citation.jobId}/files/documents?folder=${citation.id}`
+      return jobId
+        ? `/jobs/${jobId}/files/documents?folder=${id}`
         : null
     case "file":
-      return citation.jobId
-        ? `/jobs/${citation.jobId}/files/documents?file=${citation.id}`
+      return jobId
+        ? `/jobs/${jobId}/files/documents?file=${id}`
         : null
     case "daily_log":
-      return citation.jobId
-        ? `/jobs/${citation.jobId}/daily-logs?log=${citation.id}`
-        : `/daily-logs/mine?log=${citation.id}`
+      return jobId
+        ? `/jobs/${jobId}/daily-logs?focus=${id}`
+        : `/daily-logs/mine?focus=${id}`
     case "schedule_item":
-      return citation.jobId
-        ? `/jobs/${citation.jobId}/schedule?item=${citation.id}`
+      return jobId
+        ? `/jobs/${jobId}/schedule?focus=${id}`
         : null
     case "user":
-      return `/settings/team?user=${citation.id}`
+      return `/settings/team?user=${id}`
     case "activity":
       return null
     default:
@@ -95,8 +97,8 @@ export default function CitationChip({
   )
 
   const baseClasses = cn(
-    "inline-flex max-w-full items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs",
-    href ? "hover:border-orange-400 hover:bg-orange-50" : "cursor-default opacity-80",
+    "inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-white px-2 py-1 text-xs",
+    href ? "hover:border-primary/40 hover:bg-accent/50" : "cursor-default opacity-80",
     className,
   )
 

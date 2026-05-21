@@ -10,6 +10,6 @@ import type { SearchGetSearch200ResultsItem } from "./searchGetSearch200ResultsI
 
 export type SearchGetSearch200 = {
   results: SearchGetSearch200ResultsItem[];
-  /** Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`. */
+  /** Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied an explicit `cursor` parameter. Cursor-mode pagination uses `CursorPagination`. */
   pagination: SearchGetSearch200Pagination;
 };

@@ -10,23 +10,18 @@ import type { ReportFromParamParameter } from "./reportFromParamParameter";
 import type { ReportRangeParamParameter } from "./reportRangeParamParameter";
 import type { ReportToParamParameter } from "./reportToParamParameter";
 
-export type ReportsGetReportsRevenueParams = {
-  /**
-   * Preset date range. Use `custom` together with `from` and `to`.
-   */
-  range?: ReportRangeParamParameter;
-  /**
-   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  from?: ReportFromParamParameter;
-  /**
-   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  to?: ReportToParamParameter;
-  /**
-   * Response format. JSON (default) or CSV download.
-   */
+type ReportsGetReportsRevenueParamsBase = {
   format?: ReportFormatParamParameter;
 };
+
+export type ReportsGetReportsRevenueParams =
+  | (ReportsGetReportsRevenueParamsBase & {
+      range?: Exclude<ReportRangeParamParameter, "custom">;
+      from?: ReportFromParamParameter;
+      to?: ReportToParamParameter;
+    })
+  | (ReportsGetReportsRevenueParamsBase & {
+      range: "custom";
+      from: ReportFromParamParameter;
+      to: ReportToParamParameter;
+    });

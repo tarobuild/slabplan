@@ -33,7 +33,7 @@ const router: IRouter = Router();
 
 const MAX_PAGE_SIZE = 25;
 const MAX_PAGE = 20;
-const MAX_PER_SOURCE_FETCH = 200;
+const MAX_PER_SOURCE_FETCH = MAX_PAGE * MAX_PAGE_SIZE + 1;
 
 const querySchema = z.object({
   // Optional at the schema level — the handler enforces "required on

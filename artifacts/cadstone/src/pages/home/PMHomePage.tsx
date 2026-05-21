@@ -14,6 +14,9 @@ import type { PmHome } from "./types"
 
 export default function PMHomePage({ data }: { data: PmHome }) {
   const { week, atRisk, teamLogs, summary, today } = data
+  const samples = Array.isArray(atRisk.samples)
+    ? { overdue: [], missingLogJobs: [], pendingChangeOrders: [] }
+    : atRisk.samples
 
   return (
     <div className="space-y-5" data-testid="home-pm">
@@ -70,7 +73,7 @@ export default function PMHomePage({ data }: { data: PmHome }) {
         />
       </div>
 
-      <Card className="border-[#E5E7EB]" data-testid="home-pm-at-risk">
+      <Card className="border-border" data-testid="home-pm-at-risk">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <AlertTriangle className="size-4 text-amber-600" />
@@ -82,7 +85,7 @@ export default function PMHomePage({ data }: { data: PmHome }) {
             label="Overdue items"
             count={atRisk.overdueScheduleItems}
             to="/schedule?status=overdue&view=list"
-            tooltip={atRisk.samples.overdue
+            tooltip={samples.overdue
               .map((i) => `${i.title} — ${i.jobTitle ?? "?"} (due ${i.endDate})`)
               .join("\n")}
             data-testid="home-pm-at-risk-overdue"
@@ -91,14 +94,14 @@ export default function PMHomePage({ data }: { data: PmHome }) {
             label="Jobs missing logs (3+ working days)"
             count={atRisk.jobsMissingLogs}
             to="/at-risk/missing-logs"
-            tooltip={atRisk.samples.missingLogJobs.map((j) => j.title).join("\n")}
+            tooltip={samples.missingLogJobs.map((j) => j.title).join("\n")}
             data-testid="home-pm-at-risk-missing-logs"
           />
           <AtRiskTile
             label="Pending change orders"
             count={atRisk.pendingChangeOrders}
             to="/at-risk/pending-change-orders"
-            tooltip={atRisk.samples.pendingChangeOrders
+            tooltip={samples.pendingChangeOrders
               .map((c) => `#${c.number} — ${c.jobTitle ?? "?"}`)
               .join("\n")}
             data-testid="home-pm-at-risk-cos"
@@ -107,10 +110,10 @@ export default function PMHomePage({ data }: { data: PmHome }) {
       </Card>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <Card className="border-[#E5E7EB] lg:col-span-2">
+        <Card className="border-border lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarRange className="size-4 text-orange-600" />
+              <CalendarRange className="size-4 text-primary" />
               This week's schedule
             </CardTitle>
             <Badge variant="secondary">{week.items.length}</Badge>
@@ -123,7 +126,7 @@ export default function PMHomePage({ data }: { data: PmHome }) {
                 <Link
                   key={item.id}
                   to={`/jobs/${item.jobId}/schedule`}
-                  className="flex items-center gap-2 rounded-md border border-[#E5E7EB] px-3 py-2 transition hover:border-orange-300 hover:bg-orange-50/40"
+                  className="flex items-center gap-2 rounded-md border border-border px-3 py-2 transition hover:border-primary/35 hover:bg-accent/40"
                 >
                   <span
                     className="size-2 shrink-0 rounded-full"
@@ -145,10 +148,10 @@ export default function PMHomePage({ data }: { data: PmHome }) {
           </CardContent>
         </Card>
 
-        <Card className="border-[#E5E7EB]">
+        <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="size-4 text-orange-600" />
+              <FileText className="size-4 text-primary" />
               Team logs (24h)
             </CardTitle>
             <Badge variant="secondary">{teamLogs.length}</Badge>
@@ -161,7 +164,7 @@ export default function PMHomePage({ data }: { data: PmHome }) {
                 <Link
                   key={log.id}
                   to={`/jobs/${log.jobId}/daily-logs`}
-                  className="block rounded-md border border-[#E5E7EB] px-3 py-2 transition hover:border-orange-300 hover:bg-orange-50/40"
+                  className="block rounded-md border border-border px-3 py-2 transition hover:border-primary/35 hover:bg-accent/40"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="truncate text-sm font-medium text-slate-900">

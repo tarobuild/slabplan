@@ -2,6 +2,8 @@ import {
   DEFAULT_SCHEDULE_COLOR,
   addBusinessDays,
   calculateBusinessEndDate,
+  classifyWorkday,
+  dateKey,
   deriveScheduleStatus,
   type ScheduleItemPayload,
   type ScheduleItemRecord,
@@ -39,7 +41,7 @@ export function schedulePayloadFromItem(item: ScheduleItemRecord): ScheduleItemP
     assigneeIds: [...item.assigneeIds].sort(),
     startDate: item.startDate,
     workDays: Math.max(item.workDays, 1),
-    endDate: null,
+    endDate: item.manualEndDate ?? null,
     isHourly: !!item.isHourly,
     startTime: item.isHourly ? item.startTime : null,
     endTime: item.isHourly ? item.endTime : null,
@@ -71,6 +73,7 @@ export function schedulePayloadFromItem(item: ScheduleItemRecord): ScheduleItemP
     visibleToInstallers: item.visibleToInstallers ?? true,
     visibleToOfficeStaff: item.visibleToOfficeStaff ?? true,
     isComplete: item.isComplete ?? false,
+    isPersonalTodo: item.isPersonalTodo ?? false,
   }
 }
 
@@ -85,6 +88,30 @@ export function scheduleDraftSignature(item: ScheduleItemRecord) {
       .filter((note) => isDraftScheduleNoteId(note.id))
       .map((note) => note.note),
   })
+}
+
+function calculateBusinessStartDate(
+  endDate: string,
+  workDays: number,
+  exceptions: ScheduleWorkdayException[] = [],
+) {
+  const current = new Date(`${endDate}T00:00:00`)
+
+  while (!classifyWorkday(current, exceptions).isWorkday) {
+    current.setDate(current.getDate() - 1)
+  }
+
+  let remaining = Math.max(workDays, 1)
+
+  while (remaining > 1) {
+    current.setDate(current.getDate() - 1)
+
+    if (classifyWorkday(current, exceptions).isWorkday) {
+      remaining -= 1
+    }
+  }
+
+  return dateKey(current)
 }
 
 function resolveDraftPredecessorStartDate(
@@ -121,7 +148,7 @@ function resolveDraftPredecessorStartDate(
 
     if (predecessor.dependencyType === "finish_to_finish") {
       const desiredEnd = addBusinessDays(linked.endDate, predecessor.lagDays, workdayExceptions)
-      const candidateStart = calculateBusinessEndDate(desiredEnd, Math.max(workDays, 1), workdayExceptions)
+      const candidateStart = calculateBusinessStartDate(desiredEnd, Math.max(workDays, 1), workdayExceptions)
       if (candidateStart > resolvedStartDate) {
         resolvedStartDate = candidateStart
       }
@@ -129,7 +156,7 @@ function resolveDraftPredecessorStartDate(
     }
 
     const desiredEnd = addBusinessDays(linked.startDate, predecessor.lagDays, workdayExceptions)
-    const candidateStart = calculateBusinessEndDate(desiredEnd, Math.max(workDays, 1), workdayExceptions)
+    const candidateStart = calculateBusinessStartDate(desiredEnd, Math.max(workDays, 1), workdayExceptions)
     if (candidateStart > resolvedStartDate) {
       resolvedStartDate = candidateStart
     }
@@ -241,7 +268,8 @@ export function normalizeDraftScheduleItems(
             workdayExceptions,
           )
         : item.startDate
-      const nextEndDate = calculateBusinessEndDate(nextStartDate, item.workDays, workdayExceptions)
+      const nextEndDate =
+        item.manualEndDate ?? calculateBusinessEndDate(nextStartDate, item.workDays, workdayExceptions)
 
       if (nextStartDate !== item.startDate || nextEndDate !== item.endDate) {
         changed = true

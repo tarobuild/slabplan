@@ -7,8 +7,17 @@
  */
 
 /**
- * Request schema derived from updateProfileSchema in artifacts/api-server/src/routes/users.ts.
+ * Request body for `PATCH /users/me/profile`.
  */
 export interface UsersUpdateProfileSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 2
+   * @maxLength 255
+   */
+  fullName?: string;
+  /** @maxLength 255 */
+  email?: string;
+  currentPassword?: string | null;
+  phone?: string | null;
+  avatarUrl?: string | null;
 }

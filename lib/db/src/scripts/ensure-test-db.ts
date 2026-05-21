@@ -5,6 +5,7 @@ import pg from "pg";
 
 const DEFAULT_TEST_DATABASE_URL =
   "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test";
+const ALLOW_REMOTE_TEST_RESET_ENV = "STONE_TRACK_ALLOW_REMOTE_TEST_DATABASE_RESET";
 
 // A handful of tables the test suites rely on. If any are missing we treat
 // the DB as un-provisioned and trigger setup-test-db. We deliberately keep
@@ -17,6 +18,48 @@ function resolveTestDatabaseUrl(): string {
     process.env.CADSTONE_TEST_DATABASE_URL ??
     DEFAULT_TEST_DATABASE_URL
   );
+}
+
+function isLocalHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function normalizedUrl(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    return new URL(raw).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function validateTestDatabaseUrl(raw: string): void {
+  const testUrl = new URL(raw);
+  const dbName = decodeURIComponent(testUrl.pathname.replace(/^\//, ""));
+  if (!dbName) {
+    throw new Error("TEST_DATABASE_URL must include a database name.");
+  }
+
+  if (!/(^|[_-])test($|[_-])|_test$|test_/i.test(dbName)) {
+    throw new Error(
+      `Refusing to manage database "${dbName}" because its name does not look like a test database.`,
+    );
+  }
+
+  if (!isLocalHost(testUrl.hostname) && process.env[ALLOW_REMOTE_TEST_RESET_ENV] !== "true") {
+    throw new Error(
+      `Refusing to manage remote test database at "${testUrl.hostname}" without ${ALLOW_REMOTE_TEST_RESET_ENV}=true.`,
+    );
+  }
+
+  const target = testUrl.toString();
+  for (const envVar of ["SUPABASE_DATABASE_URL"]) {
+    if (normalizedUrl(process.env[envVar]) === target) {
+      throw new Error(
+        `Refusing to manage TEST_DATABASE_URL because it matches ${envVar}.`,
+      );
+    }
+  }
 }
 
 function isConnectionRefused(error: unknown): boolean {
@@ -85,6 +128,7 @@ function runSetupTestDb(): Promise<void> {
 
 async function main(): Promise<void> {
   const testDatabaseUrl = resolveTestDatabaseUrl();
+  validateTestDatabaseUrl(testDatabaseUrl);
 
   let provisioned = false;
   try {

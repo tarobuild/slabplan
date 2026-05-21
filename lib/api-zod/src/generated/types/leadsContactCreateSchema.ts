@@ -9,7 +9,7 @@
 /**
  * Request body for creating a lead contact (`POST /leads/{id}/contacts`). When `sourceContactId` is set the new contact is cloned from an existing contact and the other fields are optional. Otherwise `displayName` and `email` are required.
  */
-export interface LeadsContactCreateSchema {
+type LeadsContactCreateSchemaBase = {
   /** Optional: clone an existing lead contact by id rather than creating a new one from scratch. */
   sourceContactId?: string;
   firstName?: string | null;
@@ -24,4 +24,11 @@ export interface LeadsContactCreateSchema {
   cellPhone?: string | null;
   email?: string | null;
   label?: string | null;
-}
+};
+
+export type LeadsContactCreateSchema =
+  | (LeadsContactCreateSchemaBase & { sourceContactId: string })
+  | (LeadsContactCreateSchemaBase & {
+      displayName: string;
+      email: string;
+    });

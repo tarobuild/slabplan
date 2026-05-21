@@ -33,14 +33,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-background">
       {/* Left panel — brand identity (desktop only) */}
       <div
         className="relative hidden flex-col justify-between p-12 lg:flex lg:w-1/2"
         style={{
-          backgroundColor: "#1D1D1D",
+          backgroundColor: "hsl(var(--nav))",
           backgroundImage:
-            "repeating-linear-gradient(135deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 60px)",
+            "radial-gradient(circle at 22% 18%, hsl(var(--oxide) / 0.2), transparent 34%), repeating-linear-gradient(135deg, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px, transparent 1px, transparent 56px)",
         }}
       >
         {/* Top: logo */}
@@ -57,27 +57,27 @@ export default function LoginPage() {
           <h1 className="text-3xl font-bold leading-tight text-white">
             {APP_TAGLINE}
           </h1>
-          <p className="mt-3 text-sm text-white/60">
+          <p className="mt-3 text-sm text-white/68">
             {APP_DESCRIPTION}
           </p>
         </div>
 
         {/* Bottom: stat pills */}
         <div className="flex flex-wrap gap-2">
-          <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
+          <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80">
             Jobs
           </span>
-          <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
+          <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80">
             Daily Logs
           </span>
-          <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
+          <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80">
             Scheduling
           </span>
         </div>
       </div>
 
       {/* Right panel — form */}
-      <div className="flex w-full items-center justify-center bg-white px-6 py-12 lg:w-1/2">
+      <div className="app-surface flex w-full items-center justify-center px-6 py-12 lg:w-1/2">
         <div className="w-full max-w-sm">
           {/* Logo — mobile only (left panel shows it on lg) */}
           <div className="mb-8 flex justify-center lg:hidden">
@@ -90,8 +90,8 @@ export default function LoginPage() {
 
           {/* Heading */}
           <div className="mb-6">
-            <h1 className="text-2xl font-semibold text-slate-900">Sign in</h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               Welcome back to {APP_NAME}.
             </p>
           </div>
@@ -124,7 +124,6 @@ export default function LoginPage() {
             </div>
             <Button
               type="submit"
-              variant="orange"
               className="w-full"
               disabled={loading}
             >
@@ -133,7 +132,7 @@ export default function LoginPage() {
           </form>
           <p className="mt-5 text-center text-sm text-slate-500">
             New to {APP_NAME}?{" "}
-            <Link to="/register" className="font-medium text-orange-600 hover:underline">
+            <Link to="/register" className="font-medium text-primary hover:underline">
               Create a workspace
             </Link>
           </p>

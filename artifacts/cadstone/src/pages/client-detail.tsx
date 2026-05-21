@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
 import {
   ArrowLeft,
@@ -53,7 +53,7 @@ type ClientJob = {
   createdAt: string
 }
 
-type WorkerOption = { id: string; fullName: string; email?: string | null }
+type WorkerOption = { id: string; fullName: string; email?: string | null; role?: string | null }
 
 type ClientRollups = {
   contractValueCents: number
@@ -167,7 +167,7 @@ function InlineMoneyInput({
           setEditing(false)
         }
       }}
-      className="w-24 rounded border border-slate-200 px-1.5 py-0.5 text-right text-sm focus:border-orange-500 focus:outline-none"
+      className="w-24 rounded border border-slate-200 px-1.5 py-0.5 text-right text-sm focus:border-primary focus:outline-none"
     />
   )
 }
@@ -212,7 +212,7 @@ function InlineDate({
           type="date"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          className="w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-orange-500 focus:outline-none"
+          className="w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-primary focus:outline-none"
         />
         <div className="mt-2 flex justify-end gap-1">
           <Button
@@ -228,7 +228,6 @@ function InlineDate({
           </Button>
           <Button
             size="sm"
-            variant="orange"
             onClick={() => {
               void onSave(draft || null)
               setOpen(false)
@@ -293,7 +292,7 @@ function InlinePmPicker({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search project managers"
-          className="mb-2 w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-orange-500 focus:outline-none"
+          className="mb-2 w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-primary focus:outline-none"
         />
         <div className="max-h-56 overflow-y-auto" role="menu">
           <button
@@ -345,6 +344,8 @@ export default function ClientDetailPage() {
   const [createJobOpen, setCreateJobOpen] = useState(false)
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === "admin"
+  const loadClientSeqRef = useRef(0)
+  const jobSaveQueuesRef = useRef(new Map<string, Promise<void>>())
 
   useEffect(() => {
     if (!isAdmin) {
@@ -352,36 +353,48 @@ export default function ClientDetailPage() {
       return
     }
     api
-      .get("/users?roles=project_manager,crew_member&limit=200")
-      .then((r) => setWorkerOptions(r.data.users ?? []))
+      .get("/users?roles=project_manager&limit=200")
+      .then((r) =>
+        setWorkerOptions((r.data.users ?? []).filter((option: WorkerOption) => option.role === "project_manager")),
+      )
       .catch((err: unknown) => toastApiError(err, "Failed to load workers"))
   }, [isAdmin])
 
   useDocumentTitle(client ? client.companyName : "Client")
 
-  const refetch = useCallback(async () => {
-    if (!clientId) return
-    try {
-      const r = await api.get(`/clients/${clientId}`)
-      setClient(r.data.client)
-    } catch (err) {
-      toastApiError(err, "Failed to load client")
-    }
-  }, [clientId])
+	  const refetch = useCallback(async () => {
+	    if (!clientId) return
+    const requestSeq = ++loadClientSeqRef.current
+	    try {
+	      const r = await api.get(`/clients/${clientId}`)
+      if (requestSeq === loadClientSeqRef.current) {
+	      setClient(r.data.client)
+      }
+	    } catch (err) {
+      if (requestSeq === loadClientSeqRef.current) {
+	      toastApiError(err, "Failed to load client")
+      }
+	    }
+	  }, [clientId])
 
   useEffect(() => {
-    if (!clientId) return
-    let active = true
-    setLoading(true)
-    api
-      .get(`/clients/${clientId}`)
-      .then((r) => {
-        if (active) setClient(r.data.client)
+	    if (!clientId) return
+	    let active = true
+    const requestSeq = ++loadClientSeqRef.current
+	    setLoading(true)
+	    api
+	      .get(`/clients/${clientId}`)
+	      .then((r) => {
+	        if (active && requestSeq === loadClientSeqRef.current) setClient(r.data.client)
+	      })
+      .catch((err) => {
+        if (active && requestSeq === loadClientSeqRef.current) {
+          toastApiError(err, "Failed to load client")
+        }
       })
-      .catch((err) => toastApiError(err, "Failed to load client"))
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+	      .finally(() => {
+	        if (active && requestSeq === loadClientSeqRef.current) setLoading(false)
+	      })
     return () => {
       active = false
     }
@@ -404,9 +417,11 @@ export default function ClientDetailPage() {
       actualCompletion: string | null
       projectManagerId: string | null
     }>,
-  ) {
-    try {
-      const existing = await api.get(`/jobs/${jobId}`)
+	  ) {
+    const previousSave = jobSaveQueuesRef.current.get(jobId) ?? Promise.resolve()
+    const queuedSave = previousSave.catch(() => undefined).then(async () => {
+	    try {
+	      const existing = await api.get(`/jobs/${jobId}`)
       const j = existing.data.job
       const contract =
         overrides.contractValueCents !== undefined
@@ -469,10 +484,18 @@ export default function ClientDetailPage() {
       await api.put(`/jobs/${jobId}`, payload)
       await refetch()
       toast.success("Saved")
-    } catch (err) {
-      toastApiError(err, "Failed to update job")
-    }
-  }
+	    } catch (err) {
+	      toastApiError(err, "Failed to update job")
+	    }
+    })
+    jobSaveQueuesRef.current.set(jobId, queuedSave)
+    queuedSave.finally(() => {
+      if (jobSaveQueuesRef.current.get(jobId) === queuedSave) {
+        jobSaveQueuesRef.current.delete(jobId)
+      }
+    })
+    return queuedSave
+	  }
 
   function saveJobMoney(
     jobId: string,
@@ -520,7 +543,7 @@ export default function ClientDetailPage() {
           <Button variant="ghost" size="icon" className="size-8" onClick={() => navigate("/clients")} aria-label="Back to clients">
             <ArrowLeft className="size-4" />
           </Button>
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Building2 className="size-5" />
           </div>
           <div className="min-w-0">
@@ -545,7 +568,7 @@ export default function ClientDetailPage() {
         <RollupCard
           label="Outstanding"
           value={fmtMoney(r.outstandingCents)}
-          accent={r.outstandingCents > 0 ? "text-orange-600" : "text-slate-500"}
+          accent={r.outstandingCents > 0 ? "text-primary" : "text-slate-500"}
         />
         <RollupCard label="Last activity" value={fmtDate(r.lastActivityAt)} />
       </div>
@@ -559,7 +582,7 @@ export default function ClientDetailPage() {
             className={cn(
               "px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
               tab === t
-                ? "border-orange-600 text-orange-700"
+                ? "border-primary text-primary"
                 : "border-transparent text-slate-500 hover:text-slate-800",
             )}
           >
@@ -579,7 +602,6 @@ export default function ClientDetailPage() {
           <div className="flex justify-end">
             <Button
               size="sm"
-              variant="orange"
               onClick={() => setCreateJobOpen(true)}
             >
               <Plus className="mr-1 size-3.5" />
@@ -592,7 +614,7 @@ export default function ClientDetailPage() {
                 No jobs for this client yet.
                 <button
                   type="button"
-                  className="ml-2 text-orange-600 hover:underline"
+                  className="ml-2 text-primary hover:underline"
                   onClick={() => setCreateJobOpen(true)}
                 >
                   <Plus className="inline size-3.5" /> Add a job
@@ -696,7 +718,7 @@ export default function ClientDetailPage() {
                         <div
                           className={cn(
                             "font-medium tabular-nums",
-                            out > 0 ? "text-orange-700" : "text-slate-400",
+                            out > 0 ? "text-primary" : "text-slate-400",
                           )}
                         >
                           {fmtMoney(out)}
@@ -938,7 +960,7 @@ export default function ClientDetailPage() {
                         <td
                           className={cn(
                             "px-3 py-2 text-right font-medium",
-                            out > 0 ? "text-orange-700" : "text-slate-400",
+                            out > 0 ? "text-primary" : "text-slate-400",
                           )}
                         >
                           {fmtMoney(out)}
@@ -962,7 +984,7 @@ export default function ClientDetailPage() {
                 No contacts yet.{" "}
                 <Link
                   to={`/clients?client=${client.id}`}
-                  className="text-orange-600 hover:underline"
+                  className="text-primary hover:underline"
                 >
                   Manage contacts
                 </Link>
@@ -980,7 +1002,7 @@ export default function ClientDetailPage() {
                       {[c.firstName, c.lastName].filter(Boolean).join(" ") || "(no name)"}
                     </div>
                     {c.isPrimary && (
-                      <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-200">
+                      <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20">
                         Primary
                       </Badge>
                     )}
@@ -1059,12 +1081,15 @@ export default function ClientDetailPage() {
         create a job for *this* client without a context-losing redirect.
         Client is locked since we already know it.
       */}
-      <CreateJobDialog
-        open={createJobOpen}
-        onOpenChange={setCreateJobOpen}
-        defaultClientId={client.id}
-        lockClient
-      />
+	      <CreateJobDialog
+	        open={createJobOpen}
+	        onOpenChange={(open) => {
+            setCreateJobOpen(open)
+            if (!open) void refetch()
+          }}
+	        defaultClientId={client.id}
+	        lockClient
+	      />
     </div>
   )
 }

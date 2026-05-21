@@ -54,6 +54,7 @@ export type ScheduleItemRecord = {
   displayColor: string | null
   startDate: string
   endDate: string
+  manualEndDate?: string | null
   workDays: number
   isHourly: boolean | null
   startTime: string | null
@@ -198,7 +199,7 @@ export const SCHEDULE_COLOR_OPTIONS = [
   { label: "Iris", value: "#5f6edc" },
   { label: "Violet", value: "#8b5cf6" },
   { label: "Navy", value: "#1f3c88" },
-  { label: "Levi", value: "#2563eb" },
+  { label: "Levi", value: "#2E765D" },
 ] as const
 
 export const SCHEDULE_REMINDER_OPTIONS = [
@@ -231,7 +232,7 @@ export const SCHEDULE_DEFAULT_VIEW_OPTIONS: Array<{
   { label: "Gantt", value: "gantt" },
 ]
 
-export const DEFAULT_SCHEDULE_COLOR = "#E85D04"
+export const DEFAULT_SCHEDULE_COLOR = "#167A4A"
 
 export function dateKey(date: Date) {
   const year = date.getFullYear()
@@ -326,6 +327,9 @@ function dateMatchesException(date: Date, exception: ScheduleWorkdayException) {
   const value = sameYearComparableValue(date, exception.sameEveryYear)
   const start = exception.sameEveryYear ? exception.startDate.slice(5, 10) : exception.startDate
   const end = exception.sameEveryYear ? exception.endDate.slice(5, 10) : exception.endDate
+  if (exception.sameEveryYear && start > end) {
+    return value >= start || value <= end
+  }
   return value >= start && value <= end
 }
 

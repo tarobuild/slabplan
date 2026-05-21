@@ -241,6 +241,22 @@
       "tag": "0031_billing_events",
       "breakpoints": true,
       "checksum": "b4fd7d5783fd795a54d1f8509664fdf724464bda7a183d7cdfe58263fcf9f0b4"
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1779244800000,
+      "tag": "0032_tenant_unique_boundaries",
+      "breakpoints": true,
+      "checksum": "62d55db45d82edecdc2e3bb22c5f7c2c774fd315bca0859f3636004f123dce06"
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1779296400000,
+      "tag": "0033_tenant_composite_foreign_keys",
+      "breakpoints": true,
+      "checksum": "15c8f0cf4893ed1f5a22bbb28458e3738220c1ae15837c60b6babce028da25b9"
     }
   ]
 }

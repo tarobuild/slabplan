@@ -19,7 +19,7 @@ export interface ClientContact {
   phone?: string | null;
   cellPhone?: string | null;
   isPrimary?: boolean | null;
-  createdAt?: Date;
-  updatedAt?: Date | null;
-  deletedAt?: Date | null;
+  createdAt?: string;
+  updatedAt?: string | null;
+  deletedAt?: string | null;
 }

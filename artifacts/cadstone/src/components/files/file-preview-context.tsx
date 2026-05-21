@@ -18,7 +18,8 @@ export function FilePreviewProvider({ children }: { children: ReactNode }) {
 
   const open = useCallback((files: PreviewFile[], index = 0) => {
     if (!files.length) return
-    setState({ files, index })
+    const normalizedIndex = Math.min(Math.max(index, 0), files.length - 1)
+    setState({ files, index: normalizedIndex })
   }, [])
 
   const close = useCallback(() => setState(null), [])

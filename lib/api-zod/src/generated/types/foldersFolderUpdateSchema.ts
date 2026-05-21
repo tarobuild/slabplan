@@ -5,10 +5,17 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { FolderPermission } from "./folderPermission";
 
 /**
- * Request schema derived from folderUpdateSchema in artifacts/api-server/src/routes/folders.ts.
+ * Request body for renaming a folder or updating folder permissions.
  */
 export interface FoldersFolderUpdateSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title?: string;
+  viewingPermissions?: FolderPermission | null;
+  uploadingPermissions?: FolderPermission | null;
 }

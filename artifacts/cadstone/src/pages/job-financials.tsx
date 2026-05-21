@@ -26,6 +26,7 @@ import { apiErrorDetailCode, toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
 import { invalidateFinancialsRollups } from "@/lib/query-client"
 import { formatCurrencyCents } from "@/lib/format"
+import { parseUsdAmountCents } from "@/lib/money-input"
 import { describePercentLowering } from "@/lib/percent-confirm"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -170,7 +171,7 @@ function statusForPct(pct: number): { label: string; cls: string } {
   if (pct > 0)
     return {
       label: "In progress",
-      cls: "bg-blue-100 text-blue-800 border-blue-200",
+      cls: "bg-primary/10 text-primary border-primary/20",
     }
   return {
     label: "Not started",
@@ -210,7 +211,8 @@ function downloadCsv(
 // owns the data and passes stable useCallback handlers down.
 //
 // Inputs use `defaultValue` (uncontrolled) so typing inside one row
-// never re-renders siblings.
+// never re-renders siblings. Each input key includes the persisted value so
+// a tracker reload remounts stale fields even when the line item id is stable.
 
 type LineItemPatch = Partial<{
   description: string
@@ -251,6 +253,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       <td className="sticky left-0 z-10 bg-white px-3 py-2 shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">
         {canManage ? (
           <Input
+            key={`desc-${li.description}`}
             defaultValue={li.description}
             onBlur={(e) => {
               if (e.target.value !== li.description) {
@@ -266,6 +269,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       <td className="px-3 py-2 text-right">
         {canManage ? (
           <Input
+            key={`qty-${li.qty}`}
             type="number"
             inputMode="decimal"
             defaultValue={String(Number(li.qty))}
@@ -284,6 +288,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       <td className="px-3 py-2 text-right tabular-nums">
         {canManage ? (
           <Input
+            key={`rate-${li.rateCents}`}
             type="number"
             inputMode="decimal"
             step="0.01"
@@ -347,6 +352,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       <td className="px-3 py-2 text-right">
         {canManage ? (
           <Input
+            key={`pct-${li.percentComplete}`}
             type="number"
             inputMode="numeric"
             min={0}
@@ -466,7 +472,7 @@ const SovAreaRow = memo(function SovAreaRow({
         className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2 ${isCO ? "bg-violet-100/60" : "bg-muted/40"}`}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => onToggle(area.id)}
@@ -497,7 +503,7 @@ const SovAreaRow = memo(function SovAreaRow({
           ) : null}
           <div className="mt-2 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-slate-200">
             <div
-              className="h-full bg-orange-500 transition-all"
+              className="h-full bg-primary transition-all"
               style={{ width: `${Math.min(100, pct)}%` }}
             />
           </div>
@@ -802,7 +808,9 @@ export default function JobFinancialsPage() {
   // Mirrors the estimate / invoice upload UX. The parse endpoint
   // saves the file to the FINANCIALS folder and returns extracted
   // {number, description, amountCents}; the user confirms in a
-  // dialog and the existing change-orders POST creates the row.
+  // dialog and the existing change-orders POST creates the row. The
+  // uploaded document remains in the Financials folder rather than being
+  // linked from the change-order row.
   const coInputRef = useRef<HTMLInputElement>(null)
   const [coUploading, setCoUploading] = useState(false)
   const [coParseError, setCoParseError] = useState<AiParseError | null>(null)
@@ -811,7 +819,6 @@ export default function JobFinancialsPage() {
     description: string
     amountDollars: string
     areaId: string
-    fileId: string | null
   } | null>(null)
   const [coSaving, setCoSaving] = useState(false)
 
@@ -849,7 +856,6 @@ export default function JobFinancialsPage() {
         description: res.data.description ?? "",
         amountDollars: (res.data.amountCents / 100).toFixed(2),
         areaId: "",
-        fileId: res.data.fileId,
       })
     } catch (err) {
       setCoParseError(toAiError(err, file, "Failed to parse change order"))
@@ -871,8 +877,8 @@ export default function JobFinancialsPage() {
       toast.error("CO number is required")
       return
     }
-    const amount = Number(coDraft.amountDollars)
-    if (!Number.isFinite(amount) || amount < 0) {
+    const amountCents = parseUsdAmountCents(coDraft.amountDollars)
+    if (amountCents === null) {
       toast.error("Amount must be a non-negative number")
       return
     }
@@ -881,7 +887,7 @@ export default function JobFinancialsPage() {
       await api.post(`/jobs/${jobId}/financials/change-orders`, {
         number,
         description: coDraft.description.trim() || null,
-        amountCents: Math.round(amount * 100),
+        amountCents,
         areaId: coDraft.areaId || null,
       })
       setCoDraft(null)
@@ -1027,8 +1033,13 @@ export default function JobFinancialsPage() {
     const number = window.prompt("Change order number")?.trim()
     if (!number) return
     const description = window.prompt("Description (optional)")?.trim() || null
-    const amountStr = window.prompt("Amount (USD)")?.trim()
-    const amountCents = Math.round((Number(amountStr ?? "0") || 0) * 100)
+    const amountStr = window.prompt("Amount (USD)")
+    if (amountStr === null) return
+    const amountCents = parseUsdAmountCents(amountStr)
+    if (amountCents === null) {
+      toast.error("Amount must be a non-negative number")
+      return
+    }
     // Optional area assignment: list area names so the user can pick one.
     const areas = data?.areas ?? []
     let areaId: string | null = null
@@ -1342,16 +1353,16 @@ export default function JobFinancialsPage() {
       ) : null}
       {/* Header strip — contract date, main contract, change orders,
           contract w/ COs, billed, balance, applications, % billed */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-3">
         {totalsStrip?.map((t) => (
-          <Card key={t.label}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium text-muted-foreground">
+          <Card key={t.label} className="min-w-0">
+            <CardHeader className="px-4 pb-1 pt-4">
+              <CardTitle className="text-xs font-medium leading-snug text-muted-foreground">
                 {t.label}
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-lg font-semibold tabular-nums xl:text-xl">
+            <CardContent className="px-4 pb-4 pt-0">
+              <div className="break-words text-2xl font-semibold leading-tight tabular-nums text-slate-950">
                 {t.value}
               </div>
             </CardContent>
@@ -1373,7 +1384,7 @@ export default function JobFinancialsPage() {
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
               <div
-                className="h-full bg-orange-500 transition-all"
+                className="h-full bg-primary transition-all"
                 style={{
                   width: `${Math.min(100, Number(totals.percentBilled) || 0)}%`,
                 }}
@@ -1417,11 +1428,11 @@ export default function JobFinancialsPage() {
 
       {/* Estimate / project metadata */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <CardTitle className="flex items-center gap-2 text-lg">
             <FileText className="h-5 w-5" /> Estimate
           </CardTitle>
-          <div className="flex gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
             <Button
               variant="outline"
               size="sm"
@@ -1463,13 +1474,13 @@ export default function JobFinancialsPage() {
         {estimateError ? (
           <div
             role="alert"
-            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900"
+            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/35 bg-primary/10 px-3 py-2 text-sm text-primary"
           >
             <div className="min-w-0">
               <div className="font-medium">
                 Couldn’t parse {estimateError.file.name}
               </div>
-              <div className="truncate text-xs text-orange-800">
+              <div className="truncate text-xs text-primary">
                 <span className="font-mono">{estimateError.code}</span>
                 {": "}
                 {estimateError.message}
@@ -1697,11 +1708,11 @@ export default function JobFinancialsPage() {
 
       {/* SOV section */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <CardTitle className="flex items-center gap-2 text-lg">
             <DollarSign className="h-5 w-5" /> Schedule of Values
           </CardTitle>
-          <div className="flex gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
             <Button size="sm" variant="outline" onClick={exportCsv}>
               <Download className="mr-1 h-4 w-4" /> Export CSV
             </Button>
@@ -1851,13 +1862,13 @@ export default function JobFinancialsPage() {
         {coParseError ? (
           <div
             role="alert"
-            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900"
+            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/35 bg-primary/10 px-3 py-2 text-sm text-primary"
           >
             <div className="min-w-0">
               <div className="font-medium">
                 Couldn’t parse {coParseError.file.name}
               </div>
-              <div className="truncate text-xs text-orange-800">
+              <div className="truncate text-xs text-primary">
                 <span className="font-mono">{coParseError.code}</span>
                 {": "}
                 {coParseError.message}
@@ -2000,13 +2011,13 @@ export default function JobFinancialsPage() {
         {invoiceError ? (
           <div
             role="alert"
-            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900"
+            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/35 bg-primary/10 px-3 py-2 text-sm text-primary"
           >
             <div className="min-w-0">
               <div className="font-medium">
                 Couldn’t parse {invoiceError.file.name}
               </div>
-              <div className="truncate text-xs text-orange-800">
+              <div className="truncate text-xs text-primary">
                 <span className="font-mono">{invoiceError.code}</span>
                 {": "}
                 {invoiceError.message}
@@ -2313,7 +2324,7 @@ export default function JobFinancialsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-orange-500" /> Replace
+              <AlertTriangle className="h-5 w-5 text-primary" /> Replace
               existing estimate?
             </DialogTitle>
           </DialogHeader>
@@ -2439,7 +2450,7 @@ export default function JobFinancialsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-orange-500" /> Confirm change
+              <Sparkles className="h-5 w-5 text-primary" /> Confirm change
               order
             </DialogTitle>
           </DialogHeader>

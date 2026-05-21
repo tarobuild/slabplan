@@ -31,9 +31,9 @@ export interface DailyLogListItem {
   shareClient?: boolean;
   isPrivate?: boolean;
   createdBy?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  publishedAt?: Date | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt?: string | null;
   createdByName?: string | null;
   notifyUserIds?: string[];
   tags: string[];

@@ -59,6 +59,7 @@ Thumbs.db
 artifacts/api-server/uploads/
 artifacts/api-server/uploads-tmp/
 artifacts/api-server/tmp/
+artifacts/demo-storage/
 
 # Test artifacts (Playwright, etc.)
 artifacts/*/test-results/

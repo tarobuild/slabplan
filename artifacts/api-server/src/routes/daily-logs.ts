@@ -71,6 +71,7 @@ import {
   getCachedForecastForAddress,
   getCachedForecastForCoords,
 } from "../lib/weather";
+import { stringBoolean } from "../lib/zod-helpers";
 
 const uploadRateLimit = createUploadPerUserRateLimit();
 
@@ -138,7 +139,7 @@ const todoPayloadSchema = z.object({
 });
 
 const todoTogglePayloadSchema = z.object({
-  isComplete: z.coerce.boolean().optional(),
+  isComplete: stringBoolean.optional(),
 });
 
 const customFieldValueSchema = z.union([
@@ -181,13 +182,13 @@ const dailyLogPayloadSchema = z.object({
   title: optionalString,
   notes: z.string().optional().default(""),
   weatherData: weatherDataSchema,
-  includeWeather: z.coerce.boolean().optional().default(true),
-  includeWeatherNotes: z.coerce.boolean().optional().default(false),
+  includeWeather: stringBoolean.optional().default(true),
+  includeWeatherNotes: stringBoolean.optional().default(false),
   weatherNotes: optionalString,
-  shareInternalUsers: z.coerce.boolean().optional().default(true),
-  shareSubsVendors: z.coerce.boolean().optional().default(false),
-  shareClient: z.coerce.boolean().optional().default(false),
-  isPrivate: z.coerce.boolean().optional().default(false),
+  shareInternalUsers: stringBoolean.optional().default(true),
+  shareSubsVendors: stringBoolean.optional().default(false),
+  shareClient: stringBoolean.optional().default(false),
+  isPrivate: stringBoolean.optional().default(false),
   notifyUserIds: z.array(z.string().uuid()).optional().default([]),
   tags: z.array(z.string().trim().min(1).max(100)).optional().default([]),
   customFieldValues: customFieldValuesSchema,
@@ -474,7 +475,7 @@ async function maybeDeletePhysicalFile(fileUrl: string | null | undefined, fileI
   }
 }
 
-async function syncDailyLogTags(dailyLogId: string, tags: string[], organizationId: string | null) {
+async function syncDailyLogTags(dailyLogId: string, tags: string[], organizationId: string) {
   await db
     .delete(dailyLogTags)
     .where(eq(dailyLogTags.dailyLogId, dailyLogId));
@@ -1306,7 +1307,7 @@ router.post(
       })
       .returning();
 
-    await syncDailyLogTags(log.id, body.data.tags, log.organizationId);
+    await syncDailyLogTags(log.id, body.data.tags, log.organizationId ?? getActiveOrganizationId(req.auth!));
 
     await writeActivity({
       entityType: "daily_log",
@@ -1336,8 +1337,8 @@ const companyDailyLogFeedQuerySchema = z.object({
   createdBy: z.string().uuid().optional(),
   from: optionalDate,
   to: optionalDate,
-  hasAttachments: z.coerce.boolean().optional(),
-  hasComments: z.coerce.boolean().optional(),
+  hasAttachments: stringBoolean.optional(),
+  hasComments: stringBoolean.optional(),
 });
 
 router.get(
@@ -1810,7 +1811,7 @@ router.post(
       } else {
         await tx.insert(dailyLogLikes).values({
           id: crypto.randomUUID(),
-          organizationId: dailyLog.organizationId,
+          organizationId: dailyLog.organizationId ?? getActiveOrganizationId(req.auth!),
           dailyLogId: logId,
           userId: req.auth!.userId,
         });
@@ -1960,7 +1961,7 @@ router.post(
       .insert(dailyLogComments)
       .values({
         id: crypto.randomUUID(),
-        organizationId: dailyLog.organizationId,
+        organizationId: dailyLog.organizationId ?? getActiveOrganizationId(req.auth!),
         dailyLogId: logId,
         parentCommentId: body.data.parentCommentId,
         createdBy: req.auth!.userId,
@@ -2071,7 +2072,7 @@ router.post(
       .insert(dailyLogTodos)
       .values({
         id: crypto.randomUUID(),
-        organizationId: dailyLog.organizationId,
+        organizationId: dailyLog.organizationId ?? getActiveOrganizationId(req.auth!),
         dailyLogId: logId,
         title: body.data.title,
         isComplete: false,
@@ -2325,7 +2326,7 @@ router.post(
             const [createdAttachment] = await tx
               .insert(dailyLogAttachments)
               .values({
-                organizationId: dailyLog.organizationId,
+                organizationId: dailyLog.organizationId ?? getActiveOrganizationId(req.auth!),
                 dailyLogId: logId,
                 fileId: createdFile.id,
               })

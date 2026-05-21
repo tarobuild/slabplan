@@ -53,6 +53,10 @@ function isPathActive(path: string, item: TabItem): boolean {
   return path.startsWith(`${item.to}/`)
 }
 
+export function mobileNavColumnTemplate(primaryTabCount: number): string {
+  return `repeat(${primaryTabCount + 1}, minmax(0, 1fr))`
+}
+
 export default function MobileBottomNav() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -92,7 +96,7 @@ export default function MobileBottomNav() {
       label: "Reports",
       to: "/reports",
       icon: BarChart3,
-      allow: ROLE_GATES.sales,
+      allow: ROLE_GATES.reports,
       hidden: !isFeatureEnabled("reports"),
     },
     ...(isFieldUser
@@ -123,10 +127,13 @@ export default function MobileBottomNav() {
       <nav
         data-print-hide="true"
         aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white shadow-[0_-1px_2px_rgba(0,0,0,0.04)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white shadow-[0_-1px_2px_rgba(0,0,0,0.04)] lg:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <ul className="grid grid-cols-4">
+        <ul
+          className="grid"
+          style={{ gridTemplateColumns: mobileNavColumnTemplate(primaryTabs.length) }}
+        >
           {primaryTabs.map((tab) => {
             const active =
               tab.to.includes("?")
@@ -139,8 +146,8 @@ export default function MobileBottomNav() {
                   className={cn(
                     "flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors",
                     active
-                      ? "text-orange-600"
-                      : "text-slate-500 hover:text-slate-800",
+                      ? "text-primary"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                   aria-label={tab.label}
                   aria-current={active ? "page" : undefined}
@@ -157,7 +164,7 @@ export default function MobileBottomNav() {
               onClick={() => setMoreOpen(true)}
               className={cn(
                 "flex h-14 w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-slate-500 hover:text-slate-800",
-                moreOpen && "text-orange-600",
+                moreOpen && "text-primary",
               )}
               aria-label="More navigation options"
               aria-expanded={moreOpen}
@@ -175,7 +182,7 @@ export default function MobileBottomNav() {
           className="rounded-t-xl p-0"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
-          <SheetHeader className="border-b border-slate-100 px-4 py-3 text-left">
+          <SheetHeader className="border-b border-border px-4 py-3 text-left">
             <SheetTitle className="text-base">More</SheetTitle>
           </SheetHeader>
           <nav aria-label="More navigation" className="flex flex-col gap-0.5 p-2">
@@ -188,12 +195,12 @@ export default function MobileBottomNav() {
                   cn(
                     "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-orange-50 text-orange-700"
-                      : "text-slate-700 hover:bg-slate-100",
+                      ? "bg-accent text-primary"
+                      : "text-foreground hover:bg-accent/60",
                   )
                 }
               >
-                <item.icon className="size-4 text-slate-400" aria-hidden="true" />
+                <item.icon className="size-4 text-muted-foreground" aria-hidden="true" />
                 {item.label}
               </NavLink>
             ))}
@@ -204,9 +211,9 @@ export default function MobileBottomNav() {
                 await logoutSession()
                 navigate("/login", { replace: true })
               }}
-              className="mt-1 flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="mt-1 flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-foreground hover:bg-accent/60"
             >
-              <LogOut className="size-4 text-slate-400" aria-hidden="true" />
+              <LogOut className="size-4 text-muted-foreground" aria-hidden="true" />
               Logout
             </button>
           </nav>

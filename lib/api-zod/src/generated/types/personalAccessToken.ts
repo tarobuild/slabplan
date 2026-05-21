@@ -15,8 +15,8 @@ export interface PersonalAccessToken {
   tokenPrefix: string;
   /** Last 4 characters of the token, for UI display. */
   lastFour: string;
-  expiresAt?: Date | null;
-  lastUsedAt?: Date | null;
-  revokedAt?: Date | null;
-  createdAt: Date;
+  expiresAt?: string | null;
+  lastUsedAt?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
 }

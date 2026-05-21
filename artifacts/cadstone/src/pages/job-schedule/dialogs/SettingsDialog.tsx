@@ -35,6 +35,10 @@ import {
 
 import type { ScheduleSettingsForm } from "../types"
 
+function newPhaseId() {
+  return `new-${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`
+}
+
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: Dispatch<SetStateAction<boolean>>
@@ -137,7 +141,7 @@ export function SettingsDialog({
                     phases: [
                       ...current.phases,
                       {
-                        id: `new-${Date.now()}`,
+                        id: newPhaseId(),
                         name: "",
                         color: SCHEDULE_COLOR_OPTIONS[3]?.value || DEFAULT_SCHEDULE_COLOR,
                         isNew: true,

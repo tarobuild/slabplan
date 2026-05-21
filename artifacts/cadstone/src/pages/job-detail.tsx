@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Link, Outlet, useLocation, useNavigate, useParams } from "react-router-dom"
+import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router-dom"
 import { useDropzone } from "react-dropzone"
 import {
   ArrowLeft,
@@ -58,6 +58,8 @@ type Job = {
   status: "open" | "closed" | "archived"
   city: string | null
   state: string | null
+  contractValueCents: number | null
+  amountPaidCents: number | null
   clientId: string | null
   clientName: string | null
   access?: {
@@ -101,7 +103,8 @@ export default function JobDetailPage() {
     })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [pageUploading, setPageUploading] = useState(false)
+	  const [pageUploading, setPageUploading] = useState(false)
+  const loadJobSeqRef = useRef(0)
 
   // Job actions: Mark complete and Delete project. Both are admin-only.
   const [markCompleteOpen, setMarkCompleteOpen] = useState(false)
@@ -186,30 +189,38 @@ export default function JobDetailPage() {
   })
 
   const loadJob = (showLoading = false) => {
-    if (!jobId) return
-    if (showLoading) {
-      setLoading(true)
-      setJob(null)
+    const requestSeq = ++loadJobSeqRef.current
+    const requestedJobId = jobId
+	    if (!requestedJobId) return
+	    if (showLoading) {
+	      setLoading(true)
+	      setJob(null)
     }
     setError(null)
 
-    jobsGetJobsId(jobId)
-      .then((r) => {
-        // The typed response is `JobDetailResponse` whose `job` shape is a
-        // superset of what this header card actually renders, so cast down
-        // to our local `Job` to keep state shape-stable.
-        setJob(r.job as unknown as Job)
-      })
-      .catch((err: unknown) => {
-        setError("Unable to load this job.")
-        toastApiError(err, "Failed to load job")
-      })
-      .finally(() => {
-        if (showLoading) {
-          setLoading(false)
-        }
-      })
-  }
+	    jobsGetJobsId(requestedJobId)
+	      .then((r) => {
+          if (requestSeq !== loadJobSeqRef.current || requestedJobId !== jobId) return
+	        // The typed response is `JobDetailResponse` whose `job` shape is a
+	        // superset of what this header card actually renders, so cast down
+	        // to our local `Job` to keep state shape-stable.
+	        setJob(r.job as unknown as Job)
+	      })
+	      .catch((err: unknown) => {
+          if (requestSeq !== loadJobSeqRef.current || requestedJobId !== jobId) return
+          const status = (err as { response?: { status?: number } })?.response?.status
+          if (status === 403 || status === 404) {
+            setJob(null)
+          }
+	        setError(status === 403 ? "You no longer have access to this job." : "Unable to load this job.")
+          toastApiError(err, "Failed to load job")
+	      })
+	      .finally(() => {
+	        if (showLoading && requestSeq === loadJobSeqRef.current && requestedJobId === jobId) {
+	          setLoading(false)
+	        }
+	      })
+	  }
 
   useEffect(() => {
     loadJob(true)
@@ -240,6 +251,8 @@ export default function JobDetailPage() {
         state: (current.state as string | null) ?? null,
         zipCode: (current.zipCode as string | null) ?? null,
         contractPrice: (current.contractPrice as string | null) ?? null,
+        contractValueCents: (current.contractValueCents as number | null) ?? null,
+        amountPaidCents: (current.amountPaidCents as number | null) ?? null,
         jobType: (current.jobType as JobsJobPayloadSchema["jobType"]) ?? null,
         workDays: (current.workDays as JobsJobPayloadSchema["workDays"]) ?? null,
         projectedStart: (current.projectedStart as string | null) ?? null,
@@ -268,6 +281,8 @@ export default function JobDetailPage() {
               title: updatedJob.title ?? prev.title,
               city: updatedJob.city ?? prev.city,
               state: updatedJob.state ?? prev.state,
+              contractValueCents: updatedJob.contractValueCents ?? prev.contractValueCents,
+              amountPaidCents: updatedJob.amountPaidCents ?? prev.amountPaidCents,
             }
           : prev,
       )
@@ -301,7 +316,7 @@ export default function JobDetailPage() {
     !!job &&
     deleteConfirmText.trim().toLowerCase() === job.title.trim().toLowerCase()
 
-  if ((error && !job) || (!loading && !job)) {
+	  if ((error && !job) || (!loading && !job)) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 text-center">
         <div className="space-y-1">
@@ -310,33 +325,37 @@ export default function JobDetailPage() {
         </div>
         <Link
           to="/jobs"
-          className="text-sm font-medium text-orange-600 hover:text-orange-700"
+          className="text-sm font-medium text-primary hover:text-primary/80"
         >
           Back to jobs
         </Link>
       </div>
     )
+	  }
+
+  if (job && location.pathname.endsWith("/financials") && !(job.access?.financials ?? isAdmin)) {
+    return <Navigate to={`/jobs/${job.id}/summary`} replace />
   }
 
-  return (
+	  return (
     <div {...pageDropzone.getRootProps()} className="relative space-y-0">
       {isAdmin ? <input {...pageDropzone.getInputProps()} /> : null}
 
       {/* Page-level drop overlay */}
       {pageDropzone.isDragActive && !isOnFilesTab && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-orange-50/90 backdrop-blur-sm">
-          <div className="rounded-2xl border-2 border-dashed border-orange-400 bg-white px-12 py-10 text-center shadow-lg">
-            <Upload className="mx-auto mb-3 size-10 text-orange-500" />
-            <p className="text-lg font-semibold text-orange-700">Drop files to upload</p>
-            <p className="mt-1 text-sm text-orange-500">Files will be saved to Documents</p>
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-accent/85 backdrop-blur-sm">
+          <div className="rounded-2xl border-2 border-dashed border-primary/45 bg-white px-12 py-10 text-center shadow-lg">
+            <Upload className="mx-auto mb-3 size-10 text-primary" />
+            <p className="text-lg font-semibold text-primary">Drop files to upload</p>
+            <p className="mt-1 text-sm text-muted-foreground">Files will be saved to Documents</p>
           </div>
         </div>
       )}
 
       {pageUploading && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-orange-200 bg-white px-4 py-2 shadow-lg">
-          <div className="size-4 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
-          <span className="text-sm font-medium text-orange-700">Uploading...</span>
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-primary/20 bg-white px-4 py-2 shadow-lg">
+          <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-sm font-medium text-primary">Uploading...</span>
         </div>
       )}
 
@@ -371,17 +390,17 @@ export default function JobDetailPage() {
           scrolls through long detail pages. */}
       <div
         className={cn(
-          "sticky top-0 z-20 -mx-4 lg:-mx-5 px-4 lg:px-5 bg-[#F9FAFB]/95 backdrop-blur supports-[backdrop-filter]:bg-[#F9FAFB]/85 transition-shadow",
+          "sticky top-0 z-20 -mx-4 bg-background/95 px-4 backdrop-blur transition-shadow supports-[backdrop-filter]:bg-background/85 lg:-mx-6 lg:px-6",
           isStickyDocked ? "shadow-[0_2px_8px_-4px_rgba(15,23,42,0.18)]" : "",
         )}
       >
         {/* Row 2: H1 title + status + location + actions */}
-        <div className="flex items-center gap-3 pb-3 pt-2">
+        <div className="flex flex-wrap items-center gap-2 pb-3 pt-2 sm:gap-3">
         {loading ? (
           <Skeleton className="h-8 w-64" />
         ) : (
           <>
-            <h1 className="text-2xl font-semibold text-slate-900 truncate">
+            <h1 className="min-w-0 flex-[1_1_100%] truncate text-xl font-semibold text-slate-900 sm:flex-1 sm:text-2xl">
               {job?.title}
             </h1>
             {job?.status && (
@@ -411,7 +430,7 @@ export default function JobDetailPage() {
                       className="gap-1.5"
                     >
                       <MoreHorizontal className="size-4" />
-                      Job actions
+                      <span className="hidden sm:inline">Job actions</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
@@ -445,8 +464,11 @@ export default function JobDetailPage() {
         )}
       </div>
 
-        <div className="border-b border-[#E5E7EB]">
-          <nav className="-mb-px flex gap-0 overflow-x-auto scrollbar-none">
+        <div className="border-b border-border">
+	          <nav
+              className="-mb-px grid gap-0 md:flex md:overflow-x-auto md:scrollbar-none"
+              style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
+            >
             {visibleTabs.map((tab) => {
               const Icon = tab.icon
               const isActive = tab.matchPrefix
@@ -457,14 +479,14 @@ export default function JobDetailPage() {
                   key={tab.path}
                   to={`/jobs/${jobId}/${tab.path}`}
                   className={cn(
-                    "inline-flex shrink-0 items-center whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                    "inline-flex min-w-0 shrink-0 flex-col items-center justify-center gap-1 border-b-2 px-1 py-2 text-center text-[11px] font-medium leading-tight transition-colors md:flex-row md:justify-start md:whitespace-nowrap md:px-4 md:py-2.5 md:text-sm",
                     isActive
-                      ? "border-orange-500 text-orange-600"
+                      ? "border-primary text-primary"
                       : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900",
                   )}
                 >
-                  <Icon className="size-3.5 mr-1.5" />
-                  {tab.label}
+                  <Icon className="size-3.5 shrink-0 md:mr-1.5" />
+                  <span className="min-w-0">{tab.label}</span>
                 </Link>
               )
             })}
@@ -501,7 +523,7 @@ export default function JobDetailPage() {
                 void handleMarkComplete()
               }}
               disabled={markingComplete}
-              className="bg-orange-600 hover:bg-orange-700 focus:ring-orange-600"
+              className="bg-primary hover:bg-primary/90 focus:ring-primary"
             >
               {markingComplete && <Loader2 className="mr-2 size-3.5 animate-spin" />}
               Yes, complete project

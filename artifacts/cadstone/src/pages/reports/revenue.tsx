@@ -80,7 +80,7 @@ function ToggleBtn({
       role="tab"
       aria-selected={active}
       onClick={onClick}
-      className={`px-3 py-1.5 ${active ? "bg-orange-50 font-medium text-orange-700" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+      className={`px-3 py-1.5 ${active ? "bg-accent font-medium text-primary" : "bg-white text-muted-foreground hover:bg-accent/50"}`}
     >
       {children}
     </button>
@@ -112,7 +112,7 @@ function RevenueChart({ months, mode }: { months: Month[]; mode: Mode }) {
             <div key={m.month} className="group relative flex flex-1 flex-col items-center justify-end gap-1">
               <div className="text-[10px] text-slate-500">{formatMoney(value)}</div>
               <div
-                className="w-full rounded-t bg-orange-600 transition-colors group-hover:bg-orange-700"
+                className="w-full rounded-t bg-primary transition-colors group-hover:bg-primary/85"
                 style={{ height: Math.max(2, h) }}
                 title={tooltip}
                 role="img"

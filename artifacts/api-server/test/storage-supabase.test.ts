@@ -71,6 +71,47 @@ describe("Supabase storage provider", () => {
     assert.equal(headers.get("Authorization"), "Bearer test-service-role-key");
   });
 
+  test("accepts stored filenames with consecutive dots", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    mockFetch((input, init) => {
+      requests.push({ url: String(input), init });
+      return new Response(JSON.stringify({ Key: "stone-track/uploads/job-a/document/file.pdf" }), {
+        status: 200,
+      });
+    });
+
+    const { buildStoredFileName, buildUploadPath, writeUploadedBuffer } = await import("../src/lib/storage.ts");
+    const storedFileName = buildStoredFileName("invoice..final.pdf");
+    const upload = buildUploadPath({
+      jobId: "job-a",
+      mediaType: "document",
+      storedFileName,
+    });
+
+    await writeUploadedBuffer(upload.fileUrl, Buffer.from("pdf-bytes"));
+
+    assert.equal(requests.length, 1);
+    assert.match(storedFileName, /invoice\.\.final\.pdf$/);
+    assert.ok(requests[0].url.includes("invoice..final.pdf"));
+  });
+
+  test("rejects traversal path segments in stored URLs", async () => {
+    mockFetch(() => {
+      throw new Error("storage should not be called for invalid URLs");
+    });
+
+    const { writeUploadedBuffer } = await import("../src/lib/storage.ts");
+
+    await assert.rejects(
+      () => writeUploadedBuffer("/uploads/job-a/../secret.pdf", Buffer.from("pdf-bytes")),
+      /Invalid stored file URL/,
+    );
+    await assert.rejects(
+      () => writeUploadedBuffer("/uploads/job-a/%2e%2e/secret.pdf", Buffer.from("pdf-bytes")),
+      /Invalid stored file URL/,
+    );
+  });
+
   test("probes and deletes files through Supabase Storage", async () => {
     const requests: Array<{ url: string; method: string | undefined }> = [];
     mockFetch((input, init) => {

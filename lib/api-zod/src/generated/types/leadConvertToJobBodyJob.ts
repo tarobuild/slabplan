@@ -23,8 +23,8 @@ export type LeadConvertToJobBodyJob = {
   zipCode?: string | null;
   /** Decimal serialized as string. */
   contractPrice?: string | null;
-  projectedStart?: Date | null;
-  projectedCompletion?: Date | null;
+  projectedStart?: string | null;
+  projectedCompletion?: string | null;
   jobType?: LeadConvertToJobBodyJobJobType;
   projectManagerId?: string | null;
   assigneeIds?: string[];

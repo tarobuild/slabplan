@@ -95,7 +95,6 @@ export function BaselineTab(props: BaselineTabProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExport("baseline")}>Export CSV</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExport("baseline")}>Export PDF</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

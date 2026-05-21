@@ -10,15 +10,27 @@
  * AR rollups computed across the caller-visible jobs for this client.
  */
 export type ClientDetailRollups = {
-  /** @minimum 0 */
-  contractValueCents: bigint;
-  /** @minimum 0 */
-  amountPaidCents: bigint;
-  /** @minimum 0 */
-  outstandingCents: bigint;
+  /**
+   * Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
+  contractValueCents: number;
+  /**
+   * Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
+  amountPaidCents: number;
+  /**
+   * Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
+  outstandingCents: number;
   /** @minimum 0 */
   activeJobCount: number;
   /** @minimum 0 */
   totalJobCount: number;
-  lastActivityAt?: Date | null;
+  lastActivityAt?: string | null;
 };

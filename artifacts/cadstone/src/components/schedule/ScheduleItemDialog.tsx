@@ -83,6 +83,7 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
+import { completionStateForProgress } from "./schedule-progress"
 
 type UserOption = {
   id: string
@@ -148,6 +149,7 @@ type ScheduleItemDialogProps = {
   refreshSettings: () => Promise<void>
   onRefresh: () => Promise<void>
   draftMode?: boolean
+  readOnly?: boolean
   onDraftSave?: (params: {
     itemId: string | null
     payload: ScheduleItemPayload
@@ -210,6 +212,14 @@ function formFromItem(item: ScheduleItemRecord): ScheduleFormValues {
   }
 }
 
+function hasManualEndDate(
+  item: ScheduleItemRecord,
+  workdayExceptions: ScheduleWorkdayException[],
+): boolean {
+  if (item.manualEndDate) return true
+  return item.endDate !== calculateBusinessEndDate(item.startDate, item.workDays, workdayExceptions)
+}
+
 function attachmentIcon(icon: string) {
   if (icon === "pdf" || icon === "doc") {
     return FileText
@@ -244,6 +254,7 @@ export function ScheduleItemDialog({
   refreshSettings,
   onRefresh,
   draftMode = false,
+  readOnly = false,
   onDraftSave,
   onDraftAddNote,
   onDraftDelete,
@@ -283,6 +294,7 @@ export function ScheduleItemDialog({
   const [docPreviewLoading, setDocPreviewLoading] = useState(false)
   const [docPreviewBody, setDocPreviewBody] = useState("")
   const [docPreviewTitle, setDocPreviewTitle] = useState("")
+  const loadItemSeqRef = useRef(0)
 
   useEffect(() => {
     if (!open) {
@@ -300,6 +312,7 @@ export function ScheduleItemDialog({
   }, [item])
 
   async function loadItem(nextItemId: string) {
+    const requestSeq = ++loadItemSeqRef.current
     setLoadingItem(true)
 
     try {
@@ -310,28 +323,36 @@ export function ScheduleItemDialog({
           throw new Error("Draft schedule item not found")
         }
 
-        setItem(draftItem)
-        setValues(formFromItem(draftItem))
-        setNoteDraft("")
-        setNotifyAssignees(false)
-        setManualEndDate(false)
+	        if (requestSeq === loadItemSeqRef.current) {
+	          setItem(draftItem)
+	          setValues(formFromItem(draftItem))
+	          setNoteDraft("")
+	          setNotifyAssignees(false)
+	          setManualEndDate(hasManualEndDate(draftItem, workdayExceptions))
+	        }
         return
       }
 
       const response = await api.get<{ item: ScheduleItemRecord }>(`/schedule-items/${nextItemId}`)
+      if (requestSeq !== loadItemSeqRef.current) return
       setItem(response.data.item)
-      setValues(formFromItem(response.data.item))
-      setNoteDraft("")
-      setNotifyAssignees(false)
-      setManualEndDate(false)
+	      setValues(formFromItem(response.data.item))
+	      setNoteDraft("")
+	      setNotifyAssignees(false)
+	      setManualEndDate(hasManualEndDate(response.data.item, workdayExceptions))
     } catch (err) {
-      toastApiError(err, "Failed to load schedule item")
+      if (requestSeq === loadItemSeqRef.current) {
+        toastApiError(err, "Failed to load schedule item")
+      }
     } finally {
-      setLoadingItem(false)
+      if (requestSeq === loadItemSeqRef.current) {
+        setLoadingItem(false)
+      }
     }
   }
 
   function resetForNewItem() {
+    loadItemSeqRef.current += 1
     setItem(null)
     const form = defaultForm(initialStartDate || today, workdayExceptions)
     if (initialStartTime) {
@@ -358,6 +379,7 @@ export function ScheduleItemDialog({
 
   useEffect(() => {
     if (!open) {
+      loadItemSeqRef.current += 1
       return
     }
 
@@ -535,7 +557,7 @@ export function ScheduleItemDialog({
       assigneeIds: values.assigneeIds,
       startDate: values.startDate,
       workDays: values.workDays,
-      endDate: null,
+      endDate: manualEndDate && values.endDate ? values.endDate : null,
       isHourly: values.isHourly,
       startTime: values.isHourly ? values.startTime : null,
       endTime: values.isHourly ? values.endTime : null,
@@ -555,6 +577,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleSave(mode: "stay" | "close" | "new") {
+    if (readOnly) {
+      return null
+    }
     if (!values.title.trim()) {
       toast.error("Title is required")
       return null
@@ -565,17 +590,25 @@ export function ScheduleItemDialog({
     try {
       const payload = buildPayload()
       const pendingNote = noteDraft.trim() || null
-      const savedItem = draftMode && onDraftSave
-        ? await onDraftSave({
-            itemId: item?.id ?? null,
-            payload,
-            note: pendingNote,
-          })
-        : (
-            item
-              ? await api.put<{ item: ScheduleItemRecord }>(`/schedule-items/${item.id}`, payload)
-              : await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
-          ).data.item
+      let savedItem: ScheduleItemRecord
+
+      if (draftMode) {
+        if (!onDraftSave) {
+          throw new Error("Draft save handler is not configured.")
+        }
+
+        savedItem = await onDraftSave({
+          itemId: item?.id ?? null,
+          payload,
+          note: pendingNote,
+        })
+      } else {
+        savedItem = (
+          item
+            ? await api.put<{ item: ScheduleItemRecord }>(`/schedule-items/${item.id}`, payload)
+            : await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
+        ).data.item
+      }
 
       if (!draftMode && pendingNote) {
         await api.post(`/schedule-items/${savedItem.id}/notes`, {
@@ -603,13 +636,13 @@ export function ScheduleItemDialog({
         return savedItem.id
       }
 
-      if (draftMode) {
-        setItem(savedItem)
-        setValues(formFromItem(savedItem))
-        setNoteDraft("")
-        setNotifyAssignees(false)
-        setManualEndDate(false)
-      } else {
+	      if (draftMode) {
+	        setItem(savedItem)
+	        setValues(formFromItem(savedItem))
+	        setNoteDraft("")
+	        setNotifyAssignees(false)
+	        setManualEndDate(hasManualEndDate(savedItem, workdayExceptions))
+	      } else {
         await loadItem(savedItem.id)
       }
       setNotifyAssignees(false)
@@ -624,6 +657,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleAddNote() {
+    if (readOnly) {
+      return
+    }
     if (!item || !noteDraft.trim()) {
       return
     }
@@ -631,7 +667,15 @@ export function ScheduleItemDialog({
     setSaving(true)
 
     try {
-      if (draftMode && onDraftAddNote) {
+      if (draftMode && !onDraftAddNote) {
+        throw new Error("Draft note handler is not configured.")
+      }
+
+      if (draftMode) {
+        if (!onDraftAddNote) {
+          throw new Error("Draft note handler is not configured.")
+        }
+
         const updatedItem = await onDraftAddNote(item.id, noteDraft.trim())
         setItem(updatedItem)
         setValues(formFromItem(updatedItem))
@@ -664,6 +708,9 @@ export function ScheduleItemDialog({
 
   const onDropFiles = useCallback(
     async (droppedFiles: File[]) => {
+      if (readOnly) {
+        return
+      }
       if (draftMode) {
         toast.info("Publish draft changes before managing attachments")
         return
@@ -690,16 +737,20 @@ export function ScheduleItemDialog({
         setSaving(false)
       }
     },
-    [item, draftMode, onRefresh],
+    [item, draftMode, onRefresh, readOnly],
   )
 
   const attachmentDropzone = useDropzone({
     onDrop: onDropFiles,
     noKeyboard: true,
-    disabled: !item || draftMode,
+    disabled: !item || draftMode || readOnly,
   })
 
   async function handleUploadFiles(event: React.ChangeEvent<HTMLInputElement>) {
+    if (readOnly) {
+      event.target.value = ""
+      return
+    }
     if (draftMode) {
       toast.info("Publish draft changes before managing attachments")
       event.target.value = ""
@@ -757,6 +808,9 @@ export function ScheduleItemDialog({
   }
 
   async function performCreateDoc(defaultTitleSource?: string) {
+    if (readOnly) {
+      return
+    }
     if (!item) {
       return
     }
@@ -785,6 +839,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleConfirmCreateDoc() {
+    if (readOnly) {
+      return
+    }
     if (!item) {
       return
     }
@@ -810,6 +867,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleCreateDoc() {
+    if (readOnly) {
+      return
+    }
     if (draftMode) {
       toast.info("Publish draft changes before creating attachments")
       return
@@ -828,6 +888,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleSaveThenCreateDoc() {
+    if (readOnly) {
+      return
+    }
     setCreateDocConfirmOpen(false)
     const savedTitle = values.title
     const savedId = await handleSave("stay")
@@ -837,11 +900,17 @@ export function ScheduleItemDialog({
   }
 
   async function handleCreateDocAnyway() {
+    if (readOnly) {
+      return
+    }
     setCreateDocConfirmOpen(false)
     await performCreateDoc()
   }
 
   async function handleDeleteAttachment(attachmentId: string) {
+    if (readOnly) {
+      return
+    }
     if (draftMode) {
       toast.info("Publish draft changes before deleting attachments")
       return
@@ -865,6 +934,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleCopy() {
+    if (readOnly) {
+      return
+    }
     if (!item) {
       return
     }
@@ -873,25 +945,33 @@ export function ScheduleItemDialog({
 
     try {
       const payload = buildPayload()
-      const copiedItem = draftMode && onDraftSave
-        ? await onDraftSave({
-            itemId: null,
-            payload: {
-              ...payload,
-              title: `${payload.title} (Copy)`,
-              progress: 0,
-              isComplete: false,
-            },
-            note: null,
+      let copiedItem: ScheduleItemRecord
+
+      if (draftMode) {
+        if (!onDraftSave) {
+          throw new Error("Draft save handler is not configured.")
+        }
+
+        copiedItem = await onDraftSave({
+          itemId: null,
+          payload: {
+            ...payload,
+            title: `${payload.title} (Copy)`,
+            progress: 0,
+            isComplete: false,
+          },
+          note: null,
+        })
+      } else {
+        copiedItem = (
+          await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, {
+            ...payload,
+            title: `${payload.title} (Copy)`,
+            progress: 0,
+            isComplete: false,
           })
-        : (
-            await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, {
-              ...payload,
-              title: `${payload.title} (Copy)`,
-              progress: 0,
-              isComplete: false,
-            })
-          ).data.item
+        ).data.item
+      }
       if (!draftMode) {
         await onRefresh()
       }
@@ -905,6 +985,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleDelete() {
+    if (readOnly) {
+      return
+    }
     if (!item) {
       return
     }
@@ -912,7 +995,11 @@ export function ScheduleItemDialog({
     setSaving(true)
 
     try {
-      if (draftMode && onDraftDelete) {
+      if (draftMode) {
+        if (!onDraftDelete) {
+          throw new Error("Draft delete handler is not configured.")
+        }
+
         await onDraftDelete(item.id)
       } else {
         await api.delete(`/schedule-items/${item.id}`)
@@ -931,6 +1018,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleCreateTodo() {
+    if (readOnly) {
+      return
+    }
     if (draftMode) {
       toast.info("Publish draft changes before creating linked to-do's")
       return
@@ -969,6 +1059,9 @@ export function ScheduleItemDialog({
   // Persist their toggle immediately rather than buffering it into the form
   // — the form's Save button calls PUT, which would 403 for them.
   async function handleToggleCompleteAsCrew(nextIsComplete: boolean) {
+    if (readOnly) {
+      return
+    }
     if (!item || draftMode) {
       return
     }
@@ -1015,6 +1108,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleToggleTodo(todo: ScheduleTodo) {
+    if (readOnly) {
+      return
+    }
     if (draftMode) {
       toast.info("Publish draft changes before updating linked to-do's")
       return
@@ -1039,6 +1135,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleDeleteTodo(todoId: string) {
+    if (readOnly) {
+      return
+    }
     if (draftMode) {
       toast.info("Publish draft changes before removing linked to-do's")
       return
@@ -1062,6 +1161,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleAddPhase() {
+    if (readOnly) {
+      return
+    }
     if (!addingPhase.trim()) {
       return
     }
@@ -1084,6 +1186,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleSavePhase(phaseId: string) {
+    if (readOnly) {
+      return
+    }
     const name = editingPhases[phaseId]?.trim()
 
     if (!name) {
@@ -1104,6 +1209,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleAddTag() {
+    if (readOnly) {
+      return
+    }
     if (!addingTag.trim()) {
       return
     }
@@ -1126,6 +1234,9 @@ export function ScheduleItemDialog({
   }
 
   async function handleSaveTag(tagId: string) {
+    if (readOnly) {
+      return
+    }
     const name = editingTags[tagId]?.trim()
 
     if (!name) {
@@ -1178,7 +1289,7 @@ export function ScheduleItemDialog({
 
         {loadingItem ? (
           <div className="flex min-h-[420px] items-center justify-center">
-            <Loader2 className="size-5 animate-spin text-orange-600" />
+            <Loader2 className="size-5 animate-spin text-primary" />
           </div>
         ) : (
           <>
@@ -1263,7 +1374,7 @@ export function ScheduleItemDialog({
                             size="sm"
                             className={cn(
                               "h-8 px-2.5 text-xs",
-                              notifyAssignees && "border-orange-200 bg-orange-50 text-orange-700",
+                              notifyAssignees && "border-primary/20 bg-primary/10 text-primary",
                             )}
                             onClick={() => setNotifyAssignees((current) => !current)}
                           >
@@ -1472,22 +1583,24 @@ export function ScheduleItemDialog({
                               Schedule Item Phase
                             </h3>
                           </div>
+                          {!readOnly ? (
                           <div className="flex items-center gap-4 text-sm">
                             <button
                               type="button"
-                              className="text-orange-600 hover:underline"
+                              className="text-primary hover:underline"
                               onClick={() => setShowAddPhase((current) => !current)}
                             >
                               Add
                             </button>
                             <button
                               type="button"
-                              className="text-orange-600 hover:underline"
+                              className="text-primary hover:underline"
                               onClick={() => setShowEditPhases((current) => !current)}
                             >
                               Edit
                             </button>
                           </div>
+                          ) : null}
                         </div>
 
                         <Select
@@ -1564,22 +1677,24 @@ export function ScheduleItemDialog({
                               Schedule Item Tags
                             </h3>
                           </div>
+                          {!readOnly ? (
                           <div className="flex items-center gap-4 text-sm">
                             <button
                               type="button"
-                              className="text-orange-600 hover:underline"
+                              className="text-primary hover:underline"
                               onClick={() => setShowAddTag((current) => !current)}
                             >
                               Add
                             </button>
                             <button
                               type="button"
-                              className="text-orange-600 hover:underline"
+                              className="text-primary hover:underline"
                               onClick={() => setShowEditTags((current) => !current)}
                             >
                               Edit
                             </button>
                           </div>
+                          ) : null}
                         </div>
 
                         <Input
@@ -1599,7 +1714,7 @@ export function ScheduleItemDialog({
                               <button
                                 key={tag.id}
                                 type="button"
-                                className="rounded-full border border-[#E5E7EB] bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-orange-200 hover:text-orange-700"
+                                className="rounded-full border border-[#E5E7EB] bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:border-primary/20 hover:text-primary"
                                 onClick={() =>
                                   updateValues((current) => {
                                     const tags = cleanTags(current.tagsInput)
@@ -1711,7 +1826,7 @@ export function ScheduleItemDialog({
                         onChange={(event) => setNoteDraft(event.target.value)}
                       />
 
-                      {item ? (
+                      {item && !readOnly ? (
                         <div className="flex justify-end">
                           <Button
                             type="button"
@@ -1759,7 +1874,7 @@ export function ScheduleItemDialog({
                     <TabsContent value="files" className="space-y-4 rounded-xl border border-[#E5E7EB] p-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-semibold text-slate-900">Attachments</h3>
-                        {item ? (
+                        {item && !readOnly ? (
                           <div className="flex gap-2">
                             <input
                               ref={fileInputRef}
@@ -1796,20 +1911,21 @@ export function ScheduleItemDialog({
                         <p className="text-sm text-slate-500">Attachments are available after save.</p>
                       ) : (
                         <>
+                          {!readOnly ? (
                           <div
                             {...attachmentDropzone.getRootProps()}
                             className={cn(
                               "relative cursor-pointer rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors",
                               attachmentDropzone.isDragActive
-                                ? "border-orange-400 bg-orange-50"
-                                : "border-slate-300 bg-slate-50 hover:border-orange-400 hover:bg-orange-50/50",
+                                ? "border-primary/45 bg-primary/10"
+                                : "border-slate-300 bg-slate-50 hover:border-primary/45 hover:bg-accent/50",
                             )}
                           >
                             <input {...attachmentDropzone.getInputProps({ accept: uploadAcceptForMediaType("document") })} />
                             {attachmentDropzone.isDragActive ? (
                               <>
-                                <Upload className="mx-auto size-5 text-orange-500" />
-                                <div className="mt-2 text-sm font-medium text-orange-600">Drop files here</div>
+                                <Upload className="mx-auto size-5 text-primary" />
+                                <div className="mt-2 text-sm font-medium text-primary">Drop files here</div>
                               </>
                             ) : (
                               <>
@@ -1818,6 +1934,7 @@ export function ScheduleItemDialog({
                               </>
                             )}
                           </div>
+                          ) : null}
                           {item.attachments.length > 0 ? (
                             <div className="space-y-2">
                               {item.attachments.map((attachment, attIndex) => {
@@ -1868,7 +1985,7 @@ export function ScheduleItemDialog({
                                             <button
                                               type="button"
                                               onClick={() => filePreview.open(previewFiles, attIndex)}
-                                              className="text-left text-sm font-medium text-slate-900 hover:text-orange-700"
+                                              className="text-left text-sm font-medium text-slate-900 hover:text-primary"
                                             >
                                               {attachment.originalName}
                                             </button>
@@ -1879,17 +1996,19 @@ export function ScheduleItemDialog({
                                         )}
                                       </div>
                                     </div>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      onClick={() => setPendingDeleteAttachmentId(attachment.id)}
-                                      title={isMissing ? "Remove orphan attachment" : "Delete attachment"}
-                                      aria-label={
-                                        isMissing ? "Remove orphan attachment" : "Delete attachment"
-                                      }
-                                    >
-                                      <Trash2 className="size-4" />
-                                    </Button>
+                                    {!readOnly ? (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        onClick={() => setPendingDeleteAttachmentId(attachment.id)}
+                                        title={isMissing ? "Remove orphan attachment" : "Delete attachment"}
+                                        aria-label={
+                                          isMissing ? "Remove orphan attachment" : "Delete attachment"
+                                        }
+                                      >
+                                        <Trash2 className="size-4" />
+                                      </Button>
+                                    ) : null}
                                   </div>
                                 )
                               })}
@@ -2080,8 +2199,7 @@ export function ScheduleItemDialog({
                           onValueChange={([nextProgress]) =>
                             updateValues((current) => ({
                               ...current,
-                              progress: nextProgress ?? 0,
-                              isComplete: (nextProgress ?? 0) >= 100 ? true : current.isComplete,
+                              ...completionStateForProgress(nextProgress),
                             }))
                           }
                         />
@@ -2117,13 +2235,15 @@ export function ScheduleItemDialog({
                     <p className="mt-3 text-sm text-slate-500">To-Do&apos;s available after save</p>
                   ) : (
                     <div className="mt-3 space-y-4">
-                      <Button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void handleCreateTodo()}
-                      >
-                        Save and Create To-Do
-                      </Button>
+                      {!readOnly ? (
+                        <Button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => void handleCreateTodo()}
+                        >
+                          Save and Create To-Do
+                        </Button>
+                      ) : null}
                       {item.relatedTodos.length > 0 ? (
                         <div className="space-y-2">
                           {item.relatedTodos.map((todo) => (
@@ -2150,13 +2270,15 @@ export function ScheduleItemDialog({
                                   </p>
                                 </div>
                               </label>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={() => void handleDeleteTodo(todo.id)}
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
+                              {!readOnly ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  onClick={() => void handleDeleteTodo(todo.id)}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              ) : null}
                             </div>
                           ))}
                         </div>
@@ -2190,53 +2312,59 @@ export function ScheduleItemDialog({
                       Close
                     </Button>
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="outline" size="icon">
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => void handleCopy()}>
-                          <Copy className="size-4" />
-                          Copy
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-red-600 focus:text-red-600"
-                          onClick={() => setDeleteConfirmOpen(true)}
-                        >
-                          <Trash2 className="size-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {!readOnly ? (
+                      <>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="outline" size="icon">
+                              <MoreHorizontal className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => void handleCopy()}>
+                              <Copy className="size-4" />
+                              Copy
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-red-600 focus:text-red-600"
+                              onClick={() => setDeleteConfirmOpen(true)}
+                            >
+                              <Trash2 className="size-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
 
-                    <div className="flex">
-                      <Button
-                        type="button"
-                        className="rounded-r-none"
-                        disabled={saving}
-                        onClick={() => void handleSave("stay")}
-                      >
-                        {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                        Save
-                      </Button>
-                      {saveMenu}
-                    </div>
+                        <div className="flex">
+                          <Button
+                            type="button"
+                            className="rounded-r-none"
+                            disabled={saving}
+                            onClick={() => void handleSave("stay")}
+                          >
+                            {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                            Save
+                          </Button>
+                          {saveMenu}
+                        </div>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                    Cancel
+                    {readOnly ? "Close" : "Cancel"}
                   </Button>
-                  <div className="flex">
-                    <Button type="button" className="rounded-r-none" disabled={saving} onClick={() => void handleSave("stay")}>
-                      {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                      Save
-                    </Button>
-                    {saveMenu}
-                  </div>
+                  {!readOnly ? (
+                    <div className="flex">
+                      <Button type="button" className="rounded-r-none" disabled={saving} onClick={() => void handleSave("stay")}>
+                        {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                        Save
+                      </Button>
+                      {saveMenu}
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>

@@ -80,6 +80,7 @@ async function deliverInviteEmail(params: {
   fullName: string;
   inviterName: string;
   inviteToken: string;
+  inviteUrl?: string;
   /**
    * When true, the user already has a password set — this is an admin-driven
    * forced password reset, not a first-time invite. We still mint and store
@@ -89,7 +90,7 @@ async function deliverInviteEmail(params: {
    */
   isPasswordReset: boolean;
 }): Promise<InviteEmailOutcome> {
-  const inviteLink = buildInviteUrl(params.inviteToken);
+  const inviteLink = params.inviteUrl ?? buildInviteUrl(params.inviteToken);
   const now = new Date();
   try {
     if (params.isPasswordReset) {
@@ -609,6 +610,7 @@ router.post(
 
     const placeholderHash = await generatePlaceholderPasswordHash();
     const invite = generateInvite();
+    const inviteUrl = buildInviteUrl(invite.token);
     const organizationId = getActiveOrganizationId(req.auth!);
 
     const [created] = await db.transaction(async (tx) => {
@@ -666,6 +668,7 @@ router.post(
       fullName: created.fullName,
       inviterName,
       inviteToken: invite.token,
+      inviteUrl,
       // First-time invite by definition — the row was just inserted with a
       // placeholder password and no `passwordSetAt`.
       isPasswordReset: false,
@@ -679,7 +682,7 @@ router.post(
       },
       inviteToken: invite.token,
       invitePath: buildInvitePath(invite.token),
-      inviteUrl: buildInviteUrl(invite.token),
+      inviteUrl,
       inviteTokenExpiresAt: invite.expiresAt.toISOString(),
       emailDelivery: {
         emailed: delivery.emailed,
@@ -711,6 +714,7 @@ router.post(
     }
 
     const invite = generateInvite();
+    const inviteUrl = buildInviteUrl(invite.token);
     const now = new Date();
     const isPasswordReset = target.passwordSetAt !== null;
 
@@ -763,6 +767,7 @@ router.post(
       fullName: target.fullName,
       inviterName,
       inviteToken: invite.token,
+      inviteUrl,
       isPasswordReset,
     });
 
@@ -774,7 +779,7 @@ router.post(
       },
       inviteToken: invite.token,
       invitePath: buildInvitePath(invite.token),
-      inviteUrl: buildInviteUrl(invite.token),
+      inviteUrl,
       inviteTokenExpiresAt: invite.expiresAt.toISOString(),
       emailDelivery: {
         emailed: delivery.emailed,
@@ -827,6 +832,7 @@ router.post(
     }
 
     const invite = generateInvite();
+    const inviteUrl = buildInviteUrl(invite.token);
     const [updated] = await db
       .update(users)
       .set({
@@ -856,6 +862,7 @@ router.post(
       fullName: target.fullName,
       inviterName,
       inviteToken: invite.token,
+      inviteUrl,
       isPasswordReset: false,
     });
 
@@ -873,7 +880,7 @@ router.post(
       },
       inviteToken: invite.token,
       invitePath: buildInvitePath(invite.token),
-      inviteUrl: buildInviteUrl(invite.token),
+      inviteUrl,
       inviteTokenExpiresAt: invite.expiresAt.toISOString(),
       emailDelivery: {
         emailed: delivery.emailed,

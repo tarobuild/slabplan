@@ -121,10 +121,37 @@ export function usePdfAnnotations(
 
   const undoStackRef = useRef<HistoryEntry[]>([])
   const redoStackRef = useRef<HistoryEntry[]>([])
+  const draftsRef = useRef<DraftAnnotation[]>([])
+  const pendingCreateTimersRef = useRef<Map<string, number>>(new Map())
+  const cancelledCreateTempIdsRef = useRef<Set<string>>(new Set())
+  const refreshSeqRef = useRef(0)
   const [, forceHistoryTick] = useState(0)
   const tickHistory = useCallback(() => forceHistoryTick((t) => t + 1), [])
 
+  useEffect(() => {
+    draftsRef.current = drafts
+  }, [drafts])
+
+  const cancelPendingCreate = useCallback((tempId: string) => {
+    const timer = pendingCreateTimersRef.current.get(tempId)
+    if (timer !== undefined) {
+      window.clearTimeout(timer)
+      pendingCreateTimersRef.current.delete(tempId)
+    }
+    cancelledCreateTempIdsRef.current.add(tempId)
+  }, [])
+
+  const clearPendingCreates = useCallback(() => {
+    for (const [tempId, timer] of pendingCreateTimersRef.current.entries()) {
+      window.clearTimeout(timer)
+      cancelledCreateTempIdsRef.current.add(tempId)
+    }
+    pendingCreateTimersRef.current.clear()
+  }, [])
+
   const refresh = useCallback(async () => {
+    const refreshSeq = refreshSeqRef.current + 1
+    refreshSeqRef.current = refreshSeq
     if (!fileId) {
       setAnnotations([])
       return
@@ -135,8 +162,10 @@ export function usePdfAnnotations(
       const res = await api.get<{ annotations: ServerAnnotation[] }>(
         `/files/${fileId}/annotations`,
       )
+      if (refreshSeqRef.current !== refreshSeq) return
       setAnnotations(res.data.annotations.map(normalizeAnnotation))
     } catch (err) {
+      if (refreshSeqRef.current !== refreshSeq) return
       if (isAxiosError(err) && err.response?.status === 401) {
         // Don't surface noise if the user is not signed in.
         setAnnotations([])
@@ -144,12 +173,16 @@ export function usePdfAnnotations(
         setLoadError("Failed to load markup.")
       }
     } finally {
-      setLoading(false)
+      if (refreshSeqRef.current === refreshSeq) {
+        setLoading(false)
+      }
     }
   }, [fileId])
 
   useEffect(() => {
     if (!fileId || !enabled) {
+      refreshSeqRef.current += 1
+      clearPendingCreates()
       setAnnotations([])
       setDrafts([])
       undoStackRef.current = []
@@ -158,7 +191,8 @@ export function usePdfAnnotations(
       return
     }
     void refresh()
-  }, [fileId, enabled, refresh, tickHistory])
+    return clearPendingCreates
+  }, [fileId, enabled, refresh, tickHistory, clearPendingCreates])
 
   const presetForActive = useMemo(() => {
     if (active === "eraser" || active === "select") {
@@ -174,6 +208,14 @@ export function usePdfAnnotations(
   const persistDraft = useCallback(
     async (draft: DraftAnnotation) => {
       if (!fileId) return
+      if (
+        cancelledCreateTempIdsRef.current.has(draft.tempId) ||
+        !draftsRef.current.some((pending) => pending.tempId === draft.tempId)
+      ) {
+        pendingCreateTimersRef.current.delete(draft.tempId)
+        cancelledCreateTempIdsRef.current.delete(draft.tempId)
+        return
+      }
       try {
         const res = await api.post<{ annotation: ServerAnnotation }>(
           `/files/${fileId}/annotations`,
@@ -192,8 +234,22 @@ export function usePdfAnnotations(
           },
         )
         const created = normalizeAnnotation(res.data.annotation)
+        if (
+          cancelledCreateTempIdsRef.current.has(draft.tempId) ||
+          !draftsRef.current.some((pending) => pending.tempId === draft.tempId)
+        ) {
+          pendingCreateTimersRef.current.delete(draft.tempId)
+          cancelledCreateTempIdsRef.current.delete(draft.tempId)
+          setDrafts((prev) => prev.filter((d) => d.tempId !== draft.tempId))
+          api.delete(`/files/${fileId}/annotations/${created.id}`).catch(() => {
+            toast.error("Failed to undo. Reverted.")
+          })
+          return
+        }
         setAnnotations((prev) => [...prev, created])
         setDrafts((prev) => prev.filter((d) => d.tempId !== draft.tempId))
+        pendingCreateTimersRef.current.delete(draft.tempId)
+        cancelledCreateTempIdsRef.current.delete(draft.tempId)
         // Update the matching undo entry with the real server id so that an
         // undo (which deletes the just-created annotation) can hit the
         // server.
@@ -206,6 +262,8 @@ export function usePdfAnnotations(
       } catch (err) {
         // Roll back the optimistic draft.
         setDrafts((prev) => prev.filter((d) => d.tempId !== draft.tempId))
+        pendingCreateTimersRef.current.delete(draft.tempId)
+        cancelledCreateTempIdsRef.current.delete(draft.tempId)
         // Remove the stale undo entry if it's the most recent.
         undoStackRef.current = undoStackRef.current.filter(
           (e) => !(e.kind === "create" && e.tempId === draft.tempId),
@@ -239,9 +297,11 @@ export function usePdfAnnotations(
       tickHistory()
       // Debounce: persist after a short delay so quick successive strokes
       // don't queue dozens of in-flight requests for the same draft.
-      window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
+        pendingCreateTimersRef.current.delete(tempId)
         void persistDraft(fullDraft)
       }, 300)
+      pendingCreateTimersRef.current.set(tempId, timer)
     },
     [fileId, persistDraft, tickHistory],
   )
@@ -325,6 +385,7 @@ export function usePdfAnnotations(
     if (entry.kind === "create") {
       // Undo a create — remove the annotation locally and on server.
       const serverId = entry.serverId
+      cancelPendingCreate(entry.tempId)
       setDrafts((prev) => prev.filter((d) => d.tempId !== entry.tempId))
       let removedFromServer: Annotation | null = null
       if (serverId) {
@@ -411,7 +472,7 @@ export function usePdfAnnotations(
       }
     }
     tickHistory()
-  }, [annotations, fileId, persistDraft, tickHistory])
+  }, [annotations, cancelPendingCreate, fileId, persistDraft, tickHistory])
 
   const redo = useCallback(() => {
     const entry = redoStackRef.current.pop()

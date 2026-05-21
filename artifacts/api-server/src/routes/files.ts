@@ -32,6 +32,7 @@ import { streamStoredFileToResponse } from "../lib/storage";
 import { uploadArray } from "../lib/uploads";
 import { createUploadPerUserRateLimit } from "../lib/rate-limit";
 import { assertActiveUserById } from "../lib/active-user";
+import { stringBoolean } from "../lib/zod-helpers";
 
 const uploadRateLimit = createUploadPerUserRateLimit();
 
@@ -55,7 +56,7 @@ const fileListQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format, expected YYYY-MM-DD.").optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format, expected YYYY-MM-DD.").optional(),
   sortBy: z.string().optional().default("modified_newest"),
-  includeDeleted: z.coerce.boolean().optional().default(false),
+  includeDeleted: stringBoolean.optional().default(false),
   page: z.coerce.number().int().positive().optional().default(1),
   limit: z.coerce.number().int().positive().max(100).optional().default(100),
   cursor: z.string().optional(),

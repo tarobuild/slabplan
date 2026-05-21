@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { afterEach, describe, test } from "node:test"
 import { AxiosError, AxiosHeaders } from "axios"
 import { toast } from "sonner"
+import { ApiError } from "@workspace/api-client-react"
 
 import { apiErrorDetailCode, classifyApiError, toastApiError } from "./api-errors.ts"
 
@@ -29,6 +30,14 @@ function buildAxiosError(options: {
     config,
     undefined,
     response as never,
+  )
+}
+
+function buildGeneratedApiError(status: number, data: unknown): ApiError {
+  return new ApiError(
+    new Response(null, { status, statusText: "" }),
+    data,
+    { method: "POST", url: "/test" },
   )
 }
 
@@ -96,6 +105,44 @@ describe("classifyApiError", () => {
       kind: "toast",
       message: "Email already taken",
     })
+  })
+
+  test("prefers generated ApiError problem detail over fallbacks", () => {
+    const result = classifyApiError(
+      buildGeneratedApiError(422, { detail: "Email already taken" }),
+      "fallback",
+    )
+    assert.deepEqual(result, {
+      kind: "toast",
+      message: "Email already taken",
+    })
+  })
+
+  test("prefers generated ApiError problem title when message/detail are blank", () => {
+    const result = classifyApiError(
+      buildGeneratedApiError(422, {
+        message: "   ",
+        detail: "",
+        title: "Invalid invite",
+      }),
+      "fallback",
+    )
+    assert.deepEqual(result, {
+      kind: "toast",
+      message: "Invalid invite",
+    })
+  })
+
+  test("falls back for generated ApiError blank problem strings", () => {
+    const result = classifyApiError(
+      buildGeneratedApiError(422, {
+        message: "   ",
+        detail: "",
+        title: "  ",
+      }),
+      "fallback",
+    )
+    assert.deepEqual(result, { kind: "toast", message: "fallback" })
   })
 
   test("prefers a non-empty server message over the generic 5xx toast", () => {

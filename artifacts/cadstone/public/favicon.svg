@@ -1,28 +1,7 @@
 <svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="180" height="180" rx="32" fill="#1D1D1D"/>
-
-  <!-- C shape: top bar -->
-  <rect x="38" y="30" width="104" height="34" rx="5" fill="#BFC5D0"/>
-  <!-- C shape: left vertical bar -->
-  <rect x="38" y="30" width="42" height="120" rx="5" fill="#BFC5D0"/>
-  <!-- C shape: bottom bar -->
-  <rect x="38" y="116" width="104" height="34" rx="5" fill="#BFC5D0"/>
-
-  <!-- Orange accent: highlight the right edge of the top bar opening -->
-  <rect x="108" y="30" width="34" height="16" rx="5" fill="#E85D04"/>
-  <!-- Orange accent: highlight the right edge of the bottom bar opening -->
-  <rect x="108" y="134" width="34" height="16" rx="5" fill="#E85D04"/>
-
-  <!-- Stone mortar lines on top bar -->
-  <rect x="38" y="47" width="104" height="3" rx="1" fill="#1D1D1D" opacity="0.4"/>
-  <!-- Stone mortar lines on bottom bar -->
-  <rect x="38" y="130" width="104" height="3" rx="1" fill="#1D1D1D" opacity="0.4"/>
-  <!-- Stone mortar vertical on top bar -->
-  <rect x="87" y="30" width="3" height="17" rx="1" fill="#1D1D1D" opacity="0.4"/>
-  <!-- Stone mortar vertical on bottom bar -->
-  <rect x="87" y="133" width="3" height="17" rx="1" fill="#1D1D1D" opacity="0.4"/>
-  <!-- Left vertical bar mortar lines -->
-  <rect x="38" y="72" width="42" height="3" rx="1" fill="#1D1D1D" opacity="0.4"/>
-  <rect x="38" y="105" width="42" height="3" rx="1" fill="#1D1D1D" opacity="0.4"/>
+  <rect width="180" height="180" rx="34" fill="#252A2E"/>
+  <path d="M38 119 72 55h34l-34 64H38Z" fill="#2E765D"/>
+  <path d="M73 119 107 55h34l-34 64H73Z" fill="#B56C2C"/>
+  <path d="M44 98h86" stroke="#F4EFE5" stroke-opacity=".35" stroke-width="5" stroke-linecap="round"/>
+  <path d="M58 74h86" stroke="#F4EFE5" stroke-opacity=".18" stroke-width="5" stroke-linecap="round"/>
 </svg>

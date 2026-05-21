@@ -49,6 +49,30 @@ export class ApiError extends Error {
   }
 }
 
+function normalizeApiPath(path: string) {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const segments = normalized.split("/");
+
+  for (const segment of segments) {
+    if (!segment) {
+      continue;
+    }
+
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      throw new ApiError(400, "API path contains invalid percent encoding", null);
+    }
+
+    if (decoded === "." || decoded === ".." || decoded.includes("/") || decoded.includes("\\")) {
+      throw new ApiError(400, "API path must stay within /api and cannot contain path traversal", null);
+    }
+  }
+
+  return normalized;
+}
+
 export class ApiClient {
   readonly baseUrl: string;
   private readonly token: string;
@@ -157,7 +181,7 @@ export class ApiClient {
   }
 
   private buildUrl(path: string, query?: ApiRequest["query"]): string {
-    const normalized = path.startsWith("/") ? path : `/${path}`;
+    const normalized = normalizeApiPath(path);
     const base = `${this.baseUrl}/api${normalized}`;
     if (!query) return base;
     const params = new URLSearchParams();

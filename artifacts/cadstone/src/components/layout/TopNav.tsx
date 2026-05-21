@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   ChevronDown,
   ClipboardList,
@@ -49,6 +49,7 @@ export default function TopNav() {
   const toggleAgent = useAgentPanelStore((s) => s.toggle)
   const [searchOpen, setSearchOpen] = useState(false)
   const [canUseAssistant, setCanUseAssistant] = useState(false)
+  const assistantAccessRequestSeq = useRef(0)
 
   const role = user?.role
   const isFieldUser = role === "project_manager" || role === "crew_member"
@@ -94,16 +95,23 @@ export default function TopNav() {
     }
 
     let cancelled = false
+    const requestSeq = assistantAccessRequestSeq.current + 1
+    assistantAccessRequestSeq.current = requestSeq
+    setCanUseAssistant(false)
     const path = currentJobId
       ? `/agent/access?jobId=${encodeURIComponent(currentJobId)}`
       : "/agent/access"
     api
       .get<{ canUseAssistant: boolean }>(path, { suppressForbiddenRedirect: true })
       .then((response) => {
-        if (!cancelled) setCanUseAssistant(response.data.canUseAssistant)
+        if (!cancelled && assistantAccessRequestSeq.current === requestSeq) {
+          setCanUseAssistant(response.data.canUseAssistant)
+        }
       })
       .catch(() => {
-        if (!cancelled) setCanUseAssistant(false)
+        if (!cancelled && assistantAccessRequestSeq.current === requestSeq) {
+          setCanUseAssistant(false)
+        }
       })
 
     return () => {
@@ -135,31 +143,31 @@ export default function TopNav() {
   }, [])
 
   return (
-    <header className="sticky top-0 z-30 shadow-md" style={{ backgroundColor: "#1D1D1D" }}>
-      <div className="flex h-14 lg:h-12 items-center gap-1 px-3">
+    <header className="sticky top-0 z-30 border-b border-white/10 bg-[hsl(var(--nav))] shadow-sm">
+      <div className="flex h-14 items-center gap-1 px-3 lg:h-[3.25rem] lg:px-4">
         {/* Logo */}
-        <Link to="/dashboard" className="flex items-center shrink-0 mr-3">
-          <div className="flex items-center bg-white rounded px-2 py-1">
+        <Link to="/dashboard" className="mr-3 flex shrink-0 items-center">
+          <div className="flex items-center rounded-md border border-white/10 bg-white/95 px-2 py-1 shadow-sm">
             <img
               src={APP_LOGO_PATH}
               alt={APP_NAME}
-              className="h-6 w-auto"
+              className="h-6 w-auto lg:h-7"
             />
           </div>
         </Link>
 
         {/* Primary nav — hidden on mobile (replaced by bottom-tab nav). */}
-        <nav className="hidden md:flex items-center gap-0.5">
+        <nav className="hidden items-center gap-1 lg:flex">
           {visibleLinks.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
                 cn(
-                  "px-3 py-1.5 text-sm rounded transition-colors whitespace-nowrap font-medium",
+                  "rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
                   isActive
-                    ? "text-[#E85D04] bg-white/10"
-                    : "text-white/70 hover:text-white hover:bg-white/10",
+                    ? "bg-white/10 text-[hsl(var(--nav-foreground))] shadow-[inset_0_-1px_0_hsl(var(--oxide))]"
+                    : "text-[hsl(var(--nav-muted))] hover:bg-white/10 hover:text-[hsl(var(--nav-foreground))]",
                 )
               }
             >
@@ -171,13 +179,13 @@ export default function TopNav() {
         <div className="flex-1" />
 
         {/* Global search — desktop only */}
-        <div id="stone-track-topbar-search" className="hidden md:block w-72 mr-1">
+        <div id="stone-track-topbar-search" className="mr-1 hidden w-64 xl:block 2xl:w-72">
           <GlobalSearch />
         </div>
 
-        {/* Search button — mobile only */}
+        {/* Search button — compact header widths */}
         <button
-          className="md:hidden flex items-center justify-center rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          className="flex items-center justify-center rounded-md p-2 text-[hsl(var(--nav-muted))] transition-colors hover:bg-white/10 hover:text-[hsl(var(--nav-foreground))] xl:hidden"
           onClick={() => setSearchOpen(true)}
           aria-label="Open search"
         >
@@ -188,11 +196,11 @@ export default function TopNav() {
           <button
             type="button"
             onClick={toggleAgent}
-            className="ml-1 flex items-center justify-center gap-1.5 rounded p-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+            className="ml-1 flex items-center justify-center gap-1.5 rounded-md p-2 text-[hsl(var(--nav-muted))] transition-colors hover:bg-white/10 hover:text-[hsl(var(--nav-foreground))]"
             aria-label="Open assistant"
             title="Assistant"
           >
-            <Sparkles className="size-5" style={{ color: "#E85D04" }} />
+            <Sparkles className="size-5 text-[hsl(var(--oxide))]" />
             <span className="hidden text-sm font-medium md:block">Assistant</span>
           </button>
         ) : null}
@@ -203,12 +211,12 @@ export default function TopNav() {
             <button
               type="button"
               aria-label={`Open account menu for ${accountLabel}`}
-              className="ml-1 flex items-center gap-1.5 rounded px-2 py-1 text-white/70 hover:text-white hover:bg-white/10 transition-colors outline-none"
+              className="ml-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[hsl(var(--nav-muted))] outline-none transition-colors hover:bg-white/10 hover:text-[hsl(var(--nav-foreground))]"
             >
-              <Avatar className="size-7 border border-white/20 cursor-pointer">
+              <Avatar className="size-7 cursor-pointer border border-white/20">
                 <AvatarFallback
                   className="text-[10px] font-semibold text-white"
-                  style={{ backgroundColor: "#E85D04" }}
+                  style={{ backgroundColor: "hsl(var(--primary))" }}
                 >
                   {user ? initials(user.fullName) : APP_SHORT_NAME}
                 </AvatarFallback>
@@ -219,12 +227,12 @@ export default function TopNav() {
               <ChevronDown aria-hidden="true" className="size-3.5 opacity-70" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 border-[#E5E7EB] shadow-lg mt-1">
+          <DropdownMenuContent align="end" className="mt-1 w-56 border-border shadow-lg">
             <div className="px-2 py-1.5">
-              <p className="text-sm font-medium text-slate-900">
+              <p className="text-sm font-medium text-foreground">
                 {user?.fullName ?? "Signed out"}
               </p>
-              <p className="text-xs capitalize text-slate-500">
+              <p className="text-xs capitalize text-muted-foreground">
                 {user?.role?.replaceAll("_", " ") ?? ""}
               </p>
             </div>
@@ -257,7 +265,7 @@ export default function TopNav() {
           side="top"
           className="flex h-[85vh] max-h-[85vh] flex-col gap-0 p-0"
         >
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <SheetTitle className="text-base">Search</SheetTitle>
             <span className="size-6" aria-hidden="true" />
           </div>

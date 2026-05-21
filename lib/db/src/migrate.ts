@@ -8,6 +8,8 @@ import { pool as defaultPool } from "./index";
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultMigrationsDir = path.resolve(currentDir, "../migrations");
 const migrationsTableName = "workspace_schema_migrations";
+const migrationLockNamespace = "stone-track";
+const migrationLockName = "schema-migrations";
 
 export type ApplyMigrationsOptions = {
   /**
@@ -206,8 +208,15 @@ export async function applyMigrations(
   const migrationsDir = options.migrationsDir ?? defaultMigrationsDir;
   await verifyMigrationsJournal(migrationsDir);
   const client = await pool.connect();
+  let lockAcquired = false;
 
   try {
+    await client.query("select pg_advisory_lock(hashtext($1), hashtext($2))", [
+      migrationLockNamespace,
+      migrationLockName,
+    ]);
+    lockAcquired = true;
+
     const baselined = await recordBaselineIfNeeded(client, migrationsDir);
 
     const existingRows = await client.query<{
@@ -266,6 +275,16 @@ export async function applyMigrations(
 
     return { applied, skipped, baselined };
   } finally {
+    if (lockAcquired) {
+      await client
+        .query("select pg_advisory_unlock(hashtext($1), hashtext($2))", [
+          migrationLockNamespace,
+          migrationLockName,
+        ])
+        .catch(() => {
+          /* Advisory locks are also released when the session closes. */
+        });
+    }
     client.release();
   }
 }

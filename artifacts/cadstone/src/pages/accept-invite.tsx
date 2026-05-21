@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Loader2, Lock } from "lucide-react"
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
@@ -37,6 +37,7 @@ export default function AcceptInvitePage() {
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
 
   // If somebody is already logged in and follows an invite link in the same
   // browser session, the safest UX is to send them to the dashboard rather
@@ -57,10 +58,10 @@ export default function AcceptInvitePage() {
   if (!token) {
     return (
       <CenteredCard>
-        <h1 className="text-lg font-semibold text-slate-900">
+        <h1 className="text-lg font-semibold text-foreground">
           This setup link is incomplete
         </h1>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           Ask your administrator for a fresh invite link, then open it again.
         </p>
         <Button
@@ -76,6 +77,7 @@ export default function AcceptInvitePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submittingRef.current) return
 
     if (password.length < 8) {
       toast.error("Password must be at least 8 characters.")
@@ -90,6 +92,7 @@ export default function AcceptInvitePage() {
     const validated = validatePayload(AuthPostAuthAcceptInviteBody, payload)
     if (!validated) return
 
+    submittingRef.current = true
     setSubmitting(true)
     try {
       const response = (await authPostAuthAcceptInvite(
@@ -101,6 +104,7 @@ export default function AcceptInvitePage() {
     } catch (err: unknown) {
       toastApiError(err, "Could not accept invite")
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }
@@ -108,7 +112,7 @@ export default function AcceptInvitePage() {
   return (
     <CenteredCard>
       <div className="space-y-1.5 text-center">
-        <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+        <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Lock className="size-5" />
         </div>
         <h1 className="text-lg font-semibold text-slate-900">
@@ -164,8 +168,8 @@ export default function AcceptInvitePage() {
 
 function CenteredCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] p-4">
-      <Card className="w-full max-w-md border-[#E5E7EB] shadow-sm">
+    <div className="app-surface flex min-h-screen items-center justify-center p-4">
+      <Card className="w-full max-w-md border-border bg-card shadow-sm">
         <CardContent className="space-y-5 p-8">{children}</CardContent>
       </Card>
     </div>

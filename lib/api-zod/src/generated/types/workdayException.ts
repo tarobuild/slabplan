@@ -14,8 +14,8 @@ export interface WorkdayException {
   id: string;
   title: string;
   type: WorkdayExceptionType;
-  startDate: Date;
-  endDate: Date;
+  startDate: string;
+  endDate: string;
   sameEveryYear?: boolean | null;
   categoryId?: string | null;
   /** When true, the exception applies to every active job. Only admins can create, update, or delete company-wide exceptions. */
@@ -24,6 +24,6 @@ export interface WorkdayException {
   jobIds?: string[] | null;
   notes?: string | null;
   createdBy?: string | null;
-  createdAt?: Date | null;
-  updatedAt?: Date | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }

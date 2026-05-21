@@ -93,7 +93,7 @@ const TARGETS = {
   production: { label: "PRODUCTION", envVar: "SUPABASE_DATABASE_URL" },
 };
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   let db = null;
   let confirmed = false;
   let dryRun = false;
@@ -128,7 +128,7 @@ function parseArgs(argv) {
   return { db, dryRun, cutoff };
 }
 
-async function classifyRows({ rows, storage }) {
+export async function classifyRows({ rows, storage }) {
   const orphans = [];
   const present = [];
   const indeterminate = [];
@@ -363,8 +363,14 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("cleanup-orphan-file-rows failed:", error.message ?? error);
-  if (error?.stack) console.error(error.stack);
-  process.exitCode = 1;
-});
+const invokedDirectly =
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  main().catch((error) => {
+    console.error("cleanup-orphan-file-rows failed:", error.message ?? error);
+    if (error?.stack) console.error(error.stack);
+    process.exitCode = 1;
+  });
+}

@@ -10,7 +10,7 @@ import type { ScheduleBaselineItem } from "./scheduleBaselineItem";
 export interface ScheduleBaseline {
   id: string;
   jobId: string;
-  capturedAt: Date;
+  capturedAt: string;
   capturedBy?: string | null;
   capturedByName?: string | null;
   items: ScheduleBaselineItem[];

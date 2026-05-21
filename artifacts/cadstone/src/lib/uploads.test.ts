@@ -145,6 +145,22 @@ describe("validateVideoDurations", () => {
     assert.equal(error, null)
     assert.equal(probeCalls, 0)
   })
+
+  test("probes advertised video extensions even when MIME is generic", async () => {
+    const extensions = [".mp4", ".mov", ".avi", ".webm", ".m4v", ".mkv", ".wmv", ".flv", ".3gp"]
+    let probeCalls = 0
+    const error = await validateVideoDurations(
+      extensions.map((extension) => makeFile(`clip${extension}`, "application/octet-stream")),
+      {
+        probe: () => {
+          probeCalls += 1
+          return Promise.resolve(30)
+        },
+      },
+    )
+    assert.equal(error, null)
+    assert.equal(probeCalls, extensions.length)
+  })
 })
 
 describe("validateSelectedFilesAsync (video)", () => {

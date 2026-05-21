@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
-    "build": "vite build --config vite.config.ts",
+    "build": "node ../../lib/api-spec/scripts/with-codegen-lock.mjs -- vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "check-eager-bundle": "vite build --config vite.config.ts --logLevel warn",
-    "test": "tsx --test \"src/**/*.test.ts\"",
-    "test:e2e": "playwright test"
+    "typecheck": "node ../../lib/api-spec/scripts/with-codegen-lock.mjs -- tsc -p tsconfig.json --noEmit && node ../../lib/api-spec/scripts/with-codegen-lock.mjs -- tsc -p tsconfig.test.json --noEmit",
+    "typecheck:test": "node ../../lib/api-spec/scripts/with-codegen-lock.mjs -- tsc -p tsconfig.test.json --noEmit",
+    "check-eager-bundle": "node ../../lib/api-spec/scripts/with-codegen-lock.mjs -- vite build --config vite.config.ts --logLevel warn",
+    "test": "tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
+    "test:e2e": "playwright test",
+    "test:e2e:auth": "playwright test tests/e2e/auth.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

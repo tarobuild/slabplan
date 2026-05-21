@@ -12,7 +12,7 @@ export default function ReportsLayout() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-6 lg:flex-row">
       <aside className="lg:w-56">
-        <h1 className="mb-3 text-lg font-semibold text-slate-900">Reports</h1>
+        <h1 className="mb-3 text-lg font-semibold text-foreground">Reports</h1>
         <nav className="flex flex-row gap-1 overflow-x-auto lg:flex-col">
           {TABS.map((t) => (
             <NavLink
@@ -21,8 +21,8 @@ export default function ReportsLayout() {
               className={({ isActive }) =>
                 `whitespace-nowrap rounded px-3 py-2 text-sm ${
                   isActive
-                    ? "bg-orange-50 font-medium text-orange-700"
-                    : "text-slate-600 hover:bg-slate-100"
+                    ? "bg-accent font-medium text-primary"
+                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                 }`
               }
             >

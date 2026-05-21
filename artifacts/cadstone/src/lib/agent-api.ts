@@ -1,4 +1,4 @@
-import { api } from "./api"
+import { api, refreshSession } from "./api"
 import { apiUrl } from "./api-origin"
 import { useAuthStore } from "@/store/auth"
 
@@ -171,24 +171,35 @@ export function streamSendMessage(
   handlers: StreamHandlers,
 ): StreamHandle {
   const controller = new AbortController()
-  const token = useAuthStore.getState().accessToken
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: "text/event-stream",
-    "X-Requested-With": "XMLHttpRequest",
+  const buildHeaders = (token: string | null) => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      "X-Requested-With": "XMLHttpRequest",
+    }
+    if (token) headers.Authorization = `Bearer ${token}`
+    return headers
   }
-  if (token) headers.Authorization = `Bearer ${token}`
+
+  const send = (token: string | null) =>
+    fetch(apiUrl(`/api/agent/conversations/${conversationId}/messages`), {
+      method: "POST",
+      headers: buildHeaders(token),
+      credentials: "include",
+      signal: controller.signal,
+      body: JSON.stringify({ content }),
+    })
 
   void (async () => {
     try {
-      const res = await fetch(apiUrl(`/api/agent/conversations/${conversationId}/messages`), {
-        method: "POST",
-        headers,
-        credentials: "include",
-        signal: controller.signal,
-        body: JSON.stringify({ content }),
-      })
+      let res = await send(useAuthStore.getState().accessToken)
+
+      if (res.status === 401 && !controller.signal.aborted) {
+        const refreshedToken = await refreshSession()
+        if (refreshedToken && !controller.signal.aborted) {
+          res = await send(refreshedToken)
+        }
+      }
 
       if (!res.ok || !res.body) {
         let message = `Request failed (${res.status})`

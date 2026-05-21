@@ -3,6 +3,7 @@ import {
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_COUNT,
   MAX_VIDEO_DURATION_SECONDS as SHARED_MAX_VIDEO_DURATION_SECONDS,
+  VIDEO_UPLOAD_EXTENSIONS,
   WIDE_UPLOAD_ACCEPT_ATTRIBUTE,
   dangerousUploadMessage,
   formatUploadSize,
@@ -28,13 +29,17 @@ export const MAX_VIDEO_DURATION_SECONDS = SHARED_MAX_VIDEO_DURATION_SECONDS
 // duration probe. The picker no longer narrows by media type (we use
 // the shared WIDE_UPLOAD_ACCEPT_ATTRIBUTE everywhere) so these lists
 // only exist for the duration check.
-const videoExtensions = [".mp4", ".mov", ".avi", ".webm", ".m4v"]
+const videoExtensions = VIDEO_UPLOAD_EXTENSIONS
 const videoMimeTypes = new Set([
   "video/mp4",
   "video/quicktime",
   "video/x-msvideo",
   "video/webm",
   "video/x-m4v",
+  "video/x-matroska",
+  "video/x-ms-wmv",
+  "video/x-flv",
+  "video/3gpp",
 ])
 
 function lowerExtension(fileName: string) {
@@ -123,6 +128,7 @@ export function validateSelectedFiles(
 type DurationProbe = (file: File) => Promise<number | null>
 
 const DEFAULT_PROBE_TIMEOUT_MS = 8000
+const DEFAULT_UPLOAD_TIMEOUT_MS = 120_000
 
 function defaultProbeDuration(file: File): Promise<number | null> {
   if (typeof document === "undefined" || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
@@ -134,6 +140,7 @@ function defaultProbeDuration(file: File): Promise<number | null> {
     video.preload = "metadata"
     video.muted = true
     let settled = false
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
 
     const cleanup = () => {
       try {
@@ -152,6 +159,10 @@ function defaultProbeDuration(file: File): Promise<number | null> {
     const finish = (value: number | null) => {
       if (settled) return
       settled = true
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle)
+        timeoutHandle = null
+      }
       cleanup()
       resolve(value)
     }
@@ -161,7 +172,7 @@ function defaultProbeDuration(file: File): Promise<number | null> {
       finish(Number.isFinite(duration) && duration > 0 ? duration : null)
     }
     video.onerror = () => finish(null)
-    setTimeout(() => finish(null), DEFAULT_PROBE_TIMEOUT_MS)
+    timeoutHandle = setTimeout(() => finish(null), DEFAULT_PROBE_TIMEOUT_MS)
 
     try {
       video.src = url
@@ -292,6 +303,8 @@ export interface UploadOptions {
   signal?: AbortSignal
   /** Override max retry attempts (default 3). */
   maxAttempts?: number
+  /** Request timeout in milliseconds (default 2 minutes). */
+  timeoutMs?: number
 }
 
 export interface UploadError extends Error {
@@ -356,6 +369,7 @@ function sendOnce<T>(opts: UploadOptions): Promise<XhrAttemptResult<T> | XhrAtte
 
     xhr.open("POST", apiUrl(`/api${opts.url}`), true)
     xhr.withCredentials = true
+    xhr.timeout = Math.max(1, opts.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS)
     xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest")
     if (token) {
       xhr.setRequestHeader("Authorization", `Bearer ${token}`)

@@ -12,6 +12,6 @@ export interface DailyLogTodo {
   isComplete: boolean;
   createdBy?: string | null;
   createdByName?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }

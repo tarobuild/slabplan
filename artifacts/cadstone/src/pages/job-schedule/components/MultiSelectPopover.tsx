@@ -67,7 +67,7 @@ export function MultiSelectPopover({
                     <div
                       className={cn(
                         "flex size-4 items-center justify-center rounded border border-slate-300",
-                        isSelected && "border-orange-600 bg-orange-600 text-white",
+                        isSelected && "border-primary bg-primary text-white",
                       )}
                     >
                       {isSelected ? <Check className="size-3" /> : null}

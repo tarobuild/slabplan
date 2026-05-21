@@ -92,7 +92,7 @@ router.use(asyncHandler(async (req, _res, next) => {
 async function loadOwnedConversation(
   userId: string,
   id: string,
-  organizationId?: string | null,
+  organizationId: string,
 ) {
   const [row] = await db
     .select()
@@ -101,7 +101,7 @@ async function loadOwnedConversation(
       and(
         eq(agentConversations.id, id),
         eq(agentConversations.userId, userId),
-        organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+        eq(agentConversations.organizationId, organizationId),
       ),
     )
     .limit(1);
@@ -181,7 +181,7 @@ router.get(
         .where(
           and(
             eq(agentConversations.userId, userId),
-            organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+            eq(agentConversations.organizationId, organizationId),
           ),
         )
         .orderBy(
@@ -244,12 +244,12 @@ router.get(
         cursorPredicate
           ? and(
               eq(agentConversations.userId, userId),
-              organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+              eq(agentConversations.organizationId, organizationId),
               cursorPredicate,
             )
           : and(
               eq(agentConversations.userId, userId),
-              organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+              eq(agentConversations.organizationId, organizationId),
             ),
       )
       .orderBy(
@@ -312,7 +312,7 @@ router.patch(
       .where(
         and(
           eq(agentConversations.id, id),
-          organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+          eq(agentConversations.organizationId, organizationId),
         ),
       )
       .returning();
@@ -330,7 +330,7 @@ router.delete(
     await db.delete(agentConversations).where(
       and(
         eq(agentConversations.id, id),
-        organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+        eq(agentConversations.organizationId, organizationId),
       ),
     );
     res.status(204).end();
@@ -437,7 +437,7 @@ router.post(
             .where(
               and(
                 eq(agentConversations.id, id),
-                organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+                eq(agentConversations.organizationId, organizationId),
               ),
             );
         }
@@ -530,7 +530,7 @@ router.post(
               .where(
                 and(
                   eq(agentConversations.id, id),
-                  organizationId ? eq(agentConversations.organizationId, organizationId) : undefined,
+                  eq(agentConversations.organizationId, organizationId),
                 ),
               );
             return { id: row!.id };

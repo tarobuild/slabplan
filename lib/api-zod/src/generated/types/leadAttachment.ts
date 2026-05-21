@@ -16,6 +16,6 @@ export interface LeadAttachment {
   fileUrl?: string | null;
   fileSize?: number | null;
   mimeType?: string | null;
-  createdAt?: Date | null;
+  createdAt?: string | null;
   uploadedByName?: string | null;
 }

@@ -8,6 +8,8 @@
 
 export interface DailyLogCommentAttachment {
   name: string;
-  url: string;
+  url?: string | null;
   mimeType?: string | null;
+  fileId?: string | null;
+  fileUrl?: string | null;
 }

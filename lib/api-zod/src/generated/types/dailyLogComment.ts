@@ -23,8 +23,8 @@ export interface DailyLogComment {
   /** Map of emoji → list of user ids that reacted with it. */
   reactions: DailyLogCommentReactions;
   createdBy?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
   author: DailyLogCommentAuthor;
   replies: DailyLogComment[];
 }

@@ -67,6 +67,7 @@ export default function WorkerAssignmentPicker({
   function addWorker(userId: string) {
     onChange(selectedIds.includes(userId) ? selectedIds : [...selectedIds, userId])
     setQuery("")
+    setFocused(false)
   }
 
   function removeWorker(userId: string) {
@@ -74,7 +75,17 @@ export default function WorkerAssignmentPicker({
   }
 
   return (
-    <div className={cn("rounded-md border border-[#E5E7EB] px-3 py-2", className)}>
+    <div
+      className={cn("rounded-md border border-[#E5E7EB] px-3 py-2", className)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget
+        if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+          return
+        }
+        setFocused(false)
+      }}
+    >
       {selectedWorkers.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-2">
           {selectedWorkers.map((worker) => (
@@ -96,8 +107,6 @@ export default function WorkerAssignmentPicker({
         placeholder={placeholder}
         className="border-0 px-0 shadow-none focus-visible:ring-0"
         onChange={(event) => setQuery(event.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setTimeout(() => setFocused(false), 150)}
       />
 
       {(query.trim() || focused) && availableWorkers.length > 0 ? (

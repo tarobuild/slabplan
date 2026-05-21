@@ -47,7 +47,7 @@ function PlanCard({
     <section
       className={cn(
         "flex min-h-[360px] flex-col rounded-lg border bg-white p-5 shadow-sm",
-        active ? "border-orange-300 ring-1 ring-orange-200" : "border-slate-200",
+        active ? "border-primary/35 ring-1 ring-primary/20" : "border-slate-200",
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -56,7 +56,7 @@ function PlanCard({
           <p className="mt-1 text-sm text-slate-500">Up to {plan.maxUsers} users</p>
         </div>
         {active ? (
-          <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">
+          <Badge className="bg-primary/10 text-primary hover:bg-primary/10">
             Current
           </Badge>
         ) : null}

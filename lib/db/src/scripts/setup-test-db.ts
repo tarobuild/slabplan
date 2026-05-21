@@ -5,6 +5,7 @@ import pg from "pg";
 
 const DEFAULT_TEST_DATABASE_URL =
   "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test";
+const ALLOW_REMOTE_TEST_RESET_ENV = "STONE_TRACK_ALLOW_REMOTE_TEST_DATABASE_RESET";
 
 function resolveTestDatabaseUrl(): URL {
   const raw =
@@ -35,6 +36,49 @@ function describeTarget(testUrl: URL): string {
   const host = testUrl.hostname || "localhost";
   const port = testUrl.port || "5432";
   return `${dbName} @ ${host}:${port}`;
+}
+
+function isLocalHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function normalizedUrl(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    return new URL(raw).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function validateDestructiveTestTarget(testUrl: URL): void {
+  const dbName = decodeURIComponent(testUrl.pathname.replace(/^\//, ""));
+  if (!dbName) {
+    throw new Error(
+      `TEST_DATABASE_URL must include a database name (got "${testUrl}")`,
+    );
+  }
+
+  if (!/(^|[_-])test($|[_-])|_test$|test_/i.test(dbName)) {
+    throw new Error(
+      `Refusing to recreate database "${dbName}" because its name does not look like a test database.`,
+    );
+  }
+
+  if (!isLocalHost(testUrl.hostname) && process.env[ALLOW_REMOTE_TEST_RESET_ENV] !== "true") {
+    throw new Error(
+      `Refusing to recreate remote test database at "${testUrl.hostname}" without ${ALLOW_REMOTE_TEST_RESET_ENV}=true.`,
+    );
+  }
+
+  const target = testUrl.toString();
+  for (const envVar of ["SUPABASE_DATABASE_URL"]) {
+    if (normalizedUrl(process.env[envVar]) === target) {
+      throw new Error(
+        `Refusing to recreate TEST_DATABASE_URL because it matches ${envVar}.`,
+      );
+    }
+  }
 }
 
 function isConnectionRefused(error: unknown): boolean {
@@ -127,6 +171,7 @@ function runDrizzlePush(testUrl: URL): Promise<void> {
 
 async function main(): Promise<void> {
   const testUrl = resolveTestDatabaseUrl();
+  validateDestructiveTestTarget(testUrl);
 
   console.log(`[setup-test-db] Recreating database ${describeTarget(testUrl)}`);
   await recreateDatabase(testUrl);

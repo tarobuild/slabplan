@@ -111,15 +111,8 @@ export function TodosSheet({
 
   async function handleTogglePersonalTodo(item: ScheduleItemRecord) {
     try {
-      await api.put(`/schedule-items/${item.id}`, {
-        title: item.title,
-        startDate: item.startDate,
-        workDays: item.workDays,
+      await api.post(`/schedule-items/${item.id}/complete`, {
         isComplete: !item.isComplete,
-        isHourly: item.isHourly ?? false,
-        startTime: item.startTime,
-        endTime: item.endTime,
-        assigneeIds: item.assigneeIds,
         progress: item.isComplete ? 0 : 100,
       })
       await onRefresh()

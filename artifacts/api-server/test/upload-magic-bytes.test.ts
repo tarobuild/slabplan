@@ -546,6 +546,19 @@ test("SVG with inline <script> is rejected with UPLOAD_SVG_UNSAFE", async () => 
   assert.equal(body.errors?.code, "UPLOAD_SVG_UNSAFE");
 });
 
+test("SVG with inline <script> after the first scan chunk is rejected", async () => {
+  const paddedSvg = Buffer.concat([
+    Buffer.from('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg">'),
+    Buffer.from("<!--"),
+    Buffer.alloc(70 * 1024, 0x20),
+    Buffer.from('--><script>alert(1)</script></svg>'),
+  ]);
+  const response = await uploadFile("logo.svg", "image/svg+xml", paddedSvg);
+  assert.equal(response.status, 415);
+  const body = await readJson(response);
+  assert.equal(body.errors?.code, "UPLOAD_SVG_UNSAFE");
+});
+
 test("safe SVG passes magic-byte validation", async () => {
   const response = await uploadFile("logo.svg", "image/svg+xml", SVG_SAFE_BYTES);
   assert.equal(response.status, 200);

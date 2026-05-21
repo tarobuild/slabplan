@@ -126,6 +126,11 @@ import { uploadAcceptForMediaType, validateSelectedFilesAsync } from "@/lib/uplo
 import { useFilePreview } from "@/components/files/file-preview-context"
 import type { PreviewFile } from "@/components/files/FilePreview"
 import { toast } from "sonner"
+import {
+  getDateRangeForPreset,
+  todayString,
+  type DailyLogFilterPreset,
+} from "./job-daily-logs-date-utils"
 
 type JobContext = {
   job: JobOption | null
@@ -289,7 +294,7 @@ type FormValues = {
 // Drafts now reference an uploaded files row via `fileId`. We keep `name`,
 // `mimeType`, and `previewUrl` (an object URL we created from the local
 // File) so the composer can show a thumbnail before submit; `previewUrl`
-// is revoked on remove/submit.
+// is revoked on remove/submit/close.
 type CommentDraftAttachment = {
   fileId: string
   name: string
@@ -297,23 +302,15 @@ type CommentDraftAttachment = {
   previewUrl: string
 }
 
-type FilterPreset =
-  | "all"
-  | "custom"
-  | "today"
-  | "today_onward"
-  | "next_30"
-  | "next_14"
-  | "next_7"
-  | "today_tomorrow"
-  | "past_7"
-  | "past_14"
-  | "past_30"
-  | "past_45"
-  | "past_60"
-  | "past_90"
-  | "past_180"
-  | "past_365"
+export function revokeCommentDraftAttachmentPreviews(
+  attachments: Array<Pick<CommentDraftAttachment, "previewUrl">>,
+) {
+  for (const item of attachments) {
+    URL.revokeObjectURL(item.previewUrl)
+  }
+}
+
+type FilterPreset = DailyLogFilterPreset
 
 type FilterValues = {
   standardFilter: "all" | "published" | "draft" | "with_attachments" | "weather_included"
@@ -397,14 +394,6 @@ const COMMENT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
 const COMMENT_ATTACHMENT_SIZE_MESSAGE = "Each attachment must be under 10 MB."
 const COMMENT_ATTACHMENT_COUNT_MESSAGE = `You can attach up to ${COMMENT_ATTACHMENT_MAX_COUNT} files per comment.`
 
-function todayString() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function toDateOnly(date: Date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
-}
-
 function formatShortDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "short",
@@ -448,6 +437,18 @@ function getInitials(value: string | null | undefined) {
 function buildAddress(job: JobOption | null | undefined) {
   if (!job) return ""
   return [job.streetAddress, job.city, job.state, job.zipCode].filter(Boolean).join(", ")
+}
+
+export function buildWeatherRequestKey({
+  jobId,
+  address,
+  date,
+}: {
+  jobId: string
+  address: string
+  date: string
+}) {
+  return JSON.stringify({ jobId, address, date })
 }
 
 function normalizeWeatherData(value: unknown): WeatherSnapshot | null {
@@ -496,37 +497,6 @@ function deriveWeatherIcon(snapshot: WeatherSnapshot | null) {
 
 function titleForLog(logDate: string, title: string | null | undefined) {
   return `${formatTitleDate(logDate)} | ${title || "Daily Log"}`
-}
-
-function toQueryDate(date: Date) {
-  return toDateOnly(date).toISOString().slice(0, 10)
-}
-
-function addDays(date: Date, amount: number) {
-  const next = new Date(date)
-  next.setUTCDate(next.getUTCDate() + amount)
-  return next
-}
-
-function getDateRangeForPreset(preset: FilterPreset) {
-  const now = toDateOnly(new Date())
-
-  if (preset === "all") return { from: "", to: "" }
-  if (preset === "custom") return null
-  if (preset === "today") return { from: toQueryDate(now), to: toQueryDate(now) }
-  if (preset === "today_onward") return { from: toQueryDate(now), to: "" }
-  if (preset === "today_tomorrow") return { from: toQueryDate(now), to: toQueryDate(addDays(now, 1)) }
-  if (preset === "next_7") return { from: toQueryDate(now), to: toQueryDate(addDays(now, 7)) }
-  if (preset === "next_14") return { from: toQueryDate(now), to: toQueryDate(addDays(now, 14)) }
-  if (preset === "next_30") return { from: toQueryDate(now), to: toQueryDate(addDays(now, 30)) }
-  if (preset === "past_7") return { from: toQueryDate(addDays(now, -7)), to: toQueryDate(now) }
-  if (preset === "past_14") return { from: toQueryDate(addDays(now, -14)), to: toQueryDate(now) }
-  if (preset === "past_30") return { from: toQueryDate(addDays(now, -30)), to: toQueryDate(now) }
-  if (preset === "past_45") return { from: toQueryDate(addDays(now, -45)), to: toQueryDate(now) }
-  if (preset === "past_60") return { from: toQueryDate(addDays(now, -60)), to: toQueryDate(now) }
-  if (preset === "past_90") return { from: toQueryDate(addDays(now, -90)), to: toQueryDate(now) }
-  if (preset === "past_180") return { from: toQueryDate(addDays(now, -180)), to: toQueryDate(now) }
-  return { from: toQueryDate(addDays(now, -365)), to: toQueryDate(now) }
 }
 
 function uniqueStrings(values: string[]) {
@@ -842,8 +812,8 @@ function EmptyState({
 // ── Activity Feed helpers ──────────────────────────────────────────────
 
 const AVATAR_COLORS = [
-  "bg-orange-500",
-  "bg-blue-500",
+  "bg-primary",
+  "bg-primary",
   "bg-emerald-500",
   "bg-violet-500",
   "bg-rose-500",
@@ -965,7 +935,7 @@ function getFileTypeMeta(mimeType: string | null | undefined, filename: string) 
     return { Icon: FileAudio, label: "Audio", iconClass: "text-violet-600", bgClass: "bg-violet-50" }
   }
   if (is("zip") || is("compressed") || is("tar") || extIn("zip", "rar", "7z", "tar", "gz")) {
-    return { Icon: FileArchive, label: "Archive", iconClass: "text-orange-600", bgClass: "bg-orange-50" }
+    return { Icon: FileArchive, label: "Archive", iconClass: "text-primary", bgClass: "bg-primary/10" }
   }
   if (mime.startsWith("text/") || extIn("txt", "md", "log")) {
     return { Icon: FileText, label: "Text", iconClass: "text-slate-600", bgClass: "bg-slate-100" }
@@ -1290,7 +1260,7 @@ function ActivityFeedItem({
             </div>
             <button
               type="button"
-              className="text-sm font-semibold text-slate-900 hover:text-orange-700"
+              className="text-sm font-semibold text-slate-900 hover:text-primary"
               onClick={() => onSelect(log.id)}
             >
               added a new Daily Log
@@ -1428,7 +1398,7 @@ function TagEditor({
       ) : (
         <div className="flex flex-wrap gap-2">
           {tags.map((tag) => (
-            <Badge key={tag} variant="outline" className="gap-1 border-orange-200 bg-orange-50 text-orange-700">
+            <Badge key={tag} variant="outline" className="gap-1 border-primary/20 bg-primary/10 text-primary">
               {tag}
               <button type="button" onClick={() => onRemoveTag(tag)}>
                 <X className="size-3" />
@@ -2128,6 +2098,7 @@ function CommentsSheet({
   const [replyTo, setReplyTo] = useState<CommentRecord | null>(null)
   const [selectedMentionIds, setSelectedMentionIds] = useState<string[]>([])
   const [attachments, setAttachments] = useState<CommentDraftAttachment[]>([])
+  const attachmentsRef = useRef<CommentDraftAttachment[]>([])
   const [pendingRemoveCommentAttachmentId, setPendingRemoveCommentAttachmentId] = useState<
     string | null
   >(null)
@@ -2152,10 +2123,16 @@ function CommentsSheet({
   }
 
   useEffect(() => {
+    attachmentsRef.current = attachments
+  }, [attachments])
+
+  useEffect(() => {
     if (open && log) {
       void loadComments()
     }
     if (!open) {
+      revokeCommentDraftAttachmentPreviews(attachmentsRef.current)
+      attachmentsRef.current = []
       setBody("")
       setLinkValue("")
       setShowLinkInput(false)
@@ -2231,7 +2208,11 @@ function CommentsSheet({
         mimeType: file.mimeType,
         previewUrl: URL.createObjectURL(sized[idx]!),
       }))
-      setAttachments((current) => [...current, ...next])
+      setAttachments((current) => {
+        const updated = [...current, ...next]
+        attachmentsRef.current = updated
+        return updated
+      })
     } catch (error) {
       // Backstop the local pre-checks: if a file slipped through (e.g.
       // the cap moved server-side, or magic-byte validation tripped a
@@ -2257,13 +2238,9 @@ function CommentsSheet({
   // already revoke their own URLs; this guards the dialog-close path.
   useEffect(() => {
     return () => {
-      for (const item of attachments) {
-        URL.revokeObjectURL(item.previewUrl)
-      }
+      revokeCommentDraftAttachmentPreviews(attachmentsRef.current)
+      attachmentsRef.current = []
     }
-    // We intentionally only run this on unmount; per-item revoke happens
-    // inline in the handlers that mutate `attachments`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function insertMention(user: UserOption) {
@@ -2297,9 +2274,8 @@ function CommentsSheet({
       setBody("")
       // Revoke composer previews now that the draft is committed; the
       // posted comment renders via authenticated blob fetch from fileUrl.
-      for (const item of attachments) {
-        URL.revokeObjectURL(item.previewUrl)
-      }
+      revokeCommentDraftAttachmentPreviews(attachments)
+      attachmentsRef.current = []
       setAttachments([])
       setLinkValue("")
       setShowLinkInput(false)
@@ -2351,7 +2327,7 @@ function CommentsSheet({
                 href={link}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700"
+                className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
               >
                 <Link2 className="size-3.5" />
                 {link}
@@ -2458,7 +2434,7 @@ function CommentsSheet({
               </Button>
             </div>
             {replyTo ? (
-              <button type="button" className="text-xs text-orange-600" onClick={() => setReplyTo(null)}>
+              <button type="button" className="text-xs text-primary" onClick={() => setReplyTo(null)}>
                 Replying to {replyTo.author.fullName || "comment"} · Cancel
               </button>
             ) : null}
@@ -2570,7 +2546,9 @@ function CommentsSheet({
                 setAttachments((current) => {
                   const target = current.find((item) => item.fileId === targetId)
                   if (target) URL.revokeObjectURL(target.previewUrl)
-                  return current.filter((item) => item.fileId !== targetId)
+                  const updated = current.filter((item) => item.fileId !== targetId)
+                  attachmentsRef.current = updated
+                  return updated
                 })
                 setPendingRemoveCommentAttachmentId(null)
               }}
@@ -2618,6 +2596,8 @@ function DailyLogDialog({
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState<string[]>([])
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const weatherRequestSeqRef = useRef(0)
+  const weatherRequestKeyRef = useRef<string | null>(null)
   const [initialSnapshot, setInitialSnapshot] = useState("")
   const [confirmDeleteLogOpen, setConfirmDeleteLogOpen] = useState(false)
   const [pendingRemoveAttachment, setPendingRemoveAttachment] = useState<
@@ -2681,7 +2661,13 @@ function DailyLogDialog({
   }, [open, logId, jobId, settings, users])
 
   useEffect(() => {
-    if (!open || !values.includeWeather || !selectedJob) return
+    const requestSeq = weatherRequestSeqRef.current + 1
+    weatherRequestSeqRef.current = requestSeq
+    weatherRequestKeyRef.current = null
+    if (!open || !values.includeWeather || !selectedJob) {
+      setWeatherLoading(false)
+      return
+    }
 
     if (
       currentLog &&
@@ -2701,6 +2687,12 @@ function DailyLogDialog({
 
     setWeatherLoading(true)
     setWeatherMessage("")
+    const requestKey = buildWeatherRequestKey({
+      jobId: values.jobId,
+      address,
+      date: values.logDate,
+    })
+    weatherRequestKeyRef.current = requestKey
 
     const timeout = window.setTimeout(() => {
       void api
@@ -2711,16 +2703,27 @@ function DailyLogDialog({
           },
         })
         .then((response) => {
+          if (weatherRequestSeqRef.current !== requestSeq) return
+          if (weatherRequestKeyRef.current !== requestKey) return
           setValues((current) => ({
             ...current,
             weatherData: normalizeWeatherData(response.data.weather),
           }))
         })
         .catch((error) => {
+          if (weatherRequestSeqRef.current !== requestSeq) return
+          if (weatherRequestKeyRef.current !== requestKey) return
           setValues((current) => ({ ...current, weatherData: null }))
           setWeatherMessage(apiError(error, "Weather unavailable right now"))
         })
-        .finally(() => setWeatherLoading(false))
+        .finally(() => {
+          if (
+            weatherRequestSeqRef.current === requestSeq &&
+            weatherRequestKeyRef.current === requestKey
+          ) {
+            setWeatherLoading(false)
+          }
+        })
     }, 250)
 
     return () => window.clearTimeout(timeout)
@@ -3147,14 +3150,14 @@ function DailyLogDialog({
                     {...onDrop.getRootProps()}
                     className={cn(
                       "cursor-pointer rounded-2xl border-2 border-dashed px-4 py-6 text-center transition-colors",
-                      onDrop.isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 bg-slate-50 hover:border-orange-400 hover:bg-orange-50/50",
+                      onDrop.isDragActive ? "border-primary/45 bg-primary/10" : "border-slate-300 bg-slate-50 hover:border-primary/45 hover:bg-accent/50",
                     )}
                   >
                     <input {...onDrop.getInputProps({ accept: uploadAcceptForMediaType("any") })} />
                     {onDrop.isDragActive ? (
                       <>
-                        <Upload className="mx-auto size-5 text-orange-500" />
-                        <div className="mt-2 text-sm font-medium text-orange-600">Drop files here</div>
+                        <Upload className="mx-auto size-5 text-primary" />
+                        <div className="mt-2 text-sm font-medium text-primary">Drop files here</div>
                       </>
                     ) : (
                       <>
@@ -3233,7 +3236,7 @@ function DailyLogDialog({
                 <div className="space-y-2 rounded-2xl border border-slate-200 p-4">
                   <div className="text-sm font-semibold text-slate-950">Notes</div>
                   {!currentLog && settings.stampLocation && locationStampPreview ? (
-                    <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+                    <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
                       Location stamp will be added on publish: <span className="font-medium">{locationStampPreview}</span>
                     </div>
                   ) : null}
@@ -3358,6 +3361,8 @@ export default function JobDailyLogsPage() {
     canEditDailyLogs || (Boolean(createdBy) && createdBy === currentUser?.id)
   const [settings, setSettings] = useState<DailyLogSettings>(DEFAULT_SETTINGS)
   const [customFields, setCustomFields] = useState<DailyLogCustomField[]>([])
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
+  const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
@@ -3401,6 +3406,7 @@ export default function JobDailyLogsPage() {
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const loadRequestIdRef = useRef(0)
+  const handledFocusLogRef = useRef<string | null>(null)
 
   // All writes go through generated mutation hooks (see replit.md).
   const toggleLikeMutation = useDailyLogsPostDailyLogsIdLike()
@@ -3467,6 +3473,13 @@ export default function JobDailyLogsPage() {
 
     if (settingsResult.status === "fulfilled") {
       setSettings(normalizeDailyLogSettings(settingsResult.value.data.settings))
+      setSettingsLoaded(true)
+      setSettingsLoadError(null)
+    } else {
+      setSettingsLoaded(false)
+      const message = apiError(settingsResult.reason, "Failed to load daily log settings")
+      setSettingsLoadError(message)
+      toastApiError(settingsResult.reason, "Failed to load daily log settings")
     }
 
     if (customFieldsResult.status === "fulfilled") {
@@ -3477,6 +3490,11 @@ export default function JobDailyLogsPage() {
   }
 
   async function handleSaveSettings(nextSettings: DailyLogSettings, nextCustomFields: DailyLogCustomField[]) {
+    if (!settingsLoaded) {
+      toast.error(settingsLoadError ?? "Daily log settings are still loading")
+      return
+    }
+
     setSettingsSaving(true)
 
     try {
@@ -3540,6 +3558,14 @@ export default function JobDailyLogsPage() {
     } finally {
       setSettingsSaving(false)
     }
+  }
+
+  function handleOpenSettings() {
+    if (!settingsLoaded) {
+      toast.error(settingsLoadError ?? "Daily log settings are still loading")
+      return
+    }
+    setSettingsOpen(true)
   }
 
   async function loadLogs(cursor: string | null = null) {
@@ -3652,8 +3678,14 @@ export default function JobDailyLogsPage() {
   // `state: { openCreate: true }`. The flag is consumed once.
   const dailyLogLocation = useLocation()
   const dailyLogNavigate = useNavigate()
-  useEffect(() => {
-    const incoming = dailyLogLocation.state as Record<string, unknown> | null
+	  useEffect(() => {
+    const focusLogId = new URLSearchParams(dailyLogLocation.search).get("focus")
+    if (focusLogId && handledFocusLogRef.current !== focusLogId) {
+      handledFocusLogRef.current = focusLogId
+      void loadDetail(focusLogId)
+    }
+
+	    const incoming = dailyLogLocation.state as Record<string, unknown> | null
     if (incoming && (incoming as { openCreate?: unknown }).openCreate) {
       openCreateDialog()
       const { openCreate: _openCreate, ...rest } = incoming as {
@@ -3670,7 +3702,7 @@ export default function JobDailyLogsPage() {
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dailyLogLocation.state])
+	  }, [dailyLogLocation.search, dailyLogLocation.state])
 
   function openEditDialog(logId: string) {
     setEditingLogId(logId)
@@ -3728,7 +3760,12 @@ export default function JobDailyLogsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {canEditDailyLogs ? (
-              <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOpenSettings}
+                disabled={!settingsLoaded}
+              >
                 <Settings2 className="size-4" />
               </Button>
             ) : null}
@@ -3738,7 +3775,7 @@ export default function JobDailyLogsPage() {
             <Button variant="outline" size="sm" onClick={() => setFilterOpen(true)}>
               <Filter className="size-4" />
               {activeFilterCount(appliedFilters) > 0 ? (
-                <Badge variant="outline" className="ml-1 border-orange-200 bg-orange-50 text-orange-700">
+                <Badge variant="outline" className="ml-1 border-primary/20 bg-primary/10 text-primary">
                   {activeFilterCount(appliedFilters)}
                 </Badge>
               ) : null}
@@ -4109,7 +4146,7 @@ function DailyLogAttachmentCard({
     <button
       type="button"
       onClick={handleClick}
-      className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-orange-300 text-left"
+      className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-primary/35 text-left"
     >
       <div className="flex items-center gap-3">
         <FileText className="size-5 text-slate-400" />

@@ -107,19 +107,33 @@ function isInlineDirectUrl(url: string | null | undefined): boolean {
   return url.startsWith("data:") || url.startsWith("blob:")
 }
 
+function safeApiFileUrl(url: string | null | undefined): string | null {
+  if (!url || isInlineDirectUrl(url)) return null
+  if (!url.startsWith("/")) return null
+  if (url.startsWith("//")) return null
+  if (/^\/(?:files\/[^/]+|folders\/[^/]+\/files\/[^/]+)\/(?:view|download)(?:\?.*)?$/.test(url)) {
+    return url
+  }
+  return null
+}
+
 function buildAuthFetchUrl(file: PreviewFile): string | null {
-  if (file.viewUrl && !isInlineDirectUrl(file.viewUrl)) return file.viewUrl
+  const viewUrl = safeApiFileUrl(file.viewUrl)
+  if (viewUrl) return viewUrl
   const id = file.fileId || file.id
   if (id) return `/files/${id}/view`
-  // If the only thing we have is a non-inline directUrl (e.g. a relative or
-  // absolute URL pointing at a protected file), route it through the
-  // authenticated API client rather than a raw browser fetch.
-  if (file.directUrl && !isInlineDirectUrl(file.directUrl)) return file.directUrl
+  const directUrl = safeApiFileUrl(file.directUrl)
+  if (directUrl) return directUrl
   return null
 }
 
 function inlineDirectUrl(file: PreviewFile): string | null {
   return isInlineDirectUrl(file.directUrl) ? file.directUrl ?? null : null
+}
+
+export async function readInlineTextUrl(url: string): Promise<string> {
+  const response = await fetch(url)
+  return response.text()
 }
 
 type FilePreviewProps = {
@@ -129,27 +143,34 @@ type FilePreviewProps = {
   onClose: () => void
 }
 
+export function clampFilePreviewIndex(index: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.min(Math.max(index, 0), total - 1)
+}
+
 export function FilePreview({ files, initialIndex = 0, open, onClose }: FilePreviewProps) {
-  const [index, setIndex] = useState(initialIndex)
+  const [index, setIndex] = useState(() =>
+    clampFilePreviewIndex(initialIndex, files.length),
+  )
 
   useEffect(() => {
-    if (open) setIndex(initialIndex)
-  }, [open, initialIndex])
+    if (open) setIndex(clampFilePreviewIndex(initialIndex, files.length))
+  }, [open, initialIndex, files.length])
 
-  const safeIndex = Math.min(Math.max(index, 0), Math.max(files.length - 1, 0))
+  const safeIndex = clampFilePreviewIndex(index, files.length)
   const current = files[safeIndex]
   const total = files.length
   const hasMultiple = total > 1
 
   const goPrev = useCallback(() => {
     if (!hasMultiple) return
-    setIndex((i) => (i - 1 + total) % total)
-  }, [hasMultiple, total])
+    setIndex((safeIndex - 1 + total) % total)
+  }, [hasMultiple, safeIndex, total])
 
   const goNext = useCallback(() => {
     if (!hasMultiple) return
-    setIndex((i) => (i + 1) % total)
-  }, [hasMultiple, total])
+    setIndex((safeIndex + 1) % total)
+  }, [hasMultiple, safeIndex, total])
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -355,8 +376,23 @@ function PreviewBody({ file }: { file: PreviewFile }) {
     setTextContent(null)
 
     if (directUrl) {
-      setBlobUrl(directUrl)
-      setLoading(false)
+      if (kind === "text") {
+        setBlobUrl(null)
+        setLoading(true)
+        readInlineTextUrl(directUrl)
+          .then((text) => {
+            if (!cancelled) setTextContent(text)
+          })
+          .catch(() => {
+            if (!cancelled) setError("Failed to load file.")
+          })
+          .finally(() => {
+            if (!cancelled) setLoading(false)
+          })
+      } else {
+        setBlobUrl(directUrl)
+        setLoading(false)
+      }
     } else if (fetchUrl) {
       setLoading(true)
       setBlobUrl(null)
@@ -642,4 +678,3 @@ function UnsupportedView({ file }: { file: PreviewFile }) {
     </div>
   )
 }
-

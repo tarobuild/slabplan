@@ -13,5 +13,5 @@ export interface LeadConvertedJobRef {
   id: string;
   title: string;
   status: string;
-  convertedAt: Date | null;
+  convertedAt: string | null;
 }

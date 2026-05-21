@@ -10,6 +10,18 @@ type ReportRange = {
   to?: string
 }
 
+type ReportQueryParams =
+  | {
+      range: Exclude<RangePreset, "custom">
+      from?: string
+      to?: string
+    }
+  | {
+      range: "custom"
+      from: string
+      to: string
+    }
+
 const RANGE_LABELS: Record<RangePreset, string> = {
   last_30: "Last 30 days",
   last_90: "Last 90 days",
@@ -18,8 +30,9 @@ const RANGE_LABELS: Record<RangePreset, string> = {
 }
 
 function rangeToParams(r: ReportRange): Record<string, string> {
-  const params: Record<string, string> = { range: r.range }
-  if (r.range === "custom" && r.from && r.to) {
+  const effectiveRange = r.range === "custom" && (!r.from || !r.to) ? "last_90" : r.range
+  const params: Record<string, string> = { range: effectiveRange }
+  if (effectiveRange === "custom" && r.from && r.to) {
     params.from = r.from
     params.to = r.to
   }
@@ -46,7 +59,7 @@ export function ReportToolbar({
   const [to, setTo] = useState(value.to ?? "")
 
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-md border border-[#E5E7EB] bg-white p-3">
+    <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-white p-3">
       <label className="flex flex-col text-xs text-slate-600">
         Date range
         <select
@@ -119,7 +132,7 @@ export function SnapshotToolbar({
   note?: string
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-md border border-[#E5E7EB] bg-white p-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-white p-3">
       <span className="text-xs text-slate-500">{note ?? "Snapshot — as of today"}</span>
       <div className="ml-auto">
         <a
@@ -149,7 +162,7 @@ export function LoadingCard() {
   return (
     <Card>
       <CardContent className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
-        <Spinner className="size-4 text-orange-600" /> Loading…
+        <Spinner className="size-4 text-primary" /> Loading…
       </CardContent>
     </Card>
   )
@@ -174,20 +187,14 @@ export function useReportRange(): [ReportRange, (r: ReportRange) => void] {
 // Adapter: turn the picker's `ReportRange` into the orval-generated query
 // params shape. All five report endpoints share the same params shape, so
 // we expose a single helper here rather than per-endpoint wrappers.
-export function rangeToReportParams(range: ReportRange): {
-  range: RangePreset
-  from?: string
-  to?: string
-} {
+export function rangeToReportParams(range: ReportRange): ReportQueryParams {
   if (range.range === "custom" && range.from && range.to) {
     return { range: "custom", from: range.from, to: range.to }
   }
-  return { range: range.range }
+  return { range: range.range === "custom" ? "last_90" : range.range }
 }
 
 export function csvDownloadHref(path: string, range: ReportRange): string {
   const params = new URLSearchParams({ ...rangeToParams(range), format: "csv" })
   return `/api/reports/${path}?${params.toString()}`
 }
-
-

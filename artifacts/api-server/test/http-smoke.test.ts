@@ -115,7 +115,7 @@ test("state-changing requests require the XMLHttpRequest header", async () => {
     },
     body: JSON.stringify({
       email: "unauthorized@example.com",
-      password: "Cadstone123!",
+      password: "StoneTrackTestPass123!",
       full_name: "Unauthorized User",
     }),
   });
@@ -132,7 +132,7 @@ test("register endpoint validates organization name", async () => {
     },
     body: JSON.stringify({
       email: "unauthorized@example.com",
-      password: "Cadstone123!",
+      password: "StoneTrackTestPass123!",
       full_name: "Unauthorized User",
     }),
   });

@@ -31,10 +31,10 @@ export interface DailyLog {
   shareClient?: boolean;
   isPrivate?: boolean;
   createdBy?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  publishedAt?: Date | null;
-  deletedAt?: Date | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt?: string | null;
+  deletedAt?: string | null;
   createdByName?: string | null;
   notifyUserIds?: string[];
   notifyUsers?: AssigneeUser[];

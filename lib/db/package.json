@@ -10,13 +10,8 @@
     "./migrate": "./src/migrate.ts"
   },
   "scripts": {
-    "db:generate": "drizzle-kit generate --config ./drizzle.config.js",
     "db:migrate": "tsx ./src/migrate-cli.ts",
-    "db:push": "drizzle-kit push --config ./drizzle.config.js",
-    "generate": "drizzle-kit generate --config ./drizzle.config.js",
     "migrate": "tsx ./src/migrate-cli.ts",
-    "push": "drizzle-kit push --config ./drizzle.config.js",
-    "push-force": "drizzle-kit push --force --config ./drizzle.config.js",
     "seed": "tsx ./src/seed-cli.ts",
     "build-files-folder-index": "tsx ./src/scripts/build-files-folder-index-concurrently.ts",
     "setup-test-db": "tsx ./src/scripts/setup-test-db.ts",

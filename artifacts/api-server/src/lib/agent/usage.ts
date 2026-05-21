@@ -101,6 +101,52 @@ export type OrgUsageSnapshot = {
   userCount: number;
 };
 
+function usageIdentityCondition(
+  userId: string,
+  yearMonth: string,
+  organizationId: string | null | undefined,
+) {
+  return and(
+    eq(agentUsageMonthly.userId, userId),
+    eq(agentUsageMonthly.yearMonth, yearMonth),
+    organizationId
+      ? eq(agentUsageMonthly.organizationId, organizationId)
+      : isNull(agentUsageMonthly.organizationId),
+  );
+}
+
+function isUniqueViolationError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { code?: unknown; cause?: unknown };
+  if (candidate.code === "23505") return true;
+  return (
+    typeof candidate.cause === "object" &&
+    candidate.cause !== null &&
+    (candidate.cause as { code?: unknown }).code === "23505"
+  );
+}
+
+async function incrementUsageRow(
+  userId: string,
+  organizationId: string | null | undefined,
+  yearMonth: string,
+  inputTokens: number,
+  outputTokens: number,
+): Promise<boolean> {
+  const updated = await db
+    .update(agentUsageMonthly)
+    .set({
+      inputTokens: sql`${agentUsageMonthly.inputTokens} + ${inputTokens}`,
+      outputTokens: sql`${agentUsageMonthly.outputTokens} + ${outputTokens}`,
+      requests: sql`${agentUsageMonthly.requests} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(usageIdentityCondition(userId, yearMonth, organizationId))
+    .returning({ id: agentUsageMonthly.id });
+
+  return updated.length > 0;
+}
+
 /**
  * Aggregate org-wide token usage for the current calendar month against
  * the configured budget. Reads from the same `agent_usage_monthly` table
@@ -151,35 +197,12 @@ export async function recordUsage(
   outputTokens: number,
 ): Promise<void> {
   const ym = currentYearMonth();
-  await db.transaction(async (tx) => {
-    const [existing] = await tx
-      .select({ id: agentUsageMonthly.id })
-      .from(agentUsageMonthly)
-      .where(
-        and(
-          eq(agentUsageMonthly.userId, userId),
-          eq(agentUsageMonthly.yearMonth, ym),
-          organizationId
-            ? eq(agentUsageMonthly.organizationId, organizationId)
-            : isNull(agentUsageMonthly.organizationId),
-        ),
-      )
-      .limit(1);
+  if (await incrementUsageRow(userId, organizationId, ym, inputTokens, outputTokens)) {
+    return;
+  }
 
-    if (existing) {
-      await tx
-        .update(agentUsageMonthly)
-        .set({
-          inputTokens: sql`${agentUsageMonthly.inputTokens} + ${inputTokens}`,
-          outputTokens: sql`${agentUsageMonthly.outputTokens} + ${outputTokens}`,
-          requests: sql`${agentUsageMonthly.requests} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(eq(agentUsageMonthly.id, existing.id));
-      return;
-    }
-
-    await tx.insert(agentUsageMonthly).values({
+  try {
+    await db.insert(agentUsageMonthly).values({
       organizationId: organizationId ?? null,
       userId,
       yearMonth: ym,
@@ -187,5 +210,15 @@ export async function recordUsage(
       outputTokens,
       requests: 1,
     });
-  });
+  } catch (error) {
+    if (!isUniqueViolationError(error)) throw error;
+    const incremented = await incrementUsageRow(
+      userId,
+      organizationId,
+      ym,
+      inputTokens,
+      outputTokens,
+    );
+    if (!incremented) throw error;
+  }
 }

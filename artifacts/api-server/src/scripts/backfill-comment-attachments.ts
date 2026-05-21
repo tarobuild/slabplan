@@ -21,7 +21,7 @@
  */
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, pool } from "@workspace/db";
-import { dailyLogComments, files, folders } from "@workspace/db/schema";
+import { dailyLogComments, dailyLogs, files, folders } from "@workspace/db/schema";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -29,7 +29,7 @@ import {
   writeUploadedBuffer,
 } from "../lib/storage";
 
-const DATA_URL_RE = /^data:([\w./+-]+);base64,(.*)$/i;
+const DATA_URL_RE = /^data:([\w./+-]+);base64,([\s\S]*)$/i;
 
 type RawAttachment = Record<string, unknown>;
 
@@ -74,10 +74,19 @@ function parseDataUrl(
   if (typeof value !== "string") return null;
   const match = DATA_URL_RE.exec(value);
   if (!match) return null;
-  // The capture group can be empty for malformed inputs like "data:;base64,";
-  // skip those — they would decode to a zero-byte file we cannot serve.
-  if (!match[2]) return null;
   return { mime: match[1], data: match[2] };
+}
+
+function decodeStrictBase64(data: string): Buffer | null {
+  const normalized = data.replace(/\s+/g, "");
+  if (!normalized || normalized.length % 4 === 1) return null;
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) return null;
+
+  const buffer = Buffer.from(normalized, "base64");
+  const canonicalInput = normalized.replace(/=+$/, "");
+  const canonicalDecoded = buffer.toString("base64").replace(/=+$/, "");
+  if (canonicalInput !== canonicalDecoded) return null;
+  return buffer.length > 0 ? buffer : null;
 }
 
 function safeName(value: unknown): string {
@@ -108,6 +117,7 @@ type TxClient = Pick<typeof db, "select" | "insert">;
 async function ensureCommentFolder(
   client: TxClient,
   dailyLogId: string,
+  organizationId: string,
 ): Promise<{ id: string }> {
   const title = `Daily Log ${dailyLogId} Comment Attachments`;
 
@@ -118,6 +128,7 @@ async function ensureCommentFolder(
       and(
         isNull(folders.jobId),
         eq(folders.scope, "daily_log"),
+        eq(folders.organizationId, organizationId),
         eq(folders.dailyLogId, dailyLogId),
         eq(folders.title, title),
         eq(folders.mediaType, "photo"),
@@ -131,6 +142,7 @@ async function ensureCommentFolder(
   const [created] = await client
     .insert(folders)
     .values({
+      organizationId,
       jobId: sql<string>`null`,
       scope: "daily_log",
       dailyLogId,
@@ -169,6 +181,7 @@ async function processCommentRow(
   row: {
     id: string;
     dailyLogId: string;
+    organizationId: string | null;
     createdBy: string | null;
     attachments: unknown;
   },
@@ -220,7 +233,11 @@ async function processCommentRow(
 
   try {
     await db.transaction(async (tx) => {
-      const folder = await ensureCommentFolder(tx, row.dailyLogId);
+      if (!row.organizationId) {
+        throw new Error(`Daily log comment ${row.id} is missing organizationId`);
+      }
+
+      const folder = await ensureCommentFolder(tx, row.dailyLogId, row.organizationId);
 
       const newAttachments: StoredAttachment[] = [];
 
@@ -256,16 +273,8 @@ async function processCommentRow(
           continue;
         }
 
-        let buffer: Buffer;
-        try {
-          buffer = Buffer.from(dataUrl.data, "base64");
-        } catch {
-          // Malformed base64 — drop so we don't carry an unreadable entry.
-          result.dropped += 1;
-          continue;
-        }
-
-        if (buffer.length === 0) {
+        const buffer = decodeStrictBase64(dataUrl.data);
+        if (!buffer) {
           result.dropped += 1;
           continue;
         }
@@ -274,6 +283,7 @@ async function processCommentRow(
         const mimeType = safeMime(entry.mimeType, dataUrl.mime);
         const storedFileName = buildStoredFileName(originalName);
         const uploadPath = buildUploadPath({
+          organizationId: row.organizationId,
           jobId: `daily-log-${row.dailyLogId}-comments`,
           mediaType: "photo",
           storedFileName,
@@ -287,6 +297,7 @@ async function processCommentRow(
         const [createdFile] = await tx
           .insert(files)
           .values({
+            organizationId: row.organizationId,
             folderId: folder.id,
             filename: storedFileName,
             originalName,
@@ -360,10 +371,12 @@ export async function backfillCommentAttachments(
     .select({
       id: dailyLogComments.id,
       dailyLogId: dailyLogComments.dailyLogId,
+      organizationId: sql<string | null>`coalesce(${dailyLogComments.organizationId}, ${dailyLogs.organizationId})`,
       createdBy: dailyLogComments.createdBy,
       attachments: dailyLogComments.attachments,
     })
     .from(dailyLogComments)
+    .leftJoin(dailyLogs, eq(dailyLogComments.dailyLogId, dailyLogs.id))
     .where(isNull(dailyLogComments.deletedAt));
 
   for (const row of rows) {

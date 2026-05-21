@@ -17,7 +17,7 @@ export interface ClientListItem {
   email?: string | null;
   city?: string | null;
   state?: string | null;
-  createdAt: Date;
+  createdAt: string;
   /** Primary contact summary, or null when the client has no primary contact. */
   primaryContact: ClientPrimaryContact | null;
   /** @minimum 0 */
@@ -43,24 +43,27 @@ export interface ClientListItem {
    */
   totalJobCount: number;
   /**
-   * Sum of `contractValueCents` across all caller-visible jobs for this client. Cents.
+   * Sum of `contractValueCents` across all caller-visible jobs for this client. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
    * @minimum 0
+   * @maximum 9007199254740991
    */
-  contractValueCents: bigint;
+  contractValueCents: number;
   /**
-   * Sum of `amountPaidCents` across all caller-visible jobs for this client. Cents.
+   * Sum of `amountPaidCents` across all caller-visible jobs for this client. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
    * @minimum 0
+   * @maximum 9007199254740991
    */
-  amountPaidCents: bigint;
+  amountPaidCents: number;
   /**
-   * AR rollup: `max(0, contractValueCents - amountPaidCents)`. Cents.
+   * AR rollup: `max(0, contractValueCents - amountPaidCents)`. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
    * @minimum 0
+   * @maximum 9007199254740991
    */
-  outstandingCents: bigint;
+  outstandingCents: number;
   /** Most recent `jobs.updated_at` across the caller-visible jobs for this client. */
-  lastActivityAt?: Date | null;
+  lastActivityAt?: string | null;
   /** Soft-delete timestamp for the client itself. */
-  deletedAt?: Date | null;
+  deletedAt?: string | null;
   /** True when the client itself is soft-deleted (`deletedAt is not null`). */
   archived: boolean;
 }

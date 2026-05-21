@@ -31,6 +31,7 @@ import { HttpError, asyncHandler } from "../lib/http";
 import { buildContainsLikePattern } from "../lib/search";
 import { getActiveOrganizationId, organizationScopeCondition } from "../lib/tenant-scope";
 import { requireAdmin } from "../middleware/require-auth";
+import { stringBoolean } from "../lib/zod-helpers";
 
 const router: IRouter = Router();
 
@@ -46,16 +47,16 @@ const optionalString = z
   });
 
 const settingsPayloadSchema = z.object({
-  stampLocation: z.coerce.boolean().optional(),
+  stampLocation: stringBoolean.optional(),
   defaultNotes: z.string().optional(),
-  includeWeatherByDefault: z.coerce.boolean().optional(),
-  includeWeatherNotesByDefault: z.coerce.boolean().optional(),
-  shareInternalUsersByDefault: z.coerce.boolean().optional(),
-  notifyInternalUsersByDefault: z.coerce.boolean().optional(),
-  shareEstimatorsByDefault: z.coerce.boolean().optional(),
-  notifyEstimatorsByDefault: z.coerce.boolean().optional(),
-  shareInstallersByDefault: z.coerce.boolean().optional(),
-  notifyInstallersByDefault: z.coerce.boolean().optional(),
+  includeWeatherByDefault: stringBoolean.optional(),
+  includeWeatherNotesByDefault: stringBoolean.optional(),
+  shareInternalUsersByDefault: stringBoolean.optional(),
+  notifyInternalUsersByDefault: stringBoolean.optional(),
+  shareEstimatorsByDefault: stringBoolean.optional(),
+  notifyEstimatorsByDefault: stringBoolean.optional(),
+  shareInstallersByDefault: stringBoolean.optional(),
+  notifyInstallersByDefault: stringBoolean.optional(),
 });
 
 const customFieldTypeValues = ["text", "number", "date", "dropdown", "checkbox"] as const;

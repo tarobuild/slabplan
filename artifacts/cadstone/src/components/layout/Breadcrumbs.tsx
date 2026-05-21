@@ -39,8 +39,11 @@ function toLabel(segment: string): string {
   return segment.replace(/(^|-)([a-z])/g, (_, sep, c) => (sep ? " " : "") + c.toUpperCase())
 }
 
-function deriveFromPath(pathname: string): BreadcrumbItem[] {
+export function deriveFromPath(pathname: string): BreadcrumbItem[] {
   const parts = pathname.split("/").filter(Boolean)
+  if (parts[0] === "dashboard") {
+    parts.shift()
+  }
   if (parts.length === 0) return []
   const items: BreadcrumbItem[] = []
   let acc = ""

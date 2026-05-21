@@ -10,7 +10,7 @@ import type { UsersUpdateUserSchemaRole } from "./usersUpdateUserSchemaRole";
 /**
  * Request body for `PATCH /users/{id}` — admin updates a worker's full name, role, or active flag. At least one field must be provided. An admin cannot deactivate their own account through this endpoint.
  */
-export interface UsersUpdateUserSchema {
+type UsersUpdateUserSchemaBase = {
   /**
    * @minLength 2
    * @maxLength 255
@@ -18,4 +18,9 @@ export interface UsersUpdateUserSchema {
   fullName?: string;
   role?: UsersUpdateUserSchemaRole;
   isActive?: boolean;
-}
+};
+
+export type UsersUpdateUserSchema =
+  | (UsersUpdateUserSchemaBase & { fullName: string })
+  | (UsersUpdateUserSchemaBase & { role: UsersUpdateUserSchemaRole })
+  | (UsersUpdateUserSchemaBase & { isActive: boolean });

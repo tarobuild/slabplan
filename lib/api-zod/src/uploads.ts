@@ -23,10 +23,9 @@ export const MAX_UPLOAD_FILE_COUNT = 20;
 export const MAX_VIDEO_DURATION_SECONDS = 120;
 
 /**
- * File extensions we treat as video for the duration check. The list is
- * intentionally narrow — it mirrors the formats ffprobe / browsers can
- * decode reliably. Unknown video containers fall through (probe returns
- * null) on both sides of the wire.
+ * File extensions we treat as video for the duration check. Keep this in
+ * lockstep with the video entries in WIDE_UPLOAD_ACCEPT_EXTENSIONS so generic
+ * MIME uploads cannot bypass the server-side duration gate.
  */
 export const VIDEO_UPLOAD_EXTENSIONS: readonly string[] = [
   ".mp4",
@@ -35,6 +34,9 @@ export const VIDEO_UPLOAD_EXTENSIONS: readonly string[] = [
   ".webm",
   ".m4v",
   ".mkv",
+  ".wmv",
+  ".flv",
+  ".3gp",
 ];
 
 /** True when the given filename's extension or MIME indicates a video. */
@@ -171,7 +173,7 @@ export const WIDE_UPLOAD_ACCEPT_EXTENSIONS: readonly string[] = [
 export function extensionOf(fileName: string): string {
   if (!fileName) return "";
   const slash = Math.max(fileName.lastIndexOf("/"), fileName.lastIndexOf("\\"));
-  const base = slash >= 0 ? fileName.slice(slash + 1) : fileName;
+  const base = (slash >= 0 ? fileName.slice(slash + 1) : fileName).replace(/[. \t\r\n\f\v]+$/g, "");
   const dot = base.lastIndexOf(".");
   if (dot <= 0) return "";
   return base.slice(dot).toLowerCase();

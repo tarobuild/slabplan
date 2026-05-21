@@ -37,10 +37,16 @@ export function fileUrlToObjectName({ fileUrl }) {
     throw new Error(`Invalid stored file URL: ${fileUrl}`);
   }
   const relative = match[1];
+  const segments = relative.split("/");
   if (
-    relative.includes("..") ||
     relative.startsWith("/") ||
-    relative.includes("\0")
+    segments.some(
+      (segment) =>
+        segment === "" ||
+        segment === "." ||
+        segment === ".." ||
+        segment.includes("\0"),
+    )
   ) {
     throw new Error(`Invalid stored file URL: ${fileUrl}`);
   }

@@ -147,7 +147,6 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExport("exceptions")}>Export CSV</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExport("exceptions")}>Export PDF</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -171,7 +170,7 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
             <div>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 text-sm font-medium text-orange-700 hover:underline"
+                className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
                 onClick={() => {
                   setWorkdayEditorOpen(false)
                   if (jobId) {
@@ -410,7 +409,7 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
                     className={canWrite ? "cursor-pointer hover:bg-slate-50" : undefined}
                     onClick={canWrite ? () => openExistingWorkdayException(exception) : undefined}
                   >
-                    <TableCell className="font-medium text-orange-700">{exception.title}</TableCell>
+                    <TableCell className="font-medium text-primary">{exception.title}</TableCell>
                     <TableCell>{exception.type === "non_workday" ? "Non workday" : "Extra workday"}</TableCell>
                     <TableCell>{fmtDate(exception.startDate)}</TableCell>
                     <TableCell>{fmtDate(exception.endDate)}</TableCell>

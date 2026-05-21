@@ -30,7 +30,7 @@ export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     name: "Standard Countertop Install",
     description: "Template, fabrication, install, and final inspection milestones for a typical countertop project.",
     items: [
-      { title: "Template", workDays: 1, displayColor: "#2563eb" },
+      { title: "Template", workDays: 1, displayColor: "#2E765D" },
       { title: "Fabrication", workDays: 2, displayColor: "#6b7280" },
       { title: "Install", workDays: 1, displayColor: "#16a34a" },
       { title: "Final Inspection", workDays: 1, displayColor: "#f59e0b" },
@@ -52,10 +52,10 @@ export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     name: "Custom Stone Work",
     description: "Design through punch list workflow for custom stone fabrication and installation.",
     items: [
-      { title: "Design", workDays: 2, displayColor: "#0f766e" },
-      { title: "Template", workDays: 1, displayColor: "#2563eb" },
+      { title: "Design", workDays: 2, displayColor: "#0ea5e9" },
+      { title: "Template", workDays: 1, displayColor: "#2E765D" },
       { title: "Fabrication", workDays: 3, displayColor: "#6b7280" },
-      { title: "Dry Fit", workDays: 1, displayColor: "#f97316" },
+      { title: "Dry Fit", workDays: 1, displayColor: "#7c3aed" },
       { title: "Final Install", workDays: 1, displayColor: "#16a34a" },
       { title: "Punch List", workDays: 1, displayColor: "#f59e0b" },
     ],

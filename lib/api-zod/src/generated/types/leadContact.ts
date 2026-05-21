@@ -23,6 +23,6 @@ export interface LeadContact {
   cellPhone?: string | null;
   email?: string | null;
   label?: string | null;
-  createdAt: Date;
-  updatedAt?: Date | null;
+  createdAt: string;
+  updatedAt?: string | null;
 }

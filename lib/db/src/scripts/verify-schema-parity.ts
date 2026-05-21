@@ -103,70 +103,95 @@ function pgDump(connectionString: string): string {
  * daily_log_settings_singleton naming flavor, and Postgres' verbose
  * default-literal pretty-printing (`'0'::numeric` -> `0`).
  *
- * Lines are sorted so column ordering inside CREATE TABLE doesn't
- * register as drift (drizzle-kit push and our hand-written DDL emit
- * columns in different orders).
+ * Statements are sorted as whole blocks so emit order does not register
+ * as drift. CREATE TABLE column lines are sorted only inside their own
+ * table block, which preserves table ownership for every column.
  */
-function normalize(dump: string): string {
-  // Strip the workspace_schema_migrations block by paragraph boundaries
-  // before splitting into lines.
-  const blocks = dump.split(/\n(?=CREATE TABLE|ALTER TABLE|CREATE INDEX|CREATE UNIQUE INDEX|CREATE SEQUENCE)/);
-  const keptBlocks = blocks.filter(
-    (block) => !block.includes("public.workspace_schema_migrations"),
-  );
-  const stripped = keptBlocks.join("\n");
+export function normalize(dump: string): string {
+  const statements: string[] = [];
+  let current: string[] = [];
 
-  const lines = stripped.split("\n");
-  const kept = lines
-    .map((line) => {
-      let l = line
-        // Postgres pretty-prints numeric defaults; collapse to bare literal.
-        .replace(/DEFAULT '(-?\d+(?:\.\d+)?)'::(?:numeric|integer|bigint)/g, "DEFAULT $1")
-        // Trailing-comma vs. semicolon vs. nothing inside CREATE TABLE
-        // columns is determined by column position, which we sort below.
-        .replace(/,\s*$/, "")
-        .replace(/;\s*$/, "")
-        .trimEnd();
-      // Canonicalize FK constraint names so style differences (Postgres'
-      // *_fkey vs Drizzle's *_<table>_id_fk) don't show as drift, while
-      // preserving the FK SEMANTICS (referenced table, columns, action).
-      // We do this by stripping the constraint name itself and keeping
-      // everything else — so a real drift in FOREIGN KEY columns,
-      // REFERENCES target, or ON DELETE clause still shows up.
-      l = l.replace(
-        /(\bADD CONSTRAINT )"?[A-Za-z0-9_]+?(?:_fkey|_fk)"?( FOREIGN KEY)/g,
-        "$1<fkname>$2",
-      );
-      return l;
-    })
-    .filter((line) => {
-      const t = line.trim();
-      if (t === "") return false;
-      if (t.startsWith("--")) return false;
-      if (t.startsWith("SET ")) return false;
-      if (t.startsWith("SELECT pg_catalog.set_config")) return false;
-      if (t === ")") return false;
-      if (t === "(") return false;
-      // Same column, different constraint naming flavor (UNIQUE constraint
-      // vs uniqueIndex on `singleton`).
-      if (t.includes("daily_log_settings_singleton")) return false;
-      return true;
-    });
-  const sorted = kept.sort();
-  // `ALTER TABLE ONLY public.<x>` is a wrapper header that pg_dump emits
-  // once per ADD CONSTRAINT statement. After sorting, the count of these
-  // wrappers per table differs between sides only because of constraint
-  // styles already filtered above. Collapse runs of identical wrapper
-  // lines so leftover counts don't show up as drift.
-  const deduped: string[] = [];
-  for (const line of sorted) {
-    const isWrapper = /^ALTER TABLE ONLY public\.[A-Za-z0-9_]+$/.test(line);
-    if (isWrapper && deduped.length > 0 && deduped[deduped.length - 1] === line) {
-      continue;
+  for (const rawLine of dump.split("\n")) {
+    const line = normalizeSchemaLine(rawLine);
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("--")) continue;
+    if (trimmed.startsWith("SET ")) continue;
+    if (trimmed.startsWith("SELECT pg_catalog.set_config")) continue;
+
+    current.push(line);
+    if (trimmed.endsWith(";")) {
+      const normalized = normalizeSchemaStatement(current);
+      if (normalized) statements.push(normalized);
+      current = [];
     }
-    deduped.push(line);
   }
-  return deduped.join("\n");
+
+  if (current.length > 0) {
+    const normalized = normalizeSchemaStatement(current);
+    if (normalized) statements.push(normalized);
+  }
+
+  return statements.sort().join("\n\n");
+}
+
+function normalizeSchemaLine(line: string): string {
+  return line
+    // Postgres pretty-prints numeric defaults; collapse to bare literal.
+    .replace(/DEFAULT '(-?\d+(?:\.\d+)?)'::(?:numeric|integer|bigint)/g, "DEFAULT $1")
+    // Canonicalize FK constraint names so style differences (Postgres'
+    // *_fkey vs Drizzle's *_<table>_id_fk) don't show as drift, while
+    // preserving the FK SEMANTICS (referenced table, columns, action).
+    .replace(
+      /(\bADD CONSTRAINT )"?[A-Za-z0-9_]+?(?:_fkey|_fk)"?( FOREIGN KEY)/g,
+      "$1<fkname>$2",
+    )
+    .trimEnd();
+}
+
+function cleanStatementLine(line: string): string {
+  return line
+    .replace(/,\s*$/, "")
+    .replace(/;\s*$/, "")
+    .trimEnd();
+}
+
+function normalizeDailyLogSettingsSingleton(statement: string): string | null {
+  if (!statement.includes("public.daily_log_settings")) return null;
+  if (!statement.includes("singleton")) return null;
+  if (
+    /CREATE UNIQUE INDEX .* ON public\.daily_log_settings\b[\s\S]*\(\s*singleton\s*\)/.test(statement) ||
+    /ADD CONSTRAINT .* UNIQUE \(\s*singleton\s*\)/.test(statement)
+  ) {
+    return "UNIQUE public.daily_log_settings (singleton)";
+  }
+  return null;
+}
+
+function normalizeCreateTableStatement(lines: string[]): string {
+  const header = cleanStatementLine(lines[0]);
+  const body = lines
+    .slice(1)
+    .map(cleanStatementLine)
+    .map((line) => line.trim())
+    .filter((line) => line && line !== "(" && line !== ")" && line !== ");")
+    .sort();
+  return [header, ...body.map((line) => `  ${line}`), ");"].join("\n");
+}
+
+function normalizeSchemaStatement(lines: string[]): string | null {
+  const cleaned = lines.map(cleanStatementLine).filter((line) => line.trim());
+  const statement = cleaned.join("\n");
+  if (!statement) return null;
+  if (statement.includes("public.workspace_schema_migrations")) return null;
+
+  const dailyLogSingleton = normalizeDailyLogSettingsSingleton(statement);
+  if (dailyLogSingleton) return dailyLogSingleton;
+
+  if (/^CREATE TABLE public\.[A-Za-z0-9_]+ \($/.test(cleaned[0].trim())) {
+    return normalizeCreateTableStatement(cleaned);
+  }
+
+  return cleaned.join("\n");
 }
 
 async function writeEvidenceAndDiff(
@@ -285,7 +310,9 @@ async function main() {
   process.exitCode = code;
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

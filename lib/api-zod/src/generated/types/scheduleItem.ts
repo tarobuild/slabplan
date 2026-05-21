@@ -28,6 +28,7 @@ export interface ScheduleItem {
   displayColor?: string;
   startDate: string;
   endDate: string;
+  manualEndDate: string | null;
   workDays?: number;
   isHourly?: boolean;
   startTime?: string | null;
@@ -56,9 +57,9 @@ export interface ScheduleItem {
   hasConflict: boolean;
   conflictReasons: string[];
   createdBy?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  deletedAt?: Date | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
   createdByName?: string | null;
   createdByAvatarUrl?: string | null;
 }

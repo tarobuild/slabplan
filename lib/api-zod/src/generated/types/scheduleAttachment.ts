@@ -14,6 +14,6 @@ export interface ScheduleAttachment {
   fileUrl: string;
   fileSize: number;
   mimeType?: string | null;
-  createdAt: Date;
+  createdAt: string;
   icon: string;
 }

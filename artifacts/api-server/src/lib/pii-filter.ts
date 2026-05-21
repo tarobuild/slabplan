@@ -74,20 +74,34 @@ export function containsPii(text: string): boolean {
 export function valueContainsPii(value: unknown): boolean {
   const seen = new WeakSet<object>();
 
-  function shouldSkipKey(key: string): boolean {
-    return /(^|_)(id|uuid|hash|token|secret|key|dsn)$/i.test(key);
+  function isIdentifierKey(key: string): boolean {
+    return /(^|_)(id|uuid|hash)$/i.test(key);
   }
 
-  function normalizeString(key: string, text: string): string {
-    if (/url$/i.test(key)) return text.split(/[?#]/, 1)[0] ?? "";
-    return text;
+  function isSensitiveKey(key: string): boolean {
+    return /(^|_)(token|secret|key|api[_-]?key|dsn|password|credential|authorization)$/i.test(key);
+  }
+
+  function urlContainsPii(text: string): boolean {
+    try {
+      const url = new URL(text);
+      for (const [name, rawValue] of url.searchParams.entries()) {
+        if (isSensitiveKey(name)) continue;
+        if (containsPii(name) || containsPii(rawValue)) return true;
+      }
+      return containsPii(`${url.origin}${url.pathname}`);
+    } catch {
+      return containsPii(text);
+    }
   }
 
   function visit(val: unknown, key = ""): boolean {
     if (val === null || val === undefined) return false;
     if (typeof val === "string") {
-      if (shouldSkipKey(key)) return false;
-      return containsPii(normalizeString(key, val));
+      if (isSensitiveKey(key)) return true;
+      if (isIdentifierKey(key)) return false;
+      if (/url$/i.test(key)) return urlContainsPii(val);
+      return containsPii(val);
     }
     if (typeof val !== "object") return false;
     if (seen.has(val as object)) return false;
@@ -102,7 +116,8 @@ export function valueContainsPii(value: unknown): boolean {
     for (const [childKey, childValue] of Object.entries(
       val as Record<string, unknown>,
     )) {
-      if (shouldSkipKey(childKey)) continue;
+      if (isSensitiveKey(childKey) && childValue !== null && childValue !== undefined) return true;
+      if (isIdentifierKey(childKey)) continue;
       if (visit(childValue, childKey)) return true;
     }
     return false;

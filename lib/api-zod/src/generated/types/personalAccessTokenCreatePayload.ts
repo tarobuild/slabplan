@@ -15,5 +15,5 @@ export interface PersonalAccessTokenCreatePayload {
   name: string;
   scope?: PersonalAccessTokenCreatePayloadScope;
   /** Optional ISO 8601 expiry. Must be in the future. */
-  expiresAt?: Date | null;
+  expiresAt?: string | null;
 }

@@ -18,24 +18,80 @@ function formatTime(t: string | null): string | null {
   return `${hr}:${String(m).padStart(2, "0")} ${ampm}`
 }
 
-const FORECAST_TTL_MS = 60 * 60 * 1000
-const DEVICE_FORECAST_STORAGE_KEY = `${APP_STORAGE_NAMESPACE}:home:deviceForecast`
+export const FORECAST_TTL_MS = 60 * 60 * 1000
+export const DEVICE_FORECAST_STORAGE_KEY = `${APP_STORAGE_NAMESPACE}:home:deviceForecast`
 
-type DeviceForecastState =
+export type DeviceForecastState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "ok"; data: CrewForecast; fetchedAt: number }
   | { status: "error" }
 
-function readStoredDeviceForecast(): DeviceForecastState {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function hasOwn(record: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key)
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string"
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || isString(value)
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value)
+}
+
+function isNullableFiniteNumber(value: unknown): value is number | null {
+  return value === null || isFiniteNumber(value)
+}
+
+export function isCrewForecast(value: unknown): value is CrewForecast {
+  if (!isRecord(value)) return false
+  return (
+    isString(value.jobId) &&
+    hasOwn(value, "jobTitle") &&
+    isNullableString(value.jobTitle) &&
+    isString(value.address) &&
+    isString(value.condition) &&
+    isString(value.icon) &&
+    hasOwn(value, "temperatureHigh") &&
+    isNullableFiniteNumber(value.temperatureHigh) &&
+    hasOwn(value, "temperatureLow") &&
+    isNullableFiniteNumber(value.temperatureLow) &&
+    hasOwn(value, "windMph") &&
+    isNullableFiniteNumber(value.windMph) &&
+    hasOwn(value, "humidity") &&
+    isNullableFiniteNumber(value.humidity) &&
+    isFiniteNumber(value.precipitation) &&
+    isString(value.fetchedAt)
+  )
+}
+
+export function getDeviceForecastExpiryDelay(
+  state: DeviceForecastState,
+  now = Date.now(),
+): number | null {
+  if (state.status !== "ok") return null
+  return Math.max(0, FORECAST_TTL_MS - (now - state.fetchedAt))
+}
+
+export function readStoredDeviceForecast(): DeviceForecastState {
   if (typeof window === "undefined") return { status: "idle" }
   try {
     const raw = window.sessionStorage.getItem(DEVICE_FORECAST_STORAGE_KEY)
     if (!raw) return { status: "idle" }
-    const parsed = JSON.parse(raw) as { fetchedAt?: number; data?: CrewForecast }
+    const parsed = JSON.parse(raw) as unknown
     if (
+      isRecord(parsed) &&
       typeof parsed.fetchedAt === "number" &&
-      parsed.data &&
+      Number.isFinite(parsed.fetchedAt) &&
+      isCrewForecast(parsed.data) &&
       Date.now() - parsed.fetchedAt < FORECAST_TTL_MS
     ) {
       return { status: "ok", fetchedAt: parsed.fetchedAt, data: parsed.data }
@@ -43,6 +99,7 @@ function readStoredDeviceForecast(): DeviceForecastState {
   } catch {
     // Corrupt storage — fall through to a fresh fetch.
   }
+  window.sessionStorage.removeItem(DEVICE_FORECAST_STORAGE_KEY)
   return { status: "idle" }
 }
 
@@ -61,8 +118,11 @@ function writeStoredDeviceForecast(data: CrewForecast, fetchedAt: number) {
 export default function MyDayPage({ data }: { data: CrewHome }) {
   const { schedule, todos, weather, forecast, latestLog, today } = data
   const hasWork = schedule.items.length > 0 || todos.length > 0
-  const deviceForecast = useDeviceForecastFallback(forecast)
-  const activeForecast = forecast ?? (deviceForecast.status === "ok" ? deviceForecast.data : null)
+  const shouldUseDeviceForecast = !forecast && !weather
+  const deviceForecast = useDeviceForecastFallback(shouldUseDeviceForecast)
+  const activeForecast =
+    forecast ??
+    (shouldUseDeviceForecast && deviceForecast.status === "ok" ? deviceForecast.data : null)
 
   return (
     <div className="space-y-5" data-testid="home-my-day">
@@ -95,10 +155,10 @@ export default function MyDayPage({ data }: { data: CrewHome }) {
       ) : null}
 
       <div className="grid gap-5 md:grid-cols-2">
-        <Card className="border-[#E5E7EB]">
+        <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarDays className="size-4 text-orange-600" />
+              <CalendarDays className="size-4 text-primary" />
               Today's schedule
             </CardTitle>
             <Badge variant="secondary">{schedule.items.length}</Badge>
@@ -112,7 +172,7 @@ export default function MyDayPage({ data }: { data: CrewHome }) {
                   key={item.id}
                   to={`/jobs/${item.jobId}/schedule`}
                   data-testid="home-schedule-item"
-                  className="block rounded-lg border border-[#E5E7EB] p-3 transition hover:border-orange-300 hover:bg-orange-50/40"
+                  className="block rounded-lg border border-border p-3 transition hover:border-primary/35 hover:bg-accent/40"
                 >
                   <div className="flex items-start gap-2">
                     <span
@@ -147,7 +207,7 @@ export default function MyDayPage({ data }: { data: CrewHome }) {
                             <div
                               className={cn(
                                 "h-full rounded-full",
-                                item.isComplete ? "bg-emerald-500" : "bg-orange-500",
+                                item.isComplete ? "bg-emerald-500" : "bg-primary",
                               )}
                               style={{ width: `${item.isComplete ? 100 : item.progress}%` }}
                             />
@@ -165,10 +225,10 @@ export default function MyDayPage({ data }: { data: CrewHome }) {
           </CardContent>
         </Card>
 
-        <Card className="border-[#E5E7EB]">
+        <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <ClipboardList className="size-4 text-orange-600" />
+              <ClipboardList className="size-4 text-primary" />
               My todos
             </CardTitle>
             <Badge variant="secondary">{todos.length}</Badge>
@@ -182,7 +242,7 @@ export default function MyDayPage({ data }: { data: CrewHome }) {
                   key={todo.id}
                   to={todo.jobId ? `/jobs/${todo.jobId}/schedule` : "/jobs"}
                   data-testid="home-todo"
-                  className="flex items-start gap-2 rounded-lg border border-[#E5E7EB] p-3 transition hover:border-orange-300 hover:bg-orange-50/40"
+                  className="flex items-start gap-2 rounded-lg border border-border p-3 transition hover:border-primary/35 hover:bg-accent/40"
                 >
                   <CheckCircle2
                     className={cn(
@@ -205,7 +265,7 @@ export default function MyDayPage({ data }: { data: CrewHome }) {
       </div>
 
       {!hasWork ? (
-        <Card className="border-[#E5E7EB]">
+        <Card className="border-border">
           <CardContent className="py-10 text-center text-sm text-slate-500">
             No assignments today.{" "}
             {latestLog ? (
@@ -213,7 +273,7 @@ export default function MyDayPage({ data }: { data: CrewHome }) {
                 Last activity:{" "}
                 <Link
                   to={`/jobs/${latestLog.jobId}/daily-logs`}
-                  className="text-orange-600 hover:underline"
+                  className="text-primary hover:underline"
                 >
                   {latestLog.title || latestLog.jobTitle || "daily log"}
                 </Link>
@@ -289,11 +349,22 @@ function ForecastPlaceholder({ text }: { text: string }) {
   )
 }
 
-function useDeviceForecastFallback(serverForecast: CrewForecast | null): DeviceForecastState {
+function useDeviceForecastFallback(shouldFetch: boolean): DeviceForecastState {
   const [state, setState] = useState<DeviceForecastState>(() => readStoredDeviceForecast())
 
   useEffect(() => {
-    if (serverForecast) return
+    if (!shouldFetch) return
+    const expiryDelay = getDeviceForecastExpiryDelay(state)
+    if (expiryDelay === null) return
+    const timeout = window.setTimeout(() => {
+      window.sessionStorage.removeItem(DEVICE_FORECAST_STORAGE_KEY)
+      setState({ status: "idle" })
+    }, expiryDelay)
+    return () => window.clearTimeout(timeout)
+  }, [shouldFetch, state])
+
+  useEffect(() => {
+    if (!shouldFetch) return
     if (typeof navigator === "undefined" || !navigator.geolocation) return
     if (state.status === "ok" && Date.now() - state.fetchedAt < FORECAST_TTL_MS) return
     if (state.status === "loading") return
@@ -337,15 +408,15 @@ function useDeviceForecastFallback(serverForecast: CrewForecast | null): DeviceF
       cancelled = true
     }
     // We intentionally only re-run when the server-side forecast becomes
-    // unavailable; the cached `state` lets us avoid re-prompting for location.
+    // necessary; the cached `state` lets us avoid re-prompting for location.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverForecast])
+  }, [shouldFetch])
 
   return state
 }
 
 function EmptyHint({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-md border border-dashed border-[#E5E7EB] p-3 text-center text-xs text-slate-500">{children}</p>
+  return <p className="rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">{children}</p>
 }
 
 function prettyDate(iso: string): string {

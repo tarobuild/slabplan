@@ -29,7 +29,7 @@ export interface LeadDetail {
    * @maximum 100
    */
   confidence?: number | null;
-  projectedSalesDate?: Date | null;
+  projectedSalesDate?: string | null;
   estimatedRevenueMin?: string | null;
   estimatedRevenueMax?: string | null;
   status: LeadDetailStatus;
@@ -38,8 +38,8 @@ export interface LeadDetail {
   leadSource?: string | null;
   createdBy?: string | null;
   createdByName?: string | null;
-  createdAt: Date;
-  updatedAt?: Date | null;
+  createdAt: string;
+  updatedAt?: string | null;
   /** Primary client contact for the lead, or null when none is assigned. */
   clientContact: LeadContact | null;
   contacts: LeadContact[];

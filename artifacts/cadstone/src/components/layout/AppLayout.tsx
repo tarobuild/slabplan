@@ -11,7 +11,7 @@ import { BreadcrumbsProvider } from "@/hooks/use-breadcrumbs"
 export default function AppLayout() {
   return (
     <BreadcrumbsProvider>
-      <div className="flex h-screen flex-col overflow-hidden bg-[#F9FAFB]">
+      <div className="app-surface flex h-screen flex-col overflow-hidden">
         <div data-print-hide="true">
           <TopNav />
           <Breadcrumbs />
@@ -20,13 +20,13 @@ export default function AppLayout() {
         <div className="flex flex-1 overflow-hidden">
           <aside
             data-print-hide="true"
-            className="hidden w-56 shrink-0 overflow-hidden lg:flex lg:flex-col"
+            className="hidden w-64 shrink-0 overflow-hidden lg:flex lg:flex-col"
           >
             <Sidebar />
           </aside>
 
-          <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
-            <div className="p-4 lg:p-5">
+          <main className="flex-1 overflow-y-auto pb-20 lg:pb-0">
+            <div className="p-4 lg:p-6">
               {/*
                 Per-route ErrorBoundary: scoped *inside* the layout so a
                 thrown render error in one route doesn't blank the whole

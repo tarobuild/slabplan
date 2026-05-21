@@ -56,12 +56,14 @@ function Item({
   variant = "default",
   size = "default",
   asChild = false,
+  role,
   ...props
 }: React.ComponentProps<"div"> &
   VariantProps<typeof itemVariants> & { asChild?: boolean }) {
   const Comp = asChild ? Slot : "div"
   return (
     <Comp
+      role={asChild ? role : (role ?? "listitem")}
       data-slot="item"
       data-variant={variant}
       data-size={size}

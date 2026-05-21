@@ -10,6 +10,7 @@ export const ROLE_GATES = {
   // Reports are admin-only (per task #322). PMs and crew get a 403 from
   // the backend; the nav link is hidden via this gate too.
   reports: ["admin"] as const,
+  atRisk: ["admin", "project_manager"] as const,
   // Field users reach their assigned projects through My Jobs.
   myJobs: ["project_manager", "crew_member"] as const,
   // Company-wide Schedule and Daily Logs feeds (`/schedule`, `/daily-logs`)

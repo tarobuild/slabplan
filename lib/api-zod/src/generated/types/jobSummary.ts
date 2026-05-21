@@ -19,12 +19,20 @@ export interface JobSummary {
   jobType?: JobSummaryJobType;
   /** Decimal price serialized as string. */
   contractPrice?: string | null;
-  /** @minimum 0 */
-  contractValueCents?: bigint | null;
-  /** @minimum 0 */
-  amountPaidCents?: bigint | null;
-  projectedStart?: Date | null;
-  projectedCompletion?: Date | null;
-  updatedAt?: Date | null;
-  createdAt: Date;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
+  contractValueCents?: number | null;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
+  amountPaidCents?: number | null;
+  projectedStart?: string | null;
+  projectedCompletion?: string | null;
+  updatedAt?: string | null;
+  createdAt: string;
 }

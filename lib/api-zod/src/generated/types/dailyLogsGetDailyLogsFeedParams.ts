@@ -26,8 +26,8 @@ export type DailyLogsGetDailyLogsFeedParams = {
   clientId?: string;
   jobId?: string;
   createdBy?: string;
-  from?: Date | null;
-  to?: Date | null;
+  from?: string | null;
+  to?: string | null;
   hasAttachments?: boolean;
   hasComments?: boolean;
 };

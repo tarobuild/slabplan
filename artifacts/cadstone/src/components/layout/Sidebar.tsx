@@ -36,9 +36,9 @@ type Job = {
 type StatusFilter = "open" | "closed" | "archived" | "all"
 
 const STATUS_DOT: Record<string, string> = {
-  open: "bg-green-500",
-  closed: "bg-slate-400",
-  archived: "bg-slate-300",
+  open: "bg-primary",
+  closed: "bg-stone-400",
+  archived: "bg-stone-300",
 }
 
 const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
@@ -61,6 +61,7 @@ const SORT_ASC_STORAGE_KEY = `${APP_STORAGE_NAMESPACE}:sidebar:sortAsc`
 const COLLAPSED_CLIENTS_STORAGE_KEY = `${APP_STORAGE_NAMESPACE}:sidebar:collapsedClients`
 
 const UNASSIGNED_KEY = "__unassigned__"
+const SIDEBAR_JOBS_PAGE_SIZE = 200
 
 function isStatusFilter(value: unknown): value is StatusFilter {
   return (
@@ -121,6 +122,42 @@ type ClientGroup = {
   jobs: Job[]
 }
 
+type JobsPageResponse = {
+  jobs?: Job[]
+  pagination?: {
+    page?: number
+    totalPages?: number
+    hasMore?: boolean
+  }
+}
+
+async function loadAllSidebarJobs() {
+  const allJobs: Job[] = []
+  let page = 1
+
+  while (true) {
+    const response = await api.get<JobsPageResponse | Job[]>(
+      `/jobs?pageSize=${SIDEBAR_JOBS_PAGE_SIZE}&page=${page}`,
+    )
+    const data = response.data
+    const pageJobs = Array.isArray(data) ? data : data.jobs ?? []
+    allJobs.push(...pageJobs)
+
+    if (Array.isArray(data)) break
+
+    const totalPages = data.pagination?.totalPages
+    if (typeof totalPages === "number") {
+      if (page >= totalPages) break
+    } else if (!data.pagination?.hasMore) {
+      break
+    }
+
+    page += 1
+  }
+
+  return allJobs
+}
+
 export default function Sidebar() {
   const { jobId, clientId: routeClientId } = useParams<{
     jobId?: string
@@ -143,14 +180,19 @@ export default function Sidebar() {
     readStoredCollapsedClients,
   )
   const activeRef = useRef<HTMLButtonElement | null>(null)
+  const jobLoadSeqRef = useRef(0)
 
   const loadJobs = () => {
+    const requestSeq = ++jobLoadSeqRef.current
     setErrorMessage(null)
 
-    api
-      .get("/jobs?pageSize=200")
-      .then((r) => setJobs(r.data.jobs ?? r.data ?? []))
+    loadAllSidebarJobs()
+      .then((r) => {
+        if (requestSeq !== jobLoadSeqRef.current) return
+        setJobs(r)
+      })
       .catch((err: unknown) => {
+        if (requestSeq !== jobLoadSeqRef.current) return
         // Nav widget intentionally swallows the raw server message
         // (e.g. "Invalid jobs query.") because non-technical users
         // don't benefit from validation jargon — only the auth/permission
@@ -367,20 +409,20 @@ export default function Sidebar() {
   const navHeader = canSeeClients ? "Clients & Jobs" : "Jobs"
 
   return (
-    <div className="flex h-full flex-col border-r border-[#E5E7EB] bg-white">
+    <div className="flex h-full flex-col border-r border-border bg-sidebar/95">
       {jobId && (
-        <div className="sticky top-0 z-10 border-b border-orange-100 bg-orange-50 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-orange-700/70">
+        <div className="sticky top-0 z-10 border-b border-border bg-accent/45 px-3 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
             Current Job
           </p>
-          <p className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+          <p className="mt-0.5 truncate text-sm font-semibold text-foreground">
             {activeJob?.title ?? "Loading…"}
           </p>
           <div className="mt-1 flex flex-col gap-0.5">
             {canSeeClients && activeJob?.clientId ? (
               <Link
                 to={`/clients/${activeJob.clientId}`}
-                className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 hover:text-orange-800"
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
               >
                 <ArrowLeft className="size-3.5" />
                 Back to {activeJob.clientName ?? "client"}
@@ -388,7 +430,7 @@ export default function Sidebar() {
             ) : null}
             <Link
               to={canSeeClients ? "/clients" : "/jobs"}
-              className="inline-flex items-center gap-1 text-xs font-medium text-orange-700/80 hover:text-orange-800"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary/80 hover:text-primary"
             >
               <ArrowLeft className="size-3.5" />
               {canSeeClients ? "All Clients" : "All Jobs"}
@@ -397,10 +439,9 @@ export default function Sidebar() {
         </div>
       )}
       {isAdmin ? (
-        <div className="flex flex-col gap-1.5 border-b border-[#E5E7EB] p-2.5">
+        <div className="flex flex-col gap-1.5 border-b border-border p-3">
           {canSeeClients ? (
             <Button
-              variant="orange"
               className="w-full"
               size="sm"
               onClick={() => navigate("/clients", { state: { openCreate: true } })}
@@ -422,9 +463,9 @@ export default function Sidebar() {
       ) : null}
 
       <div className="flex items-center justify-between px-3 py-2">
-        <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           <span>{navHeader}</span>
-          <span className="text-xs text-slate-400">({totalJobsShown})</span>
+          <span className="text-xs font-medium text-muted-foreground">({totalJobsShown})</span>
         </div>
         <div className="flex items-center">
           <Popover open={filterOpen} onOpenChange={setFilterOpen}>
@@ -433,8 +474,8 @@ export default function Sidebar() {
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "relative size-6 text-slate-400 hover:text-slate-600",
-                  isFilterActive && "text-orange-600 hover:text-orange-700",
+                  "relative size-7 text-muted-foreground hover:bg-accent hover:text-foreground",
+                  isFilterActive && "text-primary hover:text-primary",
                 )}
                 title="Filter"
                 aria-label="Filter jobs by status"
@@ -443,7 +484,7 @@ export default function Sidebar() {
                 {isFilterActive && (
                   <span
                     aria-hidden
-                    className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-orange-500"
+                    className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-[hsl(var(--oxide))]"
                   />
                 )}
               </Button>
@@ -463,17 +504,17 @@ export default function Sidebar() {
                         setFilterOpen(false)
                       }}
                       className={cn(
-                        "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-xs hover:bg-slate-100",
+                        "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent",
                         selected
-                          ? "font-medium text-orange-700"
-                          : "text-slate-700",
+                          ? "font-medium text-primary"
+                          : "text-foreground",
                       )}
                     >
                       <span>{option.label}</span>
                       {selected && (
                         <span
                           aria-hidden
-                          className="size-1.5 rounded-full bg-orange-500"
+                          className="size-1.5 rounded-full bg-[hsl(var(--oxide))]"
                         />
                       )}
                     </button>
@@ -485,7 +526,7 @@ export default function Sidebar() {
           <Button
             variant="ghost"
             size="icon"
-            className="size-6 text-slate-400 hover:text-slate-600"
+            className="size-7 text-muted-foreground hover:bg-accent hover:text-foreground"
             aria-label={
               sortAsc
                 ? "Sort A to Z (click to switch to Z to A)"
@@ -503,14 +544,14 @@ export default function Sidebar() {
 
       <div className="px-2.5 pb-2">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={
               canSeeClients ? "Search clients or jobs…" : "Search jobs…"
             }
-            className="h-7 border-[#E5E7EB] pl-8 text-xs shadow-none"
+            className="h-8 border-border bg-white pl-8 text-xs shadow-none"
           />
         </div>
       </div>
@@ -546,7 +587,7 @@ export default function Sidebar() {
                 onClick={() =>
                   navigate("/clients", { state: { openCreate: true } })
                 }
-                className="mt-2 text-xs font-medium text-orange-700 hover:text-orange-800"
+              className="mt-2 text-xs font-medium text-primary hover:text-primary/80"
               >
                 Add your first client →
               </button>
@@ -591,11 +632,11 @@ export default function Sidebar() {
               : `Collapse ${group.clientName}`
 
             return (
-              <div key={group.key} className="border-b border-slate-100 last:border-b-0">
+              <div key={group.key} className="border-b border-border/70 last:border-b-0">
                 <div
                   className={cn(
-                    "flex items-center gap-1 px-2 py-1.5",
-                    isActiveClient && "bg-orange-50/40",
+                    "flex items-center gap-1 px-2 py-2",
+                    isActiveClient && "bg-accent/55",
                   )}
                 >
                   <button
@@ -603,7 +644,7 @@ export default function Sidebar() {
                     onClick={() => toggleGroup(group.key)}
                     aria-expanded={!isCollapsed}
                     aria-label={toggleLabel}
-                    className="flex size-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     {isCollapsed ? (
                       <ChevronRight className="size-3.5" />
@@ -615,8 +656,8 @@ export default function Sidebar() {
                     <Link
                       to={`/clients/${group.clientId}`}
                       className={cn(
-                        "min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide hover:text-orange-700",
-                        isActiveClient ? "text-orange-700" : "text-slate-600",
+                        "min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide hover:text-primary",
+                        isActiveClient ? "text-primary" : "text-muted-foreground",
                       )}
                       title={group.clientName}
                     >
@@ -624,13 +665,13 @@ export default function Sidebar() {
                     </Link>
                   ) : (
                     <span
-                      className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                       title={group.clientName}
                     >
                       {group.clientName}
                     </span>
                   )}
-                  <span className="shrink-0 text-[10px] text-slate-400">
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
                     {group.jobs.length}
                   </span>
                 </div>
@@ -675,9 +716,9 @@ function JobRow({
       ref={active ? activeRef : undefined}
       onClick={onSelect}
       className={cn(
-        "flex w-full items-start gap-2.5 pr-3 py-2 text-left transition-colors hover:bg-slate-50",
+        "flex w-full items-start gap-2.5 pr-3 py-2.5 text-left transition-colors hover:bg-accent/55",
         indented ? "pl-7" : "pl-3",
-        active && "bg-orange-50 hover:bg-orange-50",
+        active && "bg-accent hover:bg-accent",
       )}
     >
       <span
@@ -690,18 +731,18 @@ function JobRow({
         <p
           className={cn(
             "truncate text-sm font-medium leading-snug",
-            active ? "text-orange-700" : "text-slate-900",
+            active ? "text-primary" : "text-foreground",
           )}
         >
           {job.title}
         </p>
         {(job.city || job.state) && (
-          <p className="truncate text-xs text-slate-400">
+          <p className="truncate text-xs text-muted-foreground">
             {[job.city, job.state].filter(Boolean).join(", ")}
           </p>
         )}
         {active && (
-          <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-orange-500">
+          <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-[hsl(var(--oxide))]">
             Current
           </p>
         )}

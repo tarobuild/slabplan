@@ -21,14 +21,24 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`
 }
 
+export const TOOL_INPUT_PREVIEW_LIMIT = 600
+
+export function truncateToolInputPreview(value: string): string {
+  return value.length > TOOL_INPUT_PREVIEW_LIMIT
+    ? `${value.slice(0, TOOL_INPUT_PREVIEW_LIMIT)}…`
+    : value
+}
+
 function formatInput(input: unknown): string {
   if (input == null) return "—"
-  if (typeof input === "string") return input
+  if (typeof input === "string") {
+    return truncateToolInputPreview(input)
+  }
   try {
     const json = JSON.stringify(input, null, 2)
-    return json.length > 600 ? json.slice(0, 600) + "…" : json
+    return truncateToolInputPreview(json)
   } catch {
-    return String(input)
+    return truncateToolInputPreview(String(input))
   }
 }
 
@@ -51,7 +61,7 @@ function ToolCallRow({
         isError
           ? "border-red-200 bg-red-50"
           : isPending
-            ? "border-orange-200 bg-orange-50"
+            ? "border-primary/20 bg-primary/10"
             : "border-slate-200 bg-slate-50",
       )}
     >
@@ -61,7 +71,7 @@ function ToolCallRow({
         className="flex w-full items-center gap-2 px-2 py-1.5 text-left"
       >
         {isPending ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-orange-500" />
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
         ) : isOk ? (
           <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600" />
         ) : (
@@ -72,7 +82,7 @@ function ToolCallRow({
           {call.name}
         </span>
         {isPending ? (
-          <span className="ml-auto text-[10px] italic text-orange-600">
+          <span className="ml-auto text-[10px] italic text-primary">
             running…
           </span>
         ) : call.durationMs != null ? (
@@ -153,7 +163,7 @@ function ActionsSection({
         aria-expanded={isOpen}
       >
         {pendingCount > 0 ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-orange-500" />
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
         ) : (
           <ListChecks className="size-3.5 shrink-0 text-slate-400" />
         )}
@@ -200,7 +210,7 @@ export default function ChatMessage({ message, onCitationNavigate }: ChatMessage
         className={cn(
           "max-w-[92%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words",
           isUser
-            ? "bg-[#1D1D1D] text-white"
+            ? "bg-[hsl(var(--nav))] text-white"
             : "bg-white text-slate-800 border border-slate-200",
         )}
       >

@@ -122,6 +122,20 @@ async function jobIdForFile(fileId: string): Promise<string | null> {
   return row?.jobId ?? null;
 }
 
+async function organizationIdForFile(fileId: string): Promise<string> {
+  const [row] = await db
+    .select({ organizationId: files.organizationId })
+    .from(files)
+    .where(eq(files.id, fileId))
+    .limit(1);
+
+  if (!row?.organizationId) {
+    throw new HttpError(404, "File not found.", undefined, "not-found");
+  }
+
+  return row.organizationId;
+}
+
 export type CreateAnnotationInput = {
   fileId: string;
   page: number;
@@ -143,10 +157,11 @@ export async function createAnnotation(params: {
 }): Promise<SerializedAnnotation> {
   const { input, userId } = params;
 
-  const [inserted] = await db
-    .insert(fileAnnotations)
-    .values({
-      fileId: input.fileId,
+	  const [inserted] = await db
+	    .insert(fileAnnotations)
+	    .values({
+      organizationId: await organizationIdForFile(input.fileId),
+	      fileId: input.fileId,
       page: input.page,
       toolType: input.toolType,
       color: input.color,

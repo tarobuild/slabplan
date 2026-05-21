@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Building2, Loader2, Search } from "lucide-react"
 import {
   Dialog,
@@ -20,6 +20,41 @@ type PickableClient = {
   archived?: boolean
 }
 
+const CLIENT_PICKER_PAGE_SIZE = 100
+
+type ClientPickerPage = {
+  clients?: PickableClient[]
+  pagination?: {
+    page?: number
+    totalPages?: number
+  }
+}
+
+async function loadAllPickableClients(search: string) {
+  const allClients: PickableClient[] = []
+  let page = 1
+
+  while (true) {
+    const response = await api.get<ClientPickerPage>("/clients", {
+      params: {
+        page,
+        pageSize: CLIENT_PICKER_PAGE_SIZE,
+        status: "all",
+        search: search.trim() || undefined,
+      },
+    })
+
+    const raw = response.data?.clients ?? []
+    allClients.push(...raw)
+
+    const totalPages = response.data?.pagination?.totalPages
+    if (typeof totalPages !== "number" || page >= totalPages) break
+    page += 1
+  }
+
+  return allClients.filter((c) => !c.archived)
+}
+
 type ClientPickerDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -37,50 +72,50 @@ export function ClientPickerDialog({
 }: ClientPickerDialogProps) {
   const [clients, setClients] = useState<PickableClient[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [search, setSearch] = useState("")
+  const [loadNonce, setLoadNonce] = useState(0)
 
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    setLoading(true)
-    // Use status=all (not the default "active") so brand-new clients
-    // show up immediately. The default "active" filter requires at least
-    // one open job or an outstanding balance — which means a freshly
-    // created client would be invisible in this assign-a-job picker.
-    // Archived clients are filtered out below so they aren't selectable.
-    api
-      .get("/clients?pageSize=100&status=all")
-      .then((response) => {
-        if (cancelled) return
-        const raw: PickableClient[] = response.data?.clients ?? []
-        setClients(raw.filter((c) => !c.archived))
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        toastApiError(err, "Failed to load clients")
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+    const timeoutId = window.setTimeout(() => {
+      setLoading(true)
+      setLoadError(false)
+      setClients([])
+      // Use status=all (not the default "active") so brand-new clients
+      // show up immediately. The default "active" filter requires at least
+      // one open job or an outstanding balance — which means a freshly
+      // created client would be invisible in this assign-a-job picker.
+      // Archived clients are filtered out below so they aren't selectable.
+      loadAllPickableClients(search)
+        .then((loadedClients) => {
+          if (cancelled) return
+          setClients(loadedClients)
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          setClients([])
+          setLoadError(true)
+          toastApiError(err, "Failed to load clients")
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+    }, 250)
     return () => {
       cancelled = true
+      window.clearTimeout(timeoutId)
     }
-  }, [open])
+  }, [open, search, loadNonce])
 
   useEffect(() => {
-    if (!open) setSearch("")
+    if (!open) {
+      setSearch("")
+      setClients([])
+      setLoadError(false)
+    }
   }, [open])
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return clients
-    return clients.filter((client) =>
-      [client.companyName, client.city ?? "", client.state ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(q),
-    )
-  }, [clients, search])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -108,7 +143,20 @@ export function ClientPickerDialog({
                 <Loader2 className="mr-2 size-4 animate-spin" />
                 Loading clients…
               </div>
-            ) : filtered.length === 0 ? (
+            ) : loadError ? (
+              <div className="px-4 py-6 text-center text-sm text-slate-500">
+                <p>Couldn't load clients.</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setLoadNonce((value) => value + 1)}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : clients.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-slate-500">
                 {search.trim()
                   ? "No matching clients."
@@ -116,7 +164,7 @@ export function ClientPickerDialog({
               </div>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {filtered.map((client) => (
+                {clients.map((client) => (
                   <li key={client.id}>
                     <button
                       type="button"
@@ -126,7 +174,7 @@ export function ClientPickerDialog({
                       }}
                       className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
                     >
-                      <span className="flex size-8 items-center justify-center rounded-full bg-orange-50 text-orange-500">
+                      <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
                         <Building2 className="size-4" />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -160,4 +208,3 @@ export function ClientPickerDialog({
     </Dialog>
   )
 }
-

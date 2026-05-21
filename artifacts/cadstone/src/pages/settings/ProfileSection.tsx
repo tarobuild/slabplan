@@ -117,7 +117,7 @@ export default function ProfileSection() {
         ) : (
           <form onSubmit={handleProfileSave} className="space-y-5">
             <div className="flex items-center gap-4 mb-2">
-              <div className="size-14 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white text-xl font-bold select-none">
+              <div className="flex size-14 select-none items-center justify-center rounded-full bg-gradient-to-br from-primary to-[hsl(var(--oxide))] text-xl font-bold text-white">
                 {profileForm.fullName?.charAt(0)?.toUpperCase() ?? "?"}
               </div>
               <div>

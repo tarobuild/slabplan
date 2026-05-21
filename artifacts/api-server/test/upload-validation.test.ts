@@ -33,6 +33,12 @@ test("document uploads block .exe even when MIME claims something benign", () =>
   expectBlocked({ originalname: "payload.exe", mimetype: "application/octet-stream" });
 });
 
+test("document uploads block dangerous extensions with trailing dots or spaces", () => {
+  for (const name of ["payload.exe.", "payload.exe ", "deploy.sh ", "evil.html."]) {
+    expectBlocked({ originalname: name, mimetype: "application/octet-stream" });
+  }
+});
+
 test("document uploads block .bat / .sh / .ps1 / .js shell scripts", () => {
   for (const name of ["run.bat", "deploy.sh", "boot.ps1", "evil.js"]) {
     expectBlocked({ originalname: name, mimetype: "" });

@@ -7,6 +7,14 @@
  */
 import * as zod from "zod";
 
+const stringBoolean = zod.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  return value;
+}, zod.boolean());
+
 /**
  * Returns the active organization's billing state and configured self-serve plans.
  * @summary GET /billing/status
@@ -20,7 +28,7 @@ export const BillingGetStatusResponse = zod.object({
     billingEmail: zod.string().nullable(),
     hasStripeCustomer: zod.boolean(),
     hasStripeSubscription: zod.boolean(),
-    trialEndsAt: zod.coerce.date().nullable(),
+    trialEndsAt: zod.string().datetime({}).nullable(),
   }),
   plans: zod.array(
     zod.object({
@@ -94,7 +102,7 @@ export const FinancialsPostJobsJobidFinancialsChangeOrdersParseResponse =
   zod.object({
     number: zod.string(),
     description: zod.string().nullable(),
-    amountCents: zod.number(),
+    amountCents: zod.number().int(),
     fileId: zod.string().uuid().nullable(),
   });
 
@@ -222,8 +230,7 @@ export const usersGetUsersQueryLimitMax = 200;
 export const usersGetUsersQueryOffsetMin = 0;
 
 export const UsersGetUsersQueryParams = zod.object({
-  includeInactive: zod.coerce
-    .boolean()
+  includeInactive: stringBoolean
     .default(usersGetUsersQueryIncludeInactiveDefault)
     .describe(
       "Admin-only. When `true` the response also includes deactivated users.",
@@ -321,19 +328,26 @@ export const UsersPatchUsersIdHeader = zod.object({
     ),
 });
 
-export const usersPatchUsersIdBodyFullNameMin = 2;
-export const usersPatchUsersIdBodyFullNameMax = 255;
+export const usersPatchUsersIdBodyFourFullNameMin = 2;
+export const usersPatchUsersIdBodyFourFullNameMax = 255;
 
 export const UsersPatchUsersIdBody = zod
   .object({
     fullName: zod
       .string()
-      .min(usersPatchUsersIdBodyFullNameMin)
-      .max(usersPatchUsersIdBodyFullNameMax)
+      .min(usersPatchUsersIdBodyFourFullNameMin)
+      .max(usersPatchUsersIdBodyFourFullNameMax)
       .optional(),
     role: zod.enum(["admin", "project_manager", "crew_member"]).optional(),
     isActive: zod.boolean().optional(),
   })
+  .refine(
+    (value) =>
+      value.fullName !== undefined ||
+      value.role !== undefined ||
+      value.isActive !== undefined,
+    { message: "At least one field is required." },
+  )
   .describe(
     "Request body for `PATCH \/users\/{id}` — admin updates a worker's full name, role, or active flag. At least one field must be provided. An admin cannot deactivate their own account through this endpoint.",
   );
@@ -420,11 +434,24 @@ export const UsersPutUsersMeHeader = zod.object({
     ),
 });
 
+export const usersPutUsersMeBodyFullNameMin = 2;
+export const usersPutUsersMeBodyFullNameMax = 255;
+
+export const usersPutUsersMeBodyEmailMax = 255;
+
 export const UsersPutUsersMeBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from updateProfileSchema in artifacts\/api-server\/src\/routes\/users.ts.",
-  );
+  .object({
+    fullName: zod
+      .string()
+      .min(usersPutUsersMeBodyFullNameMin)
+      .max(usersPutUsersMeBodyFullNameMax)
+      .optional(),
+    email: zod.string().email().max(usersPutUsersMeBodyEmailMax).optional(),
+    currentPassword: zod.string().nullish(),
+    phone: zod.string().nullish(),
+    avatarUrl: zod.string().nullish(),
+  })
+  .describe("Request body for `PATCH \/users\/me\/profile`.");
 
 export const UsersPutUsersMeResponse = zod.unknown();
 
@@ -446,11 +473,14 @@ export const UsersPostUsersMePasswordHeader = zod.object({
     ),
 });
 
+export const usersPostUsersMePasswordBodyNewPasswordMin = 8;
+
 export const UsersPostUsersMePasswordBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from changePasswordSchema in artifacts\/api-server\/src\/routes\/users.ts.",
-  );
+  .object({
+    currentPassword: zod.string().min(1),
+    newPassword: zod.string().min(usersPostUsersMePasswordBodyNewPasswordMin),
+  })
+  .describe("Request body for `POST \/users\/me\/change-password`.");
 
 export const UsersPostUsersMePasswordResponse = zod.unknown();
 
@@ -498,10 +528,13 @@ export const clientsGetClientsResponseClientsItemActiveJobCountMin = 0;
 export const clientsGetClientsResponseClientsItemTotalJobCountMin = 0;
 
 export const clientsGetClientsResponseClientsItemContractValueCentsMin = 0;
+export const clientsGetClientsResponseClientsItemContractValueCentsMax = 9007199254740991;
 
 export const clientsGetClientsResponseClientsItemAmountPaidCentsMin = 0;
+export const clientsGetClientsResponseClientsItemAmountPaidCentsMax = 9007199254740991;
 
 export const clientsGetClientsResponseClientsItemOutstandingCentsMin = 0;
+export const clientsGetClientsResponseClientsItemOutstandingCentsMax = 9007199254740991;
 
 export const clientsGetClientsResponsePaginationTotalItemsMin = 0;
 
@@ -516,7 +549,7 @@ export const ClientsGetClientsResponse = zod
           email: zod.string().nullish(),
           city: zod.string().nullish(),
           state: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
           primaryContact: zod
             .union([
               zod
@@ -566,30 +599,38 @@ export const ClientsGetClientsResponse = zod
             ),
           contractValueCents: zod
             .number()
+            .int()
             .min(clientsGetClientsResponseClientsItemContractValueCentsMin)
+            .max(clientsGetClientsResponseClientsItemContractValueCentsMax)
             .describe(
-              "Sum of `contractValueCents` across all caller-visible jobs for this client. Cents.",
+              "Sum of `contractValueCents` across all caller-visible jobs for this client. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
             ),
           amountPaidCents: zod
             .number()
+            .int()
             .min(clientsGetClientsResponseClientsItemAmountPaidCentsMin)
+            .max(clientsGetClientsResponseClientsItemAmountPaidCentsMax)
             .describe(
-              "Sum of `amountPaidCents` across all caller-visible jobs for this client. Cents.",
+              "Sum of `amountPaidCents` across all caller-visible jobs for this client. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
             ),
           outstandingCents: zod
             .number()
+            .int()
             .min(clientsGetClientsResponseClientsItemOutstandingCentsMin)
+            .max(clientsGetClientsResponseClientsItemOutstandingCentsMax)
             .describe(
-              "AR rollup: `max(0, contractValueCents - amountPaidCents)`. Cents.",
+              "AR rollup: `max(0, contractValueCents - amountPaidCents)`. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
             ),
-          lastActivityAt: zod.coerce
-            .date()
+          lastActivityAt: zod
+            .string()
+            .datetime({})
             .nullish()
             .describe(
               "Most recent `jobs.updated_at` across the caller-visible jobs for this client.",
             ),
-          deletedAt: zod.coerce
-            .date()
+          deletedAt: zod
+            .string()
+            .datetime({})
             .nullish()
             .describe("Soft-delete timestamp for the client itself."),
           archived: zod
@@ -667,14 +708,19 @@ export const ClientsGetClientsIdParams = zod.object({
 });
 
 export const clientsGetClientsIdResponseClientJobsItemContractValueCentsMin = 0;
+export const clientsGetClientsIdResponseClientJobsItemContractValueCentsMax = 9007199254740991;
 
 export const clientsGetClientsIdResponseClientJobsItemAmountPaidCentsMin = 0;
+export const clientsGetClientsIdResponseClientJobsItemAmountPaidCentsMax = 9007199254740991;
 
 export const clientsGetClientsIdResponseClientRollupsContractValueCentsMin = 0;
+export const clientsGetClientsIdResponseClientRollupsContractValueCentsMax = 9007199254740991;
 
 export const clientsGetClientsIdResponseClientRollupsAmountPaidCentsMin = 0;
+export const clientsGetClientsIdResponseClientRollupsAmountPaidCentsMax = 9007199254740991;
 
 export const clientsGetClientsIdResponseClientRollupsOutstandingCentsMin = 0;
+export const clientsGetClientsIdResponseClientRollupsOutstandingCentsMax = 9007199254740991;
 
 export const clientsGetClientsIdResponseClientRollupsActiveJobCountMin = 0;
 
@@ -694,9 +740,9 @@ export const ClientsGetClientsIdResponse = zod
         zipCode: zod.string().nullish(),
         notes: zod.string().nullish(),
         createdBy: zod.string().uuid().nullish(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date().nullish(),
-        deletedAt: zod.coerce.date().nullish(),
+        createdAt: zod.string().datetime({}),
+        updatedAt: zod.string().datetime({}).nullish(),
+        deletedAt: zod.string().datetime({}).nullish(),
         contacts: zod.array(
           zod
             .object({
@@ -709,9 +755,9 @@ export const ClientsGetClientsIdResponse = zod
               phone: zod.string().nullish(),
               cellPhone: zod.string().nullish(),
               isPrimary: zod.boolean().nullish(),
-              createdAt: zod.coerce.date().optional(),
-              updatedAt: zod.coerce.date().nullish(),
-              deletedAt: zod.coerce.date().nullish(),
+              createdAt: zod.string().datetime({}).optional(),
+              updatedAt: zod.string().datetime({}).nullish(),
+              deletedAt: zod.string().datetime({}).nullish(),
             })
             .describe(
               "Full client contact record returned on client detail and contact-management endpoints.",
@@ -742,20 +788,34 @@ export const ClientsGetClientsIdResponse = zod
                   .describe("Decimal price serialized as string."),
                 contractValueCents: zod
                   .number()
+                  .int()
                   .min(
                     clientsGetClientsIdResponseClientJobsItemContractValueCentsMin,
                   )
-                  .nullish(),
+                  .max(
+                    clientsGetClientsIdResponseClientJobsItemContractValueCentsMax,
+                  )
+                  .nullish()
+                  .describe(
+                    "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+                  ),
                 amountPaidCents: zod
                   .number()
+                  .int()
                   .min(
                     clientsGetClientsIdResponseClientJobsItemAmountPaidCentsMin,
                   )
-                  .nullish(),
-                projectedStart: zod.coerce.date().nullish(),
-                projectedCompletion: zod.coerce.date().nullish(),
-                updatedAt: zod.coerce.date().nullish(),
-                createdAt: zod.coerce.date(),
+                  .max(
+                    clientsGetClientsIdResponseClientJobsItemAmountPaidCentsMax,
+                  )
+                  .nullish()
+                  .describe(
+                    "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+                  ),
+                projectedStart: zod.string().date().nullish(),
+                projectedCompletion: zod.string().date().nullish(),
+                updatedAt: zod.string().datetime({}).nullish(),
+                createdAt: zod.string().datetime({}),
               })
               .describe(
                 "Summary view of a job used in client detail and client-job listings.",
@@ -771,22 +831,39 @@ export const ClientsGetClientsIdResponse = zod
           .object({
             contractValueCents: zod
               .number()
+              .int()
               .min(
                 clientsGetClientsIdResponseClientRollupsContractValueCentsMin,
+              )
+              .max(
+                clientsGetClientsIdResponseClientRollupsContractValueCentsMax,
+              )
+              .describe(
+                "Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
               ),
             amountPaidCents: zod
               .number()
-              .min(clientsGetClientsIdResponseClientRollupsAmountPaidCentsMin),
+              .int()
+              .min(clientsGetClientsIdResponseClientRollupsAmountPaidCentsMin)
+              .max(clientsGetClientsIdResponseClientRollupsAmountPaidCentsMax)
+              .describe(
+                "Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+              ),
             outstandingCents: zod
               .number()
-              .min(clientsGetClientsIdResponseClientRollupsOutstandingCentsMin),
+              .int()
+              .min(clientsGetClientsIdResponseClientRollupsOutstandingCentsMin)
+              .max(clientsGetClientsIdResponseClientRollupsOutstandingCentsMax)
+              .describe(
+                "Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+              ),
             activeJobCount: zod
               .number()
               .min(clientsGetClientsIdResponseClientRollupsActiveJobCountMin),
             totalJobCount: zod
               .number()
               .min(clientsGetClientsIdResponseClientRollupsTotalJobCountMin),
-            lastActivityAt: zod.coerce.date().nullish(),
+            lastActivityAt: zod.string().datetime({}).nullish(),
           })
           .describe(
             "AR rollups computed across the caller-visible jobs for this client.",
@@ -846,14 +923,19 @@ export const ClientsPutClientsIdBody = zod
   );
 
 export const clientsPutClientsIdResponseClientJobsItemContractValueCentsMin = 0;
+export const clientsPutClientsIdResponseClientJobsItemContractValueCentsMax = 9007199254740991;
 
 export const clientsPutClientsIdResponseClientJobsItemAmountPaidCentsMin = 0;
+export const clientsPutClientsIdResponseClientJobsItemAmountPaidCentsMax = 9007199254740991;
 
 export const clientsPutClientsIdResponseClientRollupsContractValueCentsMin = 0;
+export const clientsPutClientsIdResponseClientRollupsContractValueCentsMax = 9007199254740991;
 
 export const clientsPutClientsIdResponseClientRollupsAmountPaidCentsMin = 0;
+export const clientsPutClientsIdResponseClientRollupsAmountPaidCentsMax = 9007199254740991;
 
 export const clientsPutClientsIdResponseClientRollupsOutstandingCentsMin = 0;
+export const clientsPutClientsIdResponseClientRollupsOutstandingCentsMax = 9007199254740991;
 
 export const clientsPutClientsIdResponseClientRollupsActiveJobCountMin = 0;
 
@@ -873,9 +955,9 @@ export const ClientsPutClientsIdResponse = zod
         zipCode: zod.string().nullish(),
         notes: zod.string().nullish(),
         createdBy: zod.string().uuid().nullish(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date().nullish(),
-        deletedAt: zod.coerce.date().nullish(),
+        createdAt: zod.string().datetime({}),
+        updatedAt: zod.string().datetime({}).nullish(),
+        deletedAt: zod.string().datetime({}).nullish(),
         contacts: zod.array(
           zod
             .object({
@@ -888,9 +970,9 @@ export const ClientsPutClientsIdResponse = zod
               phone: zod.string().nullish(),
               cellPhone: zod.string().nullish(),
               isPrimary: zod.boolean().nullish(),
-              createdAt: zod.coerce.date().optional(),
-              updatedAt: zod.coerce.date().nullish(),
-              deletedAt: zod.coerce.date().nullish(),
+              createdAt: zod.string().datetime({}).optional(),
+              updatedAt: zod.string().datetime({}).nullish(),
+              deletedAt: zod.string().datetime({}).nullish(),
             })
             .describe(
               "Full client contact record returned on client detail and contact-management endpoints.",
@@ -921,20 +1003,34 @@ export const ClientsPutClientsIdResponse = zod
                   .describe("Decimal price serialized as string."),
                 contractValueCents: zod
                   .number()
+                  .int()
                   .min(
                     clientsPutClientsIdResponseClientJobsItemContractValueCentsMin,
                   )
-                  .nullish(),
+                  .max(
+                    clientsPutClientsIdResponseClientJobsItemContractValueCentsMax,
+                  )
+                  .nullish()
+                  .describe(
+                    "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+                  ),
                 amountPaidCents: zod
                   .number()
+                  .int()
                   .min(
                     clientsPutClientsIdResponseClientJobsItemAmountPaidCentsMin,
                   )
-                  .nullish(),
-                projectedStart: zod.coerce.date().nullish(),
-                projectedCompletion: zod.coerce.date().nullish(),
-                updatedAt: zod.coerce.date().nullish(),
-                createdAt: zod.coerce.date(),
+                  .max(
+                    clientsPutClientsIdResponseClientJobsItemAmountPaidCentsMax,
+                  )
+                  .nullish()
+                  .describe(
+                    "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+                  ),
+                projectedStart: zod.string().date().nullish(),
+                projectedCompletion: zod.string().date().nullish(),
+                updatedAt: zod.string().datetime({}).nullish(),
+                createdAt: zod.string().datetime({}),
               })
               .describe(
                 "Summary view of a job used in client detail and client-job listings.",
@@ -950,22 +1046,39 @@ export const ClientsPutClientsIdResponse = zod
           .object({
             contractValueCents: zod
               .number()
+              .int()
               .min(
                 clientsPutClientsIdResponseClientRollupsContractValueCentsMin,
+              )
+              .max(
+                clientsPutClientsIdResponseClientRollupsContractValueCentsMax,
+              )
+              .describe(
+                "Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
               ),
             amountPaidCents: zod
               .number()
-              .min(clientsPutClientsIdResponseClientRollupsAmountPaidCentsMin),
+              .int()
+              .min(clientsPutClientsIdResponseClientRollupsAmountPaidCentsMin)
+              .max(clientsPutClientsIdResponseClientRollupsAmountPaidCentsMax)
+              .describe(
+                "Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+              ),
             outstandingCents: zod
               .number()
-              .min(clientsPutClientsIdResponseClientRollupsOutstandingCentsMin),
+              .int()
+              .min(clientsPutClientsIdResponseClientRollupsOutstandingCentsMin)
+              .max(clientsPutClientsIdResponseClientRollupsOutstandingCentsMax)
+              .describe(
+                "Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+              ),
             activeJobCount: zod
               .number()
               .min(clientsPutClientsIdResponseClientRollupsActiveJobCountMin),
             totalJobCount: zod
               .number()
               .min(clientsPutClientsIdResponseClientRollupsTotalJobCountMin),
-            lastActivityAt: zod.coerce.date().nullish(),
+            lastActivityAt: zod.string().datetime({}).nullish(),
           })
           .describe(
             "AR rollups computed across the caller-visible jobs for this client.",
@@ -1087,8 +1200,10 @@ export const ClientsGetClientsIdJobsParams = zod.object({
 });
 
 export const clientsGetClientsIdJobsResponseJobsItemContractValueCentsMin = 0;
+export const clientsGetClientsIdJobsResponseJobsItemContractValueCentsMax = 9007199254740991;
 
 export const clientsGetClientsIdJobsResponseJobsItemAmountPaidCentsMin = 0;
+export const clientsGetClientsIdJobsResponseJobsItemAmountPaidCentsMax = 9007199254740991;
 
 export const ClientsGetClientsIdJobsResponse = zod
   .object({
@@ -1116,16 +1231,26 @@ export const ClientsGetClientsIdJobsResponse = zod
             .describe("Decimal price serialized as string."),
           contractValueCents: zod
             .number()
+            .int()
             .min(clientsGetClientsIdJobsResponseJobsItemContractValueCentsMin)
-            .nullish(),
+            .max(clientsGetClientsIdJobsResponseJobsItemContractValueCentsMax)
+            .nullish()
+            .describe(
+              "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+            ),
           amountPaidCents: zod
             .number()
+            .int()
             .min(clientsGetClientsIdJobsResponseJobsItemAmountPaidCentsMin)
-            .nullish(),
-          projectedStart: zod.coerce.date().nullish(),
-          projectedCompletion: zod.coerce.date().nullish(),
-          updatedAt: zod.coerce.date().nullish(),
-          createdAt: zod.coerce.date(),
+            .max(clientsGetClientsIdJobsResponseJobsItemAmountPaidCentsMax)
+            .nullish()
+            .describe(
+              "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
+            ),
+          projectedStart: zod.string().date().nullish(),
+          projectedCompletion: zod.string().date().nullish(),
+          updatedAt: zod.string().datetime({}).nullish(),
+          createdAt: zod.string().datetime({}),
         })
         .describe(
           "Summary view of a job used in client detail and client-job listings.",
@@ -1203,9 +1328,9 @@ export const ClientsPutClientsIdContactsContactIdResponse = zod.object({
       phone: zod.string().nullish(),
       cellPhone: zod.string().nullish(),
       isPrimary: zod.boolean().nullish(),
-      createdAt: zod.coerce.date().optional(),
-      updatedAt: zod.coerce.date().nullish(),
-      deletedAt: zod.coerce.date().nullish(),
+      createdAt: zod.string().datetime({}).optional(),
+      updatedAt: zod.string().datetime({}).nullish(),
+      deletedAt: zod.string().datetime({}).nullish(),
     })
     .describe(
       "Full client contact record returned on client detail and contact-management endpoints.",
@@ -1286,7 +1411,10 @@ export const JobsGetJobsQueryParams = zod.object({
     .string()
     .optional()
     .describe("Optional free-text filter (job name, address, etc.)."),
-  status: zod.coerce.string().optional().describe("Optional status filter."),
+  status: zod
+    .enum(["open", "closed", "archived"])
+    .optional()
+    .describe("Optional status filter."),
   clientId: zod.coerce
     .string()
     .uuid()
@@ -1298,7 +1426,7 @@ export const JobsGetJobsQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
     ),
   limit: zod.coerce
     .number()
@@ -1375,6 +1503,7 @@ export const JobsGetJobsResponse = zod.object({
       clientName: zod.string().nullish(),
       contractValueCents: zod
         .number()
+        .int()
         .min(jobsGetJobsResponseJobsItemContractValueCentsMin)
         .max(jobsGetJobsResponseJobsItemContractValueCentsMax)
         .nullish()
@@ -1383,6 +1512,7 @@ export const JobsGetJobsResponse = zod.object({
         ),
       amountPaidCents: zod
         .number()
+        .int()
         .min(jobsGetJobsResponseJobsItemAmountPaidCentsMin)
         .max(jobsGetJobsResponseJobsItemAmountPaidCentsMax)
         .nullish()
@@ -1390,8 +1520,8 @@ export const JobsGetJobsResponse = zod.object({
           "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
         ),
       projectManagerId: zod.string().uuid().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
   pagination: zod
@@ -1548,6 +1678,7 @@ export const JobsPostJobsBody = zod
       ),
     contractValueCents: zod
       .number()
+      .int()
       .min(jobsPostJobsBodyOneContractValueCentsMin)
       .max(jobsPostJobsBodyOneContractValueCentsMax)
       .nullish()
@@ -1556,6 +1687,7 @@ export const JobsPostJobsBody = zod
       ),
     amountPaidCents: zod
       .number()
+      .int()
       .min(jobsPostJobsBodyOneAmountPaidCentsMin)
       .max(jobsPostJobsBodyOneAmountPaidCentsMax)
       .nullish()
@@ -1665,6 +1797,7 @@ export const JobsGetJobsIdResponse = zod.object({
       clientName: zod.string().nullish(),
       contractValueCents: zod
         .number()
+        .int()
         .min(jobsGetJobsIdResponseJobContractValueCentsMin)
         .max(jobsGetJobsIdResponseJobContractValueCentsMax)
         .nullish()
@@ -1673,14 +1806,15 @@ export const JobsGetJobsIdResponse = zod.object({
         ),
       amountPaidCents: zod
         .number()
+        .int()
         .min(jobsGetJobsIdResponseJobAmountPaidCentsMin)
         .max(jobsGetJobsIdResponseJobAmountPaidCentsMax)
         .nullish()
         .describe(
           "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
         ),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
       createdById: zod.string().uuid().nullish(),
       createdByName: zod.string().nullish(),
       assignees: zod.array(
@@ -1853,6 +1987,7 @@ export const JobsPutJobsIdBody = zod
       ),
     contractValueCents: zod
       .number()
+      .int()
       .min(jobsPutJobsIdBodyContractValueCentsMin)
       .max(jobsPutJobsIdBodyContractValueCentsMax)
       .nullish()
@@ -1861,6 +1996,7 @@ export const JobsPutJobsIdBody = zod
       ),
     amountPaidCents: zod
       .number()
+      .int()
       .min(jobsPutJobsIdBodyAmountPaidCentsMin)
       .max(jobsPutJobsIdBodyAmountPaidCentsMax)
       .nullish()
@@ -1939,6 +2075,7 @@ export const JobsPutJobsIdResponse = zod.object({
       clientName: zod.string().nullish(),
       contractValueCents: zod
         .number()
+        .int()
         .min(jobsPutJobsIdResponseJobContractValueCentsMin)
         .max(jobsPutJobsIdResponseJobContractValueCentsMax)
         .nullish()
@@ -1947,14 +2084,15 @@ export const JobsPutJobsIdResponse = zod.object({
         ),
       amountPaidCents: zod
         .number()
+        .int()
         .min(jobsPutJobsIdResponseJobAmountPaidCentsMin)
         .max(jobsPutJobsIdResponseJobAmountPaidCentsMax)
         .nullish()
         .describe(
           "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
         ),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
       createdById: zod.string().uuid().nullish(),
       createdByName: zod.string().nullish(),
       assignees: zod.array(
@@ -2258,7 +2396,7 @@ export const LeadsGetLeadsQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
     ),
   limit: zod.coerce
     .number()
@@ -2291,7 +2429,7 @@ export const LeadsGetLeadsResponse = zod
             .min(leadsGetLeadsResponseLeadsItemConfidenceMin)
             .max(leadsGetLeadsResponseLeadsItemConfidenceMax)
             .nullish(),
-          projectedSalesDate: zod.coerce.date().nullish(),
+          projectedSalesDate: zod.string().date().nullish(),
           estimatedRevenueMin: zod
             .string()
             .nullish()
@@ -2310,8 +2448,8 @@ export const LeadsGetLeadsResponse = zod
           ]),
           projectType: zod.string().nullish(),
           leadSource: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date().nullish(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}).nullish(),
           createdByName: zod.string().nullish(),
           clientContact: zod
             .union([
@@ -2339,7 +2477,10 @@ export const LeadsGetLeadsResponse = zod
                   id: zod.string().uuid(),
                   title: zod.string(),
                   status: zod.string(),
-                  convertedAt: zod.union([zod.coerce.date(), zod.null()]),
+                  convertedAt: zod.union([
+                    zod.string().datetime({}),
+                    zod.null(),
+                  ]),
                 })
                 .describe(
                   "Lightweight reference to the job a lead was converted into.",
@@ -2514,7 +2655,7 @@ export const LeadsGetLeadsIdResponse = zod
           .min(leadsGetLeadsIdResponseLeadConfidenceMin)
           .max(leadsGetLeadsIdResponseLeadConfidenceMax)
           .nullish(),
-        projectedSalesDate: zod.coerce.date().nullish(),
+        projectedSalesDate: zod.string().date().nullish(),
         estimatedRevenueMin: zod.string().nullish(),
         estimatedRevenueMax: zod.string().nullish(),
         status: zod.enum([
@@ -2530,8 +2671,8 @@ export const LeadsGetLeadsIdResponse = zod
         leadSource: zod.string().nullish(),
         createdBy: zod.string().uuid().nullish(),
         createdByName: zod.string().nullish(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date().nullish(),
+        createdAt: zod.string().datetime({}),
+        updatedAt: zod.string().datetime({}).nullish(),
         clientContact: zod
           .union([
             zod
@@ -2549,8 +2690,8 @@ export const LeadsGetLeadsIdResponse = zod
                 cellPhone: zod.string().nullish(),
                 email: zod.string().nullish(),
                 label: zod.string().nullish(),
-                createdAt: zod.coerce.date(),
-                updatedAt: zod.coerce.date().nullish(),
+                createdAt: zod.string().datetime({}),
+                updatedAt: zod.string().datetime({}).nullish(),
               })
               .describe(
                 "Full lead contact record returned in lead detail responses.",
@@ -2576,8 +2717,8 @@ export const LeadsGetLeadsIdResponse = zod
               cellPhone: zod.string().nullish(),
               email: zod.string().nullish(),
               label: zod.string().nullish(),
-              createdAt: zod.coerce.date(),
-              updatedAt: zod.coerce.date().nullish(),
+              createdAt: zod.string().datetime({}),
+              updatedAt: zod.string().datetime({}).nullish(),
             })
             .describe(
               "Full lead contact record returned in lead detail responses.",
@@ -2605,7 +2746,7 @@ export const LeadsGetLeadsIdResponse = zod
               fileUrl: zod.string().nullish(),
               fileSize: zod.number().nullish(),
               mimeType: zod.string().nullish(),
-              createdAt: zod.coerce.date().nullish(),
+              createdAt: zod.string().datetime({}).nullish(),
               uploadedByName: zod.string().nullish(),
             })
             .describe(
@@ -2639,7 +2780,7 @@ export const LeadsGetLeadsIdResponse = zod
                 id: zod.string().uuid(),
                 title: zod.string(),
                 status: zod.string(),
-                convertedAt: zod.union([zod.coerce.date(), zod.null()]),
+                convertedAt: zod.union([zod.string().datetime({}), zod.null()]),
               })
               .describe(
                 "Lightweight reference to the job a lead was converted into.",
@@ -2789,7 +2930,7 @@ export const LeadsPutLeadsIdResponse = zod
           .min(leadsPutLeadsIdResponseLeadConfidenceMin)
           .max(leadsPutLeadsIdResponseLeadConfidenceMax)
           .nullish(),
-        projectedSalesDate: zod.coerce.date().nullish(),
+        projectedSalesDate: zod.string().date().nullish(),
         estimatedRevenueMin: zod.string().nullish(),
         estimatedRevenueMax: zod.string().nullish(),
         status: zod.enum([
@@ -2805,8 +2946,8 @@ export const LeadsPutLeadsIdResponse = zod
         leadSource: zod.string().nullish(),
         createdBy: zod.string().uuid().nullish(),
         createdByName: zod.string().nullish(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date().nullish(),
+        createdAt: zod.string().datetime({}),
+        updatedAt: zod.string().datetime({}).nullish(),
         clientContact: zod
           .union([
             zod
@@ -2824,8 +2965,8 @@ export const LeadsPutLeadsIdResponse = zod
                 cellPhone: zod.string().nullish(),
                 email: zod.string().nullish(),
                 label: zod.string().nullish(),
-                createdAt: zod.coerce.date(),
-                updatedAt: zod.coerce.date().nullish(),
+                createdAt: zod.string().datetime({}),
+                updatedAt: zod.string().datetime({}).nullish(),
               })
               .describe(
                 "Full lead contact record returned in lead detail responses.",
@@ -2851,8 +2992,8 @@ export const LeadsPutLeadsIdResponse = zod
               cellPhone: zod.string().nullish(),
               email: zod.string().nullish(),
               label: zod.string().nullish(),
-              createdAt: zod.coerce.date(),
-              updatedAt: zod.coerce.date().nullish(),
+              createdAt: zod.string().datetime({}),
+              updatedAt: zod.string().datetime({}).nullish(),
             })
             .describe(
               "Full lead contact record returned in lead detail responses.",
@@ -2880,7 +3021,7 @@ export const LeadsPutLeadsIdResponse = zod
               fileUrl: zod.string().nullish(),
               fileSize: zod.number().nullish(),
               mimeType: zod.string().nullish(),
-              createdAt: zod.coerce.date().nullish(),
+              createdAt: zod.string().datetime({}).nullish(),
               uploadedByName: zod.string().nullish(),
             })
             .describe(
@@ -2914,7 +3055,7 @@ export const LeadsPutLeadsIdResponse = zod
                 id: zod.string().uuid(),
                 title: zod.string(),
                 status: zod.string(),
-                convertedAt: zod.union([zod.coerce.date(), zod.null()]),
+                convertedAt: zod.union([zod.string().datetime({}), zod.null()]),
               })
               .describe(
                 "Lightweight reference to the job a lead was converted into.",
@@ -2993,29 +3134,39 @@ export const LeadsPostLeadsIdContactsHeader = zod.object({
     ),
 });
 
-export const leadsPostLeadsIdContactsBodyStateMax = 2;
+export const leadsPostLeadsIdContactsBodyThreeStateMax = 2;
 
-export const LeadsPostLeadsIdContactsBody = zod
-  .object({
-    sourceContactId: zod
-      .string()
-      .uuid()
-      .optional()
-      .describe(
-        "Optional: clone an existing lead contact by id rather than creating a new one from scratch.",
-      ),
-    firstName: zod.string().nullish(),
-    lastName: zod.string().nullish(),
-    displayName: zod.string().nullish(),
-    streetAddress: zod.string().nullish(),
-    city: zod.string().nullish(),
-    state: zod.string().max(leadsPostLeadsIdContactsBodyStateMax).nullish(),
-    zipCode: zod.string().nullish(),
-    phone: zod.string().nullish(),
-    cellPhone: zod.string().nullish(),
-    email: zod.string().email().nullish(),
-    label: zod.string().nullish(),
-  })
+export const LeadsPostLeadsIdContactsBody = zod.object({
+      sourceContactId: zod
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          "Optional: clone an existing lead contact by id rather than creating a new one from scratch.",
+        ),
+      firstName: zod.string().nullish(),
+      lastName: zod.string().nullish(),
+      displayName: zod.string().nullish(),
+      streetAddress: zod.string().nullish(),
+      city: zod.string().nullish(),
+      state: zod
+        .string()
+        .max(leadsPostLeadsIdContactsBodyThreeStateMax)
+        .nullish(),
+      zipCode: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      cellPhone: zod.string().nullish(),
+      email: zod.string().email().nullish(),
+      label: zod.string().nullish(),
+    })
+  .refine(
+    (value) =>
+      Boolean(value.sourceContactId) ||
+      (Boolean(value.displayName) && Boolean(value.email)),
+    {
+      message: "Provide sourceContactId or displayName and email.",
+    },
+  )
   .describe(
     "Request body for creating a lead contact (`POST \/leads\/{id}\/contacts`). When `sourceContactId` is set the new contact is cloned from an existing contact and the other fields are optional. Otherwise `displayName` and `email` are required.",
   );
@@ -3095,8 +3246,8 @@ export const LeadsPutLeadsIdContactsContactIdResponse = zod.object({
       cellPhone: zod.string().nullish(),
       email: zod.string().nullish(),
       label: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}).nullish(),
     })
     .describe("Full lead contact record returned in lead detail responses."),
 });
@@ -3300,8 +3451,8 @@ export const LeadsPostLeadsIdConvertToJobBody = zod
           .string()
           .nullish()
           .describe("Decimal serialized as string."),
-        projectedStart: zod.coerce.date().nullish(),
-        projectedCompletion: zod.coerce.date().nullish(),
+        projectedStart: zod.string().date().nullish(),
+        projectedCompletion: zod.string().date().nullish(),
         jobType: zod
           .union([
             zod.literal("kitchen_countertops"),
@@ -3408,11 +3559,15 @@ export const FoldersPostJobsJobIdFoldersHeader = zod.object({
     ),
 });
 
+export const foldersPostJobsJobIdFoldersBodyTitleMax = 255;
+
 export const FoldersPostJobsJobIdFoldersBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from folderBodySchema in artifacts\/api-server\/src\/routes\/folders.ts.",
-  );
+  .object({
+    title: zod.string().min(1).max(foldersPostJobsJobIdFoldersBodyTitleMax),
+    mediaType: zod.enum(["document", "photo", "video"]),
+    parentFolderId: zod.string().uuid().nullish(),
+  })
+  .describe("Request body for creating a job folder.");
 
 /**
  * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with folderUpdateSchema.
@@ -3440,10 +3595,32 @@ export const FoldersPutFoldersIdHeader = zod.object({
     ),
 });
 
+export const foldersPutFoldersIdBodyTitleMax = 255;
+
 export const FoldersPutFoldersIdBody = zod
-  .record(zod.string(), zod.unknown())
+  .object({
+    title: zod.string().min(1).max(foldersPutFoldersIdBodyTitleMax).optional(),
+    viewingPermissions: zod
+      .object({
+        admin: zod.boolean().optional(),
+        project_manager: zod.boolean().optional(),
+        crew_member: zod.boolean().optional(),
+        internal: zod.boolean().optional(),
+        users: zod.record(zod.string(), zod.boolean()).optional(),
+      })
+      .nullish(),
+    uploadingPermissions: zod
+      .object({
+        admin: zod.boolean().optional(),
+        project_manager: zod.boolean().optional(),
+        crew_member: zod.boolean().optional(),
+        internal: zod.boolean().optional(),
+        users: zod.record(zod.string(), zod.boolean()).optional(),
+      })
+      .nullish(),
+  })
   .describe(
-    "Request schema derived from folderUpdateSchema in artifacts\/api-server\/src\/routes\/folders.ts.",
+    "Request body for renaming a folder or updating folder permissions.",
   );
 
 export const FoldersPutFoldersIdResponse = zod.unknown();
@@ -3529,10 +3706,10 @@ export const FoldersPutFoldersIdMoveHeader = zod.object({
 });
 
 export const FoldersPutFoldersIdMoveBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from moveFolderSchema in artifacts\/api-server\/src\/routes\/folders.ts.",
-  );
+  .object({
+    destinationFolderId: zod.string().uuid().nullish(),
+  })
+  .describe("Request body for moving a folder.");
 
 export const FoldersPutFoldersIdMoveResponse = zod.unknown();
 
@@ -3684,15 +3861,14 @@ export const FilesGetFoldersIdFilesQueryParams = zod.object({
     .describe(
       "Sort key (e.g. `modified_newest`, `modified_oldest`, `name_asc`, `name_desc`). Default `modified_newest`.",
     ),
-  includeDeleted: zod.coerce
-    .boolean()
+  includeDeleted: stringBoolean
     .optional()
     .describe("Include soft-deleted files. Default false."),
   cursor: zod.coerce
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
     ),
 });
 
@@ -3750,11 +3926,13 @@ export const FilesPutFilesIdHeader = zod.object({
     ),
 });
 
+export const filesPutFilesIdBodyOriginalNameMax = 255;
+
 export const FilesPutFilesIdBody = zod
-  .record(zod.string(), zod.unknown())
-  .describe(
-    "Request schema derived from renameFileSchema in artifacts\/api-server\/src\/routes\/files.ts.",
-  );
+  .object({
+    originalName: zod.string().min(1).max(filesPutFilesIdBodyOriginalNameMax),
+  })
+  .describe("Request body for renaming a file.");
 
 export const FilesPutFilesIdResponse = zod.unknown();
 
@@ -3900,11 +4078,13 @@ export const DailyLogsGetJobsJobIdDailyLogsQueryParams = zod.object({
     .uuid()
     .optional()
     .describe("Filter to logs authored by a specific user."),
-  from: zod
+  from: zod.coerce
+    .string()
     .date()
     .optional()
     .describe("Inclusive lower bound on log date (YYYY-MM-DD)."),
-  to: zod
+  to: zod.coerce
+    .string()
     .date()
     .optional()
     .describe("Inclusive upper bound on log date (YYYY-MM-DD)."),
@@ -3939,7 +4119,7 @@ export const DailyLogsGetJobsJobIdDailyLogsQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
     ),
 });
 
@@ -3967,7 +4147,7 @@ export const DailyLogsGetJobsJobIdDailyLogsResponse = zod
               windMph: zod.number().nullish(),
               humidity: zod.number().nullish(),
               precipitation: zod.number(),
-              fetchedAt: zod.coerce.date(),
+              fetchedAt: zod.string().datetime({}),
             })
             .nullish()
             .describe(
@@ -3992,9 +4172,9 @@ export const DailyLogsGetJobsJobIdDailyLogsResponse = zod
           shareClient: zod.boolean().optional(),
           isPrivate: zod.boolean().optional(),
           createdBy: zod.string().uuid().nullish(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
-          publishedAt: zod.coerce.date().nullish(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
+          publishedAt: zod.string().datetime({}).nullish(),
           createdByName: zod.string().nullish(),
           notifyUserIds: zod.array(zod.string().uuid()).optional(),
           tags: zod.array(zod.string()),
@@ -4041,7 +4221,7 @@ export const DailyLogsGetJobsJobIdDailyLogsResponse = zod
     ]),
   })
   .describe(
-    "Paged daily-log list. The `pagination` field uses `Pagination` (page mode) or `CursorPagination` (cursor mode) depending on whether the request supplied `?cursor=` \/ `?limit=`.",
+    "Paged daily-log list. The `pagination` field uses `Pagination` in page mode and `CursorPagination` only when the request supplies an explicit `cursor` parameter.",
   );
 
 /**
@@ -4114,7 +4294,7 @@ export const DailyLogsPostJobsJobIdDailyLogsBody = zod
             windMph: zod.number().nullish(),
             humidity: zod.number().nullish(),
             precipitation: zod.number(),
-            fetchedAt: zod.coerce.date(),
+            fetchedAt: zod.string().datetime({}),
           })
           .describe(
             'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
@@ -4195,7 +4375,7 @@ export const DailyLogsGetDailyLogsIdResponse = zod.object({
           windMph: zod.number().nullish(),
           humidity: zod.number().nullish(),
           precipitation: zod.number(),
-          fetchedAt: zod.coerce.date(),
+          fetchedAt: zod.string().datetime({}),
         })
         .nullish()
         .describe(
@@ -4215,10 +4395,10 @@ export const DailyLogsGetDailyLogsIdResponse = zod.object({
       shareClient: zod.boolean().optional(),
       isPrivate: zod.boolean().optional(),
       createdBy: zod.string().uuid().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
-      publishedAt: zod.coerce.date().nullish(),
-      deletedAt: zod.coerce.date().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+      publishedAt: zod.string().datetime({}).nullish(),
+      deletedAt: zod.string().datetime({}).nullish(),
       createdByName: zod.string().nullish(),
       notifyUserIds: zod.array(zod.string().uuid()).optional(),
       notifyUsers: zod
@@ -4249,7 +4429,7 @@ export const DailyLogsGetDailyLogsIdResponse = zod.object({
           fileUrl: zod.string(),
           fileSize: zod.number(),
           mimeType: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
           uploadedByName: zod.string().nullish(),
         }),
       ),
@@ -4264,8 +4444,8 @@ export const DailyLogsGetDailyLogsIdResponse = zod.object({
           isComplete: zod.boolean(),
           createdBy: zod.string().uuid().nullish(),
           createdByName: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
         }),
       ),
       todoCount: zod.number().optional(),
@@ -4340,7 +4520,7 @@ export const DailyLogsPutDailyLogsIdBody = zod
             windMph: zod.number().nullish(),
             humidity: zod.number().nullish(),
             precipitation: zod.number(),
-            fetchedAt: zod.coerce.date(),
+            fetchedAt: zod.string().datetime({}),
           })
           .describe(
             'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
@@ -4407,7 +4587,7 @@ export const DailyLogsPutDailyLogsIdResponse = zod.object({
           windMph: zod.number().nullish(),
           humidity: zod.number().nullish(),
           precipitation: zod.number(),
-          fetchedAt: zod.coerce.date(),
+          fetchedAt: zod.string().datetime({}),
         })
         .nullish()
         .describe(
@@ -4427,10 +4607,10 @@ export const DailyLogsPutDailyLogsIdResponse = zod.object({
       shareClient: zod.boolean().optional(),
       isPrivate: zod.boolean().optional(),
       createdBy: zod.string().uuid().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
-      publishedAt: zod.coerce.date().nullish(),
-      deletedAt: zod.coerce.date().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+      publishedAt: zod.string().datetime({}).nullish(),
+      deletedAt: zod.string().datetime({}).nullish(),
       createdByName: zod.string().nullish(),
       notifyUserIds: zod.array(zod.string().uuid()).optional(),
       notifyUsers: zod
@@ -4461,7 +4641,7 @@ export const DailyLogsPutDailyLogsIdResponse = zod.object({
           fileUrl: zod.string(),
           fileSize: zod.number(),
           mimeType: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
           uploadedByName: zod.string().nullish(),
         }),
       ),
@@ -4476,8 +4656,8 @@ export const DailyLogsPutDailyLogsIdResponse = zod.object({
           isComplete: zod.boolean(),
           createdBy: zod.string().uuid().nullish(),
           createdByName: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
         }),
       ),
       todoCount: zod.number().optional(),
@@ -4569,7 +4749,7 @@ export const DailyLogsPostDailyLogsIdPublishResponse = zod.object({
           windMph: zod.number().nullish(),
           humidity: zod.number().nullish(),
           precipitation: zod.number(),
-          fetchedAt: zod.coerce.date(),
+          fetchedAt: zod.string().datetime({}),
         })
         .nullish()
         .describe(
@@ -4589,10 +4769,10 @@ export const DailyLogsPostDailyLogsIdPublishResponse = zod.object({
       shareClient: zod.boolean().optional(),
       isPrivate: zod.boolean().optional(),
       createdBy: zod.string().uuid().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
-      publishedAt: zod.coerce.date().nullish(),
-      deletedAt: zod.coerce.date().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+      publishedAt: zod.string().datetime({}).nullish(),
+      deletedAt: zod.string().datetime({}).nullish(),
       createdByName: zod.string().nullish(),
       notifyUserIds: zod.array(zod.string().uuid()).optional(),
       notifyUsers: zod
@@ -4623,7 +4803,7 @@ export const DailyLogsPostDailyLogsIdPublishResponse = zod.object({
           fileUrl: zod.string(),
           fileSize: zod.number(),
           mimeType: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
           uploadedByName: zod.string().nullish(),
         }),
       ),
@@ -4638,8 +4818,8 @@ export const DailyLogsPostDailyLogsIdPublishResponse = zod.object({
           isComplete: zod.boolean(),
           createdBy: zod.string().uuid().nullish(),
           createdByName: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
         }),
       ),
       todoCount: zod.number().optional(),
@@ -4670,7 +4850,7 @@ export const DailyLogsGetWeatherResponse = zod.object({
       windMph: zod.number().nullish(),
       humidity: zod.number().nullish(),
       precipitation: zod.number(),
-      fetchedAt: zod.coerce.date(),
+      fetchedAt: zod.string().datetime({}),
     })
     .describe(
       'Snapshot of weather conditions captured for a daily log. `condition` is a short label (e.g. \"sunny\", \"rain\"); `icon` is a sanitized icon key for the client.',
@@ -4738,8 +4918,10 @@ export const DailyLogsGetDailyLogsIdCommentsResponse = zod.object({
         attachments: zod.array(
           zod.object({
             name: zod.string(),
-            url: zod.string(),
+            url: zod.string().nullish(),
             mimeType: zod.string().nullish(),
+            fileId: zod.string().uuid().nullish(),
+            fileUrl: zod.string().nullish(),
           }),
         ),
         links: zod.array(zod.string()),
@@ -4747,8 +4929,8 @@ export const DailyLogsGetDailyLogsIdCommentsResponse = zod.object({
           .record(zod.string(), zod.array(zod.string()))
           .describe("Map of emoji → list of user ids that reacted with it."),
         createdBy: zod.string().uuid().nullish(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date(),
+        createdAt: zod.string().datetime({}),
+        updatedAt: zod.string().datetime({}),
         author: zod.object({
           id: zod.string().uuid().nullish(),
           fullName: zod.string().nullish(),
@@ -4894,8 +5076,10 @@ export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsResponse =
           attachments: zod.array(
             zod.object({
               name: zod.string(),
-              url: zod.string(),
+              url: zod.string().nullish(),
               mimeType: zod.string().nullish(),
+              fileId: zod.string().uuid().nullish(),
+              fileUrl: zod.string().nullish(),
             }),
           ),
           links: zod.array(zod.string()),
@@ -4903,8 +5087,8 @@ export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsResponse =
             .record(zod.string(), zod.array(zod.string()))
             .describe("Map of emoji → list of user ids that reacted with it."),
           createdBy: zod.string().uuid().nullish(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
           author: zod.object({
             id: zod.string().uuid().nullish(),
             fullName: zod.string().nullish(),
@@ -5010,8 +5194,8 @@ export const DailyLogsPostDailyLogsIdTodosTodoIdToggleResponse = zod.object({
       isComplete: zod.boolean(),
       createdBy: zod.string().uuid().nullish(),
       createdByName: zod.string().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
     }),
   ),
 });
@@ -5302,10 +5486,10 @@ export const DailyLogsGetDailyLogsFeedQueryParams = zod.object({
   clientId: zod.coerce.string().uuid().optional(),
   jobId: zod.coerce.string().uuid().optional(),
   createdBy: zod.coerce.string().uuid().optional(),
-  from: zod.date().nullish(),
-  to: zod.date().nullish(),
-  hasAttachments: zod.coerce.boolean().optional(),
-  hasComments: zod.coerce.boolean().optional(),
+  from: zod.coerce.string().date().nullish(),
+  to: zod.coerce.string().date().nullish(),
+  hasAttachments: stringBoolean.optional(),
+  hasComments: stringBoolean.optional(),
 });
 
 export const dailyLogsGetDailyLogsFeedResponsePaginationOneTotalItemsMin = 0;
@@ -5332,7 +5516,7 @@ export const DailyLogsGetDailyLogsFeedResponse = zod
               windMph: zod.number().nullish(),
               humidity: zod.number().nullish(),
               precipitation: zod.number(),
-              fetchedAt: zod.coerce.date(),
+              fetchedAt: zod.string().datetime({}),
             })
             .nullish()
             .describe(
@@ -5357,9 +5541,9 @@ export const DailyLogsGetDailyLogsFeedResponse = zod
           shareClient: zod.boolean().optional(),
           isPrivate: zod.boolean().optional(),
           createdBy: zod.string().uuid().nullish(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
-          publishedAt: zod.coerce.date().nullish(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
+          publishedAt: zod.string().datetime({}).nullish(),
           createdByName: zod.string().nullish(),
           notifyUserIds: zod.array(zod.string().uuid()).optional(),
           tags: zod.array(zod.string()),
@@ -5404,7 +5588,7 @@ export const DailyLogsGetDailyLogsFeedResponse = zod
     ]),
   })
   .describe(
-    "Paged daily-log list. The `pagination` field uses `Pagination` (page mode) or `CursorPagination` (cursor mode) depending on whether the request supplied `?cursor=` \/ `?limit=`.",
+    "Paged daily-log list. The `pagination` field uses `Pagination` in page mode and `CursorPagination` only when the request supplies an explicit `cursor` parameter.",
   );
 
 /**
@@ -5455,7 +5639,7 @@ export const DailyLogAdminGetDailyLogsMineQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
     ),
 });
 
@@ -5481,7 +5665,7 @@ export const DailyLogAdminGetDailyLogsMineResponse = zod
               windMph: zod.number().nullish(),
               humidity: zod.number().nullish(),
               precipitation: zod.number(),
-              fetchedAt: zod.coerce.date(),
+              fetchedAt: zod.string().datetime({}),
             })
             .nullish()
             .describe(
@@ -5506,9 +5690,9 @@ export const DailyLogAdminGetDailyLogsMineResponse = zod
           shareClient: zod.boolean().optional(),
           isPrivate: zod.boolean().optional(),
           createdBy: zod.string().uuid().nullish(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
-          publishedAt: zod.coerce.date().nullish(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
+          publishedAt: zod.string().datetime({}).nullish(),
           createdByName: zod.string().nullish(),
           notifyUserIds: zod.array(zod.string().uuid()).optional(),
           tags: zod.array(zod.string()),
@@ -5551,7 +5735,7 @@ export const DailyLogAdminGetDailyLogsMineResponse = zod
     ]),
   })
   .describe(
-    "Response for `GET \/daily-logs\/mine`. The `pagination` field uses the offset shape (`page`\/`pageSize`\/`total`\/…) when the request used `?page=`\/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.",
+    "Response for `GET \/daily-logs\/mine`. The `pagination` field uses the offset shape (`page`\/`pageSize`\/`total`\/…) unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.",
   );
 
 /**
@@ -5650,8 +5834,8 @@ export const SchedulePutJobsJobIdScheduleSettingsResponse = zod
         showJobNameOnAllListedJobs: zod.boolean().optional(),
         automaticallyMarkItemsComplete: zod.boolean().optional(),
         includeHeaderOnPdfExports: zod.boolean().optional(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date(),
+        createdAt: zod.string().datetime({}),
+        updatedAt: zod.string().datetime({}),
       })
       .describe(
         "Schedule settings row as stored in the database. Returned by `PUT \/jobs\/{jobId}\/schedule\/settings`.",
@@ -6051,7 +6235,7 @@ export const ScheduleGetJobsJobIdScheduleBaselineResponse = zod.object({
     .object({
       id: zod.string().uuid(),
       jobId: zod.string().uuid(),
-      capturedAt: zod.coerce.date(),
+      capturedAt: zod.string().datetime({}),
       capturedBy: zod.string().uuid().nullish(),
       capturedByName: zod.string().nullish(),
       items: zod.array(
@@ -6103,7 +6287,7 @@ export const SchedulePostJobsJobIdScheduleBaselineResponse = zod.object({
     .object({
       id: zod.string().uuid(),
       jobId: zod.string().uuid(),
-      capturedAt: zod.coerce.date(),
+      capturedAt: zod.string().datetime({}),
       capturedBy: zod.string().uuid().nullish(),
       capturedByName: zod.string().nullish(),
       items: zod.array(
@@ -6155,7 +6339,7 @@ export const SchedulePutJobsJobIdScheduleBaselineResponse = zod.object({
     .object({
       id: zod.string().uuid(),
       jobId: zod.string().uuid(),
-      capturedAt: zod.coerce.date(),
+      capturedAt: zod.string().datetime({}),
       capturedBy: zod.string().uuid().nullish(),
       capturedByName: zod.string().nullish(),
       items: zod.array(
@@ -6333,8 +6517,8 @@ export const ScheduleGetJobsJobIdWorkdayExceptionsResponse = zod.object({
         id: zod.string().uuid(),
         title: zod.string(),
         type: zod.enum(["non_workday", "extra_workday"]),
-        startDate: zod.coerce.date(),
-        endDate: zod.coerce.date(),
+        startDate: zod.string().date(),
+        endDate: zod.string().date(),
         sameEveryYear: zod.boolean().nullish(),
         categoryId: zod.string().uuid().nullish(),
         appliesToAllJobs: zod
@@ -6351,8 +6535,8 @@ export const ScheduleGetJobsJobIdWorkdayExceptionsResponse = zod.object({
           ),
         notes: zod.string().nullish(),
         createdBy: zod.string().uuid().nullish(),
-        createdAt: zod.coerce.date().nullish(),
-        updatedAt: zod.coerce.date().nullish(),
+        createdAt: zod.string().datetime({}).nullish(),
+        updatedAt: zod.string().datetime({}).nullish(),
       })
       .describe(
         "A workday exception (non-workday or extra-workday) attached to one or more jobs, or applied company-wide when `appliesToAllJobs` is true.",
@@ -6389,46 +6573,86 @@ export const SchedulePostJobsJobIdWorkdayExceptionsHeader = zod.object({
     ),
 });
 
-export const schedulePostJobsJobIdWorkdayExceptionsBodyTitleMax = 255;
+export const schedulePostJobsJobIdWorkdayExceptionsBodyOneTitleMax = 255;
 
-export const schedulePostJobsJobIdWorkdayExceptionsBodyStartDateRegExp =
+export const schedulePostJobsJobIdWorkdayExceptionsBodyOneStartDateRegExp =
   new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
-export const schedulePostJobsJobIdWorkdayExceptionsBodyEndDateRegExp =
+export const schedulePostJobsJobIdWorkdayExceptionsBodyOneEndDateRegExp =
   new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
-export const schedulePostJobsJobIdWorkdayExceptionsBodySameEveryYearDefault = false;
-export const schedulePostJobsJobIdWorkdayExceptionsBodyAppliesToAllJobsDefault = false;
-export const schedulePostJobsJobIdWorkdayExceptionsBodyJobIdsDefault = [];
+export const schedulePostJobsJobIdWorkdayExceptionsBodyOneSameEveryYearDefault = false;
+export const schedulePostJobsJobIdWorkdayExceptionsBodyOneJobIdsDefault = [];
+export const schedulePostJobsJobIdWorkdayExceptionsBodyOneJobIdsMax = 0;
+
+export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoTitleMax = 255;
+
+export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoStartDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoEndDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoSameEveryYearDefault = false;
+export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoAppliesToAllJobsDefault = false;
 
 export const SchedulePostJobsJobIdWorkdayExceptionsBody = zod
-  .object({
-    title: zod
-      .string()
-      .min(1)
-      .max(schedulePostJobsJobIdWorkdayExceptionsBodyTitleMax),
-    type: zod.enum(["non_workday", "extra_workday"]),
-    startDate: zod
-      .string()
-      .regex(schedulePostJobsJobIdWorkdayExceptionsBodyStartDateRegExp),
-    endDate: zod
-      .string()
-      .regex(schedulePostJobsJobIdWorkdayExceptionsBodyEndDateRegExp),
-    sameEveryYear: zod
-      .boolean()
-      .default(schedulePostJobsJobIdWorkdayExceptionsBodySameEveryYearDefault),
-    categoryId: zod.string().uuid().nullish(),
-    appliesToAllJobs: zod
-      .boolean()
-      .default(
-        schedulePostJobsJobIdWorkdayExceptionsBodyAppliesToAllJobsDefault,
-      )
-      .describe(
-        "When true, applies the exception to every active job. Admin role required.",
-      ),
-    jobIds: zod
-      .array(zod.string().uuid())
-      .default(schedulePostJobsJobIdWorkdayExceptionsBodyJobIdsDefault),
-    notes: zod.string().nullish(),
-  })
+  .union([
+    zod.object({
+      title: zod
+        .string()
+        .min(1)
+        .max(schedulePostJobsJobIdWorkdayExceptionsBodyOneTitleMax),
+      type: zod.enum(["non_workday", "extra_workday"]),
+      startDate: zod
+        .string()
+        .regex(schedulePostJobsJobIdWorkdayExceptionsBodyOneStartDateRegExp),
+      endDate: zod
+        .string()
+        .regex(schedulePostJobsJobIdWorkdayExceptionsBodyOneEndDateRegExp),
+      sameEveryYear: zod
+        .boolean()
+        .default(
+          schedulePostJobsJobIdWorkdayExceptionsBodyOneSameEveryYearDefault,
+        ),
+      categoryId: zod.string().uuid().nullish(),
+      appliesToAllJobs: zod
+        .literal(true)
+        .describe(
+          "When true, applies the exception to every active job. Admin role required.",
+        ),
+      jobIds: zod
+        .array(zod.string().uuid())
+        .max(schedulePostJobsJobIdWorkdayExceptionsBodyOneJobIdsMax)
+        .default(schedulePostJobsJobIdWorkdayExceptionsBodyOneJobIdsDefault),
+      notes: zod.string().nullish(),
+    }),
+    zod.object({
+      title: zod
+        .string()
+        .min(1)
+        .max(schedulePostJobsJobIdWorkdayExceptionsBodyTwoTitleMax),
+      type: zod.enum(["non_workday", "extra_workday"]),
+      startDate: zod
+        .string()
+        .regex(schedulePostJobsJobIdWorkdayExceptionsBodyTwoStartDateRegExp),
+      endDate: zod
+        .string()
+        .regex(schedulePostJobsJobIdWorkdayExceptionsBodyTwoEndDateRegExp),
+      sameEveryYear: zod
+        .boolean()
+        .default(
+          schedulePostJobsJobIdWorkdayExceptionsBodyTwoSameEveryYearDefault,
+        ),
+      categoryId: zod.string().uuid().nullish(),
+      appliesToAllJobs: zod
+        .literal(false)
+        .default(
+          schedulePostJobsJobIdWorkdayExceptionsBodyTwoAppliesToAllJobsDefault,
+        )
+        .describe(
+          "When false or omitted, `jobIds` must contain at least one job.",
+        ),
+      jobIds: zod.array(zod.string().uuid()).min(1),
+      notes: zod.string().nullish(),
+    }),
+  ])
   .describe(
     "Request body for `POST \/jobs\/{jobId}\/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.",
   );
@@ -6521,8 +6745,8 @@ export const SchedulePutJobsJobIdWorkdayExceptionsExceptionIdResponse = zod
         id: zod.string().uuid(),
         title: zod.string(),
         type: zod.enum(["non_workday", "extra_workday"]),
-        startDate: zod.coerce.date(),
-        endDate: zod.coerce.date(),
+        startDate: zod.string().date(),
+        endDate: zod.string().date(),
         sameEveryYear: zod.boolean().nullish(),
         categoryId: zod.string().uuid().nullish(),
         appliesToAllJobs: zod
@@ -6539,8 +6763,8 @@ export const SchedulePutJobsJobIdWorkdayExceptionsExceptionIdResponse = zod
           ),
         notes: zod.string().nullish(),
         createdBy: zod.string().uuid().nullish(),
-        createdAt: zod.coerce.date().nullish(),
-        updatedAt: zod.coerce.date().nullish(),
+        createdAt: zod.string().datetime({}).nullish(),
+        updatedAt: zod.string().datetime({}).nullish(),
       })
       .describe(
         "A workday exception (non-workday or extra-workday) attached to one or more jobs, or applied company-wide when `appliesToAllJobs` is true.",
@@ -6651,6 +6875,7 @@ export const SchedulePostJobsJobIdScheduleTrackConflictsResponse = zod.object({
         displayColor: zod.string().optional(),
         startDate: zod.string(),
         endDate: zod.string(),
+        manualEndDate: zod.string().nullable(),
         workDays: zod.number().optional(),
         isHourly: zod.boolean().optional(),
         startTime: zod.string().nullish(),
@@ -6701,7 +6926,7 @@ export const SchedulePostJobsJobIdScheduleTrackConflictsResponse = zod.object({
           zod.object({
             id: zod.string(),
             note: zod.string(),
-            createdAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
             authorId: zod.string().uuid().nullish(),
             authorName: zod.string().nullish(),
             authorAvatarUrl: zod.string().nullish(),
@@ -6718,7 +6943,7 @@ export const SchedulePostJobsJobIdScheduleTrackConflictsResponse = zod.object({
             fileUrl: zod.string(),
             fileSize: zod.number(),
             mimeType: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
             icon: zod.string(),
           }),
         ),
@@ -6727,8 +6952,8 @@ export const SchedulePostJobsJobIdScheduleTrackConflictsResponse = zod.object({
             id: zod.string().uuid(),
             title: zod.string(),
             isComplete: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
+            updatedAt: zod.string().datetime({}),
             createdBy: zod.string().uuid().nullish(),
             createdByName: zod.string().nullish(),
           }),
@@ -6742,9 +6967,9 @@ export const SchedulePostJobsJobIdScheduleTrackConflictsResponse = zod.object({
         hasConflict: zod.boolean(),
         conflictReasons: zod.array(zod.string()),
         createdBy: zod.string().uuid().nullish(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date(),
-        deletedAt: zod.coerce.date().nullish(),
+        createdAt: zod.string().datetime({}),
+        updatedAt: zod.string().datetime({}),
+        deletedAt: zod.string().datetime({}).nullish(),
         createdByName: zod.string().nullish(),
         createdByAvatarUrl: zod.string().nullish(),
       })
@@ -6833,135 +7058,156 @@ export const ScheduleGetJobsJobIdScheduleQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
     ),
 });
 
-export const ScheduleGetJobsJobIdScheduleResponse = zod.object({
-  data: zod.array(
-    zod
-      .object({
-        id: zod.string().uuid(),
-        jobId: zod.string().uuid().nullish(),
-        jobTitle: zod.string().nullish(),
-        clientId: zod.string().uuid().nullish(),
-        clientName: zod.string().nullish(),
-        schedulePhaseId: zod.string().uuid().nullish(),
-        phaseId: zod.string().uuid().nullish(),
-        phaseName: zod.string().nullish(),
-        phaseColor: zod.string().nullish(),
-        title: zod.string(),
-        displayColor: zod.string().optional(),
-        startDate: zod.string(),
-        endDate: zod.string(),
-        workDays: zod.number().optional(),
-        isHourly: zod.boolean().optional(),
-        startTime: zod.string().nullish(),
-        endTime: zod.string().nullish(),
-        progress: zod.number().optional(),
-        reminder: zod.string().optional(),
-        showOnGantt: zod.boolean().optional(),
-        visibleToEstimators: zod.boolean().optional(),
-        visibleToInstallers: zod.boolean().optional(),
-        visibleToOfficeStaff: zod.boolean().optional(),
-        isComplete: zod.boolean().optional(),
-        isPersonalTodo: zod.boolean().optional(),
-        notes: zod.string().nullish(),
-        tags: zod.array(zod.string()),
-        notifyUserIds: zod.array(zod.string().uuid()).optional(),
-        assigneeIds: zod.array(zod.string().uuid()),
-        assignees: zod.array(
-          zod
-            .object({
-              id: zod.string().uuid(),
-              fullName: zod.string().nullish(),
-              email: zod.string(),
-              role: zod.string(),
-              avatarUrl: zod.string().nullish(),
-              canViewFinancials: zod.boolean(),
-              access: zod.object({
-                financials: zod.boolean(),
-              }),
-            })
-            .describe(
-              "A user assigned to or notified about a job, schedule item, or daily log.",
-            ),
-        ),
-        predecessors: zod.array(
-          zod.object({
-            scheduleItemId: zod.string().uuid(),
-            dependencyType: zod.enum([
-              "finish_to_start",
-              "start_to_start",
-              "finish_to_finish",
-              "start_to_finish",
-            ]),
-            lagDays: zod.number(),
-            title: zod.string(),
-          }),
-        ),
-        notesStream: zod.array(
-          zod.object({
-            id: zod.string(),
-            note: zod.string(),
-            createdAt: zod.coerce.date(),
-            authorId: zod.string().uuid().nullish(),
-            authorName: zod.string().nullish(),
-            authorAvatarUrl: zod.string().nullish(),
-            isLegacy: zod.boolean(),
-          }),
-        ),
-        noteCount: zod.number().optional(),
-        attachments: zod.array(
-          zod.object({
-            id: zod.string().uuid(),
-            fileId: zod.string().uuid(),
-            filename: zod.string(),
-            originalName: zod.string(),
-            fileUrl: zod.string(),
-            fileSize: zod.number(),
-            mimeType: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
-            icon: zod.string(),
-          }),
-        ),
-        relatedTodos: zod.array(
-          zod.object({
-            id: zod.string().uuid(),
-            title: zod.string(),
-            isComplete: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
-            createdBy: zod.string().uuid().nullish(),
-            createdByName: zod.string().nullish(),
-          }),
-        ),
-        relatedTodoCount: zod.number().optional(),
-        status: zod
-          .string()
-          .describe(
-            'Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\").',
+export const ScheduleGetJobsJobIdScheduleResponse = zod
+  .object({
+    data: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          jobId: zod.string().uuid().nullish(),
+          jobTitle: zod.string().nullish(),
+          clientId: zod.string().uuid().nullish(),
+          clientName: zod.string().nullish(),
+          schedulePhaseId: zod.string().uuid().nullish(),
+          phaseId: zod.string().uuid().nullish(),
+          phaseName: zod.string().nullish(),
+          phaseColor: zod.string().nullish(),
+          title: zod.string(),
+          displayColor: zod.string().optional(),
+          startDate: zod.string(),
+          endDate: zod.string(),
+          manualEndDate: zod.string().nullable(),
+          workDays: zod.number().optional(),
+          isHourly: zod.boolean().optional(),
+          startTime: zod.string().nullish(),
+          endTime: zod.string().nullish(),
+          progress: zod.number().optional(),
+          reminder: zod.string().optional(),
+          showOnGantt: zod.boolean().optional(),
+          visibleToEstimators: zod.boolean().optional(),
+          visibleToInstallers: zod.boolean().optional(),
+          visibleToOfficeStaff: zod.boolean().optional(),
+          isComplete: zod.boolean().optional(),
+          isPersonalTodo: zod.boolean().optional(),
+          notes: zod.string().nullish(),
+          tags: zod.array(zod.string()),
+          notifyUserIds: zod.array(zod.string().uuid()).optional(),
+          assigneeIds: zod.array(zod.string().uuid()),
+          assignees: zod.array(
+            zod
+              .object({
+                id: zod.string().uuid(),
+                fullName: zod.string().nullish(),
+                email: zod.string(),
+                role: zod.string(),
+                avatarUrl: zod.string().nullish(),
+                canViewFinancials: zod.boolean(),
+                access: zod.object({
+                  financials: zod.boolean(),
+                }),
+              })
+              .describe(
+                "A user assigned to or notified about a job, schedule item, or daily log.",
+              ),
           ),
-        hasConflict: zod.boolean(),
-        conflictReasons: zod.array(zod.string()),
-        createdBy: zod.string().uuid().nullish(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date(),
-        deletedAt: zod.coerce.date().nullish(),
-        createdByName: zod.string().nullish(),
-        createdByAvatarUrl: zod.string().nullish(),
-      })
-      .describe(
-        "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
-      ),
-  ),
-  pagination: zod.object({
-    page: zod.number(),
-    limit: zod.number(),
-    totalItems: zod.number(),
-    totalPages: zod.number(),
-  }),
-});
+          predecessors: zod.array(
+            zod.object({
+              scheduleItemId: zod.string().uuid(),
+              dependencyType: zod.enum([
+                "finish_to_start",
+                "start_to_start",
+                "finish_to_finish",
+                "start_to_finish",
+              ]),
+              lagDays: zod.number(),
+              title: zod.string(),
+            }),
+          ),
+          notesStream: zod.array(
+            zod.object({
+              id: zod.string(),
+              note: zod.string(),
+              createdAt: zod.string().datetime({}),
+              authorId: zod.string().uuid().nullish(),
+              authorName: zod.string().nullish(),
+              authorAvatarUrl: zod.string().nullish(),
+              isLegacy: zod.boolean(),
+            }),
+          ),
+          noteCount: zod.number().optional(),
+          attachments: zod.array(
+            zod.object({
+              id: zod.string().uuid(),
+              fileId: zod.string().uuid(),
+              filename: zod.string(),
+              originalName: zod.string(),
+              fileUrl: zod.string(),
+              fileSize: zod.number(),
+              mimeType: zod.string().nullish(),
+              createdAt: zod.string().datetime({}),
+              icon: zod.string(),
+            }),
+          ),
+          relatedTodos: zod.array(
+            zod.object({
+              id: zod.string().uuid(),
+              title: zod.string(),
+              isComplete: zod.boolean(),
+              createdAt: zod.string().datetime({}),
+              updatedAt: zod.string().datetime({}),
+              createdBy: zod.string().uuid().nullish(),
+              createdByName: zod.string().nullish(),
+            }),
+          ),
+          relatedTodoCount: zod.number().optional(),
+          status: zod
+            .string()
+            .describe(
+              'Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\").',
+            ),
+          hasConflict: zod.boolean(),
+          conflictReasons: zod.array(zod.string()),
+          createdBy: zod.string().uuid().nullish(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
+          deletedAt: zod.string().datetime({}).nullish(),
+          createdByName: zod.string().nullish(),
+          createdByAvatarUrl: zod.string().nullish(),
+        })
+        .describe(
+          "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
+        ),
+    ),
+    pagination: zod.union([
+      zod.object({
+        page: zod.number(),
+        limit: zod.number(),
+        totalItems: zod.number(),
+        totalPages: zod.number(),
+      }),
+      zod
+        .object({
+          limit: zod.number(),
+          hasMore: zod.boolean(),
+          nextCursor: zod
+            .string()
+            .nullish()
+            .describe(
+              "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
+            ),
+        })
+        .describe(
+          "Pagination shape returned when the request supplied a `cursor` query parameter.",
+        ),
+    ]),
+  })
+  .describe(
+    "Schedule list response. `pagination` is page-mode unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with schedulePayloadSchema.
@@ -7133,131 +7379,152 @@ export const SchedulePostJobsJobIdScheduleBody = zod
  * Company-wide schedule list (admin/PM only). Route defined in artifacts/api-server/src/routes/schedule.ts. Validated query with companyScheduleQuerySchema. Supports both page and cursor pagination.
  * @summary GET /schedule
  */
-export const ScheduleGetScheduleResponse = zod.object({
-  data: zod.array(
-    zod
-      .object({
-        id: zod.string().uuid(),
-        jobId: zod.string().uuid().nullish(),
-        jobTitle: zod.string().nullish(),
-        clientId: zod.string().uuid().nullish(),
-        clientName: zod.string().nullish(),
-        schedulePhaseId: zod.string().uuid().nullish(),
-        phaseId: zod.string().uuid().nullish(),
-        phaseName: zod.string().nullish(),
-        phaseColor: zod.string().nullish(),
-        title: zod.string(),
-        displayColor: zod.string().optional(),
-        startDate: zod.string(),
-        endDate: zod.string(),
-        workDays: zod.number().optional(),
-        isHourly: zod.boolean().optional(),
-        startTime: zod.string().nullish(),
-        endTime: zod.string().nullish(),
-        progress: zod.number().optional(),
-        reminder: zod.string().optional(),
-        showOnGantt: zod.boolean().optional(),
-        visibleToEstimators: zod.boolean().optional(),
-        visibleToInstallers: zod.boolean().optional(),
-        visibleToOfficeStaff: zod.boolean().optional(),
-        isComplete: zod.boolean().optional(),
-        isPersonalTodo: zod.boolean().optional(),
-        notes: zod.string().nullish(),
-        tags: zod.array(zod.string()),
-        notifyUserIds: zod.array(zod.string().uuid()).optional(),
-        assigneeIds: zod.array(zod.string().uuid()),
-        assignees: zod.array(
-          zod
-            .object({
-              id: zod.string().uuid(),
-              fullName: zod.string().nullish(),
-              email: zod.string(),
-              role: zod.string(),
-              avatarUrl: zod.string().nullish(),
-              canViewFinancials: zod.boolean(),
-              access: zod.object({
-                financials: zod.boolean(),
-              }),
-            })
-            .describe(
-              "A user assigned to or notified about a job, schedule item, or daily log.",
-            ),
-        ),
-        predecessors: zod.array(
-          zod.object({
-            scheduleItemId: zod.string().uuid(),
-            dependencyType: zod.enum([
-              "finish_to_start",
-              "start_to_start",
-              "finish_to_finish",
-              "start_to_finish",
-            ]),
-            lagDays: zod.number(),
-            title: zod.string(),
-          }),
-        ),
-        notesStream: zod.array(
-          zod.object({
-            id: zod.string(),
-            note: zod.string(),
-            createdAt: zod.coerce.date(),
-            authorId: zod.string().uuid().nullish(),
-            authorName: zod.string().nullish(),
-            authorAvatarUrl: zod.string().nullish(),
-            isLegacy: zod.boolean(),
-          }),
-        ),
-        noteCount: zod.number().optional(),
-        attachments: zod.array(
-          zod.object({
-            id: zod.string().uuid(),
-            fileId: zod.string().uuid(),
-            filename: zod.string(),
-            originalName: zod.string(),
-            fileUrl: zod.string(),
-            fileSize: zod.number(),
-            mimeType: zod.string().nullish(),
-            createdAt: zod.coerce.date(),
-            icon: zod.string(),
-          }),
-        ),
-        relatedTodos: zod.array(
-          zod.object({
-            id: zod.string().uuid(),
-            title: zod.string(),
-            isComplete: zod.boolean(),
-            createdAt: zod.coerce.date(),
-            updatedAt: zod.coerce.date(),
-            createdBy: zod.string().uuid().nullish(),
-            createdByName: zod.string().nullish(),
-          }),
-        ),
-        relatedTodoCount: zod.number().optional(),
-        status: zod
-          .string()
-          .describe(
-            'Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\").',
+export const ScheduleGetScheduleResponse = zod
+  .object({
+    data: zod.array(
+      zod
+        .object({
+          id: zod.string().uuid(),
+          jobId: zod.string().uuid().nullish(),
+          jobTitle: zod.string().nullish(),
+          clientId: zod.string().uuid().nullish(),
+          clientName: zod.string().nullish(),
+          schedulePhaseId: zod.string().uuid().nullish(),
+          phaseId: zod.string().uuid().nullish(),
+          phaseName: zod.string().nullish(),
+          phaseColor: zod.string().nullish(),
+          title: zod.string(),
+          displayColor: zod.string().optional(),
+          startDate: zod.string(),
+          endDate: zod.string(),
+          manualEndDate: zod.string().nullable(),
+          workDays: zod.number().optional(),
+          isHourly: zod.boolean().optional(),
+          startTime: zod.string().nullish(),
+          endTime: zod.string().nullish(),
+          progress: zod.number().optional(),
+          reminder: zod.string().optional(),
+          showOnGantt: zod.boolean().optional(),
+          visibleToEstimators: zod.boolean().optional(),
+          visibleToInstallers: zod.boolean().optional(),
+          visibleToOfficeStaff: zod.boolean().optional(),
+          isComplete: zod.boolean().optional(),
+          isPersonalTodo: zod.boolean().optional(),
+          notes: zod.string().nullish(),
+          tags: zod.array(zod.string()),
+          notifyUserIds: zod.array(zod.string().uuid()).optional(),
+          assigneeIds: zod.array(zod.string().uuid()),
+          assignees: zod.array(
+            zod
+              .object({
+                id: zod.string().uuid(),
+                fullName: zod.string().nullish(),
+                email: zod.string(),
+                role: zod.string(),
+                avatarUrl: zod.string().nullish(),
+                canViewFinancials: zod.boolean(),
+                access: zod.object({
+                  financials: zod.boolean(),
+                }),
+              })
+              .describe(
+                "A user assigned to or notified about a job, schedule item, or daily log.",
+              ),
           ),
-        hasConflict: zod.boolean(),
-        conflictReasons: zod.array(zod.string()),
-        createdBy: zod.string().uuid().nullish(),
-        createdAt: zod.coerce.date(),
-        updatedAt: zod.coerce.date(),
-        deletedAt: zod.coerce.date().nullish(),
-        createdByName: zod.string().nullish(),
-        createdByAvatarUrl: zod.string().nullish(),
-      })
-      .describe(
-        "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
-      ),
-  ),
-  pagination: zod.object({
-    page: zod.number(),
-    limit: zod.number(),
-    totalItems: zod.number(),
-    totalPages: zod.number(),
-  }),
-});
+          predecessors: zod.array(
+            zod.object({
+              scheduleItemId: zod.string().uuid(),
+              dependencyType: zod.enum([
+                "finish_to_start",
+                "start_to_start",
+                "finish_to_finish",
+                "start_to_finish",
+              ]),
+              lagDays: zod.number(),
+              title: zod.string(),
+            }),
+          ),
+          notesStream: zod.array(
+            zod.object({
+              id: zod.string(),
+              note: zod.string(),
+              createdAt: zod.string().datetime({}),
+              authorId: zod.string().uuid().nullish(),
+              authorName: zod.string().nullish(),
+              authorAvatarUrl: zod.string().nullish(),
+              isLegacy: zod.boolean(),
+            }),
+          ),
+          noteCount: zod.number().optional(),
+          attachments: zod.array(
+            zod.object({
+              id: zod.string().uuid(),
+              fileId: zod.string().uuid(),
+              filename: zod.string(),
+              originalName: zod.string(),
+              fileUrl: zod.string(),
+              fileSize: zod.number(),
+              mimeType: zod.string().nullish(),
+              createdAt: zod.string().datetime({}),
+              icon: zod.string(),
+            }),
+          ),
+          relatedTodos: zod.array(
+            zod.object({
+              id: zod.string().uuid(),
+              title: zod.string(),
+              isComplete: zod.boolean(),
+              createdAt: zod.string().datetime({}),
+              updatedAt: zod.string().datetime({}),
+              createdBy: zod.string().uuid().nullish(),
+              createdByName: zod.string().nullish(),
+            }),
+          ),
+          relatedTodoCount: zod.number().optional(),
+          status: zod
+            .string()
+            .describe(
+              'Derived schedule state (e.g. \"upcoming\", \"in_progress\", \"complete\", \"overdue\").',
+            ),
+          hasConflict: zod.boolean(),
+          conflictReasons: zod.array(zod.string()),
+          createdBy: zod.string().uuid().nullish(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
+          deletedAt: zod.string().datetime({}).nullish(),
+          createdByName: zod.string().nullish(),
+          createdByAvatarUrl: zod.string().nullish(),
+        })
+        .describe(
+          "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
+        ),
+    ),
+    pagination: zod.union([
+      zod.object({
+        page: zod.number(),
+        limit: zod.number(),
+        totalItems: zod.number(),
+        totalPages: zod.number(),
+      }),
+      zod
+        .object({
+          limit: zod.number(),
+          hasMore: zod.boolean(),
+          nextCursor: zod
+            .string()
+            .nullish()
+            .describe(
+              "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
+            ),
+        })
+        .describe(
+          "Pagination shape returned when the request supplied a `cursor` query parameter.",
+        ),
+    ]),
+  })
+  .describe(
+    "Schedule list response. `pagination` is page-mode unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
@@ -7287,6 +7554,7 @@ export const ScheduleGetScheduleItemsIdResponse = zod.object({
       displayColor: zod.string().optional(),
       startDate: zod.string(),
       endDate: zod.string(),
+      manualEndDate: zod.string().nullable(),
       workDays: zod.number().optional(),
       isHourly: zod.boolean().optional(),
       startTime: zod.string().nullish(),
@@ -7337,7 +7605,7 @@ export const ScheduleGetScheduleItemsIdResponse = zod.object({
         zod.object({
           id: zod.string(),
           note: zod.string(),
-          createdAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
           authorId: zod.string().uuid().nullish(),
           authorName: zod.string().nullish(),
           authorAvatarUrl: zod.string().nullish(),
@@ -7354,7 +7622,7 @@ export const ScheduleGetScheduleItemsIdResponse = zod.object({
           fileUrl: zod.string(),
           fileSize: zod.number(),
           mimeType: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
           icon: zod.string(),
         }),
       ),
@@ -7363,8 +7631,8 @@ export const ScheduleGetScheduleItemsIdResponse = zod.object({
           id: zod.string().uuid(),
           title: zod.string(),
           isComplete: zod.boolean(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
           createdBy: zod.string().uuid().nullish(),
           createdByName: zod.string().nullish(),
         }),
@@ -7378,9 +7646,9 @@ export const ScheduleGetScheduleItemsIdResponse = zod.object({
       hasConflict: zod.boolean(),
       conflictReasons: zod.array(zod.string()),
       createdBy: zod.string().uuid().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
-      deletedAt: zod.coerce.date().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+      deletedAt: zod.string().datetime({}).nullish(),
       createdByName: zod.string().nullish(),
       createdByAvatarUrl: zod.string().nullish(),
     })
@@ -7566,6 +7834,7 @@ export const SchedulePutScheduleItemsIdResponse = zod.object({
       displayColor: zod.string().optional(),
       startDate: zod.string(),
       endDate: zod.string(),
+      manualEndDate: zod.string().nullable(),
       workDays: zod.number().optional(),
       isHourly: zod.boolean().optional(),
       startTime: zod.string().nullish(),
@@ -7616,7 +7885,7 @@ export const SchedulePutScheduleItemsIdResponse = zod.object({
         zod.object({
           id: zod.string(),
           note: zod.string(),
-          createdAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
           authorId: zod.string().uuid().nullish(),
           authorName: zod.string().nullish(),
           authorAvatarUrl: zod.string().nullish(),
@@ -7633,7 +7902,7 @@ export const SchedulePutScheduleItemsIdResponse = zod.object({
           fileUrl: zod.string(),
           fileSize: zod.number(),
           mimeType: zod.string().nullish(),
-          createdAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
           icon: zod.string(),
         }),
       ),
@@ -7642,8 +7911,8 @@ export const SchedulePutScheduleItemsIdResponse = zod.object({
           id: zod.string().uuid(),
           title: zod.string(),
           isComplete: zod.boolean(),
-          createdAt: zod.coerce.date(),
-          updatedAt: zod.coerce.date(),
+          createdAt: zod.string().datetime({}),
+          updatedAt: zod.string().datetime({}),
           createdBy: zod.string().uuid().nullish(),
           createdByName: zod.string().nullish(),
         }),
@@ -7657,9 +7926,9 @@ export const SchedulePutScheduleItemsIdResponse = zod.object({
       hasConflict: zod.boolean(),
       conflictReasons: zod.array(zod.string()),
       createdBy: zod.string().uuid().nullish(),
-      createdAt: zod.coerce.date(),
-      updatedAt: zod.coerce.date(),
-      deletedAt: zod.coerce.date().nullish(),
+      createdAt: zod.string().datetime({}),
+      updatedAt: zod.string().datetime({}),
+      deletedAt: zod.string().datetime({}).nullish(),
       createdByName: zod.string().nullish(),
       createdByAvatarUrl: zod.string().nullish(),
     })
@@ -7785,8 +8054,8 @@ export const SchedulePutScheduleItemsIdTodosTodoIdResponse = zod.object({
     id: zod.string().uuid(),
     title: zod.string(),
     isComplete: zod.boolean(),
-    createdAt: zod.coerce.date(),
-    updatedAt: zod.coerce.date(),
+    createdAt: zod.string().datetime({}),
+    updatedAt: zod.string().datetime({}),
     createdBy: zod.string().uuid().nullish(),
     createdByName: zod.string().nullish(),
   }),
@@ -8065,7 +8334,7 @@ export const DashboardGetDashboardHomeResponse = zod
             windMph: zod.number().nullable(),
             humidity: zod.number().nullable(),
             precipitation: zod.number(),
-            fetchedAt: zod.coerce.date(),
+            fetchedAt: zod.string().datetime({}),
           }),
           zod.null(),
         ]),
@@ -8138,7 +8407,7 @@ export const DashboardGetDashboardHomeResponse = zod
               zod.object({
                 id: zod.string().uuid(),
                 number: zod.string(),
-                amountCents: zod.number(),
+                amountCents: zod.number().int(),
                 jobId: zod.string().uuid(),
                 jobTitle: zod.string().nullable(),
               }),
@@ -8153,7 +8422,7 @@ export const DashboardGetDashboardHomeResponse = zod
             notes: zod.string(),
             jobId: zod.string().uuid(),
             jobTitle: zod.string().nullable(),
-            createdAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
             createdById: zod.string().uuid().nullable(),
             createdByName: zod.string().nullable(),
           }),
@@ -8176,15 +8445,15 @@ export const DashboardGetDashboardHomeResponse = zod
           activeJobs: zod.number(),
           openLeads: zod.number(),
           newJobsThisMonth: zod.number(),
-          newContractValueThisMonthCents: zod.number(),
-          arOutstandingCents: zod.number(),
+          newContractValueThisMonthCents: zod.number().int(),
+          arOutstandingCents: zod.number().int(),
           pastDueInvoiceCount: zod.number(),
         }),
         topClients: zod.array(
           zod.object({
             clientId: zod.string().uuid().nullable(),
             clientName: zod.string(),
-            openBalanceCents: zod.number(),
+            openBalanceCents: zod.number().int(),
           }),
         ),
         pastDueInvoices: zod.array(
@@ -8192,8 +8461,8 @@ export const DashboardGetDashboardHomeResponse = zod
             id: zod.string().uuid(),
             invoiceNumber: zod.string().nullable(),
             invoiceDate: zod.string().nullable(),
-            totalCents: zod.number(),
-            paidCents: zod.number(),
+            totalCents: zod.number().int(),
+            paidCents: zod.number().int(),
             jobId: zod.string().uuid(),
             jobTitle: zod.string().nullable(),
             clientId: zod.string().uuid().nullable(),
@@ -8214,7 +8483,7 @@ export const DashboardGetDashboardHomeResponse = zod
             city: zod.string().nullable(),
             state: zod.string().nullable(),
             confidence: zod.number().nullable(),
-            createdAt: zod.coerce.date(),
+            createdAt: zod.string().datetime({}),
           }),
         ),
         calendar: zod.object({
@@ -8248,13 +8517,15 @@ export const DashboardGetDashboardHomeResponse = zod
  * @summary GET /dashboard/schedule
  */
 export const DashboardGetDashboardScheduleQueryParams = zod.object({
-  start: zod
+  start: zod.coerce
+    .string()
     .date()
     .optional()
     .describe(
       "Inclusive lower bound on the schedule range (YYYY-MM-DD). Defaults to today.",
     ),
-  end: zod
+  end: zod.coerce
+    .string()
     .date()
     .optional()
     .describe(
@@ -8321,7 +8592,7 @@ export const ActivityGetActivityQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
     ),
 });
 
@@ -8381,7 +8652,7 @@ export const SearchGetSearchQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue) or simply `?limit=N` with no `page`\/`pageSize` — the server\nreturns the first page in the cursor envelope along with\n`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`\non subsequent calls. While in cursor mode `page`\/`pageSize` are\nignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
     ),
 });
 
@@ -8430,7 +8701,7 @@ export const SearchGetSearchResponse = zod.object({
         ),
     ])
     .describe(
-      "Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`\/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`.",
+      "Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied an explicit `cursor` parameter. Cursor-mode pagination uses `CursorPagination`.",
     ),
 });
 
@@ -8496,10 +8767,10 @@ export const AccountTokensListResponse = zod.object({
       lastFour: zod
         .string()
         .describe("Last 4 characters of the token, for UI display."),
-      expiresAt: zod.coerce.date().nullish(),
-      lastUsedAt: zod.coerce.date().nullish(),
-      revokedAt: zod.coerce.date().nullish(),
-      createdAt: zod.coerce.date(),
+      expiresAt: zod.string().datetime({}).nullish(),
+      lastUsedAt: zod.string().datetime({}).nullish(),
+      revokedAt: zod.string().datetime({}).nullish(),
+      createdAt: zod.string().datetime({}),
     }),
   ),
 });
@@ -8530,8 +8801,9 @@ export const AccountTokensCreateBody = zod.object({
   scope: zod
     .enum(["read", "read_write"])
     .default(accountTokensCreateBodyScopeDefault),
-  expiresAt: zod.coerce
-    .date()
+  expiresAt: zod
+    .string()
+    .datetime({})
     .nullish()
     .describe("Optional ISO 8601 expiry. Must be in the future."),
 });
@@ -8648,13 +8920,13 @@ export const ReportsGetReportsRevenueResponse = zod.object({
   months: zod.array(
     zod.object({
       month: zod.string(),
-      billedCents: zod.number(),
-      collectedCents: zod.number(),
+      billedCents: zod.number().int(),
+      collectedCents: zod.number().int(),
       topJobs: zod.array(
         zod.object({
           jobId: zod.string(),
           jobTitle: zod.string(),
-          amountCents: zod.number(),
+          amountCents: zod.number().int(),
         }),
       ),
     }),

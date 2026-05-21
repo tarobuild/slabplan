@@ -13,5 +13,5 @@ export interface AdminRecentLead {
   city: string | null;
   state: string | null;
   confidence: number | null;
-  createdAt: Date;
+  createdAt: string;
 }

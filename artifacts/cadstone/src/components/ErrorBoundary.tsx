@@ -18,6 +18,19 @@ type State = {
   hasError: boolean
 }
 
+function sanitizedCurrentUrl(): string {
+  if (typeof window === "undefined" || !window.location) {
+    return "unknown"
+  }
+
+  try {
+    const current = new URL(window.location.href)
+    return `${current.origin}${current.pathname}`
+  } catch {
+    return "unknown"
+  }
+}
+
 /**
  * Top-level error boundary. Wraps the route tree so a thrown render
  * error doesn't blank the entire app — the user sees a recoverable
@@ -63,10 +76,7 @@ class ErrorBoundary extends Component<Props, State> {
         message: error?.message ?? String(error),
         stack: error?.stack ?? null,
         componentStack: info?.componentStack ?? null,
-        url:
-          typeof window !== "undefined" && window.location?.href
-            ? window.location.href
-            : "unknown",
+        url: sanitizedCurrentUrl(),
         userAgent:
           typeof navigator !== "undefined" ? navigator.userAgent : null,
         releaseSha:
@@ -107,17 +117,17 @@ class ErrorBoundary extends Component<Props, State> {
     }
 
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] p-4">
-        <Card className="w-full max-w-md border-[#E5E7EB] shadow-sm">
+      <div className="app-surface flex min-h-screen items-center justify-center p-4">
+        <Card className="w-full max-w-md border-border bg-card shadow-sm">
           <CardContent className="flex flex-col items-center gap-4 px-6 py-12 text-center">
             <div className="rounded-full border border-red-200 bg-red-50 p-3 text-red-600">
               <AlertTriangle className="size-5" />
             </div>
             <div className="space-y-1">
-              <h2 className="text-lg font-semibold text-slate-950">
+              <h2 className="text-lg font-semibold text-foreground">
                 {this.props.title || "Something went wrong"}
               </h2>
-              <p className="max-w-md text-sm text-slate-500">
+              <p className="max-w-md text-sm text-muted-foreground">
                 The page hit an unexpected error. Reload to try again, or
                 head back to the dashboard — your session and unsaved
                 server-side data are unaffected.

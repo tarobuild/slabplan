@@ -10,15 +10,15 @@ import { toastApiError } from "@/lib/api-errors"
 import type { PmHome } from "../home/types"
 
 // Drill-down list for the PM Home "Jobs missing logs (3+ working days)"
-// at-risk tile. The /dashboard/home payload already returns the full set
-// of missing-log jobs in `atRisk.samples.missingLogJobs` (capped well
-// above any realistic at-risk cohort), so this page renders directly
-// from that payload rather than hitting a dedicated list endpoint.
+// at-risk tile. The /dashboard/home payload returns a sampled list plus
+// an aggregate count, so the page warns clearly when the sampled rows do
+// not represent the full missing-log cohort.
 export default function MissingLogsAtRiskPage() {
   useDocumentTitle("Jobs missing logs — At-risk")
   const { data: payload, isLoading: loading, error } = useDashboardGetDashboardHome()
   const data = payload && payload.role === "pm" ? (payload as PmHome) : null
   const notPm = !!payload && payload.role !== "pm"
+  const loadFailed = !!error && !payload
 
   useEffect(() => {
     if (error) toastApiError(error, "Failed to load at-risk list")
@@ -58,6 +58,10 @@ export default function MissingLogsAtRiskPage() {
               <Skeleton className="h-12" />
               <Skeleton className="h-12" />
             </>
+          ) : loadFailed ? (
+            <p className="rounded-md border border-dashed border-red-200 bg-red-50 p-4 text-center text-sm text-red-700">
+              Could not load this at-risk list. Please retry from Home.
+            </p>
           ) : notPm ? (
             <p className="rounded-md border border-dashed border-[#E5E7EB] p-4 text-center text-sm text-slate-500">
               This list is only available to project managers.
@@ -67,21 +71,28 @@ export default function MissingLogsAtRiskPage() {
               All open jobs have a recent daily log. Nice work.
             </p>
           ) : (
-            data.atRisk.samples.missingLogJobs.map((job) => (
-              <Link
-                key={job.id}
-                to={`/jobs/${job.id}/daily-logs`}
-                className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] px-3 py-2.5 transition hover:border-amber-300 hover:bg-amber-50/40"
-                data-testid="at-risk-missing-logs-row"
-              >
-                <span className="truncate text-sm font-medium text-slate-900">
-                  {job.title}
-                </span>
-                <span className="shrink-0 text-xs text-slate-500">
-                  Open daily logs →
-                </span>
-              </Link>
-            ))
+            <>
+              {data.atRisk.jobsMissingLogs > data.atRisk.samples.missingLogJobs.length ? (
+                <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  Showing {data.atRisk.samples.missingLogJobs.length} sampled jobs out of {data.atRisk.jobsMissingLogs}. Return to Home or reports for the full cohort.
+                </p>
+              ) : null}
+              {data.atRisk.samples.missingLogJobs.map((job) => (
+                <Link
+                  key={job.id}
+                  to={`/jobs/${job.id}/daily-logs`}
+                  className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] px-3 py-2.5 transition hover:border-amber-300 hover:bg-amber-50/40"
+                  data-testid="at-risk-missing-logs-row"
+                >
+                  <span className="truncate text-sm font-medium text-slate-900">
+                    {job.title}
+                  </span>
+                  <span className="shrink-0 text-xs text-slate-500">
+                    Open daily logs →
+                  </span>
+                </Link>
+              ))}
+            </>
           )}
         </CardContent>
       </Card>

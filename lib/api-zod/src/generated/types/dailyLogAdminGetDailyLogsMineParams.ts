@@ -36,11 +36,11 @@ export type DailyLogAdminGetDailyLogsMineParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
   cursor?: CursorParamParameter;

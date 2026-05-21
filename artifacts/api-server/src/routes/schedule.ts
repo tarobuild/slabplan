@@ -48,6 +48,7 @@ import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
 import { buildScheduleListVisibilityFilter } from "../lib/schedule-visibility";
+import { getActiveOrganizationId, organizationScopeCondition } from "../lib/tenant-scope";
 import {
   buildStoredFileName,
   buildUploadPath,
@@ -62,6 +63,7 @@ import {
   uploadArray,
 } from "../lib/uploads";
 import { createUploadPerUserRateLimit } from "../lib/rate-limit";
+import { stringBoolean } from "../lib/zod-helpers";
 
 const uploadRateLimit = createUploadPerUserRateLimit();
 
@@ -152,7 +154,7 @@ const schedulePayloadSchema = z
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     workDays: z.coerce.number().int().positive().max(365).optional().default(1),
     endDate: optionalDate,
-    isHourly: z.coerce.boolean().optional().default(false),
+    isHourly: stringBoolean.optional().default(false),
     startTime: optionalTime,
     endTime: optionalTime,
     progress: z.coerce.number().int().min(0).max(100).optional().default(0),
@@ -161,12 +163,12 @@ const schedulePayloadSchema = z
     tags: z.array(z.string().trim().min(1).max(100)).optional().default([]),
     predecessors: z.array(predecessorSchema).optional().default([]),
     phaseId: optionalUuid,
-    showOnGantt: z.coerce.boolean().optional().default(true),
-    visibleToEstimators: z.coerce.boolean().optional().default(true),
-    visibleToInstallers: z.coerce.boolean().optional().default(true),
-    visibleToOfficeStaff: z.coerce.boolean().optional().default(true),
-    isComplete: z.coerce.boolean().optional().default(false),
-    isPersonalTodo: z.coerce.boolean().optional().default(false),
+    showOnGantt: stringBoolean.optional().default(true),
+    visibleToEstimators: stringBoolean.optional().default(true),
+    visibleToInstallers: stringBoolean.optional().default(true),
+    visibleToOfficeStaff: stringBoolean.optional().default(true),
+    isComplete: stringBoolean.optional().default(false),
+    isPersonalTodo: stringBoolean.optional().default(false),
   })
   .superRefine((value, ctx) => {
     if (value.isHourly && !value.startTime) {
@@ -204,10 +206,10 @@ const scheduleSettingsPayloadSchema = z.object({
   defaultView: z
     .enum(["calendar_month", "calendar_week", "calendar_day", "calendar_agenda", "list", "gantt"])
     .optional(),
-  showTimesOnMonthView: z.coerce.boolean().optional(),
-  showJobNameOnAllListedJobs: z.coerce.boolean().optional(),
-  automaticallyMarkItemsComplete: z.coerce.boolean().optional(),
-  includeHeaderOnPdfExports: z.coerce.boolean().optional(),
+  showTimesOnMonthView: stringBoolean.optional(),
+  showJobNameOnAllListedJobs: stringBoolean.optional(),
+  automaticallyMarkItemsComplete: stringBoolean.optional(),
+  includeHeaderOnPdfExports: stringBoolean.optional(),
 });
 
 const workdayExceptionCategoryPayloadSchema = z.object({
@@ -219,9 +221,9 @@ const workdayExceptionPayloadBaseSchema = z.object({
   type: z.enum(["non_workday", "extra_workday"]),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  sameEveryYear: z.coerce.boolean().optional().default(false),
+  sameEveryYear: stringBoolean.optional().default(false),
   categoryId: optionalUuid,
-  appliesToAllJobs: z.coerce.boolean().optional().default(false),
+  appliesToAllJobs: stringBoolean.optional().default(false),
   jobIds: z.array(z.string().uuid()).optional().default([]),
   notes: optionalString,
 });
@@ -269,7 +271,7 @@ const scheduleTodoPayloadSchema = z.object({
 
 const scheduleTodoUpdatePayloadSchema = z.object({
   title: z.string().trim().min(1).max(255).optional(),
-  isComplete: z.coerce.boolean().optional(),
+  isComplete: stringBoolean.optional(),
 });
 
 // Narrow payload accepted by POST /schedule-items/:id/complete.
@@ -277,7 +279,7 @@ const scheduleTodoUpdatePayloadSchema = z.object({
 // only carries the completion-state fields and never touches schedule
 // dates, visibility, predecessors, or other admin-managed properties.
 const scheduleCompletionPayloadSchema = z.object({
-  isComplete: z.coerce.boolean(),
+  isComplete: stringBoolean,
   progress: z.coerce.number().int().min(0).max(100).optional(),
 });
 
@@ -285,6 +287,7 @@ type ScheduleMeta = {
   notes: string | null;
   tags: string[];
   predecessors: Array<z.infer<typeof predecessorSchema>>;
+  manualEndDate: boolean;
 };
 
 const scheduleMetaMarker = "__stoneTrackScheduleMeta";
@@ -595,7 +598,7 @@ function addBusinessDays(startDate: string, amount: number, exceptions: WorkdayE
 }
 
 function encodeScheduleMeta(meta: ScheduleMeta) {
-  if (!meta.notes && meta.tags.length === 0 && meta.predecessors.length === 0) {
+  if (!meta.notes && meta.tags.length === 0 && meta.predecessors.length === 0 && !meta.manualEndDate) {
     return null;
   }
 
@@ -604,6 +607,7 @@ function encodeScheduleMeta(meta: ScheduleMeta) {
     notes: meta.notes,
     tags: meta.tags,
     predecessors: meta.predecessors,
+    manualEndDate: meta.manualEndDate,
   });
 }
 
@@ -613,6 +617,7 @@ function decodeScheduleMeta(value: string | null): ScheduleMeta {
       notes: null,
       tags: [],
       predecessors: [],
+      manualEndDate: false,
     };
   }
 
@@ -623,6 +628,7 @@ function decodeScheduleMeta(value: string | null): ScheduleMeta {
           notes?: string | null;
           tags?: string[];
           predecessors?: Array<z.infer<typeof predecessorSchema>>;
+          manualEndDate?: boolean;
         }
       | null;
 
@@ -633,6 +639,7 @@ function decodeScheduleMeta(value: string | null): ScheduleMeta {
         predecessors: Array.isArray(parsed.predecessors)
           ? parsed.predecessors
           : [],
+        manualEndDate: parsed.manualEndDate === true,
       };
     }
   } catch {
@@ -640,6 +647,7 @@ function decodeScheduleMeta(value: string | null): ScheduleMeta {
       notes: value,
       tags: [],
       predecessors: [],
+      manualEndDate: false,
     };
   }
 
@@ -647,6 +655,7 @@ function decodeScheduleMeta(value: string | null): ScheduleMeta {
     notes: value,
     tags: [],
     predecessors: [],
+    manualEndDate: false,
   };
 }
 
@@ -860,6 +869,7 @@ async function ensureDefaultScheduleSettings(
 }
 
 async function loadAllWorkdayExceptions(
+  organizationId: string,
   executor: DbExecutor = db,
 ): Promise<WorkdayExceptionRecord[]> {
   const rows = await executor
@@ -879,8 +889,12 @@ async function loadAllWorkdayExceptions(
     .from(scheduleWorkdayExceptions)
     .leftJoin(
       scheduleWorkdayExceptionCategories,
-      eq(scheduleWorkdayExceptions.categoryId, scheduleWorkdayExceptionCategories.id),
+      and(
+        eq(scheduleWorkdayExceptions.categoryId, scheduleWorkdayExceptionCategories.id),
+        eq(scheduleWorkdayExceptionCategories.organizationId, organizationId),
+      ),
     )
+    .where(eq(scheduleWorkdayExceptions.organizationId, organizationId))
     .orderBy(asc(scheduleWorkdayExceptions.startDate), asc(scheduleWorkdayExceptions.title));
 
   return rows.map((row): WorkdayExceptionRecord => ({
@@ -898,7 +912,12 @@ async function getWorkdayExceptionsForJob(
   jobId: string,
   executor: DbExecutor = db,
 ): Promise<WorkdayExceptionRecord[]> {
-  const all = await loadAllWorkdayExceptions(executor);
+  const organizationId = await getJobOrganizationId(jobId, executor);
+  if (!organizationId) {
+    throw new HttpError(404, "Job not found.");
+  }
+
+  const all = await loadAllWorkdayExceptions(organizationId, executor);
   return all.filter((row) => row.appliesToAllJobs || row.jobIds.includes(jobId));
 }
 
@@ -912,13 +931,33 @@ async function getWorkdayExceptionsByJob(
     return byJob;
   }
 
-  const all = await loadAllWorkdayExceptions();
+  const jobRows = await db
+    .select({ id: jobs.id, organizationId: jobs.organizationId })
+    .from(jobs)
+    .where(and(inArray(jobs.id, unique), isNull(jobs.deletedAt)));
+  const jobOrgById = new Map(jobRows.map((row) => [row.id, row.organizationId]));
+  const jobIdsByOrg = new Map<string, string[]>();
 
   for (const jobId of unique) {
-    byJob.set(
-      jobId,
-      all.filter((row) => row.appliesToAllJobs || row.jobIds.includes(jobId)),
-    );
+    const organizationId = jobOrgById.get(jobId);
+    if (!organizationId) {
+      byJob.set(jobId, []);
+      continue;
+    }
+
+    const group = jobIdsByOrg.get(organizationId) ?? [];
+    group.push(jobId);
+    jobIdsByOrg.set(organizationId, group);
+  }
+
+  for (const [organizationId, orgJobIds] of jobIdsByOrg) {
+    const all = await loadAllWorkdayExceptions(organizationId);
+    for (const jobId of orgJobIds) {
+      byJob.set(
+        jobId,
+        all.filter((row) => row.appliesToAllJobs || row.jobIds.includes(jobId)),
+      );
+    }
   }
 
   return byJob;
@@ -927,7 +966,7 @@ async function getWorkdayExceptionsByJob(
 async function syncPredecessors(
   scheduleItemId: string,
   predecessors: Array<z.infer<typeof predecessorSchema>>,
-  organizationId: string | null,
+  organizationId: string,
   executor: DbExecutor = db,
 ) {
   await executor
@@ -1096,7 +1135,7 @@ function predecessorConflictReasons(
 async function syncAssignees(
   scheduleItemId: string,
   assigneeIds: string[],
-  organizationId: string | null,
+  organizationId: string,
   executor: DbExecutor = db,
 ) {
   await executor
@@ -1270,6 +1309,7 @@ export type ScheduleCascadeItem = {
   startDate: string;
   endDate: string;
   workDays: number;
+  manualEndDate?: boolean;
 };
 
 export type ScheduleCascadePredecessor = {
@@ -1339,9 +1379,11 @@ export function computeJobScheduleCascade(
       }
 
       if (predecessors.length === 0) {
-        const computedEndDate = calculateBusinessEndDate(current.startDate, current.workDays, exceptions);
+        const computedEndDate = current.manualEndDate
+          ? current.endDate
+          : calculateBusinessEndDate(current.startDate, current.workDays, exceptions);
 
-        if (computedEndDate !== current.endDate) {
+        if (!current.manualEndDate && computedEndDate !== current.endDate) {
           current.endDate = computedEndDate;
           changed = true;
         }
@@ -1374,7 +1416,9 @@ export function computeJobScheduleCascade(
         predecessorMap,
         exceptions,
       );
-      const nextEndDate = calculateBusinessEndDate(nextStartDate, current.workDays, exceptions);
+      const nextEndDate = current.manualEndDate
+        ? current.endDate
+        : calculateBusinessEndDate(nextStartDate, current.workDays, exceptions);
 
       if (nextStartDate !== current.startDate || nextEndDate !== current.endDate) {
         current.startDate = nextStartDate;
@@ -1403,7 +1447,7 @@ async function loadJobScheduleCascadeInputs(
   jobId: string,
   executor: DbExecutor = db,
 ) {
-  const [items, exceptions, predecessorRows] = await Promise.all([
+  const [itemRows, exceptions, predecessorRows] = await Promise.all([
     executor
       .select({
         id: scheduleItems.id,
@@ -1411,6 +1455,7 @@ async function loadJobScheduleCascadeInputs(
         startDate: scheduleItems.startDate,
         endDate: scheduleItems.endDate,
         workDays: scheduleItems.workDays,
+        notes: scheduleItems.notes,
       })
       .from(scheduleItems)
       .where(and(eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
@@ -1432,7 +1477,17 @@ async function loadJobScheduleCascadeInputs(
   ]);
 
   return {
-    items,
+    items: itemRows.map((row) => {
+      const meta = decodeScheduleMeta(row.notes);
+      return {
+        id: row.id,
+        title: row.title,
+        startDate: row.startDate,
+        endDate: row.endDate,
+        workDays: row.workDays,
+        manualEndDate: meta.manualEndDate,
+      };
+    }),
     exceptions,
     predecessorRows: predecessorRows.map((row) => ({
       ...row,
@@ -1627,11 +1682,16 @@ async function getWorkdayExceptionCategoryOrThrow(categoryId: string) {
   return category;
 }
 
-async function getWorkdayExceptionOrThrow(exceptionId: string) {
+async function getWorkdayExceptionOrThrow(exceptionId: string, organizationId?: string | null) {
   const [exception] = await db
     .select()
     .from(scheduleWorkdayExceptions)
-    .where(eq(scheduleWorkdayExceptions.id, exceptionId))
+    .where(
+      and(
+        eq(scheduleWorkdayExceptions.id, exceptionId),
+        organizationId ? eq(scheduleWorkdayExceptions.organizationId, organizationId) : undefined,
+      ),
+    )
     .limit(1);
 
   if (!exception) {
@@ -1655,11 +1715,11 @@ function uniqueJobIds(jobIds: string[]) {
   return Array.from(new Set(jobIds));
 }
 
-async function listAllActiveJobIds() {
+async function listAllActiveJobIds(organizationId: string) {
   const rows = await db
     .select({ id: jobs.id })
     .from(jobs)
-    .where(isNull(jobs.deletedAt));
+    .where(and(isNull(jobs.deletedAt), eq(jobs.organizationId, organizationId)));
 
   return rows.map((row) => row.id);
 }
@@ -1671,18 +1731,37 @@ async function resolveWorkdayExceptionTargetJobIds(
     jobIds: string[] | null;
   },
 ) {
+  const organizationId = getActiveOrganizationId(auth);
+  if (!organizationId) {
+    throw new HttpError(400, "An active organization is required.", undefined, "organization-required");
+  }
+
   if (exception.appliesToAllJobs) {
     if (!isAdmin(auth)) {
       throw new HttpError(403, "Only admins can manage company-wide workday exceptions.");
     }
 
-    return listAllActiveJobIds();
+    return listAllActiveJobIds(organizationId);
   }
 
   const jobIds = uniqueJobIds(Array.isArray(exception.jobIds) ? exception.jobIds : []);
 
   if (!isAdmin(auth)) {
     throw new HttpError(403, "Only admins can manage workday exceptions.");
+  }
+
+  if (jobIds.length === 0) {
+    return [];
+  }
+
+  const rows = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(inArray(jobs.id, jobIds), eq(jobs.organizationId, organizationId), isNull(jobs.deletedAt)));
+  const scopedIds = new Set(rows.map((row) => row.id));
+
+  if (jobIds.some((jobId) => !scopedIds.has(jobId))) {
+    throw new HttpError(400, "One or more selected jobs do not belong to the active organization.");
   }
 
   return jobIds;
@@ -2161,6 +2240,7 @@ async function hydrateScheduleItems(
         attachments,
         relatedTodos,
         relatedTodoCount: relatedTodos.length,
+        manualEndDate: meta.manualEndDate ? row.endDate : null,
         status: deriveScheduleStatus({
           startDate: row.startDate,
           endDate: row.endDate,
@@ -2387,7 +2467,12 @@ router.get(
           name: scheduleWorkdayExceptionCategories.name,
         })
         .from(scheduleWorkdayExceptionCategories)
-        .where(or(eq(scheduleWorkdayExceptionCategories.jobId, jobId), isNull(scheduleWorkdayExceptionCategories.jobId)))
+        .where(
+          and(
+            organizationScopeCondition(req.auth!, scheduleWorkdayExceptionCategories.organizationId),
+            or(eq(scheduleWorkdayExceptionCategories.jobId, jobId), isNull(scheduleWorkdayExceptionCategories.jobId)),
+          ),
+        )
         .orderBy(asc(scheduleWorkdayExceptionCategories.name)),
     ]);
 
@@ -2823,11 +2908,16 @@ router.post(
 
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
+    const organizationId = getActiveOrganizationId(req.auth!);
+    if (!organizationId) {
+      throw new HttpError(400, "An active organization is required.", undefined, "organization-required");
+    }
 
     const [category] = await db
       .insert(scheduleWorkdayExceptionCategories)
       .values({
         id: crypto.randomUUID(),
+        organizationId,
         jobId,
         name: body.data.name,
       })
@@ -2860,7 +2950,12 @@ router.put(
         name: body.data.name,
         updatedAt: new Date(),
       })
-      .where(eq(scheduleWorkdayExceptionCategories.id, categoryId))
+      .where(
+        and(
+          eq(scheduleWorkdayExceptionCategories.id, categoryId),
+          organizationScopeCondition(req.auth!, scheduleWorkdayExceptionCategories.organizationId),
+        ),
+      )
       .returning({
         id: scheduleWorkdayExceptionCategories.id,
         name: scheduleWorkdayExceptionCategories.name,
@@ -2875,6 +2970,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
+    await assertCanAccessJob(req.auth!, jobId);
 
     const exceptions = await getWorkdayExceptionsForJob(jobId);
     res.json({ exceptions });
@@ -2892,7 +2988,13 @@ router.post(
 
     const jobId = getParam(req.params.jobId, "job id");
     await ensureJobExists(jobId);
+    await assertCanAccessJob(req.auth!, jobId);
     await assertWorkdayExceptionCategoryBelongsToJob(jobId, body.data.categoryId);
+    const organizationId = getActiveOrganizationId(req.auth!);
+    if (!organizationId) {
+      throw new HttpError(400, "An active organization is required.", undefined, "organization-required");
+    }
+
     const affectedJobIds = await resolveWorkdayExceptionTargetJobIds(req.auth!, {
       appliesToAllJobs: body.data.appliesToAllJobs,
       jobIds: body.data.appliesToAllJobs ? [] : body.data.jobIds,
@@ -2906,6 +3008,7 @@ router.post(
         .insert(scheduleWorkdayExceptions)
         .values({
           id: crypto.randomUUID(),
+          organizationId,
           title: body.data.title,
           type: body.data.type,
           startDate: body.data.startDate,
@@ -2938,8 +3041,9 @@ router.put(
 
     const jobId = getParam(req.params.jobId, "job id");
     const exceptionId = getParam(req.params.exceptionId, "exception id");
-    await ensureJobExists(jobId);
-    const existing = await getWorkdayExceptionOrThrow(exceptionId);
+    const job = await ensureJobExists(jobId);
+    await assertCanAccessJob(req.auth!, jobId);
+    const existing = await getWorkdayExceptionOrThrow(exceptionId, job.organizationId);
 
     if (!workdayExceptionAppliesToJob(jobId, existing)) {
       throw new HttpError(404, "Workday exception not found.");
@@ -2976,7 +3080,12 @@ router.put(
           notes: body.data.notes ?? existing.notes,
           updatedAt: new Date(),
         })
-        .where(eq(scheduleWorkdayExceptions.id, exceptionId))
+        .where(
+          and(
+            eq(scheduleWorkdayExceptions.id, exceptionId),
+            organizationScopeCondition(req.auth!, scheduleWorkdayExceptions.organizationId),
+          ),
+        )
         .returning();
 
       await synchronizeAffectedJobSchedules(
@@ -2995,8 +3104,9 @@ router.delete(
   asyncHandler(async (req, res) => {
     const jobId = getParam(req.params.jobId, "job id");
     const exceptionId = getParam(req.params.exceptionId, "exception id");
-    await ensureJobExists(jobId);
-    const existing = await getWorkdayExceptionOrThrow(exceptionId);
+    const job = await ensureJobExists(jobId);
+    await assertCanAccessJob(req.auth!, jobId);
+    const existing = await getWorkdayExceptionOrThrow(exceptionId, job.organizationId);
 
     if (!workdayExceptionAppliesToJob(jobId, existing)) {
       throw new HttpError(404, "Workday exception not found.");
@@ -3007,7 +3117,12 @@ router.delete(
     await db.transaction(async (tx) => {
       await tx
         .delete(scheduleWorkdayExceptions)
-        .where(eq(scheduleWorkdayExceptions.id, exceptionId));
+        .where(
+          and(
+            eq(scheduleWorkdayExceptions.id, exceptionId),
+            organizationScopeCondition(req.auth!, scheduleWorkdayExceptions.organizationId),
+          ),
+        );
       await synchronizeAffectedJobSchedules(affectedJobIds, tx);
     });
     res.json({ success: true });
@@ -3523,14 +3638,7 @@ router.post(
           .from(scheduleItems)
           .where(and(inArray(scheduleItems.id, predecessorIds), isNull(scheduleItems.deletedAt)))
       : [];
-    const normalizedPayload = applyPredecessorDates(
-      {
-        ...body.data,
-        endDate: null,
-      },
-      predecessorItems,
-      exceptions,
-    );
+    const normalizedPayload = applyPredecessorDates(body.data, predecessorItems, exceptions);
 
     item = await db.transaction(async (tx) => {
       await ensureTagSettings(jobId, normalizedPayload.tags, tx);
@@ -3561,13 +3669,15 @@ router.post(
             notes: normalizedPayload.notes,
             tags: normalizeUniqueStrings(normalizedPayload.tags),
             predecessors: normalizedPayload.predecessors,
+            manualEndDate: normalizedPayload.endDate !== null,
           }),
           createdBy: req.auth!.userId,
         })
         .returning();
 
-      await syncAssignees(createdItem.id, normalizedPayload.assigneeIds, job.organizationId, tx);
-      await syncPredecessors(createdItem.id, normalizedPayload.predecessors, job.organizationId, tx);
+      const organizationId = job.organizationId ?? getActiveOrganizationId(req.auth!);
+      await syncAssignees(createdItem.id, normalizedPayload.assigneeIds, organizationId, tx);
+      await syncPredecessors(createdItem.id, normalizedPayload.predecessors, organizationId, tx);
 
       // Cascade persistence and auto-complete sweep run inside the same
       // transaction as the user's insert, so a failure in either step
@@ -3793,14 +3903,7 @@ router.put(
           .from(scheduleItems)
           .where(and(inArray(scheduleItems.id, predecessorIds), isNull(scheduleItems.deletedAt)))
       : [];
-    const normalizedPayload = applyPredecessorDates(
-      {
-        ...body.data,
-        endDate: null,
-      },
-      predecessorItems,
-      exceptions,
-    );
+    const normalizedPayload = applyPredecessorDates(body.data, predecessorItems, exceptions);
 
     await db.transaction(async (tx) => {
       await ensureTagSettings(existing.jobId, normalizedPayload.tags, tx);
@@ -3828,13 +3931,15 @@ router.put(
             notes: normalizedPayload.notes,
             tags: normalizeUniqueStrings(normalizedPayload.tags),
             predecessors: normalizedPayload.predecessors,
+            manualEndDate: normalizedPayload.endDate !== null,
           }),
           updatedAt: new Date(),
         })
         .where(eq(scheduleItems.id, itemId));
 
-      await syncAssignees(itemId, normalizedPayload.assigneeIds, existing.organizationId, tx);
-      await syncPredecessors(itemId, normalizedPayload.predecessors, existing.organizationId, tx);
+      const organizationId = existing.organizationId ?? getActiveOrganizationId(req.auth!);
+      await syncAssignees(itemId, normalizedPayload.assigneeIds, organizationId, tx);
+      await syncPredecessors(itemId, normalizedPayload.predecessors, organizationId, tx);
 
       // Same atomicity guarantee as the POST handler — cascade
       // persistence shares this transaction with the user's update.
@@ -3908,7 +4013,7 @@ router.post(
     const [todo] = await db
       .insert(scheduleItemTodos)
       .values({
-        organizationId: item.organizationId,
+        organizationId: item.organizationId ?? getActiveOrganizationId(req.auth!),
         scheduleItemId: itemId,
         title: body.data.title ?? item.title,
         createdBy: req.auth!.userId,
@@ -4077,7 +4182,7 @@ router.post(
     const [note] = await db
       .insert(scheduleItemNotes)
       .values({
-        organizationId: item.organizationId,
+        organizationId: item.organizationId ?? getActiveOrganizationId(req.auth!),
         scheduleItemId: itemId,
         note: body.data.note,
         createdBy: req.auth!.userId,
@@ -4191,7 +4296,7 @@ router.post(
           const [createdAttachment] = await tx
             .insert(scheduleItemAttachments)
             .values({
-              organizationId: item.organizationId,
+              organizationId: item.organizationId ?? getActiveOrganizationId(req.auth!),
               scheduleItemId: itemId,
               fileId: createdFile.id,
             })
@@ -4372,7 +4477,7 @@ router.post(
         const [createdAttachment] = await tx
           .insert(scheduleItemAttachments)
           .values({
-            organizationId: item.organizationId,
+            organizationId: item.organizationId ?? getActiveOrganizationId(req.auth!),
             scheduleItemId: itemId,
             fileId: createdFile.id,
           })

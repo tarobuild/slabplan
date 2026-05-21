@@ -132,6 +132,7 @@ export default function JobSchedulePage() {
   const [dialogInitTitle, setDialogInitTitle] = useState<string | null>(null)
   const [dialogInitAssigneeIds, setDialogInitAssigneeIds] = useState<string[] | null>(null)
   const [dialogInitIsHourly, setDialogInitIsHourly] = useState<boolean | null>(null)
+  const handledFocusItemRef = useRef<string | null>(null)
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const [quickCreateDate, setQuickCreateDate] = useState<string | null>(null)
   const [quickCreateStartTime, setQuickCreateStartTime] = useState<string | null>(null)
@@ -461,6 +462,7 @@ export default function JobSchedulePage() {
     workdayExceptions,
     dayWidth,
     scheduleOffline,
+    canWrite,
     refreshScheduleData,
     openQuickCreate,
   })
@@ -1073,6 +1075,9 @@ export default function JobSchedulePage() {
   }
 
   function openNewItem(startDate?: string, startTime?: string, endTime?: string) {
+    if (!canWrite) {
+      return
+    }
     setActiveItemId(null)
     setDialogInitDate(startDate ?? null)
     setDialogInitStartTime(startTime ?? null)
@@ -1088,8 +1093,14 @@ export default function JobSchedulePage() {
   // `state: { openCreate: true }`. The flag is consumed once.
   const scheduleLocation = useLocation()
   const scheduleNavigate = useNavigate()
-  useEffect(() => {
-    const incoming = scheduleLocation.state as Record<string, unknown> | null
+	  useEffect(() => {
+    const focusItemId = new URLSearchParams(scheduleLocation.search).get("focus")
+    if (focusItemId && handledFocusItemRef.current !== focusItemId) {
+      handledFocusItemRef.current = focusItemId
+      openExistingItem(focusItemId)
+    }
+
+	    const incoming = scheduleLocation.state as Record<string, unknown> | null
     if (incoming && (incoming as { openCreate?: unknown }).openCreate) {
       openNewItem()
       const { openCreate: _openCreate, ...rest } = incoming as {
@@ -1106,7 +1117,7 @@ export default function JobSchedulePage() {
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleLocation.state])
+	  }, [scheduleLocation.search, scheduleLocation.state])
 
 
   function openExistingItem(itemId: string) {
@@ -1349,6 +1360,7 @@ export default function JobSchedulePage() {
                 schedulePreview={schedulePreview}
                 blockDrag={blockDrag}
                 dragSelection={dragSelection}
+                canWrite={canWrite}
                 blockClickSuppressRef={blockClickSuppressRef}
                 isBlockDraggable={isBlockDraggable}
                 handleBlockPointerDown={handleBlockPointerDown}
@@ -1380,6 +1392,7 @@ export default function JobSchedulePage() {
                 listStart={listStart}
                 listEnd={listEnd}
                 sortedListItemsLength={sortedListItems.length}
+                canWrite={canWrite}
                 setListDisplayMode={setListDisplayMode}
                 setSelectedListIds={setSelectedListIds}
                 setAppliedFilters={setAppliedFilters}
@@ -1417,6 +1430,7 @@ export default function JobSchedulePage() {
                 dayWidth={dayWidth}
                 workdayExceptions={workdayExceptions}
                 scheduleOffline={scheduleOffline}
+                canWrite={canWrite}
                 setGanttScale={setGanttScale}
                 setGanttShowPhases={setGanttShowPhases}
                 setGanttCriticalPath={setGanttCriticalPath}
@@ -1560,6 +1574,7 @@ export default function JobSchedulePage() {
           refreshSettings={fetchSettings}
           onRefresh={refreshScheduleData}
           draftMode={scheduleOffline}
+          readOnly={!canWrite}
           onDraftSave={handleDraftSaveItem}
           onDraftAddNote={handleDraftAddNote}
           onDraftDelete={handleDraftDeleteItem}

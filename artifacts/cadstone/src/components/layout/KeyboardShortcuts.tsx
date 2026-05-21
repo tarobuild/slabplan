@@ -9,6 +9,7 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { useAuthStore } from "@/store/auth"
 import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
+import { hasRoleAccess, ROLE_GATES, type AppRole } from "@/lib/role-access"
 
 const FOCUS_GLOBAL_SEARCH_EVENT = `${APP_STORAGE_NAMESPACE}:focus-global-search`
 
@@ -24,11 +25,13 @@ type ShortcutGroup = {
 
 // "Create a new job" is admin-only (post-#277). Non-admins don't see the
 // `n` shortcut in the help overlay and the keydown handler ignores it.
-function buildShortcutGroups(isAdmin: boolean): ShortcutGroup[] {
+export function buildShortcutGroups(role: AppRole | undefined): ShortcutGroup[] {
+  const canSeeClients = hasRoleAccess(role, ROLE_GATES.clients)
+  const canSeeSales = hasRoleAccess(role, ROLE_GATES.sales)
   const actions: ShortcutDef[] = [
     { keys: ["/"], label: "Focus the global search" },
   ]
-  if (isAdmin) {
+  if (role === "admin") {
     actions.push({ keys: ["n"], label: "Create a new job" })
   }
   actions.push({ keys: ["?"], label: "Show this shortcut overlay" })
@@ -38,8 +41,8 @@ function buildShortcutGroups(isAdmin: boolean): ShortcutGroup[] {
       shortcuts: [
         { keys: ["g", "d"], label: "Go to Home" },
         { keys: ["g", "j"], label: "Go to Jobs" },
-        { keys: ["g", "c"], label: "Go to Clients" },
-        { keys: ["g", "l"], label: "Go to Leads" },
+        ...(canSeeClients ? [{ keys: ["g", "c"], label: "Go to Clients" }] : []),
+        ...(canSeeSales ? [{ keys: ["g", "l"], label: "Go to Leads" }] : []),
       ],
     },
     { heading: "Actions", shortcuts: actions },
@@ -83,8 +86,9 @@ const SEQUENCE_TIMEOUT_MS = 1200
 
 function KeyboardShortcuts() {
   const navigate = useNavigate()
-  const isAdmin = useAuthStore((s) => s.user?.role === "admin")
-  const shortcutGroups = useMemo(() => buildShortcutGroups(isAdmin), [isAdmin])
+  const role = useAuthStore((s) => s.user?.role as AppRole | undefined)
+  const isAdmin = role === "admin"
+  const shortcutGroups = useMemo(() => buildShortcutGroups(role), [role])
   const [helpOpen, setHelpOpen] = useState(false)
   const pendingPrefix = useRef<string | null>(null)
   const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -133,10 +137,10 @@ function KeyboardShortcuts() {
             ? "/jobs"
             : key === "d"
               ? "/dashboard"
-              : key === "c"
+              : key === "c" && hasRoleAccess(role, ROLE_GATES.clients)
                 ? "/clients"
-                : key === "l"
-                  ? "/leads"
+                : key === "l" && hasRoleAccess(role, ROLE_GATES.sales)
+                  ? "/sales/leads"
                   : null
         clearPending()
         if (route) {
@@ -168,7 +172,7 @@ function KeyboardShortcuts() {
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [navigate, clearPending, helpOpen, isAdmin])
+  }, [navigate, clearPending, helpOpen, isAdmin, role])
 
   return (
     <Dialog open={helpOpen} onOpenChange={setHelpOpen}>

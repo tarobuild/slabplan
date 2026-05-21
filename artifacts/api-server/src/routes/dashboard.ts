@@ -517,6 +517,10 @@ async function fetchForecastForJob(job: CrewForecastJob): Promise<
 async function buildCrewHome(auth: NonNullable<Express.Request["auth"]>) {
   const today = todayIso();
   const userId = auth.userId;
+  const scheduleOrgCondition = organizationScopeCondition(auth, scheduleItems.organizationId);
+  const jobsOrgCondition = organizationScopeCondition(auth, jobs.organizationId);
+  const dailyLogsOrgCondition = organizationScopeCondition(auth, dailyLogs.organizationId);
+  const todosOrgCondition = organizationScopeCondition(auth, scheduleItemTodos.organizationId);
 
   // Today's schedule items assigned to me. We restrict to items whose date
   // window contains today so a freshly-scheduled multi-day install still
@@ -544,6 +548,8 @@ async function buildCrewHome(auth: NonNullable<Express.Request["auth"]>) {
     .where(
       and(
         eq(scheduleItemAssignees.userId, userId),
+        scheduleOrgCondition,
+        jobsOrgCondition,
         isNull(scheduleItems.deletedAt),
         isNull(jobs.deletedAt),
         lte(scheduleItems.startDate, today),
@@ -567,7 +573,14 @@ async function buildCrewHome(auth: NonNullable<Express.Request["auth"]>) {
     })
     .from(dailyLogs)
     .leftJoin(jobs, eq(dailyLogs.jobId, jobs.id))
-    .where(and(eq(dailyLogs.createdBy, userId), isNull(dailyLogs.deletedAt)))
+    .where(
+      and(
+        eq(dailyLogs.createdBy, userId),
+        dailyLogsOrgCondition,
+        jobsOrgCondition,
+        isNull(dailyLogs.deletedAt),
+      ),
+    )
     .orderBy(desc(dailyLogs.logDate), desc(dailyLogs.createdAt))
     .limit(1);
 
@@ -595,6 +608,9 @@ async function buildCrewHome(auth: NonNullable<Express.Request["auth"]>) {
     .where(
       and(
         or(eq(scheduleItemTodos.isComplete, false), isNull(scheduleItemTodos.isComplete)),
+        todosOrgCondition,
+        scheduleOrgCondition,
+        jobsOrgCondition,
         isNull(scheduleItems.deletedAt),
         or(
           eq(scheduleItemTodos.createdBy, userId),
@@ -671,7 +687,12 @@ async function buildPmHome(auth: NonNullable<Express.Request["auth"]>) {
       role: "pm" as const,
       today,
       week: { start: weekStart, end: weekEnd, items: [] },
-      atRisk: { overdueScheduleItems: 0, jobsMissingLogs: 0, pendingChangeOrders: 0, samples: [] },
+      atRisk: {
+        overdueScheduleItems: 0,
+        jobsMissingLogs: 0,
+        pendingChangeOrders: 0,
+        samples: { overdue: [], missingLogJobs: [], pendingChangeOrders: [] },
+      },
       teamLogs: [],
       summary: { activeJobs: 0, openLeads: 0, openScheduleItems: 0 },
     };
@@ -948,23 +969,30 @@ async function buildPmHome(auth: NonNullable<Express.Request["auth"]>) {
 async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
   const today = todayIso();
   const monthStart = startOfMonthIso(today);
+  const jobsOrgCondition = organizationScopeCondition(auth, jobs.organizationId);
+  const leadsOrgCondition = organizationScopeCondition(auth, leads.organizationId);
+  const scheduleOrgCondition = organizationScopeCondition(auth, scheduleItems.organizationId);
+  const clientsOrgCondition = organizationScopeCondition(auth, clients.organizationId);
+  const trackersOrgCondition = organizationScopeCondition(auth, financialTrackers.organizationId);
+  const paymentsOrgCondition = organizationScopeCondition(auth, invoiceLinePayments.organizationId);
 
   // KPI counts.
   const kpiPromise = Promise.all([
     db
       .select({ total: count() })
       .from(jobs)
-      .where(and(isNull(jobs.deletedAt), eq(jobs.status, "open"))),
+      .where(and(isNull(jobs.deletedAt), jobsOrgCondition, eq(jobs.status, "open"))),
     db
       .select({ total: count() })
       .from(leads)
-      .where(and(isNull(leads.deletedAt), eq(leads.status, "open"))),
+      .where(and(isNull(leads.deletedAt), leadsOrgCondition, eq(leads.status, "open"))),
     db
       .select({ total: count() })
       .from(jobs)
       .where(
         and(
           isNull(jobs.deletedAt),
+          jobsOrgCondition,
           gte(jobs.createdAt, new Date(`${monthStart}T00:00:00Z`)),
         ),
       ),
@@ -983,7 +1011,7 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
     .innerJoin(sovAreas, eq(sovLineItems.areaId, sovAreas.id))
     .innerJoin(financialTrackers, eq(sovAreas.trackerId, financialTrackers.id))
     .innerJoin(jobs, eq(financialTrackers.jobId, jobs.id))
-    .where(isNull(jobs.deletedAt));
+    .where(and(isNull(jobs.deletedAt), jobsOrgCondition, trackersOrgCondition));
 
   const approvedCoRowsPromise = db
     .select({
@@ -995,7 +1023,7 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
     .from(changeOrders)
     .innerJoin(financialTrackers, eq(changeOrders.trackerId, financialTrackers.id))
     .innerJoin(jobs, eq(financialTrackers.jobId, jobs.id))
-    .where(isNull(jobs.deletedAt));
+    .where(and(isNull(jobs.deletedAt), jobsOrgCondition, trackersOrgCondition));
 
   // Past-due invoices sample (tracker-level; we need totals + payments).
   const invoiceRowsPromise = db
@@ -1013,7 +1041,7 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
     .innerJoin(financialTrackers, eq(trackerInvoices.trackerId, financialTrackers.id))
     .innerJoin(jobs, eq(financialTrackers.jobId, jobs.id))
     .leftJoin(clients, eq(jobs.clientId, clients.id))
-    .where(isNull(jobs.deletedAt))
+    .where(and(isNull(jobs.deletedAt), jobsOrgCondition, trackersOrgCondition))
     .orderBy(desc(trackerInvoices.invoiceDate))
     .limit(200);
 
@@ -1023,13 +1051,14 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
       paidCents: sql<number>`coalesce(sum(${invoiceLinePayments.amountCents}), 0)`,
     })
     .from(invoiceLinePayments)
+    .where(paymentsOrgCondition)
     .groupBy(invoiceLinePayments.invoiceId);
 
   // Jobs by status (the closest thing we have to a "stage" today).
   const jobsByStatusPromise = db
     .select({ status: jobs.status, total: count() })
     .from(jobs)
-    .where(isNull(jobs.deletedAt))
+    .where(and(isNull(jobs.deletedAt), jobsOrgCondition))
     .groupBy(jobs.status);
 
   // Recent leads.
@@ -1044,7 +1073,7 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
       createdAt: leads.createdAt,
     })
     .from(leads)
-    .where(isNull(leads.deletedAt))
+    .where(and(isNull(leads.deletedAt), leadsOrgCondition))
     .orderBy(desc(leads.createdAt))
     .limit(ADMIN_RECENT_LEADS_LIMIT);
 
@@ -1066,6 +1095,8 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
     .where(
       and(
         isNull(scheduleItems.deletedAt),
+        scheduleOrgCondition,
+        jobsOrgCondition,
         isNull(jobs.deletedAt),
         lte(scheduleItems.startDate, calendarEnd),
         gte(scheduleItems.endDate, calendarStart),
@@ -1126,7 +1157,7 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
     ? await db
         .select({ id: clients.id, name: clients.companyName })
         .from(clients)
-        .where(inArray(clients.id, clientIds))
+        .where(and(inArray(clients.id, clientIds), clientsOrgCondition))
     : [];
   const clientNameById = new Map(clientNameRows.map((r) => [r.id, r.name]));
 
@@ -1171,6 +1202,7 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
     .where(
       and(
         isNull(jobs.deletedAt),
+        jobsOrgCondition,
         gte(jobs.createdAt, new Date(`${monthStart}T00:00:00Z`)),
       ),
     );

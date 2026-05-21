@@ -9,7 +9,7 @@
 export interface ScheduleNoteEntry {
   id: string;
   note: string;
-  createdAt: Date;
+  createdAt: string;
   authorId?: string | null;
   authorName?: string | null;
   authorAvatarUrl?: string | null;

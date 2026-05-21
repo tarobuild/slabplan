@@ -7,8 +7,8 @@
  */
 
 /**
- * Request schema derived from moveFolderSchema in artifacts/api-server/src/routes/folders.ts.
+ * Request body for moving a folder.
  */
 export interface FoldersMoveFolderSchema {
-  [key: string]: unknown;
+  destinationFolderId?: string | null;
 }

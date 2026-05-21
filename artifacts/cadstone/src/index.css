@@ -73,41 +73,46 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  /* SlabPlan light mode */
-  --background: 210 20% 98%;
-  --foreground: 222 47% 11%;
-  --border: 220 13% 91%;
+  /* SlabPlan light mode: warm stone neutrals + shop-floor green + oxide */
+  --background: 42 23% 97%;
+  --foreground: 210 16% 14%;
+  --border: 38 15% 85%;
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 220 13% 91%;
+  --card-foreground: 210 16% 14%;
+  --card-border: 38 15% 86%;
   --sidebar: 0 0% 100%;
-  --sidebar-foreground: 222 47% 11%;
-  --sidebar-border: 220 13% 91%;
-  --sidebar-primary: 24 97% 46%;
+  --sidebar-foreground: 210 16% 14%;
+  --sidebar-border: 38 15% 86%;
+  --sidebar-primary: 162 48% 28%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 14% 96%;
-  --sidebar-accent-foreground: 222 47% 11%;
-  --sidebar-ring: 24 97% 46%;
+  --sidebar-accent: 40 23% 92%;
+  --sidebar-accent-foreground: 210 16% 14%;
+  --sidebar-ring: 162 48% 28%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --popover-border: 220 13% 91%;
-  --primary: 24 97% 46%;
+  --popover-foreground: 210 16% 14%;
+  --popover-border: 38 15% 86%;
+  --primary: 162 48% 28%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 217 19% 27%;
-  --muted: 210 20% 98%;
-  --muted-foreground: 220 9% 46%;
-  --accent: 24 100% 95%;
-  --accent-foreground: 24 97% 35%;
+  --secondary: 40 23% 92%;
+  --secondary-foreground: 210 11% 29%;
+  --muted: 42 18% 94%;
+  --muted-foreground: 210 8% 43%;
+  --accent: 31 64% 93%;
+  --accent-foreground: 24 74% 24%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  --input: 220 13% 91%;
-  --ring: 24 97% 46%;
-  --chart-1: 24 97% 46%;
-  --chart-2: 142 71% 45%;
-  --chart-3: 38 92% 50%;
+  --input: 38 15% 84%;
+  --ring: 162 48% 28%;
+  --chart-1: 162 48% 28%;
+  --chart-2: 31 66% 42%;
+  --chart-3: 47 77% 45%;
   --chart-4: 0 72% 51%;
-  --chart-5: 270 70% 55%;
+  --chart-5: 205 12% 42%;
+  --nav: 207 14% 17%;
+  --nav-foreground: 48 24% 93%;
+  --nav-muted: 45 10% 72%;
+  --oxide: 31 66% 42%;
+  --limestone: 42 23% 97%;
 
   --app-font-sans: 'Inter', system-ui, sans-serif;
   --app-font-serif: Georgia, serif;
@@ -147,40 +152,45 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 222 47% 11%;
-  --foreground: 210 20% 98%;
-  --border: 218 17% 25%;
-  --card: 215 28% 17%;
+  --background: 210 15% 11%;
+  --foreground: 48 24% 93%;
+  --border: 210 12% 24%;
+  --card: 210 13% 15%;
   --card-foreground: 210 20% 98%;
-  --card-border: 218 17% 25%;
-  --sidebar: 215 28% 15%;
+  --card-border: 210 12% 24%;
+  --sidebar: 210 15% 12%;
   --sidebar-foreground: 210 20% 98%;
-  --sidebar-border: 218 17% 25%;
-  --sidebar-primary: 24 97% 55%;
+  --sidebar-border: 210 12% 24%;
+  --sidebar-primary: 156 46% 48%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 218 17% 22%;
+  --sidebar-accent: 210 13% 19%;
   --sidebar-accent-foreground: 210 20% 98%;
-  --sidebar-ring: 24 97% 55%;
-  --popover: 215 28% 17%;
+  --sidebar-ring: 156 46% 48%;
+  --popover: 210 13% 15%;
   --popover-foreground: 210 20% 98%;
-  --popover-border: 218 17% 25%;
-  --primary: 24 97% 55%;
+  --popover-border: 210 12% 24%;
+  --primary: 156 46% 48%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 218 17% 22%;
+  --secondary: 210 13% 19%;
   --secondary-foreground: 210 20% 98%;
-  --muted: 218 17% 20%;
-  --muted-foreground: 220 9% 60%;
-  --accent: 24 30% 18%;
-  --accent-foreground: 24 97% 65%;
+  --muted: 210 13% 18%;
+  --muted-foreground: 44 10% 65%;
+  --accent: 31 34% 18%;
+  --accent-foreground: 31 74% 70%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  --input: 218 17% 25%;
-  --ring: 24 97% 55%;
-  --chart-1: 24 97% 55%;
-  --chart-2: 142 71% 50%;
-  --chart-3: 38 92% 55%;
+  --input: 210 12% 24%;
+  --ring: 156 46% 48%;
+  --chart-1: 156 46% 48%;
+  --chart-2: 31 74% 58%;
+  --chart-3: 47 77% 55%;
   --chart-4: 0 72% 58%;
-  --chart-5: 270 70% 62%;
+  --chart-5: 205 18% 62%;
+  --nav: 210 15% 11%;
+  --nav-foreground: 48 24% 93%;
+  --nav-muted: 45 10% 72%;
+  --oxide: 31 74% 58%;
+  --limestone: 210 15% 11%;
 
   --shadow-2xs: 0 1px 2px 0 rgba(0,0,0,0.3);
   --shadow-xs: 0 1px 2px 0 rgba(0,0,0,0.4);
@@ -237,6 +247,12 @@
 
   input[type="search"]::-webkit-search-cancel-button {
     @apply hidden;
+  }
+
+  .app-surface {
+    background:
+      radial-gradient(circle at 0% 0%, hsl(var(--accent) / 0.32), transparent 26rem),
+      hsl(var(--background));
   }
 
   [contenteditable][data-placeholder]:empty::before {

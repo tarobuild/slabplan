@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useParams, useSearchParams } from "react-router-dom"
 import { useDropzone } from "react-dropzone"
 import {
   AlertTriangle,
@@ -104,6 +104,7 @@ type BreadcrumbItem = {
 
 type FileItem = {
   id: string
+  folderId?: string
   filename: string
   originalName: string | null
   fileUrl: string | null
@@ -156,7 +157,7 @@ function fmtDate(d: string) {
 
 function FileIcon({ mimeType }: { mimeType: string | null }) {
   if (!mimeType) return <File className="size-4 text-slate-400" />
-  if (mimeType.startsWith("image/")) return <span className="text-blue-500 text-sm">🖼️</span>
+  if (mimeType.startsWith("image/")) return <span className="text-primary text-sm">🖼️</span>
   if (mimeType.startsWith("video/")) return <span className="text-purple-500 text-sm">🎬</span>
   if (mimeType === "application/pdf") return <span className="text-red-500 text-sm">📄</span>
   return <FileText className="size-4 text-slate-400" />
@@ -282,7 +283,7 @@ export default function FileBrowser({
   const resolvedDefault: ViewMode =
     defaultView ?? (mediaType === "document" ? "list" : "grid")
 
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+	  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [currentFolder, setCurrentFolder] = useState<FolderItem | null>(null)
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([])
   const [folders, setFolders] = useState<FolderItem[]>([])
@@ -333,11 +334,18 @@ export default function FileBrowser({
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([])
   const [uploadNote, setUploadNote] = useState("")
-  const fileInputRef = useRef<HTMLInputElement>(null)
+	  const fileInputRef = useRef<HTMLInputElement>(null)
+	  const uploadInFlightRef = useRef(false)
+	  const folderLoadSeqRef = useRef(0)
+	  const fileLoadSeqRef = useRef(0)
+  const deepLinkSeqRef = useRef(0)
+  const lastHandledDeepLinkRef = useRef<string | null>(null)
+  const [searchParams] = useSearchParams()
 
   const filePreview = useFilePreview()
 
   const loadFolders = (parentId: string | null = null) => {
+    const requestSeq = ++folderLoadSeqRef.current
     setLoading(true)
     if (!isResourceScope && !jobId) {
       setLoading(false)
@@ -355,15 +363,25 @@ export default function FileBrowser({
           : `/jobs/${jobId}/folders?${params}`,
 	      )
 	      .then((r) => {
+          if (requestSeq !== folderLoadSeqRef.current) return
 	        setFolders(r.data.folders ?? [])
 	        setCurrentFolder(r.data.currentFolder ?? null)
 	        setBreadcrumb(r.data.breadcrumb ?? [])
 	      })
-      .catch((err: unknown) => toastApiError(err, "Failed to load folders"))
-      .finally(() => setLoading(false))
+      .catch((err: unknown) => {
+        if (requestSeq === folderLoadSeqRef.current) {
+          toastApiError(err, "Failed to load folders")
+        }
+      })
+      .finally(() => {
+        if (requestSeq === folderLoadSeqRef.current) {
+          setLoading(false)
+        }
+      })
   }
 
-  const loadFiles = (folderId: string) => {
+  const loadFiles = useCallback((folderId: string) => {
+    const requestSeq = ++fileLoadSeqRef.current
     setFilesLoading(true)
     api
       .get(
@@ -371,12 +389,26 @@ export default function FileBrowser({
           ? `/resources/folders/${folderId}/files`
           : `/folders/${folderId}/files?page=1&limit=100`,
       )
-      .then((r) => setFiles(r.data.files ?? []))
-      .catch((err: unknown) => toastApiError(err, "Failed to load files"))
-      .finally(() => setFilesLoading(false))
-  }
+      .then((r) => {
+        if (requestSeq === fileLoadSeqRef.current) {
+          setFiles(r.data.files ?? [])
+        }
+      })
+      .catch((err: unknown) => {
+        if (requestSeq === fileLoadSeqRef.current) {
+          toastApiError(err, "Failed to load files")
+        }
+      })
+      .finally(() => {
+        if (requestSeq === fileLoadSeqRef.current) {
+          setFilesLoading(false)
+        }
+      })
+  }, [isResourceScope])
 
 	  useEffect(() => {
+      folderLoadSeqRef.current += 1
+      fileLoadSeqRef.current += 1
 	    setCurrentFolderId(null)
 	    setCurrentFolder(null)
 	    setFiles([])
@@ -536,11 +568,14 @@ export default function FileBrowser({
 
   const handleUploadSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return
-    if (uploadTask) {
+    const targetFolderId = currentFolderId
+    if (!targetFolderId) return
+    if (uploadTask || uploadInFlightRef.current) {
       toast.info("Wait for the current upload to finish or cancel it first.")
       if (fileInputRef.current) fileInputRef.current.value = ""
       return
     }
+    uploadInFlightRef.current = true
     const nextFiles = Array.from(e.target.files)
     // Single helper runs the synchronous type/size/count checks and
     // then the async video-duration probe so a long clip is rejected
@@ -549,6 +584,7 @@ export default function FileBrowser({
 
     if (validationError) {
       setUploadError(validationError)
+      uploadInFlightRef.current = false
       if (fileInputRef.current) fileInputRef.current.value = ""
       return
     }
@@ -557,18 +593,21 @@ export default function FileBrowser({
       setUploadError(null)
       setSelectedUploadFiles(nextFiles)
       setUploadDialogOpen(true)
+      uploadInFlightRef.current = false
       return
     }
 
     // Instant upload — no dialog
     if (fileInputRef.current) fileInputRef.current.value = ""
-    void uploadFilesImmediately(nextFiles)
+    uploadInFlightRef.current = false
+    void uploadFilesImmediately(nextFiles, undefined, targetFolderId)
   }
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (uploadTask) return
-    if (!currentFolderId || selectedUploadFiles.length === 0) {
+    if (uploadTask || uploadInFlightRef.current) return
+    const targetFolderId = currentFolderId
+    if (!targetFolderId || selectedUploadFiles.length === 0) {
       setUploadError("Select at least one file to upload.")
       return
     }
@@ -578,39 +617,40 @@ export default function FileBrowser({
       return
     }
 
-    const formData = new FormData()
-    selectedUploadFiles.forEach((file) => formData.append("files", file))
-    if (uploadNote.trim()) {
-      formData.append("note", uploadNote.trim())
-    }
-    // Capture the per-file duration the same way the validator does so
-    // the server can persist it once instead of every render re-decoding
-    // the clip (Task #368). Probe failures yield null and we still
-    // upload — the column is purely a UX hint.
-    const durations = await probeVideoDurations(selectedUploadFiles)
-    if (durations.some((d) => d != null)) {
-      formData.append("videoDurations", JSON.stringify(durations))
-    }
+    uploadInFlightRef.current = true
     const controller = new AbortController()
     const totalBytes = selectedUploadFiles.reduce((sum, f) => sum + f.size, 0)
     const taskId = Date.now()
-    setUploadTask({
-      id: taskId,
-      fileNames: selectedUploadFiles.map((f) => f.name),
-      fileCount: selectedUploadFiles.length,
-      totalBytes,
-      loaded: 0,
-      percent: 0,
-      status: "uploading",
-      retryAttempt: 0,
-      retryReason: null,
-      abort: () => controller.abort(),
-    })
     try {
+      const formData = new FormData()
+      selectedUploadFiles.forEach((file) => formData.append("files", file))
+      if (uploadNote.trim()) {
+        formData.append("note", uploadNote.trim())
+      }
+      // Capture the per-file duration the same way the validator does so
+      // the server can persist it once instead of every render re-decoding
+      // the clip (Task #368). Probe failures yield null and we still
+      // upload — the column is purely a UX hint.
+      const durations = await probeVideoDurations(selectedUploadFiles)
+      if (durations.some((d) => d != null)) {
+        formData.append("videoDurations", JSON.stringify(durations))
+      }
+      setUploadTask({
+        id: taskId,
+        fileNames: selectedUploadFiles.map((f) => f.name),
+        fileCount: selectedUploadFiles.length,
+        totalBytes,
+        loaded: 0,
+        percent: 0,
+        status: "uploading",
+        retryAttempt: 0,
+        retryReason: null,
+        abort: () => controller.abort(),
+      })
       await uploadWithProgress({
         url: isResourceScope
-          ? `/resources/folders/${currentFolderId}/upload`
-          : `/folders/${currentFolderId}/files`,
+          ? `/resources/folders/${targetFolderId}/upload`
+          : `/folders/${targetFolderId}/files`,
         formData,
         signal: controller.signal,
         onProgress: (p) =>
@@ -637,7 +677,7 @@ export default function FileBrowser({
       setUploadDialogOpen(false)
       setSelectedUploadFiles([])
       setUploadNote("")
-      loadFiles(currentFolderId)
+      loadFiles(targetFolderId)
     } catch (err: unknown) {
       if ((err as { code?: string })?.code === "UPLOAD_ABORTED") {
         toast.info("Upload cancelled")
@@ -645,17 +685,124 @@ export default function FileBrowser({
         toastApiError(err, "Upload failed")
       }
     } finally {
+      uploadInFlightRef.current = false
       setUploadTask(null)
       if (fileInputRef.current) fileInputRef.current.value = ""
     }
   }
 
+  const buildFileViewUrlForFolder = (fileId: string, folderId: string): string =>
+    isResourceScope
+      ? `/resources/folders/${folderId}/files/${fileId}/view`
+      : `/folders/${folderId}/files/${fileId}/view`
+
   const buildFileViewUrl = (fileId: string): string | null => {
     if (!currentFolderId) return null
-    return isResourceScope
-      ? `/resources/folders/${currentFolderId}/files/${fileId}/view`
-      : `/folders/${currentFolderId}/files/${fileId}/view`
+    return buildFileViewUrlForFolder(fileId, currentFolderId)
   }
+
+  const fileItemToPreviewForFolder = useCallback(
+    (file: FileItem, folderId: string): PreviewFile => ({
+      id: file.id,
+      fileId: file.id,
+      viewUrl: buildFileViewUrlForFolder(file.id, folderId),
+      name: displayName(file),
+      mimeType: file.mimeType,
+      fileSize: file.fileSize,
+      uploadedByName: file.uploadedByName,
+      createdAt: file.createdAt,
+    }),
+    [isResourceScope],
+  )
+
+  useEffect(() => {
+    const linkedFolderId = searchParams.get("folder")
+    const linkedFileId = searchParams.get("file")
+
+    if (!linkedFolderId && !linkedFileId) return
+    if (!isResourceScope && !jobId) return
+
+    const deepLinkKey = `${scope}:${jobId ?? ""}:${mediaType}:${linkedFolderId ?? ""}:${linkedFileId ?? ""}`
+    if (lastHandledDeepLinkRef.current === deepLinkKey) return
+
+    lastHandledDeepLinkRef.current = deepLinkKey
+    const requestSeq = ++deepLinkSeqRef.current
+    folderLoadSeqRef.current += 1
+    fileLoadSeqRef.current += 1
+
+    async function openDeepLink() {
+      try {
+        let targetFolderId = linkedFolderId
+        let targetFile: FileItem | null = null
+
+        if (linkedFileId) {
+          const fileResponse = await api.get<{ file: FileItem }>(`/files/${linkedFileId}`)
+          if (requestSeq !== deepLinkSeqRef.current) return
+          targetFile = fileResponse.data.file
+          targetFolderId = targetFile.folderId ?? targetFolderId
+        }
+
+        if (!targetFolderId) return
+
+        setCurrentFolderId(targetFolderId)
+        setCurrentFolder(null)
+        setFiles([])
+        setLoading(true)
+        setFilesLoading(true)
+
+        const params = new URLSearchParams()
+        if (!isResourceScope) params.set("mediaType", mediaType)
+        params.set("parentId", targetFolderId)
+
+        const [folderResponse, fileListResponse] = await Promise.all([
+          api.get(
+            isResourceScope
+              ? `/resources/folders?${params}`
+              : `/jobs/${jobId}/folders?${params}`,
+          ),
+          api.get(
+            isResourceScope
+              ? `/resources/folders/${targetFolderId}/files`
+              : `/folders/${targetFolderId}/files?page=1&limit=100`,
+          ),
+        ])
+
+        if (requestSeq !== deepLinkSeqRef.current) return
+
+        const loadedFiles: FileItem[] = fileListResponse.data.files ?? []
+        setFolders(folderResponse.data.folders ?? [])
+        setCurrentFolder(folderResponse.data.currentFolder ?? null)
+        setBreadcrumb(folderResponse.data.breadcrumb ?? [])
+        setFiles(loadedFiles)
+
+        if (linkedFileId) {
+          const fileToOpen = loadedFiles.find((file) => file.id === linkedFileId) ?? targetFile
+          if (fileToOpen) {
+            const previewFiles = loadedFiles.length > 0 ? loadedFiles : [fileToOpen]
+            const index = Math.max(
+              0,
+              previewFiles.findIndex((file) => file.id === fileToOpen.id),
+            )
+            filePreview.open(
+              previewFiles.map((file) => fileItemToPreviewForFolder(file, targetFolderId)),
+              index,
+            )
+          }
+        }
+      } catch (err: unknown) {
+        if (requestSeq === deepLinkSeqRef.current) {
+          toastApiError(err, "Failed to open linked file")
+        }
+      } finally {
+        if (requestSeq === deepLinkSeqRef.current) {
+          setLoading(false)
+          setFilesLoading(false)
+        }
+      }
+    }
+
+    void openDeepLink()
+  }, [fileItemToPreviewForFolder, filePreview, isResourceScope, jobId, mediaType, scope, searchParams])
 
   const handleDownload = async (file: FileItem) => {
     const url = buildFileViewUrl(file.id)
@@ -819,44 +966,49 @@ export default function FileBrowser({
 	    (user?.role === "admin" ||
 	      (!isResourceScope && currentFolderAllowsUpload))
 
-  async function uploadFilesImmediately(files: File[], note?: string) {
-    if (!currentFolderId || files.length === 0) return
-    if (uploadTask) {
+  const uploadFilesImmediately = useCallback(async (
+    files: File[],
+    note?: string,
+    targetFolderId = currentFolderId,
+  ) => {
+    if (!targetFolderId || files.length === 0) return
+    if (uploadTask || uploadInFlightRef.current) {
       toast.info("Wait for the current upload to finish or cancel it first.")
       return
     }
-    const formData = new FormData()
-    files.forEach((file) => formData.append("files", file))
-    if (note?.trim()) {
-      formData.append("note", note.trim())
-    }
-    // Same per-file duration capture as the dialog upload path — see
-    // Task #368.
-    const durations = await probeVideoDurations(files)
-    if (durations.some((d) => d != null)) {
-      formData.append("videoDurations", JSON.stringify(durations))
-    }
     setUploadError(null)
+    uploadInFlightRef.current = true
     const controller = new AbortController()
     const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
     const taskId = Date.now()
-    setUploadTask({
-      id: taskId,
-      fileNames: files.map((f) => f.name),
-      fileCount: files.length,
-      totalBytes,
-      loaded: 0,
-      percent: 0,
-      status: "uploading",
-      retryAttempt: 0,
-      retryReason: null,
-      abort: () => controller.abort(),
-    })
     try {
+      const formData = new FormData()
+      files.forEach((file) => formData.append("files", file))
+      if (note?.trim()) {
+        formData.append("note", note.trim())
+      }
+      // Same per-file duration capture as the dialog upload path — see
+      // Task #368.
+      const durations = await probeVideoDurations(files)
+      if (durations.some((d) => d != null)) {
+        formData.append("videoDurations", JSON.stringify(durations))
+      }
+      setUploadTask({
+        id: taskId,
+        fileNames: files.map((f) => f.name),
+        fileCount: files.length,
+        totalBytes,
+        loaded: 0,
+        percent: 0,
+        status: "uploading",
+        retryAttempt: 0,
+        retryReason: null,
+        abort: () => controller.abort(),
+      })
       await uploadWithProgress({
         url: isResourceScope
-          ? `/resources/folders/${currentFolderId}/upload`
-          : `/folders/${currentFolderId}/files`,
+          ? `/resources/folders/${targetFolderId}/upload`
+          : `/folders/${targetFolderId}/files`,
         formData,
         signal: controller.signal,
         onProgress: (p) =>
@@ -880,7 +1032,7 @@ export default function FileBrowser({
         },
       })
       toast.success(`${files.length} file(s) uploaded`)
-      loadFiles(currentFolderId)
+      loadFiles(targetFolderId)
     } catch (err: unknown) {
       if ((err as { code?: string })?.code === "UPLOAD_ABORTED") {
         toast.info("Upload cancelled")
@@ -888,22 +1040,27 @@ export default function FileBrowser({
         toastApiError(err, "Upload failed")
       }
     } finally {
+      uploadInFlightRef.current = false
       setUploadTask(null)
     }
-  }
+  }, [currentFolderId, isResourceScope, loadFiles, uploadTask])
 
   const onDrop = useCallback(
     async (droppedFiles: File[]) => {
       if (!canUploadFiles) return
+      const targetFolderId = currentFolderId
+      if (!targetFolderId) return
       // Refuse a second concurrent upload — we only track one task and
       // letting another overwrite it would corrupt the progress UI.
-      if (uploadTask) {
+      if (uploadTask || uploadInFlightRef.current) {
         toast.info("Wait for the current upload to finish or cancel it first.")
         return
       }
+      uploadInFlightRef.current = true
       const validationError = await validateSelectedFilesAsync(droppedFiles, mediaType)
       if (validationError) {
         setUploadError(validationError)
+        uploadInFlightRef.current = false
         return
       }
       if (showCrewPhotoNote) {
@@ -911,12 +1068,21 @@ export default function FileBrowser({
         setUploadError(null)
         setSelectedUploadFiles(droppedFiles)
         setUploadDialogOpen(true)
+        uploadInFlightRef.current = false
         return
       }
+      uploadInFlightRef.current = false
       // Instant upload — no dialog
-      void uploadFilesImmediately(droppedFiles)
+      void uploadFilesImmediately(droppedFiles, undefined, targetFolderId)
     },
-    [canUploadFiles, mediaType, showCrewPhotoNote, uploadTask],
+    [
+      canUploadFiles,
+      currentFolderId,
+      mediaType,
+      showCrewPhotoNote,
+      uploadTask,
+      uploadFilesImmediately,
+    ],
   )
 
   const { getRootProps, getInputProps, isDragActive, open: openDropzone } = useDropzone({
@@ -933,7 +1099,7 @@ export default function FileBrowser({
           <button
             onClick={() => navigateTo(null)}
             className={`font-medium transition-colors shrink-0 ${
-              currentFolderId ? "text-orange-600 hover:underline" : "text-slate-900"
+              currentFolderId ? "text-primary hover:underline" : "text-slate-900"
             }`}
           >
             {rootFolderLabel}
@@ -946,7 +1112,7 @@ export default function FileBrowser({
                 className={`font-medium transition-colors truncate ${
                   crumb.id === currentFolderId
                     ? "text-slate-900"
-                    : "text-orange-600 hover:underline"
+                    : "text-primary hover:underline"
                 }`}
               >
                 {crumb.title}
@@ -1056,7 +1222,7 @@ export default function FileBrowser({
           className={`rounded-lg border px-3 py-2.5 text-sm ${
             uploadTask.status === "retrying"
               ? "border-amber-200 bg-amber-50"
-              : "border-orange-200 bg-orange-50"
+              : "border-primary/20 bg-primary/10"
           }`}
           role="status"
           aria-live="polite"
@@ -1066,12 +1232,12 @@ export default function FileBrowser({
               {uploadTask.status === "retrying" ? (
                 <AlertTriangle className="size-4 shrink-0 text-amber-600" />
               ) : (
-                <Loader2 className="size-4 shrink-0 animate-spin text-orange-600" />
+                <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
               )}
               <div className="min-w-0">
                 <div
                   className={`font-medium ${
-                    uploadTask.status === "retrying" ? "text-amber-800" : "text-orange-800"
+                    uploadTask.status === "retrying" ? "text-amber-800" : "text-primary"
                   }`}
                 >
                   {uploadTask.status === "retrying"
@@ -1137,13 +1303,13 @@ export default function FileBrowser({
           {currentFolderId && (
             <div
               {...getRootProps()}
-              className={`relative mt-3 rounded-lg transition-colors ${isDragActive ? "ring-2 ring-orange-400 ring-dashed bg-orange-50/50" : ""}`}
+              className={`relative mt-3 rounded-lg transition-colors ${isDragActive ? "ring-2 ring-primary/45 ring-dashed bg-accent/50" : ""}`}
             >
               <input {...getInputProps()} />
               {isDragActive && (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-orange-400 bg-orange-50/80">
-                  <Upload className="mb-2 size-6 text-orange-500" />
-                  <span className="text-sm font-medium text-orange-600">Drop files here</span>
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-primary/45 bg-accent/85">
+                  <Upload className="mb-2 size-6 text-primary" />
+                  <span className="text-sm font-medium text-primary">Drop files here</span>
                 </div>
               )}
               {filesLoading ? (
@@ -1188,7 +1354,7 @@ export default function FileBrowser({
                     <div
                       onClick={() => { setUploadError(null); openDropzone() }}
                       className={`mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-3 transition-colors ${
-                        isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 hover:border-orange-400 hover:bg-orange-50/50"
+                        isDragActive ? "border-primary/45 bg-primary/10" : "border-slate-300 hover:border-primary/45 hover:bg-accent/50"
                       }`}
                     >
                       <Upload className="size-4 text-slate-400" />
@@ -1201,7 +1367,7 @@ export default function FileBrowser({
                   <div
                     onClick={() => { setUploadError(null); openDropzone() }}
                     className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed py-16 text-center transition-colors ${
-                      isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 hover:border-orange-400 hover:bg-orange-50/50"
+                      isDragActive ? "border-primary/45 bg-primary/10" : "border-slate-300 hover:border-primary/45 hover:bg-accent/50"
                     }`}
                   >
                     <Upload className="mx-auto mb-3 size-8 text-slate-300" />
@@ -1220,7 +1386,7 @@ export default function FileBrowser({
                 <div
                   onClick={() => { setUploadError(null); openDropzone() }}
                   className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed py-8 text-center transition-colors ${
-                    isDragActive ? "border-orange-400 bg-orange-50" : "border-slate-300 hover:border-orange-400 hover:bg-orange-50/50"
+                    isDragActive ? "border-primary/45 bg-primary/10" : "border-slate-300 hover:border-primary/45 hover:bg-accent/50"
                   }`}
                 >
                   <Upload className="mb-2 size-5 text-slate-300" />
@@ -1247,7 +1413,7 @@ export default function FileBrowser({
                     setNewFolderName("")
                     setCreateFolderOpen(true)
                   }}
-                  className="mt-1 text-sm text-orange-600 hover:underline"
+                  className="mt-1 text-sm text-primary hover:underline"
                 >
                   Create the first folder
                 </button>
@@ -1300,7 +1466,7 @@ export default function FileBrowser({
                 className={`rounded-lg border px-3 py-2.5 text-sm ${
                   uploadTask.status === "retrying"
                     ? "border-amber-200 bg-amber-50"
-                    : "border-orange-200 bg-orange-50"
+                    : "border-primary/20 bg-primary/10"
                 }`}
                 role="status"
                 aria-live="polite"
@@ -1309,11 +1475,11 @@ export default function FileBrowser({
                   {uploadTask.status === "retrying" ? (
                     <AlertTriangle className="size-4 shrink-0 text-amber-600" />
                   ) : (
-                    <Loader2 className="size-4 shrink-0 animate-spin text-orange-600" />
+                    <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
                   )}
                   <div
                     className={`font-medium ${
-                      uploadTask.status === "retrying" ? "text-amber-800" : "text-orange-800"
+                      uploadTask.status === "retrying" ? "text-amber-800" : "text-primary"
                     }`}
                   >
                     {uploadTask.status === "retrying"
@@ -1618,7 +1784,7 @@ function FolderCard({
 	  onDelete: () => void
 	}) {
   return (
-    <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-orange-200 hover:bg-orange-50/30 transition-colors cursor-pointer select-none">
+    <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-primary/20 hover:bg-accent/40 transition-colors cursor-pointer select-none">
       <button
         className="absolute inset-0 rounded-xl"
         onClick={onOpen}
@@ -1786,7 +1952,7 @@ function AuthPhoto({
   return (
     <div
       ref={containerRef}
-      className="group relative flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-orange-300 transition-colors text-left"
+      className="group relative flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-primary/35 transition-colors text-left"
     >
       <button onClick={onClick} className="flex flex-col text-left">
         <div className="relative aspect-square overflow-hidden bg-slate-100">
@@ -1912,7 +2078,7 @@ function VideoGrid({
         return (
           <div
             key={file.id}
-            className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-orange-300 transition-colors text-left"
+            className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-primary/35 transition-colors text-left"
           >
             <button
               onClick={() => onOpenPlayer(file)}
@@ -2119,7 +2285,7 @@ function FileTable({
                       <button
                         type="button"
                         onClick={() => onOpenLightbox!(file)}
-                        className="text-orange-600 hover:underline truncate max-w-xs text-left"
+                        className="text-primary hover:underline truncate max-w-xs text-left"
                       >
                         {label}
                       </button>
@@ -2127,7 +2293,7 @@ function FileTable({
                       <button
                         type="button"
                         onClick={() => onOpenPlayer!(file)}
-                        className="text-orange-600 hover:underline truncate max-w-xs text-left"
+                        className="text-primary hover:underline truncate max-w-xs text-left"
                       >
                         {label}
                       </button>
@@ -2135,7 +2301,7 @@ function FileTable({
                       <button
                         type="button"
                         onClick={() => onOpenInNewTab(file)}
-                        className="text-orange-600 hover:underline truncate max-w-xs text-left"
+                        className="text-primary hover:underline truncate max-w-xs text-left"
                       >
                         {label}
                       </button>

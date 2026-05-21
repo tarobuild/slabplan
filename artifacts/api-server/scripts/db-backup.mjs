@@ -74,7 +74,7 @@ function fail(event, extra) {
  */
 async function findMostRecentSuccessfulBackup(excludeIsoDate) {
   try {
-    const files = await storage.listAllObjects(`${backupPrefix}/`);
+    const files = await getStorage().listAllObjects(`${backupPrefix}/`);
     let best = null;
     for (const f of files) {
       const m = /\/(\d{4}-\d{2}-\d{2})\.sql\.gz$/.exec(f.name);
@@ -105,7 +105,43 @@ if (!dbUrl) {
   fail("missing_env", { var: "SUPABASE_DATABASE_URL or DATABASE_URL" });
 }
 
-const storage = createSupabaseStorage();
+let storage;
+
+function getStorage() {
+  if (!storage) {
+    storage = createSupabaseStorage();
+  }
+  return storage;
+}
+
+function buildPgDumpInvocation(rawUrl) {
+  const parsed = new URL(rawUrl);
+  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+  if (!database) {
+    throw new Error("Database URL must include a database name.");
+  }
+
+  const args = [
+    "--no-owner",
+    "--no-privileges",
+    "--format=plain",
+    "--host",
+    parsed.hostname,
+    "--port",
+    parsed.port || "5432",
+    "--username",
+    decodeURIComponent(parsed.username),
+    "--dbname",
+    database,
+  ];
+  return {
+    args,
+    env: {
+      ...process.env,
+      PGPASSWORD: decodeURIComponent(parsed.password),
+    },
+  };
+}
 
 function todayUtc() {
   const now = new Date();
@@ -135,13 +171,16 @@ async function runBackup() {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "slabplan-db-backup-"));
   const tempFile = path.join(tempDir, `${iso}.sql.gz`);
 
-  log("info", "backup_start", { objectName, bucket: storage.bucketName });
+  const storageClient = getStorage();
+
+  log("info", "backup_start", { objectName, bucket: storageClient.bucketName });
 
   try {
+    const pgDump = buildPgDumpInvocation(dbUrl);
     const dump = spawn(
       pgDumpBin,
-      ["--no-owner", "--no-privileges", "--format=plain", dbUrl],
-      { stdio: ["ignore", "pipe", "pipe"] },
+      pgDump.args,
+      { stdio: ["ignore", "pipe", "pipe"], env: pgDump.env },
     );
 
     let stderrTail = "";
@@ -173,13 +212,13 @@ async function runBackup() {
       );
     }
 
-    await storage.uploadStream(objectName, createReadStream(tempFile), {
+    await storageClient.uploadStream(objectName, createReadStream(tempFile), {
       contentType: "application/gzip",
       cacheControl: "private, max-age=0",
       contentLengthBytes: size,
     });
 
-    const meta = await storage.getObjectInfo(objectName);
+    const meta = await storageClient.getObjectInfo(objectName);
     const sizeBytes = Number(meta?.sizeBytes ?? 0);
     if (!sizeBytes) {
       throw new Error("Uploaded backup is zero bytes.");
@@ -246,14 +285,15 @@ function classifyForRetention(files, today) {
 
 async function pruneOldBackups() {
   const today = todayUtc();
-  const files = await storage.listAllObjects(`${backupPrefix}/`);
+  const storageClient = getStorage();
+  const files = await storageClient.listAllObjects(`${backupPrefix}/`);
   const { kept, toDelete, total } = classifyForRetention(files, today);
 
   log("info", "prune_summary", { total, keeping: kept, deleting: toDelete.length });
 
   for (const e of toDelete) {
     try {
-      await storage.deleteObject(e.file.name);
+      await storageClient.deleteObject(e.file.name);
       log("info", "prune_deleted", { objectName: e.file.name, dateStr: e.dateStr });
     } catch (err) {
       // Don't abort the whole job for one delete failure; the next run
@@ -295,7 +335,7 @@ async function pruneOldBackups() {
       ].join("\n"),
       context: {
         date: todayIso,
-        bucket: storage.bucketName,
+        bucket: storage ? storage.bucketName : null,
         backupPrefix,
         error: errMsg,
         lastSuccessful: lastGood,

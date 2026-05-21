@@ -13,7 +13,7 @@ export interface PmTeamLog {
   notes: string;
   jobId: string;
   jobTitle: string | null;
-  createdAt: Date;
+  createdAt: string;
   createdById: string | null;
   createdByName: string | null;
 }

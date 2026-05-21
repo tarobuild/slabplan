@@ -43,7 +43,7 @@ function useBreadcrumbsContext(): BreadcrumbsContextValue {
  * (e.g. inject a real client / job name once the data has loaded).
  * The override is cleared automatically on unmount.
  */
-function useSetBreadcrumbs(items: BreadcrumbItem[] | null): void {
+export function useSetBreadcrumbs(items: BreadcrumbItem[] | null): void {
   const { setOverride } = useBreadcrumbsContext()
   // Stable JSON key so the effect doesn't churn for identical inputs.
   const key = items === null ? null : JSON.stringify(items)
@@ -58,7 +58,7 @@ export function useBreadcrumbsOverride(): BreadcrumbItem[] | null {
   return useBreadcrumbsContext().override
 }
 
-function useClearBreadcrumbs(): () => void {
+export function useClearBreadcrumbs(): () => void {
   const { setOverride } = useBreadcrumbsContext()
   return useCallback(() => setOverride(null), [setOverride])
 }

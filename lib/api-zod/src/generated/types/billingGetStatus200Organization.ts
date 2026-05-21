@@ -14,5 +14,5 @@ export type BillingGetStatus200Organization = {
   billingEmail: string | null;
   hasStripeCustomer: boolean;
   hasStripeSubscription: boolean;
-  trialEndsAt: Date | null;
+  trialEndsAt: string | null;
 };

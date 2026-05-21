@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { and, eq, lte } from "drizzle-orm";
+import { and, eq, lte, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { idempotencyKeys } from "@workspace/db/schema";
 import { HttpError } from "../lib/http";
@@ -67,7 +67,8 @@ export function hashMultipartRequest(req: Request): string {
   for (const k of fieldKeys) {
     const value = fields[k];
     const serialized = typeof value === "string" ? value : JSON.stringify(value ?? null);
-    hash.update(`${k}=${serialized}\n`);
+    hash.update(`field-name:${Buffer.byteLength(k)}\n${k}\n`);
+    hash.update(`field-value:${Buffer.byteLength(serialized)}\n${serialized}\n`);
   }
 
   const files = collectMultipartFiles(req)
@@ -90,7 +91,15 @@ export function hashMultipartRequest(req: Request): string {
 
   hash.update(`files:${files.length}\n`);
   for (const f of files) {
-    hash.update(`${f.field}|${f.original}|${f.mimetype}|${f.size}|${f.contentHash}\n`);
+    for (const [name, value] of [
+      ["field", f.field],
+      ["original", f.original],
+      ["mimetype", f.mimetype],
+      ["size", String(f.size)],
+      ["contentHash", f.contentHash],
+    ] as const) {
+      hash.update(`file-${name}:${Buffer.byteLength(value)}\n${value}\n`);
+    }
   }
 
   return `${MULTIPART_HASH_PREFIX}${hash.digest("hex")}`;
@@ -113,7 +122,14 @@ async function sweepExpired() {
 type PreflightResult =
   | { kind: "skip" }
   | { kind: "error"; error: HttpError }
-  | { kind: "ok"; userId: string; key: string; method: string; path: string };
+  | {
+      kind: "ok";
+      organizationId: string;
+      userId: string;
+      key: string;
+      method: string;
+      path: string;
+    };
 
 // Shared pre-flight check used by both middleware variants. Returns:
 //   - `skip`  → not a replayable write, no key, or no auth → just call
@@ -135,11 +151,22 @@ function preflight(req: Request): PreflightResult {
   if (!key) return { kind: "skip" };
 
   if (!req.auth?.userId) {
-    // Without an identity we cannot scope the key — fail open. This
-    // middleware is mounted after requireAuth, so the only way to land
-    // here is auth that resolved without a userId, which is treated as
-    // a soft skip rather than a hard error.
-    return { kind: "skip" };
+    return {
+      kind: "error",
+      error: new HttpError(401, "Authentication required.", undefined, "unauthorized"),
+    };
+  }
+
+  if (!req.auth.organizationId) {
+    return {
+      kind: "error",
+      error: new HttpError(
+        400,
+        "Idempotent writes require an active organization.",
+        undefined,
+        "organization-required",
+      ),
+    };
   }
 
   if (key.length < KEY_MIN_LEN || key.length > KEY_MAX_LEN) {
@@ -156,6 +183,7 @@ function preflight(req: Request): PreflightResult {
 
   return {
     kind: "ok",
+    organizationId: req.auth.organizationId,
     userId: req.auth.userId,
     key,
     method: req.method.toUpperCase(),
@@ -174,6 +202,7 @@ async function applyIdempotency(
   next: NextFunction,
   args: {
     userId: string;
+    organizationId: string;
     key: string;
     method: string;
     path: string;
@@ -182,7 +211,7 @@ async function applyIdempotency(
 ): Promise<void> {
   void sweepExpired();
 
-  const { userId, key, method, path, requestHash } = args;
+  const { organizationId, userId, key, method, path, requestHash } = args;
   const expiresAt = new Date(Date.now() + TTL_MS);
 
   // Step 1: atomically reserve the slot. INSERT ... ON CONFLICT DO NOTHING
@@ -194,6 +223,7 @@ async function applyIdempotency(
     reservation = await db
       .insert(idempotencyKeys)
       .values({
+        organizationId,
         userId,
         key,
         method,
@@ -206,16 +236,25 @@ async function applyIdempotency(
       })
       .onConflictDoNothing({
         target: [
+          idempotencyKeys.organizationId,
           idempotencyKeys.userId,
           idempotencyKeys.key,
           idempotencyKeys.method,
           idempotencyKeys.path,
         ],
+        where: sql`${idempotencyKeys.organizationId} is not null`,
       })
       .returning({ userId: idempotencyKeys.userId });
   } catch (err) {
     logger.error({ err }, "idempotency reservation failed");
-    next();
+    next(
+      new HttpError(
+        503,
+        "Could not reserve the Idempotency-Key. Please retry later.",
+        undefined,
+        "idempotency-unavailable",
+      ),
+    );
     return;
   }
 
@@ -235,6 +274,7 @@ async function applyIdempotency(
         .from(idempotencyKeys)
         .where(
           and(
+            eq(idempotencyKeys.organizationId, organizationId),
             eq(idempotencyKeys.userId, userId),
             eq(idempotencyKeys.key, key),
             eq(idempotencyKeys.method, method),
@@ -244,14 +284,26 @@ async function applyIdempotency(
         .limit(1);
     } catch (err) {
       logger.error({ err }, "idempotency lookup failed");
-      next();
+      next(
+        new HttpError(
+          503,
+          "Could not look up the Idempotency-Key. Please retry later.",
+          undefined,
+          "idempotency-unavailable",
+        ),
+      );
       return;
     }
 
     if (!existing) {
-      // The row vanished between conflict and lookup (sweeper raced us).
-      // Treat as a miss: let the request proceed without replay protection.
-      next();
+      next(
+        new HttpError(
+          503,
+          "Could not confirm the Idempotency-Key reservation. Please retry later.",
+          undefined,
+          "idempotency-unavailable",
+        ),
+      );
       return;
     }
 
@@ -263,6 +315,7 @@ async function applyIdempotency(
           .delete(idempotencyKeys)
           .where(
             and(
+              eq(idempotencyKeys.organizationId, organizationId),
               eq(idempotencyKeys.userId, userId),
               eq(idempotencyKeys.key, key),
               eq(idempotencyKeys.method, method),
@@ -272,7 +325,7 @@ async function applyIdempotency(
       } catch {
         // Sweeper will catch this eventually.
       }
-      next();
+      await applyIdempotency(req, res, next, args);
       return;
     }
 
@@ -379,6 +432,7 @@ async function applyIdempotency(
           })
           .where(
             and(
+              eq(idempotencyKeys.organizationId, organizationId),
               eq(idempotencyKeys.userId, userId),
               eq(idempotencyKeys.key, key),
               eq(idempotencyKeys.method, method),
@@ -401,6 +455,7 @@ async function applyIdempotency(
         .delete(idempotencyKeys)
         .where(
           and(
+            eq(idempotencyKeys.organizationId, organizationId),
             eq(idempotencyKeys.userId, userId),
             eq(idempotencyKeys.key, key),
             eq(idempotencyKeys.method, method),
@@ -455,6 +510,7 @@ export function idempotencyMiddleware(): RequestHandler {
     }
 
     await applyIdempotency(req, res, next, {
+      organizationId: pre.organizationId,
       userId: pre.userId,
       key: pre.key,
       method: pre.method,
@@ -485,6 +541,7 @@ export function multipartIdempotencyMiddleware(): RequestHandler {
     }
 
     await applyIdempotency(req, res, next, {
+      organizationId: pre.organizationId,
       userId: pre.userId,
       key: pre.key,
       method: pre.method,

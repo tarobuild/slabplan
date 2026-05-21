@@ -57,17 +57,29 @@ export interface GenericObject {
 }
 
 /**
- * Request schema derived from updateProfileSchema in artifacts/api-server/src/routes/users.ts.
+ * Request body for `PATCH /users/me/profile`.
  */
 export interface UsersUpdateProfileSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 2
+   * @maxLength 255
+   */
+  fullName?: string;
+  /** @maxLength 255 */
+  email?: string;
+  currentPassword?: string | null;
+  phone?: string | null;
+  avatarUrl?: string | null;
 }
 
 /**
- * Request schema derived from changePasswordSchema in artifacts/api-server/src/routes/users.ts.
+ * Request body for `POST /users/me/change-password`.
  */
 export interface UsersChangePasswordSchema {
-  [key: string]: unknown;
+  /** @minLength 1 */
+  currentPassword: string;
+  /** @minLength 8 */
+  newPassword: string;
 }
 
 export type UsersInviteUserSchemaRole =
@@ -105,7 +117,7 @@ export const UsersUpdateUserSchemaRole = {
 /**
  * Request body for `PATCH /users/{id}` — admin updates a worker's full name, role, or active flag. At least one field must be provided. An admin cannot deactivate their own account through this endpoint.
  */
-export interface UsersUpdateUserSchema {
+export type UsersUpdateUserSchema = unknown & {
   /**
    * @minLength 2
    * @maxLength 255
@@ -113,7 +125,7 @@ export interface UsersUpdateUserSchema {
   fullName?: string;
   role?: UsersUpdateUserSchemaRole;
   isActive?: boolean;
-}
+};
 
 /**
  * Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link plus the password they want to use. On success the user is logged in (refresh cookie + access token in response).
@@ -353,7 +365,7 @@ export interface LeadsLeadPayloadSchema {
 /**
  * Request body for creating a lead contact (`POST /leads/{id}/contacts`). When `sourceContactId` is set the new contact is cloned from an existing contact and the other fields are optional. Otherwise `displayName` and `email` are required.
  */
-export interface LeadsContactCreateSchema {
+type LeadsContactCreateSchemaBase = {
   /** Optional: clone an existing lead contact by id rather than creating a new one from scratch. */
   sourceContactId?: string;
   firstName?: string | null;
@@ -368,7 +380,14 @@ export interface LeadsContactCreateSchema {
   cellPhone?: string | null;
   email?: string | null;
   label?: string | null;
-}
+};
+
+export type LeadsContactCreateSchema =
+  | (LeadsContactCreateSchemaBase & { sourceContactId: string })
+  | (LeadsContactCreateSchemaBase & {
+      displayName: string;
+      email: string;
+    });
 
 /**
  * Request body for updating a lead contact (`PUT /leads/{id}/contacts/{contactId}`).
@@ -400,32 +419,67 @@ export interface LeadsActivityCreateSchema {
   notes?: string | null;
 }
 
+export type FoldersFolderBodySchemaMediaType =
+  (typeof FoldersFolderBodySchemaMediaType)[keyof typeof FoldersFolderBodySchemaMediaType];
+
+export const FoldersFolderBodySchemaMediaType = {
+  document: "document",
+  photo: "photo",
+  video: "video",
+} as const;
+
 /**
- * Request schema derived from folderBodySchema in artifacts/api-server/src/routes/folders.ts.
+ * Request body for creating a job folder.
  */
 export interface FoldersFolderBodySchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  mediaType: FoldersFolderBodySchemaMediaType;
+  parentFolderId?: string | null;
+}
+
+export type FolderPermissionUsers = { [key: string]: boolean };
+
+export interface FolderPermission {
+  admin?: boolean;
+  project_manager?: boolean;
+  crew_member?: boolean;
+  internal?: boolean;
+  users?: FolderPermissionUsers;
 }
 
 /**
- * Request schema derived from folderUpdateSchema in artifacts/api-server/src/routes/folders.ts.
+ * Request body for renaming a folder or updating folder permissions.
  */
 export interface FoldersFolderUpdateSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title?: string;
+  viewingPermissions?: FolderPermission | null;
+  uploadingPermissions?: FolderPermission | null;
 }
 
 /**
- * Request schema derived from moveFolderSchema in artifacts/api-server/src/routes/folders.ts.
+ * Request body for moving a folder.
  */
 export interface FoldersMoveFolderSchema {
-  [key: string]: unknown;
+  destinationFolderId?: string | null;
 }
 
 /**
- * Request schema derived from renameFileSchema in artifacts/api-server/src/routes/files.ts.
+ * Request body for renaming a file.
  */
 export interface FilesRenameFileSchema {
-  [key: string]: unknown;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  originalName: string;
 }
 
 /**
@@ -671,9 +725,17 @@ export interface JobSummary {
   jobType?: JobSummaryJobType;
   /** Decimal price serialized as string. */
   contractPrice?: string | null;
-  /** @minimum 0 */
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   contractValueCents?: number | null;
-  /** @minimum 0 */
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   amountPaidCents?: number | null;
   projectedStart?: string | null;
   projectedCompletion?: string | null;
@@ -748,18 +810,21 @@ export interface ClientListItem {
    */
   totalJobCount: number;
   /**
-   * Sum of `contractValueCents` across all caller-visible jobs for this client. Cents.
+   * Sum of `contractValueCents` across all caller-visible jobs for this client. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
    * @minimum 0
+   * @maximum 9007199254740991
    */
   contractValueCents: number;
   /**
-   * Sum of `amountPaidCents` across all caller-visible jobs for this client. Cents.
+   * Sum of `amountPaidCents` across all caller-visible jobs for this client. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
    * @minimum 0
+   * @maximum 9007199254740991
    */
   amountPaidCents: number;
   /**
-   * AR rollup: `max(0, contractValueCents - amountPaidCents)`. Cents.
+   * AR rollup: `max(0, contractValueCents - amountPaidCents)`. Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
    * @minimum 0
+   * @maximum 9007199254740991
    */
   outstandingCents: number;
   /** Most recent `jobs.updated_at` across the caller-visible jobs for this client. */
@@ -782,11 +847,23 @@ export interface ClientListResponse {
  * AR rollups computed across the caller-visible jobs for this client.
  */
 export type ClientDetailRollups = {
-  /** @minimum 0 */
+  /**
+   * Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   contractValueCents: number;
-  /** @minimum 0 */
+  /**
+   * Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   amountPaidCents: number;
-  /** @minimum 0 */
+  /**
+   * Whole cents, bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   outstandingCents: number;
   /** @minimum 0 */
   activeJobCount: number;
@@ -1091,35 +1168,48 @@ export interface WorkdayExceptionResponse {
   exception: WorkdayException;
 }
 
-export type WorkdayExceptionPayloadType =
-  (typeof WorkdayExceptionPayloadType)[keyof typeof WorkdayExceptionPayloadType];
-
-export const WorkdayExceptionPayloadType = {
-  non_workday: "non_workday",
-  extra_workday: "extra_workday",
-} as const;
-
 /**
  * Request body for `POST /jobs/{jobId}/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.
  */
-export interface WorkdayExceptionPayload {
-  /**
-   * @minLength 1
-   * @maxLength 255
-   */
-  title: string;
-  type: WorkdayExceptionPayloadType;
-  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
-  startDate: string;
-  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
-  endDate: string;
-  sameEveryYear?: boolean;
-  categoryId?: string | null;
-  /** When true, applies the exception to every active job. Admin role required. */
-  appliesToAllJobs?: boolean;
-  jobIds?: string[];
-  notes?: string | null;
-}
+export type WorkdayExceptionPayload =
+  | {
+      /**
+       * @minLength 1
+       * @maxLength 255
+       */
+      title: string;
+      type: "non_workday" | "extra_workday";
+      /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+      startDate: string;
+      /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+      endDate: string;
+      sameEveryYear?: boolean;
+      categoryId?: string | null;
+      /** When true, applies the exception to every active job. Admin role required. */
+      appliesToAllJobs: true;
+      /** @maxItems 0 */
+      jobIds?: [];
+      notes?: string | null;
+    }
+  | {
+      /**
+       * @minLength 1
+       * @maxLength 255
+       */
+      title: string;
+      type: "non_workday" | "extra_workday";
+      /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+      startDate: string;
+      /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+      endDate: string;
+      sameEveryYear?: boolean;
+      categoryId?: string | null;
+      /** When false or omitted, `jobIds` must contain at least one job. */
+      appliesToAllJobs?: false;
+      /** @minItems 1 */
+      jobIds: [string, ...string[]];
+      notes?: string | null;
+    };
 
 export type WorkdayExceptionUpdatePayloadType =
   (typeof WorkdayExceptionUpdatePayloadType)[keyof typeof WorkdayExceptionUpdatePayloadType];
@@ -1426,8 +1516,10 @@ export interface DailyLogTodo {
 
 export interface DailyLogCommentAttachment {
   name: string;
-  url: string;
+  url?: string | null;
   mimeType?: string | null;
+  fileId?: string | null;
+  fileUrl?: string | null;
 }
 
 /**
@@ -1583,7 +1675,7 @@ export interface CursorPagination {
 }
 
 /**
- * Paged daily-log list. The `pagination` field uses `Pagination` (page mode) or `CursorPagination` (cursor mode) depending on whether the request supplied `?cursor=` / `?limit=`.
+ * Paged daily-log list. The `pagination` field uses `Pagination` in page mode and `CursorPagination` only when the request supplies an explicit `cursor` parameter.
  */
 export interface DailyLogListResponse {
   logs: DailyLogListItem[];
@@ -1643,7 +1735,7 @@ export type MyDailyLogsResponsePagination =
   | CursorPagination;
 
 /**
- * Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) when the request used `?page=`/`?pageSize=`, and the cursor shape (`CursorPagination`) when the request supplied `?cursor=` or `?limit=`.
+ * Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.
  */
 export interface MyDailyLogsResponse {
   logs: DailyLogListItem[];
@@ -1716,6 +1808,7 @@ export interface ScheduleItem {
   displayColor?: string;
   startDate: string;
   endDate: string;
+  manualEndDate: string | null;
   workDays?: number;
   isHourly?: boolean;
   startTime?: string | null;
@@ -1755,13 +1848,18 @@ export interface ScheduleItemResponse {
   item: ScheduleItem;
 }
 
-export type ScheduleListResponsePagination = {
-  page: number;
-  limit: number;
-  totalItems: number;
-  totalPages: number;
-};
+export type ScheduleListResponsePagination =
+  | {
+      page: number;
+      limit: number;
+      totalItems: number;
+      totalPages: number;
+    }
+  | CursorPagination;
 
+/**
+ * Schedule list response. `pagination` is page-mode unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.
+ */
 export interface ScheduleListResponse {
   data: ScheduleItem[];
   pagination: ScheduleListResponsePagination;
@@ -2349,11 +2447,11 @@ export type IdempotencyKeyParameter = string;
 /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
 export type CursorParamParameter = string;
@@ -2520,7 +2618,7 @@ export type JobsGetJobsParams = {
   /**
    * Optional status filter.
    */
-  status?: string;
+  status?: JobsGetJobsStatus;
   /**
    * Optional client filter; restricts results to jobs for the given client.
    */
@@ -2528,11 +2626,11 @@ export type JobsGetJobsParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
   cursor?: CursorParamParameter;
@@ -2543,6 +2641,15 @@ ignored.
    */
   limit?: CursorLimitParamParameter;
 };
+
+export type JobsGetJobsStatus =
+  (typeof JobsGetJobsStatus)[keyof typeof JobsGetJobsStatus];
+
+export const JobsGetJobsStatus = {
+  open: "open",
+  closed: "closed",
+  archived: "archived",
+} as const;
 
 export type LeadsGetLeadsContactsParams = {
   /**
@@ -2586,11 +2693,11 @@ export type LeadsGetLeadsParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
   cursor?: CursorParamParameter;
@@ -2641,11 +2748,11 @@ export type FilesGetFoldersIdFilesParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
   cursor?: CursorParamParameter;
@@ -2700,11 +2807,11 @@ export type DailyLogsGetJobsJobIdDailyLogsParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
   cursor?: CursorParamParameter;
@@ -2777,11 +2884,11 @@ export type DailyLogAdminGetDailyLogsMineParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
   cursor?: CursorParamParameter;
@@ -2802,11 +2909,11 @@ export type ScheduleGetJobsJobIdScheduleParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
   cursor?: CursorParamParameter;
@@ -2862,11 +2969,11 @@ export type ActivityGetActivityParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
   cursor?: CursorParamParameter;
@@ -2909,11 +3016,11 @@ export type SearchGetSearchParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value) or simply `?limit=N` with no `page`/`pageSize` — the server
-returns the first page in the cursor envelope along with
-`pagination.nextCursor`. Echo `nextCursor` back as `?cursor=<token>`
-on subsequent calls. While in cursor mode `page`/`pageSize` are
-ignored.
+value). Requests that only send `?limit=N` remain in page mode unless
+the endpoint explicitly documents a different bootstrap. Cursor
+responses include `pagination.nextCursor`; echo that value back as
+`?cursor=<token>` on subsequent calls. While in cursor mode
+`page`/`pageSize` are ignored.
 
  */
   cursor?: CursorParamParameter;
@@ -2943,7 +3050,7 @@ export type SearchGetSearch200ResultsItem = {
 };
 
 /**
- * Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`.
+ * Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied an explicit `cursor` parameter. Cursor-mode pagination uses `CursorPagination`.
  */
 export type SearchGetSearch200Pagination =
   | {
@@ -2957,111 +3064,86 @@ export type SearchGetSearch200Pagination =
 
 export type SearchGetSearch200 = {
   results: SearchGetSearch200ResultsItem[];
-  /** Page-mode pagination (`{page, pageSize, hasMore}`) when the request used `?page=`/`?pageSize=`. Cursor-mode pagination (`CursorPagination`) when the request used `?cursor=` or `?limit=`. */
+  /** Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied an explicit `cursor` parameter. Cursor-mode pagination uses `CursorPagination`. */
   pagination: SearchGetSearch200Pagination;
 };
 
-export type ReportsGetReportsArAgingParams = {
-  /**
-   * Preset date range. Use `custom` together with `from` and `to`.
-   */
-  range?: ReportRangeParamParameter;
-  /**
-   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  from?: ReportFromParamParameter;
-  /**
-   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  to?: ReportToParamParameter;
-  /**
-   * Response format. JSON (default) or CSV download.
-   */
+type ReportsGetReportsArAgingParamsBase = {
   format?: ReportFormatParamParameter;
 };
 
-export type ReportsGetReportsRevenueParams = {
-  /**
-   * Preset date range. Use `custom` together with `from` and `to`.
-   */
-  range?: ReportRangeParamParameter;
-  /**
-   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  from?: ReportFromParamParameter;
-  /**
-   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  to?: ReportToParamParameter;
-  /**
-   * Response format. JSON (default) or CSV download.
-   */
+export type ReportsGetReportsArAgingParams =
+  | (ReportsGetReportsArAgingParamsBase & {
+      range?: Exclude<ReportRangeParamParameter, "custom">;
+      from?: ReportFromParamParameter;
+      to?: ReportToParamParameter;
+    })
+  | (ReportsGetReportsArAgingParamsBase & {
+      range: "custom";
+      from: ReportFromParamParameter;
+      to: ReportToParamParameter;
+    });
+
+type ReportsGetReportsRevenueParamsBase = {
   format?: ReportFormatParamParameter;
 };
 
-export type ReportsGetReportsPipelineParams = {
-  /**
-   * Preset date range. Use `custom` together with `from` and `to`.
-   */
-  range?: ReportRangeParamParameter;
-  /**
-   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  from?: ReportFromParamParameter;
-  /**
-   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  to?: ReportToParamParameter;
-  /**
-   * Response format. JSON (default) or CSV download.
-   */
+export type ReportsGetReportsRevenueParams =
+  | (ReportsGetReportsRevenueParamsBase & {
+      range?: Exclude<ReportRangeParamParameter, "custom">;
+      from?: ReportFromParamParameter;
+      to?: ReportToParamParameter;
+    })
+  | (ReportsGetReportsRevenueParamsBase & {
+      range: "custom";
+      from: ReportFromParamParameter;
+      to: ReportToParamParameter;
+    });
+
+type ReportsGetReportsPipelineParamsBase = {
   format?: ReportFormatParamParameter;
 };
 
-export type ReportsGetReportsDaysToPaymentParams = {
-  /**
-   * Preset date range. Use `custom` together with `from` and `to`.
-   */
-  range?: ReportRangeParamParameter;
-  /**
-   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  from?: ReportFromParamParameter;
-  /**
-   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  to?: ReportToParamParameter;
-  /**
-   * Response format. JSON (default) or CSV download.
-   */
+export type ReportsGetReportsPipelineParams =
+  | (ReportsGetReportsPipelineParamsBase & {
+      range?: Exclude<ReportRangeParamParameter, "custom">;
+      from?: ReportFromParamParameter;
+      to?: ReportToParamParameter;
+    })
+  | (ReportsGetReportsPipelineParamsBase & {
+      range: "custom";
+      from: ReportFromParamParameter;
+      to: ReportToParamParameter;
+    });
+
+type ReportsGetReportsDaysToPaymentParamsBase = {
   format?: ReportFormatParamParameter;
 };
 
-export type ReportsGetReportsJobsByStageParams = {
-  /**
-   * Preset date range. Use `custom` together with `from` and `to`.
-   */
-  range?: ReportRangeParamParameter;
-  /**
-   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  from?: ReportFromParamParameter;
-  /**
-   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
-   * @pattern ^\d{4}-\d{2}-\d{2}$
-   */
-  to?: ReportToParamParameter;
-  /**
-   * Response format. JSON (default) or CSV download.
-   */
+export type ReportsGetReportsDaysToPaymentParams =
+  | (ReportsGetReportsDaysToPaymentParamsBase & {
+      range?: Exclude<ReportRangeParamParameter, "custom">;
+      from?: ReportFromParamParameter;
+      to?: ReportToParamParameter;
+    })
+  | (ReportsGetReportsDaysToPaymentParamsBase & {
+      range: "custom";
+      from: ReportFromParamParameter;
+      to: ReportToParamParameter;
+    });
+
+type ReportsGetReportsJobsByStageParamsBase = {
   format?: ReportFormatParamParameter;
 };
+
+export type ReportsGetReportsJobsByStageParams =
+  | (ReportsGetReportsJobsByStageParamsBase & {
+      range?: Exclude<ReportRangeParamParameter, "custom">;
+      from?: ReportFromParamParameter;
+      to?: ReportToParamParameter;
+    })
+  | (ReportsGetReportsJobsByStageParamsBase & {
+      range: "custom";
+      from: ReportFromParamParameter;
+      to: ReportToParamParameter;
+    });

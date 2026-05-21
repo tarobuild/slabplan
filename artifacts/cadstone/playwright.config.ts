@@ -11,7 +11,7 @@ const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:21903"
 const chromiumExecutable = process.env.CHROMIUM_PATH
 
 /**
- * Critical-path e2e suite for CAD Stone Networks.
+ * Critical-path e2e suite for Slabplan.
  *
  * Assumes:
  * - API server (artifacts/api-server) is already running on :8080
@@ -30,18 +30,16 @@ const chromiumExecutable = process.env.CHROMIUM_PATH
  *     node artifacts/api-server/scripts/seed-users.mjs --db=local
  *
  * That single seed-users.mjs invocation upserts:
- *   cesar@cadstone.works   (admin)
- *   anwar@cadstone.works   (admin) — Anwar is an admin in reality; he
- *                                    and Cesar invite workers.
- *   worker@cadstone.works  (crew_member) — synthetic fixture used to
- *                                          prove worker-level role
- *                                          gates actually fire. Local
- *                                          only — production never
- *                                          seeds it. The Playwright
- *                                          helpers also read
- *                                          SEED_WORKER_FIXTURE_PASSWORD
- *                                          so the seed-time and
- *                                          login-time passwords match.
+ *   admin-primary@stone-track.test    (admin)
+ *   admin-secondary@stone-track.test  (admin)
+ *   worker@stone-track.test           (crew_member) — synthetic fixture
+ *                                     used to prove worker-level role
+ *                                     gates actually fire. Local only —
+ *                                     production never seeds it. The
+ *                                     Playwright helpers also read
+ *                                     SEED_WORKER_FIXTURE_PASSWORD so
+ *                                     the seed-time and login-time
+ *                                     passwords match.
  *   "E2E Fixture Client"   — baseline client the suite attaches new
  *                            jobs to via requireAnyClient.
  *   "E2E Fixture Job"      — baseline open job the suite reads via
@@ -58,14 +56,14 @@ const chromiumExecutable = process.env.CHROMIUM_PATH
  * of clicking through the login form — otherwise the auth rate limiter
  * (5/email/10min) would trip before the suite finishes.
  *
- * The fourth fixture — `pm.json` — backs `fixture-pm@cadstone.test`,
+ * The fourth fixture — `pm.json` — backs `fixture-pm@stone-track.test`,
  * a synthetic project_manager used to drive PM-positive flows in
  * `golden-path-pm.spec.ts` (PM-of-job CAN edit own job, manage
  * schedule, view financials). Unlike the other three users, the PM
  * is NOT seeded by seed-users.mjs because production has no PMs by
  * default. Instead `auth.setup.ts` provisions it on demand: it logs
- * in as Cesar, calls `ensureProjectManagerFixture` to invite
- * `fixture-pm@cadstone.test` if missing, reissues a fresh invite
+ * in as the primary admin, calls `ensureProjectManagerFixture` to invite
+ * `fixture-pm@stone-track.test` if missing, reissues a fresh invite
  * token, and consumes it via /auth/accept-invite to (re)set the
  * password to SEED_PM_FIXTURE_PASSWORD. That env var is REQUIRED by
  * the suite — pick any password that satisfies the API policy

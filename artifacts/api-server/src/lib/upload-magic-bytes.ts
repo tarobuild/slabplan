@@ -485,33 +485,69 @@ async function validatePdf(
 // only documents whose root element is `<svg>` and reject any inline
 // scripts / `javascript:` URLs / event-handler attributes before
 // allowing the upload through.
-const SVG_SCAN_BYTES = 64 * 1024;
+const SVG_SCAN_CHUNK_BYTES = 64 * 1024;
+const SVG_PATTERN_OVERLAP_BYTES = 256;
 const SVG_FORBIDDEN = [
   /<script\b/i,
   /javascript:/i,
   /\son\w+\s*=/i,
   /<foreignObject\b/i,
 ];
+
+async function inspectSvg(filePath: string): Promise<{
+  hasSvgRoot: boolean;
+  unsafe: boolean;
+}> {
+  const handle = await fs.open(filePath, "r");
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  const buffer = Buffer.alloc(SVG_SCAN_CHUNK_BYTES);
+  let hasSvgRoot = false;
+  let carry = "";
+
+  try {
+    while (true) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) {
+        break;
+      }
+
+      const text = carry + decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+      hasSvgRoot ||= /<svg\b/i.test(text);
+      if (SVG_FORBIDDEN.some((pattern) => pattern.test(text))) {
+        return { hasSvgRoot, unsafe: true };
+      }
+      carry = text.slice(-SVG_PATTERN_OVERLAP_BYTES);
+    }
+
+    const finalText = carry + decoder.decode();
+    hasSvgRoot ||= /<svg\b/i.test(finalText);
+    return {
+      hasSvgRoot,
+      unsafe: SVG_FORBIDDEN.some((pattern) => pattern.test(finalText)),
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
 async function validateSvg(
   file: Express.Multer.File,
   claimedMime: string,
   extension: string,
 ): Promise<void> {
-  const head = await readBytes(file.path, SVG_SCAN_BYTES, 0);
-  const text = head.toString("utf8");
-  if (!/<svg\b/i.test(text)) {
+  const inspection = await inspectSvg(file.path);
+  if (!inspection.hasSvgRoot) {
     throw makeMismatchError(SVG_CATEGORY, claimedMime, extension, null, {
       detail: "This file isn't an SVG image.",
     });
   }
-  for (const pattern of SVG_FORBIDDEN) {
-    if (pattern.test(text)) {
-      throw makeMismatchError(SVG_CATEGORY, claimedMime, extension, "image/svg+xml", {
-        detail:
-          "SVG files with inline scripts, event handlers, or javascript: URLs are not allowed.",
-        errorCode: "UPLOAD_SVG_UNSAFE",
-      });
-    }
+
+  if (inspection.unsafe) {
+    throw makeMismatchError(SVG_CATEGORY, claimedMime, extension, "image/svg+xml", {
+      detail:
+        "SVG files with inline scripts, event handlers, or javascript: URLs are not allowed.",
+      errorCode: "UPLOAD_SVG_UNSAFE",
+    });
   }
 }
 

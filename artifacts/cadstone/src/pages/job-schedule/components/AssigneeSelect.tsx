@@ -26,6 +26,9 @@ export function AssigneeSelect({
   onChange: (value: string) => void
 }) {
   const selectedUser = users.find((user) => user.id === value)
+  const selectedLabel = value === "__unassigned__"
+    ? "Unassigned"
+    : selectedUser?.fullName || "All team members"
 
   return (
     <Popover>
@@ -35,7 +38,7 @@ export function AssigneeSelect({
           variant="outline"
           className="h-10 w-full justify-between border-[#E5E7EB] bg-white font-normal text-slate-700"
         >
-          <span className="truncate">{selectedUser?.fullName || "All team members"}</span>
+          <span className="truncate">{selectedLabel}</span>
           <ChevronDown className="size-4 text-slate-400" />
         </Button>
       </PopoverTrigger>
@@ -49,7 +52,7 @@ export function AssigneeSelect({
                 <div
                   className={cn(
                     "flex size-4 items-center justify-center rounded border border-slate-300",
-                    value === "" && "border-orange-600 bg-orange-600 text-white",
+                    value === "" && "border-primary bg-primary text-white",
                   )}
                 >
                   {value === "" ? <Check className="size-3" /> : null}
@@ -60,7 +63,7 @@ export function AssigneeSelect({
                 <div
                   className={cn(
                     "flex size-4 items-center justify-center rounded border border-slate-300",
-                    value === "__unassigned__" && "border-orange-600 bg-orange-600 text-white",
+                    value === "__unassigned__" && "border-primary bg-primary text-white",
                   )}
                 >
                   {value === "__unassigned__" ? <Check className="size-3" /> : null}
@@ -72,7 +75,7 @@ export function AssigneeSelect({
                   <div
                     className={cn(
                       "flex size-4 items-center justify-center rounded border border-slate-300",
-                      value === user.id && "border-orange-600 bg-orange-600 text-white",
+                      value === user.id && "border-primary bg-primary text-white",
                     )}
                   >
                     {value === user.id ? <Check className="size-3" /> : null}

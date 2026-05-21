@@ -48,6 +48,8 @@ type Job = {
   zipCode: string | null
   jobType: string | null
   contractPrice: string | null
+  contractValueCents: number | null
+  amountPaidCents: number | null
   contractType: "fixed_price" | "open_book" | null
   internalNotes: string | null
   subVendorNotes: string | null
@@ -136,6 +138,8 @@ function serializeJob(job: Job | null) {
     zipCode: job.zipCode,
     jobType: job.jobType,
     contractPrice: job.contractPrice,
+    contractValueCents: job.contractValueCents,
+    amountPaidCents: job.amountPaidCents,
     contractType: job.contractType,
     internalNotes: job.internalNotes,
     subVendorNotes: job.subVendorNotes,
@@ -389,6 +393,8 @@ export default function JobSummaryPage() {
         state: job.state || null,
         zipCode: job.zipCode || null,
         contractPrice: job.contractPrice || null,
+        contractValueCents: job.contractValueCents ?? null,
+        amountPaidCents: job.amountPaidCents ?? null,
         projectedStart: job.projectedStart || null,
         projectedCompletion: job.projectedCompletion || null,
         actualStart: job.actualStart || null,
@@ -470,7 +476,7 @@ export default function JobSummaryPage() {
     })
   }
 
-  const saveFolderAccessDrafts = async () => {
+  const saveFolderAccessDrafts = async (removedUserIds: string[] = []) => {
     const selectedIds = new Set(assigneeDraftIds)
     const updates: Promise<unknown>[] = []
 
@@ -478,6 +484,18 @@ export default function JobSummaryPage() {
       let viewingPermissions = folder.viewingPermissions
       let uploadingPermissions = folder.uploadingPermissions
       let changed = false
+
+      for (const userId of removedUserIds) {
+        if (explicitFolderPermission(viewingPermissions, userId) !== false) {
+          viewingPermissions = setFolderUserPermission(viewingPermissions, userId, false)
+          changed = true
+        }
+
+        if (explicitFolderPermission(uploadingPermissions, userId) !== false) {
+          uploadingPermissions = setFolderUserPermission(uploadingPermissions, userId, false)
+          changed = true
+        }
+      }
 
       for (const worker of selectedAssignmentWorkers) {
         if (!selectedIds.has(worker.id)) continue
@@ -535,6 +553,7 @@ export default function JobSummaryPage() {
       // surfaced a toast); we still allow removals to proceed in the
       // happy-path scenario where everything validated.
       if (addPayloads.length !== toAdd.length) return
+      await saveFolderAccessDrafts(toRemove)
       await Promise.all([
         ...addPayloads.map((data) => jobsPostJobsIdAssignees(jobId, data)),
         ...toRemove.map((userId) =>
@@ -554,7 +573,6 @@ export default function JobSummaryPage() {
           )
         }),
       )
-      await saveFolderAccessDrafts()
       const assignees = await loadAssignees(jobId)
       await loadAssignmentFolders(jobId)
       setAssigneeDraftIds(assignees.map((assignee: WorkerOption) => assignee.id))
@@ -706,7 +724,7 @@ export default function JobSummaryPage() {
                       checked={job.contractType === ct}
                       onChange={() => setField("contractType", ct)}
                       disabled={!canEditJob}
-                      className="mt-0.5 accent-orange-600"
+                      className="mt-0.5 accent-primary"
                     />
                     <div>
                       <div className="text-sm font-medium text-slate-800">
@@ -816,8 +834,8 @@ export default function JobSummaryPage() {
                       disabled={!canEditJob}
                       className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
                         active
-                          ? "bg-orange-600 text-white border-orange-600"
-                          : `bg-white text-slate-600 border-[#E5E7EB] ${canEditJob ? "hover:border-orange-300" : ""}`
+                          ? "bg-primary text-white border-primary"
+                          : `bg-white text-slate-600 border-[#E5E7EB] ${canEditJob ? "hover:border-primary/35" : ""}`
                       }`}
                     >
                       {WORK_DAYS_LABELS[d]}

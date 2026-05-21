@@ -274,7 +274,7 @@ function fmtFileSize(bytes: number | null): string {
 
 function getAttachmentIcon(mimeType: string | null) {
   if (!mimeType) return <File className="size-4 text-slate-400" />
-  if (mimeType.startsWith("image/")) return <FileImage className="size-4 text-blue-400" />
+  if (mimeType.startsWith("image/")) return <FileImage className="size-4 text-primary/70" />
   if (mimeType.startsWith("video/")) return <FileVideo className="size-4 text-purple-400" />
   if (mimeType === "application/pdf") return <FileText className="size-4 text-red-400" />
   if (
@@ -282,7 +282,7 @@ function getAttachmentIcon(mimeType: string | null) {
     mimeType.includes("document") ||
     mimeType.includes("text")
   )
-    return <FileText className="size-4 text-blue-500" />
+    return <FileText className="size-4 text-primary" />
   return <File className="size-4 text-slate-400" />
 }
 
@@ -424,6 +424,7 @@ export default function LeadsPage() {
   const [editForm, setEditForm] = useState<EditForm | null>(null)
   const [savedEditForm, setSavedEditForm] = useState<EditForm | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+  const detailRequestRef = useRef(0)
 
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
@@ -521,6 +522,8 @@ export default function LeadsPage() {
   const handlePage = (p: number) => setPage(p)
 
   const openSheet = (leadId: string) => {
+    const requestId = detailRequestRef.current + 1
+    detailRequestRef.current = requestId
     setSheetLeadId(leadId)
     setIsEditing(false)
     setLeadDetail(null)
@@ -531,13 +534,16 @@ export default function LeadsPage() {
     api
       .get(`/leads/${leadId}`)
       .then((r) => {
+        if (detailRequestRef.current !== requestId) return
         const lead: LeadDetail = r.data.lead
+        if (lead.id !== leadId) return
         const nextEditForm = buildEditForm(lead)
         setLeadDetail(lead)
         setEditForm(nextEditForm)
         setSavedEditForm(nextEditForm)
       })
       .catch((err: unknown) => {
+        if (detailRequestRef.current !== requestId) return
         toastApiError(err, "Failed to load lead details")
         setSheetLeadId(null)
         setIsEditing(false)
@@ -548,7 +554,11 @@ export default function LeadsPage() {
           setSearchParams(next, { replace: true })
         }
       })
-      .finally(() => setLoadingDetail(false))
+      .finally(() => {
+        if (detailRequestRef.current === requestId) {
+          setLoadingDetail(false)
+        }
+      })
   }
 
   // Open the matched lead when the URL carries ?lead=<id> (e.g. from
@@ -566,6 +576,10 @@ export default function LeadsPage() {
 
   const handleSaveEdit = async () => {
     if (!sheetLeadId || !editForm || !leadDetail) return
+    if (leadDetail.id !== sheetLeadId) {
+      toast.error("Lead details changed while loading. Reopen the lead and try again.")
+      return
+    }
     setSavingEdit(true)
     try {
       const tags = editForm.tags
@@ -944,8 +958,13 @@ export default function LeadsPage() {
     }
 
     leadUnsavedChanges.confirmDiscardChanges(() => {
+      detailRequestRef.current += 1
       setSheetLeadId(null)
       setIsEditing(false)
+      setLeadDetail(null)
+      setEditForm(null)
+      setSavedEditForm(null)
+      setLoadingDetail(false)
       setAttachmentError(null)
       if (deepLinkLeadId) {
         const next = new URLSearchParams(searchParams)
@@ -1062,7 +1081,7 @@ export default function LeadsPage() {
                       resetCreateDialogState()
                       setCreateOpen(true)
                     }}
-                    className="text-orange-600 hover:underline"
+                    className="text-primary hover:underline"
                   >
                     Create your first lead
                   </button>
@@ -1107,7 +1126,7 @@ export default function LeadsPage() {
                             e.stopPropagation()
                             routerNavigate(`/jobs/${lead.convertedJob!.id}/summary`)
                           }}
-                          className="text-orange-600 hover:text-orange-700 transition-colors p-1"
+                          className="text-primary hover:text-primary transition-colors p-1"
                           data-testid={`view-job-${lead.id}`}
                           title="View linked job"
                         >
@@ -1119,7 +1138,7 @@ export default function LeadsPage() {
                             e.stopPropagation()
                             setConvertLead(lead)
                           }}
-                          className="text-slate-400 hover:text-orange-600 transition-colors p-1"
+                          className="text-slate-400 hover:text-primary transition-colors p-1"
                           data-testid={`convert-lead-${lead.id}`}
                           title="Convert to job"
                         >
@@ -1502,7 +1521,7 @@ export default function LeadsPage() {
                       type="button"
                       onClick={() => !saving && createFilesInputRef.current?.click()}
                       disabled={saving}
-                      className="mt-1 text-xs text-orange-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="mt-1 text-xs text-primary hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Choose files to attach
                     </button>
@@ -1998,7 +2017,7 @@ export default function LeadsPage() {
                           {leadDetail.clientContact.email && (
                             <a
                               href={`mailto:${leadDetail.clientContact.email}`}
-                              className="flex items-center gap-1.5 text-sm text-orange-600 hover:underline"
+                              className="flex items-center gap-1.5 text-sm text-primary hover:underline"
                             >
                               <Mail className="size-3.5 text-slate-400" />
                               {leadDetail.clientContact.email}
@@ -2019,7 +2038,7 @@ export default function LeadsPage() {
                           <p>No contact added yet.</p>
                           <button
                             onClick={() => setIsEditing(true)}
-                            className="text-orange-600 hover:underline text-sm flex items-center gap-1"
+                            className="text-primary hover:underline text-sm flex items-center gap-1"
                           >
                             <Edit2 className="size-3" />
                             Add contact
@@ -2098,7 +2117,7 @@ export default function LeadsPage() {
                           <button
                             onClick={() => !uploadingAttachment && fileInputRef.current?.click()}
                             disabled={uploadingAttachment}
-                            className="mt-1 text-xs text-orange-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="mt-1 text-xs text-primary hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             Upload a file
                           </button>
@@ -2150,7 +2169,7 @@ export default function LeadsPage() {
                                     <button
                                       type="button"
                                       onClick={() => filePreview.open(previewFiles, attIdx)}
-                                      className="text-sm text-slate-800 font-medium truncate block hover:text-orange-600 hover:underline text-left w-full"
+                                      className="text-sm text-slate-800 font-medium truncate block hover:text-primary hover:underline text-left w-full"
                                       title={att.originalName}
                                     >
                                       {att.originalName}

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import { organizations } from "@workspace/db/schema";
@@ -15,6 +15,7 @@ import {
 import { getActiveOrganizationId } from "../lib/tenant-scope";
 
 const router: IRouter = Router();
+type BillingDbClient = Pick<typeof db, "select" | "update">;
 
 const checkoutSchema = z.object({
   planKey: z.string().trim().transform((value) => value.toLowerCase()),
@@ -195,15 +196,37 @@ export async function updateOrganizationFromStripeSubscription(params: {
   subscriptionId: string | null;
   status: string | null;
   planKey: string | null;
-}) {
-  const conditions = [
-    params.subscriptionId ? eq(organizations.stripeSubscriptionId, params.subscriptionId) : undefined,
-    params.customerId ? eq(organizations.stripeCustomerId, params.customerId) : undefined,
-  ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+}, database: BillingDbClient = db) {
+  if (!params.subscriptionId && !params.customerId) return;
 
-  if (conditions.length === 0) return;
+  const [bySubscription] = params.subscriptionId
+    ? await database
+        .select({ id: organizations.id, stripeCustomerId: organizations.stripeCustomerId })
+        .from(organizations)
+        .where(eq(organizations.stripeSubscriptionId, params.subscriptionId))
+        .limit(1)
+    : [];
+  const [byCustomer] = params.customerId
+    ? await database
+        .select({ id: organizations.id, stripeSubscriptionId: organizations.stripeSubscriptionId })
+        .from(organizations)
+        .where(eq(organizations.stripeCustomerId, params.customerId))
+        .limit(1)
+    : [];
 
-  await db
+  if (bySubscription && byCustomer && bySubscription.id !== byCustomer.id) {
+    throw new HttpError(
+      409,
+      "Stripe customer and subscription identifiers resolve to different organizations.",
+      { customerId: params.customerId, subscriptionId: params.subscriptionId },
+      "billing-identifier-conflict",
+    );
+  }
+
+  const target = bySubscription ?? byCustomer;
+  if (!target) return;
+
+  await database
     .update(organizations)
     .set({
       stripeCustomerId: params.customerId ?? undefined,
@@ -212,7 +235,7 @@ export async function updateOrganizationFromStripeSubscription(params: {
       planKey: params.planKey && isBillingPlanKey(params.planKey) ? params.planKey : undefined,
       updatedAt: new Date(),
     })
-    .where(conditions.length === 1 ? conditions[0] : or(...conditions));
+    .where(eq(organizations.id, target.id));
 }
 
 export default router;

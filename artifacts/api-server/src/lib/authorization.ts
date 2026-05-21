@@ -16,7 +16,7 @@ import {
   scheduleItems,
 } from "@workspace/db/schema";
 import { HttpError } from "./http";
-import { organizationScopeCondition } from "./tenant-scope";
+import { getActiveOrganizationId, organizationScopeCondition } from "./tenant-scope";
 
 export type AppRole = "admin" | "project_manager" | "crew_member";
 export type AuthContext = NonNullable<Express.Request["auth"]>;
@@ -25,6 +25,7 @@ type FolderScope = "resource" | "job" | "lead" | "daily_log" | "schedule_item";
 
 type FolderAccessRecord = {
   id: string;
+  organizationId: string | null;
   scope: FolderScope | null;
   jobId: string | null;
   leadId: string | null;
@@ -37,8 +38,10 @@ type FolderAccessRecord = {
 
 type FileAccessRecord = {
   id: string;
+  organizationId: string | null;
   fileUrl: string | null;
   folderId: string | null;
+  folderOrganizationId: string | null;
   folderScope: FolderScope | null;
   folderJobId: string | null;
   folderLeadId: string | null;
@@ -405,8 +408,9 @@ export async function assertCanViewJobFinancials(auth: AuthContext, jobId: strin
   }
 }
 
-export async function assertCanManageJob(auth: AuthContext, _jobId: string) {
+export async function assertCanManageJob(auth: AuthContext, jobId: string) {
   if (isAdmin(auth)) {
+    await assertCanAccessJob(auth, jobId);
     return;
   }
 
@@ -441,6 +445,7 @@ export async function assertCanAccessLead(auth: AuthContext, leadId: string) {
 
 export async function assertCanManageLead(auth: AuthContext, leadId: string) {
   if (isAdmin(auth)) {
+    await assertCanAccessLead(auth, leadId);
     return;
   }
 
@@ -520,6 +525,11 @@ async function assertScopedFolderAccess(
   },
 ) {
   const scope = resolveFolderScope(folder);
+  const organizationId = getActiveOrganizationId(auth);
+
+  if (!organizationId || folder.organizationId !== organizationId) {
+    throw new HttpError(403, "You do not have access to that folder.");
+  }
 
   if (scope === "lead") {
     const leadId = folder.leadId ?? related?.leadId ?? null;
@@ -614,6 +624,7 @@ async function getFolderAccessOrThrow(folderId: string, includeDeleted = false) 
   const [folder] = await db
     .select({
       id: folders.id,
+      organizationId: folders.organizationId,
       scope: folders.scope,
       jobId: folders.jobId,
       leadId: folders.leadId,
@@ -705,8 +716,10 @@ async function getFileAccessRecord(params: { fileId?: string; fileUrl?: string; 
   const [record] = await db
     .select({
       id: files.id,
+      organizationId: files.organizationId,
       fileUrl: files.fileUrl,
       folderId: folders.id,
+      folderOrganizationId: folders.organizationId,
       folderScope: folders.scope,
       folderJobId: folders.jobId,
       folderLeadId: folders.leadId,
@@ -742,6 +755,7 @@ async function assertFileAccess(auth: AuthContext, record: FileAccessRecord, mod
   if (record.folderId) {
     const folderLike: FolderAccessRecord = {
       id: record.folderId,
+      organizationId: record.folderOrganizationId ?? record.organizationId,
       scope: record.folderScope,
       jobId: record.folderJobId,
       leadId: record.folderLeadId,
@@ -759,6 +773,11 @@ async function assertFileAccess(auth: AuthContext, record: FileAccessRecord, mod
     });
 
     return;
+  }
+
+  const organizationId = getActiveOrganizationId(auth);
+  if (!organizationId || record.organizationId !== organizationId) {
+    throw new HttpError(403, "You do not have access to that file.");
   }
 
   if (record.dailyLogJobId) {

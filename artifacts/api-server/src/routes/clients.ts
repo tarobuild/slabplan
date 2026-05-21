@@ -47,6 +47,7 @@ router.use(requireManagerOrAbove);
 // hounddog-ignore: hardcoded-secret
 // nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
 const UNKNOWN_CLIENT_ID = "8bdd2d52-7563-5843-95f8-aea786f0b386"; // nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
+const UNKNOWN_CLIENT_NAME = "Unknown client";
 
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
@@ -564,9 +565,38 @@ router.delete(
       // remain reachable through the clients-first navigation instead
       // of being orphaned with a NULL client_id.
       const organizationId = getActiveOrganizationId(req.auth!);
+      let reassignmentClientId = UNKNOWN_CLIENT_ID;
+
+      if (organizationId) {
+        const [existingUnknownClient] = await tx
+          .select({ id: clients.id })
+          .from(clients)
+          .where(
+            and(
+              eq(clients.organizationId, organizationId),
+              eq(clients.companyName, UNKNOWN_CLIENT_NAME),
+              isNull(clients.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        if (existingUnknownClient) {
+          reassignmentClientId = existingUnknownClient.id;
+        } else {
+          const [createdUnknownClient] = await tx
+            .insert(clients)
+            .values({
+              organizationId,
+              companyName: UNKNOWN_CLIENT_NAME,
+            })
+            .returning({ id: clients.id });
+          reassignmentClientId = createdUnknownClient.id;
+        }
+      }
+
       await tx
         .update(jobs)
-        .set({ clientId: organizationId ? null : UNKNOWN_CLIENT_ID, updatedAt: now })
+        .set({ clientId: reassignmentClientId, updatedAt: now })
         .where(
           and(
             eq(jobs.clientId, clientId),

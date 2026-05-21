@@ -75,7 +75,7 @@ test("valueContainsPii returns false for clean events", () => {
   assert.equal(valueContainsPii(event), false);
 });
 
-test("valueContainsPii strips URL query strings before scanning", () => {
+test("valueContainsPii ignores secret URL query values but scans user data", () => {
   assert.equal(
     valueContainsPii({
       request: {
@@ -84,6 +84,19 @@ test("valueContainsPii strips URL query strings before scanning", () => {
     }),
     false,
   );
+  assert.equal(
+    valueContainsPii({
+      request: {
+        url: "https://api.example.test/search?email=alice@example.com",
+      },
+    }),
+    true,
+  );
+});
+
+test("valueContainsPii treats secret-bearing fields as sensitive", () => {
+  assert.equal(valueContainsPii({ extra: { token: "abc123" } }), true);
+  assert.equal(valueContainsPii({ extra: { api_key: "abc123" } }), true);
 });
 
 test("valueContainsPii survives circular references without throwing", () => {

@@ -163,7 +163,7 @@ export function ScheduleToolbar({
             <ListChecks className="size-4" />
             My To-Do&apos;s
             {incompleteTodoCount > 0 ? (
-              <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">
+              <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary">
                 {incompleteTodoCount}
               </Badge>
             ) : null}
@@ -254,7 +254,7 @@ export function ScheduleToolbar({
             <Filter className="size-4" />
             Filter
             {activeFilterCount > 0 ? (
-              <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">
+              <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary">
                 {activeFilterCount}
               </Badge>
             ) : null}

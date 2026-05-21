@@ -108,6 +108,9 @@ export default function CompanyDailyLogsPage() {
     const out: Partial<Record<FilterKey, string>> = {}
     for (const key of FILTER_KEYS) {
       const v = searchParams.get(key)
+      if ((key === "hasAttachments" || key === "hasComments") && v !== "true") {
+        continue
+      }
       if (v) out[key] = v
     }
     return out
@@ -264,6 +267,7 @@ export default function CompanyDailyLogsPage() {
 
   function clearAllFilters() {
     setSearchInput("")
+    setDebouncedSearch("")
     setSearchParams(new URLSearchParams(), { replace: true })
   }
 
@@ -405,7 +409,7 @@ export default function CompanyDailyLogsPage() {
             <Badge
               key={key}
               variant="outline"
-              className="gap-1 border-orange-200 bg-orange-50 text-orange-700"
+              className="gap-1 border-primary/20 bg-primary/10 text-primary"
               data-testid={`filter-chip-${key}`}
             >
               {key}: {chipLabel(key, filters[key]!)}
@@ -413,7 +417,7 @@ export default function CompanyDailyLogsPage() {
                 type="button"
                 onClick={() => clearFilter(key)}
                 aria-label={`Clear ${key} filter`}
-                className="ml-1 hover:text-orange-900"
+                className="ml-1 hover:text-primary"
               >
                 <X className="size-3" />
               </button>
@@ -460,7 +464,7 @@ export default function CompanyDailyLogsPage() {
                             <div className="flex flex-wrap items-center gap-2">
                               <Link
                                 to={log.jobId ? `/jobs/${log.jobId}/daily-logs?focus=${log.id}` : "/jobs"}
-                                className="text-lg font-semibold text-slate-950 hover:text-orange-700"
+                                className="text-lg font-semibold text-slate-950 hover:text-primary"
                               >
                                 {log.title || "Daily Log"}
                               </Link>
@@ -490,7 +494,7 @@ export default function CompanyDailyLogsPage() {
                               {log.clientName ? (
                                 <Link
                                   to={`/clients/${log.clientId}`}
-                                  className="font-medium text-slate-700 hover:text-orange-700"
+                                  className="font-medium text-slate-700 hover:text-primary"
                                 >
                                   {log.clientName}
                                 </Link>

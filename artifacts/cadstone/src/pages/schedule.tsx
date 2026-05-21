@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 const PAGE_LIMIT = 50
+const UNSCHEDULED_DATE_KEY = "__unscheduled__"
 
 type ScheduleRow = ScheduleItem & {
   jobTitle?: string | null
@@ -63,7 +64,7 @@ function deriveStatus(item: ScheduleRow): { label: string; tone: string } {
   const today = new Date().toISOString().slice(0, 10)
   if (item.endDate && item.endDate < today) return { label: "Overdue", tone: "border-rose-200 bg-rose-50 text-rose-700" }
   if (item.startDate && item.startDate <= today && item.endDate && item.endDate >= today) {
-    return { label: "In progress", tone: "border-blue-200 bg-blue-50 text-blue-700" }
+    return { label: "In progress", tone: "border-primary/20 bg-primary/10 text-primary" }
   }
   return { label: "Upcoming", tone: "border-slate-200 bg-slate-50 text-slate-600" }
 }
@@ -125,7 +126,7 @@ export default function CompanySchedulePage() {
     let cancelled = false
     api
       .get<{ clients?: Array<{ id: string; companyName?: string | null; name?: string | null }> }>(
-        "/clients?pageSize=200",
+        "/clients?pageSize=100",
       )
       .then((r) => {
         if (cancelled) return
@@ -138,7 +139,7 @@ export default function CompanySchedulePage() {
       .catch(() => {})
     api
       .get<{ jobs?: Array<{ id: string; title?: string | null; clientName?: string | null }> }>(
-        "/jobs?pageSize=200",
+        "/jobs?pageSize=100",
       )
       .then((r) => {
         if (cancelled) return
@@ -245,20 +246,24 @@ export default function CompanySchedulePage() {
   const groupedByDate = useMemo(() => {
     const map = new Map<string, ScheduleRow[]>()
     for (const it of items) {
-      const key = it.startDate ?? "—"
+      const key = it.startDate ?? UNSCHEDULED_DATE_KEY
       const arr = map.get(key) ?? []
       arr.push(it)
       map.set(key, arr)
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
+    return Array.from(map.entries()).sort(([a], [b]) => {
+      if (a === UNSCHEDULED_DATE_KEY) return 1
+      if (b === UNSCHEDULED_DATE_KEY) return -1
+      return a.localeCompare(b)
+    })
   }, [items])
 
   return (
     <div className="space-y-5" data-testid="company-schedule-page">
-      <div className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Company</div>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-950">Schedule</h1>
-        <p className="mt-1 text-sm text-slate-500">All schedule items across every job and client.</p>
+      <div className="rounded-lg border border-border bg-white px-5 py-5 shadow-sm">
+        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Company</div>
+        <h1 className="mt-2 text-2xl font-semibold text-foreground">Schedule</h1>
+        <p className="mt-1 text-sm text-muted-foreground">All schedule items across every job and client.</p>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -278,7 +283,7 @@ export default function CompanySchedulePage() {
       </div>
 
       <div
-        className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-6"
+        className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-6"
         data-testid="schedule-filters"
       >
         <div className="space-y-1">
@@ -367,7 +372,7 @@ export default function CompanySchedulePage() {
             <Badge
               key={key}
               variant="outline"
-              className="gap-1 border-orange-200 bg-orange-50 text-orange-700"
+              className="gap-1 border-primary/20 bg-primary/10 text-primary"
               data-testid={`filter-chip-${key}`}
             >
               {key}: {chipLabel(key, filters[key]!)}
@@ -375,7 +380,7 @@ export default function CompanySchedulePage() {
                 type="button"
                 onClick={() => clearFilter(key)}
                 aria-label={`Clear ${key} filter`}
-                className="ml-1 hover:text-orange-900"
+                className="ml-1 hover:text-primary/80"
               >
                 <X className="size-3" />
               </button>
@@ -403,13 +408,13 @@ export default function CompanySchedulePage() {
       ) : viewMode === "list" ? (
         <div className="space-y-6" data-testid="schedule-list">
           {groupedByJob.map((group) => (
-            <div key={group.jobId} className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+            <div key={group.jobId} className="rounded-lg border border-border bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-border px-5 py-3">
                 <div className="min-w-0">
                   <div className="text-xs uppercase tracking-wide text-slate-400">{group.clientName ?? ""}</div>
                   <Link
                     to={group.jobId ? `/jobs/${group.jobId}/schedule` : "/jobs"}
-                    className="text-base font-semibold text-slate-900 hover:text-orange-700"
+                    className="text-base font-semibold text-foreground hover:text-primary"
                   >
                     {group.jobTitle}
                   </Link>
@@ -421,14 +426,14 @@ export default function CompanySchedulePage() {
                   </Link>
                 </Button>
               </div>
-              <div className="divide-y divide-slate-100">
+              <div className="divide-y divide-border/70">
                 {group.rows.map((it) => {
                   const status = deriveStatus(it)
                   return (
                     <Link
                       key={it.id}
                       to={it.jobId ? `/jobs/${it.jobId}/schedule?focus=${it.id}` : "/jobs"}
-                      className="flex flex-col gap-1 px-5 py-3 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-1 px-5 py-3 hover:bg-accent/40 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="flex items-center gap-3">
                         <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: it.displayColor || it.phaseColor || "#94a3b8" }} />
@@ -448,18 +453,18 @@ export default function CompanySchedulePage() {
       ) : (
         <div className="space-y-4" data-testid={`schedule-${viewMode}`}>
           {groupedByDate.map(([date, rows]) => (
-            <div key={date} className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700">
-                {formatDate(date)}
+            <div key={date} className="rounded-lg border border-border bg-white shadow-sm">
+              <div className="border-b border-border px-5 py-2 text-sm font-semibold text-foreground">
+                {date === UNSCHEDULED_DATE_KEY ? "Unscheduled" : formatDate(date)}
               </div>
-              <div className="divide-y divide-slate-100">
+              <div className="divide-y divide-border/70">
                 {rows.map((it) => {
                   const status = deriveStatus(it)
                   return (
                     <Link
                       key={it.id}
                       to={it.jobId ? `/jobs/${it.jobId}/schedule?focus=${it.id}` : "/jobs"}
-                      className="flex items-center justify-between px-5 py-3 hover:bg-slate-50"
+                      className="flex items-center justify-between px-5 py-3 hover:bg-accent/40"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: it.displayColor || it.phaseColor || "#94a3b8" }} />

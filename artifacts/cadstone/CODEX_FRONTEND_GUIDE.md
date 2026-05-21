@@ -1,4 +1,4 @@
-# CAD Stone Networks Frontend Build Guide
+# Slabplan Frontend Build Guide
 
 Use this guide to build the full UI inside the existing `artifacts/cadstone` React app. Do not re-scaffold the app, do not replace React Router, do not replace Zustand, and do not swap Axios for another client. Work inside the files that already exist.
 

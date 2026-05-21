@@ -83,6 +83,7 @@ interface GanttViewProps {
   dayWidth: number
   workdayExceptions: ScheduleWorkdayException[]
   scheduleOffline: boolean
+  canWrite: boolean
   setGanttScale: Dispatch<SetStateAction<GanttScale>>
   setGanttShowPhases: Dispatch<SetStateAction<boolean>>
   setGanttCriticalPath: Dispatch<SetStateAction<boolean>>
@@ -127,6 +128,7 @@ export function GanttView(props: GanttViewProps) {
     dayWidth,
     workdayExceptions,
     scheduleOffline,
+    canWrite,
     setGanttScale,
     setGanttShowPhases,
     setGanttCriticalPath,
@@ -202,10 +204,12 @@ export function GanttView(props: GanttViewProps) {
                 ? "Create a schedule item with Show on Gantt enabled to build the job timeline."
                 : "Adjust the current filters or enable Show on Gantt on more schedule items."
             }
-            actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
+            actionLabel={activeItems.length === 0 && !canWrite ? undefined : activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
             onAction={
               activeItems.length === 0
-                ? () => openNewItem()
+                ? canWrite
+                  ? () => openNewItem()
+                  : undefined
                 : () => {
                     const reset = buildFilterPreset("all")
                     setAppliedFilters(reset)
@@ -270,16 +274,18 @@ export function GanttView(props: GanttViewProps) {
                           >
                             <Edit3 className="size-4" />
                           </button>
-                          <button
-                            type="button"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              openNewItem()
-                            }}
-                          >
-                            <Plus className="size-4" />
-                          </button>
+                          {canWrite ? (
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openNewItem()
+                              }}
+                            >
+                              <Plus className="size-4" />
+                            </button>
+                          ) : null}
                         </div>
                       ),
                     )}
@@ -314,14 +320,14 @@ export function GanttView(props: GanttViewProps) {
                           className="pointer-events-none absolute bottom-[-6px] z-20"
                           style={{ left: `${todayOffsetPx - 6}px` }}
                         >
-                          <div className="size-3 rotate-45 bg-orange-600" />
+                          <div className="size-3 rotate-45 bg-primary" />
                         </div>
                       </div>
                     </div>
 
                     <div className="relative">
                       <div
-                        className="pointer-events-none absolute inset-y-0 z-10 w-px bg-orange-500/60"
+                        className="pointer-events-none absolute inset-y-0 z-10 w-px bg-primary/60"
                         style={{ left: `${todayOffsetPx}px` }}
                       />
                       {schedulePreview && ganttPreviewBounds ? (
@@ -410,7 +416,7 @@ export function GanttView(props: GanttViewProps) {
                                   : "border-transparent",
                                 activeConflictIds.has(row.item.id) && "border-rose-500 ring-2 ring-rose-200",
                                 draggable && "cursor-grab active:cursor-grabbing",
-                                isDragged && "z-20 cursor-grabbing ring-2 ring-orange-300",
+                                isDragged && "z-20 cursor-grabbing ring-2 ring-primary/35",
                               )}
                               style={{
                                 left: `${diffInDays(ganttRange.start, parseDate(barStartDate)) * dayWidth}px`,
@@ -447,7 +453,8 @@ export function GanttView(props: GanttViewProps) {
               </div>
             </div>
 
-            <div data-print-hide="true" className="flex flex-col gap-3 border-t border-[#E5E7EB] bg-orange-50/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            {canWrite ? (
+            <div data-print-hide="true" className="flex flex-col gap-3 border-t border-[#E5E7EB] bg-accent/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-sm font-semibold text-slate-900">Try Draft mode. Make changes confidently with features like undo and redo.</p>
               </div>
@@ -460,6 +467,7 @@ export function GanttView(props: GanttViewProps) {
                 Switch to Draft mode
               </Button>
             </div>
+            ) : null}
           </div>
         )}
       </div>

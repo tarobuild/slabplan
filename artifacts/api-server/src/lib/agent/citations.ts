@@ -23,6 +23,13 @@ function labelFromRow(row: Record<string, unknown>, fallback: string): string {
   return fallback;
 }
 
+function contactLabelFromRow(row: Record<string, unknown>): string {
+  const firstName = typeof row.firstName === "string" ? row.firstName.trim() : "";
+  const lastName = typeof row.lastName === "string" ? row.lastName.trim() : "";
+  const combined = `${firstName} ${lastName}`.trim();
+  return combined || labelFromRow(row, "Contact");
+}
+
 function harvestJob(row: Record<string, unknown>, out: AgentCitation[]): void {
   if (isUuid(row.id)) {
     pushUnique(out, { kind: "job", id: row.id, label: labelFromRow(row, "Job") });
@@ -38,6 +45,17 @@ function harvestLead(row: Record<string, unknown>, out: AgentCitation[]): void {
 function harvestClient(row: Record<string, unknown>, out: AgentCitation[]): void {
   if (isUuid(row.id)) {
     pushUnique(out, { kind: "client", id: row.id, label: labelFromRow(row, "Client") });
+  }
+}
+
+function harvestContact(row: Record<string, unknown>, out: AgentCitation[]): void {
+  const label = contactLabelFromRow(row);
+  if (isUuid(row.clientId)) {
+    pushUnique(out, { kind: "client", id: row.clientId, label });
+    return;
+  }
+  if (isUuid(row.leadId)) {
+    pushUnique(out, { kind: "lead", id: row.leadId, label });
   }
 }
 
@@ -112,6 +130,8 @@ const ENTITY_HARVESTERS: Record<string, Harvester> = {
   lead: harvestLead,
   clients: harvestClient,
   client: harvestClient,
+  contacts: harvestContact,
+  contact: harvestContact,
   files: harvestFile,
   file: harvestFile,
   folders: harvestFolder,
@@ -133,8 +153,8 @@ const TOOL_FALLBACK_HARVESTER: Record<string, Harvester> = {
   get_lead: harvestLead,
   list_clients: harvestClient,
   get_client: harvestClient,
-  list_contacts: harvestClient, // contacts roll up to their client
-  get_contact: harvestClient,
+  list_contacts: harvestContact,
+  get_contact: harvestContact,
   list_daily_logs: harvestDailyLog,
   get_daily_log: harvestDailyLog,
   list_schedule_items: harvestScheduleItem,

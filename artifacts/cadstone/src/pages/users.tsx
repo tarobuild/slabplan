@@ -368,7 +368,7 @@ export default function UsersPage() {
       <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
         {usersQuery.isLoading ? (
           <div className="flex items-center justify-center gap-3 py-16">
-            <Spinner className="size-5 text-orange-600" />
+            <Spinner className="size-5 text-primary" />
             <p className="text-sm text-slate-600">Loading team…</p>
           </div>
         ) : rows.length === 0 ? (

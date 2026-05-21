@@ -10,13 +10,14 @@ import { toastApiError } from "@/lib/api-errors"
 import { formatCents, type PmHome } from "../home/types"
 
 // Drill-down list for the PM Home "Pending change orders" at-risk tile.
-// Renders directly from /dashboard/home so we don't have to introduce a
-// dedicated cross-job change-orders endpoint just for this page.
+// Renders sampled rows from /dashboard/home and warns clearly when the
+// aggregate pending-change-order count exceeds the rendered sample.
 export default function PendingChangeOrdersAtRiskPage() {
   useDocumentTitle("Pending change orders — At-risk")
   const { data: payload, isLoading: loading, error } = useDashboardGetDashboardHome()
   const data = payload && payload.role === "pm" ? (payload as PmHome) : null
   const notPm = !!payload && payload.role !== "pm"
+  const loadFailed = !!error && !payload
 
   useEffect(() => {
     if (error) toastApiError(error, "Failed to load at-risk list")
@@ -56,6 +57,10 @@ export default function PendingChangeOrdersAtRiskPage() {
               <Skeleton className="h-12" />
               <Skeleton className="h-12" />
             </>
+          ) : loadFailed ? (
+            <p className="rounded-md border border-dashed border-red-200 bg-red-50 p-4 text-center text-sm text-red-700">
+              Could not load this at-risk list. Please retry from Home.
+            </p>
           ) : notPm ? (
             <p className="rounded-md border border-dashed border-[#E5E7EB] p-4 text-center text-sm text-slate-500">
               This list is only available to project managers.
@@ -65,27 +70,34 @@ export default function PendingChangeOrdersAtRiskPage() {
               No pending change orders.
             </p>
           ) : (
-            data.atRisk.samples.pendingChangeOrders.map((co) => (
-              <Link
-                key={co.id}
-                to={`/jobs/${co.jobId}/financials`}
-                className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] px-3 py-2.5 transition hover:border-amber-300 hover:bg-amber-50/40"
-                data-testid="at-risk-pending-co-row"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-900">
-                    #{co.number}
-                    {co.jobTitle ? ` — ${co.jobTitle}` : ""}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {formatCents(co.amountCents)}
-                  </p>
-                </div>
-                <span className="shrink-0 text-xs text-slate-500">
-                  Open financials →
-                </span>
-              </Link>
-            ))
+            <>
+              {data.atRisk.pendingChangeOrders > data.atRisk.samples.pendingChangeOrders.length ? (
+                <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  Showing {data.atRisk.samples.pendingChangeOrders.length} sampled change orders out of {data.atRisk.pendingChangeOrders}. Open the job financials report for the full list.
+                </p>
+              ) : null}
+              {data.atRisk.samples.pendingChangeOrders.map((co) => (
+                <Link
+                  key={co.id}
+                  to={`/jobs/${co.jobId}/financials`}
+                  className="flex items-center justify-between gap-3 rounded-md border border-[#E5E7EB] px-3 py-2.5 transition hover:border-amber-300 hover:bg-amber-50/40"
+                  data-testid="at-risk-pending-co-row"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-900">
+                      #{co.number}
+                      {co.jobTitle ? ` — ${co.jobTitle}` : ""}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {formatCents(co.amountCents)}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-slate-500">
+                    Open financials →
+                  </span>
+                </Link>
+              ))}
+            </>
           )}
         </CardContent>
       </Card>

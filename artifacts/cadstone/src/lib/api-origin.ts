@@ -1,4 +1,5 @@
-const rawApiOrigin = import.meta.env.VITE_API_ORIGIN?.trim() ?? ""
+const rawApiOrigin =
+  (import.meta as ImportMeta & { env?: { VITE_API_ORIGIN?: string } }).env?.VITE_API_ORIGIN?.trim() ?? ""
 
 export const apiOrigin = rawApiOrigin.replace(/\/+$/, "")
 

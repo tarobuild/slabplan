@@ -62,6 +62,28 @@ test("computeJobScheduleCascade recomputes endDate when persisted endDate is wro
   assert.equal(a.endDate, "2026-01-09");
 });
 
+test("computeJobScheduleCascade preserves a manual endDate", () => {
+  const result = computeJobScheduleCascade(
+    [
+      {
+        id: "a",
+        title: "A",
+        startDate: "2026-01-05",
+        endDate: "2026-01-12",
+        workDays: 5,
+        manualEndDate: true,
+      },
+    ],
+    [],
+    [],
+  );
+
+  const a = result.get("a");
+  assert.ok(a);
+  assert.equal(a.startDate, "2026-01-05");
+  assert.equal(a.endDate, "2026-01-12");
+});
+
 test("computeJobScheduleCascade resolves a finish-to-start predecessor chain", () => {
   // B must start the business day after A finishes (lag 0).
   const result = computeJobScheduleCascade(
@@ -101,6 +123,42 @@ test("computeJobScheduleCascade resolves a finish-to-start predecessor chain", (
   assert.equal(b.startDate, "2026-01-08");
   // 2 work days starting Thu = Thu + Fri = Fri Jan 9.
   assert.equal(b.endDate, "2026-01-09");
+});
+
+test("computeJobScheduleCascade preserves manual endDate when predecessors move startDate", () => {
+  const result = computeJobScheduleCascade(
+    [
+      {
+        id: "a",
+        title: "A",
+        startDate: "2026-01-05",
+        endDate: "2026-01-07",
+        workDays: 3,
+      },
+      {
+        id: "b",
+        title: "B",
+        startDate: "2026-01-05",
+        endDate: "2026-01-15",
+        workDays: 2,
+        manualEndDate: true,
+      },
+    ],
+    [
+      {
+        scheduleItemId: "b",
+        predecessorId: "a",
+        dependencyType: "finish_to_start",
+        lagDays: 0,
+      },
+    ],
+    [],
+  );
+
+  const b = result.get("b");
+  assert.ok(b);
+  assert.equal(b.startDate, "2026-01-08");
+  assert.equal(b.endDate, "2026-01-15");
 });
 
 test("computeJobScheduleCascade is pure: same input twice yields identical results", () => {

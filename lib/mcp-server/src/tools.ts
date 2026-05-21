@@ -11,7 +11,25 @@ export type McpToolDefinition = {
   handler: (client: ApiClient, args: McpToolHandlerArgs) => Promise<unknown>;
 };
 
-const idString = z.string().min(1, "id is required");
+function isSafePathSegment(value: string) {
+  try {
+    const decoded = decodeURIComponent(value);
+    return (
+      decoded.length > 0 &&
+      decoded !== "." &&
+      decoded !== ".." &&
+      !decoded.includes("/") &&
+      !decoded.includes("\\")
+    );
+  } catch {
+    return false;
+  }
+}
+
+const idString = z
+  .string()
+  .min(1, "id is required")
+  .refine(isSafePathSegment, "id must be a single URL path segment");
 const optionalIdempotencyKey = z
   .string()
   .min(1)
@@ -20,6 +38,27 @@ const optionalIdempotencyKey = z
   .describe(
     "Optional Idempotency-Key forwarded to the API; safe to retry with the same key.",
   );
+
+function decodeStrictBase64(input: string): Buffer {
+  const normalized = input.replace(/\s+/g, "");
+  if (!normalized || normalized.length % 4 === 1) {
+    throw new ApiError(400, "contentBase64 is not valid base64", null);
+  }
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) {
+    throw new ApiError(400, "contentBase64 is not valid base64", null);
+  }
+
+  const buffer = Buffer.from(normalized, "base64");
+  const canonicalInput = normalized.replace(/=+$/, "");
+  const canonicalDecoded = buffer.toString("base64").replace(/=+$/, "");
+  if (canonicalInput !== canonicalDecoded) {
+    throw new ApiError(400, "contentBase64 is not valid base64", null);
+  }
+  if (buffer.length === 0) {
+    throw new ApiError(400, "contentBase64 decoded to zero bytes", null);
+  }
+  return buffer;
+}
 
 function paginationShape() {
   return {
@@ -35,7 +74,11 @@ function pickId(args: Record<string, unknown>, key = "id"): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new ApiError(400, `${key} is required`, null);
   }
-  return value;
+  if (!isSafePathSegment(value)) {
+    throw new ApiError(400, `${key} must be a single URL path segment`, null);
+  }
+
+  return encodeURIComponent(value);
 }
 
 function takeIdempotencyKey(args: Record<string, unknown>): string | undefined {
@@ -379,7 +422,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
     description: "List the contacts attached to a client. Maps to GET /api/clients/:id/contacts.",
     inputSchema: z.object({ clientId: idString }),
     handler: (client, args) => {
-      const clientId = String(args["clientId"]);
+      const clientId = pickId(args, "clientId");
       return client
         .request({
           method: "GET",
@@ -395,8 +438,8 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
     description: "Maps to GET /api/clients/:clientId/contacts/:contactId.",
     inputSchema: z.object({ clientId: idString, contactId: idString }),
     handler: (client, args) => {
-      const clientId = String(args["clientId"]);
-      const contactId = String(args["contactId"]);
+      const clientId = pickId(args, "clientId");
+      const contactId = pickId(args, "contactId");
       return client
         .request({
           method: "GET",
@@ -425,7 +468,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       })
       .passthrough(),
     handler: (client, args) => {
-      const clientId = String(args["clientId"]);
+      const clientId = pickId(args, "clientId");
       const key = takeIdempotencyKey(args);
       return client
         .request({
@@ -458,8 +501,8 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       })
       .passthrough(),
     handler: (client, args) => {
-      const clientId = String(args["clientId"]);
-      const contactId = String(args["contactId"]);
+      const clientId = pickId(args, "clientId");
+      const contactId = pickId(args, "contactId");
       const key = takeIdempotencyKey(args);
       return client
         .request({
@@ -483,8 +526,8 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       idempotencyKey: optionalIdempotencyKey,
     }),
     handler: (client, args) => {
-      const clientId = String(args["clientId"]);
-      const contactId = String(args["contactId"]);
+      const clientId = pickId(args, "clientId");
+      const contactId = pickId(args, "contactId");
       const key = takeIdempotencyKey(args);
       return client
         .request({
@@ -512,7 +555,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       tag: z.string().optional(),
     }),
     handler: (client, args) => {
-      const jobId = String(args["jobId"]);
+      const jobId = pickId(args, "jobId");
       return client
         .request({
           method: "GET",
@@ -541,7 +584,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       .object({ jobId: idString, idempotencyKey: optionalIdempotencyKey })
       .passthrough(),
     handler: (client, args) => {
-      const jobId = String(args["jobId"]);
+      const jobId = pickId(args, "jobId");
       const key = takeIdempotencyKey(args);
       return client
         .request({
@@ -601,7 +644,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       idempotencyKey: optionalIdempotencyKey,
     }),
     handler: (client, args) => {
-      const dailyLogId = String(args["dailyLogId"]);
+      const dailyLogId = pickId(args, "dailyLogId");
       const key = takeIdempotencyKey(args);
       return client
         .request({
@@ -626,8 +669,8 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       idempotencyKey: optionalIdempotencyKey,
     }),
     handler: (client, args) => {
-      const dailyLogId = String(args["dailyLogId"]);
-      const todoId = String(args["todoId"]);
+      const dailyLogId = pickId(args, "dailyLogId");
+      const todoId = pickId(args, "todoId");
       const key = takeIdempotencyKey(args);
       return client
         .request({
@@ -650,7 +693,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       .object({ jobId: idString })
       .passthrough(),
     handler: (client, args) => {
-      const jobId = String(args["jobId"]);
+      const jobId = pickId(args, "jobId");
       return client
         .request({
           method: "GET",
@@ -697,7 +740,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       })
       .passthrough(),
     handler: (client, args) => {
-      const jobId = String(args["jobId"]);
+      const jobId = pickId(args, "jobId");
       const key = takeIdempotencyKey(args);
       return client
         .request({
@@ -760,7 +803,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       idempotencyKey: optionalIdempotencyKey,
     }),
     handler: async (client, args) => {
-      const scheduleItemId = String(args["scheduleItemId"]);
+      const scheduleItemId = pickId(args, "scheduleItemId");
       const userId = String(args["userId"]);
       const key = takeIdempotencyKey(args);
       const current = await loadScheduleItemPayload(client, scheduleItemId, "add_schedule_assignee");
@@ -822,7 +865,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       parentFolderId: z.string().optional(),
     }),
     handler: (client, args) => {
-      const jobId = String(args["jobId"]);
+      const jobId = pickId(args, "jobId");
       return client
         .request({
           method: "GET",
@@ -845,7 +888,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       idempotencyKey: optionalIdempotencyKey,
     }),
     handler: (client, args) => {
-      const jobId = String(args["jobId"]);
+      const jobId = pickId(args, "jobId");
       const key = takeIdempotencyKey(args);
       return client
         .request({
@@ -948,7 +991,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       pageSize: z.number().int().min(1).max(100).optional(),
     }),
     handler: (client, args) => {
-      const folderId = String(args["folderId"]);
+      const folderId = pickId(args, "folderId");
       return client
         .request({
           method: "GET",
@@ -973,22 +1016,13 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       idempotencyKey: optionalIdempotencyKey,
     }),
     handler: async (client, args) => {
-      const folderId = String(args["folderId"]);
+      const folderId = pickId(args, "folderId");
       const filename = String(args["filename"]);
       const mimeType = String(args["mimeType"]);
       const note = typeof args["note"] === "string" ? (args["note"] as string) : undefined;
       const idempotencyKey = takeIdempotencyKey(args);
 
-      const base64 = String(args["contentBase64"]);
-      let buffer: Buffer;
-      try {
-        buffer = Buffer.from(base64, "base64");
-      } catch {
-        throw new ApiError(400, "contentBase64 is not valid base64", null);
-      }
-      if (buffer.length === 0) {
-        throw new ApiError(400, "contentBase64 decoded to zero bytes", null);
-      }
+      const buffer = decodeStrictBase64(String(args["contentBase64"]));
 
       const formData = new FormData();
       formData.append(
@@ -1154,7 +1188,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
     name: "request",
     title: "Raw API request (escape hatch)",
     description:
-      "Send an arbitrary request to the CAD Stone REST API documented in /openapi.json. Use this when no tool covers the field you need. The server applies the same auth, validation, and activity logging as any other route.",
+      "Send an arbitrary request to the Stone Track REST API documented in /openapi.json. Use this when no tool covers the field you need. The server applies the same auth, validation, and activity logging as any other route.",
     inputSchema: z.object({
       method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
       path: z.string().min(1).describe("Path under /api, e.g. /jobs or /jobs/:id"),

@@ -248,7 +248,7 @@ test("client and contact creates stamp the active organization", async () => {
   assert.equal(contactBody.contact.organizationId, orgAId);
 });
 
-test("tenant-scoped client deletion does not link jobs to the legacy global unknown client", async () => {
+test("tenant-scoped client deletion reassigns live jobs to a tenant Unknown client", async () => {
   const deleteResponse = await fetch(`${baseUrl}/clients/${orgADeleteClientId}`, {
     method: "DELETE",
     headers: jsonHeaders(orgAAdminToken),
@@ -256,7 +256,7 @@ test("tenant-scoped client deletion does not link jobs to the legacy global unkn
   assert.equal(deleteResponse.status, 200);
 
   const { db } = await import("@workspace/db");
-  const { jobs } = await import("@workspace/db/schema");
+  const { clients, jobs } = await import("@workspace/db/schema");
   const { eq } = await import("drizzle-orm");
   const [job] = await db
     .select({ clientId: jobs.clientId })
@@ -264,5 +264,18 @@ test("tenant-scoped client deletion does not link jobs to the legacy global unkn
     .where(eq(jobs.id, orgADeleteJobId))
     .limit(1);
 
-  assert.equal(job?.clientId, null);
+  assert.ok(job?.clientId);
+
+  const [unknownClient] = await db
+    .select({
+      id: clients.id,
+      organizationId: clients.organizationId,
+      companyName: clients.companyName,
+    })
+    .from(clients)
+    .where(eq(clients.id, job.clientId))
+    .limit(1);
+
+  assert.equal(unknownClient?.organizationId, orgAId);
+  assert.equal(unknownClient?.companyName, "Unknown client");
 });

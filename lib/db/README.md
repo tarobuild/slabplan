@@ -6,10 +6,10 @@ every artifact in the monorepo.
 > **Schema source of truth: hand-written idempotent SQL in `migrations/`.**
 > `scripts/post-merge.sh` runs `pnpm --filter db migrate` (the custom runner
 > in `src/migrate.ts`) on every merge. `drizzle-kit push --force` is **not**
-> used in CI or post-merge — it can silently turn a column rename into a
-> drop-and-recreate, which would lose production data. The `push` /
-> `push-force` scripts in `package.json` exist only for local exploration
-> against throwaway databases.
+> exposed as a package script or used in CI/post-merge — it can silently turn
+> a column rename into a drop-and-recreate, which would lose production data.
+> Use the dedicated parity script when a scratch Drizzle-pushed database is
+> needed for comparison.
 
 ## Layout
 
@@ -52,7 +52,8 @@ every artifact in the monorepo.
 6. Ship. Post-merge will run `check-migrations-journal` then `migrate`
    automatically against the dev/prod database.
 
-We deliberately do **not** use `drizzle-kit generate`. Generated migrations
+We deliberately do **not** use `drizzle-kit generate`, and this package does
+not expose `generate`, `push`, or `push-force` scripts. Generated migrations
 are not idempotent and don't survive partial failures or hand-patched
 databases.
 
@@ -112,4 +113,3 @@ can audit a specific run after the fact. Pass `--mode=dev-vs-prod` to
 compare the live dev DB to prod (requires `PROD_DATABASE_URL`; read-only
 on both ends). The script auto-discovers a postgresql-17 `pg_dump` in
 `/nix/store`; override with `PG_DUMP=/path/to/pg_dump`.
-

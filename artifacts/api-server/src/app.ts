@@ -5,7 +5,7 @@ import helmet from "helmet";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import pinoHttp from "pino-http";
 import { db } from "@workspace/db";
 import { files } from "@workspace/db/schema";
@@ -27,6 +27,7 @@ import { ensureUploadRoot, streamStoredFileToResponse } from "./lib/storage";
 import { ensureTempUploadDir } from "./lib/uploads";
 import { assertActiveAuthUser } from "./lib/active-user";
 import { attachOrganizationContext } from "./lib/auth-organization";
+import { organizationScopeCondition } from "./lib/tenant-scope";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -161,7 +162,12 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
         mimeType: files.mimeType,
       })
       .from(files)
-      .where(eq(files.fileUrl, fileUrl))
+      .where(
+        and(
+          eq(files.fileUrl, fileUrl),
+          organizationScopeCondition(authWithOrganization, files.organizationId),
+        ),
+      )
       .limit(1);
 
     if (!storedFile) {

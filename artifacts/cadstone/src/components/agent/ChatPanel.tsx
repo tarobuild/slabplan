@@ -42,6 +42,7 @@ import { APP_NAME } from "@/lib/brand"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import ChatMessage from "./ChatMessage"
+import { reconcileFailedSendMessages } from "./chat-message-reconciliation"
 
 function newAssistantPlaceholder(conversationId: string): AgentMessage {
   return {
@@ -70,6 +71,8 @@ export default function ChatPanel() {
   const [showHistory, setShowHistory] = useState(false)
   const streamRef = useRef<StreamHandle | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const messageLoadSeqRef = useRef(0)
+  const localMessageSeqRef = useRef(0)
 
   // Scroll to bottom on new messages.
   useEffect(() => {
@@ -79,13 +82,16 @@ export default function ChatPanel() {
   }, [messages, statusText, open])
 
   // Load conversations + usage when opening.
-  const refreshConversations = useCallback(async () => {
+  const refreshConversations = useCallback(async (): Promise<
+    AgentConversation[] | null
+  > => {
     try {
       const list = await listConversations()
       setConversations(list)
       return list
-    } catch {
-      return []
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load conversations")
+      return null
     }
   }, [])
 
@@ -111,6 +117,7 @@ export default function ChatPanel() {
     void (async () => {
       const list = await refreshConversations()
       if (cancelled) return
+      if (list === null) return
       const pinnedFirst = list[0]
       if (pinnedFirst) {
         setActiveConversation(pinnedFirst.id)
@@ -133,14 +140,23 @@ export default function ChatPanel() {
   // Load messages on conversation change.
   useEffect(() => {
     if (!activeConversationId) {
+      messageLoadSeqRef.current += 1
       setMessages([])
       return
     }
+    const requestSeq = ++messageLoadSeqRef.current
+    const localSeqAtStart = localMessageSeqRef.current
     let cancelled = false
     void (async () => {
       try {
         const msgs = await listMessages(activeConversationId)
-        if (!cancelled) setMessages(msgs)
+        if (
+          !cancelled &&
+          requestSeq === messageLoadSeqRef.current &&
+          localSeqAtStart === localMessageSeqRef.current
+        ) {
+          setMessages(msgs)
+        }
       } catch (err) {
         if (!cancelled)
           toast.error(err instanceof Error ? err.message : "Failed to load messages")
@@ -228,6 +244,7 @@ export default function ChatPanel() {
     }
 
     const conversationId = activeConversationId
+    localMessageSeqRef.current += 1
     setDraft("")
     setBusy(true)
     setStatusText("Sending…")
@@ -249,6 +266,7 @@ export default function ChatPanel() {
     setMessages((prev) => [...prev, optimisticUser, placeholder])
 
     let assistantText = ""
+    let hasPersistedUserMessage = false
     const toolCalls: AgentToolCall[] = []
 
     streamRef.current = streamSendMessage(conversationId, trimmed, {
@@ -256,6 +274,7 @@ export default function ChatPanel() {
         switch (event.type) {
           case "user_message":
             // Replace optimistic user with persisted one (for accurate id/timestamp).
+            hasPersistedUserMessage = true
             setMessages((prev) =>
               prev.map((m) => (m.id === optimisticUser.id ? event.message : m)),
             )
@@ -344,8 +363,17 @@ export default function ChatPanel() {
       },
       onError: (message) => {
         toast.error(message)
+        setMessages((prev) =>
+          reconcileFailedSendMessages(prev, {
+            optimisticUserId: optimisticUser.id,
+            placeholderId: placeholder.id,
+            message,
+            hasPersistedUserMessage,
+          }),
+        )
         setBusy(false)
         setStatusText(null)
+        streamRef.current = null
       },
     })
   }
@@ -366,8 +394,8 @@ export default function ChatPanel() {
           logs, schedule items, clients, or activity.
         </SheetDescription>
         {/* Header */}
-        <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2">
-          <Sparkles className="size-4 text-[#E85D04]" />
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <Sparkles className="size-4 text-primary" />
           <div className="flex-1 min-w-0">
             <button
               type="button"
@@ -383,7 +411,7 @@ export default function ChatPanel() {
                   <div
                     className={cn(
                       "h-full",
-                      usage.exceeded ? "bg-red-500" : "bg-orange-400",
+                      usage.exceeded ? "bg-red-500" : "bg-primary",
                     )}
                     style={{ width: `${usagePct}%` }}
                   />
@@ -426,7 +454,7 @@ export default function ChatPanel() {
 
         {/* History dropdown */}
         {showHistory ? (
-          <div className="max-h-60 overflow-y-auto border-b border-slate-200 bg-slate-50 px-2 py-2">
+          <div className="max-h-60 overflow-y-auto border-b border-border bg-muted px-2 py-2">
             {conversations.length === 0 ? (
               <p className="px-2 py-3 text-center text-xs text-slate-500">
                 No previous conversations.
@@ -438,8 +466,8 @@ export default function ChatPanel() {
                   className={cn(
                     "group flex items-center gap-1 rounded px-2 py-1.5 text-xs",
                     c.id === activeConversationId
-                      ? "bg-orange-100 text-orange-900"
-                      : "text-slate-700 hover:bg-slate-100",
+                      ? "bg-accent text-primary"
+                      : "text-foreground hover:bg-accent/60",
                   )}
                 >
                   <button
@@ -488,10 +516,10 @@ export default function ChatPanel() {
         ) : null}
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto bg-[#F9FAFB] px-3 py-3 space-y-3">
+        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-background px-3 py-3">
           {messages.length === 0 ? (
             <div className="mx-auto mt-8 max-w-xs space-y-3 text-center text-sm text-slate-500">
-              <Sparkles className="mx-auto size-6 text-orange-400" />
+              <Sparkles className="mx-auto size-6 text-[hsl(var(--oxide))]" />
               <p className="font-semibold text-slate-700">
                 Read-only assistant for {APP_NAME}
               </p>
@@ -519,7 +547,7 @@ export default function ChatPanel() {
         </div>
 
         {/* Composer */}
-        <div className="border-t border-slate-200 bg-white p-2">
+        <div className="border-t border-border bg-white p-2">
           <div className="flex items-end gap-2">
             <Textarea
               value={draft}
@@ -545,7 +573,7 @@ export default function ChatPanel() {
               disabled={busy || !draft.trim() || usage?.exceeded === true}
               className={cn(
                 "flex size-9 shrink-0 items-center justify-center rounded-md text-white transition-colors",
-                "bg-[#E85D04] hover:bg-[#d05500] disabled:bg-slate-300",
+                "bg-primary hover:bg-primary/90 disabled:bg-slate-300",
               )}
               aria-label="Send"
             >

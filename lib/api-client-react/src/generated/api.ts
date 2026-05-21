@@ -135,7 +135,7 @@ import type {
   WorkdayExceptionsListResponse,
 } from "./api.schemas";
 
-import { customFetch } from "../custom-fetch";
+import { customFetch, mergeRequestHeaders } from "../custom-fetch";
 import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
@@ -153,7 +153,7 @@ export const getBillingGetStatusUrl = () => {
 };
 
 export const billingGetStatus = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<BillingGetStatus200> => {
   return customFetch<BillingGetStatus200>(getBillingGetStatusUrl(), {
     ...options,
@@ -230,14 +230,14 @@ export const getBillingPostCheckoutSessionsUrl = () => {
 
 export const billingPostCheckoutSessions = async (
   billingPostCheckoutSessionsBody: BillingPostCheckoutSessionsBody,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<BillingPostCheckoutSessions201> => {
   return customFetch<BillingPostCheckoutSessions201>(
     getBillingPostCheckoutSessionsUrl(),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(billingPostCheckoutSessionsBody),
     },
   );
@@ -320,7 +320,7 @@ export const getBillingPostCustomerPortalSessionsUrl = () => {
 };
 
 export const billingPostCustomerPortalSessions = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<BillingPostCustomerPortalSessions201> => {
   return customFetch<BillingPostCustomerPortalSessions201>(
     getBillingPostCustomerPortalSessionsUrl(),
@@ -407,7 +407,7 @@ export const getBillingPostStripeWebhookUrl = () => {
 };
 
 export const billingPostStripeWebhook = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<BillingPostStripeWebhook200> => {
   return customFetch<BillingPostStripeWebhook200>(
     getBillingPostStripeWebhookUrl(),
@@ -501,7 +501,7 @@ export const getFinancialsPostJobsJobidFinancialsChangeOrdersParseUrl = (
 export const financialsPostJobsJobidFinancialsChangeOrdersParse = async (
   jobId: string,
   financialsPostJobsJobidFinancialsChangeOrdersParseBody: FinancialsPostJobsJobidFinancialsChangeOrdersParseBody,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<FinancialsPostJobsJobidFinancialsChangeOrdersParse200> => {
   const formData = new FormData();
   formData.append(
@@ -632,12 +632,12 @@ export const getAuthPostAuthRegisterUrl = () => {
 
 export const authPostAuthRegister = async (
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getAuthPostAuthRegisterUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(genericObject),
   });
 };
@@ -719,12 +719,12 @@ export const getAuthPostAuthLoginUrl = () => {
 
 export const authPostAuthLogin = async (
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getAuthPostAuthLoginUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(genericObject),
   });
 };
@@ -805,7 +805,7 @@ export const getAuthPostAuthLogoutUrl = () => {
 };
 
 export const authPostAuthLogout = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getAuthPostAuthLogoutUrl(), {
     ...options,
@@ -887,7 +887,7 @@ export const getAuthPostAuthRefreshUrl = () => {
 };
 
 export const authPostAuthRefresh = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getAuthPostAuthRefreshUrl(), {
     ...options,
@@ -970,12 +970,12 @@ export const getAuthPostAuthAcceptInviteUrl = () => {
 
 export const authPostAuthAcceptInvite = async (
   authAcceptInviteSchema: AuthAcceptInviteSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getAuthPostAuthAcceptInviteUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(authAcceptInviteSchema),
   });
 };
@@ -1056,8 +1056,8 @@ export const getUsersGetUsersUrl = (params?: UsersGetUsersParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -1070,7 +1070,7 @@ export const getUsersGetUsersUrl = (params?: UsersGetUsersParams) => {
 
 export const usersGetUsers = async (
   params?: UsersGetUsersParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersGetUsersUrl(params), {
     ...options,
@@ -1162,12 +1162,12 @@ export const getUsersPostUsersUrl = () => {
 
 export const usersPostUsers = async (
   usersInviteUserSchema: UsersInviteUserSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPostUsersUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(usersInviteUserSchema),
   });
 };
@@ -1250,12 +1250,12 @@ export const getUsersPatchUsersIdUrl = (id: string) => {
 export const usersPatchUsersId = async (
   id: string,
   usersUpdateUserSchema: UsersUpdateUserSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPatchUsersIdUrl(id), {
     ...options,
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(usersUpdateUserSchema),
   });
 };
@@ -1342,7 +1342,7 @@ export const getUsersPostUsersIdInviteResendUrl = (id: string) => {
 
 export const usersPostUsersIdInviteResend = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPostUsersIdInviteResendUrl(id), {
     ...options,
@@ -1430,7 +1430,7 @@ export const getUsersPostUsersIdInviteUrl = (id: string) => {
 
 export const usersPostUsersIdInvite = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPostUsersIdInviteUrl(id), {
     ...options,
@@ -1514,7 +1514,7 @@ export const getUsersGetUsersMeUrl = () => {
 };
 
 export const usersGetUsersMe = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersGetUsersMeUrl(), {
     ...options,
@@ -1591,12 +1591,12 @@ export const getUsersPutUsersMeUrl = () => {
 
 export const usersPutUsersMe = async (
   usersUpdateProfileSchema: UsersUpdateProfileSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPutUsersMeUrl(), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(usersUpdateProfileSchema),
   });
 };
@@ -1678,12 +1678,12 @@ export const getUsersPostUsersMePasswordUrl = () => {
 
 export const usersPostUsersMePassword = async (
   usersChangePasswordSchema: UsersChangePasswordSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPostUsersMePasswordUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(usersChangePasswordSchema),
   });
 };
@@ -1764,8 +1764,8 @@ export const getClientsGetClientsUrl = (params?: ClientsGetClientsParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -1778,7 +1778,7 @@ export const getClientsGetClientsUrl = (params?: ClientsGetClientsParams) => {
 
 export const clientsGetClients = async (
   params?: ClientsGetClientsParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ClientListResponse> => {
   return customFetch<ClientListResponse>(getClientsGetClientsUrl(params), {
     ...options,
@@ -1864,12 +1864,12 @@ export const getClientsPostClientsUrl = () => {
 
 export const clientsPostClients = async (
   clientsClientPayloadSchema: ClientsClientPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ClientDetailResponse> => {
   return customFetch<ClientDetailResponse>(getClientsPostClientsUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(clientsClientPayloadSchema),
   });
 };
@@ -1952,7 +1952,7 @@ export const getClientsGetClientsIdUrl = (id: string) => {
 
 export const clientsGetClientsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ClientDetailResponse> => {
   return customFetch<ClientDetailResponse>(getClientsGetClientsIdUrl(id), {
     ...options,
@@ -2041,12 +2041,12 @@ export const getClientsPutClientsIdUrl = (id: string) => {
 export const clientsPutClientsId = async (
   id: string,
   clientsClientPayloadSchema: ClientsClientPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ClientDetailResponse> => {
   return customFetch<ClientDetailResponse>(getClientsPutClientsIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(clientsClientPayloadSchema),
   });
 };
@@ -2129,7 +2129,7 @@ export const getClientsDeleteClientsIdUrl = (id: string) => {
 
 export const clientsDeleteClientsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getClientsDeleteClientsIdUrl(id), {
     ...options,
@@ -2214,7 +2214,7 @@ export const getClientsGetClientsIdContactsUrl = (id: string) => {
 
 export const clientsGetClientsIdContacts = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getClientsGetClientsIdContactsUrl(id), {
     ...options,
@@ -2305,14 +2305,14 @@ export const getClientsPostClientsIdContactsUrl = (id: string) => {
 export const clientsPostClientsIdContacts = async (
   id: string,
   clientsContactPayloadSchema: ClientsContactPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ClientsPostClientsIdContacts201> => {
   return customFetch<ClientsPostClientsIdContacts201>(
     getClientsPostClientsIdContactsUrl(id),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(clientsContactPayloadSchema),
     },
   );
@@ -2396,7 +2396,7 @@ export const getClientsGetClientsIdJobsUrl = (id: string) => {
 
 export const clientsGetClientsIdJobs = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ClientJobsResponse> => {
   return customFetch<ClientJobsResponse>(getClientsGetClientsIdJobsUrl(id), {
     ...options,
@@ -2491,14 +2491,14 @@ export const clientsPutClientsIdContactsContactId = async (
   id: string,
   contactId: string,
   clientsContactPayloadSchema: ClientsContactPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ClientsPutClientsIdContactsContactId200> => {
   return customFetch<ClientsPutClientsIdContactsContactId200>(
     getClientsPutClientsIdContactsContactIdUrl(id, contactId),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(clientsContactPayloadSchema),
     },
   );
@@ -2614,7 +2614,7 @@ export const getClientsDeleteClientsIdContactsContactIdUrl = (
 export const clientsDeleteClientsIdContactsContactId = async (
   id: string,
   contactId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getClientsDeleteClientsIdContactsContactIdUrl(id, contactId),
@@ -2707,8 +2707,8 @@ export const getJobsGetJobsUrl = (params?: JobsGetJobsParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -2721,7 +2721,7 @@ export const getJobsGetJobsUrl = (params?: JobsGetJobsParams) => {
 
 export const jobsGetJobs = async (
   params?: JobsGetJobsParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<JobListResponse> => {
   return customFetch<JobListResponse>(getJobsGetJobsUrl(params), {
     ...options,
@@ -2804,12 +2804,12 @@ export const getJobsPostJobsUrl = () => {
 
 export const jobsPostJobs = async (
   jobsJobCreatePayloadSchema: JobsJobCreatePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<JobDetailResponse> => {
   return customFetch<JobDetailResponse>(getJobsPostJobsUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(jobsJobCreatePayloadSchema),
   });
 };
@@ -2891,7 +2891,7 @@ export const getJobsGetJobsIdUrl = (id: string) => {
 
 export const jobsGetJobsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<JobDetailResponse> => {
   return customFetch<JobDetailResponse>(getJobsGetJobsIdUrl(id), {
     ...options,
@@ -2980,12 +2980,12 @@ export const getJobsPutJobsIdUrl = (id: string) => {
 export const jobsPutJobsId = async (
   id: string,
   jobsJobPayloadSchema: JobsJobPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<JobDetailResponse> => {
   return customFetch<JobDetailResponse>(getJobsPutJobsIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(jobsJobPayloadSchema),
   });
 };
@@ -3067,7 +3067,7 @@ export const getJobsDeleteJobsIdUrl = (id: string) => {
 
 export const jobsDeleteJobsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getJobsDeleteJobsIdUrl(id), {
     ...options,
@@ -3152,7 +3152,7 @@ export const getJobsGetJobsIdAssigneesUrl = (id: string) => {
 
 export const jobsGetJobsIdAssignees = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<JobAssigneesResponse> => {
   return customFetch<JobAssigneesResponse>(getJobsGetJobsIdAssigneesUrl(id), {
     ...options,
@@ -3242,12 +3242,12 @@ export const getJobsPostJobsIdAssigneesUrl = (id: string) => {
 export const jobsPostJobsIdAssignees = async (
   id: string,
   jobsAssigneePayloadSchema: JobsAssigneePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<JobAssigneesResponse> => {
   return customFetch<JobAssigneesResponse>(getJobsPostJobsIdAssigneesUrl(id), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(jobsAssigneePayloadSchema),
   });
 };
@@ -3334,7 +3334,7 @@ export const getJobsDeleteJobsIdAssigneesUseridUrl = (
 export const jobsDeleteJobsIdAssigneesUserid = async (
   id: string,
   userId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<JobAssigneesResponse> => {
   return customFetch<JobAssigneesResponse>(
     getJobsDeleteJobsIdAssigneesUseridUrl(id, userId),
@@ -3429,14 +3429,14 @@ export const jobsPatchJobsIdAssigneesUseridFinancialsAccess = async (
   id: string,
   userId: string,
   jobsAssigneeFinancialsAccessSchema: JobsAssigneeFinancialsAccessSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<JobAssigneeResponse> => {
   return customFetch<JobAssigneeResponse>(
     getJobsPatchJobsIdAssigneesUseridFinancialsAccessUrl(id, userId),
     {
       ...options,
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(jobsAssigneeFinancialsAccessSchema),
     },
   );
@@ -3551,8 +3551,8 @@ export const getLeadsGetLeadsContactsUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -3565,7 +3565,7 @@ export const getLeadsGetLeadsContactsUrl = (
 
 export const leadsGetLeadsContacts = async (
   params?: LeadsGetLeadsContactsParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<LeadGlobalContactsListResponse> => {
   return customFetch<LeadGlobalContactsListResponse>(
     getLeadsGetLeadsContactsUrl(params),
@@ -3653,8 +3653,8 @@ export const getLeadsGetLeadsUrl = (params?: LeadsGetLeadsParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -3667,7 +3667,7 @@ export const getLeadsGetLeadsUrl = (params?: LeadsGetLeadsParams) => {
 
 export const leadsGetLeads = async (
   params?: LeadsGetLeadsParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<LeadListResponse> => {
   return customFetch<LeadListResponse>(getLeadsGetLeadsUrl(params), {
     ...options,
@@ -3750,12 +3750,12 @@ export const getLeadsPostLeadsUrl = () => {
 
 export const leadsPostLeads = async (
   leadsLeadPayloadSchema: LeadsLeadPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<LeadDetailResponse> => {
   return customFetch<LeadDetailResponse>(getLeadsPostLeadsUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(leadsLeadPayloadSchema),
   });
 };
@@ -3837,7 +3837,7 @@ export const getLeadsGetLeadsIdUrl = (id: string) => {
 
 export const leadsGetLeadsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<LeadDetailResponse> => {
   return customFetch<LeadDetailResponse>(getLeadsGetLeadsIdUrl(id), {
     ...options,
@@ -3926,12 +3926,12 @@ export const getLeadsPutLeadsIdUrl = (id: string) => {
 export const leadsPutLeadsId = async (
   id: string,
   leadsLeadPayloadSchema: LeadsLeadPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<LeadDetailResponse> => {
   return customFetch<LeadDetailResponse>(getLeadsPutLeadsIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(leadsLeadPayloadSchema),
   });
 };
@@ -4013,7 +4013,7 @@ export const getLeadsDeleteLeadsIdUrl = (id: string) => {
 
 export const leadsDeleteLeadsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getLeadsDeleteLeadsIdUrl(id), {
     ...options,
@@ -4099,12 +4099,12 @@ export const getLeadsPostLeadsIdContactsUrl = (id: string) => {
 export const leadsPostLeadsIdContacts = async (
   id: string,
   leadsContactCreateSchema: LeadsContactCreateSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<LeadContactResponse> => {
   return customFetch<LeadContactResponse>(getLeadsPostLeadsIdContactsUrl(id), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(leadsContactCreateSchema),
   });
 };
@@ -4192,14 +4192,14 @@ export const leadsPutLeadsIdContactsContactId = async (
   id: string,
   contactId: string,
   leadsContactUpdateSchema: LeadsContactUpdateSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<LeadContactResponse> => {
   return customFetch<LeadContactResponse>(
     getLeadsPutLeadsIdContactsContactIdUrl(id, contactId),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(leadsContactUpdateSchema),
     },
   );
@@ -4294,7 +4294,7 @@ export const getLeadsDeleteLeadsIdContactsContactIdUrl = (
 export const leadsDeleteLeadsIdContactsContactId = async (
   id: string,
   contactId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getLeadsDeleteLeadsIdContactsContactIdUrl(id, contactId),
@@ -4385,7 +4385,7 @@ export const getLeadsPostLeadsIdAttachmentsUrl = (id: string) => {
 
 export const leadsPostLeadsIdAttachments = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<LeadAttachmentsCreatedResponse> => {
   return customFetch<LeadAttachmentsCreatedResponse>(
     getLeadsPostLeadsIdAttachmentsUrl(id),
@@ -4477,7 +4477,7 @@ export const getLeadsDeleteLeadsIdAttachmentsAttachmentIdUrl = (
 export const leadsDeleteLeadsIdAttachmentsAttachmentId = async (
   id: string,
   attachmentId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getLeadsDeleteLeadsIdAttachmentsAttachmentIdUrl(id, attachmentId),
@@ -4574,14 +4574,14 @@ export const getLeadsPostLeadsIdConvertToJobUrl = (id: string) => {
 export const leadsPostLeadsIdConvertToJob = async (
   id: string,
   leadConvertToJobBody?: LeadConvertToJobBody,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<LeadConvertToJobResponse> => {
   return customFetch<LeadConvertToJobResponse>(
     getLeadsPostLeadsIdConvertToJobUrl(id),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(leadConvertToJobBody),
     },
   );
@@ -4666,12 +4666,12 @@ export const getLeadsPostLeadsIdActivitiesUrl = (id: string) => {
 export const leadsPostLeadsIdActivities = async (
   id: string,
   leadsActivityCreateSchema: LeadsActivityCreateSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getLeadsPostLeadsIdActivitiesUrl(id), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(leadsActivityCreateSchema),
   });
 };
@@ -4754,7 +4754,7 @@ export const getFoldersGetJobsJobIdFoldersUrl = (jobId: string) => {
 
 export const foldersGetJobsJobIdFolders = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersGetJobsJobIdFoldersUrl(jobId), {
     ...options,
@@ -4848,12 +4848,12 @@ export const getFoldersPostJobsJobIdFoldersUrl = (jobId: string) => {
 export const foldersPostJobsJobIdFolders = async (
   jobId: string,
   foldersFolderBodySchema: FoldersFolderBodySchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPostJobsJobIdFoldersUrl(jobId), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(foldersFolderBodySchema),
   });
 };
@@ -4937,12 +4937,12 @@ export const getFoldersPutFoldersIdUrl = (id: string) => {
 export const foldersPutFoldersId = async (
   id: string,
   foldersFolderUpdateSchema: FoldersFolderUpdateSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPutFoldersIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(foldersFolderUpdateSchema),
   });
 };
@@ -5025,7 +5025,7 @@ export const getFoldersDeleteFoldersIdUrl = (id: string) => {
 
 export const foldersDeleteFoldersId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersDeleteFoldersIdUrl(id), {
     ...options,
@@ -5110,7 +5110,7 @@ export const getFoldersPostFoldersIdCopyUrl = (id: string) => {
 
 export const foldersPostFoldersIdCopy = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPostFoldersIdCopyUrl(id), {
     ...options,
@@ -5196,12 +5196,12 @@ export const getFoldersPutFoldersIdMoveUrl = (id: string) => {
 export const foldersPutFoldersIdMove = async (
   id: string,
   foldersMoveFolderSchema: FoldersMoveFolderSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPutFoldersIdMoveUrl(id), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(foldersMoveFolderSchema),
   });
 };
@@ -5284,7 +5284,7 @@ export const getFoldersPostFoldersIdRestoreUrl = (id: string) => {
 
 export const foldersPostFoldersIdRestore = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPostFoldersIdRestoreUrl(id), {
     ...options,
@@ -5369,7 +5369,7 @@ export const getFoldersDeleteFoldersIdPurgeUrl = (id: string) => {
 
 export const foldersDeleteFoldersIdPurge = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersDeleteFoldersIdPurgeUrl(id), {
     ...options,
@@ -5454,7 +5454,7 @@ export const getFoldersGetFoldersIdDownloadUrl = (id: string) => {
 
 export const foldersGetFoldersIdDownload = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersGetFoldersIdDownloadUrl(id), {
     ...options,
@@ -5544,7 +5544,7 @@ export const getFoldersGetJobsJobIdTrashUrl = (jobId: string) => {
 
 export const foldersGetJobsJobIdTrash = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersGetJobsJobIdTrashUrl(jobId), {
     ...options,
@@ -5634,7 +5634,7 @@ export const getFoldersDeleteJobsJobIdTrashUrl = (jobId: string) => {
 
 export const foldersDeleteJobsJobIdTrash = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersDeleteJobsJobIdTrashUrl(jobId), {
     ...options,
@@ -5720,8 +5720,8 @@ export const getFilesGetFoldersIdFilesUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -5735,7 +5735,7 @@ export const getFilesGetFoldersIdFilesUrl = (
 export const filesGetFoldersIdFiles = async (
   id: string,
   params?: FilesGetFoldersIdFilesParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesGetFoldersIdFilesUrl(id, params), {
     ...options,
@@ -5834,7 +5834,7 @@ export const getFilesPostFoldersIdFilesUrl = (id: string) => {
 
 export const filesPostFoldersIdFiles = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesPostFoldersIdFilesUrl(id), {
     ...options,
@@ -5920,12 +5920,12 @@ export const getFilesPutFilesIdUrl = (id: string) => {
 export const filesPutFilesId = async (
   id: string,
   filesRenameFileSchema: FilesRenameFileSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesPutFilesIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(filesRenameFileSchema),
   });
 };
@@ -6007,7 +6007,7 @@ export const getFilesDeleteFilesIdUrl = (id: string) => {
 
 export const filesDeleteFilesId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesDeleteFilesIdUrl(id), {
     ...options,
@@ -6092,7 +6092,7 @@ export const getFilesPostFilesIdRestoreUrl = (id: string) => {
 
 export const filesPostFilesIdRestore = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesPostFilesIdRestoreUrl(id), {
     ...options,
@@ -6177,7 +6177,7 @@ export const getFilesDeleteFilesIdPurgeUrl = (id: string) => {
 
 export const filesDeleteFilesIdPurge = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesDeleteFilesIdPurgeUrl(id), {
     ...options,
@@ -6262,7 +6262,7 @@ export const getFilesGetFilesIdDownloadUrl = (id: string) => {
 
 export const filesGetFilesIdDownload = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesGetFilesIdDownloadUrl(id), {
     ...options,
@@ -6353,8 +6353,8 @@ export const getDailyLogsGetJobsJobIdDailyLogsUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -6368,7 +6368,7 @@ export const getDailyLogsGetJobsJobIdDailyLogsUrl = (
 export const dailyLogsGetJobsJobIdDailyLogs = async (
   jobId: string,
   params?: DailyLogsGetJobsJobIdDailyLogsParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogListResponse> => {
   return customFetch<DailyLogListResponse>(
     getDailyLogsGetJobsJobIdDailyLogsUrl(jobId, params),
@@ -6478,14 +6478,14 @@ export const getDailyLogsPostJobsJobIdDailyLogsUrl = (jobId: string) => {
 export const dailyLogsPostJobsJobIdDailyLogs = async (
   jobId: string,
   dailyLogsDailyLogPayloadSchema: DailyLogsDailyLogPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogDetailResponse> => {
   return customFetch<DailyLogDetailResponse>(
     getDailyLogsPostJobsJobIdDailyLogsUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
     },
   );
@@ -6571,7 +6571,7 @@ export const getDailyLogsGetDailyLogsIdUrl = (id: string) => {
 
 export const dailyLogsGetDailyLogsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogDetailResponse> => {
   return customFetch<DailyLogDetailResponse>(
     getDailyLogsGetDailyLogsIdUrl(id),
@@ -6665,14 +6665,14 @@ export const getDailyLogsPutDailyLogsIdUrl = (id: string) => {
 export const dailyLogsPutDailyLogsId = async (
   id: string,
   dailyLogsDailyLogPayloadSchema: DailyLogsDailyLogPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogDetailResponse> => {
   return customFetch<DailyLogDetailResponse>(
     getDailyLogsPutDailyLogsIdUrl(id),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
     },
   );
@@ -6756,7 +6756,7 @@ export const getDailyLogsDeleteDailyLogsIdUrl = (id: string) => {
 
 export const dailyLogsDeleteDailyLogsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getDailyLogsDeleteDailyLogsIdUrl(id), {
     ...options,
@@ -6841,7 +6841,7 @@ export const getDailyLogsPostDailyLogsIdPublishUrl = (id: string) => {
 
 export const dailyLogsPostDailyLogsIdPublish = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogDetailResponse> => {
   return customFetch<DailyLogDetailResponse>(
     getDailyLogsPostDailyLogsIdPublishUrl(id),
@@ -6935,7 +6935,7 @@ export const getDailyLogsGetWeatherUrl = () => {
 };
 
 export const dailyLogsGetWeather = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogWeatherResponse> => {
   return customFetch<DailyLogWeatherResponse>(getDailyLogsGetWeatherUrl(), {
     ...options,
@@ -7012,7 +7012,7 @@ export const getDailyLogsPostDailyLogsIdLikeUrl = (id: string) => {
 
 export const dailyLogsPostDailyLogsIdLike = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogLikeResponse> => {
   return customFetch<DailyLogLikeResponse>(
     getDailyLogsPostDailyLogsIdLikeUrl(id),
@@ -7100,7 +7100,7 @@ export const getDailyLogsGetDailyLogsIdCommentsUrl = (id: string) => {
 
 export const dailyLogsGetDailyLogsIdComments = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogCommentsResponse> => {
   return customFetch<DailyLogCommentsResponse>(
     getDailyLogsGetDailyLogsIdCommentsUrl(id),
@@ -7197,14 +7197,14 @@ export const getDailyLogsPostDailyLogsIdCommentsUrl = (id: string) => {
 export const dailyLogsPostDailyLogsIdComments = async (
   id: string,
   dailyLogsCommentPayloadSchema: DailyLogsCommentPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogCommentsResponse> => {
   return customFetch<DailyLogCommentsResponse>(
     getDailyLogsPostDailyLogsIdCommentsUrl(id),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(dailyLogsCommentPayloadSchema),
     },
   );
@@ -7295,14 +7295,14 @@ export const dailyLogsPostDailyLogsIdCommentsCommentIdReactions = async (
   id: string,
   commentId: string,
   dailyLogsCommentReactionPayloadSchema: DailyLogsCommentReactionPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogCommentsResponse> => {
   return customFetch<DailyLogCommentsResponse>(
     getDailyLogsPostDailyLogsIdCommentsCommentIdReactionsUrl(id, commentId),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(dailyLogsCommentReactionPayloadSchema),
     },
   );
@@ -7428,14 +7428,14 @@ export const getDailyLogsPostDailyLogsIdTodosUrl = (id: string) => {
 export const dailyLogsPostDailyLogsIdTodos = async (
   id: string,
   dailyLogsTodoPayloadSchema: DailyLogsTodoPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogTodosResponse> => {
   return customFetch<DailyLogTodosResponse>(
     getDailyLogsPostDailyLogsIdTodosUrl(id),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(dailyLogsTodoPayloadSchema),
     },
   );
@@ -7524,14 +7524,14 @@ export const dailyLogsPostDailyLogsIdTodosTodoIdToggle = async (
   id: string,
   todoId: string,
   dailyLogsTodoTogglePayloadSchema: DailyLogsTodoTogglePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogTodosResponse> => {
   return customFetch<DailyLogTodosResponse>(
     getDailyLogsPostDailyLogsIdTodosTodoIdToggleUrl(id, todoId),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(dailyLogsTodoTogglePayloadSchema),
     },
   );
@@ -7649,7 +7649,7 @@ export const getDailyLogsPostDailyLogsIdCommentAttachmentsUrl = (
 
 export const dailyLogsPostDailyLogsIdCommentAttachments = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogCommentAttachmentsCreatedResponse> => {
   return customFetch<DailyLogCommentAttachmentsCreatedResponse>(
     getDailyLogsPostDailyLogsIdCommentAttachmentsUrl(id),
@@ -7741,7 +7741,7 @@ export const getDailyLogsPostDailyLogsIdAttachmentsUrl = (id: string) => {
 
 export const dailyLogsPostDailyLogsIdAttachments = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogAttachmentsCreatedResponse> => {
   return customFetch<DailyLogAttachmentsCreatedResponse>(
     getDailyLogsPostDailyLogsIdAttachmentsUrl(id),
@@ -7836,7 +7836,7 @@ export const getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdUrl = (
 export const dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId = async (
   id: string,
   attachmentId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdUrl(id, attachmentId),
@@ -7941,7 +7941,7 @@ export const getDailyLogAdminGetDailyLogsSettingsUrl = () => {
 };
 
 export const dailyLogAdminGetDailyLogsSettings = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDailyLogAdminGetDailyLogsSettingsUrl(), {
     ...options,
@@ -8021,12 +8021,12 @@ export const getDailyLogAdminPutDailyLogsSettingsUrl = () => {
 
 export const dailyLogAdminPutDailyLogsSettings = async (
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDailyLogAdminPutDailyLogsSettingsUrl(), {
     ...options,
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(genericObject),
   });
 };
@@ -8110,7 +8110,7 @@ export const getDailyLogAdminGetDailyLogsCustomFieldsUrl = () => {
 };
 
 export const dailyLogAdminGetDailyLogsCustomFields = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDailyLogAdminGetDailyLogsCustomFieldsUrl(), {
     ...options,
@@ -8192,12 +8192,12 @@ export const getDailyLogAdminPostDailyLogsCustomFieldsUrl = () => {
 
 export const dailyLogAdminPostDailyLogsCustomFields = async (
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDailyLogAdminPostDailyLogsCustomFieldsUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(genericObject),
   });
 };
@@ -8286,14 +8286,14 @@ export const getDailyLogAdminPutDailyLogsCustomFieldsFieldIdUrl = (
 export const dailyLogAdminPutDailyLogsCustomFieldsFieldId = async (
   fieldId: string,
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getDailyLogAdminPutDailyLogsCustomFieldsFieldIdUrl(fieldId),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -8387,7 +8387,7 @@ export const getDailyLogAdminDeleteDailyLogsCustomFieldsFieldIdUrl = (
 
 export const dailyLogAdminDeleteDailyLogsCustomFieldsFieldId = async (
   fieldId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getDailyLogAdminDeleteDailyLogsCustomFieldsFieldIdUrl(fieldId),
@@ -8484,8 +8484,8 @@ export const getDailyLogsGetDailyLogsFeedUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -8498,7 +8498,7 @@ export const getDailyLogsGetDailyLogsFeedUrl = (
 
 export const dailyLogsGetDailyLogsFeed = async (
   params?: DailyLogsGetDailyLogsFeedParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<DailyLogListResponse> => {
   return customFetch<DailyLogListResponse>(
     getDailyLogsGetDailyLogsFeedUrl(params),
@@ -8591,8 +8591,8 @@ export const getDailyLogAdminGetDailyLogsMineUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -8605,7 +8605,7 @@ export const getDailyLogAdminGetDailyLogsMineUrl = (
 
 export const dailyLogAdminGetDailyLogsMine = async (
   params?: DailyLogAdminGetDailyLogsMineParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<MyDailyLogsResponse> => {
   return customFetch<MyDailyLogsResponse>(
     getDailyLogAdminGetDailyLogsMineUrl(params),
@@ -8698,7 +8698,7 @@ export const getScheduleGetJobsJobIdScheduleSettingsUrl = (jobId: string) => {
 
 export const scheduleGetJobsJobIdScheduleSettings = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleSettings> => {
   return customFetch<ScheduleSettings>(
     getScheduleGetJobsJobIdScheduleSettingsUrl(jobId),
@@ -8798,14 +8798,14 @@ export const getSchedulePutJobsJobIdScheduleSettingsUrl = (jobId: string) => {
 export const schedulePutJobsJobIdScheduleSettings = async (
   jobId: string,
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleSettingsUpdateResponse> => {
   return customFetch<ScheduleSettingsUpdateResponse>(
     getSchedulePutJobsJobIdScheduleSettingsUrl(jobId),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -8895,14 +8895,14 @@ export const getSchedulePostJobsJobIdScheduleSettingsPhasesUrl = (
 export const schedulePostJobsJobIdScheduleSettingsPhases = async (
   jobId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getSchedulePostJobsJobIdScheduleSettingsPhasesUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
     },
   );
@@ -8999,14 +8999,14 @@ export const schedulePutJobsJobIdScheduleSettingsPhasesPhaseId = async (
   jobId: string,
   phaseId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getSchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdUrl(jobId, phaseId),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
     },
   );
@@ -9129,7 +9129,7 @@ export const getScheduleGetJobsJobIdSchedulePhasesUrl = (jobId: string) => {
 
 export const scheduleGetJobsJobIdSchedulePhases = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SchedulePhaseListResponse> => {
   return customFetch<SchedulePhaseListResponse>(
     getScheduleGetJobsJobIdSchedulePhasesUrl(jobId),
@@ -9229,14 +9229,14 @@ export const getSchedulePostJobsJobIdSchedulePhasesUrl = (jobId: string) => {
 export const schedulePostJobsJobIdSchedulePhases = async (
   jobId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SchedulePhaseResponse> => {
   return customFetch<SchedulePhaseResponse>(
     getSchedulePostJobsJobIdSchedulePhasesUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
     },
   );
@@ -9328,14 +9328,14 @@ export const schedulePutJobsJobIdSchedulePhasesPhaseId = async (
   jobId: string,
   phaseId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SchedulePhaseResponse> => {
   return customFetch<SchedulePhaseResponse>(
     getSchedulePutJobsJobIdSchedulePhasesPhaseIdUrl(jobId, phaseId),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
     },
   );
@@ -9452,7 +9452,7 @@ export const getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdUrl = (
 export const scheduleDeleteJobsJobIdSchedulePhasesPhaseId = async (
   jobId: string,
   phaseId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdUrl(jobId, phaseId),
@@ -9551,14 +9551,14 @@ export const getSchedulePostJobsJobIdScheduleSettingsTagsUrl = (
 export const schedulePostJobsJobIdScheduleSettingsTags = async (
   jobId: string,
   scheduleScheduleSettingPayloadSchema: ScheduleScheduleSettingPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleSettingTagResponse> => {
   return customFetch<ScheduleSettingTagResponse>(
     getSchedulePostJobsJobIdScheduleSettingsTagsUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(scheduleScheduleSettingPayloadSchema),
     },
   );
@@ -9655,14 +9655,14 @@ export const schedulePutJobsJobIdScheduleSettingsTagsTagId = async (
   jobId: string,
   tagId: string,
   scheduleScheduleSettingPayloadSchema: ScheduleScheduleSettingPayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getSchedulePutJobsJobIdScheduleSettingsTagsTagIdUrl(jobId, tagId),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(scheduleScheduleSettingPayloadSchema),
     },
   );
@@ -9775,7 +9775,7 @@ export const getScheduleGetJobsJobIdScheduleBaselineUrl = (jobId: string) => {
 
 export const scheduleGetJobsJobIdScheduleBaseline = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleBaselineResponse> => {
   return customFetch<ScheduleBaselineResponse>(
     getScheduleGetJobsJobIdScheduleBaselineUrl(jobId),
@@ -9874,7 +9874,7 @@ export const getSchedulePostJobsJobIdScheduleBaselineUrl = (jobId: string) => {
 
 export const schedulePostJobsJobIdScheduleBaseline = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleBaselineResponse> => {
   return customFetch<ScheduleBaselineResponse>(
     getSchedulePostJobsJobIdScheduleBaselineUrl(jobId),
@@ -9965,7 +9965,7 @@ export const getSchedulePutJobsJobIdScheduleBaselineUrl = (jobId: string) => {
 
 export const schedulePutJobsJobIdScheduleBaseline = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleBaselineResponse> => {
   return customFetch<ScheduleBaselineResponse>(
     getSchedulePutJobsJobIdScheduleBaselineUrl(jobId),
@@ -10058,7 +10058,7 @@ export const getScheduleDeleteJobsJobIdScheduleBaselineUrl = (
 
 export const scheduleDeleteJobsJobIdScheduleBaseline = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteJobsJobIdScheduleBaselineUrl(jobId),
@@ -10152,14 +10152,14 @@ export const getSchedulePostJobsJobIdWorkdayExceptionsCategoriesUrl = (
 export const schedulePostJobsJobIdWorkdayExceptionsCategories = async (
   jobId: string,
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<WorkdayExceptionCategoryResponse> => {
   return customFetch<WorkdayExceptionCategoryResponse>(
     getSchedulePostJobsJobIdWorkdayExceptionsCategoriesUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -10262,7 +10262,7 @@ export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId = async (
   jobId: string,
   categoryId: string,
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<WorkdayExceptionCategoryResponse> => {
   return customFetch<WorkdayExceptionCategoryResponse>(
     getSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdUrl(
@@ -10272,7 +10272,7 @@ export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId = async (
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -10389,7 +10389,7 @@ export const getScheduleGetJobsJobIdWorkdayExceptionsUrl = (jobId: string) => {
 
 export const scheduleGetJobsJobIdWorkdayExceptions = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<WorkdayExceptionsListResponse> => {
   return customFetch<WorkdayExceptionsListResponse>(
     getScheduleGetJobsJobIdWorkdayExceptionsUrl(jobId),
@@ -10490,14 +10490,14 @@ export const getSchedulePostJobsJobIdWorkdayExceptionsUrl = (jobId: string) => {
 export const schedulePostJobsJobIdWorkdayExceptions = async (
   jobId: string,
   workdayExceptionPayload: WorkdayExceptionPayload,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<WorkdayExceptionResponse> => {
   return customFetch<WorkdayExceptionResponse>(
     getSchedulePostJobsJobIdWorkdayExceptionsUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(workdayExceptionPayload),
     },
   );
@@ -10589,14 +10589,14 @@ export const schedulePutJobsJobIdWorkdayExceptionsExceptionId = async (
   jobId: string,
   exceptionId: string,
   workdayExceptionUpdatePayload: WorkdayExceptionUpdatePayload,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<WorkdayExceptionResponse> => {
   return customFetch<WorkdayExceptionResponse>(
     getSchedulePutJobsJobIdWorkdayExceptionsExceptionIdUrl(jobId, exceptionId),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(workdayExceptionUpdatePayload),
     },
   );
@@ -10719,7 +10719,7 @@ export const getScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdUrl = (
 export const scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId = async (
   jobId: string,
   exceptionId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdUrl(
@@ -10832,7 +10832,7 @@ export const getSchedulePostJobsJobIdScheduleTrackConflictsUrl = (
 
 export const schedulePostJobsJobIdScheduleTrackConflicts = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleConflictsResponse> => {
   return customFetch<ScheduleConflictsResponse>(
     getSchedulePostJobsJobIdScheduleTrackConflictsUrl(jobId),
@@ -10926,7 +10926,7 @@ export const getSchedulePostJobsJobIdScheduleNotifyAssignedUsersUrl = (
 
 export const schedulePostJobsJobIdScheduleNotifyAssignedUsers = async (
   jobId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleNotifyResponse> => {
   return customFetch<ScheduleNotifyResponse>(
     getSchedulePostJobsJobIdScheduleNotifyAssignedUsersUrl(jobId),
@@ -11028,8 +11028,8 @@ export const getScheduleGetJobsJobIdScheduleUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -11043,7 +11043,7 @@ export const getScheduleGetJobsJobIdScheduleUrl = (
 export const scheduleGetJobsJobIdSchedule = async (
   jobId: string,
   params?: ScheduleGetJobsJobIdScheduleParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleListResponse> => {
   return customFetch<ScheduleListResponse>(
     getScheduleGetJobsJobIdScheduleUrl(jobId, params),
@@ -11147,14 +11147,14 @@ export const getSchedulePostJobsJobIdScheduleUrl = (jobId: string) => {
 export const schedulePostJobsJobIdSchedule = async (
   jobId: string,
   scheduleSchedulePayloadSchema: ScheduleSchedulePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleItemResponse> => {
   return customFetch<ScheduleItemResponse>(
     getSchedulePostJobsJobIdScheduleUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(scheduleSchedulePayloadSchema),
     },
   );
@@ -11237,7 +11237,7 @@ export const getScheduleGetScheduleUrl = () => {
 };
 
 export const scheduleGetSchedule = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleListResponse> => {
   return customFetch<ScheduleListResponse>(getScheduleGetScheduleUrl(), {
     ...options,
@@ -11314,7 +11314,7 @@ export const getScheduleGetScheduleItemsIdUrl = (id: string) => {
 
 export const scheduleGetScheduleItemsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleItemResponse> => {
   return customFetch<ScheduleItemResponse>(
     getScheduleGetScheduleItemsIdUrl(id),
@@ -11408,14 +11408,14 @@ export const getSchedulePutScheduleItemsIdUrl = (id: string) => {
 export const schedulePutScheduleItemsId = async (
   id: string,
   scheduleSchedulePayloadSchema: ScheduleSchedulePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleItemResponse> => {
   return customFetch<ScheduleItemResponse>(
     getSchedulePutScheduleItemsIdUrl(id),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(scheduleSchedulePayloadSchema),
     },
   );
@@ -11499,7 +11499,7 @@ export const getScheduleDeleteScheduleItemsIdUrl = (id: string) => {
 
 export const scheduleDeleteScheduleItemsId = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getScheduleDeleteScheduleItemsIdUrl(id), {
     ...options,
@@ -11585,14 +11585,14 @@ export const getSchedulePostScheduleItemsIdTodosUrl = (id: string) => {
 export const schedulePostScheduleItemsIdTodos = async (
   id: string,
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleTodoResponse> => {
   return customFetch<ScheduleTodoResponse>(
     getSchedulePostScheduleItemsIdTodosUrl(id),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -11683,14 +11683,14 @@ export const schedulePutScheduleItemsIdTodosTodoId = async (
   id: string,
   todoId: string,
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleTodoResponse> => {
   return customFetch<ScheduleTodoResponse>(
     getSchedulePutScheduleItemsIdTodosTodoIdUrl(id, todoId),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -11786,7 +11786,7 @@ export const getScheduleDeleteScheduleItemsIdTodosTodoIdUrl = (
 export const scheduleDeleteScheduleItemsIdTodosTodoId = async (
   id: string,
   todoId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteScheduleItemsIdTodosTodoIdUrl(id, todoId),
@@ -11879,14 +11879,14 @@ export const getSchedulePostScheduleItemsIdNotesUrl = (id: string) => {
 export const schedulePostScheduleItemsIdNotes = async (
   id: string,
   scheduleScheduleNotePayloadSchema: ScheduleScheduleNotePayloadSchema,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleNoteResponse> => {
   return customFetch<ScheduleNoteResponse>(
     getSchedulePostScheduleItemsIdNotesUrl(id),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(scheduleScheduleNotePayloadSchema),
     },
   );
@@ -11972,7 +11972,7 @@ export const getSchedulePostScheduleItemsIdAttachmentsUrl = (id: string) => {
 
 export const schedulePostScheduleItemsIdAttachments = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleAttachmentsCreatedResponse> => {
   return customFetch<ScheduleAttachmentsCreatedResponse>(
     getSchedulePostScheduleItemsIdAttachmentsUrl(id),
@@ -12066,14 +12066,14 @@ export const getSchedulePostScheduleItemsIdAttachmentsNewDocUrl = (
 export const schedulePostScheduleItemsIdAttachmentsNewDoc = async (
   id: string,
   genericObject: GenericObject,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<ScheduleAttachmentResponse> => {
   return customFetch<ScheduleAttachmentResponse>(
     getSchedulePostScheduleItemsIdAttachmentsNewDocUrl(id),
     {
       ...options,
       method: "POST",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -12169,7 +12169,7 @@ export const getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdUrl = (
 export const scheduleDeleteScheduleItemsIdAttachmentsAttachmentId = async (
   id: string,
   attachmentId: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdUrl(
@@ -12281,7 +12281,7 @@ export const getDashboardGetDashboardStatsUrl = () => {
 };
 
 export const dashboardGetDashboardStats = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDashboardGetDashboardStatsUrl(), {
     ...options,
@@ -12358,7 +12358,7 @@ export const getDashboardGetDashboardAgendaUrl = () => {
 };
 
 export const dashboardGetDashboardAgenda = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDashboardGetDashboardAgendaUrl(), {
     ...options,
@@ -12444,7 +12444,7 @@ export const getDashboardGetDashboardHomeUrl = () => {
 };
 
 export const dashboardGetDashboardHome = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<HomePayload> => {
   return customFetch<HomePayload>(getDashboardGetDashboardHomeUrl(), {
     ...options,
@@ -12522,8 +12522,8 @@ export const getDashboardGetDashboardScheduleUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -12536,7 +12536,7 @@ export const getDashboardGetDashboardScheduleUrl = (
 
 export const dashboardGetDashboardSchedule = async (
   params?: DashboardGetDashboardScheduleParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDashboardGetDashboardScheduleUrl(params), {
     ...options,
@@ -12626,8 +12626,8 @@ export const getActivityGetActivityUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -12640,7 +12640,7 @@ export const getActivityGetActivityUrl = (
 
 export const activityGetActivity = async (
   params?: ActivityGetActivityParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getActivityGetActivityUrl(params), {
     ...options,
@@ -12732,8 +12732,8 @@ export const getSearchGetSearchUrl = (params?: SearchGetSearchParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -12746,7 +12746,7 @@ export const getSearchGetSearchUrl = (params?: SearchGetSearchParams) => {
 
 export const searchGetSearch = async (
   params?: SearchGetSearchParams,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<SearchGetSearch200> => {
   return customFetch<SearchGetSearch200>(getSearchGetSearchUrl(params), {
     ...options,
@@ -12828,7 +12828,7 @@ export const getHealthGetLivezUrl = () => {
 };
 
 export const healthGetLivez = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<HealthStatus> => {
   return customFetch<HealthStatus>(getHealthGetLivezUrl(), {
     ...options,
@@ -12904,7 +12904,7 @@ export const getHealthGetHealthzUrl = () => {
 };
 
 export const healthGetHealthz = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<HealthStatusDeep> => {
   return customFetch<HealthStatusDeep>(getHealthGetHealthzUrl(), {
     ...options,
@@ -12981,12 +12981,12 @@ export const getClientErrorsPostClientErrorUrl = () => {
 
 export const clientErrorsPostClientError = async (
   clientErrorsClientErrorPayload: ClientErrorsClientErrorPayload,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<void> => {
   return customFetch<void>(getClientErrorsPostClientErrorUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(clientErrorsClientErrorPayload),
   });
 };
@@ -13067,7 +13067,7 @@ export const getAccountTokensListUrl = () => {
 };
 
 export const accountTokensList = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<PersonalAccessTokenList> => {
   return customFetch<PersonalAccessTokenList>(getAccountTokensListUrl(), {
     ...options,
@@ -13143,12 +13143,12 @@ export const getAccountTokensCreateUrl = () => {
 
 export const accountTokensCreate = async (
   personalAccessTokenCreatePayload: PersonalAccessTokenCreatePayload,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<PersonalAccessTokenCreated> => {
   return customFetch<PersonalAccessTokenCreated>(getAccountTokensCreateUrl(), {
     ...options,
     method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
     body: JSON.stringify(personalAccessTokenCreatePayload),
   });
 };
@@ -13230,7 +13230,7 @@ export const getAccountTokensRevokeUrl = (id: string) => {
 
 export const accountTokensRevoke = async (
   id: string,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<void> => {
   return customFetch<void>(getAccountTokensRevokeUrl(id), {
     ...options,
@@ -13315,8 +13315,8 @@ export const getReportsGetReportsArAgingUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -13327,18 +13327,26 @@ export const getReportsGetReportsArAgingUrl = (
     : `/api/reports/ar-aging`;
 };
 
-export const reportsGetReportsArAging = async (
+export function reportsGetReportsArAging(
+  params: ReportsGetReportsArAgingParams & { format: "csv" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<string>;
+export function reportsGetReportsArAging(
+  params?: ReportsGetReportsArAgingParams & { format?: "json" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<ArAgingResponse>;
+export function reportsGetReportsArAging(
   params?: ReportsGetReportsArAgingParams,
-  options?: RequestInit,
-): Promise<ArAgingResponse> => {
-  return customFetch<ArAgingResponse>(getReportsGetReportsArAgingUrl(params), {
+  options?: SecondParameter<typeof customFetch>,
+): Promise<ArAgingResponse | string> {
+  return customFetch<ArAgingResponse | string>(getReportsGetReportsArAgingUrl(params), {
     ...options,
     method: "GET",
   });
-};
+}
 
 export const getReportsGetReportsArAgingQueryKey = (
-  params?: ReportsGetReportsArAgingParams,
+  params?: ReportsGetReportsArAgingParams & { format?: "json" },
 ) => {
   return [`/api/reports/ar-aging`, ...(params ? [params] : [])] as const;
 };
@@ -13347,7 +13355,7 @@ export const getReportsGetReportsArAgingQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsArAging>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsArAgingParams,
+  params?: ReportsGetReportsArAgingParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsArAging>>,
@@ -13387,7 +13395,7 @@ export function useReportsGetReportsArAging<
   TData = Awaited<ReturnType<typeof reportsGetReportsArAging>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsArAgingParams,
+  params?: ReportsGetReportsArAgingParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsArAging>>,
@@ -13416,8 +13424,8 @@ export const getReportsGetReportsRevenueUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -13428,18 +13436,26 @@ export const getReportsGetReportsRevenueUrl = (
     : `/api/reports/revenue`;
 };
 
-export const reportsGetReportsRevenue = async (
+export function reportsGetReportsRevenue(
+  params: ReportsGetReportsRevenueParams & { format: "csv" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<string>;
+export function reportsGetReportsRevenue(
+  params?: ReportsGetReportsRevenueParams & { format?: "json" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<RevenueResponse>;
+export function reportsGetReportsRevenue(
   params?: ReportsGetReportsRevenueParams,
-  options?: RequestInit,
-): Promise<RevenueResponse> => {
-  return customFetch<RevenueResponse>(getReportsGetReportsRevenueUrl(params), {
+  options?: SecondParameter<typeof customFetch>,
+): Promise<RevenueResponse | string> {
+  return customFetch<RevenueResponse | string>(getReportsGetReportsRevenueUrl(params), {
     ...options,
     method: "GET",
   });
-};
+}
 
 export const getReportsGetReportsRevenueQueryKey = (
-  params?: ReportsGetReportsRevenueParams,
+  params?: ReportsGetReportsRevenueParams & { format?: "json" },
 ) => {
   return [`/api/reports/revenue`, ...(params ? [params] : [])] as const;
 };
@@ -13448,7 +13464,7 @@ export const getReportsGetReportsRevenueQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsRevenueParams,
+  params?: ReportsGetReportsRevenueParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
@@ -13488,7 +13504,7 @@ export function useReportsGetReportsRevenue<
   TData = Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsRevenueParams,
+  params?: ReportsGetReportsRevenueParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
@@ -13517,8 +13533,8 @@ export const getReportsGetReportsPipelineUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -13529,21 +13545,26 @@ export const getReportsGetReportsPipelineUrl = (
     : `/api/reports/pipeline`;
 };
 
-export const reportsGetReportsPipeline = async (
+export function reportsGetReportsPipeline(
+  params: ReportsGetReportsPipelineParams & { format: "csv" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<string>;
+export function reportsGetReportsPipeline(
+  params?: ReportsGetReportsPipelineParams & { format?: "json" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<PipelineResponse>;
+export function reportsGetReportsPipeline(
   params?: ReportsGetReportsPipelineParams,
-  options?: RequestInit,
-): Promise<PipelineResponse> => {
-  return customFetch<PipelineResponse>(
-    getReportsGetReportsPipelineUrl(params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+  options?: SecondParameter<typeof customFetch>,
+): Promise<PipelineResponse | string> {
+  return customFetch<PipelineResponse | string>(getReportsGetReportsPipelineUrl(params), {
+    ...options,
+    method: "GET",
+  });
+}
 
 export const getReportsGetReportsPipelineQueryKey = (
-  params?: ReportsGetReportsPipelineParams,
+  params?: ReportsGetReportsPipelineParams & { format?: "json" },
 ) => {
   return [`/api/reports/pipeline`, ...(params ? [params] : [])] as const;
 };
@@ -13552,7 +13573,7 @@ export const getReportsGetReportsPipelineQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsPipelineParams,
+  params?: ReportsGetReportsPipelineParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
@@ -13592,7 +13613,7 @@ export function useReportsGetReportsPipeline<
   TData = Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsPipelineParams,
+  params?: ReportsGetReportsPipelineParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
@@ -13624,8 +13645,8 @@ export const getReportsGetReportsDaysToPaymentUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -13636,21 +13657,26 @@ export const getReportsGetReportsDaysToPaymentUrl = (
     : `/api/reports/days-to-payment`;
 };
 
-export const reportsGetReportsDaysToPayment = async (
+export function reportsGetReportsDaysToPayment(
+  params: ReportsGetReportsDaysToPaymentParams & { format: "csv" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<string>;
+export function reportsGetReportsDaysToPayment(
+  params?: ReportsGetReportsDaysToPaymentParams & { format?: "json" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<DaysToPaymentResponse>;
+export function reportsGetReportsDaysToPayment(
   params?: ReportsGetReportsDaysToPaymentParams,
-  options?: RequestInit,
-): Promise<DaysToPaymentResponse> => {
-  return customFetch<DaysToPaymentResponse>(
-    getReportsGetReportsDaysToPaymentUrl(params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+  options?: SecondParameter<typeof customFetch>,
+): Promise<DaysToPaymentResponse | string> {
+  return customFetch<DaysToPaymentResponse | string>(getReportsGetReportsDaysToPaymentUrl(params), {
+    ...options,
+    method: "GET",
+  });
+}
 
 export const getReportsGetReportsDaysToPaymentQueryKey = (
-  params?: ReportsGetReportsDaysToPaymentParams,
+  params?: ReportsGetReportsDaysToPaymentParams & { format?: "json" },
 ) => {
   return [`/api/reports/days-to-payment`, ...(params ? [params] : [])] as const;
 };
@@ -13659,7 +13685,7 @@ export const getReportsGetReportsDaysToPaymentQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsDaysToPaymentParams,
+  params?: ReportsGetReportsDaysToPaymentParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
@@ -13699,7 +13725,7 @@ export function useReportsGetReportsDaysToPayment<
   TData = Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsDaysToPaymentParams,
+  params?: ReportsGetReportsDaysToPaymentParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
@@ -13731,8 +13757,8 @@ export const getReportsGetReportsJobsByStageUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? "null" : value.toString());
+    if (value !== undefined && value !== null) {
+      normalizedParams.append(key, value.toString());
     }
   });
 
@@ -13743,21 +13769,26 @@ export const getReportsGetReportsJobsByStageUrl = (
     : `/api/reports/jobs-by-stage`;
 };
 
-export const reportsGetReportsJobsByStage = async (
+export function reportsGetReportsJobsByStage(
+  params: ReportsGetReportsJobsByStageParams & { format: "csv" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<string>;
+export function reportsGetReportsJobsByStage(
+  params?: ReportsGetReportsJobsByStageParams & { format?: "json" },
+  options?: SecondParameter<typeof customFetch>,
+): Promise<JobsByStageResponse>;
+export function reportsGetReportsJobsByStage(
   params?: ReportsGetReportsJobsByStageParams,
-  options?: RequestInit,
-): Promise<JobsByStageResponse> => {
-  return customFetch<JobsByStageResponse>(
-    getReportsGetReportsJobsByStageUrl(params),
-    {
-      ...options,
-      method: "GET",
-    },
-  );
-};
+  options?: SecondParameter<typeof customFetch>,
+): Promise<JobsByStageResponse | string> {
+  return customFetch<JobsByStageResponse | string>(getReportsGetReportsJobsByStageUrl(params), {
+    ...options,
+    method: "GET",
+  });
+}
 
 export const getReportsGetReportsJobsByStageQueryKey = (
-  params?: ReportsGetReportsJobsByStageParams,
+  params?: ReportsGetReportsJobsByStageParams & { format?: "json" },
 ) => {
   return [`/api/reports/jobs-by-stage`, ...(params ? [params] : [])] as const;
 };
@@ -13766,7 +13797,7 @@ export const getReportsGetReportsJobsByStageQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsJobsByStageParams,
+  params?: ReportsGetReportsJobsByStageParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
@@ -13806,7 +13837,7 @@ export function useReportsGetReportsJobsByStage<
   TData = Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsJobsByStageParams,
+  params?: ReportsGetReportsJobsByStageParams & { format?: "json" },
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
@@ -13837,7 +13868,7 @@ export const getUsersGetUsersMeNotificationPrefsUrl = () => {
 };
 
 export const usersGetUsersMeNotificationPrefs = async (
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<NotificationPrefsResponse> => {
   return customFetch<NotificationPrefsResponse>(
     getUsersGetUsersMeNotificationPrefsUrl(),
@@ -13919,14 +13950,14 @@ export const getUsersPutUsersMeNotificationPrefsUrl = () => {
 
 export const usersPutUsersMeNotificationPrefs = async (
   notificationPrefsUpdateRequest: NotificationPrefsUpdateRequest,
-  options?: RequestInit,
+  options?: SecondParameter<typeof customFetch>,
 ): Promise<NotificationPrefsResponse> => {
   return customFetch<NotificationPrefsResponse>(
     getUsersPutUsersMeNotificationPrefsUrl(),
     {
       ...options,
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
       body: JSON.stringify(notificationPrefsUpdateRequest),
     },
   );

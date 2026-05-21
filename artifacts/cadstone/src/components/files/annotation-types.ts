@@ -53,7 +53,7 @@ export const PEN_COLORS = [
   { label: "Red", value: "#dc2626" },
   { label: "Blue", value: "#2563eb" },
   { label: "Green", value: "#16a34a" },
-  { label: "Orange", value: "#f97316" },
+  { label: "Gold", value: "#f59e0b" },
   { label: "Black", value: "#111827" },
 ] as const
 
@@ -61,7 +61,7 @@ export const SHAPE_COLORS = [
   { label: "Red", value: "#dc2626" },
   { label: "Blue", value: "#2563eb" },
   { label: "Green", value: "#16a34a" },
-  { label: "Orange", value: "#f97316" },
+  { label: "Gold", value: "#f59e0b" },
   { label: "Purple", value: "#7c3aed" },
   { label: "Black", value: "#111827" },
 ] as const

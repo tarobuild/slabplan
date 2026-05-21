@@ -54,6 +54,7 @@ interface ListViewProps {
   listStart: number
   listEnd: number
   sortedListItemsLength: number
+  canWrite: boolean
   setListDisplayMode: Dispatch<SetStateAction<ListDisplayMode>>
   setSelectedListIds: Dispatch<SetStateAction<string[]>>
   setAppliedFilters: Dispatch<SetStateAction<FilterState>>
@@ -84,6 +85,7 @@ export function ListView(props: ListViewProps) {
     listStart,
     listEnd,
     sortedListItemsLength,
+    canWrite,
     setListDisplayMode,
     setSelectedListIds,
     setAppliedFilters,
@@ -142,10 +144,12 @@ export function ListView(props: ListViewProps) {
                 ? "Create the first schedule item to populate this table."
                 : "Adjust the active filter to see matching schedule items here."
             }
-            actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
+            actionLabel={activeItems.length === 0 && !canWrite ? undefined : activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
             onAction={
               activeItems.length === 0
-                ? () => openNewItem()
+                ? canWrite
+                  ? () => openNewItem()
+                  : undefined
                 : () => {
                     const reset = buildFilterPreset("all")
                     setAppliedFilters(reset)
@@ -232,7 +236,7 @@ export function ListView(props: ListViewProps) {
                                 }}
                               />
                               <span className="min-w-0">
-                                <span className="block truncate font-medium text-orange-700 hover:underline">
+                                <span className="block truncate font-medium text-primary hover:underline">
                                   {item.isPersonalTodo ? (item.isComplete ? "☑ " : "☐ ") : ""}
                                   {item.title}
                                 </span>

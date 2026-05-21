@@ -10,8 +10,8 @@ export interface ScheduleRelatedTodo {
   id: string;
   title: string;
   isComplete: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
   createdBy?: string | null;
   createdByName?: string | null;
 }

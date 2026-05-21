@@ -7,8 +7,11 @@
  */
 
 /**
- * Request schema derived from changePasswordSchema in artifacts/api-server/src/routes/users.ts.
+ * Request body for `POST /users/me/change-password`.
  */
 export interface UsersChangePasswordSchema {
-  [key: string]: unknown;
+  /** @minLength 1 */
+  currentPassword: string;
+  /** @minLength 8 */
+  newPassword: string;
 }

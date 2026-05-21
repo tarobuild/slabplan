@@ -24,7 +24,7 @@ export interface LeadListItem {
    * @maximum 100
    */
   confidence?: number | null;
-  projectedSalesDate?: Date | null;
+  projectedSalesDate?: string | null;
   /** Decimal serialized as string. */
   estimatedRevenueMin?: string | null;
   /** Decimal serialized as string. */
@@ -32,8 +32,8 @@ export interface LeadListItem {
   status: LeadListItemStatus;
   projectType?: string | null;
   leadSource?: string | null;
-  createdAt: Date;
-  updatedAt?: Date | null;
+  createdAt: string;
+  updatedAt?: string | null;
   createdByName?: string | null;
   /** Primary client contact summary, or null when the lead has no client contact assigned. */
   clientContact: LeadPrimaryContact | null;

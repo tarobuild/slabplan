@@ -20,20 +20,34 @@ const PII_PATTERNS = [
 function eventContainsPii(event: unknown): boolean {
   const seen = new WeakSet<object>()
 
-  function shouldSkipKey(key: string): boolean {
-    return /(^|_)(id|uuid|hash|token|secret|key|dsn)$/i.test(key)
+  function isIdentifierKey(key: string): boolean {
+    return /(^|_)(id|uuid|hash)$/i.test(key)
   }
 
-  function normalizeString(key: string, text: string): string {
-    if (/url$/i.test(key)) return text.split(/[?#]/, 1)[0] ?? ""
-    return text
+  function isSensitiveKey(key: string): boolean {
+    return /(^|_)(token|secret|key|api[_-]?key|dsn|password|credential|authorization)$/i.test(key)
+  }
+
+  function urlContainsPii(text: string): boolean {
+    try {
+      const url = new URL(text)
+      for (const [name, rawValue] of url.searchParams.entries()) {
+        if (isSensitiveKey(name)) continue
+        if (PII_PATTERNS.some((re) => re.test(name) || re.test(rawValue))) return true
+      }
+      return PII_PATTERNS.some((re) => re.test(`${url.origin}${url.pathname}`))
+    } catch {
+      return PII_PATTERNS.some((re) => re.test(text))
+    }
   }
 
   function visit(value: unknown, key = ""): boolean {
     if (value === null || value === undefined) return false
     if (typeof value === "string") {
-      if (shouldSkipKey(key)) return false
-      return PII_PATTERNS.some((re) => re.test(normalizeString(key, value)))
+      if (isSensitiveKey(key)) return true
+      if (isIdentifierKey(key)) return false
+      if (/url$/i.test(key)) return urlContainsPii(value)
+      return PII_PATTERNS.some((re) => re.test(value))
     }
     if (typeof value !== "object") return false
     if (seen.has(value as object)) return false
@@ -48,7 +62,8 @@ function eventContainsPii(event: unknown): boolean {
     for (const [childKey, childValue] of Object.entries(
       value as Record<string, unknown>,
     )) {
-      if (shouldSkipKey(childKey)) continue
+      if (isSensitiveKey(childKey) && childValue !== null && childValue !== undefined) return true
+      if (isIdentifierKey(childKey)) continue
       if (visit(childValue, childKey)) return true
     }
     return false
@@ -97,7 +112,7 @@ test("web PII filter passes clean events", () => {
   )
 })
 
-test("web PII filter strips URL query strings before scanning", () => {
+test("web PII filter ignores secret URL query values but scans user data", () => {
   assert.equal(
     eventContainsPii({
       request: {
@@ -106,6 +121,19 @@ test("web PII filter strips URL query strings before scanning", () => {
     }),
     false,
   )
+  assert.equal(
+    eventContainsPii({
+      request: {
+        url: "https://api.example.test/search?email=alice@example.com",
+      },
+    }),
+    true,
+  )
+})
+
+test("web PII filter drops events with secret-bearing fields", () => {
+  assert.equal(eventContainsPii({ extra: { token: "abc123" } }), true)
+  assert.equal(eventContainsPii({ extra: { api_key: "abc123" } }), true)
 })
 
 test("web PII filter survives circular references", () => {

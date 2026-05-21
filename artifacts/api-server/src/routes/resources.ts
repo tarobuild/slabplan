@@ -20,6 +20,7 @@ import { requireAdmin } from "../middleware/require-auth";
 import { streamStoredFileToResponse } from "../lib/storage";
 import { uploadArray } from "../lib/uploads";
 import { createUploadPerUserRateLimit } from "../lib/rate-limit";
+import { stringBoolean } from "../lib/zod-helpers";
 
 const uploadRateLimit = createUploadPerUserRateLimit();
 
@@ -27,7 +28,7 @@ const router: IRouter = Router();
 
 const folderListQuerySchema = z.object({
   parentId: z.string().uuid().optional(),
-  all: z.coerce.boolean().optional().default(false),
+  all: stringBoolean.optional().default(false),
 });
 
 const fileListQuerySchema = z.object({
@@ -100,6 +101,7 @@ router.post(
       parentFolderId: body.data.parentFolderId,
       title: body.data.title,
       userId: req.auth!.userId,
+      auth: req.auth!,
     });
 
     res.status(201).json({ folder });

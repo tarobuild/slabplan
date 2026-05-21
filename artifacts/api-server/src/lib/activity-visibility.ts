@@ -1,9 +1,12 @@
-import { and, eq, inArray, isNull, type SQL } from "drizzle-orm";
-import { db } from "@workspace/db";
-import { dailyLogs, files, folders, scheduleItems } from "@workspace/db/schema";
-import { buildFolderVisibilityCondition, isAdmin, type AuthContext } from "./authorization";
-import { buildDailyLogVisibilityFilter } from "./daily-log-visibility";
-import { buildScheduleListVisibilityFilter } from "./schedule-visibility";
+import {
+  assertCanViewDailyLog,
+  assertCanViewFile,
+  assertCanViewFolder,
+  assertCanViewScheduleItem,
+  isAdmin,
+  type AuthContext,
+} from "./authorization";
+import { HttpError } from "./http";
 
 export type ActivityRow = {
   id?: string;
@@ -123,93 +126,63 @@ function isFileActivity(entityType: string) {
 }
 
 async function canViewFolderForActivity(auth: AuthContext, folderId: string) {
-  if (isAdmin(auth)) {
+  try {
+    await assertCanViewFolder(auth, folderId);
     return true;
+  } catch (error) {
+    if (error instanceof HttpError && (error.statusCode === 403 || error.statusCode === 404)) {
+      return false;
+    }
+    throw error;
   }
-
-  const visibility = buildFolderVisibilityCondition(auth);
-  const conditions: SQL[] = [eq(folders.id, folderId)];
-  if (visibility) {
-    conditions.push(visibility);
-  }
-
-  const [row] = await db
-    .select({ id: folders.id })
-    .from(folders)
-    .where(and(...conditions)!)
-    .limit(1);
-
-  return Boolean(row);
 }
 
 async function canViewFileForActivity(auth: AuthContext, fileId: string) {
-  if (isAdmin(auth)) {
+  try {
+    await assertCanViewFile(auth, fileId);
     return true;
+  } catch (error) {
+    if (error instanceof HttpError && (error.statusCode === 403 || error.statusCode === 404)) {
+      return false;
+    }
+    throw error;
   }
-
-  const visibility = buildFolderVisibilityCondition(auth);
-  const conditions: SQL[] = [eq(files.id, fileId)];
-  if (visibility) {
-    conditions.push(visibility);
-  }
-
-  const [row] = await db
-    .select({ id: files.id })
-    .from(files)
-    .innerJoin(folders, eq(files.folderId, folders.id))
-    .where(and(...conditions)!)
-    .limit(1);
-
-  return Boolean(row);
 }
 
 async function visibleScheduleItemIds(auth: AuthContext, itemIds: string[]) {
-  if (itemIds.length === 0 || isAdmin(auth)) {
-    return new Set(itemIds);
+  const visible = new Set<string>();
+
+  for (const itemId of itemIds) {
+    try {
+      await assertCanViewScheduleItem(auth, itemId);
+      visible.add(itemId);
+    } catch (error) {
+      if (error instanceof HttpError && (error.statusCode === 403 || error.statusCode === 404)) {
+        continue;
+      }
+      throw error;
+    }
   }
 
-  const visibility = buildScheduleListVisibilityFilter(auth);
-  const conditions: SQL[] = [inArray(scheduleItems.id, itemIds), isNull(scheduleItems.deletedAt)];
-  if (visibility) {
-    conditions.push(visibility);
-  }
-
-  const rows = await db
-    .select({ id: scheduleItems.id })
-    .from(scheduleItems)
-    .where(and(...conditions)!);
-
-  return new Set(rows.map((row) => row.id));
+  return visible;
 }
 
 async function canViewDailyLogForActivity(auth: AuthContext, dailyLogId: string) {
-  if (isAdmin(auth)) {
+  try {
+    await assertCanViewDailyLog(auth, dailyLogId);
     return true;
+  } catch (error) {
+    if (error instanceof HttpError && (error.statusCode === 403 || error.statusCode === 404)) {
+      return false;
+    }
+    throw error;
   }
-
-  const visibility = buildDailyLogVisibilityFilter(auth);
-  const conditions: SQL[] = [eq(dailyLogs.id, dailyLogId), isNull(dailyLogs.deletedAt)];
-  if (visibility) {
-    conditions.push(visibility);
-  }
-
-  const [row] = await db
-    .select({ id: dailyLogs.id })
-    .from(dailyLogs)
-    .where(and(...conditions)!)
-    .limit(1);
-
-  return Boolean(row);
 }
 
 export async function redactActivityRowForAuth<T extends ActivityRow>(
   row: T,
   auth: AuthContext,
 ): Promise<T | null> {
-  if (isAdmin(auth)) {
-    return row;
-  }
-
   const metadata = metadataRecord(row.metadata);
   const folderId = stringValue(metadata.folderId) ?? (isFolderActivity(row.entityType) ? row.entityId : null);
   const fileId = stringValue(metadata.fileId) ?? (isFileActivity(row.entityType) ? row.entityId : null);

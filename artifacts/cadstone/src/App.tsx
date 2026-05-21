@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react"
+import * as React from "react"
+import { createElement, lazy, Suspense, useEffect, useMemo, useState } from "react"
 import {
   createBrowserRouter,
   createRoutesFromElements,
@@ -73,11 +74,11 @@ const AcceptInvitePage = lazy(() => import("@/pages/accept-invite"))
 
 function RouteLoadingScreen() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F9FAFB] p-4">
-      <Card className="w-full max-w-md border-[#E5E7EB] shadow-sm">
+    <div className="app-surface flex min-h-screen items-center justify-center p-4">
+      <Card className="w-full max-w-md border-border shadow-sm">
         <CardContent className="flex items-center justify-center gap-3 py-10">
-          <Spinner className="size-5 text-orange-600" />
-          <p className="text-sm text-slate-600">Restoring your session…</p>
+          <Spinner className="size-5 text-primary" />
+          <p className="text-sm text-muted-foreground">Restoring your session…</p>
         </CardContent>
       </Card>
     </div>
@@ -98,11 +99,11 @@ function ProtectedRoute({ ready }: { ready: boolean }) {
   return <Outlet />
 }
 
-function FilesRedirect() {
+export function FilesRedirect() {
   const user = useAuthStore((state) => state.user)
   const target =
     user?.role === "admin" ? "/clients" : "/jobs"
-  return <Navigate to={target} replace />
+  return createElement(Navigate, { to: target, replace: true })
 }
 
 function ForbiddenListener() {
@@ -133,7 +134,7 @@ function RootShell() {
   )
 }
 
-function PublicOnlyRoute({ ready }: { ready: boolean }) {
+export function PublicOnlyRoute({ ready }: { ready: boolean }) {
   const user = useAuthStore((state) => state.user)
 
   if (!ready) {
@@ -168,7 +169,7 @@ function buildRouter(ready: boolean, basename: string | undefined) {
             <Route path="/dashboard" element={<HomePage />} />
             <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
-            <Route element={<RoleGate allow={ROLE_GATES.companyViews} redirectTo="/403" />}>
+            <Route element={<RoleGate allow={ROLE_GATES.atRisk} redirectTo="/403" />}>
               <Route
                 path="/at-risk/missing-logs"
                 element={<MissingLogsAtRiskPage />}
@@ -246,9 +247,9 @@ function buildRouter(ready: boolean, basename: string | undefined) {
               element={<Navigate to="/settings/team" replace />}
             />
             <Route path="/403" element={<ForbiddenPage />} />
-            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Route>
+        <Route path="*" element={<NotFoundPage />} />
       </Route>,
     ),
     { basename },

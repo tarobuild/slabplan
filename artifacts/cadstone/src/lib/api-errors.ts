@@ -19,11 +19,8 @@ function classifyGeneratedApiError(
   if (status === 403) return { kind: "forbidden" }
 
   const data = err.data
-  const serverMessage =
-    typeof data === "object" && data !== null
-      ? (data as { message?: unknown }).message
-      : undefined
-  if (typeof serverMessage === "string" && serverMessage.trim().length > 0) {
+  const serverMessage = firstNonEmptyString(data, ["message", "detail", "title"])
+  if (serverMessage) {
     return { kind: "toast", message: serverMessage }
   }
   if (status >= 500) {
@@ -33,6 +30,21 @@ function classifyGeneratedApiError(
     }
   }
   return { kind: "toast", message: fallback }
+}
+
+function firstNonEmptyString(
+  value: unknown,
+  keys: readonly string[],
+): string | null {
+  if (typeof value !== "object" || value === null) return null
+  const record = value as Record<string, unknown>
+  for (const key of keys) {
+    const candidate = record[key]
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate
+    }
+  }
+  return null
 }
 
 export function classifyApiError(

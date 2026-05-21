@@ -42,13 +42,29 @@ function fileUrlToRelativePath(fileUrl: string): string {
     throw new Error(`Invalid stored file URL: ${fileUrl}`);
   }
   const relative = match[1];
-  if (
-    relative.includes("..") ||
-    relative.startsWith("/") ||
-    relative.includes("\0")
-  ) {
+  if (relative.startsWith("/") || relative.includes("\0") || relative.includes("\\")) {
     throw new Error(`Invalid stored file URL: ${fileUrl}`);
   }
+
+  for (const segment of relative.split("/")) {
+    let decodedSegment: string;
+    try {
+      decodedSegment = decodeURIComponent(segment);
+    } catch {
+      throw new Error(`Invalid stored file URL: ${fileUrl}`);
+    }
+
+    if (
+      decodedSegment === "." ||
+      decodedSegment === ".." ||
+      decodedSegment.includes("/") ||
+      decodedSegment.includes("\\") ||
+      decodedSegment.includes("\0")
+    ) {
+      throw new Error(`Invalid stored file URL: ${fileUrl}`);
+    }
+  }
+
   return relative;
 }
 

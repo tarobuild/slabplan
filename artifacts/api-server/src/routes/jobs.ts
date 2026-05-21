@@ -707,6 +707,54 @@ const assigneeFinancialsAccessSchema = z.object({
   canViewFinancials: z.boolean(),
 });
 
+function setFolderUserPermission(
+  permissions: Record<string, unknown> | null,
+  userId: string,
+  allowed: boolean,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = permissions ? { ...permissions } : { internal: true };
+  const usersValue = next.users;
+  next.users =
+    usersValue && typeof usersValue === "object" && !Array.isArray(usersValue)
+      ? { ...(usersValue as Record<string, unknown>), [userId]: allowed }
+      : { [userId]: allowed };
+  return next;
+}
+
+async function revokeJobFolderAccessForAssignee(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  auth: AuthContext,
+  jobId: string,
+  userId: string,
+) {
+  const rows = await tx
+    .select({
+      id: folders.id,
+      viewingPermissions: folders.viewingPermissions,
+      uploadingPermissions: folders.uploadingPermissions,
+    })
+    .from(folders)
+    .where(
+      and(
+        eq(folders.jobId, jobId),
+        eq(folders.isGlobal, false),
+        isNull(folders.deletedAt),
+        organizationScopeCondition(auth, folders.organizationId),
+      ),
+    );
+
+  for (const folder of rows) {
+    await tx
+      .update(folders)
+      .set({
+        viewingPermissions: setFolderUserPermission(folder.viewingPermissions, userId, false),
+        uploadingPermissions: setFolderUserPermission(folder.uploadingPermissions, userId, false),
+        updatedAt: new Date(),
+      })
+      .where(eq(folders.id, folder.id));
+  }
+}
+
 router.get(
   "/:id/assignees",
   asyncHandler(async (req, res) => {
@@ -767,15 +815,18 @@ router.delete(
       throw new HttpError(404, "Job not found.");
     }
 
-    await db
-      .delete(jobAssignees)
-      .where(
-        and(
-          eq(jobAssignees.jobId, jobId),
-          eq(jobAssignees.userId, userId),
-          organizationScopeCondition(req.auth!, jobAssignees.organizationId),
-        ),
-      );
+    await db.transaction(async (tx) => {
+      await revokeJobFolderAccessForAssignee(tx, req.auth!, jobId, userId);
+      await tx
+        .delete(jobAssignees)
+        .where(
+          and(
+            eq(jobAssignees.jobId, jobId),
+            eq(jobAssignees.userId, userId),
+            organizationScopeCondition(req.auth!, jobAssignees.organizationId),
+          ),
+        );
+    });
 
     res.json({
       assignees: await listJobAssignees(jobId, req.auth!),

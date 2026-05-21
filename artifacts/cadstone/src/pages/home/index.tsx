@@ -27,6 +27,16 @@ export default function HomePage() {
     if (error) toastApiError(error, "Failed to load Home")
   }, [error])
 
+  if (error && !data) {
+    return (
+      <Card className="border-red-200 bg-red-50">
+        <CardContent className="py-6 text-sm text-red-700">
+          Home could not be loaded. Please refresh the page or try again in a moment.
+        </CardContent>
+      </Card>
+    )
+  }
+
   if (isLoading || !data) {
     return (
       <div className="space-y-4" data-testid="home-loading">

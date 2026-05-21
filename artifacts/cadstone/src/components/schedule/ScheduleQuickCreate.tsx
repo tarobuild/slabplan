@@ -140,21 +140,27 @@ export function ScheduleQuickCreate({
       date,
       startTime: isHourly ? startTime : null,
       endTime: isHourly ? endTime : null,
-      title,
+      title: title.trim(),
       assigneeIds,
       isHourly,
     }
   }
 
-  async function handleQuickSave() {
+  function validateTitle() {
     const trimmed = title.trim()
     if (!trimmed) {
       setSaveError("Title is required")
       setTitleInvalid(true)
       toast.error("Title is required")
       titleRef.current?.focus()
-      return
+      return null
     }
+    return trimmed
+  }
+
+  async function handleQuickSave() {
+    const trimmed = validateTitle()
+    if (!trimmed) return
 
     setSaving(true)
     setSaveError(null)
@@ -192,6 +198,7 @@ export function ScheduleQuickCreate({
   }
 
   function handleQuickMoreOptions() {
+    if (!validateTitle()) return
     const state = buildState()
     onOpenChange(false)
     onMoreOptions(state)

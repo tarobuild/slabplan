@@ -105,4 +105,43 @@ describe("ErrorBoundary", () => {
     })
     container.remove()
   })
+
+  it("reports a sanitized URL without query strings or fragments", async () => {
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init })
+      return { ok: true } as Response
+    }) as typeof fetch
+    window.history.pushState(
+      {},
+      "",
+      "/reset-password?token=secret-token#secret-fragment",
+    )
+
+    try {
+      await act(async () => {
+        root.render(
+          React.createElement(ErrorBoundary, null, React.createElement(Boom)),
+        )
+      })
+
+      assert.equal(calls.length, 1)
+      const body = JSON.parse(String(calls[0]?.init?.body ?? "{}")) as {
+        url?: string
+      }
+      assert.equal(body.url, "http://localhost/reset-password")
+      assert.doesNotMatch(body.url ?? "", /secret-token|secret-fragment/)
+    } finally {
+      globalThis.fetch = originalFetch
+      await act(async () => {
+        root.unmount()
+      })
+      container.remove()
+      window.history.pushState({}, "", "/")
+    }
+  })
 })

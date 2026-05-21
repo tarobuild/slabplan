@@ -75,6 +75,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { invalidateAppData } from "@/lib/data-refresh"
+import { formatShortUsDate } from "@/lib/date-format"
 import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
 import { cn } from "@/lib/utils"
@@ -167,7 +168,7 @@ const JOB_STATUS_COLORS: Record<string, string> = {
 }
 
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  return formatShortUsDate(d)
 }
 function fmtCurrency(v: string | null) {
   if (!v) return "—"
@@ -220,6 +221,7 @@ export default function ClientsPage() {
   const [deleting, setDeleting] = useState(false)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const detailRequestSeqRef = useRef(0)
 
   const [searchParams, setSearchParams] = useSearchParams()
   const deepLinkClientId = searchParams.get("client")
@@ -301,21 +303,26 @@ export default function ClientsPage() {
   const handlePage = (p: number) => { setPage(p) }
 
   const openDetail = async (id: string) => {
+    const requestSeq = ++detailRequestSeqRef.current
     setLoadingDetail(true)
     setSelected(null)
     setSheetTab("info")
     try {
       const r = await api.get(`/clients/${id}`)
+      if (detailRequestSeqRef.current !== requestSeq) return
       setSelected(r.data.client)
     } catch (err: unknown) {
+      if (detailRequestSeqRef.current !== requestSeq) return
       toastApiError(err, "Failed to load client")
-      if (searchParams.get("client")) {
+      if (searchParams.get("client") === id) {
         const next = new URLSearchParams(searchParams)
         next.delete("client")
         setSearchParams(next, { replace: true })
       }
     } finally {
-      setLoadingDetail(false)
+      if (detailRequestSeqRef.current === requestSeq) {
+        setLoadingDetail(false)
+      }
     }
   }
 
@@ -539,7 +546,7 @@ export default function ClientsPage() {
               className={cn(
                 "px-3 py-1.5 text-xs font-medium rounded transition-colors",
                 statusFilter === t.value
-                  ? "bg-orange-600 text-white"
+                  ? "bg-primary text-white"
                   : "text-slate-600 hover:bg-slate-100",
               )}
             >
@@ -579,7 +586,7 @@ export default function ClientsPage() {
                   No clients found.{" "}
                   <button
                     onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}
-                    className="text-orange-600 hover:underline"
+                    className="text-primary hover:underline"
                   >
                     Add your first client
                   </button>
@@ -598,7 +605,7 @@ export default function ClientsPage() {
                 >
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-600">
+                      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                         <Building2 className="size-3.5" />
                       </div>
                       <div>
@@ -639,7 +646,7 @@ export default function ClientsPage() {
                   <TableCell className="text-right text-sm text-slate-700">
                     {fmtMoneyCents(contract)}
                   </TableCell>
-                  <TableCell className={cn("text-right text-sm font-medium", outstanding && outstanding > 0 ? "text-orange-700" : "text-slate-400")}>
+                  <TableCell className={cn("text-right text-sm font-medium", outstanding && outstanding > 0 ? "text-primary" : "text-slate-400")}>
                     {fmtMoneyCents(outstanding)}
                   </TableCell>
                   <TableCell onClick={e => e.stopPropagation()}>
@@ -672,7 +679,7 @@ export default function ClientsPage() {
             No clients found.{" "}
             <button
               onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}
-              className="text-orange-600 hover:underline"
+              className="text-primary hover:underline"
             >
               Add your first client
             </button>
@@ -686,7 +693,7 @@ export default function ClientsPage() {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-600">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                     <Building2 className="size-4" />
                   </div>
                   <div className="min-w-0">
@@ -751,7 +758,7 @@ export default function ClientsPage() {
               <SheetHeader className="px-6 pt-6 pb-4 border-b border-[#E5E7EB]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                       <Building2 className="size-5" />
                     </div>
                     <div className="min-w-0">
@@ -780,7 +787,7 @@ export default function ClientsPage() {
                       className={cn(
                         "px-3 py-1.5 text-xs font-medium rounded transition-colors capitalize",
                         sheetTab === tab
-                          ? "bg-orange-600 text-white"
+                          ? "bg-primary text-white"
                           : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
                       )}
                     >
@@ -849,7 +856,7 @@ export default function ClientsPage() {
                         {selected.email && (
                           <div className="flex items-center gap-2.5 text-sm text-slate-700">
                             <Mail className="size-4 shrink-0 text-slate-400" />
-                            <a href={`mailto:${selected.email}`} className="text-orange-600 hover:underline">{selected.email}</a>
+                            <a href={`mailto:${selected.email}`} className="text-primary hover:underline">{selected.email}</a>
                           </div>
                         )}
                         {(selected.streetAddress || selected.city) && (
@@ -891,7 +898,7 @@ export default function ClientsPage() {
                       <div className="rounded-lg border border-dashed border-[#E5E7EB] py-10 text-center">
                         <User className="mx-auto size-8 text-slate-300 mb-2" />
                         <p className="text-sm text-slate-400">No contacts yet.</p>
-                        <button onClick={() => openContactDialog()} className="mt-1 text-xs text-orange-600 hover:underline">Add the first contact</button>
+                        <button onClick={() => openContactDialog()} className="mt-1 text-xs text-primary hover:underline">Add the first contact</button>
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -914,7 +921,7 @@ export default function ClientsPage() {
                                   {c.email && (
                                     <p className="text-xs text-slate-600 flex items-center gap-1.5">
                                       <Mail className="size-3 text-slate-400" />
-                                      <a href={`mailto:${c.email}`} className="hover:text-orange-600 hover:underline">{c.email}</a>
+                                      <a href={`mailto:${c.email}`} className="hover:text-primary hover:underline">{c.email}</a>
                                     </p>
                                   )}
                                   {c.phone && (
@@ -953,7 +960,7 @@ export default function ClientsPage() {
                         <Link
                           key={job.id}
                           to={`/jobs/${job.id}`}
-                          className="block rounded-lg border border-[#E5E7EB] bg-white p-3.5 hover:border-orange-300 hover:bg-orange-50/30 transition-colors"
+                          className="block rounded-lg border border-[#E5E7EB] bg-white p-3.5 hover:border-primary/35 hover:bg-accent/40 transition-colors"
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -1070,7 +1077,7 @@ export default function ClientsPage() {
                   type="checkbox"
                   checked={contactForm.isPrimary}
                   onChange={e => setContactForm(f => ({ ...f, isPrimary: e.target.checked }))}
-                  className="rounded accent-orange-600"
+                  className="rounded accent-primary"
                 />
                 <span className="text-sm text-slate-700">Primary contact</span>
               </label>

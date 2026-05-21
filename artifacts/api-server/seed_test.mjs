@@ -2,10 +2,15 @@ import bcrypt from "bcrypt";
 import pg from "pg";
 const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const testPassword = process.env.SEED_TEST_PASSWORD;
+if (!testPassword) {
+  console.error("Set SEED_TEST_PASSWORD before running this local seed helper.");
+  process.exit(1);
+}
 const client = await pool.connect();
 try {
   await client.query("BEGIN");
-  const hash = await bcrypt.hash("Cadstone123!", 10);
+  const hash = await bcrypt.hash(testPassword, 10);
   const u = await client.query(
     `insert into users (email, password_hash, full_name, role) values ($1,$2,$3,$4)
      on conflict (email) do update set password_hash=excluded.password_hash returning id`,

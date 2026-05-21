@@ -8,6 +8,7 @@ import { getStripeClient, isBillingPlanKey } from "../lib/stripe";
 import { updateOrganizationFromStripeSubscription } from "./billing";
 
 const router: IRouter = Router();
+type StripeWebhookDbClient = Pick<typeof db, "select" | "insert" | "update">;
 
 function requireWebhookSecret() {
   const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
@@ -32,7 +33,7 @@ function getPlanKeyFromSubscription(subscription: Stripe.Subscription) {
   return null;
 }
 
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session, database: StripeWebhookDbClient) {
   const organizationId = asString(session.metadata?.organizationId);
   if (!organizationId) return;
 
@@ -43,7 +44,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       : session.subscription?.id ?? null;
   const planKey = asString(session.metadata?.planKey);
 
-  await db
+  await database
     .update(organizations)
     .set({
       stripeCustomerId: customerId ?? undefined,
@@ -55,7 +56,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     .where(eq(organizations.id, organizationId));
 }
 
-async function handleSubscriptionChanged(subscription: Stripe.Subscription) {
+async function handleSubscriptionChanged(subscription: Stripe.Subscription, database: StripeWebhookDbClient) {
   const customerId =
     typeof subscription.customer === "string"
       ? subscription.customer
@@ -66,18 +67,18 @@ async function handleSubscriptionChanged(subscription: Stripe.Subscription) {
     subscriptionId: subscription.id,
     status: subscription.status,
     planKey: getPlanKeyFromSubscription(subscription),
-  });
+  }, database);
 }
 
-async function processStripeEvent(event: Stripe.Event) {
+async function processStripeEvent(event: Stripe.Event, database: StripeWebhookDbClient) {
   switch (event.type) {
     case "checkout.session.completed":
-      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session, database);
       break;
     case "customer.subscription.created":
     case "customer.subscription.updated":
     case "customer.subscription.deleted":
-      await handleSubscriptionChanged(event.data.object as Stripe.Subscription);
+      await handleSubscriptionChanged(event.data.object as Stripe.Subscription, database);
       break;
     default:
       break;
@@ -97,24 +98,32 @@ const handleStripeWebhook = asyncHandler(async (req, res) => {
       requireWebhookSecret(),
     );
 
-    const inserted = await db
-      .insert(billingEvents)
-      .values({
-        id: event.id,
-        provider: "stripe",
-        type: event.type,
-        livemode: event.livemode,
-        payload: event as unknown as Record<string, unknown>,
-      })
-      .onConflictDoNothing()
-      .returning({ id: billingEvents.id });
+    const duplicate = await db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(billingEvents)
+        .values({
+          id: event.id,
+          provider: "stripe",
+          type: event.type,
+          livemode: event.livemode,
+          payload: event as unknown as Record<string, unknown>,
+        })
+        .onConflictDoNothing()
+        .returning({ id: billingEvents.id });
 
-    if (inserted.length === 0) {
+      if (inserted.length === 0) {
+        return true;
+      }
+
+      await processStripeEvent(event, tx);
+      return false;
+    });
+
+    if (duplicate) {
       res.json({ received: true, duplicate: true });
       return;
     }
 
-    await processStripeEvent(event);
     res.json({ received: true });
   });
 

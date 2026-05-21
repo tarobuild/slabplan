@@ -16,6 +16,7 @@ import {
   Redo2,
   X,
 } from "lucide-react"
+import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import {
@@ -51,7 +52,7 @@ type ToolButtonProps = {
   active: boolean
   onClick: () => void
   title: string
-  children: React.ReactNode
+  children: ReactNode
   disabled?: boolean
   ariaLabel?: string
 }
@@ -73,7 +74,7 @@ function ToolButton({
       disabled={disabled}
       className={`flex h-8 w-8 items-center justify-center rounded-md transition ${
         active
-          ? "bg-blue-600 text-white shadow"
+          ? "bg-primary text-white shadow"
           : "text-slate-200 hover:bg-white/10 hover:text-white"
       } ${disabled ? "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-slate-200" : ""}`}
     >
@@ -99,7 +100,7 @@ function ColorSwatch({
       onClick={onClick}
       title={title || color}
       className={`h-5 w-5 rounded-full ring-2 transition ${
-        active ? "ring-blue-400 scale-110" : "ring-white/30 hover:ring-white/60"
+        active ? "ring-primary/45 scale-110" : "ring-white/30 hover:ring-white/60"
       }`}
       style={{ background: color }}
     />

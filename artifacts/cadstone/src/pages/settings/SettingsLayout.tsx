@@ -109,7 +109,7 @@ export default function SettingsLayout() {
                     cn(
                       "inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-2 text-sm font-medium transition-colors",
                       isActive
-                        ? "border-orange-300 bg-orange-50 text-orange-700"
+                        ? "border-primary/35 bg-primary/10 text-primary"
                         : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                     )
                   }
@@ -140,9 +140,9 @@ export default function SettingsLayout() {
                   className={({ isActive }) =>
                     cn(
                       "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors outline-none",
-                      "focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-1",
+                      "focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
                       isActive
-                        ? "bg-orange-50 text-orange-700"
+                        ? "bg-primary/10 text-primary"
                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
                     )
                   }

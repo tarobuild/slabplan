@@ -55,6 +55,7 @@ export function useScheduleDraft({
   const draftItemsRef = useRef<ScheduleItemRecord[]>([])
   const draftPastRef = useRef<ScheduleItemRecord[][]>([])
   const draftFutureRef = useRef<ScheduleItemRecord[][]>([])
+  const draftPublishKeyRef = useRef<string | null>(null)
 
   useDraftHistoryRefs({
     draftItems,
@@ -90,6 +91,7 @@ export function useScheduleDraft({
     if (scheduleOffline) {
       return
     }
+    draftPublishKeyRef.current = null
     const cloned = cloneScheduleItems(nextItems)
     setDraftItems(cloned)
     setDraftPast([])
@@ -100,6 +102,7 @@ export function useScheduleDraft({
   }
 
   function enterDraftMode() {
+    draftPublishKeyRef.current = null
     setScheduleOffline(true)
     replaceDraftState(
       normalizeDraftScheduleItems(cloneScheduleItems(items), users, settings, workdayExceptions),
@@ -112,6 +115,7 @@ export function useScheduleDraft({
   function applyDraftMutation(
     updater: (current: ScheduleItemRecord[]) => ScheduleItemRecord[],
   ) {
+    draftPublishKeyRef.current = null
     const currentItems = cloneScheduleItems(
       scheduleOffline ? draftItemsRef.current : items,
     )
@@ -189,6 +193,7 @@ export function useScheduleDraft({
     }
 
     setScheduleOffline(false)
+    draftPublishKeyRef.current = null
     resetDraftFromPersisted()
     setTrackedConflictIds([])
 
@@ -253,7 +258,8 @@ export function useScheduleDraft({
         title: payload.title,
         displayColor: payload.displayColor || DEFAULT_SCHEDULE_COLOR,
         startDate: payload.startDate,
-        endDate: calculateBusinessEndDate(payload.startDate, payload.workDays, workdayExceptions),
+        endDate: payload.endDate ?? calculateBusinessEndDate(payload.startDate, payload.workDays, workdayExceptions),
+        manualEndDate: payload.endDate,
         workDays: payload.workDays,
         isHourly: payload.isHourly,
         startTime: payload.isHourly ? payload.startTime : null,
@@ -355,12 +361,19 @@ export function useScheduleDraft({
 
     if (!hasDraftChanges) {
       setScheduleOffline(false)
+      draftPublishKeyRef.current = null
       resetDraftFromPersisted()
       toast.info("No draft changes to publish")
       return
     }
 
     setDraftPublishing(true)
+    const publishKey = draftPublishKeyRef.current ?? crypto.randomUUID()
+    draftPublishKeyRef.current = publishKey
+
+    const idempotencyHeaders = (operation: string) => ({
+      "Idempotency-Key": `schedule-draft:${jobId}:${publishKey}:${operation}`,
+    })
 
     try {
       const persistedById = new Map(items.map((item) => [item.id, item]))
@@ -383,7 +396,11 @@ export function useScheduleDraft({
           const payload = remapDraftPayload(schedulePayloadFromItem(item), draftIdMap, {
             dropUnresolvedPredecessors: true,
           })
-          const response = await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
+          const response = await api.post<{ item: ScheduleItemRecord }>(
+            `/jobs/${jobId}/schedule`,
+            payload,
+            { headers: idempotencyHeaders(`create:${item.id}`) },
+          )
           return [item.id, response.data.item.id] as const
         }),
       )
@@ -395,28 +412,41 @@ export function useScheduleDraft({
       await Promise.all([...createdDraftItems, ...changedPersistedItems].map((item) => {
         const targetId = draftIdMap.get(item.id) || item.id
         const payload = remapDraftPayload(schedulePayloadFromItem(item), draftIdMap)
-        return api.put(`/schedule-items/${targetId}`, payload)
+        const originalId = isDraftScheduleItemId(item.id) ? item.id : targetId
+        return api.put(
+          `/schedule-items/${targetId}`,
+          payload,
+          { headers: idempotencyHeaders(`upsert:${originalId}`) },
+        )
       }))
 
       await Promise.all(currentDraftItems.map(async (item) => {
         const targetId = draftIdMap.get(item.id) || item.id
         const draftNotes = item.notesStream
           .filter((note) => isDraftScheduleNoteId(note.id))
-          .map((note) => note.note.trim())
-          .filter(Boolean)
+          .map((note) => ({ id: note.id, note: note.note.trim() }))
+          .filter((note) => note.note.length > 0)
 
         for (const note of draftNotes) {
-          await api.post(`/schedule-items/${targetId}/notes`, { note })
+          await api.post(
+            `/schedule-items/${targetId}/notes`,
+            { note: note.note },
+            { headers: idempotencyHeaders(`note:${note.id}`) },
+          )
         }
       }))
 
       await Promise.all(deletedPersistedItems.map((item) =>
-        api.delete(`/schedule-items/${item.id}`)
+        api.delete(
+          `/schedule-items/${item.id}`,
+          { headers: idempotencyHeaders(`delete:${item.id}`) },
+        )
       ))
 
       setDialogOpen(false)
       setActiveItemId(null)
       setScheduleOffline(false)
+      draftPublishKeyRef.current = null
       setTrackedConflictIds([])
       await refreshScheduleData()
       toast.success("Draft changes published")

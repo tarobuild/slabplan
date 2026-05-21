@@ -142,6 +142,29 @@ function describeShape(
   return { x, y, w, h }
 }
 
+function describeLineOrArrow(start: Point, current: Point): {
+  x: number
+  y: number
+  w: number
+  h: number
+  pathData: Point[]
+} {
+  const bbox = describeShape("line", start, current)
+  return { ...bbox, pathData: [start, current] }
+}
+
+function annotationEndpoints(a: Annotation | DraftAnnotation): [Point, Point] {
+  if (Array.isArray(a.pathData) && a.pathData.length >= 2) {
+    const start = a.pathData[0]
+    const end = a.pathData[a.pathData.length - 1]
+    if (start && end) return [start, end]
+  }
+  return [
+    [a.normalizedX, a.normalizedY],
+    [a.normalizedX + a.normalizedW, a.normalizedY + a.normalizedH],
+  ]
+}
+
 function annotationCanBeDeletedBy(
   annotation: Annotation,
   currentUserId: string | null,
@@ -206,10 +229,11 @@ function renderAnnotationShape(
       )
     }
     case "line": {
-      const x1 = a.normalizedX * width
-      const y1 = a.normalizedY * height
-      const x2 = (a.normalizedX + a.normalizedW) * width
-      const y2 = (a.normalizedY + a.normalizedH) * height
+      const [start, end] = annotationEndpoints(a)
+      const x1 = start[0] * width
+      const y1 = start[1] * height
+      const x2 = end[0] * width
+      const y2 = end[1] * height
       return (
         <line
           x1={x1}
@@ -227,10 +251,11 @@ function renderAnnotationShape(
       )
     }
     case "arrow": {
-      const x1 = a.normalizedX * width
-      const y1 = a.normalizedY * height
-      const x2 = (a.normalizedX + a.normalizedW) * width
-      const y2 = (a.normalizedY + a.normalizedH) * height
+      const [start, end] = annotationEndpoints(a)
+      const x1 = start[0] * width
+      const y1 = start[1] * height
+      const x2 = end[0] * width
+      const y2 = end[1] * height
       const angle = Math.atan2(y2 - y1, x2 - x1)
       const headLength = Math.max(8, a.thickness * 4)
       const headAngle = Math.PI / 6
@@ -497,13 +522,16 @@ function SelectionStyleBar({
   width,
   height,
   onUpdate,
+  onRequestTextEdit,
 }: {
   annotation: Annotation
   width: number
   height: number
   onUpdate: (id: string, patch: AnnotationPatch) => void | Promise<void>
+  onRequestTextEdit?: () => void
 }) {
   const swatches = colorSwatchesForTool(annotation.toolType)
+  const canEditText = annotation.toolType === "text_label" && onRequestTextEdit
   // Thickness controls don't apply to sticky notes (font/box presentation only)
   // and aren't useful for text labels (the value drives font size, not stroke).
   const showThickness =
@@ -540,13 +568,27 @@ function SelectionStyleBar({
                 void onUpdate(annotation.id, { color: s.value })
               }}
               className={`h-5 w-5 rounded-full ring-2 transition ${
-                active ? "ring-blue-400 scale-110" : "ring-white/30 hover:ring-white/60"
+                active ? "ring-primary/45 scale-110" : "ring-white/30 hover:ring-white/60"
               }`}
               style={{ background: s.value }}
             />
           )
         })}
       </div>
+      {canEditText ? (
+        <>
+          <span className="h-4 w-px bg-white/15" />
+          <button
+            type="button"
+            title="Edit label text"
+            onClick={onRequestTextEdit}
+            className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] font-medium text-slate-100 transition hover:bg-white/10"
+          >
+            <Pencil className="size-3" />
+            Edit
+          </button>
+        </>
+      ) : null}
       {showThickness ? (
         <>
           <span className="h-4 w-px bg-white/15" />
@@ -564,7 +606,7 @@ function SelectionStyleBar({
                   }}
                   className={`flex h-6 items-center rounded px-1.5 text-[11px] transition ${
                     active
-                      ? "bg-blue-600 text-white"
+                      ? "bg-primary text-white"
                       : "text-slate-200 hover:bg-white/10"
                   }`}
                 >
@@ -595,10 +637,19 @@ function SelectionOverlay({
   // Compute the bounding box in pixels. For lines/arrows we expand to a
   // rectangle so the user can grab the endpoints visually.
   const isEndpointShape = annotation.toolType === "line" || annotation.toolType === "arrow"
-  const x1 = annotation.normalizedX * width
-  const y1 = annotation.normalizedY * height
-  const x2 = (annotation.normalizedX + annotation.normalizedW) * width
-  const y2 = (annotation.normalizedY + annotation.normalizedH) * height
+  const [start, end] = isEndpointShape
+    ? annotationEndpoints(annotation)
+    : ([
+        [annotation.normalizedX, annotation.normalizedY],
+        [
+          annotation.normalizedX + annotation.normalizedW,
+          annotation.normalizedY + annotation.normalizedH,
+        ],
+      ] as [Point, Point])
+  const x1 = start[0] * width
+  const y1 = start[1] * height
+  const x2 = end[0] * width
+  const y2 = end[1] * height
   const bx = Math.min(x1, x2)
   const by = Math.min(y1, y2)
   const bw = Math.abs(x2 - x1)
@@ -642,7 +693,7 @@ function SelectionOverlay({
         width={Math.max(0, bw + pad * 2)}
         height={Math.max(0, bh + pad * 2)}
         fill="none"
-        stroke="#2563eb"
+        stroke="hsl(var(--primary))"
         strokeWidth={1}
         strokeDasharray="4 3"
         opacity={0.85}
@@ -655,7 +706,7 @@ function SelectionOverlay({
           width={handleSize}
           height={handleSize}
           fill="#ffffff"
-          stroke="#2563eb"
+          stroke="hsl(var(--primary))"
           strokeWidth={1.5}
           style={{ cursor: h.cursor, pointerEvents: "all" }}
           onPointerDown={(event) => onHandlePointerDown(h.mode, event)}
@@ -736,6 +787,7 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
         const dx = cx - sx
         const dy = cy - sy
         if (Math.abs(dx) < 0.002 && Math.abs(dy) < 0.002) return
+        const shape = describeLineOrArrow(stroke.start, stroke.current)
         onCreate({
           fileId: "",
           page,
@@ -743,12 +795,12 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
           color: stroke.preset.color,
           thickness: stroke.preset.thickness,
           opacity: stroke.preset.opacity,
-          normalizedX: sx,
-          normalizedY: sy,
-          normalizedW: dx,
-          normalizedH: dy,
+          normalizedX: shape.x,
+          normalizedY: shape.y,
+          normalizedW: shape.w,
+          normalizedH: shape.h,
           content: null,
-          pathData: null,
+          pathData: shape.pathData,
         })
         return
       }
@@ -909,12 +961,15 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
     setEditorValue("")
   }, [editor, editorValue, onCreate, onUpdate, page])
 
-  const beginEditStickyNote = useCallback(
+  const beginEditTextAnnotation = useCallback(
     (annotation: Annotation) => {
       const reopened = prepareEditorForExistingNote(annotation)
       if (!reopened) return
       setEditor(reopened.editor)
       setEditorValue(reopened.value)
+      setSelectedId(null)
+      setActiveDrag(null)
+      setDragPoint(null)
     },
     [],
   )
@@ -988,19 +1043,18 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
       >
     }
     if (tool === "line" || tool === "arrow") {
-      const [sx, sy] = activeStroke.start
-      const [cx, cy] = activeStroke.current
+      const shape = describeLineOrArrow(activeStroke.start, activeStroke.current)
       return {
         toolType: tool,
         color: activeStroke.preset.color,
         thickness: activeStroke.preset.thickness,
         opacity: activeStroke.preset.opacity,
-        normalizedX: sx,
-        normalizedY: sy,
-        normalizedW: cx - sx,
-        normalizedH: cy - sy,
+        normalizedX: shape.x,
+        normalizedY: shape.y,
+        normalizedW: shape.w,
+        normalizedH: shape.h,
         content: null,
-        pathData: null,
+        pathData: shape.pathData,
       }
     }
     const bbox = describeShape(tool, activeStroke.start, activeStroke.current)
@@ -1149,6 +1203,11 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
                 width={width}
                 height={height}
                 onUpdate={onUpdate}
+                onRequestTextEdit={
+                  selected.toolType === "text_label"
+                    ? () => beginEditTextAnnotation(selected)
+                    : undefined
+                }
               />
             )
           })()
@@ -1170,7 +1229,7 @@ export function PdfAnnotationLayer(props: PdfAnnotationLayerProps) {
               // Explicit Delete button click bypasses the eraser-mode gate
               // since it's an unambiguous user intent.
               onRequestDelete={() => onDelete(a.id)}
-              onRequestEdit={canEditNote ? () => beginEditStickyNote(a) : undefined}
+              onRequestEdit={canEditNote ? () => beginEditTextAnnotation(a) : undefined}
               isMobile={isMobile}
             />
           )

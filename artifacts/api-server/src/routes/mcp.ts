@@ -27,6 +27,7 @@ type AuditPayload = {
   toolName: string;
   patId: string;
   userId: string;
+  organizationId?: string | null;
   startedAt: Date;
   durationMs: number;
   ok: boolean;
@@ -37,6 +38,7 @@ type AuditPayload = {
 async function writeMcpAuditRow(payload: AuditPayload): Promise<void> {
   try {
     await db.insert(activityLog).values({
+      organizationId: payload.organizationId ?? null,
       entityType: "mcp_tool_call",
       entityId: payload.patId,
       action: payload.toolName,
@@ -75,6 +77,7 @@ const buildAuditHook = (resolved: ResolvedMcpRequest): ToolAuditHook => {
       toolName: event.toolName,
       patId: resolved.patId,
       userId: resolved.userId,
+      organizationId: resolved.organizationId ?? null,
       startedAt: event.startedAt,
       durationMs: event.durationMs,
       ok: event.outcome.ok,
@@ -94,7 +97,12 @@ const mcpHandler = createMcpHttpHandler({
     if (!isPatToken(token)) return null;
     try {
       const resolved = await resolvePersonalAccessToken(token);
-      return { pat: token, patId: resolved.patId, userId: resolved.userId };
+      return {
+        pat: token,
+        patId: resolved.patId,
+        userId: resolved.userId,
+        organizationId: resolved.organizationId ?? null,
+      };
     } catch {
       return null;
     }
@@ -219,6 +227,7 @@ mcpAuditRouter.post("/mcp/audit", async (req: Request, res: Response) => {
     toolName: parsed.data.toolName,
     patId: auth.patId,
     userId: auth.userId,
+    organizationId: auth.organizationId ?? null,
     startedAt,
     durationMs: parsed.data.durationMs,
     ok: parsed.data.ok,

@@ -25,6 +25,8 @@ export type ResolvedMcpRequest = {
   patId: string;
   /** Owning user id of the PAT (audit-logged on every tool call). */
   userId: string;
+  /** Active organization id resolved from the PAT. */
+  organizationId?: string | null;
 };
 
 export type CreateMcpHttpHandlerOptions = {
@@ -75,7 +77,7 @@ export function createMcpHttpHandler(opts: CreateMcpHttpHandlerOptions) {
 
     if (!resolved) {
       writeJson(res, 401, {
-        type: "https://cadstone.app/problems/unauthorized",
+        type: "https://slabplan.app/problems/unauthorized",
         title: "Unauthorized",
         status: 401,
         detail:
@@ -86,11 +88,13 @@ export function createMcpHttpHandler(opts: CreateMcpHttpHandlerOptions) {
 
     const baseUrl = opts.baseUrl ?? defaultBaseUrl();
     const auditHook = opts.buildAuditHook ? opts.buildAuditHook(resolved) : undefined;
+    const abortController = new AbortController();
     const server = createCadstoneMcpServer({
       baseUrl,
       pat: resolved.pat,
       fetchImpl: opts.fetchImpl,
       internalSecret: opts.internalSecret,
+      signal: abortController.signal,
       auditHook,
     });
     const transport = new StreamableHTTPServerTransport({
@@ -98,6 +102,7 @@ export function createMcpHttpHandler(opts: CreateMcpHttpHandlerOptions) {
     });
 
     res.on("close", () => {
+      abortController.abort();
       transport.close().catch(() => {
         /* ignore — connection already gone */
       });

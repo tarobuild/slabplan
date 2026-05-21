@@ -356,14 +356,14 @@ export function ConvertLeadDialog({
                         type="button"
                         onClick={() => setClientId(c.id)}
                         className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50 ${
-                          clientId === c.id ? "bg-orange-50" : ""
+                          clientId === c.id ? "bg-primary/10" : ""
                         }`}
                       >
                         <span className="font-medium text-slate-900">
                           {c.companyName}
                         </span>
                         {clientId === c.id && (
-                          <span className="text-xs font-semibold text-orange-600">
+                          <span className="text-xs font-semibold text-primary">
                             Selected
                           </span>
                         )}

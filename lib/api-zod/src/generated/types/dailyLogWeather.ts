@@ -17,5 +17,5 @@ export interface DailyLogWeather {
   windMph?: number | null;
   humidity?: number | null;
   precipitation: number;
-  fetchedAt: Date;
+  fetchedAt: string;
 }

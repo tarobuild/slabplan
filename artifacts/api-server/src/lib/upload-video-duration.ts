@@ -212,4 +212,4 @@ export async function validateVideoDurationsForFiles(
 
 // Export the shared extension list under the local name historically
 // used by route handlers, in case any caller wants to mirror the gate.
-export { VIDEO_UPLOAD_EXTENSIONS, extensionOf };
+export { VIDEO_UPLOAD_EXTENSIONS, extensionOf, isVideoUpload };

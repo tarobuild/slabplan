@@ -9,6 +9,7 @@ export type CreateCadstoneMcpServerOptions = {
   fetchImpl?: ApiClientOptions["fetchImpl"];
   userAgent?: string;
   internalSecret?: string;
+  signal?: AbortSignal;
   auditHook?: ToolAuditHook;
 };
 
@@ -25,12 +26,12 @@ export type ToolAuditHook = (event: {
 
 const SERVER_INFO = {
   name: "cadstone-mcp",
-  title: "CAD Stone Networks",
+  title: "Stone Track",
   version: "0.1.0",
 } as const;
 
 const SERVER_INSTRUCTIONS = `
-You are connected to CAD Stone Networks, a construction-management workspace.
+You are connected to Stone Track, a construction-management workspace.
 Authenticate with a Personal Access Token (cs_pat_…). Tool calls map directly
 onto the documented REST API at /openapi.json — read it for the exact request
 shapes you can send via the \`request\` escape-hatch tool. Every tool call is
@@ -44,6 +45,7 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
     fetchImpl: opts.fetchImpl,
     userAgent: opts.userAgent,
     internalSecret: opts.internalSecret,
+    signal: opts.signal,
   });
 
   const server = new McpServer(SERVER_INFO, {
@@ -72,26 +74,22 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
         try {
           const data = await def.handler(client, args ?? {});
           const result = toToolResult(data);
-          if (auditHook) {
-            await auditHook({
-              toolName: def.name,
-              startedAt,
-              durationMs: Date.now() - startedAt.getTime(),
-              outcome: { ok: true, status: null },
-            });
-          }
+          void runAuditHook(auditHook, {
+            toolName: def.name,
+            startedAt,
+            durationMs: Date.now() - startedAt.getTime(),
+            outcome: { ok: true, status: null },
+          });
           return result;
         } catch (err) {
-          if (auditHook) {
-            const status = err instanceof ApiError ? err.status : 500;
-            const message = err instanceof Error ? err.message : String(err);
-            await auditHook({
-              toolName: def.name,
-              startedAt,
-              durationMs: Date.now() - startedAt.getTime(),
-              outcome: { ok: false, status, message },
-            });
-          }
+          const status = err instanceof ApiError ? err.status : 500;
+          const message = err instanceof Error ? err.message : String(err);
+          void runAuditHook(auditHook, {
+            toolName: def.name,
+            startedAt,
+            durationMs: Date.now() - startedAt.getTime(),
+            outcome: { ok: false, status, message },
+          });
           return toToolError(def.name, err);
         }
       },
@@ -113,7 +111,7 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
         };
       },
     }),
-    { description: "Browse CAD Stone jobs, leads, clients, files, and folders." },
+    { description: "Browse Stone Track jobs, leads, clients, files, and folders." },
     async (uri) => {
       const startedAt = new Date();
       const parsed = parseResourceUri(uri.href);
@@ -122,17 +120,15 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
         : "resources/read:unknown";
       try {
         if (!parsed) {
-          throw new Error(`Unsupported CAD Stone URI: ${uri.href}`);
+          throw new Error(`Unsupported Stone Track URI: ${uri.href}`);
         }
         const content = await readResource(client, uri.href);
-        if (auditHook) {
-          await auditHook({
-            toolName: auditName,
-            startedAt,
-            durationMs: Date.now() - startedAt.getTime(),
-            outcome: { ok: true, status: null },
-          });
-        }
+        void runAuditHook(auditHook, {
+          toolName: auditName,
+          startedAt,
+          durationMs: Date.now() - startedAt.getTime(),
+          outcome: { ok: true, status: null },
+        });
         return {
           contents: [
             {
@@ -143,22 +139,32 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
           ],
         };
       } catch (err) {
-        if (auditHook) {
-          const status = err instanceof ApiError ? err.status : 500;
-          const message = err instanceof Error ? err.message : String(err);
-          await auditHook({
-            toolName: auditName,
-            startedAt,
-            durationMs: Date.now() - startedAt.getTime(),
-            outcome: { ok: false, status, message },
-          });
-        }
+        const status = err instanceof ApiError ? err.status : 500;
+        const message = err instanceof Error ? err.message : String(err);
+        void runAuditHook(auditHook, {
+          toolName: auditName,
+          startedAt,
+          durationMs: Date.now() - startedAt.getTime(),
+          outcome: { ok: false, status, message },
+        });
         throw err;
       }
     },
   );
 
   return server;
+}
+
+async function runAuditHook(
+  auditHook: ToolAuditHook | undefined,
+  event: Parameters<ToolAuditHook>[0],
+) {
+  if (!auditHook) return;
+  try {
+    await auditHook(event);
+  } catch {
+    /* Audit telemetry must never turn an already-completed tool/resource into a client-visible failure. */
+  }
 }
 
 function toToolResult(data: unknown) {

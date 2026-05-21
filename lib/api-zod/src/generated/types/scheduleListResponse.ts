@@ -8,6 +8,9 @@
 import type { ScheduleItem } from "./scheduleItem";
 import type { ScheduleListResponsePagination } from "./scheduleListResponsePagination";
 
+/**
+ * Schedule list response. `pagination` is page-mode unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.
+ */
 export interface ScheduleListResponse {
   data: ScheduleItem[];
   pagination: ScheduleListResponsePagination;

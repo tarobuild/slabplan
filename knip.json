@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": ["artifacts/demo-recordings-local/**/*.mjs"],
   "workspaces": {
     "artifacts/cadstone": {
       "entry": ["src/**/*.test.{ts,tsx}", "tests/**/*.spec.ts"],
@@ -14,21 +15,15 @@
         "@radix-ui/react-accordion",
         "@radix-ui/react-aspect-ratio",
         "@radix-ui/react-collapsible",
-        "@radix-ui/react-context-menu",
         "@radix-ui/react-hover-card",
-        "@radix-ui/react-menubar",
-        "@radix-ui/react-navigation-menu",
         "@radix-ui/react-toast",
         "@radix-ui/react-toggle",
         "@radix-ui/react-toggle-group",
         "date-fns",
-        "embla-carousel-react",
         "framer-motion",
         "input-otp",
         "next-themes",
-        "react-day-picker",
         "react-hook-form",
-        "react-resizable-panels",
         "vaul",
         "@types/pg",
         "pg",
@@ -96,17 +91,22 @@
       ]
     },
     "lib/api-spec": {
+      "entry": ["scripts/**/*.test.mjs"],
       "project": ["scripts/**/*.mjs"],
       "ignore": [
         "scripts/apply-api-foundation.mjs",
         "scripts/post-codegen.mjs"
       ],
-      "ignoreDependencies": ["orval", "yaml"]
+      "ignoreDependencies": ["orval"]
     },
     "lib/db": {
-      "entry": ["src/scripts/**/*.ts"],
+      "entry": ["src/scripts/**/*.ts", "src/**/*.test.ts"],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["drizzle-zod", "zod"]
+    },
+    "scripts": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
     }
   },
   "ignoreDependencies": ["prettier"],

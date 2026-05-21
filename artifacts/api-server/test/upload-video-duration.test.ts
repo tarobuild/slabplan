@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  VIDEO_UPLOAD_EXTENSIONS,
+  isVideoUpload,
   probeVideoDuration,
   validateVideoDurationsForFiles,
 } from "../src/lib/upload-video-duration.ts";
@@ -129,6 +131,16 @@ test("detects video by extension when MIME is missing (curl-style upload)", asyn
       return true;
     },
   );
+});
+
+test("detects every advertised video extension when MIME is generic", () => {
+  for (const extension of VIDEO_UPLOAD_EXTENSIONS) {
+    assert.equal(
+      isVideoUpload(`clip${extension}`, "application/octet-stream"),
+      true,
+      `expected ${extension} to be treated as a video`,
+    );
+  }
 });
 
 test("probeVideoDuration returns null when the binary is missing", async () => {

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label"
 import { authApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { useDocumentTitle } from "@/hooks/use-document-title"
-import { APP_DESCRIPTION, APP_LOGO_PATH, APP_NAME, APP_TAGLINE } from "@/lib/brand"
+import { APP_LOGO_PATH, APP_NAME } from "@/lib/brand"
 import { toast } from "sonner"
 
 export default function LoginPage() {
@@ -33,68 +33,22 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Left panel — brand identity (desktop only) */}
-      <div
-        className="relative hidden flex-col justify-between p-12 lg:flex lg:w-1/2"
-        style={{
-          backgroundColor: "hsl(var(--nav))",
-          backgroundImage:
-            "radial-gradient(circle at 22% 18%, hsl(var(--oxide) / 0.2), transparent 34%), repeating-linear-gradient(135deg, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px, transparent 1px, transparent 56px)",
-        }}
-      >
-        {/* Top: logo */}
-        <div>
+    <div className="app-surface flex min-h-screen items-center justify-center bg-background px-6 py-12">
+      <div className="w-full max-w-md">
+        <div className="mb-10 flex justify-center">
           <img
             src={APP_LOGO_PATH}
             alt={APP_NAME}
-            className="h-14 w-auto"
+            className="h-[4.5rem] w-auto sm:h-20"
           />
         </div>
 
-        {/* Center: headline + descriptor */}
-        <div className="max-w-md">
-          <h1 className="text-3xl font-bold leading-tight text-white">
-            {APP_TAGLINE}
-          </h1>
-          <p className="mt-3 text-sm text-white/68">
-            {APP_DESCRIPTION}
+        <div className="mb-6">
+          <h1 className="text-4xl font-semibold text-foreground">Sign in</h1>
+          <p className="mt-2 text-base text-muted-foreground">
+            Welcome back to {APP_NAME}.
           </p>
         </div>
-
-        {/* Bottom: stat pills */}
-        <div className="flex flex-wrap gap-2">
-          <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80">
-            Jobs
-          </span>
-          <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80">
-            Daily Logs
-          </span>
-          <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80">
-            Scheduling
-          </span>
-        </div>
-      </div>
-
-      {/* Right panel — form */}
-      <div className="app-surface flex w-full items-center justify-center px-6 py-12 lg:w-1/2">
-        <div className="w-full max-w-sm">
-          {/* Logo — mobile only (left panel shows it on lg) */}
-          <div className="mb-8 flex justify-center lg:hidden">
-            <img
-              src={APP_LOGO_PATH}
-              alt={APP_NAME}
-              className="h-12 w-auto"
-            />
-          </div>
-
-          {/* Heading */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold text-foreground">Sign in</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Welcome back to {APP_NAME}.
-            </p>
-          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
@@ -106,6 +60,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email"
+                className="h-12 text-base"
                 required
                 autoFocus
               />
@@ -119,12 +74,13 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
+                className="h-12 text-base"
                 required
               />
             </div>
             <Button
               type="submit"
-              className="w-full"
+              className="h-12 w-full text-base"
               disabled={loading}
             >
               {loading ? "Signing in…" : "Sign in"}
@@ -136,7 +92,6 @@ export default function LoginPage() {
               Create a workspace
             </Link>
           </p>
-        </div>
       </div>
     </div>
   )

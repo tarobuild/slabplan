@@ -984,10 +984,11 @@ export default function LeadsPage() {
   return (
     <div className="space-y-4">
       {leadUnsavedChanges.dialog}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Sales Leads</h1>
         <Button
           size="sm"
+          className="w-full justify-center sm:w-auto"
           onClick={() => {
             resetCreateDialogState()
             setCreateOpen(true)
@@ -998,8 +999,8 @@ export default function LeadsPage() {
         </Button>
       </div>
 
-      <div className="flex gap-2">
-        <div className="relative flex-1 max-w-xs">
+      <div className="grid gap-2 sm:flex sm:items-center">
+        <div className="relative min-w-0 sm:max-w-xs sm:flex-1">
           <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
           <Input
             value={search}
@@ -1009,7 +1010,7 @@ export default function LeadsPage() {
           />
         </div>
         <Select value={status} onValueChange={handleStatus}>
-          <SelectTrigger className="w-40 h-9">
+          <SelectTrigger className="h-9 w-full sm:w-40">
             <SelectValue placeholder="All statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -1031,7 +1032,7 @@ export default function LeadsPage() {
             active because the list is already restricted to converted
             leads in that case. */}
         {status !== "converted" && (
-          <label className="flex items-center gap-2 text-xs text-slate-600 self-center">
+          <label className="flex min-h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-600 sm:border-0 sm:bg-transparent sm:px-0">
             <input
               type="checkbox"
               checked={showConverted}
@@ -1255,13 +1256,13 @@ export default function LeadsPage() {
 
       {/* Create Lead Dialog */}
       <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
-        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>New Lead Opportunity</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreate}>
-            <div className="grid grid-cols-2 gap-4 py-4">
-              <div className="col-span-2 space-y-1.5">
+            <div className="grid grid-cols-1 gap-4 py-4 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="lead-title">Title *</Label>
                 <Input
                   id="lead-title"
@@ -1381,7 +1382,7 @@ export default function LeadsPage() {
                 />
               </div>
 
-              <div className="col-span-2 space-y-1.5">
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="lead-notes">Notes</Label>
                 <Textarea
                   id="lead-notes"
@@ -1393,12 +1394,12 @@ export default function LeadsPage() {
               </div>
 
               {/* Contact section */}
-              <div className="col-span-2 pt-2">
+              <div className="pt-2 sm:col-span-2">
                 <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
                   <User className="size-3.5" />
                   Primary Contact <span className="font-normal text-slate-400">(optional)</span>
                 </p>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="contact-name">Display Name</Label>
                     <Input
@@ -1447,7 +1448,7 @@ export default function LeadsPage() {
               </div>
 
               {/* Attachments section */}
-              <div className="col-span-2 pt-2">
+              <div className="pt-2 sm:col-span-2">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
                     <Paperclip className="size-3.5" />

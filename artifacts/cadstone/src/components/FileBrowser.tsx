@@ -1094,7 +1094,7 @@ export default function FileBrowser({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-1.5 text-sm min-w-0">
           <button
             onClick={() => navigateTo(null)}
@@ -1121,14 +1121,14 @@ export default function FileBrowser({
           ))}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-2 sm:shrink-0">
           <Select
             value={sortBy}
             onValueChange={(v) => {
               if (isSortOption(v)) setSortBy(v)
             }}
           >
-            <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectTrigger className="h-9 w-full text-xs sm:h-8 sm:w-36">
               <SelectValue placeholder="Sort" />
             </SelectTrigger>
             <SelectContent>
@@ -1142,7 +1142,7 @@ export default function FileBrowser({
           </Select>
 
           {canToggleView && (
-            <div className="flex border border-[#E5E7EB] rounded-md overflow-hidden">
+            <div className="flex overflow-hidden rounded-md border border-[#E5E7EB]">
               <button
                 onClick={() => setViewMode("grid")}
                 className={`px-2 py-1.5 transition-colors ${
@@ -1186,6 +1186,7 @@ export default function FileBrowser({
                   fileInputRef.current?.click()
                 }}
                 disabled={uploading}
+                className="w-full justify-center sm:w-auto"
               >
                 {uploading ? (
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -1203,6 +1204,7 @@ export default function FileBrowser({
                 setNewFolderName("")
                 setCreateFolderOpen(true)
               }}
+              className="w-full justify-center sm:w-auto"
             >
               <Plus className="mr-1.5 size-3.5" />
               New Folder
@@ -1338,7 +1340,7 @@ export default function FileBrowser({
                       canManageFile={canManageFile}
                     />
                   ) : (
-                    <FileTable
+                    <FileList
                       files={sortedFiles}
                       showDuration={mediaType === "video"}
                       mediaType={mediaType}
@@ -1358,7 +1360,7 @@ export default function FileBrowser({
                       }`}
                     >
                       <Upload className="size-4 text-slate-400" />
-                      <span className="text-sm text-slate-500">Drag files here or click to upload</span>
+                      <span className="text-sm text-slate-500">Tap to upload files</span>
                     </div>
                   )}
                 </div>
@@ -1371,7 +1373,7 @@ export default function FileBrowser({
                     }`}
                   >
                     <Upload className="mx-auto mb-3 size-8 text-slate-300" />
-                    <p className="text-sm font-medium text-slate-500">Drag & drop files here, or click to upload</p>
+                    <p className="text-sm font-medium text-slate-500">Tap to upload files</p>
                     {mediaType === "video" ? (
                       <p className="mt-1 text-xs text-slate-400">{videoUploadHint()}</p>
                     ) : null}
@@ -1390,7 +1392,7 @@ export default function FileBrowser({
                   }`}
                 >
                   <Upload className="mb-2 size-5 text-slate-300" />
-                  <p className="text-sm text-slate-500">Drag & drop files here, or click to upload</p>
+                  <p className="text-sm text-slate-500">Tap to upload files</p>
                   {mediaType === "video" ? (
                     <p className="mt-1 text-xs text-slate-400">{videoUploadHint()}</p>
                   ) : null}
@@ -1439,9 +1441,11 @@ export default function FileBrowser({
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Add a note for your photos</DialogTitle>
+            <DialogTitle>
+              {mediaType === "photo" ? "Add a note for your photos" : "Upload files"}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleUploadSubmit} className="space-y-4">
             <div className="text-sm text-slate-500">
@@ -1449,14 +1453,20 @@ export default function FileBrowser({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="upload-note">Note (required)</Label>
+              <Label htmlFor="upload-note">
+                {mediaType === "photo" ? "Note (required for field photos)" : "Note (optional)"}
+              </Label>
               <Input
                 id="upload-note"
                 value={uploadNote}
                 autoFocus
                 onChange={(event) => setUploadNote(event.target.value)}
-                placeholder="Describe the area or work shown in these photos"
-                required
+                placeholder={
+                  mediaType === "photo"
+                    ? "Describe the area or work shown in these photos"
+                    : "Add context for this upload"
+                }
+                required={showCrewPhotoNote}
                 disabled={uploading}
               />
             </div>
@@ -1506,7 +1516,7 @@ export default function FileBrowser({
               </div>
             ) : null}
 
-            <DialogFooter>
+            <DialogFooter className="gap-2 sm:gap-0">
               {uploading ? (
                 <Button
                   type="button"
@@ -2204,7 +2214,7 @@ function FileActionsMenu({
   )
 }
 
-function FileTable({
+function FileList({
   files,
   showDuration,
   mediaType,
@@ -2228,7 +2238,102 @@ function FileTable({
   const showNotes = files.some((file) => !!file.note)
 
   return (
-    <div className="rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
+    <>
+      <div className="space-y-2 md:hidden">
+        {files.map((file) => {
+          const label = displayName(file)
+          const isMissing = file.storageStatus === "missing"
+          const canPhoto = mediaType === "photo" && !!onOpenLightbox && !isMissing
+          const canVideo = mediaType === "video" && !!onOpenPlayer && !isMissing
+          const handleOpen = canPhoto
+            ? () => onOpenLightbox!(file)
+            : canVideo
+              ? () => onOpenPlayer!(file)
+              : () => onOpenInNewTab(file)
+
+          return (
+            <div
+              key={file.id}
+              className={`rounded-lg border bg-white p-3 ${
+                isMissing ? "border-amber-200 bg-amber-50/60" : "border-[#E5E7EB]"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={isMissing ? undefined : handleOpen}
+                  disabled={isMissing}
+                  className="flex min-w-0 flex-1 items-start gap-2 text-left disabled:cursor-default"
+                >
+                  {isMissing ? (
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                  ) : (
+                    <FileIcon mimeType={file.mimeType} />
+                  )}
+                  <span className="min-w-0">
+                    <span
+                      className={`block truncate text-sm font-medium ${
+                        isMissing
+                          ? "text-slate-700 line-through decoration-amber-400"
+                          : "text-primary"
+                      }`}
+                    >
+                      {label}
+                    </span>
+                    <span className="mt-1 block text-xs text-slate-500">
+                      {formatFileSize(file.fileSize)}
+                      {showDuration
+                        ? ` · ${
+                            file.durationSeconds != null
+                              ? formatVideoDuration(file.durationSeconds)
+                              : "No duration"
+                          }`
+                        : ""}
+                    </span>
+                    {isMissing ? (
+                      <span className="mt-1 block text-[11px] font-medium text-amber-700">
+                        Original file unavailable
+                      </span>
+                    ) : null}
+                    {file.note ? (
+                      <span className="mt-1 line-clamp-2 block text-xs text-slate-500">
+                        {file.note}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+
+                <div className="flex shrink-0 items-center gap-1">
+                  {!isMissing && (
+                    <button
+                      type="button"
+                      onClick={() => onDownload(file)}
+                      className="inline-flex size-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                      aria-label={`Download ${label}`}
+                    >
+                      <Download className="size-4" />
+                    </button>
+                  )}
+                  <FileActionsMenu
+                    file={file}
+                    canManage={canManageFile(file)}
+                    onOpen={isMissing ? undefined : handleOpen}
+                    onDownload={onDownload}
+                    onRequestDelete={onRequestDelete}
+                    triggerAriaLabel={`Actions for ${label}`}
+                  />
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
+                <span>{file.uploadedByName ?? "Unknown uploader"}</span>
+                <span>{fmtDate(file.createdAt)}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+    <div className="hidden overflow-hidden rounded-lg border border-[#E5E7EB] bg-white md:block">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 border-b border-[#E5E7EB]">
           <tr>
@@ -2356,5 +2461,6 @@ function FileTable({
         </tbody>
       </table>
     </div>
+    </>
   )
 }

@@ -69,6 +69,7 @@ export default function MobileBottomNav() {
     ? [
         { label: "Home", to: "/dashboard", icon: Home },
         { label: "My Jobs", to: "/jobs", icon: Briefcase },
+        { label: "Files", to: "/resources", icon: FileText },
         { label: "Logs", to: "/daily-logs/mine", icon: ClipboardList },
       ]
     : [
@@ -76,22 +77,19 @@ export default function MobileBottomNav() {
         ...(hasRoleAccess(role, ROLE_GATES.clients)
           ? [{ label: "Clients", to: "/clients", icon: Users }]
           : []),
-        ...(hasRoleAccess(role, ROLE_GATES.companyViews)
-          ? [{ label: "Schedule", to: "/schedule", icon: Calendar }]
+        ...(hasRoleAccess(role, ROLE_GATES.sales)
+          ? [{ label: "Sales", to: "/sales/leads", icon: Sparkles, matchPrefixes: ["/sales"] }]
           : []),
-        ...(hasRoleAccess(role, ROLE_GATES.companyViews)
-          ? [{ label: "Logs", to: "/daily-logs", icon: ClipboardList }]
-          : []),
+        { label: "Files", to: "/resources", icon: FileText },
       ]
 
   const moreItems: MoreItem[] = [
-    { label: "Resources", to: "/resources", icon: FileText },
-    {
-      label: "Sales",
-      to: "/sales",
-      icon: Sparkles,
-      allow: ROLE_GATES.sales,
-    },
+    ...(hasRoleAccess(role, ROLE_GATES.companyViews)
+      ? [{ label: "Schedule", to: "/schedule", icon: Calendar }]
+      : []),
+    ...(hasRoleAccess(role, ROLE_GATES.companyViews)
+      ? [{ label: "Logs", to: "/daily-logs", icon: ClipboardList }]
+      : []),
     {
       label: "Reports",
       to: "/reports",

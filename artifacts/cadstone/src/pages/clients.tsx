@@ -519,16 +519,20 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Clients</h1>
-        <Button size="sm" onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}>
+        <Button
+          size="sm"
+          className="w-full justify-center sm:w-auto"
+          onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}
+        >
           <Plus className="mr-1.5 size-3.5" />
           New Client
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative max-w-xs flex-1 min-w-[200px]">
+      <div className="grid gap-3 sm:flex sm:flex-wrap sm:items-center">
+        <div className="relative min-w-0 sm:max-w-xs sm:flex-1">
           <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
           <Input
             value={search}
@@ -537,14 +541,14 @@ export default function ClientsPage() {
             className="pl-8 h-9"
           />
         </div>
-        <div className="inline-flex rounded-md border border-[#E5E7EB] bg-white p-0.5">
+        <div className="grid grid-cols-3 rounded-md border border-[#E5E7EB] bg-white p-0.5 sm:inline-flex">
           {STATUS_TABS.map(t => (
             <button
               key={t.value}
               type="button"
               onClick={() => { setStatusFilter(t.value); setPage(1) }}
               className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded transition-colors",
+                "rounded px-3 py-2 text-xs font-medium transition-colors sm:py-1.5",
                 statusFilter === t.value
                   ? "bg-primary text-white"
                   : "text-slate-600 hover:bg-slate-100",
@@ -994,7 +998,7 @@ export default function ClientsPage() {
 
       {/* New Client Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>New Client</DialogTitle>
           </DialogHeader>
@@ -1010,7 +1014,7 @@ export default function ClientsPage() {
                   placeholder="Acme Construction"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="phone">Phone</Label>
                   <Input id="phone" value={clientForm.phone} onChange={e => setClientForm(f => ({ ...f, phone: e.target.value }))} placeholder="(555) 000-0000" />
@@ -1025,7 +1029,7 @@ export default function ClientsPage() {
                 <Input id="city" value={clientForm.city} onChange={e => setClientForm(f => ({ ...f, city: e.target.value }))} placeholder="Austin" />
               </div>
             </div>
-            <DialogFooter className="mt-4">
+            <DialogFooter className="mt-4 gap-2 sm:gap-0">
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
@@ -1038,13 +1042,13 @@ export default function ClientsPage() {
 
       {/* Add / Edit Contact Dialog */}
       <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
-        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editingContact ? "Edit Contact" : "Add Contact"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSaveContact}>
             <div className="space-y-3 py-2">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>First Name</Label>
                   <Input value={contactForm.firstName} onChange={e => setContactForm(f => ({ ...f, firstName: e.target.value }))} placeholder="John" />

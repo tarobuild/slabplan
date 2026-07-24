@@ -431,6 +431,7 @@ export default function JobDetailPage() {
                       variant="outline"
                       size="sm"
                       className="gap-1.5"
+                      aria-label="Job actions"
                     >
                       <MoreHorizontal className="size-4" />
                       <span className="hidden sm:inline">Job actions</span>

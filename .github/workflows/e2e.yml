@@ -87,6 +87,9 @@ jobs:
       # The hostname is a job-local GitHub Actions service container. Keep the
       # destructive reset guard explicit while allowing this throwaway test DB.
       STONE_TRACK_ALLOW_REMOTE_TEST_DATABASE_RESET: "true"
+      # E2E uploads belong to this disposable runner; Supabase credentials are
+      # intentionally absent from CI.
+      CADSTONE_STORAGE_BACKEND: local
       # api-server / Vite ports the spec config expects.
       PORT: 8080
       E2E_BASE_URL: http://127.0.0.1:21903

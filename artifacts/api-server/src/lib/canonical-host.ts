@@ -4,6 +4,7 @@ export const CANONICAL_HOST =
   process.env.CANONICAL_HOST?.trim().toLowerCase() || DEFAULT_CANONICAL_HOST;
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+const HEALTH_CHECK_PATHS = new Set(["/api/livez", "/api/healthz"]);
 const CONFIGURED_HOST_ENV_KEYS = [
   "CANONICAL_HOST",
   "APP_PUBLIC_URL",
@@ -31,6 +32,10 @@ export function normalizeHostHeader(hostHeader: string | undefined): string {
 export function isLoopbackAddress(remoteAddress: string | undefined): boolean {
   const normalized = remoteAddress?.replace(/^::ffff:/, "") ?? "";
   return LOOPBACK_HOSTS.has(normalized);
+}
+
+export function isCanonicalHostBypassPath(pathname: string): boolean {
+  return HEALTH_CHECK_PATHS.has(pathname);
 }
 
 function splitCandidates(value: string | undefined) {

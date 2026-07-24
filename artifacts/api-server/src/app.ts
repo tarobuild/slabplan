@@ -32,7 +32,11 @@ import {
 import { ensureTempUploadDir } from "./lib/uploads";
 import { assertActiveAuthUser } from "./lib/active-user";
 import { attachOrganizationContext } from "./lib/auth-organization";
-import { CANONICAL_HOST, isAllowedProductionHost } from "./lib/canonical-host";
+import {
+  CANONICAL_HOST,
+  isAllowedProductionHost,
+  isCanonicalHostBypassPath,
+} from "./lib/canonical-host";
 import { organizationScopeCondition } from "./lib/tenant-scope";
 
 const isProd = process.env.NODE_ENV === "production";
@@ -154,7 +158,10 @@ app.use((req, res, next) => {
     next();
     return;
   }
-  if (req.path === "/api/healthz") {
+  // Deployment-platform probes use internal Host headers. Both probes must
+  // answer directly so a healthy container is never rejected by the
+  // canonical public-host redirect.
+  if (isCanonicalHostBypassPath(req.path)) {
     next();
     return;
   }

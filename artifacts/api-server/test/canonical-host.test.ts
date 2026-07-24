@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   collectConfiguredProductionHosts,
   isAllowedProductionHost,
+  isCanonicalHostBypassPath,
   normalizeHostHeader,
 } from "../src/lib/canonical-host.ts";
 
@@ -61,4 +62,11 @@ test("production canonical host guard allows loopback hosts only from loopback s
 
 test("production canonical host guard rejects non-canonical public hosts", () => {
   assert.equal(isAllowedProductionHost("cadstone.example.com", "203.0.113.10"), false);
+});
+
+test("production canonical host guard bypasses deployment health probes", () => {
+  assert.equal(isCanonicalHostBypassPath("/api/livez"), true);
+  assert.equal(isCanonicalHostBypassPath("/api/healthz"), true);
+  assert.equal(isCanonicalHostBypassPath("/api/livez/extra"), false);
+  assert.equal(isCanonicalHostBypassPath("/api/jobs"), false);
 });

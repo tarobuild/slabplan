@@ -83,7 +83,6 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
-import { completionStateForProgress } from "./schedule-progress"
 
 type UserOption = {
   id: string
@@ -149,7 +148,6 @@ type ScheduleItemDialogProps = {
   refreshSettings: () => Promise<void>
   onRefresh: () => Promise<void>
   draftMode?: boolean
-  readOnly?: boolean
   onDraftSave?: (params: {
     itemId: string | null
     payload: ScheduleItemPayload
@@ -212,14 +210,6 @@ function formFromItem(item: ScheduleItemRecord): ScheduleFormValues {
   }
 }
 
-function hasManualEndDate(
-  item: ScheduleItemRecord,
-  workdayExceptions: ScheduleWorkdayException[],
-): boolean {
-  if (item.manualEndDate) return true
-  return item.endDate !== calculateBusinessEndDate(item.startDate, item.workDays, workdayExceptions)
-}
-
 function attachmentIcon(icon: string) {
   if (icon === "pdf" || icon === "doc") {
     return FileText
@@ -254,7 +244,6 @@ export function ScheduleItemDialog({
   refreshSettings,
   onRefresh,
   draftMode = false,
-  readOnly = false,
   onDraftSave,
   onDraftAddNote,
   onDraftDelete,
@@ -262,6 +251,7 @@ export function ScheduleItemDialog({
 }: ScheduleItemDialogProps) {
   const today = dateKey(new Date())
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const loadGenerationRef = useRef(0)
   const filePreview = useFilePreview()
 
   const currentUser = useAuthStore((s) => s.user)
@@ -294,7 +284,6 @@ export function ScheduleItemDialog({
   const [docPreviewLoading, setDocPreviewLoading] = useState(false)
   const [docPreviewBody, setDocPreviewBody] = useState("")
   const [docPreviewTitle, setDocPreviewTitle] = useState("")
-  const loadItemSeqRef = useRef(0)
 
   useEffect(() => {
     if (!open) {
@@ -311,8 +300,7 @@ export function ScheduleItemDialog({
     }
   }, [item])
 
-  async function loadItem(nextItemId: string) {
-    const requestSeq = ++loadItemSeqRef.current
+  async function loadItem(nextItemId: string, loadGeneration = loadGenerationRef.current) {
     setLoadingItem(true)
 
     try {
@@ -323,37 +311,40 @@ export function ScheduleItemDialog({
           throw new Error("Draft schedule item not found")
         }
 
-	        if (requestSeq === loadItemSeqRef.current) {
-	          setItem(draftItem)
-	          setValues(formFromItem(draftItem))
-	          setNoteDraft("")
-	          setNotifyAssignees(false)
-	          setManualEndDate(hasManualEndDate(draftItem, workdayExceptions))
-	        }
+        if (loadGenerationRef.current !== loadGeneration) {
+          return
+        }
+        setItem(draftItem)
+        setValues(formFromItem(draftItem))
+        setNoteDraft("")
+        setNotifyAssignees(false)
+        setManualEndDate(false)
         return
       }
 
       const response = await api.get<{ item: ScheduleItemRecord }>(`/schedule-items/${nextItemId}`)
-      if (requestSeq !== loadItemSeqRef.current) return
+      if (loadGenerationRef.current !== loadGeneration) {
+        return
+      }
       setItem(response.data.item)
-	      setValues(formFromItem(response.data.item))
-	      setNoteDraft("")
-	      setNotifyAssignees(false)
-	      setManualEndDate(hasManualEndDate(response.data.item, workdayExceptions))
+      setValues(formFromItem(response.data.item))
+      setNoteDraft("")
+      setNotifyAssignees(false)
+      setManualEndDate(false)
     } catch (err) {
-      if (requestSeq === loadItemSeqRef.current) {
+      if (loadGenerationRef.current === loadGeneration) {
         toastApiError(err, "Failed to load schedule item")
       }
     } finally {
-      if (requestSeq === loadItemSeqRef.current) {
+      if (loadGenerationRef.current === loadGeneration) {
         setLoadingItem(false)
       }
     }
   }
 
   function resetForNewItem() {
-    loadItemSeqRef.current += 1
     setItem(null)
+    setLoadingItem(false)
     const form = defaultForm(initialStartDate || today, workdayExceptions)
     if (initialStartTime) {
       form.isHourly = true
@@ -378,8 +369,11 @@ export function ScheduleItemDialog({
   }
 
   useEffect(() => {
+    loadGenerationRef.current += 1
+    const loadGeneration = loadGenerationRef.current
+
     if (!open) {
-      loadItemSeqRef.current += 1
+      setLoadingItem(false)
       return
     }
 
@@ -392,7 +386,7 @@ export function ScheduleItemDialog({
     setAddingPhase("")
     setAddingTag("")
     if (itemId) {
-      void loadItem(itemId)
+      void loadItem(itemId, loadGeneration)
       return
     }
 
@@ -557,7 +551,7 @@ export function ScheduleItemDialog({
       assigneeIds: values.assigneeIds,
       startDate: values.startDate,
       workDays: values.workDays,
-      endDate: manualEndDate && values.endDate ? values.endDate : null,
+      endDate: null,
       isHourly: values.isHourly,
       startTime: values.isHourly ? values.startTime : null,
       endTime: values.isHourly ? values.endTime : null,
@@ -577,9 +571,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleSave(mode: "stay" | "close" | "new") {
-    if (readOnly) {
-      return null
-    }
     if (!values.title.trim()) {
       toast.error("Title is required")
       return null
@@ -588,78 +579,90 @@ export function ScheduleItemDialog({
     setSaving(true)
 
     try {
-      const payload = buildPayload()
-      const pendingNote = noteDraft.trim() || null
       let savedItem: ScheduleItemRecord
+      const wasEditing = Boolean(item)
 
-      if (draftMode) {
-        if (!onDraftSave) {
-          throw new Error("Draft save handler is not configured.")
+      try {
+        const payload = buildPayload()
+        const pendingNote = noteDraft.trim() || null
+        savedItem = draftMode && onDraftSave
+          ? await onDraftSave({
+              itemId: item?.id ?? null,
+              payload,
+              note: pendingNote,
+            })
+          : (
+              item
+                ? await api.put<{ item: ScheduleItemRecord }>(`/schedule-items/${item.id}`, payload)
+                : await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
+            ).data.item
+
+        if (!draftMode && pendingNote) {
+          try {
+            await api.post(`/schedule-items/${savedItem.id}/notes`, {
+              note: pendingNote,
+            })
+          } catch (err) {
+            toastApiError(err, "Schedule item saved, but the note could not be added")
+          }
+        }
+      } catch (err) {
+        toastApiError(err, "Failed to save schedule item")
+        return null
+      }
+
+      async function refreshAfterSave() {
+        if (draftMode) {
+          return
         }
 
-        savedItem = await onDraftSave({
-          itemId: item?.id ?? null,
-          payload,
-          note: pendingNote,
-        })
-      } else {
-        savedItem = (
-          item
-            ? await api.put<{ item: ScheduleItemRecord }>(`/schedule-items/${item.id}`, payload)
-            : await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, payload)
-        ).data.item
+      try {
+        await onRefresh()
+      } catch {
+        toast.info("Schedule item saved, but the schedule could not refresh.")
       }
-
-      if (!draftMode && pendingNote) {
-        await api.post(`/schedule-items/${savedItem.id}/notes`, {
-          note: pendingNote,
-        })
-      }
+    }
 
       if (notifyAssignees && draftMode && values.assigneeIds.length > 0) {
         toast.info("Assigned-user notifications will be available after publish")
       }
 
-      if (!draftMode) {
-        await onRefresh()
-      }
+      const successMessage = wasEditing ? "Schedule item saved" : "Schedule item created"
 
       if (mode === "new") {
         resetForNewItem()
-        toast.success(item ? "Schedule item saved" : "Schedule item created")
+        toast.success(successMessage)
+        await refreshAfterSave()
         return savedItem.id
       }
 
       if (mode === "close") {
         onOpenChange(false)
-        toast.success(item ? "Schedule item saved" : "Schedule item created")
+        toast.success(successMessage)
+        await refreshAfterSave()
         return savedItem.id
       }
 
-	      if (draftMode) {
-	        setItem(savedItem)
-	        setValues(formFromItem(savedItem))
-	        setNoteDraft("")
-	        setNotifyAssignees(false)
-	        setManualEndDate(hasManualEndDate(savedItem, workdayExceptions))
-	      } else {
+      setItem(savedItem)
+      setValues(formFromItem(savedItem))
+      setNoteDraft("")
+      setNotifyAssignees(false)
+      setManualEndDate(false)
+
+      await refreshAfterSave()
+      if (!draftMode) {
         await loadItem(savedItem.id)
       }
+
       setNotifyAssignees(false)
-      toast.success(item ? "Schedule item saved" : "Schedule item created")
+      toast.success(successMessage)
       return savedItem.id
-    } catch (err) {
-      toastApiError(err, "Failed to save schedule item")
-      return null
     } finally {
       setSaving(false)
     }
   }
 
   async function handleAddNote() {
-    if (readOnly) {
-      return
-    }
     if (!item || !noteDraft.trim()) {
       return
     }
@@ -667,15 +670,7 @@ export function ScheduleItemDialog({
     setSaving(true)
 
     try {
-      if (draftMode && !onDraftAddNote) {
-        throw new Error("Draft note handler is not configured.")
-      }
-
-      if (draftMode) {
-        if (!onDraftAddNote) {
-          throw new Error("Draft note handler is not configured.")
-        }
-
+      if (draftMode && onDraftAddNote) {
         const updatedItem = await onDraftAddNote(item.id, noteDraft.trim())
         setItem(updatedItem)
         setValues(formFromItem(updatedItem))
@@ -708,9 +703,6 @@ export function ScheduleItemDialog({
 
   const onDropFiles = useCallback(
     async (droppedFiles: File[]) => {
-      if (readOnly) {
-        return
-      }
       if (draftMode) {
         toast.info("Publish draft changes before managing attachments")
         return
@@ -737,20 +729,16 @@ export function ScheduleItemDialog({
         setSaving(false)
       }
     },
-    [item, draftMode, onRefresh, readOnly],
+    [item, draftMode, onRefresh],
   )
 
   const attachmentDropzone = useDropzone({
     onDrop: onDropFiles,
     noKeyboard: true,
-    disabled: !item || draftMode || readOnly,
+    disabled: !item || draftMode,
   })
 
   async function handleUploadFiles(event: React.ChangeEvent<HTMLInputElement>) {
-    if (readOnly) {
-      event.target.value = ""
-      return
-    }
     if (draftMode) {
       toast.info("Publish draft changes before managing attachments")
       event.target.value = ""
@@ -808,9 +796,6 @@ export function ScheduleItemDialog({
   }
 
   async function performCreateDoc(defaultTitleSource?: string) {
-    if (readOnly) {
-      return
-    }
     if (!item) {
       return
     }
@@ -839,9 +824,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleConfirmCreateDoc() {
-    if (readOnly) {
-      return
-    }
     if (!item) {
       return
     }
@@ -867,9 +849,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleCreateDoc() {
-    if (readOnly) {
-      return
-    }
     if (draftMode) {
       toast.info("Publish draft changes before creating attachments")
       return
@@ -888,9 +867,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleSaveThenCreateDoc() {
-    if (readOnly) {
-      return
-    }
     setCreateDocConfirmOpen(false)
     const savedTitle = values.title
     const savedId = await handleSave("stay")
@@ -900,17 +876,11 @@ export function ScheduleItemDialog({
   }
 
   async function handleCreateDocAnyway() {
-    if (readOnly) {
-      return
-    }
     setCreateDocConfirmOpen(false)
     await performCreateDoc()
   }
 
   async function handleDeleteAttachment(attachmentId: string) {
-    if (readOnly) {
-      return
-    }
     if (draftMode) {
       toast.info("Publish draft changes before deleting attachments")
       return
@@ -934,9 +904,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleCopy() {
-    if (readOnly) {
-      return
-    }
     if (!item) {
       return
     }
@@ -945,37 +912,35 @@ export function ScheduleItemDialog({
 
     try {
       const payload = buildPayload()
-      let copiedItem: ScheduleItemRecord
-
-      if (draftMode) {
-        if (!onDraftSave) {
-          throw new Error("Draft save handler is not configured.")
-        }
-
-        copiedItem = await onDraftSave({
-          itemId: null,
-          payload: {
-            ...payload,
-            title: `${payload.title} (Copy)`,
-            progress: 0,
-            isComplete: false,
-          },
-          note: null,
-        })
-      } else {
-        copiedItem = (
-          await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, {
-            ...payload,
-            title: `${payload.title} (Copy)`,
-            progress: 0,
-            isComplete: false,
+      const copiedItem = draftMode && onDraftSave
+        ? await onDraftSave({
+            itemId: null,
+            payload: {
+              ...payload,
+              title: `${payload.title} (Copy)`,
+              progress: 0,
+              isComplete: false,
+            },
+            note: null,
           })
-        ).data.item
-      }
+        : (
+            await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, {
+              ...payload,
+              title: `${payload.title} (Copy)`,
+              progress: 0,
+              isComplete: false,
+            })
+          ).data.item
       if (!draftMode) {
         await onRefresh()
+        await loadItem(copiedItem.id)
+      } else {
+        setItem(copiedItem)
+        setValues(formFromItem(copiedItem))
+        setNoteDraft("")
+        setNotifyAssignees(false)
+        setManualEndDate(false)
       }
-      await loadItem(copiedItem.id)
       toast.success("Schedule item copied")
     } catch (err) {
       toastApiError(err, "Failed to copy schedule item")
@@ -985,9 +950,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleDelete() {
-    if (readOnly) {
-      return
-    }
     if (!item) {
       return
     }
@@ -995,11 +957,7 @@ export function ScheduleItemDialog({
     setSaving(true)
 
     try {
-      if (draftMode) {
-        if (!onDraftDelete) {
-          throw new Error("Draft delete handler is not configured.")
-        }
-
+      if (draftMode && onDraftDelete) {
         await onDraftDelete(item.id)
       } else {
         await api.delete(`/schedule-items/${item.id}`)
@@ -1018,9 +976,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleCreateTodo() {
-    if (readOnly) {
-      return
-    }
     if (draftMode) {
       toast.info("Publish draft changes before creating linked to-do's")
       return
@@ -1059,9 +1014,6 @@ export function ScheduleItemDialog({
   // Persist their toggle immediately rather than buffering it into the form
   // — the form's Save button calls PUT, which would 403 for them.
   async function handleToggleCompleteAsCrew(nextIsComplete: boolean) {
-    if (readOnly) {
-      return
-    }
     if (!item || draftMode) {
       return
     }
@@ -1108,9 +1060,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleToggleTodo(todo: ScheduleTodo) {
-    if (readOnly) {
-      return
-    }
     if (draftMode) {
       toast.info("Publish draft changes before updating linked to-do's")
       return
@@ -1135,9 +1084,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleDeleteTodo(todoId: string) {
-    if (readOnly) {
-      return
-    }
     if (draftMode) {
       toast.info("Publish draft changes before removing linked to-do's")
       return
@@ -1161,9 +1107,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleAddPhase() {
-    if (readOnly) {
-      return
-    }
     if (!addingPhase.trim()) {
       return
     }
@@ -1186,9 +1129,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleSavePhase(phaseId: string) {
-    if (readOnly) {
-      return
-    }
     const name = editingPhases[phaseId]?.trim()
 
     if (!name) {
@@ -1209,9 +1149,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleAddTag() {
-    if (readOnly) {
-      return
-    }
     if (!addingTag.trim()) {
       return
     }
@@ -1234,9 +1171,6 @@ export function ScheduleItemDialog({
   }
 
   async function handleSaveTag(tagId: string) {
-    if (readOnly) {
-      return
-    }
     const name = editingTags[tagId]?.trim()
 
     if (!name) {
@@ -1583,7 +1517,6 @@ export function ScheduleItemDialog({
                               Schedule Item Phase
                             </h3>
                           </div>
-                          {!readOnly ? (
                           <div className="flex items-center gap-4 text-sm">
                             <button
                               type="button"
@@ -1600,7 +1533,6 @@ export function ScheduleItemDialog({
                               Edit
                             </button>
                           </div>
-                          ) : null}
                         </div>
 
                         <Select
@@ -1677,7 +1609,6 @@ export function ScheduleItemDialog({
                               Schedule Item Tags
                             </h3>
                           </div>
-                          {!readOnly ? (
                           <div className="flex items-center gap-4 text-sm">
                             <button
                               type="button"
@@ -1694,7 +1625,6 @@ export function ScheduleItemDialog({
                               Edit
                             </button>
                           </div>
-                          ) : null}
                         </div>
 
                         <Input
@@ -1826,7 +1756,7 @@ export function ScheduleItemDialog({
                         onChange={(event) => setNoteDraft(event.target.value)}
                       />
 
-                      {item && !readOnly ? (
+                      {item ? (
                         <div className="flex justify-end">
                           <Button
                             type="button"
@@ -1874,7 +1804,7 @@ export function ScheduleItemDialog({
                     <TabsContent value="files" className="space-y-4 rounded-xl border border-[#E5E7EB] p-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-semibold text-slate-900">Attachments</h3>
-                        {item && !readOnly ? (
+                        {item ? (
                           <div className="flex gap-2">
                             <input
                               ref={fileInputRef}
@@ -1911,14 +1841,13 @@ export function ScheduleItemDialog({
                         <p className="text-sm text-slate-500">Attachments are available after save.</p>
                       ) : (
                         <>
-                          {!readOnly ? (
                           <div
                             {...attachmentDropzone.getRootProps()}
                             className={cn(
                               "relative cursor-pointer rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors",
                               attachmentDropzone.isDragActive
-                                ? "border-primary/45 bg-primary/10"
-                                : "border-slate-300 bg-slate-50 hover:border-primary/45 hover:bg-accent/50",
+                                ? "border-primary/40 bg-primary/10"
+                                : "border-slate-300 bg-slate-50 hover:border-primary/40 hover:bg-primary/10",
                             )}
                           >
                             <input {...attachmentDropzone.getInputProps({ accept: uploadAcceptForMediaType("document") })} />
@@ -1934,7 +1863,6 @@ export function ScheduleItemDialog({
                               </>
                             )}
                           </div>
-                          ) : null}
                           {item.attachments.length > 0 ? (
                             <div className="space-y-2">
                               {item.attachments.map((attachment, attIndex) => {
@@ -1996,19 +1924,17 @@ export function ScheduleItemDialog({
                                         )}
                                       </div>
                                     </div>
-                                    {!readOnly ? (
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        onClick={() => setPendingDeleteAttachmentId(attachment.id)}
-                                        title={isMissing ? "Remove orphan attachment" : "Delete attachment"}
-                                        aria-label={
-                                          isMissing ? "Remove orphan attachment" : "Delete attachment"
-                                        }
-                                      >
-                                        <Trash2 className="size-4" />
-                                      </Button>
-                                    ) : null}
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      onClick={() => setPendingDeleteAttachmentId(attachment.id)}
+                                      title={isMissing ? "Remove orphan attachment" : "Delete attachment"}
+                                      aria-label={
+                                        isMissing ? "Remove orphan attachment" : "Delete attachment"
+                                      }
+                                    >
+                                      <Trash2 className="size-4" />
+                                    </Button>
                                   </div>
                                 )
                               })}
@@ -2199,7 +2125,8 @@ export function ScheduleItemDialog({
                           onValueChange={([nextProgress]) =>
                             updateValues((current) => ({
                               ...current,
-                              ...completionStateForProgress(nextProgress),
+                              progress: nextProgress ?? 0,
+                              isComplete: (nextProgress ?? 0) >= 100 ? true : current.isComplete,
                             }))
                           }
                         />
@@ -2235,15 +2162,13 @@ export function ScheduleItemDialog({
                     <p className="mt-3 text-sm text-slate-500">To-Do&apos;s available after save</p>
                   ) : (
                     <div className="mt-3 space-y-4">
-                      {!readOnly ? (
-                        <Button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => void handleCreateTodo()}
-                        >
-                          Save and Create To-Do
-                        </Button>
-                      ) : null}
+                      <Button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void handleCreateTodo()}
+                      >
+                        Save and Create To-Do
+                      </Button>
                       {item.relatedTodos.length > 0 ? (
                         <div className="space-y-2">
                           {item.relatedTodos.map((todo) => (
@@ -2270,15 +2195,13 @@ export function ScheduleItemDialog({
                                   </p>
                                 </div>
                               </label>
-                              {!readOnly ? (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  onClick={() => void handleDeleteTodo(todo.id)}
-                                >
-                                  <Trash2 className="size-4" />
-                                </Button>
-                              ) : null}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => void handleDeleteTodo(todo.id)}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
                             </div>
                           ))}
                         </div>
@@ -2312,59 +2235,53 @@ export function ScheduleItemDialog({
                       Close
                     </Button>
 
-                    {!readOnly ? (
-                      <>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button type="button" variant="outline" size="icon">
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => void handleCopy()}>
-                              <Copy className="size-4" />
-                              Copy
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-red-600 focus:text-red-600"
-                              onClick={() => setDeleteConfirmOpen(true)}
-                            >
-                              <Trash2 className="size-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" size="icon">
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => void handleCopy()}>
+                          <Copy className="size-4" />
+                          Copy
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-red-600 focus:text-red-600"
+                          onClick={() => setDeleteConfirmOpen(true)}
+                        >
+                          <Trash2 className="size-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
-                        <div className="flex">
-                          <Button
-                            type="button"
-                            className="rounded-r-none"
-                            disabled={saving}
-                            onClick={() => void handleSave("stay")}
-                          >
-                            {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                            Save
-                          </Button>
-                          {saveMenu}
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                    {readOnly ? "Close" : "Cancel"}
-                  </Button>
-                  {!readOnly ? (
                     <div className="flex">
-                      <Button type="button" className="rounded-r-none" disabled={saving} onClick={() => void handleSave("stay")}>
+                      <Button
+                        type="button"
+                        className="rounded-r-none"
+                        disabled={saving}
+                        onClick={() => void handleSave("stay")}
+                      >
                         {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                         Save
                       </Button>
                       {saveMenu}
                     </div>
-                  ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    Cancel
+                  </Button>
+                  <div className="flex">
+                    <Button type="button" className="rounded-r-none" disabled={saving} onClick={() => void handleSave("stay")}>
+                      {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                      Save
+                    </Button>
+                    {saveMenu}
+                  </div>
                 </div>
               )}
             </div>

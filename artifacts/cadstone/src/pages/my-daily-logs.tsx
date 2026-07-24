@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { Link, useLocation, useNavigate } from "react-router-dom"
+import { useEffect, useRef, useState } from "react"
+import { Link, useSearchParams } from "react-router-dom"
 import { ChevronRight, FileText, Loader2, Search, Users } from "lucide-react"
 import {
   dailyLogAdminGetDailyLogsMine,
@@ -8,7 +8,6 @@ import {
 } from "@workspace/api-client-react"
 import { DailyLogAdminGetDailyLogsMineQueryParams } from "@workspace/api-zod"
 import { apiErrorMessage } from "@/lib/api-errors"
-import { api } from "@/lib/api"
 import { validatePayload } from "@/lib/validate-payload"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +39,7 @@ function titleForLog(log: MyDailyLogItem) {
 
 export default function MyDailyLogsPage() {
   useDocumentTitle("My daily logs")
+  const [searchParams] = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [search, setSearch] = useState("")
@@ -49,21 +49,12 @@ export default function MyDailyLogsPage() {
   const [hasMore, setHasMore] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const loadRequestIdRef = useRef(0)
-  const location = useLocation()
-  const navigate = useNavigate()
 
-  const clientFilterId = useMemo(() => {
-    const sp = new URLSearchParams(location.search)
-    const cid = sp.get("client")
-    return cid && cid.length > 0 ? cid : null
-  }, [location.search])
-  const focusLogId = useMemo(() => {
-    const sp = new URLSearchParams(location.search)
-    const focus = sp.get("focus")
-    return focus && focus.length > 0 ? focus : null
-  }, [location.search])
+  const clientFilterParam = searchParams.get("client")
+  const clientFilterId =
+    clientFilterParam && clientFilterParam.length > 0 ? clientFilterParam : null
   const [clientFilterName, setClientFilterName] = useState<string | null>(null)
-	  useEffect(() => {
+  useEffect(() => {
     if (!clientFilterId) {
       setClientFilterName(null)
       return
@@ -167,30 +158,7 @@ export default function MyDailyLogsPage() {
     setHasMore(false)
     void loadLogs(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-	  }, [debouncedSearch, clientFilterId])
-
-  useEffect(() => {
-    if (!focusLogId) return
-    const focused = logs.find((log) => log.id === focusLogId)
-    if (focused?.jobId) {
-      navigate(`/jobs/${focused.jobId}/daily-logs?focus=${focused.id}`, { replace: true })
-      return
-    }
-    let cancelled = false
-    api
-      .get<{ log: { id: string; jobId: string | null } }>(`/daily-logs/${focusLogId}`)
-      .then((response) => {
-        if (!cancelled && response.data.log.jobId) {
-          navigate(`/jobs/${response.data.log.jobId}/daily-logs?focus=${response.data.log.id}`, { replace: true })
-        }
-      })
-      .catch(() => {
-        // Keep the list usable if the focused log is no longer accessible.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [focusLogId, logs, navigate])
+  }, [debouncedSearch, clientFilterId])
 
   return (
     <div className="space-y-5">
@@ -249,7 +217,7 @@ export default function MyDailyLogsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
-	                        to={log.jobId ? `/jobs/${log.jobId}/daily-logs?focus=${log.id}` : "/jobs"}
+                        to={log.jobId ? `/jobs/${log.jobId}/daily-logs` : "/jobs"}
                         className="text-lg font-semibold text-slate-950 hover:text-primary"
                       >
                         {titleForLog(log)}
@@ -273,7 +241,7 @@ export default function MyDailyLogsPage() {
                     </p>
                   </div>
                   <Button asChild variant="outline" className="shrink-0">
-	                    <Link to={log.jobId ? `/jobs/${log.jobId}/daily-logs?focus=${log.id}` : "/jobs"}>
+                    <Link to={log.jobId ? `/jobs/${log.jobId}/daily-logs` : "/jobs"}>
                       Open Job
                       <ChevronRight className="size-4" />
                     </Link>

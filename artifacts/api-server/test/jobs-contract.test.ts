@@ -134,6 +134,22 @@ test("POST /jobs body schema rejects negative money", () => {
   assert.equal(result.success, false);
 });
 
+test("POST /jobs body schema rejects fractional money", () => {
+  for (const [field, value] of [
+    ["contractValueCents", 123.99],
+    ["contractValueCents", "123.99"],
+    ["amountPaidCents", 1.5],
+    ["amountPaidCents", "1.5"],
+  ] as const) {
+    const result = JobsPostJobsBody.safeParse({
+      ...basePayload(),
+      clientId: VALID_CLIENT_ID,
+      [field]: value,
+    });
+    assert.equal(result.success, false, `${field}=${JSON.stringify(value)}`);
+  }
+});
+
 test("PUT /jobs/{id} body schema accepts a payload WITHOUT clientId (PUT does not require it)", () => {
   const result = JobsPutJobsIdBody.safeParse(basePayload());
   assert.equal(result.success, true, JSON.stringify(result, null, 2));
@@ -158,4 +174,19 @@ test("PUT /jobs/{id} body schema bounds money at Number.MAX_SAFE_INTEGER (never 
     contractValueCents: Number.MAX_SAFE_INTEGER + 1,
   });
   assert.equal(bad.success, false);
+});
+
+test("PUT /jobs/{id} body schema rejects fractional money", () => {
+  for (const [field, value] of [
+    ["contractValueCents", 123.99],
+    ["contractValueCents", "123.99"],
+    ["amountPaidCents", 1.5],
+    ["amountPaidCents", "1.5"],
+  ] as const) {
+    const result = JobsPutJobsIdBody.safeParse({
+      ...basePayload(),
+      [field]: value,
+    });
+    assert.equal(result.success, false, `${field}=${JSON.stringify(value)}`);
+  }
 });

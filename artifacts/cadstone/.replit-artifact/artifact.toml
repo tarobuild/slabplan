@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "CAD Stone Networks"
+title = "SlabPlan"
 version = "1.0.0"
 id = "artifacts/cadstone"
 router = "path"

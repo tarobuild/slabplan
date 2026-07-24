@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import jwt from "jsonwebtoken";
+import type { Response } from "express";
 
 const fixtureUser = {
   id: "1f4c4fb7-43cb-4f40-b373-4f42466389a1",
@@ -67,6 +68,36 @@ test("production no longer throws on missing JWT_UPLOAD_SECRET (advisory only)",
   }
 });
 
+test("auth responses include refresh tokens only when explicitly requested", async () => {
+  const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
+  const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
+  const originalUploadSecret = process.env.JWT_UPLOAD_SECRET;
+
+  process.env.JWT_ACCESS_SECRET = "access-secret-for-tests";
+  process.env.JWT_REFRESH_SECRET = "refresh-secret-for-tests";
+  process.env.JWT_UPLOAD_SECRET = "upload-secret-for-tests";
+
+  try {
+    const authModule = await import(`../src/lib/auth.ts?test=mobile-${Date.now()}`);
+    const webResponse = createResponseRecorder();
+    authModule.sendAuthResponse(webResponse as unknown as Response, fixtureUser);
+    assert.ok(webResponse.body);
+    assert.equal("refreshToken" in webResponse.body, false);
+
+    const mobileResponse = createResponseRecorder();
+    authModule.sendAuthResponse(mobileResponse as unknown as Response, fixtureUser, {
+      includeRefreshToken: true,
+    });
+    assert.ok(mobileResponse.body);
+    assert.equal(typeof mobileResponse.body.refreshToken, "string");
+    assert.equal(authModule.verifyRefreshToken(mobileResponse.body.refreshToken).userId, fixtureUser.id);
+  } finally {
+    restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);
+    restoreEnv("JWT_REFRESH_SECRET", originalRefreshSecret);
+    restoreEnv("JWT_UPLOAD_SECRET", originalUploadSecret);
+  }
+});
+
 test("auth router does not expose forgot-password or reset-password endpoints", async () => {
   const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
   const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
@@ -105,4 +136,17 @@ function restoreEnv(name: string, value: string | undefined) {
   }
 
   process.env[name] = value;
+}
+
+function createResponseRecorder() {
+  return {
+    body: undefined as Record<string, unknown> | undefined,
+    cookie() {
+      return this;
+    },
+    json(body: Record<string, unknown>) {
+      this.body = body;
+      return this;
+    },
+  };
 }

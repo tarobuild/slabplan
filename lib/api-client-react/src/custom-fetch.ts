@@ -1,3 +1,9 @@
+import {
+  DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
+  DIRECT_UPLOAD_EDGE_LIMIT_BYTES,
+  formatUploadSize,
+} from "@workspace/api-zod";
+
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
 };
@@ -7,6 +13,12 @@ export type ErrorType<T = unknown> = ApiError<T>;
 export type BodyType<T> = T;
 
 export type AuthTokenGetter = () => Promise<string | null> | string | null;
+export type AuthRefreshHandler = () => Promise<string | null>;
+export type AuthFailureHandler = () => void;
+export type ForbiddenHandler = (context: {
+  method: string;
+  url: string;
+}) => void;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
@@ -17,6 +29,9 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _authRefreshHandler: AuthRefreshHandler | null = null;
+let _authFailureHandler: AuthFailureHandler | null = null;
+let _forbiddenHandler: ForbiddenHandler | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -42,6 +57,30 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Register a session refresh handler used after a generated-client request
+ * receives a 401. When the handler returns a token, customFetch retries the
+ * original request once with that token before surfacing the error.
+ */
+export function setAuthRefreshHandler(handler: AuthRefreshHandler | null): void {
+  _authRefreshHandler = handler;
+}
+
+/**
+ * Register a handler called when generated-client auth refresh cannot recover
+ * from a 401.
+ */
+export function setAuthFailureHandler(handler: AuthFailureHandler | null): void {
+  _authFailureHandler = handler;
+}
+
+/**
+ * Register a handler called for generated-client 403 responses.
+ */
+export function setForbiddenHandler(handler: ForbiddenHandler | null): void {
+  _forbiddenHandler = handler;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -81,6 +120,60 @@ function resolveUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
+function resolveRequestUrl(input: RequestInfo | URL): URL | null {
+  const value = resolveUrl(input);
+  const base =
+    _baseUrl ??
+    (typeof globalThis.location !== "undefined"
+      ? globalThis.location.origin
+      : undefined);
+
+  try {
+    return base ? new URL(value, base) : new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function isAuthEndpoint(input: RequestInfo | URL): boolean {
+  const rawUrl = resolveUrl(input);
+  if (rawUrl.startsWith("/")) {
+    return rawUrl.includes("/auth/");
+  }
+
+  const requestUrl = resolveRequestUrl(input);
+  return requestUrl ? requestUrl.pathname.includes("/auth/") : false;
+}
+
+function shouldAttachAuthHeader(input: RequestInfo | URL): boolean {
+  const rawUrl = resolveUrl(input);
+  const isAbsolute = /^[a-z][a-z\d+\-.]*:/i.test(rawUrl);
+
+  if (!_baseUrl && typeof globalThis.location === "undefined" && !isAbsolute) {
+    return true;
+  }
+
+  const requestUrl = resolveRequestUrl(input);
+
+  if (!requestUrl) {
+    return false;
+  }
+
+  if (_baseUrl) {
+    return requestUrl.origin === new URL(_baseUrl).origin;
+  }
+
+  if (typeof globalThis.location !== "undefined") {
+    return requestUrl.origin === globalThis.location.origin;
+  }
+
+  return !isAbsolute;
+}
+
+function shouldManageAuthForRequest(input: RequestInfo | URL): boolean {
+  return shouldAttachAuthHeader(input) && !isAuthEndpoint(input);
+}
+
 function mergeHeaders(...sources: Array<HeadersInit | undefined>): Headers {
   const headers = new Headers();
 
@@ -94,10 +187,19 @@ function mergeHeaders(...sources: Array<HeadersInit | undefined>): Headers {
   return headers;
 }
 
+/** @public Used by generated request functions that Knip intentionally excludes. */
 export function mergeRequestHeaders(
   ...sources: Array<HeadersInit | undefined>
 ): Headers {
   return mergeHeaders(...sources);
+}
+
+export function jsonContentTypeHeaders(headersInit?: HeadersInit): Headers {
+  const headers = mergeHeaders(headersInit);
+  if (!headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+  return headers;
 }
 
 function getMediaType(headers: Headers): string | null {
@@ -338,6 +440,112 @@ async function parseSuccessBody(
   }
 }
 
+function notifyForbiddenResponse(
+  response: Response,
+  requestInfo: { method: string; url: string },
+  shouldManageAuth: boolean,
+) {
+  if (response.status !== 403 || !shouldManageAuth) {
+    return;
+  }
+
+  _forbiddenHandler?.(requestInfo);
+}
+
+function isFormDataBody(value: unknown): value is FormData {
+  return typeof FormData !== "undefined" && value instanceof FormData;
+}
+
+function formDataFileSize(value: FormDataEntryValue): number | null {
+  if (typeof Blob !== "undefined" && value instanceof Blob) {
+    return value.size;
+  }
+  if (typeof value === "object" && value !== null && "size" in value) {
+    const size = (value as { size?: unknown }).size;
+    return typeof size === "number" && Number.isSafeInteger(size) && size >= 0
+      ? size
+      : null;
+  }
+  return null;
+}
+
+function resolveLeadAttachmentDirectUploadLeadId(input: RequestInfo | URL): string | null {
+  const rawUrl = resolveUrl(input);
+  const rawPath = rawUrl.startsWith("/") ? rawUrl.split("?", 1)[0] : null;
+  const pathname = rawPath ?? resolveRequestUrl(input)?.pathname ?? null;
+  const match = pathname?.match(/^\/api\/leads\/([^/]+)\/attachments\/?$/i);
+  return match?.[1] ?? null;
+}
+
+function throwOversizedLeadAttachmentDirectUpload(
+  leadId: string,
+  filesBytes: number,
+  requestInfo: { method: string; url: string },
+): never {
+  const uploadPolicyEndpoint = `/api/leads/${leadId}/attachments/upload-policy`;
+  const chunkedStartEndpoint = `/api/leads/${leadId}/attachments/chunked`;
+  const data = {
+    type: "https://slabplan.com/errors/payload-too-large",
+    title: "Payload Too Large",
+    status: 413,
+    detail:
+      `Direct lead attachment multipart uploads are limited to ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)} ` +
+      `to stay below the production edge cap. Use chunked upload for this file.`,
+    errors: {
+      code: "LEAD_ATTACHMENT_USE_CHUNKED_UPLOAD",
+      contentLengthEstimate: filesBytes,
+      edgeRequestLimitBytes: DIRECT_UPLOAD_EDGE_LIMIT_BYTES,
+      maxRecommendedBytes: DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
+      multipartFieldName: "files",
+      uploadPolicyEndpoint,
+      chunkedStartEndpoint,
+      chunkedUploadSupported: true,
+    },
+  };
+  const response = new Response(JSON.stringify(data), {
+    status: 413,
+    statusText: "Payload Too Large",
+    headers: { "content-type": "application/problem+json" },
+  });
+  throw new ApiError(response, data, requestInfo);
+}
+
+function guardLeadAttachmentDirectUpload(
+  input: RequestInfo | URL,
+  method: string,
+  body: BodyInit | null | undefined,
+  requestInfo: { method: string; url: string },
+) {
+  if (method !== "POST" || !isFormDataBody(body)) {
+    return;
+  }
+
+  const leadId = resolveLeadAttachmentDirectUploadLeadId(input);
+  if (!leadId) {
+    return;
+  }
+
+  let filesBytes = 0;
+  for (const entry of body.getAll("files")) {
+    const size = formDataFileSize(entry);
+    if (size != null) filesBytes += size;
+  }
+
+  if (filesBytes > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES) {
+    throwOversizedLeadAttachmentDirectUpload(leadId, filesBytes, requestInfo);
+  }
+}
+
+async function throwApiError(
+  response: Response,
+  requestInfo: { method: string; url: string },
+  shouldManageAuth: boolean,
+): Promise<never> {
+  notifyForbiddenResponse(response, requestInfo, shouldManageAuth);
+  const errorData = await parseErrorBody(response, requestInfo.method);
+  throw new ApiError(response, errorData, requestInfo);
+}
+
 export async function customFetch<T = unknown>(
   input: RequestInfo | URL,
   options: CustomFetchOptions = {},
@@ -355,6 +563,7 @@ export async function customFetch<T = unknown>(
     isRequest(input) ? input.headers : undefined,
     headersInit,
   );
+  const shouldManageAuth = shouldManageAuthForRequest(input);
 
   if (
     typeof init.body === "string" &&
@@ -382,7 +591,12 @@ export async function customFetch<T = unknown>(
 
   // Attach bearer token when an auth getter is configured and no
   // Authorization header has been explicitly provided.
-  if (_authTokenGetter && !headers.has("authorization")) {
+  const usesManagedAuthorization =
+    Boolean(_authTokenGetter) &&
+    !headers.has("authorization") &&
+    shouldManageAuth;
+
+  if (usesManagedAuthorization && _authTokenGetter) {
     const token = await _authTokenGetter();
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
@@ -390,12 +604,35 @@ export async function customFetch<T = unknown>(
   }
 
   const requestInfo = { method, url: resolveUrl(input) };
+  guardLeadAttachmentDirectUpload(input, method, init.body, requestInfo);
 
-  const response = await fetch(input, { ...init, method, headers });
+  let response = await fetch(input, { ...init, method, headers });
+
+  if (
+    response.status === 401 &&
+    _authRefreshHandler &&
+    shouldManageAuth
+  ) {
+    const refreshedToken = await _authRefreshHandler();
+
+    let authFailureNotified = false;
+
+    if (refreshedToken) {
+      const retryHeaders = new Headers(headers);
+      retryHeaders.set("authorization", `Bearer ${refreshedToken}`);
+      response = await fetch(input, { ...init, method, headers: retryHeaders });
+    } else {
+      _authFailureHandler?.();
+      authFailureNotified = true;
+    }
+
+    if (response.status === 401 && !authFailureNotified) {
+      _authFailureHandler?.();
+    }
+  }
 
   if (!response.ok) {
-    const errorData = await parseErrorBody(response, method);
-    throw new ApiError(response, errorData, requestInfo);
+    await throwApiError(response, requestInfo, shouldManageAuth);
   }
 
   return (await parseSuccessBody(response, responseType, requestInfo)) as T;

@@ -11,16 +11,19 @@
 // other specs in this suite; see helpers/auth.ts + auth.setup.ts.
 
 import { expect, test } from "@playwright/test"
+import { CESAR_STATE } from "./helpers/storage"
 
 const REPORTS = [
   { slug: "ar-aging", title: /A\/R Aging/i },
   { slug: "revenue", title: /Revenue by Month/i },
-  { slug: "pipeline", title: /Sales Pipeline/i },
-  { slug: "days-to-payment", title: /By Client/i },
+  { slug: "pipeline", title: /Pipeline/i },
+  { slug: "days-to-payment", title: /Days to Payment/i },
   { slug: "jobs-by-stage", title: /Jobs by Stage/i },
 ] as const
 
 test.describe("admin reports", () => {
+  test.use({ storageState: CESAR_STATE })
+
   test("admin can open every report from the left rail", async ({ page }) => {
     await page.goto("/dashboard")
     await page.getByRole("link", { name: /^Reports$/ }).click()

@@ -8,6 +8,8 @@ import {
   ReportSection,
   ReportToolbar,
   csvDownloadHref,
+  isCsvReportData,
+  jsonReportData,
   rangeToReportParams,
   useReportRange,
 } from "./shared"
@@ -26,6 +28,8 @@ const FUNNEL_ORDER: Array<{ stage: string; label: string; color: string }> = [
 export default function PipelineReport() {
   const [range, setRange] = useReportRange()
   const q = useReportsGetReportsPipeline(rangeToReportParams(range))
+  const data = jsonReportData(q.data)
+  const unexpectedCsv = isCsvReportData(q.data)
 
   return (
     <>
@@ -38,9 +42,9 @@ export default function PipelineReport() {
       <ReportSection title="Sales Pipeline & Win Rate">
         {q.isLoading ? (
           <LoadingCard />
-        ) : q.isError ? (
-          <EmptyState title="Couldn't load pipeline" />
-        ) : !q.data || q.data.funnel.every((f) => f.count === 0) ? (
+        ) : q.isError || unexpectedCsv ? (
+          <EmptyState title="Couldn't load pipeline" hint="The report returned CSV where JSON was expected." />
+        ) : !data || data.funnel.every((f) => f.count === 0) ? (
           <EmptyState
             title="No leads yet"
             hint="Once leads are added in Sales they'll show up in the funnel here."
@@ -48,11 +52,11 @@ export default function PipelineReport() {
         ) : (
           <div className="space-y-6">
             <div className="grid gap-3 sm:grid-cols-3">
-              <Stat label="Win rate" value={`${q.data.winRate}%`} />
-              <Stat label="Closed (won / lost)" value={`${q.data.won} / ${q.data.lost}`} />
-              <Stat label="Avg days to close" value={`${q.data.avgDaysToClose}`} />
+              <Stat label="Win rate" value={`${data.winRate}%`} />
+              <Stat label="Closed (won / lost)" value={`${data.won} / ${data.lost}`} />
+              <Stat label="Avg days to close" value={`${data.avgDaysToClose}`} />
             </div>
-            <Funnel data={q.data} />
+            <Funnel data={data} />
           </div>
         )}
       </ReportSection>

@@ -6,9 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Attachment shown on a daily-log comment. Legacy comments use `url`; file-backed comments use `fileId`/`fileUrl` and keep `url` as null.
+ */
 export interface DailyLogCommentAttachment {
   name: string;
-  url?: string | null;
+  url: string | null;
   mimeType?: string | null;
   fileId?: string | null;
   fileUrl?: string | null;

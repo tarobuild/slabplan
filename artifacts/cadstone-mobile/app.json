@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "SlabPlan",
+    "slug": "slabplan-mobile",
+    "scheme": "slabplan",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#F8FAFC"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow SlabPlan to attach jobsite photos and videos to field reports.",
+          "cameraPermission": "Allow SlabPlan to capture jobsite photos for field reports."
+        }
+      ],
+      "expo-document-picker",
+      "expo-font"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tarobuild.slabplan"
+    },
+    "android": {
+      "package": "com.tarobuild.slabplan"
+    },
+    "extra": {
+      "apiBaseUrl": ""
+    }
+  }
+}

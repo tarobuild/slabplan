@@ -188,3 +188,74 @@ test("usage from a partial response is still metered when the run aborts before 
     },
   );
 });
+
+test("non-abort assistant API failures emit error without saving or done", async () => {
+  await withMockedAnthropic(
+    () => Promise.reject(new Error("upstream down")) as ReturnType<AnthropicMessagesCreate>,
+    async () => {
+      const emitted: unknown[] = [];
+      let savedAssistantMessage = false;
+
+      const result = await runAgentTurn({
+        userId: "api-failure-user",
+        bearerToken: "test-bearer",
+        baseUrl: "http://127.0.0.1:1",
+        history: [],
+        userMessage: "hello",
+        emit: (event) => emitted.push(event),
+        saveAssistantMessage: async () => {
+          savedAssistantMessage = true;
+          return { id: "should-not-happen" };
+        },
+      });
+
+      assert.equal(result.ok, false);
+      assert.equal(result.aborted, false);
+      assert.equal(result.messageId, undefined);
+      assert.equal(savedAssistantMessage, false);
+      assert.ok(
+        emitted.some((e) => (e as { type?: string }).type === "error"),
+        "must emit the API error event",
+      );
+      assert.ok(
+        !emitted.some((e) => (e as { type?: string }).type === "done"),
+        "must not emit `done` after assistant API failure",
+      );
+    },
+  );
+});
+
+test("network reset from assistant API is not misclassified as a user abort", async () => {
+  await withMockedAnthropic(
+    () => {
+      const error = new Error("socket hang up") as Error & { code?: string };
+      error.code = "ECONNRESET";
+      return Promise.reject(error) as ReturnType<AnthropicMessagesCreate>;
+    },
+    async () => {
+      const emitted: unknown[] = [];
+      let savedAssistantMessage = false;
+
+      const result = await runAgentTurn({
+        userId: "network-reset-user",
+        bearerToken: "test-bearer",
+        baseUrl: "http://127.0.0.1:1",
+        history: [],
+        userMessage: "hello",
+        emit: (event) => emitted.push(event),
+        saveAssistantMessage: async () => {
+          savedAssistantMessage = true;
+          return { id: "should-not-happen" };
+        },
+      });
+
+      assert.equal(result.ok, false);
+      assert.equal(result.aborted, false);
+      assert.equal(savedAssistantMessage, false);
+      assert.ok(
+        emitted.some((e) => (e as { type?: string }).type === "error"),
+        "network reset should surface as an assistant API error",
+      );
+    },
+  );
+});

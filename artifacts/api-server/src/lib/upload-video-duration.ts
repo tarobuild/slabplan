@@ -21,7 +21,7 @@ import { logger } from "./logger";
  * with a clean 4xx.
  *
  * Like the client, we treat probe failures as "unknown duration" and
- * fall through — the existing 500 MB size cap remains the long-term
+ * fall through — the shared size cap remains the long-term
  * safety net. We never want a transient ffprobe hiccup to dead-end a
  * legitimate upload.
  */

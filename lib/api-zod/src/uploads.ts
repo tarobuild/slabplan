@@ -8,10 +8,19 @@
  * Out of scope here: changing the actual ceiling. If the limit needs to
  * grow, change the value once below.
  */
-export const MAX_UPLOAD_FILE_BYTES = 1024 * 1024 * 500;
+export const MAX_UPLOAD_FILE_BYTES = 1024 * 1024 * 1024 * 2;
 
 /** Maximum number of files allowed in a single multipart request. */
 export const MAX_UPLOAD_FILE_COUNT = 20;
+
+/**
+ * Cloud Run rejects HTTP/1 request bodies above 32 MiB before Node/Express can
+ * return problem+json. Replit production deploys through Cloud Run, so direct
+ * multipart uploads need a conservative ceiling below that edge cap. The app
+ * still accepts much larger files through chunked upload sessions.
+ */
+export const DIRECT_UPLOAD_EDGE_LIMIT_BYTES = 32 * 1024 * 1024;
+export const DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES = 24 * 1024 * 1024;
 
 /**
  * Maximum allowed duration of an uploaded video, in seconds. Both the
@@ -80,8 +89,13 @@ export function videoDurationLimitLabel(maxSeconds: number = MAX_VIDEO_DURATION_
  */
 export function formatUploadSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return `${bytes} B`;
+  const GB = 1024 * 1024 * 1024;
   const MB = 1024 * 1024;
   const KB = 1024;
+  if (bytes >= GB) {
+    const value = bytes / GB;
+    return `${Number.isInteger(value) ? value : value.toFixed(1)} GB`;
+  }
   if (bytes >= MB) return `${Math.round(bytes / MB)} MB`;
   if (bytes >= KB) return `${Math.round(bytes / KB)} KB`;
   return `${bytes} B`;
@@ -133,6 +147,7 @@ export const DANGEROUS_UPLOAD_EXTENSIONS: ReadonlySet<string> = new Set([
   ".htm",
   ".xhtml",
   ".mhtml",
+  ".svg",
 ]);
 
 /**
@@ -146,7 +161,7 @@ export const DANGEROUS_UPLOAD_EXTENSIONS: ReadonlySet<string> = new Set([
 export const WIDE_UPLOAD_ACCEPT_EXTENSIONS: readonly string[] = [
   // Images
   ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".tif", ".tiff",
-  ".bmp", ".svg", ".avif", ".ico",
+  ".bmp", ".avif", ".ico",
   // RAW image containers
   ".cr2", ".nef", ".arw", ".dng", ".orf", ".rw2",
   // Video

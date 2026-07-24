@@ -5,6 +5,12 @@ import { db } from "@workspace/db";
 import { idempotencyKeys } from "@workspace/db/schema";
 import { HttpError } from "../lib/http";
 import { logger } from "../lib/logger";
+import {
+  decodeIdempotencyResponseBody,
+  encodeIdempotencyResponseBody,
+  responseChunkEncoding,
+  responseChunkToBuffer,
+} from "./response-chunks";
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -28,6 +34,15 @@ function isReplayableMethod(method: string): boolean {
   return WRITE_METHODS.has(method.toUpperCase());
 }
 
+function idempotencyStoreUnavailableError(operation: string): HttpError {
+  return new HttpError(
+    503,
+    `Idempotency ${operation} is temporarily unavailable. Retry the request later with the same Idempotency-Key.`,
+    undefined,
+    "idempotency-store-unavailable",
+  );
+}
+
 function hashRequestBody(req: Request): string {
   const raw = req.body && typeof req.body === "object" ? JSON.stringify(req.body) : String(req.body ?? "");
   return crypto.createHash("sha256").update(raw).digest("hex");
@@ -37,6 +52,12 @@ function isMultipartRequest(req: Request): boolean {
   const ct = req.headers["content-type"];
   if (typeof ct !== "string") return false;
   return ct.toLowerCase().startsWith("multipart/form-data");
+}
+
+function isRawChunkUploadRequest(req: Request): boolean {
+  const ct = req.headers["content-type"];
+  if (typeof ct !== "string") return false;
+  return ct.toLowerCase().startsWith("application/octet-stream");
 }
 
 function collectMultipartFiles(req: Request): Express.Multer.File[] {
@@ -50,6 +71,23 @@ function collectMultipartFiles(req: Request): Express.Multer.File[] {
   }
   if (req.file) collected.push(req.file);
   return collected;
+}
+
+function requireMultipartContentHash(file: Express.Multer.File): string {
+  const contentHash = file.contentHash;
+  if (typeof contentHash !== "string" || !/^[a-f0-9]{64}$/i.test(contentHash)) {
+    throw new HttpError(
+      500,
+      "Multipart idempotency requires every uploaded file to include a SHA-256 content hash.",
+      {
+        code: "MULTIPART_CONTENT_HASH_MISSING",
+        field: file.fieldname ?? "",
+        originalName: file.originalname ?? "",
+      },
+      "multipart-content-hash-missing",
+    );
+  }
+  return contentHash.toLowerCase();
 }
 
 // Build a fingerprint for a multipart write. The hash combines:
@@ -77,10 +115,7 @@ export function hashMultipartRequest(req: Request): string {
       original: file.originalname ?? "",
       mimetype: file.mimetype ?? "",
       size: typeof file.size === "number" ? file.size : 0,
-      // A missing contentHash means a non-hashing storage engine slipped
-      // in; collapse to empty string so the absence is itself part of
-      // the fingerprint and cannot silently match a real digest.
-      contentHash: file.contentHash ?? "",
+      contentHash: requireMultipartContentHash(file),
     }))
     .sort((a, b) => {
       if (a.field !== b.field) return a.field < b.field ? -1 : 1;
@@ -247,14 +282,7 @@ async function applyIdempotency(
       .returning({ userId: idempotencyKeys.userId });
   } catch (err) {
     logger.error({ err }, "idempotency reservation failed");
-    next(
-      new HttpError(
-        503,
-        "Could not reserve the Idempotency-Key. Please retry later.",
-        undefined,
-        "idempotency-unavailable",
-      ),
-    );
+    next(idempotencyStoreUnavailableError("reservation"));
     return;
   }
 
@@ -284,14 +312,7 @@ async function applyIdempotency(
         .limit(1);
     } catch (err) {
       logger.error({ err }, "idempotency lookup failed");
-      next(
-        new HttpError(
-          503,
-          "Could not look up the Idempotency-Key. Please retry later.",
-          undefined,
-          "idempotency-unavailable",
-        ),
-      );
+      next(idempotencyStoreUnavailableError("lookup"));
       return;
     }
 
@@ -368,7 +389,7 @@ async function applyIdempotency(
     res
       .status(existing.statusCode)
       .type(existing.responseContentType)
-      .send(existing.responseBody);
+      .send(decodeIdempotencyResponseBody(existing.responseBody));
     return;
   }
 
@@ -383,12 +404,8 @@ async function applyIdempotency(
     chunk: unknown,
     ...rest: unknown[]
   ) {
-    if (chunk) {
-      const buf = Buffer.isBuffer(chunk)
-        ? chunk
-        : Buffer.from(typeof chunk === "string" ? chunk : String(chunk));
-      chunks.push(buf);
-    }
+    const buf = responseChunkToBuffer(chunk, responseChunkEncoding(rest));
+    if (buf) chunks.push(buf);
     // @ts-expect-error rest forwarded as-is
     return originalWrite(chunk, ...rest);
   };
@@ -398,12 +415,8 @@ async function applyIdempotency(
     chunk?: unknown,
     ...rest: unknown[]
   ) {
-    if (chunk) {
-      const buf = Buffer.isBuffer(chunk)
-        ? chunk
-        : Buffer.from(typeof chunk === "string" ? chunk : String(chunk));
-      chunks.push(buf);
-    }
+    const buf = responseChunkToBuffer(chunk, responseChunkEncoding(rest));
+    if (buf) chunks.push(buf);
     // @ts-expect-error rest forwarded as-is
     return originalEnd(chunk, ...rest);
   };
@@ -417,7 +430,7 @@ async function applyIdempotency(
       // Persist the exact final response (success OR error) so retries
       // with the same key replay byte-for-byte. This matches Stripe-style
       // idempotency semantics.
-      const body = Buffer.concat(chunks).toString("utf8");
+      const body = encodeIdempotencyResponseBody(chunks);
       const contentType =
         (res.getHeader("content-type") as string | undefined) ?? "application/json";
 
@@ -499,6 +512,14 @@ export function idempotencyMiddleware(): RequestHandler {
       return;
     }
 
+    if (isRawChunkUploadRequest(req)) {
+      // Chunked file uploads stream the request body in the route handler.
+      // Hashing `req.body` here would run before the stream is consumed and
+      // produce a misleading empty-body idempotency fingerprint.
+      next();
+      return;
+    }
+
     const pre = preflight(req);
     if (pre.kind === "error") {
       next(pre.error);
@@ -540,13 +561,21 @@ export function multipartIdempotencyMiddleware(): RequestHandler {
       return;
     }
 
+    let requestHash: string;
+    try {
+      requestHash = hashMultipartRequest(req);
+    } catch (err) {
+      next(err);
+      return;
+    }
+
     await applyIdempotency(req, res, next, {
       organizationId: pre.organizationId,
       userId: pre.userId,
       key: pre.key,
       method: pre.method,
       path: pre.path,
-      requestHash: hashMultipartRequest(req),
+      requestHash,
     });
   };
 }

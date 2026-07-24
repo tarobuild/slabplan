@@ -9,17 +9,23 @@ const source = readFileSync(sourcePath, "utf8")
 
 describe("ChatPanel conversation loading", () => {
   it("does not treat failed conversation loads as empty history", () => {
-    assert.match(source, /AgentConversation\[\] \| null/)
-    assert.match(source, /return null/)
+    assert.match(source, /throw err/)
     assert.doesNotMatch(source, /catch[^{]*\{[^}]*return \[\]/s)
   })
 
   it("does not auto-create a conversation after list failures", () => {
-    const failureGuardIndex = source.indexOf("if (list === null) return")
-    const createIndex = source.indexOf("const created = await createConversation()", failureGuardIndex)
+    const failureGuardIndex = source.indexOf("} catch {")
+    const createIndex = source.indexOf(
+      "const created = await createConversation()",
+      failureGuardIndex,
+    )
 
     assert.notEqual(failureGuardIndex, -1)
     assert.notEqual(createIndex, -1)
     assert.ok(failureGuardIndex < createIndex)
+    assert.match(
+      source.slice(failureGuardIndex, createIndex),
+      /catch \{\s+return\s+\}/,
+    )
   })
 })

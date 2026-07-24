@@ -474,9 +474,11 @@ function multerErrorToHttpError(
         `File exceeds the ${formatUploadSize(limits.fileSize)} upload size limit.`,
         {
           limit: limits.fileSize,
-          code: "UPLOAD_TOO_LARGE",
+          code: "FILE_TOO_LARGE",
+          legacyCode: "UPLOAD_TOO_LARGE",
           multerCode: err.code,
           field: err.field,
+          chunkedUploadSupported: true,
         },
         "payload-too-large",
       );

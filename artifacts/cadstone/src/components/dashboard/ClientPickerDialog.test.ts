@@ -1,26 +1,20 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import test from "node:test"
+import { test } from "node:test"
 
 const source = readFileSync(new URL("./ClientPickerDialog.tsx", import.meta.url), "utf8")
 
-test("ClientPickerDialog clears stale clients and renders failed-load state", () => {
-  assert.match(source, /setClients\(\[\]\)/)
-  assert.match(source, /setLoadError\(true\)/)
-  assert.match(source, /Couldn't load clients\./)
-  assert.match(source, /loadError \?/)
+test("client picker sends search and pagination to the clients endpoint", () => {
+  assert.match(source, /api\.get\("\/clients", \{/)
+  assert.match(source, /page:\s*nextPage/)
+  assert.match(source, /pageSize:\s*CLIENT_PAGE_SIZE/)
+  assert.match(source, /status:\s*"all"/)
+  assert.match(source, /search:\s*query \|\| undefined/)
+  assert.match(source, /pagination\?\.hasMore/)
+  assert.match(source, /loadClients\(page \+ 1, "append"\)/)
 })
 
-test("ClientPickerDialog loads every matching client page for search", () => {
-  assert.match(source, /const CLIENT_PICKER_PAGE_SIZE = 100/)
-  assert.match(source, /async function loadAllPickableClients\(search: string\)/)
-  assert.match(source, /let page = 1/)
-  assert.match(source, /pageSize: CLIENT_PICKER_PAGE_SIZE/)
-  assert.match(source, /search: search\.trim\(\) \|\| undefined/)
-  assert.match(source, /allClients\.push\(\.\.\.raw\)/)
-  assert.match(source, /const totalPages = response\.data\?\.pagination\?\.totalPages/)
-  assert.match(source, /if \(typeof totalPages !== "number" \|\| page >= totalPages\) break/)
-  assert.match(source, /page \+= 1/)
-  assert.match(source, /return allClients\.filter\(\(c\) => !c\.archived\)/)
-  assert.match(source, /loadAllPickableClients\(search\)/)
+test("client picker no longer filters only the first local client page", () => {
+  assert.doesNotMatch(source, /const filtered = useMemo/)
+  assert.doesNotMatch(source, /\.filter\(\(client\) =>\s*\[/)
 })

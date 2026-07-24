@@ -108,7 +108,25 @@ export function valueContainsPii(value: unknown): boolean {
     seen.add(val as object);
 
     if (val instanceof Error) {
-      return containsPii(val.message);
+      if (
+        containsPii(val.name) ||
+        containsPii(val.message) ||
+        (typeof val.stack === "string" && containsPii(val.stack))
+      ) {
+        return true;
+      }
+      if ("cause" in val && visit(val.cause, "cause")) {
+        return true;
+      }
+      if (
+        val instanceof AggregateError &&
+        val.errors.some((error) => visit(error, "errors"))
+      ) {
+        return true;
+      }
+      return Object.entries(val).some(([childKey, childValue]) =>
+        visit(childValue, childKey),
+      );
     }
 
     if (Array.isArray(val)) return val.some((item) => visit(item, key));

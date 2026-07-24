@@ -9,7 +9,7 @@ test("inline client contact failure is visible and does not clear contact fields
     source,
     /Client was created, but the primary contact could not be saved\./,
   )
-  assert.match(source, /catch \(err: unknown\) \{[\s\S]*toastApiError[\s\S]*return;/)
+  assert.match(source, /catch \(err: unknown\) \{[\s\S]*toastApiError[\s\S]*return;?/)
 })
 
 test("client is presented and enforced as required before advancing past step 1", () => {
@@ -34,10 +34,10 @@ test("locked client changes synchronize without wiping other form fields", () =>
 test("locked client id is authoritative for advancing and submitting", () => {
   assert.match(
     source,
-    /const effectiveClientId = lockClient\s+\? defaultClientId \|\| ""\s+: form\.clientId \|\| "";/,
+    /const effectiveClientId = lockClient\s+\? defaultClientId \|\| ""\s+: form\.clientId \|\| ""/,
   )
   assert.match(
     source,
-    /<Select\s+value=\{\s+\(lockClient \? defaultClientId : form\.clientId\) \|\| "_none"\s+\}\s+disabled=\{lockClient\}/s,
+    /lockClient \? \(\s+<div[\s\S]*\{selectedClientName \?\? "Selected client"\}[\s\S]*<\/div>\s+\) : \(\s+<Select/s,
   )
 })

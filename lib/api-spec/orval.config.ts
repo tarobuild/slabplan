@@ -64,14 +64,14 @@ export default defineConfig({
       override: {
         zod: {
           coerce: {
-            query: ["number", "string"],
-            param: ["boolean", "number", "string"],
-            body: [],
-            response: [],
+            query: ['boolean', 'number', 'string'],
+            param: ['boolean', 'number', 'string'],
+            body: ['bigint'],
+            response: ['bigint'],
           },
         },
         useDates: false,
-        useBigInt: false,
+        useBigInt: true,
       },
     },
   },

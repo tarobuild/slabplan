@@ -26,7 +26,6 @@ import { apiErrorDetailCode, toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
 import { invalidateFinancialsRollups } from "@/lib/query-client"
 import { formatCurrencyCents } from "@/lib/format"
-import { parseUsdAmountCents } from "@/lib/money-input"
 import { describePercentLowering } from "@/lib/percent-confirm"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -162,6 +161,22 @@ export type AiParseError = {
   message: string
 }
 
+type AreaEditorDraft =
+  | { mode: "add"; name: string }
+  | { mode: "rename"; id: string; currentName: string; name: string }
+
+type LineItemEditorDraft = {
+  areaId: string
+  description: string
+}
+
+type ManualChangeOrderDraft = {
+  number: string
+  description: string
+  amountDollars: string
+  areaId: string
+}
+
 function statusForPct(pct: number): { label: string; cls: string } {
   if (pct >= 100)
     return {
@@ -171,7 +186,7 @@ function statusForPct(pct: number): { label: string; cls: string } {
   if (pct > 0)
     return {
       label: "In progress",
-      cls: "bg-primary/10 text-primary border-primary/20",
+      cls: "bg-blue-100 text-blue-800 border-blue-200",
     }
   return {
     label: "Not started",
@@ -211,8 +226,8 @@ function downloadCsv(
 // owns the data and passes stable useCallback handlers down.
 //
 // Inputs use `defaultValue` (uncontrolled) so typing inside one row
-// never re-renders siblings. Each input key includes the persisted value so
-// a tracker reload remounts stale fields even when the line item id is stable.
+// never re-renders siblings. Their persisted value is part of the key so a
+// successful reload also refreshes an already-mounted uncontrolled input.
 
 type LineItemPatch = Partial<{
   description: string
@@ -226,7 +241,7 @@ type SovLineItemRowProps = {
   li: LineItem
   invoices: Invoice[]
   canManage: boolean
-  onUpdate: (id: string, patch: LineItemPatch) => void
+  onUpdate: (id: string, patch: LineItemPatch) => void | Promise<void>
   onDelete: (id: string) => void
 }
 
@@ -243,14 +258,61 @@ const SovLineItemRow = memo(function SovLineItemRow({
   )
   const liPct = Math.round(Number(li.percentComplete) || 0)
   const liStatus = statusForPct(liPct)
+  const [percentDraft, setPercentDraft] = useState(() => String(liPct))
+
+  useEffect(() => {
+    setPercentDraft(String(liPct))
+  }, [liPct])
+
+  const commitPercentComplete = (rawValue: string) => {
+    const raw = Number(rawValue)
+    if (!Number.isFinite(raw)) {
+      setPercentDraft(String(liPct))
+      return
+    }
+    const next = Math.max(0, Math.min(100, raw))
+    setPercentDraft(next.toFixed(0))
+    if (next.toFixed(2) === Number(li.percentComplete).toFixed(2)) {
+      return
+    }
+
+    // Safety check: dropping % below already-applied invoice payments would
+    // silently shrink billed under the matched amount. Predicate lives in
+    // lib/percent-confirm.ts so it can be unit-tested apart from React.
+    const conflict = describePercentLowering({
+      scheduledValueCents: Number(li.scheduledValueCents) || 0,
+      newPercent: next,
+      payments: li.payments,
+    })
+    if (conflict.needsConfirm) {
+      const invNos = li.payments
+        .map((p) => {
+          const inv = invoices.find((x) => x.id === p.invoiceId)
+          return inv?.invoiceNumber ?? inv?.id.slice(0, 6) ?? "?"
+        })
+        .join(", ")
+      const ok = window.confirm(
+        `This line already has ${formatCurrency(conflict.appliedCents)} applied from invoice(s) ${invNos}. ` +
+          `Setting % complete to ${next}% would lower billed to ${formatCurrency(conflict.proposedBilledCents)}, which is below the matched amount.\n\n` +
+          `Continue anyway?`,
+      )
+      if (!ok) {
+        setPercentDraft(String(liPct))
+        return
+      }
+    }
+
+    void onUpdate(li.id, { percentComplete: next })
+  }
+
   return (
-    <tr className="border-t">
-      <td className="px-3 py-2">
+    <tr className="border-t align-middle">
+      <td className="px-3 py-2 align-middle">
         <Badge variant="outline" className={liStatus.cls}>
           {liStatus.label}
         </Badge>
       </td>
-      <td className="sticky left-0 z-10 bg-white px-3 py-2 shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">
+      <td className="sticky left-0 z-10 bg-white px-3 py-2 align-middle shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">
         {canManage ? (
           <Input
             key={`desc-${li.description}`}
@@ -260,13 +322,13 @@ const SovLineItemRow = memo(function SovLineItemRow({
                 onUpdate(li.id, { description: e.target.value })
               }
             }}
-            className="h-8"
+            className="h-8 w-full min-w-0"
           />
         ) : (
           <span className="text-sm">{li.description}</span>
         )}
       </td>
-      <td className="px-3 py-2 text-right">
+      <td className="px-3 py-2 text-right align-middle">
         {canManage ? (
           <Input
             key={`qty-${li.qty}`}
@@ -279,13 +341,13 @@ const SovLineItemRow = memo(function SovLineItemRow({
                 onUpdate(li.id, { qty: v })
               }
             }}
-            className="h-8 w-20 text-right"
+            className="h-8 w-full min-w-0 text-right"
           />
         ) : (
           <span className="tabular-nums">{Number(li.qty)}</span>
         )}
       </td>
-      <td className="px-3 py-2 text-right tabular-nums">
+      <td className="px-3 py-2 text-right align-middle tabular-nums">
         {canManage ? (
           <Input
             key={`rate-${li.rateCents}`}
@@ -300,13 +362,13 @@ const SovLineItemRow = memo(function SovLineItemRow({
                 onUpdate(li.id, { rateCents: cents })
               }
             }}
-            className="h-8 w-24 text-right"
+            className="h-8 w-full min-w-0 text-right"
           />
         ) : (
           formatCurrency(li.rateCents)
         )}
       </td>
-      <td className="px-3 py-2 text-right tabular-nums">
+      <td className="px-3 py-2 text-right align-middle tabular-nums">
         {canManage ? (
           <Input
             key={`sched-${li.scheduledValueCents}`}
@@ -335,21 +397,21 @@ const SovLineItemRow = memo(function SovLineItemRow({
               }
               onUpdate(li.id, { scheduledValueCents: cents })
             }}
-            className="h-8 w-28 text-right"
+            className="h-8 w-full min-w-0 text-right"
           />
         ) : (
           formatCurrency(li.scheduledValueCents)
         )}
       </td>
-      <td className="px-3 py-2 text-right tabular-nums">
+      <td className="px-3 py-2 text-right align-middle tabular-nums">
         {formatCurrency(li.billedCents)}
       </td>
-      <td className="px-3 py-2 text-right tabular-nums">
+      <td className="px-3 py-2 text-right align-middle tabular-nums">
         {formatCurrency(
           Math.max(0, Number(li.scheduledValueCents) - Number(li.billedCents)),
         )}
       </td>
-      <td className="px-3 py-2 text-right">
+      <td className="px-3 py-2 text-right align-middle">
         {canManage ? (
           <Input
             key={`pct-${li.percentComplete}`}
@@ -358,45 +420,32 @@ const SovLineItemRow = memo(function SovLineItemRow({
             min={0}
             max={100}
             step="1"
-            defaultValue={Number(li.percentComplete).toFixed(0)}
+            value={percentDraft}
             aria-label={`Percent complete for ${li.description}`}
-            onBlur={(e) => {
-              const v = Number(e.target.value)
-              if (
-                Number.isNaN(v) ||
-                v.toFixed(2) === Number(li.percentComplete).toFixed(2)
-              ) {
+            onFocus={(e) => e.currentTarget.select()}
+            onClick={(e) => e.currentTarget.select()}
+            onChange={(e) => {
+              const value = e.currentTarget.value
+              if (value === "") {
+                setPercentDraft("")
                 return
               }
-              // Safety check: dropping % below already-applied invoice
-              // payments would silently shrink billed under the matched
-              // amount. Predicate lives in lib/percent-confirm.ts so it
-              // can be unit-tested apart from React.
-              const conflict = describePercentLowering({
-                scheduledValueCents: Number(li.scheduledValueCents) || 0,
-                newPercent: v,
-                payments: li.payments,
-              })
-              if (conflict.needsConfirm) {
-                const invNos = li.payments
-                  .map((p) => {
-                    const inv = invoices.find((x) => x.id === p.invoiceId)
-                    return inv?.invoiceNumber ?? inv?.id.slice(0, 6) ?? "?"
-                  })
-                  .join(", ")
-                const ok = window.confirm(
-                  `This line already has ${formatCurrency(conflict.appliedCents)} applied from invoice(s) ${invNos}. ` +
-                    `Setting % complete to ${v}% would lower billed to ${formatCurrency(conflict.proposedBilledCents)}, which is below the matched amount.\n\n` +
-                    `Continue anyway?`,
-                )
-                if (!ok) {
-                  e.target.value = Number(li.percentComplete).toFixed(0)
-                  return
-                }
-              }
-              onUpdate(li.id, { percentComplete: v })
+              const raw = Number(value)
+              if (!Number.isFinite(raw)) return
+              const next = Math.max(0, Math.min(100, Math.round(raw)))
+              setPercentDraft(String(next))
             }}
-            className="h-8 w-16 text-right"
+            onBlur={(e) => {
+              commitPercentComplete(e.currentTarget.value)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                commitPercentComplete(e.currentTarget.value)
+                e.currentTarget.blur()
+              }
+            }}
+            className="h-8 w-16 min-w-0 text-right"
           />
         ) : (
           <span className="tabular-nums">{Number(li.percentComplete).toFixed(0)}%</span>
@@ -405,7 +454,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
       {invoices.map((inv) => {
         const amt = paymentByInv.get(inv.id) ?? 0
         return (
-          <td key={inv.id} className="px-3 py-2 text-right tabular-nums">
+          <td key={inv.id} className="px-3 py-2 text-right align-middle tabular-nums">
             {amt > 0 ? (
               formatCurrency(amt)
             ) : (
@@ -414,7 +463,7 @@ const SovLineItemRow = memo(function SovLineItemRow({
           </td>
         )
       })}
-      <td className="px-3 py-2 text-right">
+      <td className="px-3 py-2 text-right align-middle">
         {canManage ? (
           <Button
             size="icon"
@@ -472,7 +521,7 @@ const SovAreaRow = memo(function SovAreaRow({
         className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2 ${isCO ? "bg-violet-100/60" : "bg-muted/40"}`}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => onToggle(area.id)}
@@ -503,7 +552,7 @@ const SovAreaRow = memo(function SovAreaRow({
           ) : null}
           <div className="mt-2 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-slate-200">
             <div
-              className="h-full bg-primary transition-all"
+              className="h-full bg-primary/100 transition-all"
               style={{ width: `${Math.min(100, pct)}%` }}
             />
           </div>
@@ -546,23 +595,37 @@ const SovAreaRow = memo(function SovAreaRow({
             ← swipe to see more →
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-xs text-muted-foreground">
+            <table className="min-w-[1040px] table-fixed text-sm">
+              <colgroup>
+                <col className="w-[130px]" />
+                <col className="w-[240px]" />
+                <col className="w-[92px]" />
+                <col className="w-[116px]" />
+                <col className="w-[140px]" />
+                <col className="w-[128px]" />
+                <col className="w-[128px]" />
+                <col className="w-[96px]" />
+                {invoices.map((inv) => (
+                  <col key={inv.id} className="w-[128px]" />
+                ))}
+                <col className="w-[56px]" />
+              </colgroup>
+              <thead className="border-b border-slate-200 bg-white text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-3 py-2 text-left">Status</th>
-                  <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">
+                  <th className="px-3 py-2 text-left align-bottom">Status</th>
+                  <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left align-bottom shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">
                     Description
                   </th>
-                  <th className="px-3 py-2 text-right">Qty</th>
-                  <th className="px-3 py-2 text-right">Rate</th>
-                  <th className="px-3 py-2 text-right">Scheduled</th>
-                  <th className="px-3 py-2 text-right">Billed</th>
-                  <th className="px-3 py-2 text-right">Balance</th>
-                  <th className="px-3 py-2 text-right">% Done</th>
+                  <th className="px-3 py-2 text-right align-bottom">Qty</th>
+                  <th className="px-3 py-2 text-right align-bottom">Rate</th>
+                  <th className="px-3 py-2 text-right align-bottom">Scheduled</th>
+                  <th className="px-3 py-2 text-right align-bottom">Billed</th>
+                  <th className="px-3 py-2 text-right align-bottom">Balance</th>
+                  <th className="px-3 py-2 text-right align-bottom">% Done</th>
                   {invoices.map((inv) => (
                     <th
                       key={inv.id}
-                      className="px-3 py-2 text-right whitespace-nowrap"
+                      className="px-3 py-2 text-right align-bottom whitespace-nowrap"
                       title={inv.invoiceDate ?? ""}
                     >
                       Inv {inv.invoiceNumber ?? inv.id.slice(0, 6)}
@@ -638,6 +701,14 @@ export default function JobFinancialsPage() {
   // dismiss. Drift item from #269 / #275.
   const [estimateError, setEstimateError] = useState<AiParseError | null>(null)
   const [invoiceError, setInvoiceError] = useState<AiParseError | null>(null)
+  const [areaDraft, setAreaDraft] = useState<AreaEditorDraft | null>(null)
+  const [areaSaving, setAreaSaving] = useState(false)
+  const [lineItemDraft, setLineItemDraft] =
+    useState<LineItemEditorDraft | null>(null)
+  const [lineItemSaving, setLineItemSaving] = useState(false)
+  const [manualCoDraft, setManualCoDraft] =
+    useState<ManualChangeOrderDraft | null>(null)
+  const [manualCoSaving, setManualCoSaving] = useState(false)
   const toggleArea = useCallback(
     (areaId: string) =>
       setCollapsedAreas((m) => ({ ...m, [areaId]: !m[areaId] })),
@@ -810,7 +881,7 @@ export default function JobFinancialsPage() {
   // {number, description, amountCents}; the user confirms in a
   // dialog and the existing change-orders POST creates the row. The
   // uploaded document remains in the Financials folder rather than being
-  // linked from the change-order row.
+  // captured in the editable draft.
   const coInputRef = useRef<HTMLInputElement>(null)
   const [coUploading, setCoUploading] = useState(false)
   const [coParseError, setCoParseError] = useState<AiParseError | null>(null)
@@ -877,8 +948,8 @@ export default function JobFinancialsPage() {
       toast.error("CO number is required")
       return
     }
-    const amountCents = parseUsdAmountCents(coDraft.amountDollars)
-    if (amountCents === null) {
+    const amount = Number(coDraft.amountDollars)
+    if (!Number.isFinite(amount) || amount < 0) {
       toast.error("Amount must be a non-negative number")
       return
     }
@@ -887,7 +958,7 @@ export default function JobFinancialsPage() {
       await api.post(`/jobs/${jobId}/financials/change-orders`, {
         number,
         description: coDraft.description.trim() || null,
-        amountCents,
+        amountCents: Math.round(amount * 100),
         areaId: coDraft.areaId || null,
       })
       setCoDraft(null)
@@ -947,35 +1018,53 @@ export default function JobFinancialsPage() {
     }
   }, [jobId, load, invalidate, pendingDeleteLineItemId])
 
-  const addArea = async () => {
+  const addArea = () => {
     if (!jobId) return
-    const name = window.prompt("Area name")?.trim()
+    setAreaDraft({ mode: "add", name: "" })
+  }
+
+  const saveAreaDraft = async () => {
+    if (!jobId || !areaDraft) return
+    const name = areaDraft.name.trim()
     if (!name) return
+    if (areaDraft.mode === "rename" && name === areaDraft.currentName) {
+      setAreaDraft(null)
+      return
+    }
+    setAreaSaving(true)
     try {
-      await api.post(`/jobs/${jobId}/financials/areas`, { name })
+      if (areaDraft.mode === "add") {
+        await api.post(`/jobs/${jobId}/financials/areas`, { name })
+      } else {
+        await api.patch(`/jobs/${jobId}/financials/areas/${areaDraft.id}`, {
+          name,
+        })
+      }
       await load()
       invalidate()
+      setAreaDraft(null)
+      toast.success(areaDraft.mode === "add" ? "Area added" : "Area renamed")
     } catch (err) {
-      toastApiError(err, "Failed to add area")
+      toastApiError(
+        err,
+        areaDraft.mode === "add" ? "Failed to add area" : "Failed to rename area",
+      )
+    } finally {
+      setAreaSaving(false)
     }
   }
 
   const renameArea = useCallback(
     async (areaId: string, currentName: string) => {
       if (!jobId) return
-      const next = window.prompt("Rename area", currentName)?.trim()
-      if (!next || next === currentName) return
-      try {
-        await api.patch(`/jobs/${jobId}/financials/areas/${areaId}`, {
-          name: next,
-        })
-        await load()
-        invalidate()
-      } catch (err) {
-        toastApiError(err, "Failed to rename area")
-      }
+      setAreaDraft({
+        mode: "rename",
+        id: areaId,
+        currentName,
+        name: currentName,
+      })
     },
-    [jobId, load, invalidate],
+    [jobId],
   )
 
   const deleteArea = useCallback((areaId: string, name: string) => {
@@ -999,12 +1088,24 @@ export default function JobFinancialsPage() {
   }, [jobId, load, invalidate, pendingDeleteArea])
 
   const openInvoiceFile = async (fileId: string) => {
+    const newWindow = window.open("about:blank", "_blank")
+    if (!newWindow) {
+      toast.error("Please allow pop-ups to open this invoice file")
+      return
+    }
+    newWindow.opener = null
     try {
       const res = await api.post<{ url: string }>(
         `/files/${fileId}/signed-view`,
       )
-      window.open(res.data.url, "_blank", "noopener,noreferrer")
+      if (!res.data.url) throw new Error("Missing signed view URL")
+      newWindow.location.replace(res.data.url)
     } catch (err) {
+      try {
+        newWindow.close()
+      } catch {
+        // ignore
+      }
       toastApiError(err, "Failed to open invoice file")
     }
   }
@@ -1012,60 +1113,67 @@ export default function JobFinancialsPage() {
   const addLineItem = useCallback(
     async (areaId: string) => {
       if (!jobId) return
-      const description = window.prompt("Line item description")?.trim()
-      if (!description) return
-      try {
-        await api.post(`/jobs/${jobId}/financials/line-items`, {
-          areaId,
-          description,
-        })
-        await load()
-        invalidate()
-      } catch (err) {
-        toastApiError(err, "Failed to add line item")
-      }
+      setLineItemDraft({ areaId, description: "" })
     },
-    [jobId, load, invalidate],
+    [jobId],
   )
 
-  const addChangeOrder = async () => {
-    if (!jobId) return
-    const number = window.prompt("Change order number")?.trim()
-    if (!number) return
-    const description = window.prompt("Description (optional)")?.trim() || null
-    const amountStr = window.prompt("Amount (USD)")
-    if (amountStr === null) return
-    const amountCents = parseUsdAmountCents(amountStr)
-    if (amountCents === null) {
-      toast.error("Amount must be a non-negative number")
-      return
-    }
-    // Optional area assignment: list area names so the user can pick one.
-    const areas = data?.areas ?? []
-    let areaId: string | null = null
-    if (areas.length > 0) {
-      const list = areas.map((a, i) => `${i + 1}. ${a.name}`).join("\n")
-      const pick = window
-        .prompt(
-          `Assign to area? Enter number, or leave blank for none.\n${list}`,
-        )
-        ?.trim()
-      const idx = pick ? Number(pick) - 1 : NaN
-      if (!Number.isNaN(idx) && idx >= 0 && idx < areas.length) {
-        areaId = areas[idx].id
-      }
-    }
+  const saveLineItemDraft = async () => {
+    if (!jobId || !lineItemDraft) return
+    const description = lineItemDraft.description.trim()
+    if (!description) return
+    setLineItemSaving(true)
     try {
-      await api.post(`/jobs/${jobId}/financials/change-orders`, {
-        number,
+      await api.post(`/jobs/${jobId}/financials/line-items`, {
+        areaId: lineItemDraft.areaId,
         description,
-        amountCents,
-        areaId,
       })
       await load()
       invalidate()
+      setLineItemDraft(null)
+      toast.success("Line item added")
+    } catch (err) {
+      toastApiError(err, "Failed to add line item")
+    } finally {
+      setLineItemSaving(false)
+    }
+  }
+
+  const addChangeOrder = () => {
+    if (!jobId) return
+    setManualCoDraft({
+      number: "",
+      description: "",
+      amountDollars: "",
+      areaId: "",
+    })
+  }
+
+  const saveManualChangeOrder = async () => {
+    if (!jobId || !manualCoDraft) return
+    const number = manualCoDraft.number.trim()
+    if (!number) return
+    const amount = Number(manualCoDraft.amountDollars)
+    if (!Number.isFinite(amount) || amount < 0) {
+      toast.error("Amount must be a non-negative number")
+      return
+    }
+    setManualCoSaving(true)
+    try {
+      await api.post(`/jobs/${jobId}/financials/change-orders`, {
+        number,
+        description: manualCoDraft.description.trim() || null,
+        amountCents: Math.round(amount * 100),
+        areaId: manualCoDraft.areaId || null,
+      })
+      await load()
+      invalidate()
+      setManualCoDraft(null)
+      toast.success("Change order added")
     } catch (err) {
       toastApiError(err, "Failed to add change order")
+    } finally {
+      setManualCoSaving(false)
     }
   }
 
@@ -1353,16 +1461,16 @@ export default function JobFinancialsPage() {
       ) : null}
       {/* Header strip — contract date, main contract, change orders,
           contract w/ COs, billed, balance, applications, % billed */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         {totalsStrip?.map((t) => (
-          <Card key={t.label} className="min-w-0">
-            <CardHeader className="px-4 pb-1 pt-4">
-              <CardTitle className="text-xs font-medium leading-snug text-muted-foreground">
+          <Card key={t.label}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-medium text-muted-foreground">
                 {t.label}
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-4 pb-4 pt-0">
-              <div className="break-words text-2xl font-semibold leading-tight tabular-nums text-slate-950">
+            <CardContent>
+              <div className="text-lg font-semibold tabular-nums xl:text-xl">
                 {t.value}
               </div>
             </CardContent>
@@ -1384,7 +1492,7 @@ export default function JobFinancialsPage() {
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
               <div
-                className="h-full bg-primary transition-all"
+                className="h-full bg-primary/100 transition-all"
                 style={{
                   width: `${Math.min(100, Number(totals.percentBilled) || 0)}%`,
                 }}
@@ -1428,11 +1536,11 @@ export default function JobFinancialsPage() {
 
       {/* Estimate / project metadata */}
       <Card>
-        <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-lg">
             <FileText className="h-5 w-5" /> Estimate
           </CardTitle>
-          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
+          <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -1464,8 +1572,8 @@ export default function JobFinancialsPage() {
                     <Sparkles className="mr-1 h-4 w-4" />
                   )}
                   {data.tracker.estimateFileId
-                    ? "Re-parse PDF"
-                    : "Parse Estimate PDF"}
+                    ? "Re-parse Estimate"
+                    : "Parse Estimate"}
                 </Button>
               </>
             ) : null}
@@ -1474,7 +1582,7 @@ export default function JobFinancialsPage() {
         {estimateError ? (
           <div
             role="alert"
-            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/35 bg-primary/10 px-3 py-2 text-sm text-primary"
+            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
           >
             <div className="min-w-0">
               <div className="font-medium">
@@ -1708,11 +1816,11 @@ export default function JobFinancialsPage() {
 
       {/* SOV section */}
       <Card>
-        <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-lg">
             <DollarSign className="h-5 w-5" /> Schedule of Values
           </CardTitle>
-          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
+          <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={exportCsv}>
               <Download className="mr-1 h-4 w-4" /> Export CSV
             </Button>
@@ -1726,7 +1834,7 @@ export default function JobFinancialsPage() {
         <CardContent className="space-y-6">
           {data.areas.length === 0 ? (
             <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No areas yet. Parse an estimate PDF or add an area manually.
+              No areas yet. Parse an estimate or add an area manually.
             </div>
           ) : (
             data.areas.map((area) => (
@@ -1862,7 +1970,7 @@ export default function JobFinancialsPage() {
         {coParseError ? (
           <div
             role="alert"
-            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/35 bg-primary/10 px-3 py-2 text-sm text-primary"
+            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
           >
             <div className="min-w-0">
               <div className="font-medium">
@@ -2011,7 +2119,7 @@ export default function JobFinancialsPage() {
         {invoiceError ? (
           <div
             role="alert"
-            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/35 bg-primary/10 px-3 py-2 text-sm text-primary"
+            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
           >
             <div className="min-w-0">
               <div className="font-medium">
@@ -2313,6 +2421,235 @@ export default function JobFinancialsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Area editor */}
+      <Dialog
+        open={!!areaDraft}
+        onOpenChange={(o) => {
+          if (!o) setAreaDraft(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {areaDraft?.mode === "rename" ? "Rename area" : "Add area"}
+            </DialogTitle>
+          </DialogHeader>
+          {areaDraft ? (
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                Area name
+              </span>
+              <Input
+                autoFocus
+                value={areaDraft.name}
+                onChange={(e) =>
+                  setAreaDraft((draft) =>
+                    draft ? { ...draft, name: e.target.value } : draft,
+                  )
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    void saveAreaDraft()
+                  }
+                }}
+              />
+            </label>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setAreaDraft(null)}
+              disabled={areaSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void saveAreaDraft()}
+              disabled={areaSaving || !areaDraft?.name.trim()}
+            >
+              {areaSaving ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
+              {areaDraft?.mode === "rename" ? "Save name" : "Add area"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Line item editor */}
+      <Dialog
+        open={!!lineItemDraft}
+        onOpenChange={(o) => {
+          if (!o) setLineItemDraft(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add line item</DialogTitle>
+          </DialogHeader>
+          {lineItemDraft ? (
+            <div className="space-y-3">
+              <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+                Area:{" "}
+                <span className="font-medium text-slate-700">
+                  {data.areas.find((area) => area.id === lineItemDraft.areaId)
+                    ?.name ?? "Selected area"}
+                </span>
+              </div>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Description
+                </span>
+                <Input
+                  autoFocus
+                  value={lineItemDraft.description}
+                  onChange={(e) =>
+                    setLineItemDraft((draft) =>
+                      draft
+                        ? { ...draft, description: e.target.value }
+                        : draft,
+                    )
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      void saveLineItemDraft()
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setLineItemDraft(null)}
+              disabled={lineItemSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void saveLineItemDraft()}
+              disabled={lineItemSaving || !lineItemDraft?.description.trim()}
+            >
+              {lineItemSaving ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
+              Add line item
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual change order editor */}
+      <Dialog
+        open={!!manualCoDraft}
+        onOpenChange={(o) => {
+          if (!o) setManualCoDraft(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add change order</DialogTitle>
+          </DialogHeader>
+          {manualCoDraft ? (
+            <div className="grid gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    CO #
+                  </span>
+                  <Input
+                    autoFocus
+                    value={manualCoDraft.number}
+                    onChange={(e) =>
+                      setManualCoDraft((draft) =>
+                        draft ? { ...draft, number: e.target.value } : draft,
+                      )
+                    }
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Amount (USD)
+                  </span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={manualCoDraft.amountDollars}
+                    onChange={(e) =>
+                      setManualCoDraft((draft) =>
+                        draft
+                          ? { ...draft, amountDollars: e.target.value }
+                          : draft,
+                      )
+                    }
+                  />
+                </label>
+              </div>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Description
+                </span>
+                <Input
+                  value={manualCoDraft.description}
+                  onChange={(e) =>
+                    setManualCoDraft((draft) =>
+                      draft ? { ...draft, description: e.target.value } : draft,
+                    )
+                  }
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Assign to area (optional)
+                </span>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={manualCoDraft.areaId}
+                  onChange={(e) =>
+                    setManualCoDraft((draft) =>
+                      draft ? { ...draft, areaId: e.target.value } : draft,
+                    )
+                  }
+                >
+                  <option value="">None</option>
+                  {data.areas.map((area) => (
+                    <option key={area.id} value={area.id}>
+                      {area.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setManualCoDraft(null)}
+              disabled={manualCoSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void saveManualChangeOrder()}
+              disabled={
+                manualCoSaving ||
+                !manualCoDraft?.number.trim() ||
+                !manualCoDraft?.amountDollars.trim()
+              }
+            >
+              {manualCoSaving ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
+              Add change order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm re-upload of estimate */}
       <Dialog

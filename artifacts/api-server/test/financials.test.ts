@@ -6,7 +6,8 @@ import type { Server } from "node:http";
 
 const testDatabaseUrl =
   process.env.TEST_DATABASE_URL ??
-  "postgres://postgres:password@helium:5432/cadstone_test";
+  process.env.CADSTONE_TEST_DATABASE_URL ??
+  "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test";
 
 let server: Server;
 let baseUrl: string;
@@ -442,6 +443,29 @@ test("POST /financials/invoices applies AI matches to line items", async () => {
   assert.equal(typeof invoiceLog!.completionTokens, "number");
   assert.equal(typeof invoiceLog!.totalTokens, "number");
   assert.equal(typeof invoiceLog!.durationMs, "number");
+});
+
+test("GET /dashboard/home uses net received AR when retention is held", async () => {
+  const res = await fetch(`${baseUrl}/api/dashboard/home`, {
+    headers: authedHeaders(),
+  });
+  const rawBody = await res.text();
+  assert.equal(res.status, 200, rawBody);
+  const body = JSON.parse(rawBody) as {
+    kpis: { arOutstandingCents: number };
+    topClients: Array<{
+      clientId: string | null;
+      openBalanceCents: number;
+    }>;
+  };
+
+  const row = body.topClients.find((client) => client.clientId === clientId);
+  assert.ok(row, "dashboard should include the seeded retention client");
+  assert.equal(row.openBalanceCents, 275_000);
+  assert.ok(
+    body.kpis.arOutstandingCents >= 275_000,
+    `dashboard AR should include held retention, got ${body.kpis.arOutstandingCents}`,
+  );
 });
 
 test("AI failure path logs structured warn entry with errorCode AI_PARSE_FAILED", async () => {

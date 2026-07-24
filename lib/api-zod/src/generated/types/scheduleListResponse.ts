@@ -13,5 +13,6 @@ import type { ScheduleListResponsePagination } from "./scheduleListResponsePagin
  */
 export interface ScheduleListResponse {
   data: ScheduleItem[];
+  /** Offset pagination for page-mode requests, or CursorPagination when the request supplied `?cursor=`. */
   pagination: ScheduleListResponsePagination;
 }

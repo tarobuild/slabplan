@@ -9,7 +9,7 @@ import type { DailyLogListItem } from "./dailyLogListItem";
 import type { MyDailyLogsResponsePagination } from "./myDailyLogsResponsePagination";
 
 /**
- * Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.
+ * Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) unless the request supplied the `cursor` query key, in which case it uses `CursorPagination`. A `limit` query by itself does not select cursor mode.
  */
 export interface MyDailyLogsResponse {
   logs: DailyLogListItem[];

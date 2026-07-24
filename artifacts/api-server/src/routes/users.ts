@@ -1,10 +1,12 @@
 import crypto from "node:crypto";
 import bcrypt from "bcrypt";
-import { and, asc, count, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
+  jobAssignees,
+  jobs,
   organizationMemberships,
   personalAccessTokens,
   safeUserColumns,
@@ -13,10 +15,17 @@ import {
   type User,
 } from "@workspace/db/schema";
 import { sendAuthResponse, toPublicUser } from "../lib/auth";
+import { CANONICAL_HOST } from "../lib/canonical-host";
 import { sendInvite, sendPasswordReset, truncateEmailError } from "../lib/email";
 import { writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { getActiveOrganizationId } from "../lib/tenant-scope";
+import {
+  isSupabasePasswordLoginEnabled,
+  sendSupabaseAuthResponse,
+  signInWithSupabasePassword,
+  updateSupabaseAuthUser,
+} from "../lib/supabase-auth-session";
 import {
   requireAdmin,
   requireManagerOrAbove,
@@ -25,6 +34,15 @@ import {
 const router: IRouter = Router();
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const ADMIN_MEMBERSHIP_ADVISORY_LOCK = 918273645;
+const INVITE_PUBLIC_ORIGIN_ENV_KEYS = [
+  "APP_PUBLIC_URL",
+  "APP_ORIGIN",
+  "FRONTEND_ORIGIN",
+  "PUBLIC_APP_ORIGIN",
+  "CUSTOM_DOMAIN_ORIGIN",
+] as const;
+type UserRole = (typeof userRoles)[number];
 
 function hashInviteToken(rawToken: string) {
   return crypto.createHash("sha256").update(rawToken).digest("hex");
@@ -34,20 +52,56 @@ function buildInvitePath(token: string) {
   return `/accept-invite?token=${encodeURIComponent(token)}`;
 }
 
-// Resolve an absolute URL for the invitee. Production sets APP_PUBLIC_URL
-// (e.g. https://app.stonetrack.example) to the canonical host; in dev we
-// fall back to the REPLIT_DEV_DOMAIN proxy host. We always return a URL
-// with an `https://` scheme so the email is clickable from any client —
-// if neither env var is set we throw, because emailing a relative path
-// would silently produce a broken link.
+function normaliseOriginCandidate(value: string): string | null {
+  const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    return new URL(candidate).origin;
+  } catch {
+    return null;
+  }
+}
+
+function configuredInviteOrigin(env: NodeJS.ProcessEnv = process.env): string | null {
+  for (const key of INVITE_PUBLIC_ORIGIN_ENV_KEYS) {
+    const candidates = env[key]
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean) ?? [];
+
+    for (const candidate of candidates) {
+      const origin = normaliseOriginCandidate(candidate);
+      if (origin) return origin;
+    }
+  }
+
+  return null;
+}
+
+function isReplitOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname.toLowerCase();
+    return (
+      host === "replit.dev" ||
+      host.endsWith(".replit.dev") ||
+      host === "replit.app" ||
+      host.endsWith(".replit.app") ||
+      host.endsWith(".repl.co")
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Resolve an absolute URL for the invitee. Production must prefer the
+// configured customer-facing SlabPlan host; preview hosts are dev-only.
 function buildInviteUrl(token: string): string {
   const path = buildInvitePath(token);
-  const explicit = process.env.APP_PUBLIC_URL?.trim();
-  if (explicit) {
-    const normalised = /^https?:\/\//i.test(explicit)
-      ? explicit
-      : `https://${explicit}`;
-    return `${normalised.replace(/\/$/, "")}${path}`;
+  const explicit = configuredInviteOrigin();
+  if (explicit && (process.env.NODE_ENV !== "production" || !isReplitOrigin(explicit))) {
+    return `${explicit}${path}`;
+  }
+  if (process.env.NODE_ENV === "production" && CANONICAL_HOST) {
+    return `https://${CANONICAL_HOST}${path}`;
   }
   const replit = process.env.REPLIT_DEV_DOMAIN?.trim();
   if (replit) {
@@ -55,7 +109,7 @@ function buildInviteUrl(token: string): string {
   }
   throw new HttpError(
     500,
-    "Cannot build an invite URL: neither APP_PUBLIC_URL nor REPLIT_DEV_DOMAIN is configured.",
+    "Cannot build an invite URL: neither a public app origin nor REPLIT_DEV_DOMAIN is configured.",
   );
 }
 
@@ -143,17 +197,68 @@ function generateInvite() {
   return { token, tokenHash, expiresAt };
 }
 
-async function generatePlaceholderPasswordHash() {
-  const random = crypto.randomBytes(32).toString("base64url");
-  return bcrypt.hash(random, 10);
+function supabaseUserMetadata(user: Pick<User, "id" | "fullName" | "role">) {
+  return {
+    user_metadata: { full_name: user.fullName },
+    app_metadata: {
+      cadstone_user_id: user.id,
+      cadstone_role: user.role,
+    },
+  };
 }
+
+async function verifyCurrentPasswordForUser(
+  user: Pick<User, "id" | "email" | "passwordHash">,
+  currentPassword: string,
+) {
+  if (isSupabasePasswordLoginEnabled()) {
+    const session = await signInWithSupabasePassword(user.email, currentPassword);
+    if (session.user.id !== user.id) {
+      throw new HttpError(400, "Current password is incorrect.");
+    }
+    return;
+  }
+
+  const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!isValid) {
+    throw new HttpError(400, "Current password is incorrect.");
+  }
+}
+
+async function generatePlaceholderPasswordHash() {
+  const { hash } = await generatePlaceholderPassword();
+  return hash;
+}
+
+async function generatePlaceholderPassword() {
+  const random = crypto.randomBytes(32).toString("base64url");
+  const hash = await bcrypt.hash(random, 10);
+  return { password: random, hash };
+}
+
+const nullableProfileFieldSchema = z
+  .union([z.string(), z.null()])
+  .optional()
+  .transform((value): string | null | undefined => {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (value === null) {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  });
 
 const updateProfileSchema = z.object({
   fullName: z.string().trim().min(2).max(255).optional(),
   email: z.string().trim().email().max(255).optional(),
   currentPassword: z
-    .union([z.string(), z.null(), z.undefined()])
-    .transform((value) => {
+    .union([z.string(), z.null()])
+    .optional()
+    .transform((value): string | null => {
       if (typeof value !== "string") {
         return null;
       }
@@ -161,26 +266,8 @@ const updateProfileSchema = z.object({
       const trimmed = value.trim();
       return trimmed.length > 0 ? trimmed : null;
     }),
-  phone: z
-    .union([z.string(), z.null(), z.undefined()])
-    .transform((value) => {
-      if (typeof value !== "string") {
-        return null;
-      }
-
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    }),
-  avatarUrl: z
-    .union([z.string(), z.null(), z.undefined()])
-    .transform((value) => {
-      if (typeof value !== "string") {
-        return null;
-      }
-
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    }),
+  phone: nullableProfileFieldSchema,
+  avatarUrl: nullableProfileFieldSchema,
 });
 
 const changePasswordSchema = z.object({
@@ -235,8 +322,8 @@ const userListQuerySchema = z
 
         return items
           .map((item) => item.trim())
-          .filter((item): item is "admin" | "project_manager" | "crew_member" =>
-            item === "admin" || item === "project_manager" || item === "crew_member",
+          .filter((item): item is UserRole =>
+            (userRoles as readonly string[]).includes(item),
           );
       }),
   })
@@ -319,6 +406,44 @@ function publicUserWithStatus(user: Pick<User,
       : null,
     lastInviteEmailError: user.lastInviteEmailError ?? null,
   };
+}
+
+function shouldAssignAllJobsOnInvite(role: UserRole): boolean {
+  return role === "project_manager" || role === "crew_member";
+}
+
+async function assignAllExistingJobsToUser(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string,
+  organizationId: string | null,
+) {
+  const rows = await tx
+    .select({ jobId: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        isNull(jobs.deletedAt),
+        organizationId ? eq(jobs.organizationId, organizationId) : undefined,
+      ),
+    );
+
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  await tx
+    .insert(jobAssignees)
+    .values(
+      rows.map((row) => ({
+        organizationId,
+        jobId: row.jobId,
+        userId,
+        canViewFinancials: false,
+      })),
+    )
+    .onConflictDoNothing();
+
+  return rows.length;
 }
 
 router.get(
@@ -451,11 +576,7 @@ router.put(
         throw new HttpError(400, "Current password is required to change your email.");
       }
 
-      const isValid = await bcrypt.compare(body.data.currentPassword, user.passwordHash);
-
-      if (!isValid) {
-        throw new HttpError(400, "Current password is incorrect.");
-      }
+      await verifyCurrentPasswordForUser(user, body.data.currentPassword);
 
       const [existing] = await db
         .select({ id: users.id })
@@ -466,6 +587,22 @@ router.put(
       if (existing) {
         throw new HttpError(409, "That email address is already in use.");
       }
+
+      if (isSupabasePasswordLoginEnabled()) {
+        if (!user.supabaseAuthUserId) {
+          throw new HttpError(409, "This account is not linked to Supabase Auth yet.");
+        }
+
+        await updateSupabaseAuthUser(user.supabaseAuthUserId, {
+          email,
+          email_confirm: true,
+          ...supabaseUserMetadata({
+            id: user.id,
+            fullName: body.data.fullName ?? user.fullName,
+            role: user.role,
+          }),
+        });
+      }
     }
 
     const [updated] = await db
@@ -473,8 +610,9 @@ router.put(
       .set({
         fullName: body.data.fullName ?? user.fullName,
         email,
-        phone: body.data.phone ?? user.phone,
-        avatarUrl: body.data.avatarUrl ?? user.avatarUrl,
+        phone: body.data.phone !== undefined ? body.data.phone : user.phone,
+        avatarUrl:
+          body.data.avatarUrl !== undefined ? body.data.avatarUrl : user.avatarUrl,
         updatedAt: new Date(),
       })
       .where(eq(users.id, user.id))
@@ -519,17 +657,18 @@ router.put(
     if (!parsed.success) {
       throw new HttpError(400, "Invalid notification prefs payload.", parsed.error.flatten());
     }
-    const [existing] = await db
-      .select({ prefs: users.notificationPrefs })
-      .from(users)
-      .where(eq(users.id, user.id))
-      .limit(1);
-    const merged = { ...(existing?.prefs ?? {}), ...parsed.data.prefs };
-    await db
+    const [updated] = await db
       .update(users)
-      .set({ notificationPrefs: merged, updatedAt: new Date() })
-      .where(eq(users.id, user.id));
-    res.json({ prefs: merged });
+      .set({
+        notificationPrefs: sql<Record<string, boolean>>`
+          ${users.notificationPrefs} || ${JSON.stringify(parsed.data.prefs)}::jsonb
+        `,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id))
+      .returning({ prefs: users.notificationPrefs });
+
+    res.json({ prefs: updated?.prefs ?? parsed.data.prefs });
   }),
 );
 
@@ -548,10 +687,17 @@ router.post(
       throw new HttpError(400, body.error.errors[0]?.message ?? "Invalid password payload.");
     }
 
-    const isValid = await bcrypt.compare(body.data.currentPassword, user.passwordHash);
+    await verifyCurrentPasswordForUser(user, body.data.currentPassword);
 
-    if (!isValid) {
-      throw new HttpError(400, "Current password is incorrect.");
+    if (isSupabasePasswordLoginEnabled()) {
+      if (!user.supabaseAuthUserId) {
+        throw new HttpError(409, "This account is not linked to Supabase Auth yet.");
+      }
+
+      await updateSupabaseAuthUser(user.supabaseAuthUserId, {
+        password: body.data.newPassword,
+        ...supabaseUserMetadata(user),
+      });
     }
 
     const passwordHash = await bcrypt.hash(body.data.newPassword, 10);
@@ -576,6 +722,12 @@ router.post(
 
       return updatedRows;
     });
+
+    if (isSupabasePasswordLoginEnabled()) {
+      const session = await signInWithSupabasePassword(user.email, body.data.newPassword);
+      sendSupabaseAuthResponse(res, session);
+      return;
+    }
 
     sendAuthResponse(res, updated!);
   }),
@@ -612,9 +764,10 @@ router.post(
     const invite = generateInvite();
     const inviteUrl = buildInviteUrl(invite.token);
     const organizationId = getActiveOrganizationId(req.auth!);
+    const invitePath = buildInvitePath(invite.token);
 
-    const [created] = await db.transaction(async (tx) => {
-      const createdRows = await tx
+    const { created, initialJobAccessCount } = await db.transaction(async (tx) => {
+      const [createdUser] = await tx
         .insert(users)
         .values({
           email,
@@ -630,7 +783,10 @@ router.post(
         })
         .returning();
 
-      const createdUser = createdRows[0];
+      if (!createdUser) {
+        throw new HttpError(500, "Failed to create user.");
+      }
+
       if (createdUser && organizationId) {
         await tx.insert(organizationMemberships).values({
           organizationId,
@@ -641,7 +797,11 @@ router.post(
         });
       }
 
-      return createdRows;
+      const assignedJobs = shouldAssignAllJobsOnInvite(role)
+        ? await assignAllExistingJobsToUser(tx, createdUser.id, organizationId)
+        : 0;
+
+      return { created: createdUser, initialJobAccessCount: assignedJobs };
     });
 
     if (!created) {
@@ -655,7 +815,11 @@ router.post(
       userId: req.auth!.userId,
       jobId: null,
       description: `Invited ${created.fullName} (${created.email}) as ${created.role}`,
-      extra: { invitedRole: created.role, invitedEmail: created.email },
+      extra: {
+        invitedRole: created.role,
+        invitedEmail: created.email,
+        initialJobAccessCount,
+      },
     }).catch((error) => {
       // Activity logging must never block the invite from being returned.
       req.log.warn({ err: error }, "users: failed to record invite activity");
@@ -681,9 +845,13 @@ router.post(
         lastInviteEmailError: delivery.emailError,
       },
       inviteToken: invite.token,
-      invitePath: buildInvitePath(invite.token),
+      invitePath,
       inviteUrl,
       inviteTokenExpiresAt: invite.expiresAt.toISOString(),
+      initialJobAccess: {
+        assignedAllJobs: shouldAssignAllJobsOnInvite(created.role as UserRole),
+        jobCount: initialJobAccessCount,
+      },
       emailDelivery: {
         emailed: delivery.emailed,
         emailError: delivery.emailError,
@@ -714,14 +882,30 @@ router.post(
     }
 
     const invite = generateInvite();
+    const invitePath = buildInvitePath(invite.token);
     const inviteUrl = buildInviteUrl(invite.token);
     const now = new Date();
     const isPasswordReset = target.passwordSetAt !== null;
+    const placeholder = isPasswordReset
+      ? await generatePlaceholderPassword()
+      : null;
+
+    if (
+      placeholder &&
+      isSupabasePasswordLoginEnabled() &&
+      target.supabaseAuthUserId
+    ) {
+      await updateSupabaseAuthUser(target.supabaseAuthUserId, {
+        password: placeholder.password,
+        ...supabaseUserMetadata(target),
+      });
+    }
 
     const [updated] = await db.transaction(async (tx) => {
       const updatedRows = await tx
         .update(users)
         .set({
+          passwordHash: placeholder?.hash ?? target.passwordHash,
           inviteTokenHash: invite.tokenHash,
           inviteToken: null,
           inviteTokenExpiresAt: invite.expiresAt,
@@ -778,7 +962,7 @@ router.post(
         lastInviteEmailError: delivery.emailError,
       },
       inviteToken: invite.token,
-      invitePath: buildInvitePath(invite.token),
+      invitePath,
       inviteUrl,
       inviteTokenExpiresAt: invite.expiresAt.toISOString(),
       emailDelivery: {
@@ -790,9 +974,9 @@ router.post(
   }),
 );
 
-// Admin: resend a pending invite email. Raw invite tokens are never stored, so
-// resend mints a fresh single-use token and invalidates any previous pending
-// setup link. Password resets still go through the reissue endpoint above.
+// Admin: resend a pending invite email only when a legacy raw invite token is
+// available. New invite flows deliberately store only a hash, so they cannot
+// re-send the existing link; admins must reissue a fresh link instead.
 router.post(
   "/:id/invite/resend",
   requireAdmin,
@@ -831,18 +1015,18 @@ router.post(
       );
     }
 
-    const invite = generateInvite();
-    const inviteUrl = buildInviteUrl(invite.token);
-    const [updated] = await db
-      .update(users)
-      .set({
-        inviteTokenHash: invite.tokenHash,
-        inviteToken: null,
-        inviteTokenExpiresAt: invite.expiresAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, target.id))
-      .returning();
+    if (
+      !target.inviteToken ||
+      hashInviteToken(target.inviteToken) !== target.inviteTokenHash
+    ) {
+      throw new HttpError(
+        400,
+        "This pending invite cannot be resent because raw setup links are not stored. Use reissue to generate and email a fresh setup link.",
+      );
+    }
+
+    const invitePath = buildInvitePath(target.inviteToken);
+    const inviteUrl = buildInviteUrl(target.inviteToken);
 
     await writeActivity({
       entityType: "user",
@@ -861,7 +1045,7 @@ router.post(
       to: target.email,
       fullName: target.fullName,
       inviterName,
-      inviteToken: invite.token,
+      inviteToken: target.inviteToken,
       inviteUrl,
       isPasswordReset: false,
     });
@@ -874,14 +1058,14 @@ router.post(
 
     res.json({
       user: {
-        ...publicUserWithStatus(refreshed ?? updated!),
+        ...publicUserWithStatus(refreshed ?? target),
         lastInviteEmailSentAt: delivery.lastInviteEmailSentAt,
         lastInviteEmailError: delivery.emailError,
       },
-      inviteToken: invite.token,
-      invitePath: buildInvitePath(invite.token),
+      inviteToken: target.inviteToken,
+      invitePath,
       inviteUrl,
-      inviteTokenExpiresAt: invite.expiresAt.toISOString(),
+      inviteTokenExpiresAt: target.inviteTokenExpiresAt.toISOString(),
       emailDelivery: {
         emailed: delivery.emailed,
         emailError: delivery.emailError,
@@ -892,8 +1076,9 @@ router.post(
 );
 
 // Admin: change a worker's name, role, or active flag. Admins can never
-// flip their OWN isActive to false through this endpoint — that has to be
-// done by another admin so the team can never lock itself out by accident.
+// flip their OWN isActive to false or demote themselves through this
+// endpoint — that has to be done by another admin so the team can never
+// lock itself out by accident.
 router.patch(
   "/:id",
   requireAdmin,
@@ -924,6 +1109,15 @@ router.patch(
       throw new HttpError(400, "You cannot deactivate your own account.");
     }
 
+    if (
+      parsed.data.role !== undefined &&
+      parsed.data.role !== "admin" &&
+      target.role === "admin" &&
+      target.id === req.auth!.userId
+    ) {
+      throw new HttpError(400, "You cannot demote your own admin account.");
+    }
+
     const nextRole = parsed.data.role ?? target.role;
     const nextIsActive = parsed.data.isActive ?? target.isActive;
 
@@ -937,6 +1131,10 @@ router.patch(
         target.isActive &&
         (nextRole !== "admin" || nextIsActive === false)
       ) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(${ADMIN_MEMBERSHIP_ADVISORY_LOCK})`,
+        );
+
         const [remainingAdmin] = organizationId
           ? await tx
               .select({ total: count() })

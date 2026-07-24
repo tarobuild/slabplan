@@ -68,10 +68,22 @@ const EVENTS: NotificationEvent[] = [
   },
 ]
 
+export function mergeSavedNotificationPrefs(
+  currentPrefs: Record<string, boolean>,
+  key: string,
+  optimisticValue: boolean,
+  savedPrefs: Record<string, boolean> | undefined,
+): Record<string, boolean> {
+  return {
+    ...currentPrefs,
+    [key]: savedPrefs?.[key] ?? optimisticValue,
+  }
+}
+
 export default function NotificationsSection() {
   useDocumentTitle("Notifications · Settings")
   const [prefs, setPrefs] = useState<Record<string, boolean>>({})
-  const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(() => new Set())
 
   const { data, isLoading: loading, error } = useUsersGetUsersMeNotificationPrefs()
   const putMutation = useUsersPutUsersMeNotificationPrefs()
@@ -91,25 +103,40 @@ export default function NotificationsSection() {
     return event.defaultValue ?? false
   }
 
+  const setPreferenceSaving = (key: string, isSaving: boolean) => {
+    setSavingKeys((current) => {
+      const next = new Set(current)
+      if (isSaving) {
+        next.add(key)
+      } else {
+        next.delete(key)
+      }
+      return next
+    })
+  }
+
   const handleToggle = async (event: NotificationEvent, next: boolean) => {
-    if (savingKey) return
     const previous = valueFor(event)
     setPrefs((p) => ({ ...p, [event.key]: next }))
-    setSavingKey(event.key)
+    setPreferenceSaving(event.key, true)
     try {
       const result = await putMutation.mutateAsync({
         data: { prefs: { [event.key]: next } },
       })
-      setPrefs(result.prefs ?? {})
+      setPrefs((current) =>
+        mergeSavedNotificationPrefs(current, event.key, next, result.prefs),
+      )
       toast.success(`${event.label}: ${next ? "on" : "off"}`)
     } catch (err: unknown) {
       // Roll back optimistic state on failure.
       setPrefs((p) => ({ ...p, [event.key]: previous }))
       toastApiError(err, "Failed to update notification preference")
     } finally {
-      setSavingKey(null)
+      setPreferenceSaving(event.key, false)
     }
   }
+
+  const hasPendingSave = savingKeys.size > 0
 
   return (
     <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
@@ -136,8 +163,7 @@ export default function NotificationsSection() {
           <ul className="mt-6 divide-y divide-slate-100">
             {EVENTS.map((event) => {
               const checked = valueFor(event)
-              const isSaving = savingKey === event.key
-              const saveInProgress = savingKey !== null
+              const isSaving = savingKeys.has(event.key)
               return (
                 <li
                   key={event.key}
@@ -161,7 +187,7 @@ export default function NotificationsSection() {
                     <Switch
                       checked={checked}
                       onCheckedChange={(v) => handleToggle(event, v)}
-                      disabled={saveInProgress}
+                      disabled={hasPendingSave}
                       aria-label={`${event.label}: ${checked ? "on" : "off"}`}
                     />
                   </div>

@@ -6,6 +6,7 @@ import pg from "pg";
 const DEFAULT_TEST_DATABASE_URL =
   "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test";
 const ALLOW_REMOTE_TEST_RESET_ENV = "STONE_TRACK_ALLOW_REMOTE_TEST_DATABASE_RESET";
+const LEGACY_TEST_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
 
 function resolveTestDatabaseUrl(): URL {
   const raw =
@@ -169,6 +170,51 @@ function runDrizzlePush(testUrl: URL): Promise<void> {
   });
 }
 
+async function configureLegacyTestTenantDefaults(testUrl: URL): Promise<void> {
+  const client = new pg.Client({ connectionString: testUrl.toString() });
+  await client.connect();
+
+  try {
+    await client.query("begin");
+    await client.query(
+      `insert into organizations (id, name, slug, status)
+       values ($1::uuid, 'Legacy CAD test tenant', 'legacy-cad-test-tenant', 'active')
+       on conflict (id) do nothing`,
+      [LEGACY_TEST_ORGANIZATION_ID],
+    );
+    await client.query(
+      `alter table users
+       alter column default_organization_id
+       set default '${LEGACY_TEST_ORGANIZATION_ID}'::uuid`,
+    );
+
+    const result = await client.query<{ table_name: string }>(
+      `select table_name
+         from information_schema.columns
+        where table_schema = 'public'
+          and column_name = 'organization_id'`,
+    );
+
+    for (const row of result.rows) {
+      const tableName = row.table_name.replace(/"/g, '""');
+      await client.query(
+        `alter table "${tableName}"
+         alter column organization_id
+         set default '${LEGACY_TEST_ORGANIZATION_ID}'::uuid`,
+      );
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {
+      /* preserve the original setup error */
+    });
+    throw error;
+  } finally {
+    await client.end();
+  }
+}
+
 async function main(): Promise<void> {
   const testUrl = resolveTestDatabaseUrl();
   validateDestructiveTestTarget(testUrl);
@@ -179,6 +225,7 @@ async function main(): Promise<void> {
 
   console.log(`[setup-test-db] Pushing Drizzle schema (drizzle-kit push --force)...`);
   await runDrizzlePush(testUrl);
+  await configureLegacyTestTenantDefaults(testUrl);
   console.log(`[setup-test-db] Schema is up to date.`);
 }
 

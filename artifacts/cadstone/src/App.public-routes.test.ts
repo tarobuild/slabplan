@@ -84,7 +84,7 @@ async function renderPublicRoute(ready: boolean, initialPath = "/register") {
           null,
           createElement(
             Route,
-            { element: createElement(PublicOnlyRoute, { ready }) },
+            { element: createElement(PublicOnlyRoute, { ready } as never) },
             createElement(Route, {
               path: "/register",
               element: createElement("div", null, REGISTER_MARKER),

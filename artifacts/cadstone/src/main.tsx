@@ -1,9 +1,7 @@
+import "./lib/sentry-init"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-// Initialize Sentry before React renders so the ErrorBoundary sees a
-// configured client (Task #348).
-import { initSentry, setSentryUser } from "./lib/sentry"
-initSentry()
+import { setSentryUser } from "./lib/sentry"
 import App from "./App"
 import "./index.css"
 import { useAuthStore } from "./store/auth"

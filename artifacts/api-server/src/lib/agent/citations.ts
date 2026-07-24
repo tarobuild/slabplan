@@ -30,6 +30,14 @@ function contactLabelFromRow(row: Record<string, unknown>): string {
   return combined || labelFromRow(row, "Contact");
 }
 
+function uuidFromRow(row: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = row[key];
+    if (isUuid(value)) return value;
+  }
+  return undefined;
+}
+
 function harvestJob(row: Record<string, unknown>, out: AgentCitation[]): void {
   if (isUuid(row.id)) {
     pushUnique(out, { kind: "job", id: row.id, label: labelFromRow(row, "Job") });
@@ -50,12 +58,14 @@ function harvestClient(row: Record<string, unknown>, out: AgentCitation[]): void
 
 function harvestContact(row: Record<string, unknown>, out: AgentCitation[]): void {
   const label = contactLabelFromRow(row);
-  if (isUuid(row.clientId)) {
-    pushUnique(out, { kind: "client", id: row.clientId, label });
+  const clientId = uuidFromRow(row, ["clientId", "client_id"]);
+  if (clientId) {
+    pushUnique(out, { kind: "client", id: clientId, label });
     return;
   }
-  if (isUuid(row.leadId)) {
-    pushUnique(out, { kind: "lead", id: row.leadId, label });
+  const leadId = uuidFromRow(row, ["leadId", "lead_id"]);
+  if (leadId) {
+    pushUnique(out, { kind: "lead", id: leadId, label });
   }
 }
 
@@ -121,6 +131,12 @@ function harvestUser(row: Record<string, unknown>, out: AgentCitation[]): void {
   }
 }
 
+function harvestActivity(row: Record<string, unknown>, out: AgentCitation[]): void {
+  if (isUuid(row.id)) {
+    pushUnique(out, { kind: "activity", id: row.id, label: labelFromRow(row, "Activity") });
+  }
+}
+
 type Harvester = (row: Record<string, unknown>, out: AgentCitation[]) => void;
 
 const ENTITY_HARVESTERS: Record<string, Harvester> = {
@@ -144,6 +160,8 @@ const ENTITY_HARVESTERS: Record<string, Harvester> = {
   items: harvestScheduleItem,
   users: harvestUser,
   user: harvestUser,
+  activities: harvestActivity,
+  activity: harvestActivity,
 };
 
 const TOOL_FALLBACK_HARVESTER: Record<string, Harvester> = {
@@ -159,12 +177,59 @@ const TOOL_FALLBACK_HARVESTER: Record<string, Harvester> = {
   get_daily_log: harvestDailyLog,
   list_schedule_items: harvestScheduleItem,
   get_schedule_item: harvestScheduleItem,
+  read_activity: harvestActivity,
+  list_activity: harvestActivity,
   list_folders: harvestFolder,
   get_folder: harvestFolder,
   list_files: harvestFile,
   get_file: harvestFile,
   list_users: harvestUser,
 };
+
+const TOOL_WRAPPER_HARVESTERS: Record<string, Record<string, Harvester>> = {
+  list_contacts: {
+    contacts: harvestContact,
+    contact: harvestContact,
+    data: harvestContact,
+  },
+  get_contact: {
+    contacts: harvestContact,
+    contact: harvestContact,
+    data: harvestContact,
+  },
+  list_schedule_items: {
+    data: harvestScheduleItem,
+  },
+  get_schedule_item: {
+    data: harvestScheduleItem,
+  },
+  read_activity: {
+    activities: harvestActivity,
+    activity: harvestActivity,
+    data: harvestActivity,
+  },
+  list_activity: {
+    activities: harvestActivity,
+    activity: harvestActivity,
+    data: harvestActivity,
+  },
+};
+
+function harvestWrappedValue(
+  value: unknown,
+  harvester: Harvester,
+  out: AgentCitation[],
+): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (item && typeof item === "object") {
+        harvester(item as Record<string, unknown>, out);
+      }
+    }
+  } else if (value && typeof value === "object") {
+    harvester(value as Record<string, unknown>, out);
+  }
+}
 
 /**
  * Pull deep-linkable record references out of a tool result.
@@ -183,14 +248,13 @@ export function extractCitations(toolName: string, result: unknown): AgentCitati
   for (const [key, value] of Object.entries(root)) {
     const harvester = ENTITY_HARVESTERS[key];
     if (!harvester) continue;
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item && typeof item === "object") {
-          harvester(item as Record<string, unknown>, out);
-        }
-      }
-    } else if (value && typeof value === "object") {
-      harvester(value as Record<string, unknown>, out);
+    harvestWrappedValue(value, harvester, out);
+  }
+
+  const wrapperHarvesters = TOOL_WRAPPER_HARVESTERS[toolName];
+  if (wrapperHarvesters) {
+    for (const [key, harvester] of Object.entries(wrapperHarvesters)) {
+      harvestWrappedValue(root[key], harvester, out);
     }
   }
 
@@ -204,6 +268,13 @@ export function extractCitations(toolName: string, result: unknown): AgentCitati
       const label =
         typeof r.title === "string" ? r.title : labelFromRow(r, type ?? "Result");
       // Map search "type" → citation kind. "schedule" → "schedule_item".
+      if (type === "contact") {
+        const clientId = uuidFromRow(r, ["clientId", "client_id"]);
+        if (clientId) {
+          pushUnique(out, { kind: "client", id: clientId, label });
+        }
+        continue;
+      }
       const kindMap: Record<string, AgentCitation["kind"]> = {
         job: "job",
         lead: "lead",

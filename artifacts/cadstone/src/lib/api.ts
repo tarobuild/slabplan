@@ -136,7 +136,7 @@ initializeInterceptors()
 
 let lastForbiddenAt = 0
 
-function notifyForbidden() {
+export function notifyForbidden() {
   const now = Date.now()
   // Debounce: a batch of parallel 403s (e.g. page load firing several queries)
   // should result in a single toast + one route change, not a cascade.
@@ -155,7 +155,7 @@ function notifyForbidden() {
 
 let lastForbiddenActionAt = 0
 
-function notifyForbiddenAction() {
+export function notifyForbiddenAction() {
   // Same debounce strategy as notifyForbidden, but for write requests we only
   // want a toast — no navigation — so the user keeps their open form/dialog.
   const now = Date.now()
@@ -173,7 +173,7 @@ function notifyForbiddenAction() {
 
 let lastSessionExpiredAt = 0
 
-function notifySessionExpired() {
+export function notifySessionExpired() {
   const now = Date.now()
   // Debounce: a batch of parallel 401s (e.g. several queries firing on a
   // page load with an expired session) should result in a single toast,
@@ -217,7 +217,12 @@ export async function bootstrapAuthSession() {
 
 export async function logoutSession() {
   try {
-    await authApi.post("/auth/logout")
+    const token = useAuthStore.getState().accessToken
+    await authApi.post(
+      "/auth/logout",
+      undefined,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
+    )
   } finally {
     useAuthStore.getState().clearAuth()
   }

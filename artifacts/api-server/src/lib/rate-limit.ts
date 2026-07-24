@@ -163,33 +163,33 @@ function setBindingRateLimitHeaders(
 // pathological per-IP volume.
 const GLOBAL_IP_MAX = 10_000;
 const PER_USER_MAX = 2_000;
+const POSTGRES_INT_MAX = 2_147_483_647;
 
-function positiveIntegerFromEnv(name: string, fallback: number): number {
+function parsePositiveIntegerEnv(
+  name: string,
+  defaultValue: number,
+  maxValue = Number.MAX_SAFE_INTEGER,
+): number {
   const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-
-  const value = Number(raw);
-  if (Number.isFinite(value) && Number.isInteger(value) && value > 0) {
-    return value;
+  if (raw === undefined || raw === "") {
+    return defaultValue;
   }
 
-  logger.warn(
-    { env: name, value: raw, fallback },
-    "invalid rate-limit environment value; using default",
-  );
-  return fallback;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > maxValue) {
+    throw new Error(`${name} must be a positive integer no greater than ${maxValue}.`);
+  }
+
+  return parsed;
 }
 
-function assertValidRateLimitOptions(options: RateLimitOptions): void {
-  if (!Number.isFinite(options.max) || !Number.isInteger(options.max) || options.max <= 0) {
-    throw new Error(`Invalid rate limit max for ${options.keyPrefix}`);
-  }
-  if (
-    !Number.isFinite(options.windowMs) ||
-    !Number.isInteger(options.windowMs) ||
-    options.windowMs <= 0
-  ) {
-    throw new Error(`Invalid rate limit windowMs for ${options.keyPrefix}`);
+function assertPositiveInteger(
+  name: string,
+  value: number,
+  maxValue = Number.MAX_SAFE_INTEGER,
+): void {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > maxValue) {
+    throw new Error(`${name} must be a positive integer no greater than ${maxValue}.`);
   }
 }
 
@@ -263,13 +263,11 @@ function perUserBucketKey(req: Request) {
 // tight — `AI_PARSE_PER_USER_MAX` (default 20) parses per
 // `AI_PARSE_PER_USER_WINDOW_MS` (default 1 hour). Override via env when
 // load-testing or for one-off bulk imports.
-const AI_PARSE_PER_USER_MAX = positiveIntegerFromEnv(
-  "AI_PARSE_PER_USER_MAX",
-  20,
-);
-const AI_PARSE_PER_USER_WINDOW_MS = positiveIntegerFromEnv(
+const AI_PARSE_PER_USER_MAX = parsePositiveIntegerEnv("AI_PARSE_PER_USER_MAX", 20);
+const AI_PARSE_PER_USER_WINDOW_MS = parsePositiveIntegerEnv(
   "AI_PARSE_PER_USER_WINDOW_MS",
   60 * 60 * 1000,
+  POSTGRES_INT_MAX,
 );
 
 export function createAiParsePerUserRateLimit(): RequestHandler {
@@ -284,16 +282,21 @@ export function createAiParsePerUserRateLimit(): RequestHandler {
 }
 
 // Per-user limiter for upload endpoints (folders, daily-logs, leads,
-// schedule, resources, etc.). Defaults to 100 uploads per hour per
-// identity — enough headroom for a normal day on site, low enough that
-// a stuck client loop can't fill object storage. Override via env.
-const UPLOAD_PER_USER_MAX = positiveIntegerFromEnv(
+// schedule, resources, etc.). Defaults to 2,500 uploads per 15 minutes per
+// identity. That leaves room for one-off bulk photo migrations while still
+// stopping runaway clients, and the shorter window gives clients a practical
+// retry target when they do hit the cap. Override via env.
+export const DEFAULT_UPLOAD_PER_USER_MAX = 2_500;
+export const DEFAULT_UPLOAD_PER_USER_WINDOW_MS = 15 * 60 * 1000;
+
+const UPLOAD_PER_USER_MAX = parsePositiveIntegerEnv(
   "UPLOAD_PER_USER_MAX",
-  100,
+  DEFAULT_UPLOAD_PER_USER_MAX,
 );
-const UPLOAD_PER_USER_WINDOW_MS = positiveIntegerFromEnv(
+const UPLOAD_PER_USER_WINDOW_MS = parsePositiveIntegerEnv(
   "UPLOAD_PER_USER_WINDOW_MS",
-  60 * 60 * 1000,
+  DEFAULT_UPLOAD_PER_USER_WINDOW_MS,
+  POSTGRES_INT_MAX,
 );
 
 export function createUploadPerUserRateLimit(): RequestHandler {
@@ -339,7 +342,8 @@ export async function clearRateLimitBucket(
 }
 
 export function createRateLimit(options: RateLimitOptions): RequestHandler {
-  assertValidRateLimitOptions(options);
+  assertPositiveInteger("rate limit max", options.max);
+  assertPositiveInteger("rate limit windowMs", options.windowMs, POSTGRES_INT_MAX);
   return (req: Request, res: Response, next: NextFunction) => {
     const key = options.resolveKey(req);
 

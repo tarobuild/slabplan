@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ScheduleSchedulePayloadSchemaPredecessorsItem } from "./scheduleSchedulePayloadSchemaPredecessorsItem";
+import type { ScheduleSchedulePayloadSchemaReminder } from "./scheduleSchedulePayloadSchemaReminder";
 
 /**
  * Request body for creating or updating a schedule item (`POST /jobs/{jobId}/schedule`, `PUT /schedule-items/{id}`). Hourly items require a `startTime`. Predecessors must be unique and may not point at the item being edited.
@@ -32,17 +33,17 @@ export interface ScheduleSchedulePayloadSchema {
    */
   endDate?: string | null;
   isHourly?: boolean;
-  /** @pattern ^\d{2}:\d{2}(:\d{2})?$ */
+  /** @pattern ^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$ */
   startTime?: string | null;
-  /** @pattern ^\d{2}:\d{2}(:\d{2})?$ */
+  /** @pattern ^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$ */
   endTime?: string | null;
   /**
    * @minimum 0
    * @maximum 100
    */
   progress?: number;
-  /** One of the configured reminder options (e.g. `none`, `1d`, `1h`). */
-  reminder?: string;
+  /** One of the configured reminder options (for example `none`, `1_hour_before`, or `1_day_before`). */
+  reminder?: ScheduleSchedulePayloadSchemaReminder;
   notes?: string | null;
   tags?: string[];
   predecessors?: ScheduleSchedulePayloadSchemaPredecessorsItem[];

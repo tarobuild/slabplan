@@ -9,6 +9,7 @@
   },
   "scripts": {
     "preinstall": "sh -c 'case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
+    "postinstall": "node scripts/patch-drizzle-errors.mjs",
     "build": "node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm run typecheck && node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm run build:web && node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm run build:api",
     "build:api": "pnpm --filter @workspace/api-server run build:server",
     "build:web": "pnpm --filter @workspace/cadstone run build",
@@ -23,6 +24,8 @@
   },
   "private": true,
   "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
     "knip": "^6.11.0",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"

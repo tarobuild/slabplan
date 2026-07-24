@@ -55,7 +55,6 @@ export const photoExtensions = [
   ".tif",
   ".tiff",
   ".bmp",
-  ".svg",
 ];
 export const videoExtensions = [...VIDEO_UPLOAD_EXTENSIONS];
 
@@ -154,6 +153,20 @@ const JOB_TEMPLATE_FOLDERS: Array<{
     uploadingPermissions: { admin: true, project_manager: true },
   },
   {
+    mediaType: "document",
+    title: "10. WARRANTY",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "11. SHOP DRAWINGS",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
     mediaType: "photo",
     title: "10. PICTURES",
     isGlobal: false,
@@ -167,7 +180,119 @@ const JOB_TEMPLATE_FOLDERS: Array<{
     viewingPermissions: { internal: true },
     uploadingPermissions: { admin: true, project_manager: true },
   },
+  {
+    mediaType: "document",
+    title: "CHECKLIST",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "MASA DESIGN BOOKLETS",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "PEDESTAL SAFETY",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
+  {
+    mediaType: "document",
+    title: "Pre-Sale Documents",
+    isGlobal: false,
+    viewingPermissions: { internal: true },
+    uploadingPermissions: { admin: true, project_manager: true },
+  },
 ];
+
+const FOLDER_LOOKUP_ALIASES: Record<string, string[]> = {
+  "5 prelim notice": ["5 prelim"],
+  "6 cois": ["6 coi", "6 coi s"],
+  "pre sale documents": ["presale documents", "pre-sale documents"],
+};
+
+export function normalizeFolderLookupKey(value: string): string {
+  const normalized = value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’‘`]/g, "'")
+    .replace(/&/g, " and ")
+    .replace(/['"]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  return normalized.replace(/^0+(\d+)(?=\s)/, "$1");
+}
+
+function folderLookupKeys(title: string): Set<string> {
+  const normalized = normalizeFolderLookupKey(title);
+  const keys = new Set<string>([normalized]);
+
+  for (const alias of FOLDER_LOOKUP_ALIASES[normalized] ?? []) {
+    keys.add(normalizeFolderLookupKey(alias));
+  }
+
+  for (const [canonical, aliases] of Object.entries(FOLDER_LOOKUP_ALIASES)) {
+    const normalizedAliases = aliases.map((alias) => normalizeFolderLookupKey(alias));
+    if (normalizedAliases.includes(normalized)) {
+      keys.add(canonical);
+      for (const alias of normalizedAliases) {
+        keys.add(alias);
+      }
+    }
+  }
+
+  return keys;
+}
+
+function folderNamesMatch(left: string, right: string): boolean {
+  const leftKeys = folderLookupKeys(left);
+  for (const key of folderLookupKeys(right)) {
+    if (leftKeys.has(key)) return true;
+  }
+  return false;
+}
+
+function parseFolderPathSegments(params: {
+  path?: string | null;
+  pathSegments?: string[] | null;
+}): string[] {
+  const rawSegments = params.pathSegments && params.pathSegments.length > 0
+    ? params.pathSegments
+    : typeof params.path === "string"
+      ? params.path.split("/")
+      : [];
+
+  const segments = rawSegments.map((segment) => segment.trim()).filter(Boolean);
+  if (segments.length === 0) {
+    throw new HttpError(
+      400,
+      "Folder path must include at least one segment.",
+      { code: "FOLDER_PATH_REQUIRED" },
+      "validation",
+    );
+  }
+
+  for (const segment of segments) {
+    if (segment === "." || segment === ".." || segment.includes("\0")) {
+      throw new HttpError(
+        400,
+        "Folder path contains an invalid segment.",
+        { code: "FOLDER_PATH_INVALID", segment },
+        "validation",
+      );
+    }
+  }
+
+  return segments;
+}
 
 function lowerExtension(fileName: string) {
   return extensionOf(fileName);
@@ -251,9 +376,12 @@ async function findRootSystemFolder(
   jobId: string | null,
   mediaType: string,
   title: string,
-  organizationId?: string | null,
+  options?: {
+    includeDeleted?: boolean;
+    organizationId?: string | null;
+  },
 ) {
-  const [folder] = await db
+  const rootFolders = await db
     .select()
     .from(folders)
     .where(
@@ -261,15 +389,17 @@ async function findRootSystemFolder(
         jobId ? eq(folders.jobId, jobId) : isNull(folders.jobId),
         eq(folders.scope, jobId ? "job" : "resource"),
         eq(folders.mediaType, mediaType),
-        eq(folders.title, title),
-        organizationId ? eq(folders.organizationId, organizationId) : undefined,
+        options?.organizationId
+          ? eq(folders.organizationId, options.organizationId)
+          : options?.organizationId === null
+            ? isNull(folders.organizationId)
+            : undefined,
         isNull(folders.parentFolderId),
-        isNull(folders.deletedAt),
+        ...(options?.includeDeleted ? [] : [isNull(folders.deletedAt)]),
       ),
-    )
-    .limit(1);
+    );
 
-  return folder ?? null;
+  return rootFolders.find((folder) => folderNamesMatch(folder.title, title)) ?? null;
 }
 
 export async function ensureSystemFolders(
@@ -285,7 +415,10 @@ export async function ensureSystemFolders(
   ];
 
   for (const value of values) {
-    const existing = await findRootSystemFolder(jobId, value.mediaType, value.title, job.organizationId);
+    const existing = await findRootSystemFolder(jobId, value.mediaType, value.title, {
+      includeDeleted: true,
+      organizationId: job.organizationId,
+    });
 
     if (!existing) {
       await db.insert(folders).values({
@@ -342,15 +475,51 @@ export async function getFileOrThrow(fileId: string, includeDeleted = false) {
   return file;
 }
 
+async function getFilesOrThrow(fileIds: readonly string[]) {
+  const uniqueIds = Array.from(new Set(fileIds));
+
+  if (uniqueIds.length === 0) {
+    throw new HttpError(400, "At least one file is required.");
+  }
+
+  const rows = await db
+    .select()
+    .from(files)
+    .where(and(inArray(files.id, uniqueIds), isNull(files.deletedAt)));
+  const rowById = new Map(rows.map((file) => [file.id, file]));
+  const missingFileId = uniqueIds.find((fileId) => !rowById.has(fileId));
+
+  if (missingFileId) {
+    throw new HttpError(404, "File not found.");
+  }
+
+  return uniqueIds.map((fileId) => rowById.get(fileId)!);
+}
+
+async function getFoldersForFilesOrThrow(fileBatch: readonly File[]) {
+  const folderIds = Array.from(new Set(fileBatch.map((file) => file.folderId)));
+
+  if (folderIds.length === 0) {
+    throw new HttpError(400, "At least one source folder is required.");
+  }
+
+  const rows = await db
+    .select()
+    .from(folders)
+    .where(and(inArray(folders.id, folderIds), isNull(folders.deletedAt)));
+  const rowById = new Map(rows.map((folder) => [folder.id, folder]));
+  const missingFolderId = folderIds.find((folderId) => !rowById.has(folderId));
+
+  if (missingFolderId) {
+    throw new HttpError(404, "Folder not found.");
+  }
+
+  return rowById;
+}
+
 function assertFolderEditable(folder: Folder) {
   if (folder.isGlobal) {
     throw new HttpError(400, "Global folders cannot be renamed, moved, or deleted.");
-  }
-}
-
-function assertNestedFolderAllowed(mediaType: string, parentFolderId: string | null) {
-  if (parentFolderId && mediaType !== "document") {
-    throw new HttpError(400, "Nested folders are only supported in Documents.");
   }
 }
 
@@ -408,6 +577,17 @@ function buildFolderPath(folderId: string, folderMap: Map<string, Folder>) {
   }
 
   return breadcrumb;
+}
+
+function buildFolderPathMetadata(folderId: string, folderMap: Map<string, Folder>) {
+  const breadcrumb = buildFolderPath(folderId, folderMap);
+  const pathSegments = breadcrumb.map((folder) => folder.title);
+
+  return {
+    pathSegments,
+    path: pathSegments.join("/"),
+    normalizedPath: pathSegments.map((segment) => normalizeFolderLookupKey(segment)).join("/"),
+  };
 }
 
 function collectDescendantFolderIds(rootFolderId: string, allFolders: Folder[]) {
@@ -577,7 +757,7 @@ export async function listFoldersForJob(params: {
   auth: AuthContext;
 }) {
   await ensureJobExists(params.jobId);
-  await ensureSystemFolders(params.jobId);
+  await ensureSystemFolders(params.jobId, { includeJobTemplates: true });
   return listFoldersForScope({
     jobId: params.jobId,
     mediaType: params.mediaType,
@@ -592,6 +772,10 @@ export async function listResourceFolders(params: {
   all: boolean;
   auth: AuthContext;
 }) {
+  if (params.auth.role === "drafter") {
+    throw new HttpError(403, "Drafters do not have access to resource files.");
+  }
+
   return listFoldersForScope({
     jobId: null,
     mediaType: "document",
@@ -667,9 +851,160 @@ async function listFoldersForScope(params: {
     breadcrumb: currentFolder ? buildFolderPath(currentFolder.id, folderMap) : [],
     folders: visibleFolders.map((folder) => ({
       ...folder,
+      ...buildFolderPathMetadata(folder.id, folderMap),
+      normalizedTitle: normalizeFolderLookupKey(folder.title),
       childFolderCount: childCountByFolderId.get(folder.id) ?? 0,
       fileCount: fileCountByFolderId.get(folder.id) ?? 0,
     })),
+  };
+}
+
+export async function listFolderTreeForJob(params: {
+  jobId: string;
+  mediaType: "document" | "photo" | "video" | null;
+  auth: AuthContext;
+}) {
+  await ensureJobExists(params.jobId);
+  await ensureSystemFolders(params.jobId, { includeJobTemplates: true });
+
+  const visibilityCondition = buildFolderVisibilityCondition(params.auth);
+  const mediaTypes = params.mediaType
+    ? [params.mediaType]
+    : (["document", "photo", "video"] as const);
+  const allFolders = await db
+    .select()
+    .from(folders)
+    .where(
+      and(
+        eq(folders.jobId, params.jobId),
+        eq(folders.scope, "job"),
+        inArray(folders.mediaType, [...mediaTypes]),
+        isNull(folders.deletedAt),
+        ...(visibilityCondition ? [visibilityCondition] : []),
+      ),
+    )
+    .orderBy(asc(folders.mediaType), asc(folders.title));
+
+  const folderMap = new Map(allFolders.map((folder) => [folder.id, folder]));
+  const filesForCounts = await getAllFilesForFolderIds(allFolders.map((folder) => folder.id));
+  const fileCountByFolderId = new Map<string, number>();
+  const childCountByFolderId = new Map<string, number>();
+
+  for (const file of filesForCounts) {
+    if (!file.folderId) continue;
+    fileCountByFolderId.set(file.folderId, (fileCountByFolderId.get(file.folderId) ?? 0) + 1);
+  }
+
+  for (const folder of allFolders) {
+    if (!folder.parentFolderId) continue;
+    childCountByFolderId.set(
+      folder.parentFolderId,
+      (childCountByFolderId.get(folder.parentFolderId) ?? 0) + 1,
+    );
+  }
+
+  return {
+    folders: allFolders.map((folder) => ({
+      ...folder,
+      ...buildFolderPathMetadata(folder.id, folderMap),
+      normalizedTitle: normalizeFolderLookupKey(folder.title),
+      childFolderCount: childCountByFolderId.get(folder.id) ?? 0,
+      fileCount: fileCountByFolderId.get(folder.id) ?? 0,
+    })),
+  };
+}
+
+export async function resolveJobFolderPath(params: {
+  jobId: string;
+  mediaType: "document" | "photo" | "video";
+  path?: string | null;
+  pathSegments?: string[] | null;
+  createIfMissing: boolean;
+  userId: string;
+}) {
+  const requestedSegments = parseFolderPathSegments({
+    path: params.path,
+    pathSegments: params.pathSegments,
+  });
+
+  await ensureJobExists(params.jobId);
+  await ensureSystemFolders(params.jobId, { includeJobTemplates: true });
+
+  let allFolders = await getAllFoldersForJob(params.jobId, params.mediaType);
+  const createdFolders: Folder[] = [];
+  let parentFolderId: string | null = null;
+  let matchedBy: "exact" | "normalized" | "created" = "exact";
+  let currentFolder: Folder | null = null;
+
+  for (const [index, requestedSegment] of requestedSegments.entries()) {
+    const sibling = allFolders.find((folder) => {
+      if ((folder.parentFolderId ?? null) !== parentFolderId) return false;
+      return folderNamesMatch(folder.title, requestedSegment);
+    });
+
+    if (sibling) {
+      if (sibling.title !== requestedSegment) {
+        matchedBy = matchedBy === "created" ? "created" : "normalized";
+      }
+      currentFolder = sibling;
+      parentFolderId = sibling.id;
+      continue;
+    }
+
+    if (!params.createIfMissing) {
+      const searchedPath = requestedSegments.slice(0, index + 1).join("/");
+      throw new HttpError(
+        404,
+        `No CADsystems folder id for path "${searchedPath}".`,
+        {
+          code: "FOLDER_PATH_NOT_FOUND",
+          segment: requestedSegment,
+          normalizedSegment: normalizeFolderLookupKey(requestedSegment),
+          path: requestedSegments.join("/"),
+          mediaType: params.mediaType,
+          createIfMissingSupported: true,
+        },
+        "not-found",
+      );
+    }
+
+    const created = await createFolder({
+      jobId: params.jobId,
+      mediaType: params.mediaType,
+      parentFolderId,
+      title: requestedSegment,
+      userId: params.userId,
+    });
+    createdFolders.push(created);
+    allFolders = [...allFolders, created];
+    currentFolder = created;
+    parentFolderId = created.id;
+    matchedBy = "created";
+  }
+
+  if (!currentFolder) {
+    throw new HttpError(
+      404,
+      "Folder not found.",
+      { code: "FOLDER_PATH_NOT_FOUND", mediaType: params.mediaType },
+      "not-found",
+    );
+  }
+
+  const folderMap = new Map(allFolders.map((folder) => [folder.id, folder]));
+  const breadcrumb = buildFolderPath(currentFolder.id, folderMap);
+
+  return {
+    folder: {
+      ...currentFolder,
+      ...buildFolderPathMetadata(currentFolder.id, folderMap),
+      normalizedTitle: normalizeFolderLookupKey(currentFolder.title),
+    },
+    breadcrumb,
+    createdFolders,
+    matchedBy,
+    requestedPath: requestedSegments.join("/"),
+    normalizedRequestedPath: requestedSegments.map((segment) => normalizeFolderLookupKey(segment)).join("/"),
   };
 }
 
@@ -916,6 +1251,136 @@ async function annotateFilesWithStorageStatus<T extends { fileUrl: string | null
   }));
 }
 
+export const duplicateActionValues = ["keep_both", "skip_exact", "fail_on_conflict"] as const;
+export type DuplicateAction = (typeof duplicateActionValues)[number];
+export type DuplicateDetectionStatus =
+  | "none"
+  | "already_exists_exact_match"
+  | "name_conflict_different_content"
+  | "duplicate_possible_manual_review";
+
+function normalizeContentHash(value: string | null | undefined): string | null {
+  const trimmed = value?.trim().toLowerCase() ?? "";
+  return /^[a-f0-9]{64}$/.test(trimmed) ? trimmed : null;
+}
+
+function normalizeDuplicateFilename(value: string): string {
+  return value.normalize("NFKC").trim().toLowerCase();
+}
+
+type DuplicateMatch = {
+  id: string;
+  folderId: string;
+  originalName: string;
+  filename: string;
+  fileSize: number | null;
+  contentHash: string | null;
+  mimeType: string | null;
+  uploadedBy: string | null;
+  uploadedByName: string | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  matchReason: "name" | "checksum" | "name_and_size" | "name_and_checksum";
+};
+
+export async function detectFileDuplicate(params: {
+  folderId: string;
+  originalName: string;
+  fileSize: number | null | undefined;
+  contentHash?: string | null;
+}) {
+  const normalizedName = normalizeDuplicateFilename(params.originalName);
+  const normalizedHash = normalizeContentHash(params.contentHash);
+  const fileSize = typeof params.fileSize === "number" && Number.isFinite(params.fileSize)
+    ? params.fileSize
+    : null;
+
+  const rows = await db
+    .select({
+      id: files.id,
+      folderId: files.folderId,
+      originalName: files.originalName,
+      filename: files.filename,
+      fileSize: files.fileSize,
+      contentHash: files.contentHash,
+      mimeType: files.mimeType,
+      uploadedBy: files.uploadedBy,
+      uploadedByName: users.fullName,
+      createdAt: files.createdAt,
+      updatedAt: files.updatedAt,
+    })
+    .from(files)
+    .leftJoin(users, eq(files.uploadedBy, users.id))
+    .where(
+      and(
+        eq(files.folderId, params.folderId),
+        isNull(files.deletedAt),
+        sql`(lower(trim(${files.originalName})) = ${normalizedName} or (${normalizedHash}::text is not null and ${files.contentHash} = ${normalizedHash}))`,
+      ),
+    )
+    .orderBy(desc(files.createdAt));
+
+  const matches = rows.map((row): DuplicateMatch => {
+    const sameName = normalizeDuplicateFilename(row.originalName) === normalizedName;
+    const sameSize = fileSize !== null && row.fileSize === fileSize;
+    const sameHash = normalizedHash !== null && row.contentHash === normalizedHash;
+    const matchReason =
+      sameName && sameHash
+        ? "name_and_checksum"
+        : sameName && sameSize
+          ? "name_and_size"
+          : sameHash
+            ? "checksum"
+            : "name";
+
+    return {
+      ...row,
+      contentHash: row.contentHash ?? null,
+      matchReason,
+    };
+  });
+
+  const exactMatches = matches.filter((match) => {
+    if (normalizedHash && match.contentHash === normalizedHash) return true;
+    return false;
+  });
+
+  const nameMatches = matches.filter(
+    (match) => normalizeDuplicateFilename(match.originalName) === normalizedName,
+  );
+  const nameConflicts = nameMatches.filter((match) => {
+    if (fileSize !== null && match.fileSize !== null && match.fileSize !== fileSize) return true;
+    if (normalizedHash && match.contentHash && match.contentHash !== normalizedHash) return true;
+    return false;
+  });
+  const possibleMatches = nameMatches.filter((match) => {
+    if (exactMatches.some((exact) => exact.id === match.id)) return false;
+    if (nameConflicts.some((conflict) => conflict.id === match.id)) return false;
+    return fileSize === null || match.fileSize === fileSize;
+  });
+
+  const status: DuplicateDetectionStatus =
+    exactMatches.length > 0
+      ? "already_exists_exact_match"
+      : nameConflicts.length > 0
+        ? "name_conflict_different_content"
+        : possibleMatches.length > 0
+          ? "duplicate_possible_manual_review"
+          : "none";
+
+  return {
+    status,
+    matches,
+    criteria: {
+      filename: params.originalName,
+      normalizedFilename: normalizedName,
+      size: fileSize,
+      checksum: normalizedHash,
+      checksumAvailable: normalizedHash !== null,
+    },
+  };
+}
+
 export async function createFolder(params: {
   jobId: string;
   parentFolderId: string | null;
@@ -924,8 +1389,7 @@ export async function createFolder(params: {
   userId: string;
 }) {
   const job = await ensureJobExists(params.jobId);
-  await ensureSystemFolders(params.jobId);
-  assertNestedFolderAllowed(params.mediaType, params.parentFolderId);
+  await ensureSystemFolders(params.jobId, { includeJobTemplates: true });
 
   if (params.parentFolderId) {
     const parentFolder = await getFolderOrThrow(params.parentFolderId);
@@ -1073,7 +1537,6 @@ export async function moveFolder(params: {
 }) {
   const folder = await getFolderOrThrow(params.folderId);
   assertFolderEditable(folder);
-  assertNestedFolderAllowed(folder.mediaType, params.destinationFolderId);
 
   if (params.destinationFolderId) {
     const destination = await getFolderOrThrow(params.destinationFolderId);
@@ -1186,8 +1649,11 @@ export async function copyFolder(params: {
         originalName: currentFile.originalName,
         fileUrl: currentFile.fileUrl,
         fileSize: currentFile.fileSize,
+        contentHash: currentFile.contentHash,
         mimeType: currentFile.mimeType,
+        note: currentFile.note,
         uploadedBy: currentFile.uploadedBy,
+        durationSeconds: currentFile.durationSeconds,
       });
     }
   });
@@ -1370,6 +1836,7 @@ export async function saveUploadedFiles(params: {
   userId: string;
   uploadedFiles: Express.Multer.File[];
   note?: string | null;
+  duplicateAction?: DuplicateAction;
   // Per-file video durations in whole seconds, indexed in lockstep with
   // `uploadedFiles`. The client probes these via an off-DOM <video> at
   // selection time (Task #368). Entries may be null for non-video files
@@ -1384,9 +1851,49 @@ export async function saveUploadedFiles(params: {
   }
 
   const created: File[] = [];
+  const uploadResults: Array<{
+    originalName: string;
+    status: "uploaded" | "skipped_exact_duplicate";
+    fileId: string | null;
+    duplicate: Awaited<ReturnType<typeof detectFileDuplicate>>;
+  }> = [];
 
   for (const [index, uploadedFile] of params.uploadedFiles.entries()) {
     validateUploadForMediaType(folder.mediaType, uploadedFile);
+    const contentHash = normalizeContentHash(uploadedFile.contentHash ?? null);
+    const duplicate = await detectFileDuplicate({
+      folderId: folder.id,
+      originalName: uploadedFile.originalname,
+      fileSize: uploadedFile.size,
+      contentHash,
+    });
+
+    if (
+      params.duplicateAction === "fail_on_conflict" &&
+      duplicate.status === "name_conflict_different_content"
+    ) {
+      await cleanupTempUpload(uploadedFile);
+      throw new HttpError(
+        409,
+        `A different file named "${uploadedFile.originalname}" already exists in this folder.`,
+        { code: "NAME_CONFLICT_DIFFERENT_CONTENT", duplicate },
+        "conflict",
+      );
+    }
+
+    if (
+      params.duplicateAction === "skip_exact" &&
+      duplicate.status === "already_exists_exact_match"
+    ) {
+      await cleanupTempUpload(uploadedFile);
+      uploadResults.push({
+        originalName: uploadedFile.originalname,
+        status: "skipped_exact_duplicate",
+        fileId: null,
+        duplicate,
+      });
+      continue;
+    }
 
     const storedName = buildStoredFileName(uploadedFile.originalname);
     const { fileUrl } = buildUploadPath({
@@ -1433,6 +1940,7 @@ export async function saveUploadedFiles(params: {
             originalName: uploadedFile.originalname,
             fileUrl,
             fileSize: uploadedFile.size,
+            contentHash,
             mimeType: uploadedFile.mimetype,
             note: params.note ?? null,
             uploadedBy: params.userId,
@@ -1466,11 +1974,18 @@ export async function saveUploadedFiles(params: {
     }, folder.jobId);
 
     created.push(file);
+    uploadResults.push({
+      originalName: uploadedFile.originalname,
+      status: "uploaded",
+      fileId: file.id,
+      duplicate,
+    });
   }
 
   return {
     folder,
     files: created,
+    uploadResults,
   };
 }
 
@@ -1507,14 +2022,14 @@ export async function renameFile(params: {
   return updated;
 }
 
-export async function moveFile(params: {
-  fileId: string;
-  destinationFolderId: string;
-  userId: string;
-}) {
-  const file = await getFileOrThrow(params.fileId);
-  const sourceFolder = await getFolderOrThrow(file.folderId!);
-  const destination = await getFolderOrThrow(params.destinationFolderId);
+function assertFileDestinationMatchesSource(
+  sourceFolder: Folder,
+  destination: Folder,
+  options: { rejectSameFolder?: boolean } = {},
+) {
+  if (options.rejectSameFolder && destination.id === sourceFolder.id) {
+    throw new HttpError(400, "Destination folder must be different from the source folder.");
+  }
 
   if (
     destination.jobId !== sourceFolder.jobId ||
@@ -1553,6 +2068,37 @@ export async function moveFile(params: {
       "Destination folder must belong to the same schedule item as the source folder.",
     );
   }
+}
+
+function assertBatchDestinationMatchesSources(params: {
+  fileBatch: readonly File[];
+  sourceFoldersById: Map<string, Folder>;
+  destination: Folder;
+  rejectSameFolder?: boolean;
+}) {
+  for (const file of params.fileBatch) {
+    const sourceFolder = params.sourceFoldersById.get(file.folderId);
+
+    if (!sourceFolder) {
+      throw new HttpError(404, "Folder not found.");
+    }
+
+    assertFileDestinationMatchesSource(sourceFolder, params.destination, {
+      rejectSameFolder: params.rejectSameFolder,
+    });
+  }
+}
+
+export async function moveFile(params: {
+  fileId: string;
+  destinationFolderId: string;
+  userId: string;
+}) {
+  const file = await getFileOrThrow(params.fileId);
+  const sourceFolder = await getFolderOrThrow(file.folderId!);
+  const destination = await getFolderOrThrow(params.destinationFolderId);
+
+  assertFileDestinationMatchesSource(sourceFolder, destination);
 
   const [updated] = await db
     .update(files)
@@ -1576,6 +2122,119 @@ export async function moveFile(params: {
   });
 
   return updated;
+}
+
+export async function moveFiles(params: {
+  fileIds: string[];
+  destinationFolderId: string;
+  userId: string;
+}) {
+  const fileBatch = await getFilesOrThrow(params.fileIds);
+  const sourceFoldersById = await getFoldersForFilesOrThrow(fileBatch);
+  const destination = await getFolderOrThrow(params.destinationFolderId);
+
+  assertBatchDestinationMatchesSources({
+    fileBatch,
+    sourceFoldersById,
+    destination,
+    rejectSameFolder: true,
+  });
+
+  const movedAt = new Date();
+  const updatedRows = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(files)
+      .set({
+        folderId: destination.id,
+        updatedAt: movedAt,
+      })
+      .where(and(inArray(files.id, fileBatch.map((file) => file.id)), isNull(files.deletedAt)))
+      .returning();
+
+    if (rows.length !== fileBatch.length) {
+      throw new HttpError(409, "One or more selected files changed before the batch move completed.");
+    }
+
+    return rows;
+  });
+  const updatedById = new Map(updatedRows.map((file) => [file.id, file]));
+  const updated = fileBatch.map((file) => updatedById.get(file.id)).filter((file): file is File => !!file);
+
+  for (const file of updated) {
+    await writeActivity({
+      entityType: "file",
+      entityId: file.id,
+      action: "moved",
+      userId: params.userId,
+      jobId: destination.jobId ?? null,
+      mediaType: destination.mediaType,
+      folderId: destination.id,
+      fileId: file.id,
+      description: `Moved ${file.originalName} to ${destination.title}`,
+      extra: { batchAction: "move", batchSize: updated.length },
+    });
+  }
+
+  return updated;
+}
+
+export async function copyFiles(params: {
+  fileIds: string[];
+  destinationFolderId: string;
+  userId: string;
+}) {
+  const fileBatch = await getFilesOrThrow(params.fileIds);
+  const sourceFoldersById = await getFoldersForFilesOrThrow(fileBatch);
+  const destination = await getFolderOrThrow(params.destinationFolderId);
+
+  assertBatchDestinationMatchesSources({
+    fileBatch,
+    sourceFoldersById,
+    destination,
+    rejectSameFolder: true,
+  });
+
+  const createdRows = await db.transaction(async (tx) => {
+    const created: File[] = [];
+
+    for (const file of fileBatch) {
+      const [copied] = await tx
+        .insert(files)
+        .values({
+          folderId: destination.id,
+          filename: file.filename,
+          originalName: file.originalName,
+          fileUrl: file.fileUrl,
+          fileSize: file.fileSize,
+          contentHash: file.contentHash,
+          mimeType: file.mimeType,
+          note: file.note,
+          uploadedBy: file.uploadedBy,
+          durationSeconds: file.durationSeconds,
+        })
+        .returning();
+      created.push(copied);
+    }
+
+    return created;
+  });
+
+  for (const file of createdRows) {
+    await writeActivity({
+      entityType: "file",
+      entityId: file.id,
+      action: "copied",
+      userId: params.userId,
+      jobId: destination.jobId ?? null,
+      mediaType: destination.mediaType,
+      folderId: destination.id,
+      fileId: file.id,
+      description: `Copied ${file.originalName} to ${destination.title}`,
+      extra: { batchAction: "copy", batchSize: createdRows.length },
+    });
+  }
+
+  return createdRows;
 }
 
 export async function softDeleteFile(params: {
@@ -1603,6 +2262,50 @@ export async function softDeleteFile(params: {
     fileId: file.id,
     description: `Moved ${file.originalName} to trash`,
   });
+}
+
+export async function softDeleteFiles(params: {
+  fileIds: string[];
+  userId: string;
+}) {
+  const fileBatch = await getFilesOrThrow(params.fileIds);
+  const sourceFoldersById = await getFoldersForFilesOrThrow(fileBatch);
+  const deletedAt = new Date();
+
+  const updatedRows = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(files)
+      .set({ deletedAt, updatedAt: deletedAt })
+      .where(and(inArray(files.id, fileBatch.map((file) => file.id)), isNull(files.deletedAt)))
+      .returning();
+
+    if (rows.length !== fileBatch.length) {
+      throw new HttpError(409, "One or more selected files changed before the batch delete completed.");
+    }
+
+    return rows;
+  });
+  const deletedById = new Map(updatedRows.map((file) => [file.id, file]));
+  const deleted = fileBatch.map((file) => deletedById.get(file.id)).filter((file): file is File => !!file);
+
+  for (const file of deleted) {
+    const folder = sourceFoldersById.get(file.folderId);
+
+    await writeActivity({
+      entityType: "file",
+      entityId: file.id,
+      action: "deleted",
+      userId: params.userId,
+      jobId: folder?.jobId ?? null,
+      mediaType: folder?.mediaType,
+      folderId: folder?.id,
+      fileId: file.id,
+      description: `Moved ${file.originalName} to trash`,
+      extra: { batchAction: "delete", batchSize: deleted.length },
+    });
+  }
+
+  return deleted;
 }
 
 export async function restoreFile(params: {
@@ -1790,6 +2493,7 @@ export async function getActivityEntries(params: {
   allowedJobIds?: string[] | null;
   allowedLeadIds?: string[] | null;
   page?: number;
+  pageSize?: number;
   limit?: number;
   cursor?: { createdAt: string; id: string } | null;
   isCursorMode?: boolean;
@@ -1862,9 +2566,40 @@ export async function getActivityEntries(params: {
     }
   }
 
-  const limit = params.limit ?? 50;
   const cursor = params.cursor ?? null;
   const isCursorMode = params.isCursorMode === true || cursor !== null;
+  const limit = isCursorMode
+    ? (params.limit ?? 50)
+    : (params.pageSize ?? params.limit ?? 50);
+  const rawBatchLimit = Math.max(limit * 2, 100);
+  type ActivityFeedRow = {
+    id: string;
+    entityType: string;
+    entityId: string;
+    action: string;
+    metadata: unknown;
+    description: string | null;
+    createdAt: Date;
+    userName: string | null;
+  };
+  const selectRows = (whereClause: SQL | undefined, rowLimit: number, rowOffset: number) =>
+    db
+      .select({
+        id: activityLog.id,
+        entityType: activityLog.entityType,
+        entityId: activityLog.entityId,
+        action: activityLog.action,
+        metadata: activityLog.metadata,
+        description: metadataDescription,
+        createdAt: activityLog.createdAt,
+        userName: users.fullName,
+      })
+      .from(activityLog)
+      .leftJoin(users, eq(activityLog.userId, users.id))
+      .where(whereClause)
+      .orderBy(desc(activityLog.createdAt), desc(activityLog.id))
+      .limit(rowLimit)
+      .offset(rowOffset);
 
   if (isCursorMode) {
     // Cursor mode: skip the costly COUNT and fetch limit+1 to detect the next
@@ -1883,36 +2618,27 @@ export async function getActivityEntries(params: {
     }
 
     const whereClauseCursor = and(...conditions);
-    const fetchLimit = limit + 1;
+    const visibleRows: ActivityFeedRow[] = [];
+    let rawOffset = 0;
 
-    const rows = await db
-      .select({
-        id: activityLog.id,
-        entityType: activityLog.entityType,
-        entityId: activityLog.entityId,
-        action: activityLog.action,
-        metadata: activityLog.metadata,
-        description: metadataDescription,
-        createdAt: activityLog.createdAt,
-        userName: users.fullName,
-      })
-      .from(activityLog)
-      .leftJoin(users, eq(activityLog.userId, users.id))
-      .where(whereClauseCursor)
-      .orderBy(desc(activityLog.createdAt), desc(activityLog.id))
-      .limit(fetchLimit);
+    while (visibleRows.length <= limit) {
+      const rows = await selectRows(whereClauseCursor, rawBatchLimit, rawOffset);
+      if (rows.length === 0) break;
 
-    const hasMore = rows.length > limit;
-    const trimmed = hasMore ? rows.slice(0, limit) : rows;
+      visibleRows.push(...(await redactActivityRowsForAuth(rows, params.auth)));
+      rawOffset += rows.length;
+      if (rows.length < rawBatchLimit) break;
+    }
+
+    const hasMore = visibleRows.length > limit;
+    const trimmed = hasMore ? visibleRows.slice(0, limit) : visibleRows;
     const last = trimmed[trimmed.length - 1];
     const nextCursorPayload = hasMore && last
       ? { createdAt: last.createdAt.toISOString(), id: last.id }
       : null;
 
-    const data = await redactActivityRowsForAuth(trimmed, params.auth);
-
     return {
-      data,
+      data: trimmed,
       pagination: {
         limit,
         hasMore,
@@ -1923,41 +2649,32 @@ export async function getActivityEntries(params: {
 
   const whereClause = and(...conditions);
   const page = params.page ?? 1;
-  const offset = (page - 1) * limit;
+  const visibleOffset = (page - 1) * limit;
+  const data: ActivityFeedRow[] = [];
+  let totalItems = 0;
+  let rawOffset = 0;
 
-  const [totalRow] = await db
-    .select({
-      total: count(),
-    })
-    .from(activityLog)
-    .where(whereClause);
+  while (true) {
+    const rows = await selectRows(whereClause, rawBatchLimit, rawOffset);
+    if (rows.length === 0) break;
 
-  const rows = await db
-    .select({
-      id: activityLog.id,
-      entityType: activityLog.entityType,
-      entityId: activityLog.entityId,
-      action: activityLog.action,
-      metadata: activityLog.metadata,
-      description: metadataDescription,
-      createdAt: activityLog.createdAt,
-      userName: users.fullName,
-    })
-    .from(activityLog)
-    .leftJoin(users, eq(activityLog.userId, users.id))
-    .where(whereClause)
-    .orderBy(desc(activityLog.createdAt), desc(activityLog.id))
-    .limit(limit)
-    .offset(offset);
+    const visibleRows = await redactActivityRowsForAuth(rows, params.auth);
+    for (const row of visibleRows) {
+      if (totalItems >= visibleOffset && data.length < limit) {
+        data.push(row);
+      }
+      totalItems += 1;
+    }
 
-  const totalItems = totalRow?.total ?? 0;
-
-  const data = await redactActivityRowsForAuth(rows, params.auth);
+    rawOffset += rows.length;
+    if (rows.length < rawBatchLimit) break;
+  }
 
   return {
     data,
     pagination: {
       page,
+      pageSize: limit,
       limit,
       total: totalItems,
       totalItems,
@@ -2042,6 +2759,68 @@ export async function collectFolderZipEntries(params: {
   return { rootTitle: safeZipPathComponent(folder.title, "folder"), entries };
 }
 
+function uniqueZipEntryName(fileName: string, seenNames: Map<string, number>) {
+  const normalized = fileName.toLowerCase();
+  const currentCount = seenNames.get(normalized) ?? 0;
+
+  if (currentCount === 0) {
+    seenNames.set(normalized, 1);
+    return fileName;
+  }
+
+  const extension = path.posix.extname(fileName);
+  const baseName = extension ? fileName.slice(0, -extension.length) : fileName;
+  let nextCount = currentCount + 1;
+  let nextName = `${baseName} (${nextCount})${extension}`;
+
+  while (seenNames.has(nextName.toLowerCase())) {
+    nextCount += 1;
+    nextName = `${baseName} (${nextCount})${extension}`;
+  }
+
+  seenNames.set(normalized, nextCount);
+  seenNames.set(nextName.toLowerCase(), 1);
+  return nextName;
+}
+
+export async function collectSelectedFileZipEntries(params: {
+  fileIds: string[];
+}): Promise<{
+  rootTitle: string;
+  entries: Array<{ fileId: string; fileUrl: string; zipName: string }>;
+}> {
+  const fileBatch = await getFilesOrThrow(params.fileIds);
+  const rootTitle = "Selected Files";
+  const seenNames = new Map<string, number>();
+  const entries: Array<{ fileId: string; fileUrl: string; zipName: string }> = [];
+
+  for (const file of fileBatch) {
+    if (!file.fileUrl) {
+      continue;
+    }
+
+    const safeName = safeZipPathComponent(file.originalName, "file");
+    const zipName = path.posix.join(rootTitle, uniqueZipEntryName(safeName, seenNames));
+    entries.push({ fileId: file.id, fileUrl: file.fileUrl, zipName });
+  }
+
+  return { rootTitle, entries };
+}
+
+function configureArchiveResponse(params: {
+  res: Response;
+  filename: string;
+}) {
+  params.res.attachment(params.filename);
+  // Same safe-header bundle that `streamStoredFileToResponse` applies to
+  // single-file downloads. ZIPs are inert by themselves, but the headers
+  // keep us consistent across every file-serving response and stop a
+  // browser from second-guessing the type if one ever swaps the
+  // content-type sniff to "look at the bytes".
+  params.res.setHeader("X-Content-Type-Options", "nosniff");
+  params.res.setHeader("Content-Security-Policy", FILE_RESPONSE_CSP);
+}
+
 export async function streamFolderZip(params: {
   folderId: string;
   res: Response;
@@ -2052,14 +2831,7 @@ export async function streamFolderZip(params: {
     auth: params.auth,
   });
 
-  params.res.attachment(`${rootTitle}.zip`);
-  // Same safe-header bundle that `streamStoredFileToResponse` applies to
-  // single-file downloads. ZIPs are inert by themselves, but the headers
-  // keep us consistent across every file-serving response and stop a
-  // browser from second-guessing the type if one ever swaps the
-  // content-type sniff to "look at the bytes".
-  params.res.setHeader("X-Content-Type-Options", "nosniff");
-  params.res.setHeader("Content-Security-Policy", FILE_RESPONSE_CSP);
+  configureArchiveResponse({ res: params.res, filename: `${rootTitle}.zip` });
 
   const archive = archiver("zip", {
     zlib: { level: 9 },
@@ -2067,6 +2839,50 @@ export async function streamFolderZip(params: {
 
   archive.on("error", (error: Error) => {
     logger.error({ err: error, folderId: params.folderId }, "Failed to stream folder archive");
+
+    if (!params.res.headersSent) {
+      params.res.status(500).end();
+      return;
+    }
+
+    params.res.destroy(error);
+  });
+
+  archive.pipe(params.res);
+
+  if (entries.length === 0) {
+    archive.append("", { name: `${rootTitle}/` });
+  }
+
+  for (const entry of entries) {
+    if (!(await storedFileExists(entry.fileUrl))) {
+      continue;
+    }
+
+    archive.append(await openStoredFileReadStream(entry.fileUrl), {
+      name: entry.zipName,
+    });
+  }
+
+  await archive.finalize();
+}
+
+export async function streamSelectedFilesZip(params: {
+  fileIds: string[];
+  res: Response;
+}) {
+  const { rootTitle, entries } = await collectSelectedFileZipEntries({
+    fileIds: params.fileIds,
+  });
+
+  configureArchiveResponse({ res: params.res, filename: `${rootTitle}.zip` });
+
+  const archive = archiver("zip", {
+    zlib: { level: 9 },
+  });
+
+  archive.on("error", (error: Error) => {
+    logger.error({ err: error, fileIds: params.fileIds }, "Failed to stream selected file archive");
 
     if (!params.res.headersSent) {
       params.res.status(500).end();

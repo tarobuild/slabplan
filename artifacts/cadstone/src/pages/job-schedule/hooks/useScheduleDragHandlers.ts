@@ -34,9 +34,38 @@ interface UseScheduleDragHandlersOptions {
   workdayExceptions: ScheduleWorkdayException[]
   dayWidth: number
   scheduleOffline: boolean
-  canWrite: boolean
   refreshScheduleData: () => Promise<void>
   openQuickCreate: (startDate: string, startTime?: string, endTime?: string) => void
+}
+
+export function isScheduleBlockDraggable(
+  item: ScheduleItemRecord,
+  scheduleOffline: boolean,
+) {
+  if (scheduleOffline) {
+    return false
+  }
+  if (isDraftScheduleItemId(item.id)) {
+    return false
+  }
+  if (!item.isHourly) {
+    return false
+  }
+  if (!item.startTime || !item.endTime) {
+    return false
+  }
+  if (itemEndDate(item) !== item.startDate) {
+    return false
+  }
+  const start = timeStringToGridMinutes(item.startTime)
+  const end = timeStringToGridMinutes(item.endTime)
+  if (start === null || end === null) {
+    return false
+  }
+  if (start < 0 || end > TIMED_GRID_TOTAL_MINUTES || end <= start) {
+    return false
+  }
+  return true
 }
 
 export function useScheduleDragHandlers({
@@ -46,7 +75,6 @@ export function useScheduleDragHandlers({
   workdayExceptions,
   dayWidth,
   scheduleOffline,
-  canWrite,
   refreshScheduleData,
   openQuickCreate,
 }: UseScheduleDragHandlersOptions) {
@@ -62,9 +90,6 @@ export function useScheduleDragHandlers({
   const undoGanttDragToastIdRef = useRef<string | number | null>(null)
 
   function openHourBlockFromMinutes(dayKey: string, anchorMinutes: number) {
-    if (!canWrite) {
-      return
-    }
     const hour = Math.min(DAY_END_HOUR, Math.floor(anchorMinutes / 60) + DAY_START_HOUR)
     const startTime = `${String(hour).padStart(2, "0")}:00`
     const endTime = `${String(Math.min(hour + 1, DAY_END_HOUR + 1)).padStart(2, "0")}:00`
@@ -72,9 +97,6 @@ export function useScheduleDragHandlers({
   }
 
   function commitTimedSelection(dragState: DragSelection) {
-    if (!canWrite) {
-      return
-    }
     const dayKey = dragState.dayKey
     if (!dragState.moved) {
       openHourBlockFromMinutes(dayKey, dragState.anchorMinutes)
@@ -92,27 +114,7 @@ export function useScheduleDragHandlers({
   }
 
   function isBlockDraggable(item: ScheduleItemRecord) {
-    if (!canWrite) {
-      return false
-    }
-    if (!item.isHourly) {
-      return false
-    }
-    if (!item.startTime || !item.endTime) {
-      return false
-    }
-    if (itemEndDate(item) !== item.startDate) {
-      return false
-    }
-    const start = timeStringToGridMinutes(item.startTime)
-    const end = timeStringToGridMinutes(item.endTime)
-    if (start === null || end === null) {
-      return false
-    }
-    if (start < 0 || end > TIMED_GRID_TOTAL_MINUTES || end <= start) {
-      return false
-    }
-    return true
+    return isScheduleBlockDraggable(item, scheduleOffline)
   }
 
   function dismissUndoBlockDragToast() {
@@ -174,6 +176,9 @@ export function useScheduleDragHandlers({
   async function commitBlockDrag(drag: BlockDrag) {
     const target = items.find((entry) => entry.id === drag.itemId)
     if (!target) {
+      return
+    }
+    if (!isScheduleBlockDraggable(target, scheduleOffline)) {
       return
     }
     const newStartTime = minutesToTimeString(drag.startMinutes)
@@ -257,9 +262,6 @@ export function useScheduleDragHandlers({
   }
 
   function isGanttBarDraggable(item: ScheduleItemRecord) {
-    if (!canWrite) {
-      return false
-    }
     if (scheduleOffline) {
       return false
     }
@@ -428,9 +430,6 @@ export function useScheduleDragHandlers({
   }
 
   function handleTimedColumnPointerDown(event: React.PointerEvent<HTMLDivElement>, dayKey: string) {
-    if (!canWrite) {
-      return
-    }
     if (event.button !== 0) {
       return
     }

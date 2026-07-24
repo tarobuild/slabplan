@@ -22,6 +22,8 @@ const logCount = 12;
 const dailyLogIds: string[] = Array.from({ length: logCount }, () =>
   crypto.randomUUID(),
 );
+const activeCommentId = crypto.randomUUID();
+const deletedCommentId = crypto.randomUUID();
 
 function dayFor(i: number) {
   // Distinct dates within a single month so logDate is a unique sort key.
@@ -56,7 +58,7 @@ before(async () => {
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
   const { db } = await import("@workspace/db");
-  const { users, jobs, dailyLogs, dailyLogTags } = await import(
+  const { users, jobs, dailyLogs, dailyLogComments, dailyLogTags } = await import(
     "@workspace/db/schema"
   );
 
@@ -112,6 +114,22 @@ before(async () => {
     })),
   );
 
+  await db.insert(dailyLogComments).values([
+    {
+      id: activeCommentId,
+      dailyLogId: dailyLogIds[0],
+      createdBy: adminUserId,
+      body: "Visible feed comment",
+    },
+    {
+      id: deletedCommentId,
+      dailyLogId: dailyLogIds[1],
+      createdBy: adminUserId,
+      body: "Deleted-only feed comment",
+      deletedAt: new Date(baseTime + 1000),
+    },
+  ]);
+
   adminToken = auth.signAccessToken({
     id: adminUserId,
     email: adminEmail,
@@ -133,12 +151,15 @@ before(async () => {
 
 after(async () => {
   const { db, pool } = await import("@workspace/db");
-  const { users, jobs, dailyLogs, dailyLogTags } = await import(
+  const { users, jobs, dailyLogs, dailyLogComments, dailyLogTags } = await import(
     "@workspace/db/schema"
   );
   const { inArray, eq } = await import("drizzle-orm");
 
   try {
+    await db
+      .delete(dailyLogComments)
+      .where(inArray(dailyLogComments.id, [activeCommentId, deletedCommentId]));
     await db
       .delete(dailyLogTags)
       .where(inArray(dailyLogTags.dailyLogId, dailyLogIds));
@@ -167,6 +188,14 @@ type CursorPage = {
     shareClient?: boolean;
   }>;
   pagination: { limit: number; hasMore: boolean; nextCursor: string | null };
+};
+
+type FeedPage = {
+  logs: Array<{
+    id: string;
+    commentsCount: number;
+  }>;
+  pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };
 };
 
 async function fetchPage(
@@ -217,6 +246,23 @@ async function fetchSeededLogs(params: Record<string, string | string[]> = {}) {
     cursor = page.pagination.hasMore ? page.pagination.nextCursor : null;
   }
   return collected;
+}
+
+async function fetchFeedPage(params: Record<string, string>) {
+  const url = new URL(`${baseUrl}/api/daily-logs/feed`);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+  const bodyText = await response.text();
+  assert.equal(
+    response.status,
+    200,
+    `GET ${url.pathname}${url.search} must return 200, got ${response.status}: ${bodyText}`,
+  );
+  return JSON.parse(bodyText) as FeedPage;
 }
 
 test("GET /jobs/:jobId/daily-logs first cursor page returns hasMore + nextCursor", async () => {
@@ -307,6 +353,39 @@ test("Cursor mode honors the `keywords` filter", async () => {
     `exactly one seeded log must match ${runMarker}-7`,
   );
   assert.equal(collected[0]!.id, dailyLogIds[7]);
+});
+
+test("Company feed hasComments ignores soft-deleted comments", async () => {
+  const page = await fetchFeedPage({
+    hasComments: "true",
+    keywords: runMarker,
+    pageSize: "50",
+  });
+  const seededRows = page.logs.filter((log) => dailyLogIds.includes(log.id));
+  const seededIds = new Set(seededRows.map((log) => log.id));
+
+  assert.equal(seededIds.has(dailyLogIds[0]!), true);
+  assert.equal(seededRows.find((log) => log.id === dailyLogIds[0])?.commentsCount, 1);
+  assert.equal(
+    seededIds.has(dailyLogIds[1]!),
+    false,
+    "a log whose only comment is soft-deleted must not match hasComments=true",
+  );
+});
+
+test("Company feed boolean filters parse false query strings as false", async () => {
+  const page = await fetchFeedPage({
+    hasComments: "false",
+    hasAttachments: "false",
+    keywords: runMarker,
+    pageSize: "50",
+  });
+  const seededIds = new Set(
+    page.logs.filter((log) => dailyLogIds.includes(log.id)).map((log) => log.id),
+  );
+
+  assert.equal(seededIds.has(dailyLogIds[0]!), true);
+  assert.equal(seededIds.has(dailyLogIds[1]!), true);
 });
 
 test("Cursor mode honors the `tags` filter (single + multi-value)", async () => {

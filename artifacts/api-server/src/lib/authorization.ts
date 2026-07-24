@@ -18,7 +18,7 @@ import {
 import { HttpError } from "./http";
 import { getActiveOrganizationId, organizationScopeCondition } from "./tenant-scope";
 
-export type AppRole = "admin" | "project_manager" | "crew_member";
+export type AppRole = "admin" | "project_manager" | "crew_member" | "drafter";
 export type AuthContext = NonNullable<Express.Request["auth"]>;
 
 type FolderScope = "resource" | "job" | "lead" | "daily_log" | "schedule_item";
@@ -78,7 +78,12 @@ type ScheduleItemAccessRecord = {
 };
 
 function roleFromAuth(auth: AuthContext): AppRole {
-  if (auth.role === "admin" || auth.role === "project_manager" || auth.role === "crew_member") {
+  if (
+    auth.role === "admin" ||
+    auth.role === "project_manager" ||
+    auth.role === "crew_member" ||
+    auth.role === "drafter"
+  ) {
     return auth.role;
   }
 
@@ -177,7 +182,25 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
       ),
     );
 
-  const [createdRows, assignedRows, dailyLogRows, uploadedRows, jobAssigneeRows] = await Promise.all([
+  if (role === "drafter") {
+    const assignedJobRows = await assignedJobRowsPromise;
+    return uniqueIds(assignedJobRows.map((row) => row.id));
+  }
+
+  const managedJobRowsPromise =
+    role === "project_manager"
+      ? db
+          .select({ id: jobs.id })
+          .from(jobs)
+          .where(
+            and(
+              isNull(jobs.deletedAt),
+              or(eq(jobs.projectManagerId, auth.userId), eq(jobs.createdBy, auth.userId)),
+            ),
+          )
+      : Promise.resolve([] as Array<{ id: string | null }>);
+
+  const [createdRows, assignedRows, dailyLogRows, uploadedRows, jobAssigneeRows, managedJobRows] = await Promise.all([
     db
       .select({ id: jobs.id })
       .from(jobs)
@@ -226,8 +249,9 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
           isNull(folders.deletedAt),
           isNull(jobs.deletedAt),
         ),
-      ),
+    ),
     assignedJobRowsPromise,
+    managedJobRowsPromise,
   ]);
 
   return uniqueIds([
@@ -236,6 +260,7 @@ export async function listAccessibleJobIds(auth: AuthContext): Promise<string[] 
     ...dailyLogRows.map((row) => row.id),
     ...uploadedRows.map((row) => row.id),
     ...jobAssigneeRows.map((row) => row.id),
+    ...managedJobRows.map((row) => row.id),
   ]);
 }
 
@@ -244,7 +269,12 @@ export async function listAccessibleLeadIds(auth: AuthContext): Promise<string[]
     return null;
   }
 
-  if (roleFromAuth(auth) !== "project_manager") {
+  const role = roleFromAuth(auth);
+  if (role === "drafter") {
+    return null;
+  }
+
+  if (role !== "project_manager") {
     return [];
   }
 
@@ -357,9 +387,11 @@ export async function assertCanCreateJobFolder(
   _mediaType: string | null,
 ) {
   await assertCanAccessJob(auth, jobId);
-  if (!isAdmin(auth)) {
-    throw new HttpError(403, "You do not have permission to create folders.");
+  if (isAdmin(auth) || roleFromAuth(auth) === "drafter") {
+    return;
   }
+
+  throw new HttpError(403, "You do not have permission to create folders.");
 }
 
 export async function canViewJobFinancials(auth: AuthContext, jobId: string) {
@@ -376,6 +408,15 @@ export async function canViewJobFinancials(auth: AuthContext, jobId: string) {
       )
       .limit(1);
     return Boolean(row);
+  }
+
+  if (roleFromAuth(auth) === "drafter") {
+    return false;
+  }
+
+  const managedJobIds = await listManagedJobIds(auth);
+  if (managedJobIds?.includes(jobId)) {
+    return true;
   }
 
   const [row] = await db
@@ -414,7 +455,37 @@ export async function assertCanManageJob(auth: AuthContext, jobId: string) {
     return;
   }
 
+  if (roleFromAuth(auth) === "project_manager") {
+    const [managedJob] = await db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.id, jobId),
+          isNull(jobs.deletedAt),
+          or(eq(jobs.projectManagerId, auth.userId), eq(jobs.createdBy, auth.userId)),
+        ),
+      )
+      .limit(1);
+    if (managedJob) {
+      return;
+    }
+  }
+
   throw new HttpError(403, "You do not have permission to modify that job.");
+}
+
+export async function assertCanCreateScheduleItem(auth: AuthContext, jobId: string) {
+  if (isAdmin(auth)) {
+    return;
+  }
+
+  if (roleFromAuth(auth) === "drafter") {
+    await assertCanAccessJob(auth, jobId);
+    return;
+  }
+
+  await assertCanManageJob(auth, jobId);
 }
 
 export async function assertCanAccessLead(auth: AuthContext, leadId: string) {
@@ -438,9 +509,11 @@ export async function assertCanAccessLead(auth: AuthContext, leadId: string) {
 
   const leadIds = await listAccessibleLeadIds(auth);
 
-  if (!leadIds?.includes(leadId)) {
-    throw new HttpError(403, "You do not have access to that lead.");
+  if (leadIds === null || leadIds.includes(leadId)) {
+    return;
   }
+
+  throw new HttpError(403, "You do not have access to that lead.");
 }
 
 export async function assertCanManageLead(auth: AuthContext, leadId: string) {
@@ -449,15 +522,18 @@ export async function assertCanManageLead(auth: AuthContext, leadId: string) {
     return;
   }
 
-  if (roleFromAuth(auth) !== "project_manager") {
+  const role = roleFromAuth(auth);
+  if (role !== "project_manager" && role !== "drafter") {
     throw new HttpError(403, "You do not have permission to modify that lead.");
   }
 
   const leadIds = await listAccessibleLeadIds(auth);
 
-  if (!leadIds?.includes(leadId)) {
-    throw new HttpError(403, "You do not have permission to modify that lead.");
+  if (leadIds === null || leadIds.includes(leadId)) {
+    return;
   }
+
+  throw new HttpError(403, "You do not have permission to modify that lead.");
 }
 
 export async function assertCanAccessClient(auth: AuthContext, clientId: string) {
@@ -531,6 +607,10 @@ async function assertScopedFolderAccess(
     throw new HttpError(403, "You do not have access to that folder.");
   }
 
+  if (scope === "resource" && roleFromAuth(auth) === "drafter") {
+    throw new HttpError(403, "Drafters do not have access to resource files.");
+  }
+
   if (scope === "lead") {
     const leadId = folder.leadId ?? related?.leadId ?? null;
     if (!leadId) {
@@ -539,19 +619,18 @@ async function assertScopedFolderAccess(
 
     if (mode === "view") {
       await assertCanAccessLead(auth, leadId);
-      return;
-    }
-
-    if (mode === "upload") {
+    } else if (mode === "upload") {
       await assertCanManageLead(auth, leadId);
+    } else {
+      await assertCanManageLead(auth, leadId);
+      if (!canUploadToFolderForRole(auth, folder)) {
+        throw new HttpError(403, "You do not have permission to upload to that folder.");
+      }
       return;
     }
-
-    await assertCanManageLead(auth, leadId);
-    return;
   }
 
-  if (scope === "daily_log") {
+  else if (scope === "daily_log") {
     const dailyLogId = folder.dailyLogId ?? related?.dailyLogId ?? null;
     if (!dailyLogId) {
       throw new HttpError(403, "You do not have access to that file.");
@@ -559,19 +638,18 @@ async function assertScopedFolderAccess(
 
     if (mode === "view") {
       await assertCanViewDailyLog(auth, dailyLogId);
-      return;
-    }
-
-    if (mode === "upload") {
+    } else if (mode === "upload") {
       await assertCanEditDailyLog(auth, dailyLogId);
+    } else {
+      await assertCanEditDailyLog(auth, dailyLogId);
+      if (!canUploadToFolderForRole(auth, folder)) {
+        throw new HttpError(403, "You do not have permission to upload to that folder.");
+      }
       return;
     }
-
-    await assertCanEditDailyLog(auth, dailyLogId);
-    return;
   }
 
-  if (scope === "schedule_item") {
+  else if (scope === "schedule_item") {
     const scheduleItemId = folder.scheduleItemId ?? related?.scheduleItemId ?? null;
     if (!scheduleItemId) {
       throw new HttpError(403, "You do not have access to that file.");
@@ -579,19 +657,18 @@ async function assertScopedFolderAccess(
 
     if (mode === "view") {
       await assertCanViewScheduleItem(auth, scheduleItemId);
-      return;
-    }
-
-    if (mode === "upload") {
+    } else if (mode === "upload") {
       await assertCanManageScheduleItem(auth, scheduleItemId);
+    } else {
+      await assertCanManageScheduleItem(auth, scheduleItemId);
+      if (!canUploadToFolderForRole(auth, folder)) {
+        throw new HttpError(403, "You do not have permission to upload to that folder.");
+      }
       return;
     }
-
-    await assertCanManageScheduleItem(auth, scheduleItemId);
-    return;
   }
 
-  if (scope === "job") {
+  else if (scope === "job") {
     if (!folder.jobId) {
       throw new HttpError(403, "You do not have access to that folder.");
     }
@@ -940,21 +1017,29 @@ function canViewScheduleItem(auth: AuthContext, item: ScheduleItemAccessRecord) 
     return item.visibleToOfficeStaff !== false || item.visibleToEstimators !== false;
   }
 
+  if (role === "drafter") {
+    return false;
+  }
+
   return item.visibleToInstallers !== false;
 }
 
 export async function assertCanViewScheduleItem(auth: AuthContext, itemId: string) {
   const item = await getScheduleItemAccessOrThrow(auth, itemId);
 
+  if (!canViewScheduleItem(auth, item)) {
+    throw new HttpError(403, "You do not have access to that schedule item.");
+  }
+
+  if (roleFromAuth(auth) === "drafter") {
+    return item;
+  }
+
   if (!item.jobId) {
     throw new HttpError(403, "You do not have access to that schedule item.");
   }
 
   await assertCanAccessJob(auth, item.jobId);
-
-  if (!canViewScheduleItem(auth, item)) {
-    throw new HttpError(403, "You do not have access to that schedule item.");
-  }
 
   return item;
 }
@@ -963,6 +1048,23 @@ export async function assertCanManageScheduleItem(auth: AuthContext, itemId: str
   const item = await assertCanViewScheduleItem(auth, itemId);
 
   if (isAdmin(auth)) {
+    return item;
+  }
+
+  if (!item.jobId) {
+    throw new HttpError(403, "You do not have permission to modify that schedule item.");
+  }
+
+  if (roleFromAuth(auth) === "project_manager") {
+    await assertCanManageJob(auth, item.jobId);
+    return item;
+  }
+
+  if (
+    roleFromAuth(auth) === "drafter" &&
+    (item.createdBy === auth.userId || item.isAssignedToCurrentUser)
+  ) {
+    await assertCanAccessJob(auth, item.jobId);
     return item;
   }
 

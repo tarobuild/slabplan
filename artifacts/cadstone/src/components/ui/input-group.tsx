@@ -70,10 +70,9 @@ function InputGroupAddon({
         if ((e.target as HTMLElement).closest("button")) {
           return
         }
-        const control = e.currentTarget.parentElement?.querySelector<HTMLElement>(
-          "[data-slot='input-group-control']",
-        )
-        control?.focus()
+        e.currentTarget.parentElement
+          ?.querySelector<HTMLElement>('[data-slot="input-group-control"]')
+          ?.focus()
       }}
       {...props}
     />

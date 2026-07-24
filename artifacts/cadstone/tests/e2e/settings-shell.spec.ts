@@ -45,7 +45,7 @@ test.describe("settings shell — admin", () => {
     await rail.getByRole("link", { name: /^notifications$/i }).click()
     await expect(page).toHaveURL(/\/settings\/notifications$/)
     await expect(
-      page.getByRole("heading", { name: /^notifications$/i }),
+      page.getByRole("heading", { name: /^email notifications$/i }),
     ).toBeVisible()
 
     // Click Team → admin sub-route renders Users page.
@@ -105,9 +105,11 @@ test.describe("settings shell — admin", () => {
     await expect(row).toBeVisible()
     await expect(row.getByText(/^active$/i)).toBeVisible()
 
-    // Revoke via the per-row trash button. The revoke confirm() is auto-accepted.
-    page.once("dialog", (d) => d.accept())
+    // Revoke via the per-row trash button and confirm in the app dialog.
     await row.getByRole("button", { name: new RegExp(`revoke ${tokenName}`, "i") }).click()
+    const revokeDialog = page.getByRole("alertdialog")
+    await expect(revokeDialog.getByText(/revoke api token/i)).toBeVisible()
+    await revokeDialog.getByRole("button", { name: /^revoke$/i }).click()
 
     await expect(row.getByText(/^revoked$/i)).toBeVisible({ timeout: 15_000 })
   })

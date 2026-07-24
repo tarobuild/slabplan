@@ -7,6 +7,9 @@
  */
 import type { CursorPagination } from "./cursorPagination";
 
+/**
+ * Offset pagination for page-mode requests, or CursorPagination when the request supplied `?cursor=`.
+ */
 export type ScheduleListResponsePagination =
   | {
       page: number;

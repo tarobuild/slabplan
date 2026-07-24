@@ -205,6 +205,7 @@ return ({
       process.env.SENTRY_DSN_WEB ?? process.env.VITE_SENTRY_DSN ?? "",
     ),
     __SENTRY_RELEASE__: JSON.stringify(releaseSha),
+    __APP_RELEASE_SHA__: JSON.stringify(releaseSha),
     __SENTRY_ENVIRONMENT__: JSON.stringify(
       process.env.SENTRY_ENVIRONMENT
       ?? process.env.VITE_SENTRY_ENVIRONMENT
@@ -262,6 +263,7 @@ return ({
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
     },
     dedupe: ["react", "react-dom", "@tanstack/react-query"],
+    conditions: ["workspace"],
   },
   root: path.resolve(import.meta.dirname),
   build: {

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import {
   and,
   asc,
@@ -12,7 +13,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -37,16 +38,26 @@ import {
 } from "@workspace/db/schema";
 import {
   assertCanAccessJob,
+  assertCanCreateScheduleItem,
+  assertCanManageJob,
+  assertCanManageScheduleItem,
   assertCanViewScheduleItem,
   isAdmin,
   listAccessibleJobIds,
+  listManagedJobIds,
   type AuthContext,
 } from "../lib/authorization";
 import { requireAdmin } from "../middleware/require-auth";
 import { decodeCursor, encodeCursor } from "../lib/cursor";
-import { validateUploadForMediaType, writeActivity } from "../lib/file-manager";
+import {
+  photoExtensions,
+  validateUploadForMediaType,
+  videoExtensions,
+  writeActivity,
+} from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
+import { createUserNotificationsBestEffort } from "../lib/notifications";
 import { buildScheduleListVisibilityFilter } from "../lib/schedule-visibility";
 import { getActiveOrganizationId, organizationScopeCondition } from "../lib/tenant-scope";
 import {
@@ -68,6 +79,28 @@ import { stringBoolean } from "../lib/zod-helpers";
 const uploadRateLimit = createUploadPerUserRateLimit();
 
 const router: IRouter = Router();
+function requireCompanyScheduleAccess(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
+  const role = req.auth?.role;
+
+  if (role === "admin" || role === "drafter") {
+    next();
+    return;
+  }
+
+  next(
+    new HttpError(
+      403,
+      "You do not have permission to perform that action.",
+      undefined,
+      "forbidden",
+    ),
+  );
+}
+
 type DbExecutor = Pick<typeof db, "select" | "insert" | "update" | "delete" | "execute">;
 
 async function getJobOrganizationId(jobId: string, executor: DbExecutor = db) {
@@ -85,6 +118,12 @@ const dependencyTypes = [
   "finish_to_finish",
   "start_to_finish",
 ] as const;
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string) {
+  return uuidPattern.test(value);
+}
 
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
@@ -135,7 +174,7 @@ const optionalTime = z
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   })
-  .refine((value) => value === null || /^\d{2}:\d{2}(:\d{2})?$/.test(value), {
+  .refine((value) => value === null || /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(value), {
     message: "Times must use HH:MM or HH:MM:SS format.",
   });
 
@@ -181,6 +220,215 @@ const schedulePayloadSchema = z
 
     const seenPredecessorIds = new Set<string>();
     value.predecessors.forEach((predecessor, index) => {
+      if (seenPredecessorIds.has(predecessor.scheduleItemId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Duplicate predecessors are not allowed.",
+          path: ["predecessors", index, "scheduleItemId"],
+        });
+        return;
+      }
+      seenPredecessorIds.add(predecessor.scheduleItemId);
+    });
+  });
+
+const draftPublishPredecessorSchema = z.object({
+  scheduleItemId: z.string().trim().min(1).max(128),
+  dependencyType: z.enum(dependencyTypes),
+  lagDays: z.coerce.number().int().min(0).max(365).optional().default(0),
+});
+
+const draftPublishItemPayloadSchema = z
+  .object({
+    title: z.string().trim().min(1).max(255),
+    displayColor: optionalString,
+    assigneeIds: z.array(z.string().uuid()).optional().default([]),
+    notifyUserIds: z.array(z.string().uuid()).optional().default([]),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    workDays: z.coerce.number().int().positive().max(365).optional().default(1),
+    endDate: optionalDate,
+    isHourly: z.coerce.boolean().optional().default(false),
+    startTime: optionalTime,
+    endTime: optionalTime,
+    progress: z.coerce.number().int().min(0).max(100).optional().default(0),
+    reminder: z.enum(reminderOptions).optional().default("none"),
+    notes: optionalString,
+    tags: z.array(z.string().trim().min(1).max(100)).optional().default([]),
+    predecessors: z.array(draftPublishPredecessorSchema).optional().default([]),
+    phaseId: optionalUuid,
+    showOnGantt: z.coerce.boolean().optional().default(true),
+    visibleToEstimators: z.coerce.boolean().optional().default(true),
+    visibleToInstallers: z.coerce.boolean().optional().default(true),
+    visibleToOfficeStaff: z.coerce.boolean().optional().default(true),
+    isComplete: z.coerce.boolean().optional().default(false),
+    isPersonalTodo: z.coerce.boolean().optional().default(false),
+  })
+  .superRefine((value, ctx) => {
+    if (value.isHourly && !value.startTime) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Hourly items require a start time.",
+        path: ["startTime"],
+      });
+    }
+
+    const seenPredecessorIds = new Set<string>();
+    value.predecessors.forEach((predecessor, index) => {
+      if (seenPredecessorIds.has(predecessor.scheduleItemId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Duplicate predecessors are not allowed.",
+          path: ["predecessors", index, "scheduleItemId"],
+        });
+        return;
+      }
+      seenPredecessorIds.add(predecessor.scheduleItemId);
+    });
+  });
+
+const draftPublishNoteSchema = z
+  .object({
+    clientNoteId: z.string().trim().min(1).max(128).optional(),
+    clientItemId: z.string().trim().min(1).max(128).optional(),
+    scheduleItemId: z.string().uuid().optional(),
+    note: z.string().trim().min(1).max(10_000),
+  })
+  .superRefine((value, ctx) => {
+    const targetCount = Number(Boolean(value.clientItemId)) + Number(Boolean(value.scheduleItemId));
+    if (targetCount !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide exactly one note target.",
+        path: ["scheduleItemId"],
+      });
+    }
+  });
+
+const scheduleDraftPublishPayloadSchema = z
+  .object({
+    create: z
+      .array(z.object({
+        clientId: z.string().trim().min(1).max(128),
+        payload: draftPublishItemPayloadSchema,
+      }))
+      .max(500)
+      .optional()
+      .default([]),
+    update: z
+      .array(z.object({
+        id: z.string().uuid(),
+        payload: draftPublishItemPayloadSchema,
+      }))
+      .max(500)
+      .optional()
+      .default([]),
+    deleteIds: z.array(z.string().uuid()).max(500).optional().default([]),
+    notes: z.array(draftPublishNoteSchema).max(1000).optional().default([]),
+  })
+  .superRefine((value, ctx) => {
+    const clientIds = new Set<string>();
+    value.create.forEach((entry, index) => {
+      if (clientIds.has(entry.clientId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Duplicate draft item ids are not allowed.",
+          path: ["create", index, "clientId"],
+        });
+        return;
+      }
+      clientIds.add(entry.clientId);
+    });
+
+    const updateIds = new Set<string>();
+    value.update.forEach((entry, index) => {
+      if (updateIds.has(entry.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Duplicate update item ids are not allowed.",
+          path: ["update", index, "id"],
+        });
+        return;
+      }
+      updateIds.add(entry.id);
+    });
+
+    const deleteIds = new Set<string>();
+    value.deleteIds.forEach((id, index) => {
+      if (deleteIds.has(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Duplicate delete item ids are not allowed.",
+          path: ["deleteIds", index],
+        });
+        return;
+      }
+      deleteIds.add(id);
+    });
+
+    value.update.forEach((entry, index) => {
+      if (deleteIds.has(entry.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "An item cannot be updated and deleted in the same publish.",
+          path: ["update", index, "id"],
+        });
+      }
+    });
+
+    value.notes.forEach((entry, index) => {
+      if (entry.scheduleItemId && deleteIds.has(entry.scheduleItemId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Notes cannot be added to an item deleted in the same publish.",
+          path: ["notes", index, "scheduleItemId"],
+        });
+      }
+      if (entry.clientItemId && !clientIds.has(entry.clientItemId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Note target draft item was not included in this publish.",
+          path: ["notes", index, "clientItemId"],
+        });
+      }
+    });
+  });
+
+const schedulePatchPayloadSchema = z
+  .object({
+    title: z.string().trim().min(1).max(255).optional(),
+    displayColor: optionalString.optional(),
+    assigneeIds: z.array(z.string().uuid()).optional(),
+    notifyUserIds: z.array(z.string().uuid()).optional(),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    workDays: z.coerce.number().int().positive().max(365).optional(),
+    endDate: optionalDate.optional(),
+    isHourly: z.coerce.boolean().optional(),
+    startTime: optionalTime.optional(),
+    endTime: optionalTime.optional(),
+    progress: z.coerce.number().int().min(0).max(100).optional(),
+    reminder: z.enum(reminderOptions).optional(),
+    notes: optionalString.optional(),
+    tags: z.array(z.string().trim().min(1).max(100)).optional(),
+    predecessors: z.array(predecessorSchema).optional(),
+    phaseId: optionalUuid.optional(),
+    showOnGantt: z.coerce.boolean().optional(),
+    visibleToEstimators: z.coerce.boolean().optional(),
+    visibleToInstallers: z.coerce.boolean().optional(),
+    visibleToOfficeStaff: z.coerce.boolean().optional(),
+    isComplete: z.coerce.boolean().optional(),
+    isPersonalTodo: z.coerce.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.isHourly && value.startTime === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Hourly items require a start time.",
+        path: ["startTime"],
+      });
+    }
+
+    const seenPredecessorIds = new Set<string>();
+    value.predecessors?.forEach((predecessor, index) => {
       if (seenPredecessorIds.has(predecessor.scheduleItemId)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -283,6 +531,10 @@ const scheduleCompletionPayloadSchema = z.object({
   progress: z.coerce.number().int().min(0).max(100).optional(),
 });
 
+const scheduleAssigneePayloadSchema = z.object({
+  userId: z.string().uuid(),
+});
+
 type ScheduleMeta = {
   notes: string | null;
   tags: string[];
@@ -314,18 +566,46 @@ function normalizeUniqueStrings(values: string[]) {
 
 const requireScheduleJobRouteAccess = asyncHandler(async (req, _res, next) => {
   const jobId = getParam(req.params.jobId, "job id");
+  const isCreateScheduleItemRoute =
+    req.method === "POST" && (req.path === "/" || req.path === "");
+  const isNotifyAssignedUsersRoute =
+    req.method === "POST" && req.path.endsWith("/notify-assigned-users");
 
   if (req.method === "GET") {
     await assertCanAccessJob(req.auth!, jobId);
   } else {
-    await assertCanAccessJob(req.auth!, jobId);
-    if (!isAdmin(req.auth!)) {
-      throw new HttpError(403, "Only admins can update job schedules.");
+    if (isCreateScheduleItemRoute) {
+      await assertCanCreateScheduleItem(req.auth!, jobId);
+      next();
+      return;
     }
+
+    if (isNotifyAssignedUsersRoute) {
+      await assertCanNotifyScheduleAssignees(req.auth!, jobId);
+      next();
+      return;
+    }
+
+    await assertCanManageJob(req.auth!, jobId);
   }
 
   next();
 });
+
+async function assertCanNotifyScheduleAssignees(auth: AuthContext, jobId: string) {
+  if (isAdmin(auth)) {
+    return;
+  }
+
+  if (auth.role !== "project_manager") {
+    throw new HttpError(403, "Only admins and project managers can notify schedule assignees.");
+  }
+
+  const managedJobIds = await listManagedJobIds(auth);
+  if (!managedJobIds?.includes(jobId)) {
+    throw new HttpError(403, "You do not have access to that job.");
+  }
+}
 
 const requireScheduleItemRouteAccess = asyncHandler(async (req, _res, next) => {
   const itemId = getParam(req.params.id, "schedule item id");
@@ -334,17 +614,24 @@ const requireScheduleItemRouteAccess = asyncHandler(async (req, _res, next) => {
   // flip their own assignment's completion state — it must be reachable
   // with view-level access. The handler then re-checks that the caller
   // is either an assignee or has manage-level rights on the item.
+  const isCollaborativeAttachmentUpload =
+    req.method === "POST" && path === "/attachments";
   const isCollaborativeUpdate =
     path.startsWith("/notes") ||
     path.startsWith("/todos") ||
-    path.startsWith("/complete");
+    path.startsWith("/complete") ||
+    isCollaborativeAttachmentUpload;
 
-  if (req.method === "GET" || isCollaborativeUpdate) {
+  if (req.method === "GET") {
     await assertCanViewScheduleItem(req.auth!, itemId);
-  } else {
-    if (!isAdmin(req.auth!)) {
-      throw new HttpError(403, "Only admins can update job schedules.");
+  } else if (isCollaborativeUpdate) {
+    if (req.auth!.role === "drafter") {
+      await assertCanManageScheduleItem(req.auth!, itemId);
+    } else {
+      await assertCanViewScheduleItem(req.auth!, itemId);
     }
+  } else {
+    await assertCanManageScheduleItem(req.auth!, itemId);
   }
 
   next();
@@ -525,10 +812,22 @@ function comparableExceptionDate(date: Date, sameEveryYear: boolean) {
   return date.toISOString().slice(0, 10);
 }
 
+export function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function matchesWorkdayException(date: Date, exception: WorkdayExceptionRecord) {
   const value = comparableExceptionDate(date, exception.sameEveryYear);
   const start = exception.sameEveryYear ? exception.startDate.slice(5, 10) : exception.startDate;
   const end = exception.sameEveryYear ? exception.endDate.slice(5, 10) : exception.endDate;
+
+  if (exception.sameEveryYear && start > end) {
+    return value >= start || value <= end;
+  }
+
   return value >= start && value <= end;
 }
 
@@ -572,6 +871,30 @@ function calculateBusinessEndDate(startDate: string, workDays: number, exception
 
   while (remaining > 1) {
     current.setUTCDate(current.getUTCDate() + 1);
+
+    if (classifyWorkday(current, exceptions).isWorkday) {
+      remaining -= 1;
+    }
+  }
+
+  return current.toISOString().slice(0, 10);
+}
+
+function calculateBusinessStartDateForEndDate(
+  endDate: string,
+  workDays: number,
+  exceptions: WorkdayExceptionRecord[] = [],
+) {
+  const current = new Date(`${endDate}T00:00:00.000Z`);
+
+  while (!classifyWorkday(current, exceptions).isWorkday) {
+    current.setUTCDate(current.getUTCDate() - 1);
+  }
+
+  let remaining = Math.max(workDays, 1);
+
+  while (remaining > 1) {
+    current.setUTCDate(current.getUTCDate() - 1);
 
     if (classifyWorkday(current, exceptions).isWorkday) {
       remaining -= 1;
@@ -707,6 +1030,17 @@ function fileIconKind(mimeType: string | null) {
   return "file";
 }
 
+function inferUploadedAttachmentMediaType(uploadedFile: Express.Multer.File): "photo" | "video" | "document" {
+  const mimeType = (uploadedFile.mimetype ?? "").toLowerCase();
+  if (mimeType.startsWith("image/")) return "photo";
+  if (mimeType.startsWith("video/")) return "video";
+
+  const ext = path.extname(uploadedFile.originalname ?? "").toLowerCase();
+  if (photoExtensions.includes(ext)) return "photo";
+  if (videoExtensions.includes(ext)) return "video";
+  return "document";
+}
+
 async function ensureJobExists(jobId: string) {
   const [job] = await db
     .select({
@@ -764,35 +1098,58 @@ async function getScheduleItemOrThrow(id: string) {
   return item;
 }
 
-async function assertPredecessorsBelongToJob(jobId: string, itemIds: string[]) {
+async function assertScheduleItemsBelongToJob(
+  jobId: string,
+  itemIds: string[],
+  message: string,
+  executor: DbExecutor = db,
+) {
   if (itemIds.length === 0) {
     return;
   }
 
-  const rows = await db
+  const uniqueItemIds = Array.from(new Set(itemIds));
+  const rows = await executor
     .select({
       id: scheduleItems.id,
     })
     .from(scheduleItems)
     .where(
       and(
-        inArray(scheduleItems.id, itemIds),
+        inArray(scheduleItems.id, uniqueItemIds),
         eq(scheduleItems.jobId, jobId),
         isNull(scheduleItems.deletedAt),
       ),
     );
 
-  if (rows.length !== itemIds.length) {
-    throw new HttpError(400, "Predecessors must belong to the same job.");
+  if (rows.length !== uniqueItemIds.length) {
+    throw new HttpError(400, message);
   }
 }
 
-async function assertPhaseBelongsToJob(jobId: string, phaseId: string | null) {
+async function assertPredecessorsBelongToJob(
+  jobId: string,
+  itemIds: string[],
+  executor: DbExecutor = db,
+) {
+  await assertScheduleItemsBelongToJob(
+    jobId,
+    itemIds,
+    "Predecessors must belong to the same job.",
+    executor,
+  );
+}
+
+async function assertPhaseBelongsToJob(
+  jobId: string,
+  phaseId: string | null,
+  executor: DbExecutor = db,
+) {
   if (!phaseId) {
     return;
   }
 
-  const [phase] = await db
+  const [phase] = await executor
     .select({ id: schedulePhases.id })
     .from(schedulePhases)
     .where(and(eq(schedulePhases.id, phaseId), eq(schedulePhases.jobId, jobId)))
@@ -1022,6 +1379,209 @@ function applyPredecessorDates(
   };
 }
 
+type SchedulePayload = z.infer<typeof schedulePayloadSchema>;
+type DraftPublishItemPayload = z.infer<typeof draftPublishItemPayloadSchema>;
+
+function resolveDraftPublishPayload(
+  payload: DraftPublishItemPayload,
+  createdItemIdsByClientId: Map<string, string>,
+  options: { dropUnresolvedClientPredecessors?: boolean } = {},
+): SchedulePayload {
+  const mappedPayload = {
+    ...payload,
+    predecessors: payload.predecessors.flatMap((predecessor) => {
+      const mappedId = createdItemIdsByClientId.get(predecessor.scheduleItemId);
+      if (mappedId) {
+        return [{ ...predecessor, scheduleItemId: mappedId }];
+      }
+
+      if (!isUuid(predecessor.scheduleItemId)) {
+        return options.dropUnresolvedClientPredecessors
+          ? []
+          : [{ ...predecessor, scheduleItemId: predecessor.scheduleItemId }];
+      }
+
+      return [predecessor];
+    }),
+  };
+  const parsed = schedulePayloadSchema.safeParse(mappedPayload);
+
+  if (!parsed.success) {
+    throw new HttpError(400, "Invalid schedule item payload.", parsed.error.flatten());
+  }
+
+  return parsed.data;
+}
+
+async function loadPredecessorDateRows(
+  itemIds: string[],
+  executor: DbExecutor = db,
+) {
+  const uniqueItemIds = Array.from(new Set(itemIds));
+  if (uniqueItemIds.length === 0) {
+    return [];
+  }
+
+  return executor
+    .select({
+      id: scheduleItems.id,
+      startDate: scheduleItems.startDate,
+      endDate: scheduleItems.endDate,
+    })
+    .from(scheduleItems)
+    .where(and(inArray(scheduleItems.id, uniqueItemIds), isNull(scheduleItems.deletedAt)));
+}
+
+async function normalizeSchedulePayloadForWrite(
+  jobId: string,
+  itemId: string | null,
+  payload: SchedulePayload,
+  exceptions: WorkdayExceptionRecord[],
+  executor: DbExecutor = db,
+) {
+  if (itemId && payload.predecessors.some((predecessor) => predecessor.scheduleItemId === itemId)) {
+    throw new HttpError(400, "A schedule item cannot be its own predecessor.");
+  }
+
+  const predecessorIds = payload.predecessors.map((predecessor) => predecessor.scheduleItemId);
+  await assertPredecessorsBelongToJob(jobId, predecessorIds, executor);
+  await assertPhaseBelongsToJob(jobId, payload.phaseId, executor);
+  const predecessorItems = await loadPredecessorDateRows(predecessorIds, executor);
+
+  return applyPredecessorDates(
+    {
+      ...payload,
+      endDate: null,
+    },
+    predecessorItems,
+    exceptions,
+  );
+}
+
+async function insertScheduleItemWithoutCascade({
+  jobId,
+  payload,
+  userId,
+  exceptions,
+  executor,
+}: {
+  jobId: string;
+  payload: SchedulePayload;
+  userId: string;
+  exceptions: WorkdayExceptionRecord[];
+  executor: DbExecutor;
+}) {
+  const normalizedPayload = await normalizeSchedulePayloadForWrite(
+    jobId,
+    null,
+    payload,
+    exceptions,
+    executor,
+  );
+  const organizationId = await getJobOrganizationId(jobId, executor);
+  if (!organizationId) {
+    throw new HttpError(409, "Job is missing an organization.");
+  }
+  await ensureTagSettings(jobId, normalizedPayload.tags, executor);
+
+  const [createdItem] = await executor
+    .insert(scheduleItems)
+    .values({
+      organizationId,
+      jobId,
+      schedulePhaseId: normalizedPayload.phaseId,
+      title: normalizedPayload.title,
+      displayColor: normalizedPayload.displayColor ?? "#2563eb",
+      startDate: normalizedPayload.startDate,
+      workDays: normalizedPayload.workDays,
+      endDate: normalizedPayload.endDate ?? calculateBusinessEndDate(normalizedPayload.startDate, normalizedPayload.workDays, exceptions),
+      isHourly: normalizedPayload.isHourly,
+      startTime: normalizeTimeValue(normalizedPayload.startTime),
+      endTime: normalizeTimeValue(normalizedPayload.endTime),
+      progress: normalizedPayload.progress,
+      reminder: normalizedPayload.reminder,
+      showOnGantt: normalizedPayload.showOnGantt,
+      visibleToEstimators: normalizedPayload.visibleToEstimators,
+      visibleToInstallers: normalizedPayload.visibleToInstallers,
+      visibleToOfficeStaff: normalizedPayload.visibleToOfficeStaff,
+      isComplete: normalizedPayload.isComplete,
+      isPersonalTodo: normalizedPayload.isPersonalTodo,
+      notes: encodeScheduleMeta({
+        notes: normalizedPayload.notes,
+        tags: normalizeUniqueStrings(normalizedPayload.tags),
+        predecessors: normalizedPayload.predecessors,
+        manualEndDate: normalizedPayload.endDate !== null,
+      }),
+      createdBy: userId,
+    })
+    .returning();
+
+  await syncAssignees(createdItem.id, normalizedPayload.assigneeIds, organizationId, executor);
+  await syncPredecessors(createdItem.id, normalizedPayload.predecessors, organizationId, executor);
+
+  return createdItem;
+}
+
+async function updateScheduleItemWithoutCascade({
+  itemId,
+  jobId,
+  payload,
+  exceptions,
+  executor,
+}: {
+  itemId: string;
+  jobId: string;
+  payload: SchedulePayload;
+  exceptions: WorkdayExceptionRecord[];
+  executor: DbExecutor;
+}) {
+  const normalizedPayload = await normalizeSchedulePayloadForWrite(
+    jobId,
+    itemId,
+    payload,
+    exceptions,
+    executor,
+  );
+  const organizationId = await getJobOrganizationId(jobId, executor);
+  if (!organizationId) {
+    throw new HttpError(409, "Job is missing an organization.");
+  }
+  await ensureTagSettings(jobId, normalizedPayload.tags, executor);
+
+  await executor
+    .update(scheduleItems)
+    .set({
+      schedulePhaseId: normalizedPayload.phaseId,
+      title: normalizedPayload.title,
+      displayColor: normalizedPayload.displayColor ?? "#2563eb",
+      startDate: normalizedPayload.startDate,
+      workDays: normalizedPayload.workDays,
+      endDate: normalizedPayload.endDate ?? calculateBusinessEndDate(normalizedPayload.startDate, normalizedPayload.workDays, exceptions),
+      isHourly: normalizedPayload.isHourly,
+      startTime: normalizeTimeValue(normalizedPayload.startTime),
+      endTime: normalizeTimeValue(normalizedPayload.endTime),
+      progress: normalizedPayload.progress,
+      reminder: normalizedPayload.reminder,
+      showOnGantt: normalizedPayload.showOnGantt,
+      visibleToEstimators: normalizedPayload.visibleToEstimators,
+      visibleToInstallers: normalizedPayload.visibleToInstallers,
+      visibleToOfficeStaff: normalizedPayload.visibleToOfficeStaff,
+      isComplete: normalizedPayload.isComplete,
+      isPersonalTodo: normalizedPayload.isPersonalTodo,
+      notes: encodeScheduleMeta({
+        notes: normalizedPayload.notes,
+        tags: normalizeUniqueStrings(normalizedPayload.tags),
+        predecessors: normalizedPayload.predecessors,
+        manualEndDate: normalizedPayload.endDate !== null,
+      }),
+      updatedAt: new Date(),
+    })
+    .where(eq(scheduleItems.id, itemId));
+
+  await syncAssignees(itemId, normalizedPayload.assigneeIds, organizationId, executor);
+  await syncPredecessors(itemId, normalizedPayload.predecessors, organizationId, executor);
+}
+
 function resolvePredecessorStartDate(
   startDate: string,
   workDays: number,
@@ -1056,7 +1616,15 @@ function resolvePredecessorStartDate(
 
     if (predecessor.dependencyType === "finish_to_finish") {
       const desiredEnd = addBusinessDays(linked.endDate, predecessor.lagDays, exceptions);
-      const candidateStart = calculateBusinessEndDate(desiredEnd, Math.max(workDays, 1), exceptions);
+      const currentEnd = calculateBusinessEndDate(resolvedStartDate, Math.max(workDays, 1), exceptions);
+      if (currentEnd >= desiredEnd) {
+        continue;
+      }
+      const candidateStart = calculateBusinessStartDateForEndDate(
+        desiredEnd,
+        Math.max(workDays, 1),
+        exceptions,
+      );
       if (candidateStart > resolvedStartDate) {
         resolvedStartDate = candidateStart;
       }
@@ -1065,7 +1633,15 @@ function resolvePredecessorStartDate(
 
     if (predecessor.dependencyType === "start_to_finish") {
       const desiredEnd = addBusinessDays(linked.startDate, predecessor.lagDays, exceptions);
-      const candidateStart = calculateBusinessEndDate(desiredEnd, Math.max(workDays, 1), exceptions);
+      const currentEnd = calculateBusinessEndDate(resolvedStartDate, Math.max(workDays, 1), exceptions);
+      if (currentEnd >= desiredEnd) {
+        continue;
+      }
+      const candidateStart = calculateBusinessStartDateForEndDate(
+        desiredEnd,
+        Math.max(workDays, 1),
+        exceptions,
+      );
       if (candidateStart > resolvedStartDate) {
         resolvedStartDate = candidateStart;
       }
@@ -3200,10 +3776,12 @@ router.post(
       });
     }
 
+    const notificationBatchId = crypto.randomUUID();
+
     if (recipients.size > 0 && itemsById.size > 0) {
       await writeActivity({
         entityType: "schedule_notification",
-        entityId: crypto.randomUUID(),
+        entityId: notificationBatchId,
         action: "queued",
         userId: req.auth!.userId,
         jobId,
@@ -3211,6 +3789,23 @@ router.post(
         extra: {
           notifyUserIds: Array.from(recipients.keys()),
           recipients: Array.from(recipients.values()),
+          scheduleItems: Array.from(itemsById.values()),
+        },
+      });
+
+      await createUserNotificationsBestEffort({
+        organizationId: getActiveOrganizationId(req.auth!)!,
+        recipientUserIds: Array.from(recipients.keys()),
+        actorUserId: req.auth!.userId,
+        entityType: "schedule_notification",
+        entityId: notificationBatchId,
+        action: "queued",
+        title: "Schedule notification",
+        body: `${itemsById.size} schedule item${itemsById.size === 1 ? "" : "s"} need attention.`,
+        url: `/jobs/${jobId}/schedule`,
+        metadata: {
+          jobId,
+          notifyUserIds: Array.from(recipients.keys()),
           scheduleItems: Array.from(itemsById.values()),
         },
       });
@@ -3417,7 +4012,7 @@ const companyScheduleQuerySchema = z.object({
 
 router.get(
   "/schedule",
-  requireAdmin,
+  requireCompanyScheduleAccess,
   asyncHandler(async (req, res) => {
     const parsedQuery = companyScheduleQuerySchema.safeParse(req.query);
     if (!parsedQuery.success) {
@@ -3433,10 +4028,11 @@ router.get(
     const cursorPayload = rawCursor ? decodeCursor(rawCursor) : null;
     const auth = req.auth!;
     const currentUserId = auth.userId;
-    const today = new Date().toISOString().split("T")[0];
+    const today = localDateKey();
 
-    const accessibleJobIds = await listAccessibleJobIds(auth);
-    if (accessibleJobIds && accessibleJobIds.length === 0) {
+    const accessibleJobIds =
+      auth.role === "drafter" ? null : await listAccessibleJobIds(auth);
+    if (auth.role !== "drafter" && accessibleJobIds && accessibleJobIds.length === 0) {
       res.json({
         data: [],
         pagination: isCursorMode
@@ -3575,6 +4171,240 @@ router.get(
   }),
 );
 
+router.post(
+  "/jobs/:jobId/schedule/draft-publish",
+  asyncHandler(async (req, res) => {
+    const body = scheduleDraftPublishPayloadSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid schedule draft publish payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    await ensureJobExists(jobId);
+
+    const existingIds = Array.from(new Set([
+      ...body.data.update.map((entry) => entry.id),
+      ...body.data.deleteIds,
+      ...body.data.notes.flatMap((entry) => entry.scheduleItemId ? [entry.scheduleItemId] : []),
+    ]));
+
+    if (existingIds.length > 0) {
+      await assertScheduleItemsBelongToJob(
+        jobId,
+        existingIds,
+        "Schedule items must belong to the published job.",
+      );
+    }
+
+    const existingRows = existingIds.length > 0
+      ? await db
+          .select({
+            id: scheduleItems.id,
+            title: scheduleItems.title,
+            createdBy: scheduleItems.createdBy,
+            isPersonalTodo: scheduleItems.isPersonalTodo,
+          })
+          .from(scheduleItems)
+          .where(and(inArray(scheduleItems.id, existingIds), eq(scheduleItems.jobId, jobId), isNull(scheduleItems.deletedAt)))
+      : [];
+    const existingRowById = new Map(existingRows.map((row) => [row.id, row]));
+
+    for (const row of existingRows) {
+      if (row.isPersonalTodo && row.createdBy !== req.auth!.userId) {
+        throw new HttpError(403, "You do not have access to that schedule item.");
+      }
+    }
+
+    const previousHydratedById = new Map<string, HydratedScheduleItem>();
+    for (const itemId of [...body.data.update.map((entry) => entry.id), ...body.data.deleteIds]) {
+      const hydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
+      previousHydratedById.set(itemId, hydrated.item);
+    }
+
+    const createdItemIdsByClientId = new Map<string, string>();
+    const createdItemIds: string[] = [];
+    const updatedItemIds: string[] = [];
+    const deletedItemIds: string[] = [];
+    const noteActivities: Array<{ noteId: string; scheduleItemId: string }> = [];
+
+    await db.transaction(async (tx) => {
+      const exceptions = await getWorkdayExceptionsForJob(jobId, tx);
+
+      for (const entry of body.data.create) {
+        const initialPayload = resolveDraftPublishPayload(
+          entry.payload,
+          createdItemIdsByClientId,
+          { dropUnresolvedClientPredecessors: true },
+        );
+        const created = await insertScheduleItemWithoutCascade({
+          jobId,
+          payload: initialPayload,
+          userId: req.auth!.userId,
+          exceptions,
+          executor: tx,
+        });
+
+        createdItemIdsByClientId.set(entry.clientId, created.id);
+        createdItemIds.push(created.id);
+      }
+
+      for (const entry of body.data.create) {
+        const itemId = createdItemIdsByClientId.get(entry.clientId);
+        if (!itemId) {
+          throw new HttpError(500, "Draft item was not created.");
+        }
+
+        const finalPayload = resolveDraftPublishPayload(entry.payload, createdItemIdsByClientId);
+        await updateScheduleItemWithoutCascade({
+          itemId,
+          jobId,
+          payload: finalPayload,
+          exceptions,
+          executor: tx,
+        });
+      }
+
+      for (const entry of body.data.update) {
+        const payload = resolveDraftPublishPayload(entry.payload, createdItemIdsByClientId);
+        await updateScheduleItemWithoutCascade({
+          itemId: entry.id,
+          jobId,
+          payload,
+          exceptions,
+          executor: tx,
+        });
+        updatedItemIds.push(entry.id);
+      }
+
+      if (body.data.deleteIds.length > 0) {
+        await tx
+          .update(scheduleItems)
+          .set({
+            deletedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(inArray(scheduleItems.id, body.data.deleteIds));
+        deletedItemIds.push(...body.data.deleteIds);
+      }
+
+      for (const note of body.data.notes) {
+        const scheduleItemId = note.scheduleItemId ?? createdItemIdsByClientId.get(note.clientItemId ?? "");
+        if (!scheduleItemId) {
+          throw new HttpError(400, "Note target schedule item was not found.");
+        }
+
+        const [createdNote] = await tx
+          .insert(scheduleItemNotes)
+          .values({
+            organizationId: getActiveOrganizationId(req.auth!),
+            scheduleItemId,
+            note: note.note,
+            createdBy: req.auth!.userId,
+          })
+          .returning({
+            id: scheduleItemNotes.id,
+          });
+        noteActivities.push({ noteId: createdNote.id, scheduleItemId });
+      }
+
+      await synchronizeJobSchedule(jobId, tx);
+    });
+
+    const [createdHydrated, updatedHydrated] = await Promise.all([
+      Promise.all(createdItemIds.map((itemId) => hydrateScheduleItem(itemId, req.auth!.userId))),
+      Promise.all(updatedItemIds.map((itemId) => hydrateScheduleItem(itemId, req.auth!.userId))),
+    ]);
+
+    for (const entry of createdHydrated) {
+      await writeActivity({
+        entityType: "schedule_item",
+        entityId: entry.item.id,
+        action: "created",
+        userId: req.auth!.userId,
+        jobId,
+        description: `Created schedule item ${entry.item.title}`,
+        extra: {
+          scheduleItemId: entry.item.id,
+          changes: buildScheduleHistoryChanges(null, entry.item),
+          current: buildScheduleHistorySnapshot(entry.item),
+        },
+      });
+    }
+
+    for (const entry of updatedHydrated) {
+      const previous = previousHydratedById.get(entry.item.id);
+      const markedComplete = Boolean(previous && !previous.isComplete && entry.item.isComplete);
+      await writeActivity({
+        entityType: "schedule_item",
+        entityId: entry.item.id,
+        action: markedComplete ? "completed" : "updated",
+        userId: req.auth!.userId,
+        jobId,
+        description: markedComplete
+          ? `Marked schedule item ${entry.item.title} complete`
+          : `Updated schedule item ${entry.item.title}`,
+        extra: {
+          scheduleItemId: entry.item.id,
+          changes: buildScheduleHistoryChanges(previous ?? null, entry.item),
+          previous: previous ? buildScheduleHistorySnapshot(previous) : null,
+          current: buildScheduleHistorySnapshot(entry.item),
+        },
+      });
+    }
+
+    for (const itemId of deletedItemIds) {
+      const previous = previousHydratedById.get(itemId);
+      const title = previous?.title ?? existingRowById.get(itemId)?.title ?? "schedule item";
+      await writeActivity({
+        entityType: "schedule_item",
+        entityId: itemId,
+        action: "deleted",
+        userId: req.auth!.userId,
+        jobId,
+        description: `Deleted schedule item ${title}`,
+        extra: {
+          scheduleItemId: itemId,
+          previous: previous ? buildScheduleHistorySnapshot(previous) : null,
+        },
+      });
+    }
+
+    if (noteActivities.length > 0) {
+      const noteItemIds = Array.from(new Set(noteActivities.map((activity) => activity.scheduleItemId)));
+      const noteItems = await db
+        .select({
+          id: scheduleItems.id,
+          title: scheduleItems.title,
+        })
+        .from(scheduleItems)
+        .where(inArray(scheduleItems.id, noteItemIds));
+      const noteItemById = new Map(noteItems.map((item) => [item.id, item]));
+
+      for (const activity of noteActivities) {
+        const item = noteItemById.get(activity.scheduleItemId);
+        await writeActivity({
+          entityType: "schedule_item_note",
+          entityId: activity.noteId,
+          action: "created",
+          userId: req.auth!.userId,
+          jobId,
+          description: `Added a note to schedule item ${item?.title ?? "schedule item"}`,
+          extra: {
+            scheduleItemId: activity.scheduleItemId,
+            noteId: activity.noteId,
+          },
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      createdItemIdsByClientId: Object.fromEntries(createdItemIdsByClientId.entries()),
+    });
+  }),
+);
+
 async function hydrateAndAttachContext(
   pageRows: Array<{ id: string; jobId: string | null; jobTitle: string | null; clientId: string | null }>,
   currentUserId: string,
@@ -3709,6 +4539,23 @@ router.post(
           scheduleItemId: item.id,
           notifyUserIds: recipients.map((recipient) => recipient.id),
           recipients,
+        },
+      });
+
+      await createUserNotificationsBestEffort({
+        organizationId: getActiveOrganizationId(req.auth!)!,
+        recipientUserIds: recipients.map((recipient) => recipient.id),
+        actorUserId: req.auth!.userId,
+        entityType: "schedule_item",
+        entityId: item.id,
+        action: "notify",
+        title: `Schedule item: ${item.title}`,
+        body: "You were notified about this schedule item.",
+        url: `/jobs/${jobId}/schedule`,
+        metadata: {
+          jobId,
+          scheduleItemId: item.id,
+          notifyUserIds: recipients.map((recipient) => recipient.id),
         },
       });
     }
@@ -3860,18 +4707,94 @@ router.post(
   }),
 );
 
-router.put(
-  "/schedule-items/:id",
+router.post(
+  "/schedule-items/:id/assignees",
   asyncHandler(async (req, res) => {
-    const body = schedulePayloadSchema.safeParse(req.body);
+    const body = scheduleAssigneePayloadSchema.safeParse(req.body ?? {});
 
     if (!body.success) {
-      throw new HttpError(400, "Invalid schedule item payload.", body.error.flatten());
+      throw new HttpError(400, "Invalid schedule item assignee payload.", body.error.flatten());
+    }
+
+    const itemId = getParam(req.params.id, "schedule item id");
+    const existing = await getScheduleItemOrThrow(itemId);
+    const existingHydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
+
+    if (existingHydrated.item.isPersonalTodo && existingHydrated.item.createdBy !== req.auth!.userId) {
+      throw new HttpError(403, "You do not have access to that schedule item.");
+    }
+
+    if (!existing.jobId) {
+      throw new HttpError(400, "Schedule item is missing a job.");
+    }
+
+    const [assignee] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, body.data.userId))
+      .limit(1);
+
+    if (!assignee) {
+      throw new HttpError(400, "Assignee user was not found.");
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(scheduleItemAssignees)
+        .values({
+          organizationId: existing.organizationId ?? getActiveOrganizationId(req.auth!),
+          scheduleItemId: itemId,
+          userId: body.data.userId,
+        })
+        .onConflictDoNothing({
+          target: [
+            scheduleItemAssignees.scheduleItemId,
+            scheduleItemAssignees.userId,
+          ],
+        });
+
+      await tx
+        .update(scheduleItems)
+        .set({ updatedAt: new Date() })
+        .where(eq(scheduleItems.id, itemId));
+
+      await synchronizeJobSchedule(existing.jobId!, tx);
+    });
+
+    const hydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
+    const changes = buildScheduleHistoryChanges(existingHydrated.item, hydrated.item);
+
+    await writeActivity({
+      entityType: "schedule_item",
+      entityId: itemId,
+      action: "updated",
+      userId: req.auth!.userId,
+      jobId: existing.jobId,
+      description: `Updated schedule item ${existing.title}`,
+      extra: {
+        scheduleItemId: itemId,
+        changes,
+        previous: buildScheduleHistorySnapshot(existingHydrated.item),
+        current: buildScheduleHistorySnapshot(hydrated.item),
+      },
+    });
+
+    res.json(hydrated);
+  }),
+);
+
+router.patch(
+  "/schedule-items/:id",
+  asyncHandler(async (req, res) => {
+    const body = schedulePatchPayloadSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid schedule item patch payload.", body.error.flatten());
     }
 
     const itemId = getParam(req.params.id, "schedule item id");
 
-    if (body.data.predecessors.some((predecessor) => predecessor.scheduleItemId === itemId)) {
+    if (body.data.predecessors?.some((predecessor) => predecessor.scheduleItemId === itemId)) {
       throw new HttpError(400, "A schedule item cannot be its own predecessor.");
     }
 
@@ -3881,6 +4804,129 @@ router.put(
     if (existingHydrated.item.isPersonalTodo && existingHydrated.item.createdBy !== req.auth!.userId) {
       throw new HttpError(403, "You do not have access to that schedule item.");
     }
+
+    if (!existing.jobId) {
+      throw new HttpError(400, "Schedule item is missing a job.");
+    }
+
+    if ("phaseId" in body.data) {
+      await assertPhaseBelongsToJob(existing.jobId, body.data.phaseId ?? null);
+    }
+    if (body.data.predecessors) {
+      await assertPredecessorsBelongToJob(
+        existing.jobId,
+        body.data.predecessors.map((predecessor) => predecessor.scheduleItemId),
+      );
+    }
+
+    const existingMeta = decodeScheduleMeta(existing.notes);
+    const nextTags = body.data.tags
+      ? normalizeUniqueStrings(body.data.tags)
+      : existingMeta.tags;
+    const nextPredecessors = body.data.predecessors ?? existingMeta.predecessors;
+    const updateValues: Partial<typeof scheduleItems.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+
+    if ("phaseId" in body.data) updateValues.schedulePhaseId = body.data.phaseId ?? null;
+    if ("title" in body.data && body.data.title !== undefined) updateValues.title = body.data.title;
+    if ("displayColor" in body.data) updateValues.displayColor = body.data.displayColor ?? "#2563eb";
+    if ("startDate" in body.data && body.data.startDate !== undefined) updateValues.startDate = body.data.startDate;
+    if ("workDays" in body.data && body.data.workDays !== undefined) updateValues.workDays = body.data.workDays;
+    if ("endDate" in body.data && body.data.endDate !== null && body.data.endDate !== undefined) updateValues.endDate = body.data.endDate;
+    if ("isHourly" in body.data && body.data.isHourly !== undefined) updateValues.isHourly = body.data.isHourly;
+    if ("startTime" in body.data) updateValues.startTime = normalizeTimeValue(body.data.startTime ?? null);
+    if ("endTime" in body.data) updateValues.endTime = normalizeTimeValue(body.data.endTime ?? null);
+    if ("progress" in body.data && body.data.progress !== undefined) updateValues.progress = body.data.progress;
+    if ("reminder" in body.data && body.data.reminder !== undefined) updateValues.reminder = body.data.reminder;
+    if ("showOnGantt" in body.data && body.data.showOnGantt !== undefined) updateValues.showOnGantt = body.data.showOnGantt;
+    if ("visibleToEstimators" in body.data && body.data.visibleToEstimators !== undefined) updateValues.visibleToEstimators = body.data.visibleToEstimators;
+    if ("visibleToInstallers" in body.data && body.data.visibleToInstallers !== undefined) updateValues.visibleToInstallers = body.data.visibleToInstallers;
+    if ("visibleToOfficeStaff" in body.data && body.data.visibleToOfficeStaff !== undefined) updateValues.visibleToOfficeStaff = body.data.visibleToOfficeStaff;
+    if ("isComplete" in body.data && body.data.isComplete !== undefined) updateValues.isComplete = body.data.isComplete;
+    if ("isPersonalTodo" in body.data && body.data.isPersonalTodo !== undefined) updateValues.isPersonalTodo = body.data.isPersonalTodo;
+    if ("notes" in body.data || "tags" in body.data || "predecessors" in body.data) {
+      updateValues.notes = encodeScheduleMeta({
+        notes: "notes" in body.data ? body.data.notes ?? null : existingMeta.notes,
+        tags: nextTags,
+        predecessors: nextPredecessors,
+        manualEndDate:
+          "endDate" in body.data
+            ? body.data.endDate !== null && body.data.endDate !== undefined
+            : existingMeta.manualEndDate,
+      });
+    }
+
+    await db.transaction(async (tx) => {
+      if (body.data.tags) {
+        await ensureTagSettings(existing.jobId!, nextTags, tx);
+      }
+
+      await tx
+        .update(scheduleItems)
+        .set(updateValues)
+        .where(eq(scheduleItems.id, itemId));
+
+      if (body.data.assigneeIds) {
+        const organizationId =
+          existing.organizationId ?? getActiveOrganizationId(req.auth!);
+        await syncAssignees(itemId, body.data.assigneeIds, organizationId, tx);
+      }
+      if (body.data.predecessors) {
+        const organizationId =
+          existing.organizationId ?? getActiveOrganizationId(req.auth!);
+        await syncPredecessors(itemId, body.data.predecessors, organizationId, tx);
+      }
+
+      await synchronizeJobSchedule(existing.jobId!, tx);
+    });
+
+    const hydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
+    const changes = buildScheduleHistoryChanges(existingHydrated.item, hydrated.item);
+    const markedComplete = !existingHydrated.item.isComplete && hydrated.item.isComplete;
+
+    await writeActivity({
+      entityType: "schedule_item",
+      entityId: itemId,
+      action: markedComplete ? "completed" : "updated",
+      userId: req.auth!.userId,
+      jobId: existing.jobId,
+      description: markedComplete
+        ? `Marked schedule item ${hydrated.item.title} complete`
+        : `Updated schedule item ${hydrated.item.title}`,
+      extra: {
+        scheduleItemId: itemId,
+        changes,
+        previous: buildScheduleHistorySnapshot(existingHydrated.item),
+        current: buildScheduleHistorySnapshot(hydrated.item),
+      },
+    });
+
+    res.json(hydrated);
+  }),
+);
+
+router.put(
+  "/schedule-items/:id",
+  asyncHandler(async (req, res) => {
+    const itemId = getParam(req.params.id, "schedule item id");
+    const existing = await getScheduleItemOrThrow(itemId);
+
+    if (existing.isPersonalTodo && existing.createdBy !== req.auth!.userId) {
+      throw new HttpError(403, "You do not have access to that schedule item.");
+    }
+
+    const body = schedulePayloadSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid schedule item payload.", body.error.flatten());
+    }
+
+    if (body.data.predecessors.some((predecessor) => predecessor.scheduleItemId === itemId)) {
+      throw new HttpError(400, "A schedule item cannot be its own predecessor.");
+    }
+
+    const existingHydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
 
     if (!existing.jobId) {
       throw new HttpError(400, "Schedule item is missing a job.");
@@ -3962,11 +5008,28 @@ router.put(
         action: "queued",
         userId: req.auth!.userId,
         jobId: existing.jobId,
-        description: `Queued schedule item notifications for ${body.data.title}`,
+        description: `Queued schedule item notifications for ${normalizedPayload.title}`,
         extra: {
           scheduleItemId: itemId,
           notifyUserIds: recipients.map((recipient) => recipient.id),
           recipients,
+        },
+      });
+
+      await createUserNotificationsBestEffort({
+        organizationId: getActiveOrganizationId(req.auth!)!,
+        recipientUserIds: recipients.map((recipient) => recipient.id),
+        actorUserId: req.auth!.userId,
+        entityType: "schedule_item",
+        entityId: itemId,
+        action: "notify",
+        title: `Schedule item: ${normalizedPayload.title}`,
+        body: "You were notified about this schedule item.",
+        url: `/jobs/${existing.jobId}/schedule`,
+        metadata: {
+          jobId: existing.jobId,
+          scheduleItemId: itemId,
+          notifyUserIds: recipients.map((recipient) => recipient.id),
         },
       });
     }
@@ -4230,7 +5293,6 @@ router.post(
 
 router.post(
   "/schedule-items/:id/attachments",
-  requireScheduleItemRouteAccess,
   uploadRateLimit,
   uploadArray("files", 20),
   asyncHandler(async (req, res) => {
@@ -4251,12 +5313,13 @@ router.post(
     const attachments = [];
 
     for (const uploadedFile of uploadedFiles) {
-      validateUploadForMediaType("document", uploadedFile);
+      const mediaType = inferUploadedAttachmentMediaType(uploadedFile);
+      validateUploadForMediaType(mediaType, uploadedFile);
 
       const storedFileName = buildStoredFileName(uploadedFile.originalname);
       const uploadPath = buildUploadPath({
         jobId: item.jobId,
-        mediaType: "document",
+        mediaType,
         storedFileName,
       });
 
@@ -4600,12 +5663,12 @@ router.delete(
   "/schedule-items/:id",
   asyncHandler(async (req, res) => {
     const itemId = getParam(req.params.id, "schedule item id");
-    const hydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
     const existing = await getScheduleItemOrThrow(itemId);
 
-    if (hydrated.item.isPersonalTodo && hydrated.item.createdBy !== req.auth!.userId) {
+    if (existing.isPersonalTodo && existing.createdBy !== req.auth!.userId) {
       throw new HttpError(403, "You do not have access to that schedule item.");
     }
+    const hydrated = await hydrateScheduleItem(itemId, req.auth!.userId);
 
     if (!existing.jobId) {
       throw new HttpError(400, "Schedule item is missing a job.");

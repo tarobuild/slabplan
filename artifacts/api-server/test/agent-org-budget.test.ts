@@ -11,6 +11,7 @@ import type { Server } from "node:http";
 // endpoint.
 const testDatabaseUrl =
   "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test";
+const testOrganizationId = "00000000-0000-4000-8000-000000000001";
 
 process.env.NODE_ENV = "test";
 process.env.LOG_LEVEL = "silent";
@@ -58,6 +59,7 @@ let server: Server;
 let baseUrl: string;
 let adminAccessJwt: string;
 let userAccessJwt: string;
+let nonAdminAccessJwt: string;
 let conversationId: string;
 let nonAdminConversationId: string;
 
@@ -101,7 +103,7 @@ before(async () => {
       email: userAEmail,
       passwordHash: "test-not-a-real-hash",
       fullName: "ZZZ Org Budget User A",
-      role: "crew_member",
+      role: "admin",
     },
     {
       id: userBUserId,
@@ -126,6 +128,16 @@ before(async () => {
     id: userAUserId,
     email: userAEmail,
     fullName: "ZZZ Org Budget User A",
+    role: "admin",
+    avatarUrl: null,
+    phone: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  nonAdminAccessJwt = auth.signAccessToken({
+    id: userBUserId,
+    email: userBEmail,
+    fullName: "ZZZ Org Budget User B",
     role: "crew_member",
     avatarUrl: null,
     phone: null,
@@ -133,19 +145,19 @@ before(async () => {
     updatedAt: new Date(),
   });
 
-  // Two pre-seeded conversations so the admin-only send-handler tests can
-  // hit real owned rows. Both have nothing fancy — the cap check fires
-  // before any history-load logic does anything interesting.
+  // Two pre-seeded conversations so the send-handler tests can hit a real
+  // owned admin row. Both have nothing fancy — the cap check fires before
+  // any history-load logic does anything interesting.
   const [c1] = await db
     .insert(agentConversations)
-    .values({ userId: adminUserId, title: "Org budget test convo" })
+    .values({ userId: userAUserId, title: "Org budget test convo" })
     .returning();
   conversationId = c1!.id;
   conversationIdsToClean.push(conversationId);
 
   const [c2] = await db
     .insert(agentConversations)
-    .values({ userId: adminUserId, title: "Per-user cap test convo" })
+    .values({ userId: userAUserId, title: "Per-user cap test convo" })
     .returning();
   nonAdminConversationId = c2!.id;
   conversationIdsToClean.push(nonAdminConversationId);
@@ -231,7 +243,7 @@ test("loadOrgUsageSnapshot sums across all users for the current month and ignor
   // the running clock.
   await setUsageRow(adminUserId, "2020-01", 9_999_999, 9_999_999, 99);
 
-  const snapshot = await usage.loadOrgUsageSnapshot();
+  const snapshot = await usage.loadOrgUsageSnapshot(testOrganizationId);
   assert.equal(snapshot.yearMonth, ym);
   assert.equal(snapshot.inputTokens, 300_000);
   assert.equal(snapshot.outputTokens, 130_000);
@@ -251,12 +263,12 @@ test("loadOrgUsageSnapshot.exceeded flips once total >= budget", async () => {
   try {
     process.env.AGENT_MONTHLY_TOKEN_BUDGET = "1000";
     await setUsageRow(userAUserId, ym, 600, 350, 1); // total 950, under
-    let snap = await usage.loadOrgUsageSnapshot();
+    let snap = await usage.loadOrgUsageSnapshot(testOrganizationId);
     assert.equal(snap.exceeded, false);
     assert.equal(snap.remaining, 50);
 
     await setUsageRow(userBUserId, ym, 100, 100, 1); // org total 1150 > 1000
-    snap = await usage.loadOrgUsageSnapshot();
+    snap = await usage.loadOrgUsageSnapshot(testOrganizationId);
     assert.equal(snap.exceeded, true);
     assert.equal(snap.remaining, 0);
   } finally {
@@ -272,7 +284,7 @@ test("rolling over to a new month resets the org snapshot to zero", async () => 
   // year_month and must be invisible to the current-month aggregate.
   await setUsageRow(userAUserId, "2020-02", 5_000_000, 5_000_000, 50);
   await setUsageRow(userBUserId, "2020-02", 5_000_000, 5_000_000, 50);
-  const snap = await usage.loadOrgUsageSnapshot();
+  const snap = await usage.loadOrgUsageSnapshot(testOrganizationId);
   assert.equal(snap.totalTokens, 0);
   assert.equal(snap.requests, 0);
   assert.equal(snap.userCount, 0);
@@ -284,7 +296,7 @@ test("rolling over to a new month resets the org snapshot to zero", async () => 
 
 test("GET /api/agent/usage/org requires admin role", async () => {
   const denied = await fetch(`${baseUrl}/api/agent/usage/org`, {
-    headers: { authorization: `Bearer ${userAccessJwt}` },
+    headers: { authorization: `Bearer ${nonAdminAccessJwt}` },
   });
   assert.equal(denied.status, 403);
 });
@@ -321,7 +333,7 @@ test("POST /agent/conversations/:id/messages returns 429 (org-usage-limit) when 
     // counter past it before this user's own per-user cap is anywhere
     // close. That isolates the org-cap firing path from the per-user one.
     process.env.AGENT_MONTHLY_TOKEN_BUDGET = "500";
-    process.env.AGENT_MONTHLY_TOKEN_CAP = "999999"; // calling admin is far under
+    process.env.AGENT_MONTHLY_TOKEN_CAP = "999999"; // user A is far under
     await setUsageRow(adminUserId, ym, 400, 200, 1); // org=600 > 500
 
     const res = await fetch(
@@ -331,7 +343,7 @@ test("POST /agent/conversations/:id/messages returns 429 (org-usage-limit) when 
         headers: {
           "content-type": "application/json",
           "x-requested-with": "XMLHttpRequest",
-          authorization: `Bearer ${adminAccessJwt}`,
+          authorization: `Bearer ${userAccessJwt}`,
         },
         body: JSON.stringify({ content: "hello" }),
       },
@@ -363,7 +375,7 @@ test("POST /agent/conversations/:id/messages still returns 429 (usage-limit) for
     // unchanged by the new org cap.
     process.env.AGENT_MONTHLY_TOKEN_BUDGET = "999999999";
     process.env.AGENT_MONTHLY_TOKEN_CAP = "100";
-    await setUsageRow(adminUserId, ym, 80, 30, 1); // user total 110 > 100
+    await setUsageRow(userAUserId, ym, 80, 30, 1); // user total 110 > 100
 
     const res = await fetch(
       `${baseUrl}/api/agent/conversations/${nonAdminConversationId}/messages`,
@@ -372,7 +384,7 @@ test("POST /agent/conversations/:id/messages still returns 429 (usage-limit) for
         headers: {
           "content-type": "application/json",
           "x-requested-with": "XMLHttpRequest",
-          authorization: `Bearer ${adminAccessJwt}`,
+          authorization: `Bearer ${userAccessJwt}`,
         },
         body: JSON.stringify({ content: "hello again" }),
       },

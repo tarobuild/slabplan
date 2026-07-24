@@ -13,8 +13,6 @@ import {
   scheduleItemAssignees,
   scheduleItemTodos,
   scheduleItems,
-  sovAreas,
-  sovLineItems,
   trackerInvoices,
   users,
 } from "@workspace/db/schema";
@@ -34,6 +32,7 @@ import { HttpError, asyncHandler } from "../lib/http";
 import { buildScheduleListVisibilityFilter } from "../lib/schedule-visibility";
 import { organizationScopeCondition } from "../lib/tenant-scope";
 import { getCachedForecastForAddress, type WeatherSnapshot } from "../lib/weather";
+import { getTrackerTotalsByJobIds } from "./financials";
 
 const router: IRouter = Router();
 
@@ -412,6 +411,8 @@ router.get(
 const PM_AT_RISK_NO_LOG_WORKING_DAYS = 3;
 const ADMIN_TOP_CLIENTS_LIMIT = 5;
 const ADMIN_RECENT_LEADS_LIMIT = 5;
+const DRAFTER_RECENT_LEADS_LIMIT = 5;
+const DRAFTER_UPCOMING_SCHEDULE_LIMIT = 8;
 const PM_TEAM_LOG_WINDOW_HOURS = 24;
 // Cap on the per-cohort drill-down list returned in `samples`. Set high
 // enough that the PM Home at-risk tiles can drill into the full counted
@@ -422,8 +423,11 @@ const PM_TEAM_LOG_WINDOW_HOURS = 24;
 // list endpoints.
 const PM_AT_RISK_DRILLDOWN_LIMIT = 500;
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+export function todayIso(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function isoDaysFromNow(days: number): string {
@@ -966,6 +970,94 @@ async function buildPmHome(auth: NonNullable<Express.Request["auth"]>) {
   };
 }
 
+async function buildDrafterHome(auth: NonNullable<Express.Request["auth"]>) {
+  const today = todayIso();
+  const scheduleEnd = isoDaysFromNow(14);
+  const scheduleVisibilityFilter = buildScheduleListVisibilityFilter(auth);
+
+  const summaryPromise = Promise.all([
+    db
+      .select({ total: count() })
+      .from(leads)
+      .where(and(isNull(leads.deletedAt), eq(leads.status, "open"))),
+    db
+      .select({ total: count() })
+      .from(scheduleItems)
+      .leftJoin(jobs, eq(scheduleItems.jobId, jobs.id))
+      .where(
+        and(
+          isNull(scheduleItems.deletedAt),
+          isNull(jobs.deletedAt),
+          or(isNull(scheduleItems.isComplete), eq(scheduleItems.isComplete, false)),
+          scheduleVisibilityFilter,
+        ),
+      ),
+  ]);
+
+  const recentLeadsPromise = db
+    .select({
+      id: leads.id,
+      title: leads.title,
+      status: leads.status,
+      city: leads.city,
+      state: leads.state,
+      confidence: leads.confidence,
+      createdAt: leads.createdAt,
+    })
+    .from(leads)
+    .where(isNull(leads.deletedAt))
+    .orderBy(desc(leads.createdAt))
+    .limit(DRAFTER_RECENT_LEADS_LIMIT);
+
+  const upcomingSchedulePromise = db
+    .select({
+      id: scheduleItems.id,
+      title: scheduleItems.title,
+      startDate: scheduleItems.startDate,
+      endDate: scheduleItems.endDate,
+      progress: scheduleItems.progress,
+      isComplete: scheduleItems.isComplete,
+      displayColor: scheduleItems.displayColor,
+      jobId: scheduleItems.jobId,
+      jobTitle: jobs.title,
+    })
+    .from(scheduleItems)
+    .leftJoin(jobs, eq(scheduleItems.jobId, jobs.id))
+    .where(
+      and(
+        isNull(scheduleItems.deletedAt),
+        isNull(jobs.deletedAt),
+        lte(scheduleItems.startDate, scheduleEnd),
+        gte(scheduleItems.endDate, today),
+        scheduleVisibilityFilter,
+      ),
+    )
+    .orderBy(scheduleItems.startDate)
+    .limit(DRAFTER_UPCOMING_SCHEDULE_LIMIT);
+
+  const [[openLeadsRow, openScheduleItemsRow], recentLeads, upcomingSchedule] =
+    await Promise.all([summaryPromise, recentLeadsPromise, upcomingSchedulePromise]);
+
+  return {
+    role: "drafter" as const,
+    today,
+    summary: {
+      openLeads: Number(openLeadsRow[0]?.total ?? 0),
+      openScheduleItems: Number(openScheduleItemsRow[0]?.total ?? 0),
+    },
+    recentLeads,
+    schedule: {
+      start: today,
+      end: scheduleEnd,
+      items: upcomingSchedule.map((row) => ({
+        ...row,
+        progress: row.progress ?? 0,
+        isComplete: row.isComplete === true,
+      })),
+    },
+  };
+}
+
 async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
   const today = todayIso();
   const monthStart = startOfMonthIso(today);
@@ -998,30 +1090,15 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
       ),
   ]);
 
-  // AR outstanding across all trackers (admin sees everything).
-  const lineItemRowsPromise = db
+  // AR outstanding across all trackers (admin sees everything). Use the same
+  // tracker totals helper as financials/job/client rollups so held retention
+  // is treated as not received until released.
+  const trackerJobRowsPromise = db
     .select({
       jobId: financialTrackers.jobId,
       clientId: jobs.clientId,
-      scheduledValueCents: sovLineItems.scheduledValueCents,
-      billedCents: sovLineItems.billedCents,
-      isRemoved: sovLineItems.isRemoved,
     })
-    .from(sovLineItems)
-    .innerJoin(sovAreas, eq(sovLineItems.areaId, sovAreas.id))
-    .innerJoin(financialTrackers, eq(sovAreas.trackerId, financialTrackers.id))
-    .innerJoin(jobs, eq(financialTrackers.jobId, jobs.id))
-    .where(and(isNull(jobs.deletedAt), jobsOrgCondition, trackersOrgCondition));
-
-  const approvedCoRowsPromise = db
-    .select({
-      jobId: financialTrackers.jobId,
-      clientId: jobs.clientId,
-      amountCents: changeOrders.amountCents,
-      status: changeOrders.status,
-    })
-    .from(changeOrders)
-    .innerJoin(financialTrackers, eq(changeOrders.trackerId, financialTrackers.id))
+    .from(financialTrackers)
     .innerJoin(jobs, eq(financialTrackers.jobId, jobs.id))
     .where(and(isNull(jobs.deletedAt), jobsOrgCondition, trackersOrgCondition));
 
@@ -1107,8 +1184,7 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
 
   const [
     [activeJobsRow, openLeadsRow, newJobsThisMonthRow],
-    lineItemRows,
-    approvedCoRows,
+    trackerJobRows,
     invoiceRows,
     paymentTotals,
     jobsByStatus,
@@ -1116,8 +1192,7 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
     calendarItems,
   ] = await Promise.all([
     kpiPromise,
-    lineItemRowsPromise,
-    approvedCoRowsPromise,
+    trackerJobRowsPromise,
     invoiceRowsPromise,
     paymentTotalsPromise,
     jobsByStatusPromise,
@@ -1125,27 +1200,16 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
     calendarItemsPromise,
   ]);
 
-  // Roll up open balance per client. Open balance = scheduled + approved COs
-  // − billed, floored at 0 (mirrors the formula in financials.ts).
-  const balanceByClient = new Map<string | null, { scheduled: number; billed: number; approvedCo: number }>();
-  for (const row of lineItemRows) {
-    if (row.isRemoved) continue;
+  const trackerTotalsByJobId = await getTrackerTotalsByJobIds(trackerJobRows.map((row) => row.jobId));
+  const balanceByClient = new Map<string | null, number>();
+  for (const row of trackerJobRows) {
+    const openBalance = trackerTotalsByJobId.get(row.jobId)?.outstandingCents ?? 0;
     const key = row.clientId ?? null;
-    const entry = balanceByClient.get(key) ?? { scheduled: 0, billed: 0, approvedCo: 0 };
-    entry.scheduled += Number(row.scheduledValueCents ?? 0);
-    entry.billed += Number(row.billedCents ?? 0);
-    balanceByClient.set(key, entry);
-  }
-  for (const row of approvedCoRows) {
-    if (row.status !== "approved") continue;
-    const key = row.clientId ?? null;
-    const entry = balanceByClient.get(key) ?? { scheduled: 0, billed: 0, approvedCo: 0 };
-    entry.approvedCo += Number(row.amountCents ?? 0);
-    balanceByClient.set(key, entry);
+    balanceByClient.set(key, (balanceByClient.get(key) ?? 0) + openBalance);
   }
 
   const arOutstandingCents = Array.from(balanceByClient.values()).reduce(
-    (sum, e) => sum + Math.max(0, e.scheduled + e.approvedCo - e.billed),
+    (sum, openBalance) => sum + Math.max(0, openBalance),
     0,
   );
 
@@ -1162,10 +1226,10 @@ async function buildAdminHome(auth: NonNullable<Express.Request["auth"]>) {
   const clientNameById = new Map(clientNameRows.map((r) => [r.id, r.name]));
 
   const topClients = Array.from(balanceByClient.entries())
-    .map(([clientId, e]) => ({
+    .map(([clientId, openBalanceCents]) => ({
       clientId,
       clientName: clientId ? clientNameById.get(clientId) ?? "(Unknown client)" : "(No client)",
-      openBalanceCents: Math.max(0, e.scheduled + e.approvedCo - e.billed),
+      openBalanceCents: Math.max(0, openBalanceCents),
     }))
     .filter((c) => c.openBalanceCents > 0)
     .sort((a, b) => b.openBalanceCents - a.openBalanceCents)
@@ -1240,6 +1304,14 @@ router.get(
     const auth = req.auth!;
     if (isAdmin(auth)) {
       res.json(await buildAdminHome(auth));
+      return;
+    }
+    if (auth.role === "project_manager") {
+      res.json(await buildPmHome(auth));
+      return;
+    }
+    if (auth.role === "drafter") {
+      res.json(await buildDrafterHome(auth));
       return;
     }
     res.json(await buildCrewHome(auth));

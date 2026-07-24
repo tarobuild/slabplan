@@ -80,6 +80,7 @@ type FolderPermissions = {
   admin?: boolean
   project_manager?: boolean
   crew_member?: boolean
+  drafter?: boolean
   internal?: boolean
   users?: Record<string, boolean>
 } | null
@@ -267,7 +268,7 @@ export default function JobSummaryPage() {
     // filters, so go through `customFetch` with a manual querystring rather
     // than calling `usersGetUsers()` (which would over-fetch).
     type UsersResponse = { users?: WorkerOption[] }
-    const usersUrl = `${getUsersGetUsersUrl()}?roles=project_manager,crew_member&limit=200`
+    const usersUrl = `${getUsersGetUsersUrl()}?roles=project_manager,crew_member,drafter&limit=200`
     customFetch<UsersResponse>(usersUrl, { method: "GET" })
       .then((data) => setWorkerOptions(data.users ?? []))
       .catch(() => {})
@@ -344,10 +345,12 @@ export default function JobSummaryPage() {
       for (const worker of selectedAssignmentWorkers) {
         const existing = current[worker.id]
         const financials =
-          existing?.financials ??
-          worker.canViewFinancials ??
-          worker.access?.financials ??
-          false
+          worker.role === "drafter"
+            ? false
+            : existing?.financials ??
+              worker.canViewFinancials ??
+              worker.access?.financials ??
+              false
         const folders: Record<string, FolderAccessDraft> = {}
         for (const folder of assignmentFolders) {
           const existingFolder = existing?.folders[folder.id]
@@ -941,7 +944,7 @@ export default function JobSummaryPage() {
                     <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
                       {selectedAssignmentWorkers.length === 0 ? (
                         <p className="rounded-md border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-400">
-                          Select a worker or project manager to configure access.
+                          Select a team member to configure access.
                         </p>
                       ) : assignmentFolderLoading ? (
                         <div className="space-y-2">
@@ -951,6 +954,7 @@ export default function JobSummaryPage() {
                       ) : (
                         selectedAssignmentWorkers.map((assignee) => {
                           const draft = assigneeAccessDrafts[assignee.id]
+                          const canGrantFinancials = assignee.role !== "drafter"
                           return (
                             <div key={assignee.id} className="rounded-lg border border-slate-200 p-3">
                               <div className="mb-3 flex items-center justify-between gap-3">
@@ -965,10 +969,14 @@ export default function JobSummaryPage() {
                                 <label className="flex shrink-0 items-center gap-2 text-xs font-medium text-slate-600">
                                   Financials
                                   <Switch
-                                    checked={draft?.financials ?? false}
+                                    checked={canGrantFinancials && (draft?.financials ?? false)}
+                                    disabled={!canGrantFinancials}
                                     aria-label={`${assignee.fullName} can view financials`}
                                     onCheckedChange={(checked) =>
-                                      updateAssigneeFinancialsDraft(assignee.id, checked)
+                                      updateAssigneeFinancialsDraft(
+                                        assignee.id,
+                                        canGrantFinancials ? checked : false,
+                                      )
                                     }
                                   />
                                 </label>
@@ -1075,10 +1083,16 @@ export default function JobSummaryPage() {
                       <label className="mt-3 flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2">
                         <span className="text-xs font-medium text-slate-600">Can view financials</span>
                         <Switch
-                          checked={assignee.canViewFinancials ?? assignee.access?.financials ?? false}
-                          disabled={savingAccessUserId === assignee.id}
+                          checked={
+                            assignee.role !== "drafter" &&
+                            (assignee.canViewFinancials ?? assignee.access?.financials ?? false)
+                          }
+                          disabled={savingAccessUserId === assignee.id || assignee.role === "drafter"}
                           onCheckedChange={(checked) =>
-                            handleUpdateAssigneeFinancialsAccess(assignee, checked)
+                            handleUpdateAssigneeFinancialsAccess(
+                              assignee,
+                              assignee.role === "drafter" ? false : checked,
+                            )
                           }
                         />
                       </label>

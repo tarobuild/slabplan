@@ -1,7 +1,19 @@
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query"
-import { ApiError, setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react"
+import {
+  ApiError,
+  setAuthFailureHandler,
+  setAuthRefreshHandler,
+  setAuthTokenGetter,
+  setBaseUrl,
+  setForbiddenHandler,
+} from "@workspace/api-client-react"
 import { useAuthStore } from "@/store/auth"
-import { refreshSession } from "@/lib/api"
+import {
+  notifyForbidden,
+  notifyForbiddenAction,
+  notifySessionExpired,
+  refreshSession,
+} from "@/lib/api"
 import { apiOrigin } from "@/lib/api-origin"
 import {
   invalidateAppData,
@@ -21,9 +33,7 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
   }
 
   if (error.status === 401) {
-    // Allow one retry so the cookie-based refresh that runs from
-    // the cache `onError` handler has a chance to seat a new token.
-    return failureCount < 1
+    return false
   }
 
   if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
@@ -33,25 +43,9 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
   return failureCount < 2
 }
 
-async function handleAuthError(error: unknown): Promise<void> {
-  if (!isApiError(error) || error.status !== 401) {
-    return
-  }
-
-  await refreshSession()
-}
-
 const queryClient = new QueryClient({
-  queryCache: new QueryCache({
-    onError: (error) => {
-      void handleAuthError(error)
-    },
-  }),
-  mutationCache: new MutationCache({
-    onError: (error) => {
-      void handleAuthError(error)
-    },
-  }),
+  queryCache: new QueryCache(),
+  mutationCache: new MutationCache(),
   defaultOptions: {
     queries: {
       retry: shouldRetry,
@@ -61,7 +55,7 @@ const queryClient = new QueryClient({
     mutations: {
       retry: (failureCount, error) => {
         if (isApiError(error) && error.status === 401) {
-          return failureCount < 1
+          return false
         }
         return false
       },
@@ -146,5 +140,14 @@ export function configureApiClient(): void {
 
   setBaseUrl(apiOrigin || null)
   setAuthTokenGetter(() => useAuthStore.getState().accessToken)
+  setAuthRefreshHandler(refreshSession)
+  setAuthFailureHandler(notifySessionExpired)
+  setForbiddenHandler(({ method }) => {
+    if (method.toUpperCase() === "GET") {
+      notifyForbidden()
+    } else {
+      notifyForbiddenAction()
+    }
+  })
   bridgeDataRefreshToReactQuery()
 }

@@ -23,7 +23,15 @@ export type LeadConvertToJobBodyJob = {
   zipCode?: string | null;
   /** Decimal serialized as string. */
   contractPrice?: string | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   projectedStart?: string | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   projectedCompletion?: string | null;
   jobType?: LeadConvertToJobBodyJobJobType;
   projectManagerId?: string | null;

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 import { CESAR, authHeaders, loginViaApi } from "./helpers/auth"
 import { deleteJob, requireAnyClient } from "./helpers/api"
+import { visiblePlaceholder } from "./helpers/locators"
 import { CESAR_STATE } from "./helpers/storage"
 
 // Task #343 — pin the "Converted" status filter + violet "Converted"
@@ -121,10 +122,7 @@ test.describe("leads — Converted status filter + badge", () => {
 
     // Open /leads and narrow to just our seeded rows via search.
     await page.goto("/leads")
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(marker)
+    await visiblePlaceholder(page, /search/i).fill(marker)
 
     // Pick "Converted" from the status dropdown and capture the
     // outgoing /api/leads request to prove the UI sends

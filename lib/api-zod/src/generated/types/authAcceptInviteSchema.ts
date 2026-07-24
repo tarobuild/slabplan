@@ -7,11 +7,16 @@
  */
 
 /**
- * Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link plus the password they want to use. On success the user is logged in (refresh cookie + access token in response).
+ * Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link, confirms the invited email address, and sends the password they want to use. On success the user is logged in (refresh cookie + access token in response).
  */
 export interface AuthAcceptInviteSchema {
   /** @minLength 1 */
   token: string;
+  /**
+   * @minLength 3
+   * @maxLength 255
+   */
+  email: string;
   /** @minLength 8 */
   password: string;
 }

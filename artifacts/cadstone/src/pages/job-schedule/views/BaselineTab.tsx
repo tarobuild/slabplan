@@ -1,5 +1,5 @@
 import { type Dispatch, type SetStateAction } from "react"
-import { Download, Filter, MoreHorizontal, Plus, Settings2 } from "lucide-react"
+import { Download, MoreHorizontal, Plus, Settings2 } from "lucide-react"
 import {
   fmtDate,
   fmtDateTime,
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table"
 
 import { EmptyState } from "../components"
+import type { ScheduleExportFormat, ScheduleExportKind } from "../types"
 
 interface BaselineTabProps {
   baseline: ScheduleBaselineRecord | null
@@ -32,12 +33,11 @@ interface BaselineTabProps {
   // Admin may set/reset baseline; crew gets read-only.
   canWrite: boolean
   setSettingsOpen: Dispatch<SetStateAction<boolean>>
-  setFilterOpen: Dispatch<SetStateAction<boolean>>
   enterDraftMode: () => void
   handleDiscardDraft: () => void
   handleResetBaseline: () => Promise<void> | void
   handleSetBaseline: () => Promise<void> | void
-  handleExport: (kind: "baseline" | "exceptions" | "schedule") => void
+  handleExport: (kind: ScheduleExportKind, format: ScheduleExportFormat) => void
 }
 
 export function BaselineTab(props: BaselineTabProps) {
@@ -46,7 +46,6 @@ export function BaselineTab(props: BaselineTabProps) {
     scheduleOffline,
     canWrite,
     setSettingsOpen,
-    setFilterOpen,
     enterDraftMode,
     handleDiscardDraft,
     handleResetBaseline,
@@ -95,13 +94,10 @@ export function BaselineTab(props: BaselineTabProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExport("baseline")}>Export PDF</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("baseline", "csv")}>Export CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("baseline", "pdf")}>Export PDF</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setFilterOpen(true)}>
-              <Filter className="size-4" />
-              Filter
-            </Button>
             {canWrite ? (
               <Button type="button" size="sm" onClick={() => void handleSetBaseline()}>
                 <Plus className="size-4" />

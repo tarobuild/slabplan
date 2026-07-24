@@ -126,11 +126,6 @@ import { uploadAcceptForMediaType, validateSelectedFilesAsync } from "@/lib/uplo
 import { useFilePreview } from "@/components/files/file-preview-context"
 import type { PreviewFile } from "@/components/files/FilePreview"
 import { toast } from "sonner"
-import {
-  getDateRangeForPreset,
-  todayString,
-  type DailyLogFilterPreset,
-} from "./job-daily-logs-date-utils"
 
 type JobContext = {
   job: JobOption | null
@@ -294,7 +289,7 @@ type FormValues = {
 // Drafts now reference an uploaded files row via `fileId`. We keep `name`,
 // `mimeType`, and `previewUrl` (an object URL we created from the local
 // File) so the composer can show a thumbnail before submit; `previewUrl`
-// is revoked on remove/submit/close.
+// is revoked on remove/submit.
 type CommentDraftAttachment = {
   fileId: string
   name: string
@@ -303,14 +298,43 @@ type CommentDraftAttachment = {
 }
 
 export function revokeCommentDraftAttachmentPreviews(
-  attachments: Array<Pick<CommentDraftAttachment, "previewUrl">>,
+  items: Array<Pick<CommentDraftAttachment, "previewUrl">>,
 ) {
-  for (const item of attachments) {
+  for (const item of items) {
     URL.revokeObjectURL(item.previewUrl)
   }
 }
 
-type FilterPreset = DailyLogFilterPreset
+function authenticatedAttachmentViewUrl(attachment: {
+  fileId: string | null
+  fileUrl: string | null
+}) {
+  if (attachment.fileId) return `/files/${attachment.fileId}/view`
+  if (!attachment.fileUrl) return null
+  if (attachment.fileUrl.startsWith("/api/")) {
+    return attachment.fileUrl.slice("/api".length)
+  }
+  if (attachment.fileUrl.startsWith("/uploads/")) return null
+  return attachment.fileUrl
+}
+
+type FilterPreset =
+  | "all"
+  | "custom"
+  | "today"
+  | "today_onward"
+  | "next_30"
+  | "next_14"
+  | "next_7"
+  | "today_tomorrow"
+  | "past_7"
+  | "past_14"
+  | "past_30"
+  | "past_45"
+  | "past_60"
+  | "past_90"
+  | "past_180"
+  | "past_365"
 
 type FilterValues = {
   standardFilter: "all" | "published" | "draft" | "with_attachments" | "weather_included"
@@ -393,6 +417,21 @@ const COMMENT_ATTACHMENT_MAX_COUNT = 10
 const COMMENT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
 const COMMENT_ATTACHMENT_SIZE_MESSAGE = "Each attachment must be under 10 MB."
 const COMMENT_ATTACHMENT_COUNT_MESSAGE = `You can attach up to ${COMMENT_ATTACHMENT_MAX_COUNT} files per comment.`
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function todayString() {
+  return formatLocalDate(new Date())
+}
+
+function toDateOnly(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
 
 function formatShortDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -497,6 +536,37 @@ function deriveWeatherIcon(snapshot: WeatherSnapshot | null) {
 
 function titleForLog(logDate: string, title: string | null | undefined) {
   return `${formatTitleDate(logDate)} | ${title || "Daily Log"}`
+}
+
+function toQueryDate(date: Date) {
+  return formatLocalDate(toDateOnly(date))
+}
+
+function addDays(date: Date, amount: number) {
+  const next = toDateOnly(date)
+  next.setDate(next.getDate() + amount)
+  return next
+}
+
+function getDateRangeForPreset(preset: FilterPreset) {
+  const now = toDateOnly(new Date())
+
+  if (preset === "all") return { from: "", to: "" }
+  if (preset === "custom") return null
+  if (preset === "today") return { from: toQueryDate(now), to: toQueryDate(now) }
+  if (preset === "today_onward") return { from: toQueryDate(now), to: "" }
+  if (preset === "today_tomorrow") return { from: toQueryDate(now), to: toQueryDate(addDays(now, 1)) }
+  if (preset === "next_7") return { from: toQueryDate(now), to: toQueryDate(addDays(now, 7)) }
+  if (preset === "next_14") return { from: toQueryDate(now), to: toQueryDate(addDays(now, 14)) }
+  if (preset === "next_30") return { from: toQueryDate(now), to: toQueryDate(addDays(now, 30)) }
+  if (preset === "past_7") return { from: toQueryDate(addDays(now, -7)), to: toQueryDate(now) }
+  if (preset === "past_14") return { from: toQueryDate(addDays(now, -14)), to: toQueryDate(now) }
+  if (preset === "past_30") return { from: toQueryDate(addDays(now, -30)), to: toQueryDate(now) }
+  if (preset === "past_45") return { from: toQueryDate(addDays(now, -45)), to: toQueryDate(now) }
+  if (preset === "past_60") return { from: toQueryDate(addDays(now, -60)), to: toQueryDate(now) }
+  if (preset === "past_90") return { from: toQueryDate(addDays(now, -90)), to: toQueryDate(now) }
+  if (preset === "past_180") return { from: toQueryDate(addDays(now, -180)), to: toQueryDate(now) }
+  return { from: toQueryDate(addDays(now, -365)), to: toQueryDate(now) }
 }
 
 function uniqueStrings(values: string[]) {
@@ -812,8 +882,8 @@ function EmptyState({
 // ── Activity Feed helpers ──────────────────────────────────────────────
 
 const AVATAR_COLORS = [
-  "bg-primary",
-  "bg-primary",
+  "bg-primary/100",
+  "bg-blue-500",
   "bg-emerald-500",
   "bg-violet-500",
   "bg-rose-500",
@@ -973,18 +1043,18 @@ function CommentAttachmentThumbnail({
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const isImage = (attachment.mimeType || "").startsWith("image/")
-  // New attachments stream from /uploads via the authenticated client and
-  // need a blob fetch (same dance as AttachmentThumbnail above). Legacy
-  // attachments still hold a data URL in `url` and can render directly.
-  const needsBlobFetch = isImage && !!attachment.fileUrl
-  const directSrc = isImage && !attachment.fileUrl ? attachment.url : null
+  const viewUrl = authenticatedAttachmentViewUrl(attachment)
+  // New attachments stream through the authenticated file view endpoint.
+  // Legacy attachments still hold a data URL in `url` and can render directly.
+  const needsBlobFetch = isImage && !!viewUrl
+  const directSrc = isImage && !viewUrl ? attachment.url : null
 
   useEffect(() => {
-    if (!needsBlobFetch || !attachment.fileUrl) return
+    if (!needsBlobFetch || !viewUrl) return
     let cancelled = false
     setLoading(true)
     api
-      .get<Blob>(attachment.fileUrl, { responseType: "blob" })
+      .get<Blob>(viewUrl, { responseType: "blob" })
       .then((res) => {
         if (!cancelled) setBlobUrl(URL.createObjectURL(res.data))
       })
@@ -1000,7 +1070,7 @@ function CommentAttachmentThumbnail({
         return null
       })
     }
-  }, [attachment.fileUrl, needsBlobFetch])
+  }, [needsBlobFetch, viewUrl])
 
   return (
     <button
@@ -1059,13 +1129,14 @@ function AttachmentThumbnail({
   const isImage = mime.startsWith("image/")
   const isVideo = mime.startsWith("video/")
   const isMissing = attachment.storageStatus === "missing"
+  const viewUrl = authenticatedAttachmentViewUrl(attachment)
 
   useEffect(() => {
-    if (!isImage || !attachment.fileUrl || isMissing) return
+    if (!isImage || !viewUrl || isMissing) return
     let cancelled = false
     setLoading(true)
     api
-      .get<Blob>(attachment.fileUrl, { responseType: "blob" })
+      .get<Blob>(viewUrl, { responseType: "blob" })
       .then((res) => {
         if (!cancelled) {
           setBlobUrl(URL.createObjectURL(res.data))
@@ -1083,7 +1154,7 @@ function AttachmentThumbnail({
         return null
       })
     }
-  }, [attachment.fileUrl, isImage, isMissing])
+  }, [isImage, isMissing, viewUrl])
 
   const handleClick = () => {
     filePreview.open(dailyLogAttachmentsToPreviewFiles(attachments), index)
@@ -2098,16 +2169,26 @@ function CommentsSheet({
   const [replyTo, setReplyTo] = useState<CommentRecord | null>(null)
   const [selectedMentionIds, setSelectedMentionIds] = useState<string[]>([])
   const [attachments, setAttachments] = useState<CommentDraftAttachment[]>([])
-  const attachmentsRef = useRef<CommentDraftAttachment[]>([])
   const [pendingRemoveCommentAttachmentId, setPendingRemoveCommentAttachmentId] = useState<
     string | null
   >(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const attachmentsRef = useRef<CommentDraftAttachment[]>([])
 
   // All writes go through generated mutation hooks (see replit.md).
   const postCommentMutation = useDailyLogsPostDailyLogsIdComments()
   const toggleReactionMutation =
     useDailyLogsPostDailyLogsIdCommentsCommentIdReactions()
+
+  useEffect(() => {
+    attachmentsRef.current = attachments
+  }, [attachments])
+
+  function clearDraftAttachments() {
+    revokeCommentDraftAttachmentPreviews(attachmentsRef.current)
+    attachmentsRef.current = []
+    setAttachments([])
+  }
 
   async function loadComments() {
     if (!log) return
@@ -2123,22 +2204,16 @@ function CommentsSheet({
   }
 
   useEffect(() => {
-    attachmentsRef.current = attachments
-  }, [attachments])
-
-  useEffect(() => {
     if (open && log) {
       void loadComments()
     }
     if (!open) {
-      revokeCommentDraftAttachmentPreviews(attachmentsRef.current)
-      attachmentsRef.current = []
       setBody("")
       setLinkValue("")
       setShowLinkInput(false)
       setReplyTo(null)
       setSelectedMentionIds([])
-      setAttachments([])
+      clearDraftAttachments()
       setFormatHint(false)
     }
   }, [open, log?.id])
@@ -2241,6 +2316,9 @@ function CommentsSheet({
       revokeCommentDraftAttachmentPreviews(attachmentsRef.current)
       attachmentsRef.current = []
     }
+    // We intentionally only run this on unmount; per-item revoke happens
+    // inline in the handlers that mutate `attachments`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function insertMention(user: UserOption) {
@@ -2274,9 +2352,7 @@ function CommentsSheet({
       setBody("")
       // Revoke composer previews now that the draft is committed; the
       // posted comment renders via authenticated blob fetch from fileUrl.
-      revokeCommentDraftAttachmentPreviews(attachments)
-      attachmentsRef.current = []
-      setAttachments([])
+      clearDraftAttachments()
       setLinkValue("")
       setShowLinkInput(false)
       setReplyTo(null)
@@ -2810,17 +2886,22 @@ function DailyLogDialog({
         tags: values.tags,
       }
 
-      const response = currentLog
-        ? ((await updateLogMutation.mutateAsync({
-            id: currentLog.id,
-            data: (validatePayload(DailyLogsPutDailyLogsIdBody, payload) ??
-              payload) as DailyLogsPutDailyLogsIdMutationBody,
-          })) as unknown as { log: DailyLogDetail })
-        : ((await createLogMutation.mutateAsync({
-            jobId: values.jobId,
-            data: (validatePayload(DailyLogsPostJobsJobIdDailyLogsBody, payload) ??
-              payload) as DailyLogsPostJobsJobIdDailyLogsMutationBody,
-          })) as unknown as { log: DailyLogDetail })
+      let response: { log: DailyLogDetail }
+      if (currentLog) {
+        const validatedPayload = validatePayload(DailyLogsPutDailyLogsIdBody, payload)
+        if (!validatedPayload) return
+        response = (await updateLogMutation.mutateAsync({
+          id: currentLog.id,
+          data: validatedPayload as DailyLogsPutDailyLogsIdMutationBody,
+        })) as unknown as { log: DailyLogDetail }
+      } else {
+        const validatedPayload = validatePayload(DailyLogsPostJobsJobIdDailyLogsBody, payload)
+        if (!validatedPayload) return
+        response = (await createLogMutation.mutateAsync({
+          jobId: values.jobId,
+          data: validatedPayload as DailyLogsPostJobsJobIdDailyLogsMutationBody,
+        })) as unknown as { log: DailyLogDetail }
+      }
 
       const savedId = response.log.id
       await uploadPendingFiles(savedId)
@@ -3150,10 +3231,15 @@ function DailyLogDialog({
                     {...onDrop.getRootProps()}
                     className={cn(
                       "cursor-pointer rounded-2xl border-2 border-dashed px-4 py-6 text-center transition-colors",
-                      onDrop.isDragActive ? "border-primary/45 bg-primary/10" : "border-slate-300 bg-slate-50 hover:border-primary/45 hover:bg-accent/50",
+                      onDrop.isDragActive ? "border-primary/40 bg-primary/10" : "border-slate-300 bg-slate-50 hover:border-primary/40 hover:bg-primary/10",
                     )}
                   >
-                    <input {...onDrop.getInputProps({ accept: uploadAcceptForMediaType("any") })} />
+                    <input
+                      {...onDrop.getInputProps({
+                        accept: uploadAcceptForMediaType("any"),
+                        className: "hidden",
+                      })}
+                    />
                     {onDrop.isDragActive ? (
                       <>
                         <Upload className="mx-auto size-5 text-primary" />
@@ -3406,7 +3492,6 @@ export default function JobDailyLogsPage() {
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const loadRequestIdRef = useRef(0)
-  const handledFocusLogRef = useRef<string | null>(null)
 
   // All writes go through generated mutation hooks (see replit.md).
   const toggleLikeMutation = useDailyLogsPostDailyLogsIdLike()
@@ -3477,7 +3562,10 @@ export default function JobDailyLogsPage() {
       setSettingsLoadError(null)
     } else {
       setSettingsLoaded(false)
-      const message = apiError(settingsResult.reason, "Failed to load daily log settings")
+      const message = apiError(
+        settingsResult.reason,
+        "Failed to load daily log settings",
+      )
       setSettingsLoadError(message)
       toastApiError(settingsResult.reason, "Failed to load daily log settings")
     }
@@ -3678,14 +3766,8 @@ export default function JobDailyLogsPage() {
   // `state: { openCreate: true }`. The flag is consumed once.
   const dailyLogLocation = useLocation()
   const dailyLogNavigate = useNavigate()
-	  useEffect(() => {
-    const focusLogId = new URLSearchParams(dailyLogLocation.search).get("focus")
-    if (focusLogId && handledFocusLogRef.current !== focusLogId) {
-      handledFocusLogRef.current = focusLogId
-      void loadDetail(focusLogId)
-    }
-
-	    const incoming = dailyLogLocation.state as Record<string, unknown> | null
+  useEffect(() => {
+    const incoming = dailyLogLocation.state as Record<string, unknown> | null
     if (incoming && (incoming as { openCreate?: unknown }).openCreate) {
       openCreateDialog()
       const { openCreate: _openCreate, ...rest } = incoming as {
@@ -3702,7 +3784,7 @@ export default function JobDailyLogsPage() {
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-	  }, [dailyLogLocation.search, dailyLogLocation.state])
+  }, [dailyLogLocation.state])
 
   function openEditDialog(logId: string) {
     setEditingLogId(logId)
@@ -4119,6 +4201,7 @@ function dailyLogAttachmentsToPreviewFiles(attachments: DailyLogAttachment[]): P
   return attachments.map((a) => ({
     id: a.id,
     fileId: a.fileId,
+    viewUrl: authenticatedAttachmentViewUrl(a),
     name: a.originalName,
     mimeType: a.mimeType,
     fileSize: a.fileSize,
@@ -4146,7 +4229,7 @@ function DailyLogAttachmentCard({
     <button
       type="button"
       onClick={handleClick}
-      className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-primary/35 text-left"
+      className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-primary/40 text-left"
     >
       <div className="flex items-center gap-3">
         <FileText className="size-5 text-slate-400" />

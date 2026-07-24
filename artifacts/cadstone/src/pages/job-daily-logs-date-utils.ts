@@ -23,10 +23,6 @@ export function localDateString(date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
-export function todayString() {
-  return localDateString()
-}
-
 export function toDateOnly(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }

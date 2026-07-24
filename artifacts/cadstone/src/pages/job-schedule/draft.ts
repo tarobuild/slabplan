@@ -41,7 +41,7 @@ export function schedulePayloadFromItem(item: ScheduleItemRecord): ScheduleItemP
     assigneeIds: [...item.assigneeIds].sort(),
     startDate: item.startDate,
     workDays: Math.max(item.workDays, 1),
-    endDate: item.manualEndDate ?? null,
+    endDate: null,
     isHourly: !!item.isHourly,
     startTime: item.isHourly ? item.startTime : null,
     endTime: item.isHourly ? item.endTime : null,
@@ -73,7 +73,6 @@ export function schedulePayloadFromItem(item: ScheduleItemRecord): ScheduleItemP
     visibleToInstallers: item.visibleToInstallers ?? true,
     visibleToOfficeStaff: item.visibleToOfficeStaff ?? true,
     isComplete: item.isComplete ?? false,
-    isPersonalTodo: item.isPersonalTodo ?? false,
   }
 }
 
@@ -90,10 +89,10 @@ export function scheduleDraftSignature(item: ScheduleItemRecord) {
   })
 }
 
-function calculateBusinessStartDate(
+function calculateBusinessStartDateForEndDate(
   endDate: string,
   workDays: number,
-  exceptions: ScheduleWorkdayException[] = [],
+  exceptions: ScheduleWorkdayException[],
 ) {
   const current = new Date(`${endDate}T00:00:00`)
 
@@ -148,7 +147,15 @@ function resolveDraftPredecessorStartDate(
 
     if (predecessor.dependencyType === "finish_to_finish") {
       const desiredEnd = addBusinessDays(linked.endDate, predecessor.lagDays, workdayExceptions)
-      const candidateStart = calculateBusinessStartDate(desiredEnd, Math.max(workDays, 1), workdayExceptions)
+      const currentEnd = calculateBusinessEndDate(resolvedStartDate, Math.max(workDays, 1), workdayExceptions)
+      if (currentEnd >= desiredEnd) {
+        continue
+      }
+      const candidateStart = calculateBusinessStartDateForEndDate(
+        desiredEnd,
+        Math.max(workDays, 1),
+        workdayExceptions,
+      )
       if (candidateStart > resolvedStartDate) {
         resolvedStartDate = candidateStart
       }
@@ -156,7 +163,15 @@ function resolveDraftPredecessorStartDate(
     }
 
     const desiredEnd = addBusinessDays(linked.startDate, predecessor.lagDays, workdayExceptions)
-    const candidateStart = calculateBusinessStartDate(desiredEnd, Math.max(workDays, 1), workdayExceptions)
+    const currentEnd = calculateBusinessEndDate(resolvedStartDate, Math.max(workDays, 1), workdayExceptions)
+    if (currentEnd >= desiredEnd) {
+      continue
+    }
+    const candidateStart = calculateBusinessStartDateForEndDate(
+      desiredEnd,
+      Math.max(workDays, 1),
+      workdayExceptions,
+    )
     if (candidateStart > resolvedStartDate) {
       resolvedStartDate = candidateStart
     }
@@ -212,6 +227,53 @@ function draftConflictReasons(
   return reasons
 }
 
+function findDependencyCycleItemIds(items: ScheduleItemRecord[]) {
+  const itemIds = new Set(items.map((item) => item.id))
+  const graph = new Map(
+    items.map((item) => [
+      item.id,
+      item.predecessors
+        .map((predecessor) => predecessor.scheduleItemId)
+        .filter((id) => itemIds.has(id)),
+    ]),
+  )
+  const cycleIds = new Set<string>()
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const stack: string[] = []
+
+  function visit(id: string) {
+    if (visiting.has(id)) {
+      const cycleStart = stack.indexOf(id)
+      for (const cycleId of stack.slice(cycleStart)) {
+        cycleIds.add(cycleId)
+      }
+      return
+    }
+
+    if (visited.has(id)) {
+      return
+    }
+
+    visiting.add(id)
+    stack.push(id)
+
+    for (const predecessorId of graph.get(id) ?? []) {
+      visit(predecessorId)
+    }
+
+    stack.pop()
+    visiting.delete(id)
+    visited.add(id)
+  }
+
+  for (const id of itemIds) {
+    visit(id)
+  }
+
+  return cycleIds
+}
+
 export function normalizeDraftScheduleItems(
   items: ScheduleItemRecord[],
   users: AppUser[],
@@ -240,6 +302,7 @@ export function normalizeDraftScheduleItems(
       lagDays: Math.max(0, predecessor.lagDays),
     })),
   }))
+  const cycleItemIds = findDependencyCycleItemIds(normalized)
 
   for (let pass = 0; pass < Math.max(normalized.length * 2, 1); pass += 1) {
     const predecessorMap = new Map(
@@ -255,6 +318,10 @@ export function normalizeDraftScheduleItems(
     let changed = false
 
     normalized = normalized.map((item) => {
+      if (cycleItemIds.has(item.id)) {
+        return item
+      }
+
       const nextStartDate = item.predecessors.length > 0
         ? resolveDraftPredecessorStartDate(
             item.startDate,
@@ -268,8 +335,7 @@ export function normalizeDraftScheduleItems(
             workdayExceptions,
           )
         : item.startDate
-      const nextEndDate =
-        item.manualEndDate ?? calculateBusinessEndDate(nextStartDate, item.workDays, workdayExceptions)
+      const nextEndDate = calculateBusinessEndDate(nextStartDate, item.workDays, workdayExceptions)
 
       if (nextStartDate !== item.startDate || nextEndDate !== item.endDate) {
         changed = true
@@ -314,16 +380,21 @@ export function normalizeDraftScheduleItems(
       ...predecessor,
       title: normalizedMap.get(predecessor.scheduleItemId)?.title || predecessor.title || "Unknown task",
     }))
-    const conflictReasons = draftConflictReasons(
-      {
-        title: item.title,
-        startDate: item.startDate,
-        endDate: item.endDate,
-        predecessors,
-      },
-      normalizedMap,
-      workdayExceptions,
-    )
+    const conflictReasons = [
+      ...(cycleItemIds.has(item.id)
+        ? [`${item.title} has a circular dependency`]
+        : []),
+      ...draftConflictReasons(
+        {
+          title: item.title,
+          startDate: item.startDate,
+          endDate: item.endDate,
+          predecessors,
+        },
+        normalizedMap,
+        workdayExceptions,
+      ),
+    ]
 
     return {
       ...item,
@@ -343,36 +414,4 @@ export function normalizeDraftScheduleItems(
       conflictReasons,
     }
   })
-}
-
-export function remapDraftPayload(
-  payload: ScheduleItemPayload,
-  draftIdMap: Map<string, string>,
-  options: {
-    dropUnresolvedPredecessors?: boolean
-  } = {},
-) {
-  return {
-    ...payload,
-    predecessors: payload.predecessors.flatMap((predecessor) => {
-      const mappedId = draftIdMap.get(predecessor.scheduleItemId)
-
-      if (isDraftScheduleItemId(predecessor.scheduleItemId)) {
-        if (!mappedId && options.dropUnresolvedPredecessors) {
-          return []
-        }
-
-        if (!mappedId) {
-          return []
-        }
-      }
-
-      return [
-        {
-          ...predecessor,
-          scheduleItemId: mappedId || predecessor.scheduleItemId,
-        },
-      ]
-    }),
-  }
 }

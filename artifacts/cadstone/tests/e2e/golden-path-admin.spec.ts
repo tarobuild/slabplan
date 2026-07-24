@@ -1,5 +1,6 @@
 import { expect, test, type Route } from "@playwright/test"
 import { CESAR, authHeaders, loginViaApi } from "./helpers/auth"
+import { visiblePlaceholder, visibleText } from "./helpers/locators"
 import { gotoViaTopNav, isMobileViewport } from "./helpers/mobile"
 import { CESAR_STATE } from "./helpers/storage"
 
@@ -119,28 +120,19 @@ test.describe("golden path — admin", () => {
     })
 
     // Cross-screen freshness: new client must appear on the list.
-    await page
-      .getByPlaceholder(/search clients/i)
-      .first()
-      .fill(clientName)
-    await expect(page.getByText(clientName).first()).toBeVisible({
+    await visiblePlaceholder(page, /search clients/i).fill(clientName)
+    await expect(visibleText(page, clientName)).toBeVisible({
       timeout: 10_000,
     })
 
     // ---- 3. Create a job through the two-step "+ New Job" dialog.
-    await page.goto("/jobs")
-    await page.getByRole("button", { name: /\+ ?new job/i }).first().click()
+    await page.goto(`/jobs?newJob=1&clientId=${clientId}`)
     const jobDialog = page.getByRole("dialog", { name: /create job/i })
     await expect(jobDialog).toBeVisible({ timeout: 10_000 })
 
-    // Step 1 — title, client, dates.
+    // Step 1 — title and dates. The client is pre-selected and locked by
+    // the new-job deep link above.
     await jobDialog.locator("#title").fill(jobTitle)
-    // Open the client select trigger and pick the client we just made.
-    await jobDialog.getByRole("combobox").first().click()
-    await page
-      .getByRole("option", { name: new RegExp(clientName, "i") })
-      .first()
-      .click()
     await jobDialog.locator("#projectedStart").fill(today)
     await jobDialog.locator("#projectedCompletion").fill(tomorrow)
     await jobDialog
@@ -168,11 +160,8 @@ test.describe("golden path — admin", () => {
     })
 
     // Cross-screen freshness: the new job is on /jobs immediately.
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(jobTitle)
-    await expect(page.getByText(jobTitle).first()).toBeVisible({
+    await visiblePlaceholder(page, /search/i).fill(jobTitle)
+    await expect(visibleText(page, jobTitle)).toBeVisible({
       timeout: 15_000,
     })
 
@@ -395,10 +384,7 @@ test.describe("golden path — admin", () => {
     //         shows under the default "Open" filter, but switching to
     //         "Closed" surfaces it. Catches a stale jobs-list cache.
     await page.goto("/jobs")
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(jobTitle)
+    await visiblePlaceholder(page, /search/i).fill(jobTitle)
     // Default filter is "all"; explicitly switch to Closed via the
     // status Select to assert the closed job is filterable.
     await page.getByRole("combobox", { name: /all statuses/i })
@@ -406,7 +392,7 @@ test.describe("golden path — admin", () => {
       .first()
       .click()
     await page.getByRole("option", { name: /^closed$/i }).click()
-    await expect(page.getByText(jobTitle).first()).toBeVisible({
+    await expect(visibleText(page, jobTitle)).toBeVisible({
       timeout: 15_000,
     })
   })

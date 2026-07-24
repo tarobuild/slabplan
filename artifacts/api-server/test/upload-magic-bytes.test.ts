@@ -205,6 +205,57 @@ const OPC_ONLY_ZIP_BYTES = Buffer.from(
   }),
 );
 
+function forgeCentralDirectoryUncompressedSize(
+  zipBytes: Buffer,
+  entryName: string,
+  forgedSize: number,
+): Buffer {
+  const out = Buffer.from(zipBytes);
+  const centralDirectorySignature = 0x02014b50;
+  let offset = 0;
+
+  while (offset + 46 <= out.length) {
+    if (out.readUInt32LE(offset) !== centralDirectorySignature) {
+      offset += 1;
+      continue;
+    }
+
+    const nameLength = out.readUInt16LE(offset + 28);
+    const extraLength = out.readUInt16LE(offset + 30);
+    const commentLength = out.readUInt16LE(offset + 32);
+    const name = out.subarray(offset + 46, offset + 46 + nameLength).toString("utf8");
+
+    if (name === entryName) {
+      out.writeUInt32LE(forgedSize, offset + 24);
+      return out;
+    }
+
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+
+  throw new Error(`Could not find ZIP central directory entry ${entryName}`);
+}
+
+const FORGED_HUGE_DOCX_BYTES = forgeCentralDirectoryUncompressedSize(
+  Buffer.from(
+    zipSync({
+      "[Content_Types].xml": strToU8(
+        '<?xml version="1.0" encoding="UTF-8"?>' +
+          '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+          " ".repeat(2 * 1024 * 1024) +
+          '<Override PartName="/word/document.xml" ' +
+          'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+          "</Types>",
+      ),
+      "word/document.xml": strToU8(
+        '<?xml version="1.0"?><document xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+      ),
+    }),
+  ),
+  "[Content_Types].xml",
+  1,
+);
+
 const ODT_BYTES = Buffer.from(
   zipSync({
     // ODF spec: `mimetype` must be the first entry, stored
@@ -229,6 +280,12 @@ const OLE2_BYTES = Buffer.concat([
 const SVG_UNSAFE_BYTES = Buffer.from(
   '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
 );
+
+const SVG_UNSAFE_LATE_BYTES = Buffer.concat([
+  Buffer.from('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg">'),
+  Buffer.alloc(70 * 1024, 0x20),
+  Buffer.from("<script>alert(1)</script></svg>"),
+]);
 
 const SVG_SAFE_BYTES = Buffer.from(
   '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>',
@@ -296,13 +353,23 @@ async function readJson(response: Response): Promise<{
   type: string;
   status: number;
   detail: string;
-  errors?: { code?: string; sniffedMimeType?: string | null };
+  errors?: {
+    code?: string;
+    sniffedMimeType?: string | null;
+    encryptedPdf?: boolean;
+    unlockRequired?: boolean;
+  };
 }> {
   return (await response.json()) as {
     type: string;
     status: number;
     detail: string;
-    errors?: { code?: string; sniffedMimeType?: string | null };
+    errors?: {
+      code?: string;
+      sniffedMimeType?: string | null;
+      encryptedPdf?: boolean;
+      unlockRequired?: boolean;
+    };
   };
 }
 
@@ -337,7 +404,7 @@ test("PDF with leading whitespace before the header passes magic-byte validation
   assert.equal(response.status, 200);
 });
 
-test("encrypted PDF returns an actionable 415 about removing the password", async () => {
+test("encrypted PDF returns an actionable 415 with unlock metadata", async () => {
   const response = await uploadFile(
     "secret.pdf",
     "application/pdf",
@@ -346,7 +413,10 @@ test("encrypted PDF returns an actionable 415 about removing the password", asyn
   assert.equal(response.status, 415);
   const body = await readJson(response);
   assert.equal(body.errors?.code, "UPLOAD_PDF_ENCRYPTED");
-  assert.match(body.detail, /password/i);
+  assert.equal(body.errors?.encryptedPdf, true);
+  assert.equal(body.errors?.unlockRequired, true);
+  assert.match(body.detail, /encrypted|locked/i);
+  assert.match(body.detail, /unlocked PDF/i);
 });
 
 test("legitimate JPEG upload passes magic-byte validation", async () => {
@@ -539,6 +609,17 @@ test("DOCX bytes uploaded as .xlsx are rejected with UPLOAD_TYPE_MISMATCH", asyn
   assert.equal(body.errors?.code, "UPLOAD_TYPE_MISMATCH");
 });
 
+test("DOCX zip entries cannot bypass inspection with forged uncompressed size", async () => {
+  const response = await uploadFile(
+    "forged.docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    FORGED_HUGE_DOCX_BYTES,
+  );
+  assert.equal(response.status, 415);
+  const body = await readJson(response);
+  assert.equal(body.errors?.code, "MAGIC_BYTE_SNIFF_FAILED");
+});
+
 test("SVG with inline <script> is rejected with UPLOAD_SVG_UNSAFE", async () => {
   const response = await uploadFile("logo.svg", "image/svg+xml", SVG_UNSAFE_BYTES);
   assert.equal(response.status, 415);
@@ -546,14 +627,8 @@ test("SVG with inline <script> is rejected with UPLOAD_SVG_UNSAFE", async () => 
   assert.equal(body.errors?.code, "UPLOAD_SVG_UNSAFE");
 });
 
-test("SVG with inline <script> after the first scan chunk is rejected", async () => {
-  const paddedSvg = Buffer.concat([
-    Buffer.from('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg">'),
-    Buffer.from("<!--"),
-    Buffer.alloc(70 * 1024, 0x20),
-    Buffer.from('--><script>alert(1)</script></svg>'),
-  ]);
-  const response = await uploadFile("logo.svg", "image/svg+xml", paddedSvg);
+test("SVG with a late inline script is rejected beyond the old 64 KiB scan window", async () => {
+  const response = await uploadFile("logo.svg", "image/svg+xml", SVG_UNSAFE_LATE_BYTES);
   assert.equal(response.status, 415);
   const body = await readJson(response);
   assert.equal(body.errors?.code, "UPLOAD_SVG_UNSAFE");

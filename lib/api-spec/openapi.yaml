@@ -258,6 +258,7 @@ paths:
           schema:
             type: string
             format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
@@ -439,11 +440,13 @@ paths:
       description: Route defined in artifacts/api-server/src/routes/auth.ts.
       responses:
         "200":
-          description: Successful response
+          description: >-
+            Successful response. Native mobile clients that send `X-Cadstone-Client: mobile`
+            also receive `refreshToken` in the JSON body so they can store it in secure device storage.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnyValue"
+                $ref: "#/components/schemas/AuthResponse"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -496,11 +499,13 @@ paths:
       description: Route defined in artifacts/api-server/src/routes/auth.ts.
       responses:
         "200":
-          description: Successful response
+          description: >-
+            Successful response. Native mobile clients that send `X-Cadstone-Client: mobile`
+            also receive `refreshToken` in the JSON body so they can store it in secure device storage.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnyValue"
+                $ref: "#/components/schemas/AuthResponse"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -534,11 +539,13 @@ paths:
       description: Route defined in artifacts/api-server/src/routes/auth.ts.
       responses:
         "200":
-          description: Successful response
+          description: >-
+            Successful response. Native mobile clients may send `refreshToken` in the JSON body
+            with `X-Cadstone-Client: mobile`; browser clients continue to refresh via the HTTP-only cookie.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnyValue"
+                $ref: "#/components/schemas/AuthResponse"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -576,6 +583,62 @@ paths:
       security: []
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+  /auth/invite:
+    get:
+      operationId: auth_get_auth_invite
+      tags:
+        - auth
+      summary: GET /auth/invite
+      description: Public endpoint. Validates a one-time setup token and returns the invited account details so the invitee can confirm the email address before choosing a password. This endpoint does not consume the token.
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/auth_invitePreview"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+        "401":
+          description: Unauthorized — token missing, expired, already used, or account deactivated.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+            X-RateLimit-Reset:
+              $ref: "#/components/headers/X-RateLimit-Reset"
+      x-source-file: artifacts/api-server/src/routes/auth.ts
+      security: []
   /auth/accept-invite:
     post:
       operationId: auth_post_auth_accept_invite
@@ -708,7 +771,7 @@ paths:
         - name: roles
           in: query
           required: false
-          description: Comma-separated list of role names to filter by (`admin`, `project_manager`, `crew_member`).
+          description: Comma-separated list of role names to filter by (`admin`, `project_manager`, `crew_member`, `drafter`).
           schema:
             type: string
         - name: page
@@ -742,7 +805,7 @@ paths:
       description: |
         Admin-only. Invite a new worker. Creates the user with a random unguessable placeholder password and a single-use setup token. The raw token is returned exactly once (never persisted in plain text).
 
-        The server also attempts to send the setup link via the configured transactional email provider (Resend). The response body always includes:
+        The server also attempts to send the setup link via the configured transactional email provider when one is approved and wired. The response body always includes:
           - `inviteToken` — the raw one-time token (also embedded in `inviteUrl`).
           - `invitePath` — relative path including the token, for in-product navigation.
           - `inviteUrl` — absolute URL the email body uses; safe to copy/paste as a fallback.
@@ -917,6 +980,7 @@ paths:
           schema:
             type: string
             format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
         - $ref: "#/components/parameters/IdempotencyKey"
   /users/{id}/invite/resend:
     post:
@@ -925,11 +989,11 @@ paths:
         - users
       summary: POST /users/{id}/invite/resend
       description: |
-        Admin-only. Re-send the existing invite email for a user whose setup is still pending, WITHOUT minting a new token. Use this when the invitee lost the email or it bounced — any link already in flight remains valid.
+        Admin-only legacy compatibility endpoint. Re-send the existing invite email for a user whose setup is still pending only when the server still has a legacy raw invite token. Modern invite flows store only token hashes, so most pending invites cannot be resent without minting a replacement.
 
-        Returns the same shape as `POST /users/{id}/invite` (a `user`, `inviteToken`, `invitePath`, `inviteUrl`, `inviteTokenExpiresAt`, and `emailDelivery`), but the token is the *current* one rather than a freshly-minted replacement.
+        Returns the same shape as `POST /users/{id}/invite` (a `user`, `inviteToken`, `invitePath`, `inviteUrl`, `inviteTokenExpiresAt`, and `emailDelivery`) when a legacy raw token is available, but never invalidates an existing pending invite. Use `POST /users/{id}/invite` to issue and email a fresh one-time setup link.
 
-        Returns `400` if the user has already completed setup, has no pending invite, or the existing token has expired. In those cases the admin should use the regular `POST /users/{id}/invite` endpoint to issue a fresh one.
+        Returns `400` if the user has already completed setup, has no pending invite, the existing token has expired, or the raw token is not stored. In those cases the admin should use the regular `POST /users/{id}/invite` endpoint to issue a fresh one.
       responses:
         "200":
           description: Returns the user plus the existing setup token and path.
@@ -1006,6 +1070,7 @@ paths:
           schema:
             type: string
             format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
         - $ref: "#/components/parameters/IdempotencyKey"
   /users/{id}/invite:
     post:
@@ -3181,14 +3246,14 @@ paths:
         - name: excludeConverted
           in: query
           required: false
-          description: When `true`, leads that have already been converted to a job are filtered out. The cadstone UI sends this by default and clears it when the "Show converted" toggle is enabled.
+          description: When `true`, leads that have already been converted to a job are filtered out. The SlabPlan UI sends this by default and clears it when the "Show converted" toggle is enabled.
           schema:
             type: string
             enum: ["true", "false"]
         - name: onlyConverted
           in: query
           required: false
-          description: When `true`, only leads that have been converted to a job are returned. Used by the cadstone Leads list when the user picks the "Converted" status filter.
+          description: When `true`, only leads that have been converted to a job are returned. Used by the SlabPlan Leads list when the user picks the "Converted" status filter.
           schema:
             type: string
             enum: ["true", "false"]
@@ -3814,7 +3879,23 @@ paths:
       tags:
         - leads
       summary: POST /leads/{id}/attachments
-      description: Route defined in artifacts/api-server/src/routes/leads.ts.
+      description: Small-file-only direct multipart upload for lead attachments via multipart form field `files`. Replit production runs on Cloud Run, whose HTTP/1 request body cap is 32 MiB; callers must use `/leads/{id}/attachments/upload-policy?fileSize=<bytes>` before sending bytes and must use `/leads/{id}/attachments/chunked` when a PDF/ZIP/project package is above the policy's `multipart.maxRecommendedBytes`. Direct multipart requests above that recommendation can be rejected by Google Frontend with HTML 413 before the API can format JSON.
+      requestBody:
+        required: true
+        description: multipart/form-data with one or more small lead attachment files in the `files` field. The field name is `files`, not `file` or `attachments`. Do not use this request body for large PDFs/ZIPs/project packages; use the chunked lead attachment endpoints instead.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: binary
+              required:
+                - files
       responses:
         "201":
           description: Created
@@ -3881,6 +3962,12 @@ paths:
               $ref: "#/components/headers/X-RateLimit-Remaining"
             X-RateLimit-Reset:
               $ref: "#/components/headers/X-RateLimit-Reset"
+        "413":
+          description: File too large for the direct multipart path when the request reaches the application. If Google Frontend rejects the request first, clients will see HTML 413; avoid that by using `/leads/{id}/attachments/upload-policy` and the chunked upload endpoints for large lead project packages.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
       x-source-file: artifacts/api-server/src/routes/leads.ts
       parameters:
         - name: id
@@ -3890,6 +3977,386 @@ paths:
             type: string
             format: uuid
             pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+  /leads/{id}/attachments/upload-policy:
+    get:
+      operationId: leads_get_leads_id_attachments_upload_policy
+      tags:
+        - leads
+      summary: Get lead attachment upload policy
+      description: Returns the correct upload route for a lead attachment before bytes are sent. API agents should call this with `fileSize` for every PDF, ZIP, and project package; files above `multipart.maxRecommendedBytes` must use the chunked endpoint to avoid upstream Google Frontend HTML 413 responses.
+      responses:
+        "200":
+          description: Upload policy and route recommendation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadAttachmentUploadPolicyResponse"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Lead not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/leads.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - name: fileSize
+          in: query
+          required: false
+          description: Candidate file size in bytes. Include this to receive a multipart-vs-chunked recommendation.
+          schema:
+            type: integer
+            minimum: 1
+        - name: originalName
+          in: query
+          required: false
+          description: Candidate filename, used only to echo a concrete chunked start payload.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+        - name: mimeType
+          in: query
+          required: false
+          description: Candidate MIME type, used only to echo a concrete chunked start payload.
+          schema:
+            type: string
+            maxLength: 100
+      security:
+        - bearerAuth: []
+  /leads/{id}/attachments/chunked:
+    post:
+      operationId: leads_post_leads_id_attachments_chunked
+      tags:
+        - leads
+      summary: Start a chunked lead attachment upload session
+      description: Creates a resumable upload session for one large lead attachment. Use this path for large ZIP/project packages that may exceed proxy multipart request limits; upload chunks with PUT, then call complete to assemble, validate, and persist the attachment. Chunk PUT accepts raw application/octet-stream bytes or base64-encoded text/plain/application/base64 bytes for the same chunk when a client needs to avoid pre-app binary upload rejection.
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: File too large
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/leads.ts
+      x-zod-body-schema: leadAttachmentChunkedUploadStartSchema
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/leads_leadAttachmentChunkedUploadStartSchema"
+  /leads/{id}/attachments/chunked/{uploadId}:
+    get:
+      operationId: leads_get_leads_id_attachments_chunked_uploadId
+      tags:
+        - leads
+      summary: Get chunked lead attachment upload session status
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "410":
+          description: Upload session expired
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/leads.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: leads_delete_leads_id_attachments_chunked_uploadId
+      tags:
+        - leads
+      summary: Abort a chunked lead attachment upload session
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/leads.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+  /leads/{id}/attachments/chunked/{uploadId}/chunks/{chunkIndex}:
+    put:
+      operationId: leads_put_leads_id_attachments_chunked_uploadId_chunks_chunkIndex
+      tags:
+        - leads
+      summary: Upload one chunk for a chunked lead attachment upload session
+      description: Uploads one chunk for a lead attachment session. Send raw bytes as application/octet-stream, or send the same chunk base64-encoded as text/plain or application/base64 to avoid upstream binary body inspection while keeping app-side validation and problem+json errors.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: Chunk too large
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/leads.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: chunkIndex
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+          text/plain:
+            schema:
+              type: string
+              format: byte
+              description: Base64-encoded bytes for this chunk.
+          application/base64:
+            schema:
+              type: string
+              format: byte
+              description: Base64-encoded bytes for this chunk.
+  /leads/{id}/attachments/chunked/{uploadId}/complete:
+    post:
+      operationId: leads_post_leads_id_attachments_chunked_uploadId_complete
+      tags:
+        - leads
+      summary: Complete a chunked lead attachment upload session
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadAttachmentsCreatedResponse"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Upload incomplete
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Unsupported media type
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/leads.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
         - $ref: "#/components/parameters/IdempotencyKey"
       security:
         - bearerAuth: []
@@ -4350,6 +4817,120 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/folders_folderBodySchema"
+  /jobs/{jobId}/folder-tree:
+    get:
+      operationId: folders_get_jobs_jobId_folder_tree
+      tags:
+        - folders
+      summary: Return the complete visible folder tree for a job
+      description: Agent-friendly folder discovery endpoint. Returns all visible job folders for one media type or all media types, including stable IDs, parent-child relationships, and path metadata.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/folders.ts
+      x-zod-query-schema: folderTreeQuerySchema
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - name: mediaType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [document, photo, video, all]
+            default: all
+      security:
+        - bearerAuth: []
+  /jobs/{jobId}/folders/resolve:
+    post:
+      operationId: folders_post_jobs_jobId_folders_resolve
+      tags:
+        - folders
+      summary: Resolve or create a job folder by path
+      description: Resolves a document, photo, or video folder path using server-side normalization for numeric prefixes, punctuation, apostrophes, and whitespace. Optionally creates missing path segments, including nested photo/video subfolders for migration imports.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/folders.ts
+      x-zod-body-schema: folderResolveSchema
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/folders_folderResolveSchema"
   /folders/{id}:
     put:
       operationId: folders_put_folders_id
@@ -5244,7 +5825,14 @@ paths:
       tags:
         - files
       summary: POST /folders/{id}/files
-      description: Route defined in artifacts/api-server/src/routes/files.ts.
+      description: >-
+        Direct multipart upload for files in a folder. Server-side 403 responses
+        are returned as application/problem+json with machine-readable
+        `errors.code` values such as `CSRF_HEADER_REQUIRED` or
+        `UPLOAD_FOLDER_FORBIDDEN`. If a client receives a non-JSON/plain 403
+        before the app can format the response, retry the same file through the
+        chunked endpoints under `/folders/{id}/files/chunked`; photo and video
+        uploads from the web app use that chunked path by default.
       responses:
         "201":
           description: Created
@@ -5286,7 +5874,10 @@ paths:
             X-RateLimit-Reset:
               $ref: "#/components/headers/X-RateLimit-Reset"
         "403":
-          description: Forbidden
+          description: >-
+            Forbidden. Structured app responses include `errors.code`; a
+            non-JSON/plain 403 indicates an upstream/edge rejection and should
+            be retried through the chunked upload endpoint.
           content:
             application/problem+json:
               schema:
@@ -5323,6 +5914,656 @@ paths:
         - $ref: "#/components/parameters/IdempotencyKey"
       security:
         - bearerAuth: []
+  /folders/{id}/files/duplicates:
+    get:
+      operationId: files_get_folders_id_files_duplicates
+      tags:
+        - files
+      summary: Preflight duplicate detection for a folder upload
+      description: Returns machine-readable duplicate status for a filename, size, and optional SHA-256 checksum in the target folder.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      x-zod-query-schema: duplicateQuerySchema
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - name: filename
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: checksum
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{64}$
+      security:
+        - bearerAuth: []
+  /jobs/{jobId}/files/by-path:
+    post:
+      operationId: files_post_jobs_jobId_files_by_path
+      tags:
+        - files
+      summary: Upload files to a job folder by normalized path
+      description: Resolves the destination folder by path, optionally creates missing path segments, then uploads files through the standard validation/storage pipeline.
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Duplicate or name conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: Payload too large
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Unsupported media type
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      x-zod-body-schema: uploadFilesByPathSchema
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/files_uploadFilesByPathSchema"
+  /folders/{id}/files/chunked:
+    post:
+      operationId: files_post_folders_id_files_chunked
+      tags:
+        - files
+      summary: Start a chunked file upload session
+      description: Creates a resumable upload session for one large file. Upload chunks with PUT, then call complete to assemble, validate, and persist the file. Chunk PUT accepts raw application/octet-stream bytes or base64-encoded text/plain/application/base64 bytes for the same chunk; retry a raw chunk as base64 when a client receives a non-JSON/plain 403 before the app can format a problem response.
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: File too large
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      x-zod-body-schema: chunkedUploadStartSchema
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/files_chunkedUploadStartSchema"
+  /folders/{id}/files/chunked/{uploadId}:
+    get:
+      operationId: files_get_folders_id_files_chunked_uploadId
+      tags:
+        - files
+      summary: Get chunked upload session status
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "410":
+          description: Upload session expired
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: files_delete_folders_id_files_chunked_uploadId
+      tags:
+        - files
+      summary: Abort a chunked upload session
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+  /folders/{id}/files/chunked/{uploadId}/chunks/{chunkIndex}:
+    put:
+      operationId: files_put_folders_id_files_chunked_uploadId_chunks_chunkIndex
+      tags:
+        - files
+      summary: Upload one chunk for a chunked upload session
+      description: Uploads one chunk for a file session. Send raw bytes as application/octet-stream, or send the same chunk base64-encoded as text/plain or application/base64 to avoid upstream binary body inspection while keeping app-side validation and problem+json errors.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: Chunk too large
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: chunkIndex
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+          text/plain:
+            schema:
+              type: string
+              format: byte
+              description: Base64-encoded bytes for this chunk.
+          application/base64:
+            schema:
+              type: string
+              format: byte
+              description: Base64-encoded bytes for this chunk.
+  /folders/{id}/files/chunked/{uploadId}/complete:
+    post:
+      operationId: files_post_folders_id_files_chunked_uploadId_complete
+      tags:
+        - files
+      summary: Complete a chunked upload session
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Upload incomplete or duplicate conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Unsupported media type
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+  /files/batch/delete:
+    post:
+      operationId: files_post_files_batch_delete
+      tags:
+        - files
+      summary: Delete selected files
+      description: Soft-deletes a selected set of files in one transaction after authorizing every file.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Selected files changed during the batch operation
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      x-zod-body-schema: batchFilesSchema
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/files_batchFilesSchema"
+  /files/batch/move:
+    post:
+      operationId: files_post_files_batch_move
+      tags:
+        - files
+      summary: Move selected files
+      description: Moves selected files to a different folder in the same job, media type, and scope.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Selected files changed during the batch operation
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      x-zod-body-schema: batchFilesDestinationSchema
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/files_batchFilesDestinationSchema"
+  /files/batch/copy:
+    post:
+      operationId: files_post_files_batch_copy
+      tags:
+        - files
+      summary: Copy selected files
+      description: Copies selected file records to a different folder in the same job, media type, and scope while preserving file metadata.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Selected files changed during the batch operation
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      x-zod-body-schema: batchFilesDestinationSchema
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/files_batchFilesDestinationSchema"
+  /files/batch/download:
+    post:
+      operationId: files_post_files_batch_download
+      tags:
+        - files
+      summary: Download selected files as a ZIP
+      description: Streams authorized selected files in a ZIP archive.
+      responses:
+        "200":
+          description: ZIP archive
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      x-zod-body-schema: batchFilesSchema
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/files_batchFilesSchema"
   /files/{id}:
     put:
       operationId: files_put_files_id
@@ -5870,14 +7111,14 @@ paths:
           description: Inclusive lower bound on log date (YYYY-MM-DD).
           schema:
             type: string
-            format: date
+            pattern: ^\d{4}-\d{2}-\d{2}$
         - name: to
           in: query
           required: false
           description: Inclusive upper bound on log date (YYYY-MM-DD).
           schema:
             type: string
-            format: date
+            pattern: ^\d{4}-\d{2}-\d{2}$
         - name: tag
           in: query
           required: false
@@ -7704,11 +8945,11 @@ paths:
         - in: query
           name: from
           required: false
-          schema: { type: string, format: date, nullable: true }
+          schema: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$", nullable: true }
         - in: query
           name: to
           required: false
-          schema: { type: string, format: date, nullable: true }
+          schema: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$", nullable: true }
         - in: query
           name: hasAttachments
           required: false
@@ -9859,6 +11100,63 @@ paths:
         - $ref: "#/components/parameters/IdempotencyKey"
       security:
         - bearerAuth: []
+  /jobs/{jobId}/schedule/draft-publish:
+    post:
+      operationId: schedule_post_jobs_jobId_schedule_draft_publish
+      tags:
+        - schedule
+      summary: POST /jobs/{jobId}/schedule/draft-publish
+      description: Atomically publishes draft schedule item creates, updates, deletes, and notes for one job. Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleDraftPublishPayloadSchema.
+      responses:
+        "200":
+          description: Draft publish applied.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/schedule_scheduleDraftPublishResponseSchema"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/schedule.ts
+      x-zod-body-schema: scheduleDraftPublishPayloadSchema
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/schedule_scheduleDraftPublishPayloadSchema"
   /jobs/{jobId}/schedule:
     get:
       operationId: schedule_get_jobs_jobId_schedule
@@ -11098,7 +12396,7 @@ paths:
       summary: GET /dashboard/home
       description: |
         Role-aware Home page payload. Returns a discriminated union keyed by
-        `role` (`crew` | `pm` | `admin`). The shape varies by role; see
+        `role` (`crew` | `pm` | `drafter` | `admin`). The shape varies by role; see
         artifacts/api-server/src/routes/dashboard.ts for the authoritative
         builder functions. The `crew` payload includes a `forecast` field with
         today's high/low and conditions for the user's primary job site, fetched
@@ -11219,14 +12517,14 @@ paths:
           description: Inclusive lower bound on the schedule range (YYYY-MM-DD). Defaults to today.
           schema:
             type: string
-            format: date
+            pattern: ^\d{4}-\d{2}-\d{2}$
         - name: end
           in: query
           required: false
           description: Inclusive upper bound on the schedule range (YYYY-MM-DD). Defaults to today + 60 days. Must be on or after `start`.
           schema:
             type: string
-            format: date
+            pattern: ^\d{4}-\d{2}-\d{2}$
         - name: clientId
           in: query
           required: false
@@ -11343,10 +12641,18 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: pageSize
+          in: query
+          required: false
+          description: Page size for offset pagination. Ignored when `cursor` is supplied. Default 50; max 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
         - name: limit
           in: query
           required: false
-          description: Page size. Default 50; max 100.
+          description: Page size for cursor pagination. Legacy page-mode callers may still use it when `pageSize` is omitted. Default 50; max 100.
           schema:
             type: integer
             minimum: 1
@@ -11446,7 +12752,7 @@ paths:
                           nullable: true
                           description: For job results, the linked client's company name (or null when unassigned). Omitted for non-job results.
                   pagination:
-                    description: Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied an explicit `cursor` parameter. Cursor-mode pagination uses `CursorPagination`.
+                    description: Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied the `cursor` query key, in which case this field uses `CursorPagination`. A `limit` query by itself does not select cursor mode.
                     oneOf:
                       - type: object
                         required:
@@ -11945,6 +13251,84 @@ paths:
       x-source-file: artifacts/api-server/src/routes/users.ts
       security:
         - bearerAuth: []
+  /notifications:
+    get:
+      operationId: notifications_get_notifications
+      tags:
+        - notifications
+      summary: GET /notifications
+      description: List the authenticated user's recent in-app notifications with unread count.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: unreadOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Recent notifications and unread count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsListResponse"
+        "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+      x-source-file: artifacts/api-server/src/routes/notifications.ts
+      security:
+        - bearerAuth: []
+  /notifications/{id}/read:
+    patch:
+      operationId: notifications_patch_notifications_id_read
+      tags:
+        - notifications
+      summary: PATCH /notifications/{id}/read
+      description: Mark one notification as read for the authenticated user.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Notification read timestamp
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationReadResponse"
+        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "404": { description: Not found, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+      x-source-file: artifacts/api-server/src/routes/notifications.ts
+      security:
+        - bearerAuth: []
+  /notifications/read-all:
+    post:
+      operationId: notifications_post_notifications_read_all
+      tags:
+        - notifications
+      summary: POST /notifications/read-all
+      description: Mark all unread notifications as read for the authenticated user.
+      responses:
+        "200":
+          description: Mark-read result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsReadAllResponse"
+        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+      x-source-file: artifacts/api-server/src/routes/notifications.ts
+      security:
+        - bearerAuth: []
 components:
   securitySchemes:
     bearerAuth:
@@ -11984,6 +13368,10 @@ components:
             required:
               - code
               - message
+        releaseSha:
+          type: string
+          nullable: true
+          description: Short Git commit SHA for the deployed build, when the host exposes one.
       required:
         - status
         - db
@@ -12027,6 +13415,57 @@ components:
     GenericObject:
       type: object
       additionalProperties: true
+    AuthUser:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        role:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - email
+        - fullName
+        - role
+        - avatarUrl
+        - phone
+    AuthResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+          description: >-
+            Returned only to native mobile clients that send `X-Cadstone-Client: mobile`;
+            browser clients receive the refresh token only as an HTTP-only cookie.
+        expiresIn:
+          type: integer
+          minimum: 1
+        user:
+          $ref: "#/components/schemas/AuthUser"
+      required:
+        - accessToken
+        - expiresIn
+        - user
     users_updateProfileSchema:
       type: object
       additionalProperties: false
@@ -12081,6 +13520,7 @@ components:
             - admin
             - project_manager
             - crew_member
+            - drafter
       required:
         - email
         - fullName
@@ -12089,6 +13529,7 @@ components:
       type: object
       additionalProperties: false
       description: Request body for `PATCH /users/{id}` — admin updates a worker's full name, role, or active flag. At least one field must be provided. An admin cannot deactivate their own account through this endpoint.
+      minProperties: 1
       properties:
         fullName:
           type: string
@@ -12100,25 +13541,52 @@ components:
             - admin
             - project_manager
             - crew_member
+            - drafter
         isActive:
           type: boolean
-      anyOf:
-        - required: [fullName]
-        - required: [role]
-        - required: [isActive]
     auth_acceptInviteSchema:
       type: object
-      description: Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link plus the password they want to use. On success the user is logged in (refresh cookie + access token in response).
+      description: Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link, confirms the invited email address, and sends the password they want to use. On success the user is logged in (refresh cookie + access token in response).
       properties:
         token:
           type: string
           minLength: 1
+        email:
+          type: string
+          format: email
+          minLength: 3
+          maxLength: 255
         password:
           type: string
           minLength: 8
       required:
         - token
+        - email
         - password
+    auth_invitePreview:
+      type: object
+      description: Response body for `GET /auth/invite`. Shows the invited account details tied to a valid setup token without consuming it.
+      properties:
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        role:
+          type: string
+          enum:
+            - admin
+            - project_manager
+            - crew_member
+            - drafter
+        inviteTokenExpiresAt:
+          type: string
+          format: date-time
+      required:
+        - email
+        - fullName
+        - role
+        - inviteTokenExpiresAt
     clients_clientPayloadSchema:
       type: object
       description: Request body for creating or updating a client (`POST /clients`, `PUT /clients/{id}`). Optional string fields accept null and empty strings (which are normalized to null). `state` must be a 2-character abbreviation when provided.
@@ -12423,51 +13891,95 @@ components:
       required:
         - title
     leads_contactCreateSchema:
-      type: object
       description: Request body for creating a lead contact (`POST /leads/{id}/contacts`). When `sourceContactId` is set the new contact is cloned from an existing contact and the other fields are optional. Otherwise `displayName` and `email` are required.
-      properties:
-        sourceContactId:
-          type: string
-          format: uuid
-          description: "Optional: clone an existing lead contact by id rather than creating a new one from scratch."
-        firstName:
-          type: string
-          nullable: true
-        lastName:
-          type: string
-          nullable: true
-        displayName:
-          type: string
-          nullable: true
-        streetAddress:
-          type: string
-          nullable: true
-        city:
-          type: string
-          nullable: true
-        state:
-          type: string
-          nullable: true
-          maxLength: 2
-        zipCode:
-          type: string
-          nullable: true
-        phone:
-          type: string
-          nullable: true
-        cellPhone:
-          type: string
-          nullable: true
-        email:
-          type: string
-          nullable: true
-          format: email
-        label:
-          type: string
-          nullable: true
       oneOf:
-        - required: [sourceContactId]
-        - required: [displayName, email]
+        - type: object
+          description: Clone an existing lead contact into this lead. Other fields may be supplied but are ignored by the server.
+          properties:
+            sourceContactId:
+              type: string
+              format: uuid
+              description: Clone an existing lead contact by id rather than creating a new one from scratch.
+            firstName:
+              type: string
+              nullable: true
+            lastName:
+              type: string
+              nullable: true
+            displayName:
+              type: string
+              nullable: true
+            streetAddress:
+              type: string
+              nullable: true
+            city:
+              type: string
+              nullable: true
+            state:
+              type: string
+              nullable: true
+              maxLength: 2
+            zipCode:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              nullable: true
+            cellPhone:
+              type: string
+              nullable: true
+            email:
+              type: string
+              nullable: true
+              format: email
+            label:
+              type: string
+              nullable: true
+          required:
+            - sourceContactId
+        - type: object
+          description: Create a new lead contact from manually supplied contact fields.
+          not:
+            required:
+              - sourceContactId
+          properties:
+            firstName:
+              type: string
+              nullable: true
+            lastName:
+              type: string
+              nullable: true
+            displayName:
+              type: string
+              minLength: 1
+            streetAddress:
+              type: string
+              nullable: true
+            city:
+              type: string
+              nullable: true
+            state:
+              type: string
+              nullable: true
+              maxLength: 2
+            zipCode:
+              type: string
+              nullable: true
+            phone:
+              type: string
+              nullable: true
+            cellPhone:
+              type: string
+              nullable: true
+            email:
+              type: string
+              format: email
+            label:
+              type: string
+              nullable: true
+          required:
+            - displayName
+            - email
     leads_contactUpdateSchema:
       type: object
       description: Request body for updating a lead contact (`PUT /leads/{id}/contacts/{contactId}`).
@@ -12539,6 +14051,29 @@ components:
       required:
         - title
         - mediaType
+    folders_folderResolveSchema:
+      type: object
+      description: Request schema derived from folderResolveSchema in artifacts/api-server/src/routes/folders.ts.
+      properties:
+        mediaType:
+          type: string
+          enum:
+            - document
+            - photo
+            - video
+          default: document
+        path:
+          type: string
+          minLength: 1
+        pathSegments:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+        createIfMissing:
+          type: boolean
+          default: false
     folders_folderUpdateSchema:
       type: object
       additionalProperties: false
@@ -12549,11 +14084,47 @@ components:
           minLength: 1
           maxLength: 255
         viewingPermissions:
+          type: object
           nullable: true
-          $ref: "#/components/schemas/FolderPermission"
+          additionalProperties: false
+          properties:
+            admin:
+              type: boolean
+            project_manager:
+              type: boolean
+            crew_member:
+              type: boolean
+            drafter:
+              type: boolean
+            internal:
+              type: boolean
+            users:
+              type: object
+              additionalProperties:
+                type: boolean
+              propertyNames:
+                format: uuid
         uploadingPermissions:
+          type: object
           nullable: true
-          $ref: "#/components/schemas/FolderPermission"
+          additionalProperties: false
+          properties:
+            admin:
+              type: boolean
+            project_manager:
+              type: boolean
+            crew_member:
+              type: boolean
+            drafter:
+              type: boolean
+            internal:
+              type: boolean
+            users:
+              type: object
+              additionalProperties:
+                type: boolean
+              propertyNames:
+                format: uuid
     folders_moveFolderSchema:
       type: object
       additionalProperties: false
@@ -12563,6 +14134,38 @@ components:
           type: string
           format: uuid
           nullable: true
+    files_batchFilesSchema:
+      type: object
+      description: Request schema derived from batchFilesSchema in artifacts/api-server/src/routes/files.ts.
+      additionalProperties: false
+      properties:
+        fileIds:
+          type: array
+          minItems: 1
+          maxItems: 250
+          items:
+            type: string
+            format: uuid
+      required:
+        - fileIds
+    files_batchFilesDestinationSchema:
+      type: object
+      description: Request schema derived from batchFilesDestinationSchema in artifacts/api-server/src/routes/files.ts.
+      additionalProperties: false
+      properties:
+        fileIds:
+          type: array
+          minItems: 1
+          maxItems: 250
+          items:
+            type: string
+            format: uuid
+        destinationFolderId:
+          type: string
+          format: uuid
+      required:
+        - fileIds
+        - destinationFolderId
     files_renameFileSchema:
       type: object
       additionalProperties: false
@@ -12584,12 +14187,116 @@ components:
           type: boolean
         crew_member:
           type: boolean
+        drafter:
+          type: boolean
         internal:
           type: boolean
         users:
           type: object
           additionalProperties:
             type: boolean
+    files_uploadFilesByPathSchema:
+      type: object
+      description: Multipart request schema for uploading files to a job folder by path.
+      properties:
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+        folderPath:
+          type: string
+        path:
+          type: string
+        pathSegments:
+          type: string
+          description: JSON array string or slash-delimited path.
+        mediaType:
+          type: string
+          enum:
+            - document
+            - photo
+            - video
+          default: document
+        createIfMissing:
+          type: boolean
+          default: false
+        note:
+          type: string
+          nullable: true
+        videoDurations:
+          type: string
+          description: JSON array of per-file video durations in seconds.
+        duplicateAction:
+          type: string
+          enum:
+            - keep_both
+            - skip_exact
+            - fail_on_conflict
+          default: keep_both
+      required:
+        - files
+    files_chunkedUploadStartSchema:
+      type: object
+      description: Request schema derived from chunkedUploadStartSchema in artifacts/api-server/src/routes/files.ts.
+      properties:
+        originalName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        mimeType:
+          type: string
+          maxLength: 100
+        totalSize:
+          type: integer
+          minimum: 1
+        totalChunks:
+          type: integer
+          minimum: 1
+        contentHash:
+          type: string
+          pattern: ^[a-fA-F0-9]{64}$
+        note:
+          type: string
+          nullable: true
+        duplicateAction:
+          type: string
+          enum:
+            - keep_both
+            - skip_exact
+            - fail_on_conflict
+          default: keep_both
+        videoDurationSeconds:
+          type: number
+          minimum: 0
+      required:
+        - originalName
+        - totalSize
+        - totalChunks
+    leads_leadAttachmentChunkedUploadStartSchema:
+      type: object
+      description: Request schema for starting a chunked lead attachment upload. Use for large lead ZIP/project packages that should avoid proxy multipart limits.
+      properties:
+        originalName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        mimeType:
+          type: string
+          maxLength: 100
+        totalSize:
+          type: integer
+          minimum: 1
+        totalChunks:
+          type: integer
+          minimum: 1
+        contentHash:
+          type: string
+          pattern: ^[a-fA-F0-9]{64}$
+      required:
+        - originalName
+        - totalSize
+        - totalChunks
     daily_logs_dailyLogPayloadSchema:
       type: object
       description: Request body for creating or updating a daily log (`POST /jobs/{jobId}/daily-logs`, `PUT /daily-logs/{id}`). On create, `jobId` is taken from the URL; on update the URL identifies the log directly. `customFieldValues` is a free-form object whose values are scalar (string, number, boolean, or null).
@@ -12787,11 +14494,11 @@ components:
         startTime:
           type: string
           nullable: true
-          pattern: ^\d{2}:\d{2}(:\d{2})?$
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$"
         endTime:
           type: string
           nullable: true
-          pattern: ^\d{2}:\d{2}(:\d{2})?$
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$"
         progress:
           type: integer
           minimum: 0
@@ -12800,7 +14507,16 @@ components:
         reminder:
           type: string
           default: none
-          description: One of the configured reminder options (e.g. `none`, `1d`, `1h`).
+          enum:
+            - none
+            - 1_hour_before
+            - 2_hours_before
+            - 4_hours_before
+            - 8_hours_before
+            - 12_hours_before
+            - 1_day_before
+            - 2_days_before
+          description: One of the configured reminder options (for example `none`, `1_hour_before`, or `1_day_before`).
         notes:
           type: string
           nullable: true
@@ -12860,6 +14576,208 @@ components:
       required:
         - title
         - startDate
+    schedule_scheduleDraftPublishItemPayloadSchema:
+      type: object
+      description: Schedule item payload used by draft publish. Predecessors may reference either persisted schedule item UUIDs or draft `clientId` values from the same publish request.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        displayColor:
+          type: string
+          nullable: true
+        assigneeIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        notifyUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        startDate:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        workDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 1
+        endDate:
+          type: string
+          nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        isHourly:
+          type: boolean
+          default: false
+        startTime:
+          type: string
+          nullable: true
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$"
+        endTime:
+          type: string
+          nullable: true
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$"
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 0
+        reminder:
+          type: string
+          default: none
+          enum:
+            - none
+            - 1_hour_before
+            - 2_hours_before
+            - 4_hours_before
+            - 8_hours_before
+            - 12_hours_before
+            - 1_day_before
+            - 2_days_before
+        notes:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+          default: []
+        predecessors:
+          type: array
+          default: []
+          items:
+            type: object
+            properties:
+              scheduleItemId:
+                type: string
+                minLength: 1
+                maxLength: 128
+              dependencyType:
+                type: string
+                enum:
+                  - finish_to_start
+                  - start_to_start
+                  - finish_to_finish
+                  - start_to_finish
+              lagDays:
+                type: integer
+                minimum: 0
+                maximum: 365
+                default: 0
+            required:
+              - scheduleItemId
+              - dependencyType
+        phaseId:
+          type: string
+          format: uuid
+          nullable: true
+        showOnGantt:
+          type: boolean
+          default: true
+        visibleToEstimators:
+          type: boolean
+          default: true
+        visibleToInstallers:
+          type: boolean
+          default: true
+        visibleToOfficeStaff:
+          type: boolean
+          default: true
+        isComplete:
+          type: boolean
+          default: false
+        isPersonalTodo:
+          type: boolean
+          default: false
+      required:
+        - title
+        - startDate
+    schedule_scheduleDraftPublishPayloadSchema:
+      type: object
+      description: Atomic draft publish request for one job schedule.
+      properties:
+        create:
+          type: array
+          maxItems: 500
+          default: []
+          items:
+            type: object
+            properties:
+              clientId:
+                type: string
+                minLength: 1
+                maxLength: 128
+              payload:
+                $ref: "#/components/schemas/schedule_scheduleDraftPublishItemPayloadSchema"
+            required:
+              - clientId
+              - payload
+        update:
+          type: array
+          maxItems: 500
+          default: []
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              payload:
+                $ref: "#/components/schemas/schedule_scheduleDraftPublishItemPayloadSchema"
+            required:
+              - id
+              - payload
+        deleteIds:
+          type: array
+          maxItems: 500
+          default: []
+          items:
+            type: string
+            format: uuid
+        notes:
+          type: array
+          maxItems: 1000
+          default: []
+          items:
+            type: object
+            properties:
+              clientNoteId:
+                type: string
+                minLength: 1
+                maxLength: 128
+              clientItemId:
+                type: string
+                minLength: 1
+                maxLength: 128
+              scheduleItemId:
+                type: string
+                format: uuid
+              note:
+                type: string
+                minLength: 1
+                maxLength: 10000
+            required:
+              - note
+    schedule_scheduleDraftPublishResponseSchema:
+      type: object
+      properties:
+        success:
+          type: boolean
+        createdItemIdsByClientId:
+          type: object
+          additionalProperties:
+            type: string
+            format: uuid
+      required:
+        - success
+        - createdItemIdsByClientId
     schedule_scheduleNotePayloadSchema:
       type: object
       description: Request body for adding a note to a schedule item.
@@ -12945,12 +14863,14 @@ components:
           description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.
         projectedStart:
           type: string
-          format: date
           nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.
         projectedCompletion:
           type: string
-          format: date
           nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.
         updatedAt:
           type: string
           format: date-time
@@ -13453,8 +15373,9 @@ components:
           nullable: true
         projectedSalesDate:
           type: string
-          format: date
           nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — **not** an ISO timestamp and **not** coerced to a `Date`."
         estimatedRevenueMin:
           type: string
           nullable: true
@@ -13583,8 +15504,9 @@ components:
           nullable: true
         projectedSalesDate:
           type: string
-          format: date
           nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — **not** an ISO timestamp and **not** coerced to a `Date`."
         estimatedRevenueMin:
           type: string
           nullable: true
@@ -13757,98 +15679,49 @@ components:
       required:
         - exception
     WorkdayExceptionPayload:
+      type: object
       description: Request body for `POST /jobs/{jobId}/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.
-      oneOf:
-        - type: object
-          properties:
-            title:
-              type: string
-              minLength: 1
-              maxLength: 255
-            type:
-              type: string
-              enum:
-                - non_workday
-                - extra_workday
-            startDate:
-              type: string
-              pattern: ^\d{4}-\d{2}-\d{2}$
-            endDate:
-              type: string
-              pattern: ^\d{4}-\d{2}-\d{2}$
-            sameEveryYear:
-              type: boolean
-              default: false
-            categoryId:
-              type: string
-              format: uuid
-              nullable: true
-            appliesToAllJobs:
-              type: boolean
-              enum:
-                - true
-              description: When true, applies the exception to every active job. Admin role required.
-            jobIds:
-              type: array
-              items:
-                type: string
-                format: uuid
-              maxItems: 0
-              default: []
-            notes:
-              type: string
-              nullable: true
-          required:
-            - title
-            - type
-            - startDate
-            - endDate
-            - appliesToAllJobs
-        - type: object
-          properties:
-            title:
-              type: string
-              minLength: 1
-              maxLength: 255
-            type:
-              type: string
-              enum:
-                - non_workday
-                - extra_workday
-            startDate:
-              type: string
-              pattern: ^\d{4}-\d{2}-\d{2}$
-            endDate:
-              type: string
-              pattern: ^\d{4}-\d{2}-\d{2}$
-            sameEveryYear:
-              type: boolean
-              default: false
-            categoryId:
-              type: string
-              format: uuid
-              nullable: true
-            appliesToAllJobs:
-              type: boolean
-              enum:
-                - false
-              default: false
-              description: When false or omitted, `jobIds` must contain at least one job.
-            jobIds:
-              type: array
-              minItems: 1
-              items:
-                type: string
-                format: uuid
-            notes:
-              type: string
-              nullable: true
-          required:
-            - title
-            - type
-            - startDate
-            - endDate
-            - jobIds
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        type:
+          type: string
+          enum:
+            - non_workday
+            - extra_workday
+        startDate:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        endDate:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        sameEveryYear:
+          type: boolean
+          default: false
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+        appliesToAllJobs:
+          type: boolean
+          default: false
+          description: When true, applies the exception to every active job. Admin role required.
+        jobIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          default: []
+        notes:
+          type: string
+          nullable: true
+      required:
+        - title
+        - type
+        - startDate
+        - endDate
     WorkdayExceptionUpdatePayload:
       type: object
       description: Request body for `PUT /jobs/{jobId}/workday-exceptions/{exceptionId}`. All fields are optional; omitted fields keep their previous value. Toggling `appliesToAllJobs` is admin-only.
@@ -14285,9 +16158,161 @@ components:
             $ref: "#/components/schemas/LeadAttachment"
       required:
         - attachments
+    LeadAttachmentUploadPolicyResponse:
+      type: object
+      properties:
+        leadId:
+          type: string
+          format: uuid
+        multipart:
+          type: object
+          properties:
+            endpoint:
+              type: string
+              example: /api/leads/f8aa285e-d5dc-498d-bbba-4cc22d5d83b5/attachments
+            fieldName:
+              type: string
+              enum:
+                - files
+            maxFiles:
+              type: integer
+              minimum: 1
+            maxAppFileSizeBytes:
+              type: integer
+              minimum: 1
+            edgeRequestLimitBytes:
+              type: integer
+              minimum: 1
+              description: Production Cloud Run HTTP/1 request cap. Direct multipart requests near or above this can be rejected before the API runs.
+            edgeRequestLimitDisplay:
+              type: string
+              example: 32 MB
+            maxRecommendedBytes:
+              type: integer
+              minimum: 1
+              description: Use chunked upload above this conservative size to avoid production proxy multipart limits.
+            maxRecommendedDisplay:
+              type: string
+              example: 24 MB
+            guidance:
+              type: string
+          required:
+            - endpoint
+            - fieldName
+            - maxFiles
+            - maxAppFileSizeBytes
+            - edgeRequestLimitBytes
+            - edgeRequestLimitDisplay
+            - maxRecommendedBytes
+            - maxRecommendedDisplay
+            - guidance
+        chunked:
+          type: object
+          properties:
+            supported:
+              type: boolean
+            maxTotalBytes:
+              type: integer
+              minimum: 1
+            maxChunkBytes:
+              type: integer
+              minimum: 1
+            sessionTtlMs:
+              type: integer
+              minimum: 1
+            rawChunkContentType:
+              type: string
+              example: application/octet-stream
+            base64ChunkContentTypes:
+              type: array
+              items:
+                type: string
+            endpoints:
+              type: object
+              properties:
+                start:
+                  type: string
+                status:
+                  type: string
+                chunk:
+                  type: string
+                complete:
+                  type: string
+                abort:
+                  type: string
+              required:
+                - start
+                - status
+                - chunk
+                - complete
+                - abort
+            startBody:
+              type: object
+              description: Example JSON body for `chunked.endpoints.start`. Replace `contentHash` with a SHA-256 hex digest or omit it.
+              properties:
+                originalName:
+                  type: string
+                mimeType:
+                  type: string
+                totalSize:
+                  type: integer
+                  minimum: 1
+                totalChunks:
+                  type: integer
+                  minimum: 1
+                contentHash:
+                  type: string
+              required:
+                - originalName
+                - mimeType
+                - totalSize
+                - totalChunks
+                - contentHash
+          required:
+            - supported
+            - maxTotalBytes
+            - maxChunkBytes
+            - sessionTtlMs
+            - rawChunkContentType
+            - base64ChunkContentTypes
+            - endpoints
+            - startBody
+        file:
+          oneOf:
+            - type: object
+              properties:
+                originalName:
+                  type: string
+                  nullable: true
+                mimeType:
+                  type: string
+                  nullable: true
+                size:
+                  type: integer
+                  minimum: 1
+                  nullable: true
+                recommendedUploadMode:
+                  type: string
+                  enum:
+                    - multipart
+                    - chunked
+                reason:
+                  type: string
+              required:
+                - originalName
+                - mimeType
+                - size
+                - recommendedUploadMode
+                - reason
+            - type: "null"
+      required:
+        - leadId
+        - multipart
+        - chunked
+        - file
     LeadConvertToJobBody:
       type: object
-      description: Optional payload for `POST /leads/{id}/convert-to-job`. Provide either `clientId` to attach the new job to an existing client, or `newClient` to create a client inline. `job` carries optional overrides applied on top of the lead's pre-fill values.
+      description: Optional payload for `POST /leads/{id}/convert-to-job`. `clientId` attaches the new job to an existing client; `newClient` creates a client inline. The endpoint also accepts an omitted client choice for backwards compatibility, but `clientId` and `newClient` are mutually exclusive. `job` carries optional overrides applied on top of the lead's pre-fill values.
       properties:
         clientId:
           type: string
@@ -14352,12 +16377,14 @@ components:
               description: Decimal serialized as string.
             projectedStart:
               type: string
-              format: date
+              pattern: "^\\d{4}-\\d{2}-\\d{2}$"
               nullable: true
+              description: Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.
             projectedCompletion:
               type: string
-              format: date
+              pattern: "^\\d{4}-\\d{2}-\\d{2}$"
               nullable: true
+              description: Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.
             jobType:
               type: string
               nullable: true
@@ -14428,6 +16455,7 @@ components:
         - updatedAt
     DailyLogCommentAttachment:
       type: object
+      description: Attachment shown on a daily-log comment. Legacy comments use `url`; file-backed comments use `fileId`/`fileUrl` and keep `url` as null.
       properties:
         name:
           type: string
@@ -14446,6 +16474,7 @@ components:
           nullable: true
       required:
         - name
+        - url
     DailyLogComment:
       type: object
       description: Comment on a daily log. Replies are nested via `replies` (recursive).
@@ -14773,7 +16802,7 @@ components:
         - updatedAt
     DailyLogListResponse:
       type: object
-      description: Paged daily-log list. The `pagination` field uses `Pagination` in page mode and `CursorPagination` only when the request supplies an explicit `cursor` parameter.
+      description: Paged daily-log list. The `pagination` field uses `Pagination` (page mode) unless the request supplied the `cursor` query key, in which case it uses `CursorPagination`. A `limit` query by itself does not select cursor mode.
       properties:
         logs:
           type: array
@@ -14875,7 +16904,7 @@ components:
         - files
     MyDailyLogsResponse:
       type: object
-      description: Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.
+      description: Response for `GET /daily-logs/mine`. The `pagination` field uses the offset shape (`page`/`pageSize`/`total`/…) unless the request supplied the `cursor` query key, in which case it uses `CursorPagination`. A `limit` query by itself does not select cursor mode.
       properties:
         logs:
           type: array
@@ -15196,6 +17225,7 @@ components:
           items:
             $ref: "#/components/schemas/ScheduleItem"
         pagination:
+          description: Offset pagination for page-mode requests, or CursorPagination when the request supplied `?cursor=`.
           oneOf:
             - type: object
               properties:
@@ -15831,6 +17861,28 @@ components:
         - displayColor
         - jobId
         - jobTitle
+    DrafterScheduleItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        startDate: { type: string }
+        endDate: { type: string }
+        progress: { type: number }
+        isComplete: { type: boolean }
+        displayColor: { type: string, nullable: true }
+        jobId: { type: string, format: uuid, nullable: true }
+        jobTitle: { type: string, nullable: true }
+      required:
+        - id
+        - title
+        - startDate
+        - endDate
+        - progress
+        - isComplete
+        - displayColor
+        - jobId
+        - jobTitle
     PmTeamLog:
       type: object
       properties:
@@ -15936,6 +17988,40 @@ components:
         - atRisk
         - teamLogs
         - summary
+    DrafterHome:
+      type: object
+      description: Role-aware Home payload returned to drafters. Discriminator value "drafter".
+      properties:
+        role:
+          type: string
+          enum: [drafter]
+        today: { type: string }
+        summary:
+          type: object
+          properties:
+            openLeads: { type: integer }
+            openScheduleItems: { type: integer }
+          required: [openLeads, openScheduleItems]
+        recentLeads:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminRecentLead"
+        schedule:
+          type: object
+          properties:
+            start: { type: string }
+            end: { type: string }
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/DrafterScheduleItem"
+          required: [start, end, items]
+      required:
+        - role
+        - today
+        - summary
+        - recentLeads
+        - schedule
     AdminTopClient:
       type: object
       properties:
@@ -16042,28 +18128,54 @@ components:
         - recentLeads
         - calendar
     HomePayload:
-      description: Role-aware /dashboard/home response. Discriminated by `role` (crew | pm | admin).
+      description: Role-aware /dashboard/home response. Discriminated by `role` (crew | pm | drafter | admin).
       oneOf:
         - $ref: "#/components/schemas/CrewHome"
         - $ref: "#/components/schemas/PmHome"
+        - $ref: "#/components/schemas/DrafterHome"
         - $ref: "#/components/schemas/AdminHome"
       discriminator:
         propertyName: role
         mapping:
           crew: "#/components/schemas/CrewHome"
           pm: "#/components/schemas/PmHome"
+          drafter: "#/components/schemas/DrafterHome"
           admin: "#/components/schemas/AdminHome"
     ArAgingRow:
       type: object
       properties:
         clientId: { type: string, nullable: true }
         clientName: { type: string }
-        current: { type: number }
-        d1to30: { type: number }
-        d31to60: { type: number }
-        d61to90: { type: number }
-        d90plus: { type: number }
-        total: { type: number }
+        current:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+        d1to30:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+        d31to60:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+        d61to90:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+        d90plus:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+        total:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
       required:
         - clientId
         - clientName
@@ -16160,6 +18272,93 @@ components:
           items:
             $ref: "#/components/schemas/JobsByStageRow"
       required: [rows]
+    NotificationActor:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        fullName:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+      required: [id, fullName, email]
+    AppNotification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityType:
+          type: string
+        entityId:
+          type: string
+          format: uuid
+          nullable: true
+        action:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        actor:
+          $ref: "#/components/schemas/NotificationActor"
+      required: [id, entityType, entityId, action, title, body, url, metadata, readAt, createdAt, actor]
+    NotificationsListResponse:
+      type: object
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppNotification"
+        unreadCount:
+          type: integer
+          minimum: 0
+      required: [notifications, unreadCount]
+    NotificationRead:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, readAt]
+    NotificationReadResponse:
+      type: object
+      properties:
+        notification:
+          $ref: "#/components/schemas/NotificationRead"
+      required: [notification]
+    NotificationsReadAllResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        count:
+          type: integer
+          minimum: 0
+      required: [success, count]
     NotificationPrefsResponse:
       type: object
       description: Per-user notification preferences. Map of event-key → boolean.
@@ -16229,11 +18428,11 @@ components:
       description: |
         Opaque cursor for stable cursor-based pagination. To bootstrap the
         first cursor page, send `?cursor=&limit=N` (cursor present with no
-        value). Requests that only send `?limit=N` remain in page mode unless
-        the endpoint explicitly documents a different bootstrap. Cursor
-        responses include `pagination.nextCursor`; echo that value back as
+        value). The server returns the first page in the cursor envelope
+        along with `pagination.nextCursor`. Echo `nextCursor` back as
         `?cursor=<token>` on subsequent calls. While in cursor mode
-        `page`/`pageSize` are ignored.
+        `page`/`pageSize` are ignored. A `limit` query without `cursor`
+        does not select cursor mode.
       schema:
         type: string
     CursorLimitParam:

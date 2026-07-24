@@ -35,11 +35,11 @@ test("/sales/leads is wired behind the sales role gate", () => {
 
 test("/register is wired under the public-only route guard", () => {
   const publicRoutes = source.slice(
-    source.indexOf('<Route element={<PublicOnlyRoute ready={ready} />}>'),
-    source.indexOf('<Route element={<ProtectedRoute ready={ready} />}>'),
+    source.indexOf('<Route element={<PublicOnlyRoute />}>'),
+    source.indexOf('<Route element={<ProtectedRoute />}>'),
   )
 
-  assert.match(publicRoutes, /<Route element=\{<PublicOnlyRoute ready=\{ready\} \/>\}>/)
+  assert.match(publicRoutes, /<Route element=\{<PublicOnlyRoute \/>\}>/)
   assert.match(publicRoutes, /<Route path="\/login" element=\{<LoginPage \/>\} \/>/)
   assert.match(publicRoutes, /<Route path="\/register" element=\{<RegisterPage \/>\} \/>/)
   assert.match(publicRoutes, /<Route path="\/accept-invite" element=\{<AcceptInvitePage \/>\} \/>/)

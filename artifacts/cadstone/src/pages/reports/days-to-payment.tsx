@@ -5,6 +5,8 @@ import {
   ReportSection,
   ReportToolbar,
   csvDownloadHref,
+  isCsvReportData,
+  jsonReportData,
   rangeToReportParams,
   useReportRange,
 } from "./shared"
@@ -20,7 +22,9 @@ type Bucket = {
 export default function DaysToPaymentReport() {
   const [range, setRange] = useReportRange()
   const q = useReportsGetReportsDaysToPayment(rangeToReportParams(range))
-  const empty = q.data && q.data.byClient.length === 0 && q.data.byJobType.length === 0
+  const data = jsonReportData(q.data)
+  const unexpectedCsv = isCsvReportData(q.data)
+  const empty = data && data.byClient.length === 0 && data.byJobType.length === 0
 
   return (
     <>
@@ -32,8 +36,11 @@ export default function DaysToPaymentReport() {
       />
       {q.isLoading ? (
         <LoadingCard />
-      ) : q.isError ? (
-        <EmptyState title="Couldn't load days-to-payment" />
+      ) : q.isError || unexpectedCsv ? (
+        <EmptyState
+          title="Couldn't load days-to-payment"
+          hint="The report returned CSV where JSON was expected."
+        />
       ) : empty ? (
         <EmptyState
           title="No paid invoices in this range"
@@ -42,10 +49,10 @@ export default function DaysToPaymentReport() {
       ) : (
         <>
           <ReportSection title="By Client">
-            <BucketTable buckets={q.data?.byClient ?? []} />
+            <BucketTable buckets={data?.byClient ?? []} />
           </ReportSection>
           <ReportSection title="By Job Type">
-            <BucketTable buckets={q.data?.byJobType ?? []} />
+            <BucketTable buckets={data?.byJobType ?? []} />
           </ReportSection>
         </>
       )}

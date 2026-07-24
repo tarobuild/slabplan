@@ -8,6 +8,8 @@ import {
   SnapshotToolbar,
   csvDownloadHref,
   formatMoney,
+  isCsvReportData,
+  jsonReportData,
 } from "./shared"
 
 type ArRow = {
@@ -31,14 +33,16 @@ const SNAPSHOT_RANGE = { range: "last_30" as const, from: "", to: "" }
 
 export default function ArAgingReport() {
   const q = useReportsGetReportsArAging({ range: SNAPSHOT_RANGE.range })
+  const data = jsonReportData(q.data)
+  const unexpectedCsv = isCsvReportData(q.data)
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "total",
     dir: "desc",
   })
 
   const rows = useMemo(() => {
-    const data = q.data?.rows ?? []
-    const sorted = [...data].sort((a, b) => {
+    const reportRows = data?.rows ?? []
+    const sorted = [...reportRows].sort((a, b) => {
       const av = a[sort.key]
       const bv = b[sort.key]
       if (typeof av === "string" && typeof bv === "string") {
@@ -47,7 +51,7 @@ export default function ArAgingReport() {
       return sort.dir === "asc" ? Number(av) - Number(bv) : Number(bv) - Number(av)
     })
     return sorted
-  }, [q.data, sort])
+  }, [data, sort])
 
   function toggleSort(key: SortKey) {
     setSort((prev) =>
@@ -65,15 +69,15 @@ export default function ArAgingReport() {
   return (
     <>
       <SnapshotToolbar
-        csvHref={csvDownloadHref("ar-aging", SNAPSHOT_RANGE)}
+        csvHref={csvDownloadHref("ar-aging", SNAPSHOT_RANGE)!}
         csvFilename="ar-aging.csv"
         note="Snapshot — outstanding balances as of today"
       />
       <ReportSection title="A/R Aging by Client">
         {q.isLoading ? (
           <LoadingCard />
-        ) : q.isError ? (
-          <EmptyState title="Couldn't load A/R aging" hint="Try again in a moment." />
+        ) : q.isError || unexpectedCsv ? (
+          <EmptyState title="Couldn't load A/R aging" hint="The report returned CSV where JSON was expected." />
         ) : !rows.length ? (
           <EmptyState
             title="No outstanding invoices"

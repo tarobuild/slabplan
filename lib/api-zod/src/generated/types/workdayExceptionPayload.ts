@@ -5,46 +5,38 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { WorkdayExceptionPayloadType } from "./workdayExceptionPayloadType";
 
 /**
  * Request body for `POST /jobs/{jobId}/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.
  */
+type WorkdayExceptionPayloadBase = {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  title: string;
+  type: WorkdayExceptionPayloadType;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  startDate: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  endDate: string;
+  sameEveryYear?: boolean;
+  categoryId?: string | null;
+  notes?: string | null;
+};
+
+type WorkdayExceptionPayloadAllJobs = WorkdayExceptionPayloadBase & {
+  /** When true, applies the exception to every active job. Admin role required. */
+  appliesToAllJobs: true;
+  jobIds?: string[];
+};
+
+type WorkdayExceptionPayloadJobIds = WorkdayExceptionPayloadBase & {
+  appliesToAllJobs?: false;
+  jobIds: [string, ...string[]];
+};
+
 export type WorkdayExceptionPayload =
-  | {
-      /**
-       * @minLength 1
-       * @maxLength 255
-       */
-      title: string;
-      type: "non_workday" | "extra_workday";
-      /** @pattern ^\d{4}-\d{2}-\d{2}$ */
-      startDate: string;
-      /** @pattern ^\d{4}-\d{2}-\d{2}$ */
-      endDate: string;
-      sameEveryYear?: boolean;
-      categoryId?: string | null;
-      /** When true, applies the exception to every active job. Admin role required. */
-      appliesToAllJobs: true;
-      /** @maxItems 0 */
-      jobIds?: [];
-      notes?: string | null;
-    }
-  | {
-      /**
-       * @minLength 1
-       * @maxLength 255
-       */
-      title: string;
-      type: "non_workday" | "extra_workday";
-      /** @pattern ^\d{4}-\d{2}-\d{2}$ */
-      startDate: string;
-      /** @pattern ^\d{4}-\d{2}-\d{2}$ */
-      endDate: string;
-      sameEveryYear?: boolean;
-      categoryId?: string | null;
-      /** When false or omitted, `jobIds` must contain at least one job. */
-      appliesToAllJobs?: false;
-      /** @minItems 1 */
-      jobIds: [string, ...string[]];
-      notes?: string | null;
-    };
+  | WorkdayExceptionPayloadAllJobs
+  | WorkdayExceptionPayloadJobIds;

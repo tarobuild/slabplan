@@ -1,5 +1,11 @@
+import crypto from "node:crypto";
+import {
+  DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
+  MAX_UPLOAD_FILE_BYTES,
+  formatUploadSize,
+} from "@workspace/api-zod";
 import { z } from "zod";
-import { ApiClient, ApiError } from "./api-client";
+import { ApiClient, ApiError } from "./api-client.js";
 
 export type McpToolHandlerArgs = Record<string, unknown>;
 
@@ -30,6 +36,11 @@ const idString = z
   .string()
   .min(1, "id is required")
   .refine(isSafePathSegment, "id must be a single URL path segment");
+// The MCP tool accepts inline base64, so estimate decoded size before
+// allocating the Buffer while staying aligned with the platform upload cap.
+const MAX_ATTACH_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
+const MAX_ATTACH_FILE_BASE64_CHARS = Math.ceil(MAX_ATTACH_FILE_BYTES / 3) * 4;
+const MCP_CHUNKED_UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024;
 const optionalIdempotencyKey = z
   .string()
   .min(1)
@@ -38,27 +49,6 @@ const optionalIdempotencyKey = z
   .describe(
     "Optional Idempotency-Key forwarded to the API; safe to retry with the same key.",
   );
-
-function decodeStrictBase64(input: string): Buffer {
-  const normalized = input.replace(/\s+/g, "");
-  if (!normalized || normalized.length % 4 === 1) {
-    throw new ApiError(400, "contentBase64 is not valid base64", null);
-  }
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) {
-    throw new ApiError(400, "contentBase64 is not valid base64", null);
-  }
-
-  const buffer = Buffer.from(normalized, "base64");
-  const canonicalInput = normalized.replace(/=+$/, "");
-  const canonicalDecoded = buffer.toString("base64").replace(/=+$/, "");
-  if (canonicalInput !== canonicalDecoded) {
-    throw new ApiError(400, "contentBase64 is not valid base64", null);
-  }
-  if (buffer.length === 0) {
-    throw new ApiError(400, "contentBase64 decoded to zero bytes", null);
-  }
-  return buffer;
-}
 
 function paginationShape() {
   return {
@@ -87,88 +77,124 @@ function takeIdempotencyKey(args: Record<string, unknown>): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function estimateBase64DecodedBytes(base64: string): number {
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return (base64.length / 4) * 3 - padding;
+}
+
+function isBase64AlphabetCode(code: number): boolean {
+  return (
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    (code >= 48 && code <= 57) ||
+    code === 43 ||
+    code === 47
+  );
+}
+
+function isCanonicalBase64(value: string): boolean {
+  if (value.length % 4 !== 0) return false;
+
+  const padding =
+    value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  const dataLength = value.length - padding;
+
+  for (let index = 0; index < dataLength; index += 1) {
+    if (!isBase64AlphabetCode(value.charCodeAt(index))) return false;
+  }
+  for (let index = dataLength; index < value.length; index += 1) {
+    if (value.charCodeAt(index) !== 61) return false;
+  }
+
+  return true;
+}
+
+function decodeCanonicalBase64(value: string): Buffer {
+  if (value.length > MAX_ATTACH_FILE_BASE64_CHARS) {
+    throw new ApiError(413, `contentBase64 exceeds the ${formatUploadSize(MAX_ATTACH_FILE_BYTES)} upload size limit`, {
+      limit: MAX_ATTACH_FILE_BYTES,
+    });
+  }
+  if (!isCanonicalBase64(value)) {
+    throw new ApiError(400, "contentBase64 is not valid canonical base64", null);
+  }
+
+  const estimatedBytes = estimateBase64DecodedBytes(value);
+  if (estimatedBytes > MAX_ATTACH_FILE_BYTES) {
+    throw new ApiError(413, `contentBase64 exceeds the ${formatUploadSize(MAX_ATTACH_FILE_BYTES)} upload size limit`, {
+      limit: MAX_ATTACH_FILE_BYTES,
+    });
+  }
+
+  const buffer = Buffer.from(value, "base64");
+  if (buffer.length === 0) {
+    throw new ApiError(400, "contentBase64 decoded to zero bytes", null);
+  }
+  if (buffer.toString("base64") !== value) {
+    throw new ApiError(400, "contentBase64 is not valid canonical base64", null);
+  }
+  return buffer;
+}
+
+async function attachLeadFileWithChunks(params: {
+  client: ApiClient;
+  leadId: string;
+  filename: string;
+  mimeType: string;
+  buffer: Buffer;
+  idempotencyKey?: string;
+}) {
+  const totalChunks = Math.ceil(params.buffer.length / MCP_CHUNKED_UPLOAD_CHUNK_BYTES);
+  const contentHash = crypto.createHash("sha256").update(params.buffer).digest("hex");
+  const start = await params.client.request<{
+    session?: { uploadId?: string };
+    uploadId?: string;
+  }>({
+    method: "POST",
+    path: `/leads/${params.leadId}/attachments/chunked`,
+    body: {
+      originalName: params.filename,
+      mimeType: params.mimeType,
+      totalSize: params.buffer.length,
+      totalChunks,
+      contentHash,
+    },
+    toolName: "attach_lead_file",
+    idempotencyKey: params.idempotencyKey,
+  });
+
+  const uploadId = start.data.session?.uploadId ?? start.data.uploadId;
+  if (!uploadId) {
+    throw new ApiError(502, "Chunked lead attachment start did not return an uploadId", start.data);
+  }
+
+  for (let index = 0; index < totalChunks; index += 1) {
+    const offset = index * MCP_CHUNKED_UPLOAD_CHUNK_BYTES;
+    const chunk = params.buffer.subarray(offset, offset + MCP_CHUNKED_UPLOAD_CHUNK_BYTES);
+    await params.client.requestRaw({
+      method: "PUT",
+      path: `/leads/${params.leadId}/attachments/chunked/${uploadId}/chunks/${index}`,
+      body: chunk.toString("base64"),
+      contentType: "text/plain",
+      toolName: "attach_lead_file",
+    });
+  }
+
+  const complete = await params.client.request({
+    method: "POST",
+    path: `/leads/${params.leadId}/attachments/chunked/${uploadId}/complete`,
+    toolName: "attach_lead_file",
+    idempotencyKey: params.idempotencyKey
+      ? `${params.idempotencyKey}:complete`
+      : undefined,
+  });
+  return complete.data;
+}
+
 function omit<T extends Record<string, unknown>>(args: T, ...keys: string[]): T {
   const out: Record<string, unknown> = { ...args };
   for (const key of keys) delete out[key];
   return out as T;
-}
-
-async function loadScheduleItemPayload(
-  client: ApiClient,
-  scheduleItemId: string,
-  toolName: string,
-): Promise<Record<string, unknown>> {
-  const response = await client
-    .request<{ item?: Record<string, unknown> } | Record<string, unknown> | null>({
-      method: "GET",
-      path: `/schedule-items/${scheduleItemId}`,
-      toolName,
-    })
-    .then((r) => r.data);
-
-  const item: Record<string, unknown> | null =
-    response && typeof response === "object" && "item" in response
-      ? ((response as { item?: Record<string, unknown> }).item ?? null)
-      : (response as Record<string, unknown> | null);
-
-  if (!item) {
-    throw new ApiError(404, `Schedule item ${scheduleItemId} not found`, null);
-  }
-
-  const predecessors = Array.isArray(item["predecessors"])
-    ? (item["predecessors"] as Array<Record<string, unknown>>).map((p) => ({
-        scheduleItemId: String(p["scheduleItemId"] ?? ""),
-        dependencyType: p["dependencyType"],
-        lagDays: typeof p["lagDays"] === "number" ? p["lagDays"] : 0,
-      }))
-    : [];
-
-  const assigneeIds = Array.isArray(item["assigneeIds"])
-    ? (item["assigneeIds"] as unknown[]).filter((v): v is string => typeof v === "string")
-    : Array.isArray(item["assignees"])
-      ? (item["assignees"] as Array<Record<string, unknown>>)
-          .map((a) => a["id"])
-          .filter((v): v is string => typeof v === "string")
-      : [];
-
-  const tags = Array.isArray(item["tags"])
-    ? (item["tags"] as unknown[]).filter((v): v is string => typeof v === "string")
-    : [];
-
-  return {
-    title: item["title"],
-    displayColor: item["displayColor"] ?? undefined,
-    assigneeIds,
-    notifyUserIds: [],
-    startDate: item["startDate"],
-    workDays: item["workDays"] ?? 1,
-    endDate: item["endDate"] ?? null,
-    isHourly: Boolean(item["isHourly"]),
-    startTime: item["startTime"] ?? null,
-    endTime: item["endTime"] ?? null,
-    progress: typeof item["progress"] === "number" ? item["progress"] : 0,
-    reminder: item["reminder"] ?? "none",
-    notes: typeof item["notes"] === "string" ? item["notes"] : null,
-    tags,
-    predecessors,
-    phaseId: item["phaseId"] ?? null,
-    showOnGantt: item["showOnGantt"] !== false,
-    visibleToEstimators: item["visibleToEstimators"] !== false,
-    visibleToInstallers: item["visibleToInstallers"] !== false,
-    visibleToOfficeStaff: item["visibleToOfficeStaff"] !== false,
-    isComplete: Boolean(item["isComplete"]),
-    isPersonalTodo: Boolean(item["isPersonalTodo"]),
-  };
-}
-
-async function loadAndMergeScheduleItem(
-  client: ApiClient,
-  scheduleItemId: string,
-  patch: Record<string, unknown>,
-  toolName: string,
-): Promise<Record<string, unknown>> {
-  const current = await loadScheduleItemPayload(client, scheduleItemId, toolName);
-  return { ...current, ...patch };
 }
 
 export const TOOL_DEFINITIONS: McpToolDefinition[] = [
@@ -336,6 +362,52 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
           idempotencyKey: takeIdempotencyKey(args),
         })
         .then((r) => r.data ?? { status: "deleted" }),
+  },
+  {
+    name: "attach_lead_file",
+    title: "Attach a file to a lead from a base64 buffer",
+    description:
+      `Upload a lead attachment from inline base64. Uses POST /api/leads/:id/attachments with multipart field \`files\` for files up to ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)}, and automatically switches larger files to /api/leads/:id/attachments/chunked using base64 text chunks so large PDFs and ZIPs avoid Google Frontend 413 responses.`,
+    inputSchema: z.object({
+      leadId: idString,
+      filename: z.string().min(1).max(255),
+      mimeType: z.string().min(1).max(255),
+      contentBase64: z.string().min(1).max(MAX_ATTACH_FILE_BASE64_CHARS),
+      idempotencyKey: optionalIdempotencyKey,
+    }),
+    handler: async (client, args) => {
+      const leadId = String(args["leadId"]);
+      const filename = String(args["filename"]);
+      const mimeType = String(args["mimeType"]);
+      const idempotencyKey = takeIdempotencyKey(args);
+      const buffer = decodeCanonicalBase64(String(args["contentBase64"]));
+
+      if (buffer.length > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES) {
+        return attachLeadFileWithChunks({
+          client,
+          leadId,
+          filename,
+          mimeType,
+          buffer,
+          idempotencyKey,
+        });
+      }
+
+      const formData = new FormData();
+      formData.append(
+        "files",
+        new Blob([new Uint8Array(buffer)], { type: mimeType }),
+        filename,
+      );
+
+      const res = await client.requestMultipart({
+        path: `/leads/${leadId}/attachments`,
+        body: formData,
+        toolName: "attach_lead_file",
+        idempotencyKey,
+      });
+      return res.data;
+    },
   },
 
   // -------- Clients (companies) and contacts --------
@@ -757,7 +829,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
     name: "update_schedule_item",
     title: "Patch fields on a schedule item",
     description:
-      "Patch one or more fields on a schedule item. Reads the current item, merges your patch into it, and PUTs the result back to /api/schedule-items/:id. Supports any field accepted by the create payload.",
+      "Patch one or more fields on a schedule item. Sends only the provided fields to PATCH /api/schedule-items/:id.",
     inputSchema: z
       .object({ id: idString, idempotencyKey: optionalIdempotencyKey })
       .passthrough(),
@@ -765,12 +837,11 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       const id = pickId(args);
       const key = takeIdempotencyKey(args);
       const patch = omit(args, "id", "idempotencyKey");
-      const merged = await loadAndMergeScheduleItem(client, id, patch, "update_schedule_item");
       return client
         .request({
-          method: "PUT",
+          method: "PATCH",
           path: `/schedule-items/${id}`,
-          body: merged,
+          body: patch,
           toolName: "update_schedule_item",
           idempotencyKey: key,
         })
@@ -796,7 +867,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
     name: "add_schedule_assignee",
     title: "Assign a user to a schedule item",
     description:
-      "Convenience wrapper that adds a userId to a schedule item's assignees. Reads the current item, merges the new assignee in, and PUTs the result back to /api/schedule-items/:id.",
+      "Convenience wrapper that atomically adds a userId to a schedule item's assignees. Maps to POST /api/schedule-items/:id/assignees.",
     inputSchema: z.object({
       scheduleItemId: idString,
       userId: idString,
@@ -806,18 +877,11 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       const scheduleItemId = pickId(args, "scheduleItemId");
       const userId = String(args["userId"]);
       const key = takeIdempotencyKey(args);
-      const current = await loadScheduleItemPayload(client, scheduleItemId, "add_schedule_assignee");
-      const existing = Array.isArray(current["assigneeIds"])
-        ? (current["assigneeIds"] as unknown[]).filter(
-            (v): v is string => typeof v === "string",
-          )
-        : [];
-      const merged = Array.from(new Set([...existing, userId]));
       return client
         .request({
-          method: "PUT",
-          path: `/schedule-items/${scheduleItemId}`,
-          body: { ...current, assigneeIds: merged },
+          method: "POST",
+          path: `/schedule-items/${scheduleItemId}/assignees`,
+          body: { userId },
           toolName: "add_schedule_assignee",
           idempotencyKey: key,
         })
@@ -828,7 +892,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
     name: "mark_schedule_done",
     title: "Mark a schedule item complete",
     description:
-      "Convenience wrapper that flips a schedule item's progress to 100 and isComplete to true. Reads the current item, merges the completion flags in, and PUTs the result back to /api/schedule-items/:id.",
+      "Convenience wrapper that flips a schedule item's completion state through POST /api/schedule-items/:id/complete.",
     inputSchema: z.object({
       id: idString,
       isComplete: z.boolean().optional().default(true),
@@ -838,15 +902,14 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       const id = pickId(args);
       const key = takeIdempotencyKey(args);
       const isComplete = args["isComplete"] === false ? false : true;
-      const patch = isComplete
+      const body = isComplete
         ? { isComplete: true, progress: 100 }
-        : { isComplete: false, progress: 0 };
-      const merged = await loadAndMergeScheduleItem(client, id, patch, "mark_schedule_done");
+        : { isComplete: false };
       return client
         .request({
-          method: "PUT",
-          path: `/schedule-items/${id}`,
-          body: merged,
+          method: "POST",
+          path: `/schedule-items/${id}/complete`,
+          body,
           toolName: "mark_schedule_done",
           idempotencyKey: key,
         })
@@ -1011,7 +1074,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       folderId: idString,
       filename: z.string().min(1).max(255),
       mimeType: z.string().min(1).max(255),
-      contentBase64: z.string().min(1),
+      contentBase64: z.string().min(1).max(MAX_ATTACH_FILE_BASE64_CHARS),
       note: z.string().max(2_000).optional(),
       idempotencyKey: optionalIdempotencyKey,
     }),
@@ -1022,7 +1085,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       const note = typeof args["note"] === "string" ? (args["note"] as string) : undefined;
       const idempotencyKey = takeIdempotencyKey(args);
 
-      const buffer = decodeStrictBase64(String(args["contentBase64"]));
+      const buffer = decodeCanonicalBase64(String(args["contentBase64"]));
 
       const formData = new FormData();
       formData.append(
@@ -1163,7 +1226,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
       limit: z.number().int().min(1).max(200).optional(),
       offset: z.number().int().min(0).optional(),
       roles: z
-        .array(z.enum(["admin", "project_manager", "crew_member"]))
+        .array(z.enum(["admin", "project_manager", "crew_member", "drafter"]))
         .optional()
         .describe("One or more roles to filter by."),
     }),
@@ -1284,6 +1347,7 @@ export const TOOL_OUTPUT_SCHEMAS: Record<string, z.ZodObject<z.ZodRawShape>> = {
   create_lead: objectOut,
   update_lead: objectOut,
   delete_lead: deleteOut,
+  attach_lead_file: objectOut,
 
   list_clients: listOut("clients"),
   get_client: itemOut("client"),

@@ -23,7 +23,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 
-import type { ViewMode } from "../types"
+import type { ScheduleExportFormat, ScheduleExportKind, ViewMode } from "../types"
 
 type ScheduleToolbarProps = {
   viewMode: ViewMode
@@ -40,10 +40,9 @@ type ScheduleToolbarProps = {
   draftFutureLength: number
   activeFilterCount: number
   hasActiveItems: boolean
-  // Whether the current user may perform write actions (admin).
-  // Crew members get a read-only toolbar — write affordances are
-  // hidden, never just disabled.
+  // Whether the current user may perform admin-level schedule writes.
   canWrite: boolean
+  canCreateScheduleItems: boolean
   enterDraftMode: () => void
   handleDiscardDraft: () => void
   handleDraftUndo: () => void
@@ -51,7 +50,7 @@ type ScheduleToolbarProps = {
   handleTrackConflicts: () => void | Promise<void>
   handleNotifyAssignedUsers: () => void | Promise<void>
   handleDeleteAllItems: () => void | Promise<void>
-  handleExport: (kind: "schedule" | "baseline" | "exceptions") => void | Promise<void>
+  handleExport: (kind: ScheduleExportKind, format: ScheduleExportFormat) => void | Promise<void>
   runSchedulePrint: () => void
   openNewItem: () => void
   handlePublishDraft: () => void | Promise<void>
@@ -73,6 +72,7 @@ export function ScheduleToolbar({
   activeFilterCount,
   hasActiveItems,
   canWrite,
+  canCreateScheduleItems,
   enterDraftMode,
   handleDiscardDraft,
   handleDraftUndo,
@@ -236,7 +236,7 @@ export function ScheduleToolbar({
                   Delete All Items
                 </DropdownMenuItem>
               ) : null}
-              <DropdownMenuItem onClick={() => handleExport("schedule")}>
+              <DropdownMenuItem onClick={() => handleExport("schedule", "pdf")}>
                 Export to PDF
               </DropdownMenuItem>
               <DropdownMenuItem onClick={runSchedulePrint}>
@@ -259,7 +259,7 @@ export function ScheduleToolbar({
               </Badge>
             ) : null}
           </Button>
-          {canWrite ? (
+          {canCreateScheduleItems ? (
             <Button type="button" size="sm" onClick={openNewItem}>
               <Plus className="size-4" />
               New Schedule Item

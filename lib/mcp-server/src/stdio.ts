@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import path from "node:path";
 import process from "node:process";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createCadstoneMcpServer, type ToolAuditHook } from "./server";
+import { createCadstoneMcpServer, type ToolAuditHook } from "./server.js";
 
 export async function runStdioServer(): Promise<void> {
   const baseUrl = process.env["CADSTONE_API_URL"];

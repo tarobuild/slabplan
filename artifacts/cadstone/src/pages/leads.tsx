@@ -6,6 +6,7 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  Download,
   Edit2,
   File,
   FileImage,
@@ -28,6 +29,7 @@ import {
 import {
   getLeadsGetLeadsQueryKey,
   getLeadsGetLeadsIdQueryKey,
+  leadsGetLeadsIdAttachmentsUploadPolicy,
   leadsPostLeadsIdAttachments,
   useLeadsGetLeads,
   useLeadsPostLeads,
@@ -50,6 +52,7 @@ import {
   LeadsPutLeadsIdBody,
   LeadsPostLeadsIdContactsBody,
   LeadsPutLeadsIdContactsContactIdBody,
+  formatUploadSize,
 } from "@workspace/api-zod"
 import { useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
@@ -102,9 +105,12 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes"
 import { invalidateAppData } from "@/lib/data-refresh"
-import { uploadAcceptForMediaType, validateSelectedFiles } from "@/lib/uploads"
-import { useFilePreview } from "@/components/files/file-preview-context"
-import type { PreviewFile } from "@/components/files/FilePreview"
+import {
+  DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
+  uploadAcceptForMediaType,
+  uploadLeadAttachmentWithChunks,
+  validateSelectedFiles,
+} from "@/lib/uploads"
 import { toast } from "sonner"
 import { classifyApiError, toastApiError } from "@/lib/api-errors"
 
@@ -176,7 +182,7 @@ type LeadDetail = {
   clientContact: LeadContact | null
   tags: string[]
   sources: string[]
-  salespeople: { id: string; fullName: string }[]
+  salespeople: { id: string; fullName: string; email?: string | null; role?: string | null }[]
   attachments: LeadAttachment[]
   convertedJob?: LeadConvertedJobRef | null
 }
@@ -274,7 +280,7 @@ function fmtFileSize(bytes: number | null): string {
 
 function getAttachmentIcon(mimeType: string | null) {
   if (!mimeType) return <File className="size-4 text-slate-400" />
-  if (mimeType.startsWith("image/")) return <FileImage className="size-4 text-primary/70" />
+  if (mimeType.startsWith("image/")) return <FileImage className="size-4 text-blue-400" />
   if (mimeType.startsWith("video/")) return <FileVideo className="size-4 text-purple-400" />
   if (mimeType === "application/pdf") return <FileText className="size-4 text-red-400" />
   if (
@@ -282,7 +288,7 @@ function getAttachmentIcon(mimeType: string | null) {
     mimeType.includes("document") ||
     mimeType.includes("text")
   )
-    return <FileText className="size-4 text-primary" />
+    return <FileText className="size-4 text-blue-500" />
   return <File className="size-4 text-slate-400" />
 }
 
@@ -311,9 +317,17 @@ type EditForm = CreateForm & {
   zipCode: string
   tags: string
   sources: string
+  salespeople: string[]
   contactDisplayName: string
   contactEmail: string
   contactPhone: string
+}
+
+type LeadAssigneeOption = {
+  id: string
+  fullName: string | null
+  email: string
+  role: string
 }
 
 const emptyCreate: CreateForm = {
@@ -355,6 +369,7 @@ function buildEditForm(lead: LeadDetail): EditForm {
     leadSource: lead.leadSource ?? "",
     tags: lead.tags.join(", "),
     sources: lead.sources.join(", "),
+    salespeople: lead.salespeople.map((sp) => sp.id),
     contactDisplayName: lead.clientContact?.displayName ?? "",
     contactEmail: lead.clientContact?.email ?? "",
     contactPhone: lead.clientContact?.phone ?? "",
@@ -386,10 +401,32 @@ function DetailRow({
   )
 }
 
+async function downloadLeadAttachment(att: LeadAttachment) {
+  if (!att.fileId) {
+    toast.error("This file isn't available to download.")
+    return
+  }
+
+  const progressToast = toast.loading("Preparing download…")
+  try {
+    const response = await api.post<{ url: string }>(
+      `/files/${att.fileId}/signed-download`,
+    )
+    if (!response.data.url) throw new Error("Missing signed download URL")
+    toast.dismiss(progressToast)
+    // A same-tab download navigation is not subject to the browser's delayed
+    // synthetic-click blocking. Content-Disposition keeps the Sales page in
+    // place while the first-party response starts the actual download.
+    window.location.assign(response.data.url)
+  } catch (err: unknown) {
+    toast.dismiss(progressToast)
+    toastApiError(err, "Failed to download file.")
+  }
+}
+
 export default function LeadsPage() {
   useDocumentTitle("Leads")
   const queryClient = useQueryClient()
-  const filePreview = useFilePreview()
   const [page, setPage] = useState(1)
   const pageSize = 10
   const [search, setSearch] = useState("")
@@ -403,6 +440,14 @@ export default function LeadsPage() {
   const [convertLead, setConvertLead] = useState<Lead | LeadDetail | null>(null)
   const authUser = useAuthStore((s) => s.user)
   const isAdmin = authUser?.role === "admin"
+  const canCreateLeads =
+    authUser?.role === "admin" || authUser?.role === "project_manager"
+  const canEditLeads = canCreateLeads || authUser?.role === "drafter"
+  const canDeleteLeads = canCreateLeads
+  const canEditLeadContacts = canCreateLeads
+  const canAssignLeadUsers = canCreateLeads
+  const canDeleteLeadAttachments = canCreateLeads
+  const [leadAssigneeOptions, setLeadAssigneeOptions] = useState<LeadAssigneeOption[]>([])
 
   const [createOpen, setCreateOpen] = useState(false)
   const [form, setForm] = useState<CreateForm>(emptyCreate)
@@ -424,7 +469,6 @@ export default function LeadsPage() {
   const [editForm, setEditForm] = useState<EditForm | null>(null)
   const [savedEditForm, setSavedEditForm] = useState<EditForm | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
-  const detailRequestRef = useRef(0)
 
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
@@ -433,6 +477,8 @@ export default function LeadsPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeSheetLeadIdRef = useRef<string | null>(null)
+  const detailRequestSeqRef = useRef(0)
 
   const [searchParams, setSearchParams] = useSearchParams()
   const deepLinkLeadId = searchParams.get("lead")
@@ -463,6 +509,30 @@ export default function LeadsPage() {
     }
     return params
   }, [page, pageSize, debouncedSearch, status, showConverted])
+
+  useEffect(() => {
+    if (!canAssignLeadUsers) {
+      setLeadAssigneeOptions([])
+      return
+    }
+
+    let cancelled = false
+    api
+      .get<{ users?: LeadAssigneeOption[]; data?: LeadAssigneeOption[] }>(
+        "/users?roles=admin,project_manager,drafter&limit=200",
+      )
+      .then((response) => {
+        if (cancelled) return
+        setLeadAssigneeOptions(response.data.users ?? response.data.data ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setLeadAssigneeOptions([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [canAssignLeadUsers])
 
   const leadsQuery = useLeadsGetLeads(listParams, {
     query: {
@@ -507,6 +577,37 @@ export default function LeadsPage() {
   const updateLeadContactMutation = useLeadsPutLeadsIdContactsContactId()
   const deleteLeadAttachmentMutation = useLeadsDeleteLeadsIdAttachmentsAttachmentId()
 
+  async function uploadLeadAttachmentFile(leadId: string, file: File) {
+    const policy = await leadsGetLeadsIdAttachmentsUploadPolicy(leadId, {
+      fileSize: file.size,
+      originalName: file.name,
+      mimeType: file.type || undefined,
+    })
+    const maxUploadBytes = Math.min(
+      policy.multipart.maxAppFileSizeBytes,
+      policy.chunked.supported ? policy.chunked.maxTotalBytes : policy.multipart.maxAppFileSizeBytes,
+    )
+
+    if (file.size > maxUploadBytes) {
+      throw new Error(`${file.name} exceeds the ${formatUploadSize(maxUploadBytes)} file size limit.`)
+    }
+
+    if (
+      policy.file?.recommendedUploadMode === "chunked" ||
+      file.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES ||
+      file.size > policy.multipart.maxRecommendedBytes
+    ) {
+      return uploadLeadAttachmentWithChunks<{ attachments: LeadAttachment[] }>({
+        leadId,
+        file,
+      })
+    }
+
+    return leadsPostLeadsIdAttachments(leadId, { files: [file] }) as Promise<{
+      attachments: LeadAttachment[]
+    }>
+  }
+
   const handleSearch = (v: string) => {
     setSearch(v)
     setPage(1)
@@ -522,8 +623,8 @@ export default function LeadsPage() {
   const handlePage = (p: number) => setPage(p)
 
   const openSheet = (leadId: string) => {
-    const requestId = detailRequestRef.current + 1
-    detailRequestRef.current = requestId
+    const requestId = ++detailRequestSeqRef.current
+    activeSheetLeadIdRef.current = leadId
     setSheetLeadId(leadId)
     setIsEditing(false)
     setLeadDetail(null)
@@ -534,17 +635,27 @@ export default function LeadsPage() {
     api
       .get(`/leads/${leadId}`)
       .then((r) => {
-        if (detailRequestRef.current !== requestId) return
+        if (
+          requestId !== detailRequestSeqRef.current ||
+          activeSheetLeadIdRef.current !== leadId
+        ) {
+          return
+        }
         const lead: LeadDetail = r.data.lead
-        if (lead.id !== leadId) return
         const nextEditForm = buildEditForm(lead)
         setLeadDetail(lead)
         setEditForm(nextEditForm)
         setSavedEditForm(nextEditForm)
       })
       .catch((err: unknown) => {
-        if (detailRequestRef.current !== requestId) return
+        if (
+          requestId !== detailRequestSeqRef.current ||
+          activeSheetLeadIdRef.current !== leadId
+        ) {
+          return
+        }
         toastApiError(err, "Failed to load lead details")
+        activeSheetLeadIdRef.current = null
         setSheetLeadId(null)
         setIsEditing(false)
         setAttachmentError(null)
@@ -555,9 +666,13 @@ export default function LeadsPage() {
         }
       })
       .finally(() => {
-        if (detailRequestRef.current === requestId) {
-          setLoadingDetail(false)
+        if (
+          requestId !== detailRequestSeqRef.current ||
+          activeSheetLeadIdRef.current !== leadId
+        ) {
+          return
         }
+        setLoadingDetail(false)
       })
   }
 
@@ -576,10 +691,7 @@ export default function LeadsPage() {
 
   const handleSaveEdit = async () => {
     if (!sheetLeadId || !editForm || !leadDetail) return
-    if (leadDetail.id !== sheetLeadId) {
-      toast.error("Lead details changed while loading. Reopen the lead and try again.")
-      return
-    }
+    if (!canEditLeads) return
     setSavingEdit(true)
     try {
       const tags = editForm.tags
@@ -607,7 +719,7 @@ export default function LeadsPage() {
         leadSource: editForm.leadSource || null,
         tags,
         sources,
-        salespeople: leadDetail.salespeople.map((sp) => sp.id),
+        salespeople: editForm.salespeople,
       })
       if (!updatePayload) {
         setSavingEdit(false)
@@ -674,6 +786,7 @@ export default function LeadsPage() {
 
   const handleCreateOpenChange = (open: boolean) => {
     if (saving) return
+    if (open && !canCreateLeads) return
     if (!open) {
       setCreateOpen(false)
       resetCreateDialogState()
@@ -690,8 +803,10 @@ export default function LeadsPage() {
   useEffect(() => {
     const incoming = location.state as Record<string, unknown> | null
     if (incoming && (incoming as { openCreate?: unknown }).openCreate) {
-      resetCreateDialogState()
-      setCreateOpen(true)
+      if (canCreateLeads) {
+        resetCreateDialogState()
+        setCreateOpen(true)
+      }
       const { openCreate: _openCreate, ...rest } = incoming as {
         openCreate?: unknown
       } & Record<string, unknown>
@@ -708,13 +823,15 @@ export default function LeadsPage() {
     // We only want this to fire when the location changes meaningfully,
     // not when the consumed state replays.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.state])
+  }, [canCreateLeads, location.state])
 
   const handleSelectCreateFiles = (fileList: FileList) => {
     const newFiles = Array.from(fileList)
     if (newFiles.length === 0) return
     const combined = [...createFiles, ...newFiles]
-    const validationError = validateSelectedFiles(combined, "document")
+    const validationError = validateSelectedFiles(combined, "document", {
+      maxFileSizeBytes: Number.MAX_SAFE_INTEGER,
+    })
     if (validationError) {
       setCreateFileError(validationError)
       if (createFilesInputRef.current) createFilesInputRef.current.value = ""
@@ -728,12 +845,18 @@ export default function LeadsPage() {
   const removeCreateFile = (index: number) => {
     const next = createFiles.filter((_, i) => i !== index)
     setCreateFiles(next)
-    const validationError = next.length > 0 ? validateSelectedFiles(next, "document") : null
+    const validationError =
+      next.length > 0
+        ? validateSelectedFiles(next, "document", {
+            maxFileSizeBytes: Number.MAX_SAFE_INTEGER,
+          })
+        : null
     setCreateFileError(validationError)
   }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canCreateLeads) return
     if (createFileError) return
     setSaving(true)
 
@@ -807,13 +930,7 @@ export default function LeadsPage() {
     for (let i = 0; i < createFiles.length; i++) {
       const file = createFiles[i]
       try {
-        const fd = new FormData()
-        fd.append("files", file)
-        // The generated `useLeadsPostLeadsIdAttachments` hook only accepts
-        // `{ id }` in its variables (orval drops multipart bodies from the
-        // mutation surface). We still go through the generated client by
-        // calling the bare function with `body: fd`, which avoids axios.
-        await leadsPostLeadsIdAttachments(leadId, { body: fd })
+        await uploadLeadAttachmentFile(leadId, file)
         successfulIndexes.push(i)
       } catch (err) {
         const classified = classifyApiError(err, "Upload failed")
@@ -851,13 +968,18 @@ export default function LeadsPage() {
 
   const handleDelete = async () => {
     if (!deleteId) return
+    if (!canDeleteLeads) return
     setDeleting(true)
     try {
       await deleteLeadMutation.mutateAsync({ id: deleteId })
       toast.success("Lead deleted")
       const deletedId = deleteId
       setDeleteId(null)
-      if (sheetLeadId === deletedId) setSheetLeadId(null)
+      if (sheetLeadId === deletedId) {
+        detailRequestSeqRef.current += 1
+        activeSheetLeadIdRef.current = null
+        setSheetLeadId(null)
+      }
       invalidateLeadsList()
       invalidateLeadDetail(deletedId)
       invalidateAppData(["leads", "navigation"])
@@ -870,8 +992,11 @@ export default function LeadsPage() {
 
   const handleUploadAttachments = async (fileList: FileList) => {
     if (!sheetLeadId || fileList.length === 0) return
+    if (!canEditLeads) return
     const selectedFiles = Array.from(fileList)
-    const validationError = validateSelectedFiles(selectedFiles, "document")
+    const validationError = validateSelectedFiles(selectedFiles, "document", {
+      maxFileSizeBytes: Number.MAX_SAFE_INTEGER,
+    })
 
     if (validationError) {
       setAttachmentError(validationError)
@@ -882,17 +1007,15 @@ export default function LeadsPage() {
     setAttachmentError(null)
     setUploadingAttachment(true)
     try {
-      const formData = new FormData()
-      selectedFiles.forEach((file) => formData.append("files", file))
-      // See note in handleCreate: bare generated function for multipart.
-      const data = (await leadsPostLeadsIdAttachments(sheetLeadId, {
-        body: formData,
-      })) as { attachments: LeadAttachment[] }
-      const newAttachments: LeadAttachment[] = data.attachments
+      const uploaded: LeadAttachment[] = []
+      for (const file of selectedFiles) {
+        const data = await uploadLeadAttachmentFile(sheetLeadId, file)
+        uploaded.push(...data.attachments)
+      }
       toast.success(
-        newAttachments.length === 1
+        uploaded.length === 1
           ? "File uploaded"
-          : `${newAttachments.length} files uploaded`,
+          : `${uploaded.length} files uploaded`,
       )
       const { data: freshData } = await api.get(`/leads/${sheetLeadId}`)
       setLeadDetail(freshData.lead)
@@ -906,6 +1029,7 @@ export default function LeadsPage() {
 
   const handleDeleteAttachment = async () => {
     if (!sheetLeadId || !confirmDeleteAttachmentId) return
+    if (!canDeleteLeadAttachments) return
     setDeletingAttachmentId(confirmDeleteAttachmentId)
     setConfirmDeleteAttachmentId(null)
     try {
@@ -941,6 +1065,16 @@ export default function LeadsPage() {
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setEditForm((f) => (f ? { ...f, [k]: e.target.value } : f))
 
+  const toggleLeadAssignee = (userId: string, checked: boolean) => {
+    setEditForm((current) => {
+      if (!current) return current
+      const currentSet = new Set(current.salespeople)
+      if (checked) currentSet.add(userId)
+      else currentSet.delete(userId)
+      return { ...current, salespeople: Array.from(currentSet) }
+    })
+  }
+
   const closeLeadEditor = () => {
     leadUnsavedChanges.confirmDiscardChanges(() => {
       setIsEditing(false)
@@ -958,13 +1092,10 @@ export default function LeadsPage() {
     }
 
     leadUnsavedChanges.confirmDiscardChanges(() => {
-      detailRequestRef.current += 1
+      detailRequestSeqRef.current += 1
+      activeSheetLeadIdRef.current = null
       setSheetLeadId(null)
       setIsEditing(false)
-      setLeadDetail(null)
-      setEditForm(null)
-      setSavedEditForm(null)
-      setLoadingDetail(false)
       setAttachmentError(null)
       if (deepLinkLeadId) {
         const next = new URLSearchParams(searchParams)
@@ -984,23 +1115,24 @@ export default function LeadsPage() {
   return (
     <div className="space-y-4">
       {leadUnsavedChanges.dialog}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Sales Leads</h1>
-        <Button
-          size="sm"
-          className="w-full justify-center sm:w-auto"
-          onClick={() => {
-            resetCreateDialogState()
-            setCreateOpen(true)
-          }}
-        >
-          <Plus className="mr-1.5 size-3.5" />
-          New Lead
-        </Button>
+        {canCreateLeads ? (
+          <Button
+            size="sm"
+            onClick={() => {
+              resetCreateDialogState()
+              setCreateOpen(true)
+            }}
+          >
+            <Plus className="mr-1.5 size-3.5" />
+            New Lead
+          </Button>
+        ) : null}
       </div>
 
-      <div className="grid gap-2 sm:flex sm:items-center">
-        <div className="relative min-w-0 sm:max-w-xs sm:flex-1">
+      <div className="flex gap-2">
+        <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
           <Input
             value={search}
@@ -1010,7 +1142,7 @@ export default function LeadsPage() {
           />
         </div>
         <Select value={status} onValueChange={handleStatus}>
-          <SelectTrigger className="h-9 w-full sm:w-40">
+          <SelectTrigger className="w-40 h-9">
             <SelectValue placeholder="All statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -1032,7 +1164,7 @@ export default function LeadsPage() {
             active because the list is already restricted to converted
             leads in that case. */}
         {status !== "converted" && (
-          <label className="flex min-h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-600 sm:border-0 sm:bg-transparent sm:px-0">
+          <label className="flex items-center gap-2 text-xs text-slate-600 self-center">
             <input
               type="checkbox"
               checked={showConverted}
@@ -1076,16 +1208,21 @@ export default function LeadsPage() {
             ) : leads.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-12 text-center text-sm text-slate-400">
-                  No leads found.{" "}
-                  <button
-                    onClick={() => {
-                      resetCreateDialogState()
-                      setCreateOpen(true)
-                    }}
-                    className="text-primary hover:underline"
-                  >
-                    Create your first lead
-                  </button>
+                  No leads found.
+                  {canCreateLeads ? (
+                    <>
+                      {" "}
+                      <button
+                        onClick={() => {
+                          resetCreateDialogState()
+                          setCreateOpen(true)
+                        }}
+                        className="text-primary hover:underline"
+                      >
+                        Create your first lead
+                      </button>
+                    </>
+                  ) : null}
                 </TableCell>
               </TableRow>
             ) : (
@@ -1155,15 +1292,17 @@ export default function LeadsPage() {
                           <ArrowRightCircle className="size-3.5" />
                         </button>
                       ) : null}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDeleteId(lead.id)
-                        }}
-                        className="text-slate-400 hover:text-red-500 transition-colors p-1"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                      {canDeleteLeads ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteId(lead.id)
+                          }}
+                          className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      ) : null}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -1212,12 +1351,14 @@ export default function LeadsPage() {
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={e => { e.stopPropagation(); setDeleteId(lead.id) }}
-                  className="shrink-0 p-1 text-slate-400 transition-colors hover:text-red-500"
-                >
-                  <Trash2 className="size-4" />
-                </button>
+                {canDeleteLeads ? (
+                  <button
+                    onClick={e => { e.stopPropagation(); setDeleteId(lead.id) }}
+                    className="shrink-0 p-1 text-slate-400 transition-colors hover:text-red-500"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                ) : null}
               </div>
             </div>
           ))
@@ -1256,13 +1397,13 @@ export default function LeadsPage() {
 
       {/* Create Lead Dialog */}
       <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New Lead Opportunity</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreate}>
-            <div className="grid grid-cols-1 gap-4 py-4 sm:grid-cols-2">
-              <div className="space-y-1.5 sm:col-span-2">
+            <div className="grid grid-cols-2 gap-4 py-4">
+              <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="lead-title">Title *</Label>
                 <Input
                   id="lead-title"
@@ -1382,7 +1523,7 @@ export default function LeadsPage() {
                 />
               </div>
 
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="lead-notes">Notes</Label>
                 <Textarea
                   id="lead-notes"
@@ -1394,12 +1535,12 @@ export default function LeadsPage() {
               </div>
 
               {/* Contact section */}
-              <div className="pt-2 sm:col-span-2">
+              <div className="col-span-2 pt-2">
                 <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
                   <User className="size-3.5" />
                   Primary Contact <span className="font-normal text-slate-400">(optional)</span>
                 </p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="contact-name">Display Name</Label>
                     <Input
@@ -1448,7 +1589,7 @@ export default function LeadsPage() {
               </div>
 
               {/* Attachments section */}
-              <div className="pt-2 sm:col-span-2">
+              <div className="col-span-2 pt-2">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
                     <Paperclip className="size-3.5" />
@@ -1671,7 +1812,7 @@ export default function LeadsPage() {
                   </Button>
                 )
               )}
-              {!isEditing && leadDetail && (
+              {!isEditing && leadDetail && canEditLeads && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1864,6 +2005,44 @@ export default function LeadsPage() {
                           placeholder="referral, web"
                         />
                       </div>
+
+                      {canAssignLeadUsers ? (
+                        <div className="col-span-2 space-y-2">
+                          <Label>Assigned sales / estimating users</Label>
+                          {leadAssigneeOptions.length === 0 ? (
+                            <p className="text-sm text-slate-400">No assignable users found.</p>
+                          ) : (
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {leadAssigneeOptions.map((option) => {
+                                const checked = editForm.salespeople.includes(option.id)
+                                return (
+                                  <label
+                                    key={option.id}
+                                    className="flex min-w-0 items-start gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(event) =>
+                                        toggleLeadAssignee(option.id, event.target.checked)
+                                      }
+                                      className="mt-1"
+                                    />
+                                    <span className="min-w-0">
+                                      <span className="block truncate font-medium text-slate-800">
+                                        {option.fullName ?? option.email}
+                                      </span>
+                                      <span className="block truncate text-xs text-slate-400">
+                                        {option.role.replaceAll("_", " ")}
+                                      </span>
+                                    </span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="space-y-1.5">
@@ -1876,46 +2055,50 @@ export default function LeadsPage() {
                       />
                     </div>
 
-                    <Separator />
+                    {canEditLeadContacts ? (
+                      <>
+                        <Separator />
 
-                    <div>
-                      <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
-                        <User className="size-3.5" />
-                        Primary Contact
-                      </p>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <Label>Display Name</Label>
-                          <Input
-                            value={editForm.contactDisplayName}
-                            onChange={setEditField("contactDisplayName")}
-                            placeholder="Jane Smith"
-                          />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
+                            <User className="size-3.5" />
+                            Primary Contact
+                          </p>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <Label>Display Name</Label>
+                              <Input
+                                value={editForm.contactDisplayName}
+                                onChange={setEditField("contactDisplayName")}
+                                placeholder="Jane Smith"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label>Email</Label>
+                              <Input
+                                type="email"
+                                inputMode="email"
+                                autoComplete="email"
+                                value={editForm.contactEmail}
+                                onChange={setEditField("contactEmail")}
+                                placeholder="jane@example.com"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label>Phone</Label>
+                              <Input
+                                type="tel"
+                                inputMode="tel"
+                                autoComplete="tel"
+                                value={editForm.contactPhone}
+                                onChange={setEditField("contactPhone")}
+                                placeholder="(555) 000-0000"
+                              />
+                            </div>
+                          </div>
                         </div>
-                        <div className="space-y-1.5">
-                          <Label>Email</Label>
-                          <Input
-                            type="email"
-                            inputMode="email"
-                            autoComplete="email"
-                            value={editForm.contactEmail}
-                            onChange={setEditField("contactEmail")}
-                            placeholder="jane@example.com"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label>Phone</Label>
-                          <Input
-                            type="tel"
-                            inputMode="tel"
-                            autoComplete="tel"
-                            value={editForm.contactPhone}
-                            onChange={setEditField("contactPhone")}
-                            placeholder="(555) 000-0000"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                      </>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -1978,6 +2161,21 @@ export default function LeadsPage() {
                       />
                     </div>
 
+                    {leadDetail.salespeople.length > 0 ? (
+                      <div>
+                        <p className="text-xs text-slate-400 mb-2">
+                          Assigned sales / estimating
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {leadDetail.salespeople.map((person) => (
+                            <Badge key={person.id} variant="secondary" className="text-xs">
+                              {person.fullName || person.email || "Assigned user"}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
                     {leadDetail.notes && (
                       <div>
                         <p className="text-xs text-slate-400 mb-1">Notes</p>
@@ -2037,13 +2235,15 @@ export default function LeadsPage() {
                       ) : (
                         <div className="flex items-center gap-2 text-sm text-slate-400">
                           <p>No contact added yet.</p>
-                          <button
-                            onClick={() => setIsEditing(true)}
-                            className="text-primary hover:underline text-sm flex items-center gap-1"
-                          >
-                            <Edit2 className="size-3" />
-                            Add contact
-                          </button>
+                          {canEditLeadContacts ? (
+                            <button
+                              onClick={() => setIsEditing(true)}
+                              className="text-primary hover:underline text-sm flex items-center gap-1"
+                            >
+                              <Edit2 className="size-3" />
+                              Add contact
+                            </button>
+                          ) : null}
                         </div>
                       )}
                     </div>
@@ -2078,32 +2278,36 @@ export default function LeadsPage() {
                             </span>
                           )}
                         </p>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs px-2.5 gap-1.5"
-                          disabled={uploadingAttachment}
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          {uploadingAttachment ? (
-                            <Loader2 className="size-3 animate-spin" />
-                          ) : (
-                            <Upload className="size-3" />
-                          )}
-                          Upload files
-                        </Button>
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          multiple
-                          accept={uploadAcceptForMediaType("document")}
-                          className="hidden"
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files.length > 0) {
-                              handleUploadAttachments(e.target.files)
-                            }
-                          }}
-                        />
+                        {canEditLeads ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs px-2.5 gap-1.5"
+                              disabled={uploadingAttachment}
+                              onClick={() => fileInputRef.current?.click()}
+                            >
+                              {uploadingAttachment ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Upload className="size-3" />
+                              )}
+                              Upload files
+                            </Button>
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              multiple
+                              accept={uploadAcceptForMediaType("document")}
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files.length > 0) {
+                                  handleUploadAttachments(e.target.files)
+                                }
+                              }}
+                            />
+                          </>
+                        ) : null}
                       </div>
                       {attachmentError ? (
                         <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -2115,26 +2319,19 @@ export default function LeadsPage() {
                         <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-slate-200 rounded-lg">
                           <Paperclip className="size-7 text-slate-300 mb-2" />
                           <p className="text-sm text-slate-400">No attachments yet</p>
-                          <button
-                            onClick={() => !uploadingAttachment && fileInputRef.current?.click()}
-                            disabled={uploadingAttachment}
-                            className="mt-1 text-xs text-primary hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            Upload a file
-                          </button>
+                          {canEditLeads ? (
+                            <button
+                              onClick={() => !uploadingAttachment && fileInputRef.current?.click()}
+                              disabled={uploadingAttachment}
+                              className="mt-1 text-xs text-primary hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              Upload a file
+                            </button>
+                          ) : null}
                         </div>
                       ) : (
                         <div className="space-y-1">
-                          {leadDetail.attachments.map((att, attIdx) => {
-                            const previewFiles: PreviewFile[] = leadDetail.attachments.map((a) => ({
-                              id: a.id,
-                              fileId: a.fileId,
-                              name: a.originalName,
-                              mimeType: a.mimeType,
-                              fileSize: a.fileSize,
-                              uploadedByName: a.uploadedByName,
-                              createdAt: a.createdAt,
-                            }))
+                          {leadDetail.attachments.map((att) => {
                             const isMissing = att.storageStatus === "missing"
                             return (
                             <div
@@ -2169,9 +2366,10 @@ export default function LeadsPage() {
                                   <>
                                     <button
                                       type="button"
-                                      onClick={() => filePreview.open(previewFiles, attIdx)}
+                                      onClick={() => downloadLeadAttachment(att)}
                                       className="text-sm text-slate-800 font-medium truncate block hover:text-primary hover:underline text-left w-full"
                                       title={att.originalName}
+                                      aria-label={`Download ${att.originalName}`}
                                     >
                                       {att.originalName}
                                     </button>
@@ -2187,27 +2385,40 @@ export default function LeadsPage() {
                                   </>
                                 )}
                               </div>
-                              <button
-                                className={
-                                  isMissing
-                                    ? "shrink-0 text-amber-700 hover:text-red-600"
-                                    : "shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
-                                }
-                                disabled={deletingAttachmentId === att.id}
-                                onClick={() => setConfirmDeleteAttachmentId(att.id)}
-                                aria-label={
-                                  isMissing
-                                    ? "Permanently remove orphan attachment"
-                                    : "Delete attachment"
-                                }
-                                title={isMissing ? "Remove orphan row" : undefined}
-                              >
-                                {deletingAttachmentId === att.id ? (
-                                  <Loader2 className="size-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="size-4" />
-                                )}
-                              </button>
+                              {!isMissing ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-400 hover:text-primary transition-opacity"
+                                  onClick={() => downloadLeadAttachment(att)}
+                                  aria-label={`Download ${att.originalName}`}
+                                  title="Download"
+                                >
+                                  <Download className="size-4" />
+                                </button>
+                              ) : null}
+                              {canDeleteLeadAttachments ? (
+                                <button
+                                  className={
+                                    isMissing
+                                      ? "shrink-0 text-amber-700 hover:text-red-600"
+                                      : "shrink-0 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
+                                  }
+                                  disabled={deletingAttachmentId === att.id}
+                                  onClick={() => setConfirmDeleteAttachmentId(att.id)}
+                                  aria-label={
+                                    isMissing
+                                      ? "Permanently remove orphan attachment"
+                                      : "Delete attachment"
+                                  }
+                                  title={isMissing ? "Remove orphan row" : undefined}
+                                >
+                                  {deletingAttachmentId === att.id ? (
+                                    <Loader2 className="size-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="size-4" />
+                                  )}
+                                </button>
+                              ) : null}
                             </div>
                             )
                           })}

@@ -124,3 +124,29 @@ test("valueContainsPii drops events with phone numbers in stack frames", () => {
   };
   assert.equal(valueContainsPii(event), true);
 });
+
+test("valueContainsPii scans native Error message and stack fields", () => {
+  const error = new Error("contact alice@example.com for access");
+  assert.equal(valueContainsPii(error), true);
+
+  const stackOnly = new Error("clean message");
+  stackOnly.stack = "Error: clean\n    at handler (555-867-5309)";
+  assert.equal(valueContainsPii({ extra: { error: stackOnly } }), true);
+});
+
+test("valueContainsPii scans Error causes and custom fields", () => {
+  const error = new Error("outer clean", {
+    cause: new Error("call +14155550199"),
+  });
+  assert.equal(valueContainsPii({ hint: { originalException: error } }), true);
+
+  const custom = new Error("clean");
+  (custom as Error & { jobSite?: string }).jobSite = "123 Main Street";
+  assert.equal(valueContainsPii(custom), true);
+});
+
+test("valueContainsPii handles circular Error causes", () => {
+  const error = new Error("clean");
+  (error as Error & { cause?: unknown }).cause = error;
+  assert.equal(valueContainsPii(error), false);
+});

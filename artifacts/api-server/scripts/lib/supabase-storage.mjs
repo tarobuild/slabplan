@@ -154,14 +154,45 @@ export function createSupabaseStorage(env = process.env) {
   async function getObjectInfo(objectName) {
     const response = await supabaseStorageRequest(
       config,
-      `/object/${objectPath(objectName)}`,
+      `/object/info/${objectPath(objectName)}`,
       { method: "HEAD" },
       new Set([200, ...SUPABASE_OBJECT_MISSING_STATUSES]),
     );
     if (response.status !== 200) return null;
+    const headerSize = Number(response.headers.get("content-length") ?? 0);
+    if (headerSize > 0) {
+      return {
+        objectName,
+        sizeBytes: headerSize,
+        contentType: response.headers.get("content-type"),
+        updated: response.headers.get("last-modified"),
+      };
+    }
+
+    // Supabase's object-info HEAD response can have an empty response body,
+    // which makes content-length 0 even when the object is non-empty. Fall
+    // back to the storage listing metadata so backup verification does not
+    // reject valid uploads as zero-byte objects.
+    const slash = objectName.lastIndexOf("/");
+    const parentPrefix = slash >= 0 ? objectName.slice(0, slash) : "";
+    const listed = (await listAllObjects(parentPrefix)).find(
+      (item) => item.name === objectName,
+    );
+    if (listed) {
+      return {
+        objectName,
+        sizeBytes: Number(listed.metadata?.size ?? 0),
+        contentType:
+          listed.metadata?.mimetype ??
+          listed.metadata?.contentType ??
+          response.headers.get("content-type"),
+        updated: listed.updated ?? response.headers.get("last-modified"),
+      };
+    }
+
     return {
       objectName,
-      sizeBytes: Number(response.headers.get("content-length") ?? 0),
+      sizeBytes: 0,
       contentType: response.headers.get("content-type"),
       updated: response.headers.get("last-modified"),
     };

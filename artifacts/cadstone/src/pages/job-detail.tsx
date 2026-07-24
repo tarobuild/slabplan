@@ -93,7 +93,8 @@ export default function JobDetailPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === "admin"
-  const isFieldUser = user?.role === "project_manager" || user?.role === "crew_member"
+  const isFieldUser =
+    user?.role === "project_manager" || user?.role === "crew_member" || user?.role === "drafter"
   const [job, setJob] = useState<Job | null>(null)
   const access = job?.access
   const visibleTabs = TABS
@@ -339,7 +340,9 @@ export default function JobDetailPage() {
 
 	  return (
     <div {...pageDropzone.getRootProps()} className="relative space-y-0">
-      {isAdmin ? <input {...pageDropzone.getInputProps()} /> : null}
+      {isAdmin ? (
+        <input {...pageDropzone.getInputProps({ className: "hidden" })} />
+      ) : null}
 
       {/* Page-level drop overlay */}
       {pageDropzone.isDragActive && !isOnFilesTab && (

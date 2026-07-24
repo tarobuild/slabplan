@@ -2,7 +2,11 @@ import assert from "node:assert/strict"
 import { describe, test } from "node:test"
 
 import {
+  DEFAULT_UPLOAD_TIMEOUT_MS,
   MAX_VIDEO_DURATION_SECONDS,
+  UPLOAD_MAX_FILE_SIZE_BYTES,
+  uploadFileWithChunks,
+  uploadWithProgress,
   validateSelectedFiles,
   validateSelectedFilesAsync,
   validateVideoDurations,
@@ -66,6 +70,17 @@ describe("validateSelectedFiles", () => {
     }
   })
 
+  test("accepts lead-sized project PDFs above the former 500 MB cap", () => {
+    const largePdf = {
+      name: "K Bakery - Issue for Construction-260409.pdf",
+      type: "application/pdf",
+      size: 600 * 1024 * 1024,
+    } as File
+
+    assert.equal(UPLOAD_MAX_FILE_SIZE_BYTES, 2 * 1024 * 1024 * 1024)
+    assert.equal(validateSelectedFiles([largePdf], "document"), null)
+  })
+
   test("rejects a .exe with a clear, extension-named message", () => {
     // Loosening the MIME check must not loosen the extension check —
     // a renamed executable still has a non-document extension and
@@ -79,8 +94,8 @@ describe("validateSelectedFiles", () => {
     assert.match(error!, /aren't allowed for safety/)
   })
 
-  test("rejects .bat / .sh / .html across the blocklist", () => {
-    for (const name of ["run.bat", "deploy.sh", "evil.html"]) {
+  test("rejects .bat / .sh / .html / .svg across the blocklist", () => {
+    for (const name of ["run.bat", "deploy.sh", "evil.html", "payload.svg"]) {
       const error = validateSelectedFiles([makeFile(name, "")], "document")
       assert.ok(error, `${name} should be blocked`)
     }
@@ -215,6 +230,218 @@ describe("validateSelectedFilesAsync (video)", () => {
   })
 })
 
+describe("uploadWithProgress", () => {
+  test("marks non-JSON 403 responses as plain forbidden upload errors", async () => {
+    class PlainForbiddenXMLHttpRequest {
+      static instances: PlainForbiddenXMLHttpRequest[] = []
+
+      upload = { addEventListener: () => undefined }
+      timeout = 0
+      withCredentials = false
+      responseType: XMLHttpRequestResponseType = ""
+      status = 403
+      responseText = "Forbidden"
+      onload: XMLHttpRequest["onload"] = null
+      onerror: XMLHttpRequest["onerror"] = null
+      ontimeout: XMLHttpRequest["ontimeout"] = null
+      onabort: XMLHttpRequest["onabort"] = null
+
+      constructor() {
+        PlainForbiddenXMLHttpRequest.instances.push(this)
+      }
+
+      open() {}
+      setRequestHeader() {}
+      getResponseHeader(name: string) {
+        return name.toLowerCase() === "content-type" ? "text/plain" : null
+      }
+      abort() {
+        this.onabort?.call(this as unknown as XMLHttpRequest, new Event("abort") as ProgressEvent)
+      }
+      send() {
+        queueMicrotask(() => {
+          this.onload?.call(this as unknown as XMLHttpRequest, new Event("load") as ProgressEvent)
+        })
+      }
+    }
+
+    const previousXMLHttpRequest = globalThis.XMLHttpRequest
+    globalThis.XMLHttpRequest = PlainForbiddenXMLHttpRequest as unknown as typeof XMLHttpRequest
+
+    try {
+      await assert.rejects(
+        uploadWithProgress({
+          url: "/folders/test/files",
+          formData: new FormData(),
+          maxAttempts: 1,
+        }),
+        (error) => {
+          assert.equal((error as { status?: number }).status, 403)
+          assert.equal((error as { code?: string }).code, "UPLOAD_FORBIDDEN_PLAIN_RESPONSE")
+          assert.deepEqual((error as { details?: unknown }).details, {
+            structured: false,
+            responseContentType: "text/plain",
+            rawBody: "Forbidden",
+          })
+          return true
+        },
+      )
+    } finally {
+      globalThis.XMLHttpRequest = previousXMLHttpRequest
+    }
+  })
+
+  test("chunked uploads retry a plain 403 raw chunk as base64 text", async () => {
+    const file = new File([new Uint8Array([1, 2, 3, 4, 5])], "edge-photo.jpg", {
+      type: "image/jpeg",
+    })
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = []
+    const xhrSends: Array<{
+      url: string
+      headers: Record<string, string>
+      body: unknown
+    }> = []
+
+    class PlainForbiddenThenBase64XMLHttpRequest {
+      upload = { addEventListener: () => undefined }
+      timeout = 0
+      withCredentials = false
+      responseType: XMLHttpRequestResponseType = ""
+      status = 0
+      responseText = ""
+      onload: XMLHttpRequest["onload"] = null
+      onerror: XMLHttpRequest["onerror"] = null
+      ontimeout: XMLHttpRequest["ontimeout"] = null
+      onabort: XMLHttpRequest["onabort"] = null
+      private responseContentType = "application/json"
+      private url = ""
+      private headers: Record<string, string> = {}
+
+      open(_method: string, url: string) {
+        this.url = url
+      }
+      setRequestHeader(name: string, value: string) {
+        this.headers[name.toLowerCase()] = value
+      }
+      getResponseHeader(name: string) {
+        return name.toLowerCase() === "content-type" ? this.responseContentType : null
+      }
+      abort() {
+        this.onabort?.call(this as unknown as XMLHttpRequest, new Event("abort") as ProgressEvent)
+      }
+      send(body: unknown) {
+        xhrSends.push({ url: this.url, headers: this.headers, body })
+        if (this.headers["content-type"] === "text/plain") {
+          this.status = 200
+          this.responseContentType = "application/json"
+          this.responseText = JSON.stringify({ transport: "base64" })
+        } else {
+          this.status = 403
+          this.responseContentType = "text/plain"
+          this.responseText = "Forbidden"
+        }
+        queueMicrotask(() => {
+          this.onload?.call(this as unknown as XMLHttpRequest, new Event("load") as ProgressEvent)
+        })
+      }
+    }
+
+    const previousFetch = globalThis.fetch
+    const previousXMLHttpRequest = globalThis.XMLHttpRequest
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      fetchCalls.push({ url, init })
+      if (url.endsWith("/api/folders/folder-1/files/chunked")) {
+        return new Response(JSON.stringify({ session: { uploadId: "upload-1" } }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      if (url.endsWith("/api/folders/folder-1/files/chunked/upload-1/complete")) {
+        return new Response(JSON.stringify({ status: "uploaded" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      return new Response("not found", { status: 404 })
+    }) as typeof fetch
+    globalThis.XMLHttpRequest = PlainForbiddenThenBase64XMLHttpRequest as unknown as typeof XMLHttpRequest
+
+    try {
+      const result = await uploadFileWithChunks<{ status: string }>({
+        folderId: "folder-1",
+        file,
+        chunkSizeBytes: 1024,
+      })
+
+      assert.equal(result.status, "uploaded")
+      assert.equal(fetchCalls.length, 2)
+      assert.equal(xhrSends.length, 2)
+      assert.equal(xhrSends[0]?.headers["content-type"], "application/octet-stream")
+      assert.ok(xhrSends[0]?.body instanceof Blob)
+      assert.equal(xhrSends[1]?.headers["content-type"], "text/plain")
+      assert.equal(xhrSends[1]?.body, "AQIDBAU=")
+    } finally {
+      globalThis.fetch = previousFetch
+      globalThis.XMLHttpRequest = previousXMLHttpRequest
+    }
+  })
+
+  test("configures a request timeout and surfaces XHR timeout failures", async () => {
+    class TimeoutXMLHttpRequest {
+      static instances: TimeoutXMLHttpRequest[] = []
+
+      upload = { addEventListener: () => undefined }
+      timeout = 0
+      withCredentials = false
+      responseType: XMLHttpRequestResponseType = ""
+      onload: XMLHttpRequest["onload"] = null
+      onerror: XMLHttpRequest["onerror"] = null
+      ontimeout: XMLHttpRequest["ontimeout"] = null
+      onabort: XMLHttpRequest["onabort"] = null
+
+      constructor() {
+        TimeoutXMLHttpRequest.instances.push(this)
+      }
+
+      open() {}
+      setRequestHeader() {}
+      abort() {
+        this.onabort?.call(this as unknown as XMLHttpRequest, new Event("abort") as ProgressEvent)
+      }
+      send() {
+        queueMicrotask(() => {
+          this.ontimeout?.call(
+            this as unknown as XMLHttpRequest,
+            new Event("timeout") as ProgressEvent,
+          )
+        })
+      }
+    }
+
+    const previousXMLHttpRequest = globalThis.XMLHttpRequest
+    globalThis.XMLHttpRequest = TimeoutXMLHttpRequest as unknown as typeof XMLHttpRequest
+
+    try {
+      await assert.rejects(
+        uploadWithProgress({
+          url: "/folders/test/files",
+          formData: new FormData(),
+          maxAttempts: 1,
+        }),
+        (error) => {
+          assert.equal((error as { code?: string }).code, "UPLOAD_NETWORK_TIMEOUT")
+          assert.match((error as Error).message, /timed out/i)
+          return true
+        },
+      )
+      assert.equal(TimeoutXMLHttpRequest.instances[0]?.timeout, DEFAULT_UPLOAD_TIMEOUT_MS)
+    } finally {
+      globalThis.XMLHttpRequest = previousXMLHttpRequest
+    }
+  })
+})
+
 // Component-level coverage: verify the actual upload-picker call sites
 // (Files > Videos via FileBrowser, daily-logs attachment dropzone)
 // route their selections through the shared async validator. The unit
@@ -260,5 +487,52 @@ describe("upload pickers wire the async video-duration check", () => {
       "utf8",
     )
     assert.match(source, /videoUploadHint\s*\(\s*\)/, "FileBrowser should render the shared video upload hint")
+  })
+
+  test("FileBrowser chunks proxy-sized uploads before the hard app limit", async () => {
+    const source = await nodeFs.readFile(
+      nodePath.join(here, "..", "components", "FileBrowser.tsx"),
+      "utf8",
+    )
+    assert.match(source, /DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES/, "FileBrowser must import the direct-upload chunking threshold")
+    assert.match(source, /file\.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES/, "FileBrowser must route proxy-sized files through chunked upload")
+  })
+
+  test("FileBrowser routes job photo and video uploads through chunked upload by default", async () => {
+    const source = await nodeFs.readFile(
+      nodePath.join(here, "..", "components", "FileBrowser.tsx"),
+      "utf8",
+    )
+    assert.match(
+      source,
+      /mediaType !== "document"/,
+      "FileBrowser must route job Photos/Videos through chunked upload even when individual files are below the proxy-sized threshold",
+    )
+  })
+
+  test("lead attachment uploads route large files through the lead chunked endpoint", async () => {
+    const source = await nodeFs.readFile(
+      nodePath.join(here, "..", "pages", "leads.tsx"),
+      "utf8",
+    )
+    assert.match(source, /uploadLeadAttachmentWithChunks/, "Leads page must import the lead chunked upload helper")
+    assert.match(source, /leadsGetLeadsIdAttachmentsUploadPolicy/, "Lead attachments must ask the API for the live upload policy")
+    assert.match(source, /policy\.multipart\.maxAppFileSizeBytes/, "Lead attachments must enforce the policy app max instead of a stale bundled cap")
+    assert.match(source, /file\.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES/, "Lead attachments must chunk large files before multipart upload")
+    assert.match(source, /maxFileSizeBytes:\s*Number\.MAX_SAFE_INTEGER/, "Lead attachment pickers must not block policy-sized files before policy lookup")
+  })
+
+  test("lead attachment rows download directly instead of opening the file preview", async () => {
+    const source = await nodeFs.readFile(
+      nodePath.join(here, "..", "pages", "leads.tsx"),
+      "utf8",
+    )
+    assert.match(source, /downloadLeadAttachment/, "Lead attachment rows must have a direct download action")
+    assert.match(source, /\/files\/\$\{att\.fileId\}\/signed-download/, "Lead attachment downloads must mint a signed download URL")
+    assert.match(source, /window\.location\.assign\(response\.data\.url\)/, "Lead downloads must use an unblockable same-tab download navigation")
+    assert.doesNotMatch(source, /\/files\/\$\{att\.fileId\}\/download[`"]/, "Lead attachment downloads must not buffer the file through Axios before saving")
+    assert.doesNotMatch(source, /anchor\.click\(\)/, "Lead downloads must not rely on a delayed synthetic click")
+    assert.doesNotMatch(source, /useFilePreview/, "Lead attachments should not mount the preview modal hook")
+    assert.doesNotMatch(source, /filePreview\.open/, "Lead attachment clicks should not open the preview modal")
   })
 })

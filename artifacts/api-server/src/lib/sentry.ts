@@ -14,13 +14,16 @@ import * as Sentry from "@sentry/node";
 import { valueContainsPii } from "./pii-filter";
 import { APP_MCP_NAME } from "./brand";
 
+declare const __API_RELEASE_SHA__: string | undefined;
+
 let initialized = false;
 
 export function getRelease(): string | undefined {
-  // Hosting providers often inject the current Git SHA at build/runtime;
-  // fall back to generic release env vars so the same identifier can flow
-  // through the source-map upload step on the web.
+  // Prefer the build-time SHA, then use the current host's runtime SHA.
+  const bakedReleaseSha =
+    typeof __API_RELEASE_SHA__ === "string" ? __API_RELEASE_SHA__ : "";
   const sha =
+    bakedReleaseSha ||
     process.env.RAILWAY_GIT_COMMIT_SHA ||
     process.env.VERCEL_GIT_COMMIT_SHA ||
     process.env.REPLIT_GIT_COMMIT_SHA ||

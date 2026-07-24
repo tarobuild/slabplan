@@ -81,24 +81,47 @@ test.describe("daily logs photo upload (UI)", () => {
         res.ok(),
       { timeout: 20_000 },
     )
+    const attachmentUploadPromise = page.waitForResponse(
+      (res) =>
+        res.request().method() === "POST" &&
+        /\/api\/daily-logs\/[^/]+\/attachments$/.test(res.url()) &&
+        res.ok(),
+      { timeout: 20_000 },
+    )
     await logDialog.getByRole("button", { name: /^publish$/i }).click()
     const logResp = await logCreatePromise
     const logBody = await logResp.json()
     createdLogId = logBody.log?.id ?? logBody.dailyLog?.id ?? logBody.id ?? null
     expect(createdLogId).toBeTruthy()
 
-    // The feed should render the photo tile (not a generic file icon).
+    const uploadResp = await attachmentUploadPromise
+    const uploadBody = await uploadResp.json()
+    const uploadedPhoto = (uploadBody.attachments ?? []).find((a: { originalName?: string }) =>
+      (a.originalName ?? "").includes(photoName),
+    )
+    expect(uploadedPhoto).toBeTruthy()
+    expect(String(uploadedPhoto.mimeType ?? "")).toMatch(/^image\//)
+
+    // Wait for the full save/publish sequence, not just the create request.
+    // While the dialog is still open, the pending thumbnail is also an <img>;
+    // accepting that image would race the later attachment upload.
+    await expect(logDialog).toBeHidden({ timeout: 20_000 })
+
+    // The save flow opens the new log detail. The detail view shows a
+    // persisted attachment card, while the feed renders image attachments as
+    // thumbnails.
     await expect(page.getByText(logNotes).first()).toBeVisible({
       timeout: 15_000,
     })
-    await expect(
-      page.getByRole("img", { name: photoName }).first(),
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(photoName).first()).toBeVisible({
+      timeout: 15_000,
+    })
 
     // Confirm the server actually persisted an image-mime attachment.
     const detail = await request.get(`/api/daily-logs/${createdLogId}`, {
       headers: authHeaders(token),
     })
+    expect(detail.ok()).toBeTruthy()
     const detailBody = await detail.json()
     const attachments =
       detailBody.log?.attachments ?? detailBody.dailyLog?.attachments ?? detailBody.attachments ?? []
@@ -107,5 +130,10 @@ test.describe("daily logs photo upload (UI)", () => {
     )
     expect(photo).toBeTruthy()
     expect(String(photo.mimeType ?? "")).toMatch(/^image\//)
+
+    await page.getByRole("button", { name: /\/ Daily Logs$/ }).click()
+    await expect(
+      page.getByRole("img", { name: photoName }).first(),
+    ).toBeVisible({ timeout: 15_000 })
   })
 })

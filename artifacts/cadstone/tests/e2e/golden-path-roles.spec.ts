@@ -14,6 +14,7 @@ import {
   requireAnyClient,
 } from "./helpers/api"
 import { gotoViaTopNav, isMobileViewport } from "./helpers/mobile"
+import { visiblePlaceholder, visibleText } from "./helpers/locators"
 import { CESAR_STATE, WORKER_STATE } from "./helpers/storage"
 
 /**
@@ -170,17 +171,14 @@ test.describe("golden path — crew (worker) UI", () => {
       ).toBeVisible()
     }
     await gotoViaTopNav(page, "/jobs", /^my jobs$/i)
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(seeded.jobId.slice(0, 12))
+    await visiblePlaceholder(page, /search/i).fill(seeded.jobId.slice(0, 12))
     // The seeded job's title contains "E2E GP role-crew" — search by
     // that to filter the list down to our row.
-    const jobRow = page.getByText(/E2E GP role-crew/i).first()
+    const jobRow = visibleText(page, /E2E GP role-crew/i)
     await expect(jobRow).toBeVisible({ timeout: 15_000 })
 
     await expect(
-      page.getByRole("button", { name: /\+ ?new job/i }),
+      page.getByRole("button", { name: /\+ ?new job/i }).and(page.locator(":visible")),
       "+ New Job button must be hidden for crew (desktop or mobile)",
     ).toHaveCount(0)
 
@@ -189,12 +187,14 @@ test.describe("golden path — crew (worker) UI", () => {
     await page.goto(`/jobs/${jobId}/schedule`)
     await page.getByRole("button", { name: /^list$/i }).first().click()
     await expect(
-      page.getByRole("button", { name: /^new schedule item$/i }),
+      page
+        .getByRole("button", { name: /^new schedule item$/i })
+        .and(page.locator(":visible")),
       "New Schedule Item button must be hidden for crew",
     ).toHaveCount(0)
     // Crew also cannot see the admin-only "Job actions" menu trigger.
     await expect(
-      page.getByRole("button", { name: /job actions/i }),
+      page.getByRole("button", { name: /job actions/i }).and(page.locator(":visible")),
       "Job actions menu must be hidden for crew",
     ).toHaveCount(0)
 

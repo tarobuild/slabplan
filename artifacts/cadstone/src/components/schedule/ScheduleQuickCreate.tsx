@@ -166,6 +166,8 @@ export function ScheduleQuickCreate({
     setSaveError(null)
     setTitleInvalid(false)
 
+    let item: ScheduleItemRecord
+
     try {
       const response = await api.post<{ item: ScheduleItemRecord }>(`/jobs/${jobId}/schedule`, {
         title: trimmed,
@@ -176,9 +178,7 @@ export function ScheduleQuickCreate({
         endTime: isHourly ? endTime : null,
         assigneeIds,
       })
-      await onSaved(response.data.item)
-      toast.success("Schedule item created")
-      onOpenChange(false)
+      item = response.data.item
     } catch (err) {
       const classified = classifyApiError(err, "Failed to create schedule item")
       if (classified.kind === "toast") {
@@ -192,9 +192,20 @@ export function ScheduleQuickCreate({
         // 403: global interceptor already shows a toast and routes the user away.
         setSaveError("You don't have permission to create schedule items here.")
       }
+      setSaving(false)
+      return
+    }
+
+    try {
+      await onSaved(item)
+    } catch {
+      toast.info("Schedule item created, but the schedule could not refresh.")
     } finally {
       setSaving(false)
     }
+
+    toast.success("Schedule item created")
+    onOpenChange(false)
   }
 
   function handleQuickMoreOptions() {

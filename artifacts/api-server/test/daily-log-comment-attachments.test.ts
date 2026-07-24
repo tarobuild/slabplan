@@ -9,8 +9,10 @@ const testDatabaseUrl = "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_te
 let server: Server;
 let baseUrl: string;
 let adminToken: string;
+let otherAdminToken: string;
 
 const adminUserId = crypto.randomUUID();
+const otherAdminUserId = crypto.randomUUID();
 const jobId = crypto.randomUUID();
 const dailyLogId = crypto.randomUUID();
 
@@ -47,13 +49,22 @@ before(async () => {
   await prepareApp();
 
   const adminEmail = `admin-${adminUserId}@daily-log-comment-attachments-test.local`;
-  await db.insert(users).values({
-    id: adminUserId,
-    email: adminEmail,
-    passwordHash: "test-not-a-real-hash",
-    fullName: "ZZZ Comment Attachments Admin",
-    role: "admin",
-  });
+  await db.insert(users).values([
+    {
+      id: adminUserId,
+      email: adminEmail,
+      passwordHash: "test-not-a-real-hash",
+      fullName: "ZZZ Comment Attachments Admin",
+      role: "admin",
+    },
+    {
+      id: otherAdminUserId,
+      email: `other-${otherAdminUserId}@daily-log-comment-attachments-test.local`,
+      passwordHash: "test-not-a-real-hash",
+      fullName: "ZZZ Other Comment Attachments Admin",
+      role: "admin",
+    },
+  ]);
 
   await db.insert(jobs).values({
     id: jobId,
@@ -82,6 +93,16 @@ before(async () => {
     createdAt: new Date(),
     updatedAt: new Date(),
   });
+  otherAdminToken = auth.signAccessToken({
+    id: otherAdminUserId,
+    email: `other-${otherAdminUserId}@daily-log-comment-attachments-test.local`,
+    fullName: "ZZZ Other Comment Attachments Admin",
+    role: "admin",
+    avatarUrl: null,
+    phone: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
 
   server = app.listen(0);
   await new Promise<void>((resolve) => {
@@ -94,7 +115,7 @@ before(async () => {
 after(async () => {
   const { db, pool } = await import("@workspace/db");
   const { users, jobs, dailyLogs } = await import("@workspace/db/schema");
-  const { eq } = await import("drizzle-orm");
+  const { eq, inArray } = await import("drizzle-orm");
 
   try {
     // Daily logs cascade-delete folders → files (and the comments JSON
@@ -103,7 +124,7 @@ after(async () => {
     // wrote during the test.
     await db.delete(dailyLogs).where(eq(dailyLogs.id, dailyLogId));
     await db.delete(jobs).where(eq(jobs.id, jobId));
-    await db.delete(users).where(eq(users.id, adminUserId));
+    await db.delete(users).where(inArray(users.id, [adminUserId, otherAdminUserId]));
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => {
@@ -118,6 +139,14 @@ after(async () => {
 
 function pngBlob(): Blob {
   return new Blob([tinyPngBytes], { type: "image/png" });
+}
+
+function jsonHeaders(token: string) {
+  return {
+    authorization: `Bearer ${token}`,
+    "content-type": "application/json",
+    "X-Requested-With": "XMLHttpRequest",
+  };
 }
 
 test("POST /daily-logs/:id/comment-attachments persists files and the resulting comment carries fileId/fileUrl", async () => {
@@ -241,6 +270,90 @@ test("POST /daily-logs/:id/comments rejects unknown fileIds with 400", async () 
   assert.equal(response.status, 400, await response.text());
 });
 
+test("concurrent daily-log like toggles return cleanly without duplicate insert errors", async () => {
+  const responses = await Promise.all([
+    fetch(`${baseUrl}/api/daily-logs/${dailyLogId}/like`, {
+      method: "POST",
+      headers: jsonHeaders(adminToken),
+    }),
+    fetch(`${baseUrl}/api/daily-logs/${dailyLogId}/like`, {
+      method: "POST",
+      headers: jsonHeaders(adminToken),
+    }),
+  ]);
+
+  for (const response of responses) {
+    assert.equal(response.status, 200, await response.text());
+  }
+
+  const { db } = await import("@workspace/db");
+  const { dailyLogLikes } = await import("@workspace/db/schema");
+  const { and, count, eq } = await import("drizzle-orm");
+  const [row] = await db
+    .select({ total: count() })
+    .from(dailyLogLikes)
+    .where(
+      and(
+        eq(dailyLogLikes.dailyLogId, dailyLogId),
+        eq(dailyLogLikes.userId, adminUserId),
+      ),
+    );
+  assert.equal(Number(row?.total ?? 0), 0);
+});
+
+test("concurrent comment reactions merge distinct users instead of overwriting", async () => {
+  const commentResponse = await fetch(
+    `${baseUrl}/api/daily-logs/${dailyLogId}/comments`,
+    {
+      method: "POST",
+      headers: jsonHeaders(adminToken),
+      body: JSON.stringify({ body: "reaction concurrency seed" }),
+    },
+  );
+  const commentText = await commentResponse.text();
+  assert.equal(commentResponse.status, 201, commentText);
+  const commentBody = JSON.parse(commentText) as {
+    comments: Array<{ id: string; body: string }>;
+  };
+  const comment = commentBody.comments.find(
+    (candidate) => candidate.body === "reaction concurrency seed",
+  );
+  assert.ok(comment);
+
+  const responses = await Promise.all([
+    fetch(
+      `${baseUrl}/api/daily-logs/${dailyLogId}/comments/${comment.id}/reactions`,
+      {
+        method: "POST",
+        headers: jsonHeaders(adminToken),
+        body: JSON.stringify({ emoji: "thumb" }),
+      },
+    ),
+    fetch(
+      `${baseUrl}/api/daily-logs/${dailyLogId}/comments/${comment.id}/reactions`,
+      {
+        method: "POST",
+        headers: jsonHeaders(otherAdminToken),
+        body: JSON.stringify({ emoji: "thumb" }),
+      },
+    ),
+  ]);
+
+  for (const response of responses) {
+    assert.equal(response.status, 200, await response.text());
+  }
+
+  const { db } = await import("@workspace/db");
+  const { dailyLogComments } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const [row] = await db
+    .select({ reactions: dailyLogComments.reactions })
+    .from(dailyLogComments)
+    .where(eq(dailyLogComments.id, comment.id));
+  const reactions = row?.reactions as Record<string, string[]> | null | undefined;
+  assert.deepEqual(new Set(reactions?.thumb ?? []), new Set([adminUserId, otherAdminUserId]));
+});
+
 test("POST /daily-logs/:id/comment-attachments rejects oversize uploads with 413 LIMIT_FILE_SIZE", async () => {
   // 11 MB exceeds the 10 MB per-attachment cap. Multer's global limit
   // fires LIMIT_FILE_SIZE which the problem-json mapper turns into 413.
@@ -261,9 +374,10 @@ test("POST /daily-logs/:id/comment-attachments rejects oversize uploads with 413
   assert.equal(response.status, 413, oversizeText);
   const body = JSON.parse(oversizeText) as {
     status: number;
-    errors?: { code?: string };
+    errors?: { code?: string; legacyCode?: string; multerCode?: string };
   };
-  assert.equal(body.errors?.code, "UPLOAD_TOO_LARGE");
+  assert.equal(body.errors?.code, "FILE_TOO_LARGE");
+  assert.equal(body.errors?.legacyCode, "UPLOAD_TOO_LARGE");
   assert.equal(body.errors?.multerCode, "LIMIT_FILE_SIZE");
 });
 

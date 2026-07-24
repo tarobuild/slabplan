@@ -12,12 +12,29 @@ delete process.env.SUPABASE_DATABASE_URL;
 
 const {
   computeJobScheduleCascade,
+  localDateKey,
   startScheduleAutoCompleteSweeper,
 } = await import("../src/routes/schedule.ts");
 
 test("computeJobScheduleCascade returns an empty map for empty input", () => {
   const result = computeJobScheduleCascade([], [], []);
   assert.equal(result.size, 0);
+});
+
+test("localDateKey uses local calendar dates instead of UTC dates", () => {
+  const previousTz = process.env.TZ;
+  process.env.TZ = "America/Los_Angeles";
+  try {
+    const localLateNight = new Date("2026-05-18T06:30:00.000Z");
+    assert.equal(localDateKey(localLateNight), "2026-05-17");
+    assert.equal(localLateNight.toISOString().slice(0, 10), "2026-05-18");
+  } finally {
+    if (previousTz === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = previousTz;
+    }
+  }
 });
 
 test("computeJobScheduleCascade does not change items that already match their workDays", () => {
@@ -82,6 +99,58 @@ test("computeJobScheduleCascade preserves a manual endDate", () => {
   assert.ok(a);
   assert.equal(a.startDate, "2026-01-05");
   assert.equal(a.endDate, "2026-01-12");
+});
+
+test("computeJobScheduleCascade respects annual workday exceptions that cross New Year", () => {
+  const result = computeJobScheduleCascade(
+    [
+      {
+        id: "setup",
+        title: "Setup",
+        startDate: "2026-12-23",
+        endDate: "2026-12-23",
+        workDays: 1,
+      },
+      {
+        id: "a",
+        title: "A",
+        startDate: "2026-12-24",
+        endDate: "2026-12-24",
+        workDays: 1,
+      },
+    ],
+    [
+      {
+        scheduleItemId: "a",
+        predecessorId: "setup",
+        dependencyType: "finish_to_start",
+        lagDays: 0,
+      },
+    ],
+    [
+      {
+        id: "holiday-shutdown",
+        title: "Holiday Shutdown",
+        type: "non_workday",
+        startDate: "2025-12-24",
+        endDate: "2026-01-02",
+        sameEveryYear: true,
+        categoryId: null,
+        categoryName: null,
+        appliesToAllJobs: true,
+        jobIds: [],
+        notes: null,
+      },
+    ],
+  );
+
+  const a = result.get("a");
+  const setup = result.get("setup");
+  assert.ok(setup);
+  assert.ok(a);
+  assert.equal(setup.endDate, "2026-12-23");
+  assert.equal(a.startDate, "2027-01-04");
+  assert.equal(a.endDate, "2027-01-04");
 });
 
 test("computeJobScheduleCascade resolves a finish-to-start predecessor chain", () => {
@@ -266,4 +335,144 @@ test("computeJobScheduleCascade respects start-to-start with lag", () => {
   // Start-to-Start with 2 business-day lag from Mon Jan 5 = Wed Jan 7.
   assert.equal(c.startDate, "2026-01-07");
   assert.equal(c.endDate, "2026-01-07");
+});
+
+test("computeJobScheduleCascade keeps a finish-to-finish successor that already satisfies the finish date", () => {
+  const result = computeJobScheduleCascade(
+    [
+      {
+        id: "a",
+        title: "A",
+        startDate: "2026-05-18", // Mon
+        endDate: "2026-05-22", // Fri
+        workDays: 5,
+      },
+      {
+        id: "b",
+        title: "B",
+        startDate: "2026-05-20", // Wed
+        endDate: "2026-05-22", // Fri
+        workDays: 3,
+      },
+    ],
+    [
+      {
+        scheduleItemId: "b",
+        predecessorId: "a",
+        dependencyType: "finish_to_finish",
+        lagDays: 0,
+      },
+    ],
+    [],
+  );
+
+  const b = result.get("b");
+  assert.ok(b);
+  assert.equal(b.startDate, "2026-05-20");
+  assert.equal(b.endDate, "2026-05-22");
+});
+
+test("computeJobScheduleCascade moves finish-to-finish successors only enough to satisfy the finish date", () => {
+  const result = computeJobScheduleCascade(
+    [
+      {
+        id: "a",
+        title: "A",
+        startDate: "2026-05-18", // Mon
+        endDate: "2026-05-22", // Fri
+        workDays: 5,
+      },
+      {
+        id: "b",
+        title: "B",
+        startDate: "2026-05-19", // Tue, ends too early
+        endDate: "2026-05-21",
+        workDays: 3,
+      },
+    ],
+    [
+      {
+        scheduleItemId: "b",
+        predecessorId: "a",
+        dependencyType: "finish_to_finish",
+        lagDays: 0,
+      },
+    ],
+    [],
+  );
+
+  const b = result.get("b");
+  assert.ok(b);
+  assert.equal(b.startDate, "2026-05-20");
+  assert.equal(b.endDate, "2026-05-22");
+});
+
+test("computeJobScheduleCascade keeps a start-to-finish successor that already satisfies the finish date", () => {
+  const result = computeJobScheduleCascade(
+    [
+      {
+        id: "a",
+        title: "A",
+        startDate: "2026-05-22", // Fri
+        endDate: "2026-05-22",
+        workDays: 1,
+      },
+      {
+        id: "b",
+        title: "B",
+        startDate: "2026-05-20", // Wed
+        endDate: "2026-05-22", // Fri
+        workDays: 3,
+      },
+    ],
+    [
+      {
+        scheduleItemId: "b",
+        predecessorId: "a",
+        dependencyType: "start_to_finish",
+        lagDays: 0,
+      },
+    ],
+    [],
+  );
+
+  const b = result.get("b");
+  assert.ok(b);
+  assert.equal(b.startDate, "2026-05-20");
+  assert.equal(b.endDate, "2026-05-22");
+});
+
+test("computeJobScheduleCascade moves start-to-finish successors only enough to satisfy the finish date", () => {
+  const result = computeJobScheduleCascade(
+    [
+      {
+        id: "a",
+        title: "A",
+        startDate: "2026-05-22", // Fri
+        endDate: "2026-05-22",
+        workDays: 1,
+      },
+      {
+        id: "b",
+        title: "B",
+        startDate: "2026-05-19", // Tue, ends too early
+        endDate: "2026-05-21",
+        workDays: 3,
+      },
+    ],
+    [
+      {
+        scheduleItemId: "b",
+        predecessorId: "a",
+        dependencyType: "start_to_finish",
+        lagDays: 0,
+      },
+    ],
+    [],
+  );
+
+  const b = result.get("b");
+  assert.ok(b);
+  assert.equal(b.startDate, "2026-05-20");
+  assert.equal(b.endDate, "2026-05-22");
 });

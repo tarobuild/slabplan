@@ -33,6 +33,15 @@ export type ApiMultipartRequest = {
   idempotencyKey?: string;
 };
 
+export type ApiRawRequest = {
+  method: "POST" | "PUT" | "PATCH";
+  path: string;
+  body: string | Uint8Array | ArrayBuffer | Blob | FormData;
+  contentType: string;
+  toolName?: string;
+  idempotencyKey?: string;
+};
+
 export type ApiResponse<T = unknown> = {
   status: number;
   data: T;
@@ -124,6 +133,22 @@ export class ApiClient {
     });
 
     return this.parseResponse<T>(res, "POST", req.path, false);
+  }
+
+  async requestRaw<T = unknown>(req: ApiRawRequest): Promise<ApiResponse<T>> {
+    const url = this.buildUrl(req.path);
+    const headers = this.baseHeaders(req.toolName, req.idempotencyKey);
+    headers["Accept"] = "application/json";
+    headers["Content-Type"] = req.contentType;
+
+    const res = await this.fetchImpl(url, {
+      method: req.method,
+      headers,
+      body: req.body,
+      signal: this.signal,
+    });
+
+    return this.parseResponse<T>(res, req.method, req.path, false);
   }
 
   private baseHeaders(toolName: string | undefined, idempotencyKey: string | undefined) {

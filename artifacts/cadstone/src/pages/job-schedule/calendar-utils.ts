@@ -8,9 +8,7 @@ import {
 import type { SchedulePreview } from "@/components/schedule/ScheduleItemDialog"
 import type { DayTimelineSegment, MonthWeekSegment, TimelineHeaderUnit } from "./types"
 import type { GanttScale } from "./types"
-import { DAY_END_HOUR, DAY_START_HOUR } from "./drag"
-
-const DAY_END_EXCLUSIVE_HOUR = DAY_END_HOUR + 1
+import { DAY_END_EXCLUSIVE_HOUR, DAY_END_HOUR, DAY_START_HOUR } from "./drag"
 
 export function parseDate(value: string) {
   return new Date(`${value}T12:00:00`)
@@ -241,19 +239,23 @@ function getDaySegmentBounds(item: ScheduleItemRecord, day: string) {
   if (item.isHourly) {
     const boundedStart = item.startDate === day ? startHour ?? 8 : DAY_START_HOUR
     const boundedEnd = itemEndDate(item) === day ? endHour ?? boundedStart + 1 : DAY_END_EXCLUSIVE_HOUR
+    const clampedStart = Math.max(DAY_START_HOUR, Math.min(DAY_END_HOUR, boundedStart))
 
     return {
-      startHour: Math.max(DAY_START_HOUR, boundedStart),
-      endHour: Math.max(boundedStart + 0.75, Math.min(DAY_END_EXCLUSIVE_HOUR, boundedEnd || DAY_END_EXCLUSIVE_HOUR)),
+      startHour: clampedStart,
+      endHour: Math.min(
+        DAY_END_EXCLUSIVE_HOUR,
+        Math.max(clampedStart + 0.75, Math.min(DAY_END_EXCLUSIVE_HOUR, boundedEnd || DAY_END_EXCLUSIVE_HOUR)),
+      ),
     }
   }
 
   const boundedStart = item.startDate === day ? 8 : DAY_START_HOUR
-  const boundedEnd = itemEndDate(item) === day ? 17 : DAY_END_HOUR
+  const boundedEnd = itemEndDate(item) === day ? 17 : DAY_END_EXCLUSIVE_HOUR
 
   return {
     startHour: Math.max(DAY_START_HOUR, boundedStart),
-    endHour: Math.max(boundedStart + 1, Math.min(DAY_END_HOUR, boundedEnd)),
+    endHour: Math.max(boundedStart + 1, Math.min(DAY_END_EXCLUSIVE_HOUR, boundedEnd)),
   }
 }
 
@@ -288,10 +290,10 @@ export function previewBoundsForDay(day: string, preview: SchedulePreview) {
   }
 
   const startHour = preview.startDate === day ? 8 : DAY_START_HOUR
-  const endHour = preview.endDate === day ? 17 : DAY_END_HOUR
+  const endHour = preview.endDate === day ? 17 : DAY_END_EXCLUSIVE_HOUR
   return {
     startHour: Math.max(DAY_START_HOUR, startHour),
-    endHour: Math.max(startHour + 1, Math.min(DAY_END_HOUR, endHour)),
+    endHour: Math.max(startHour + 1, Math.min(DAY_END_EXCLUSIVE_HOUR, endHour)),
   }
 }
 

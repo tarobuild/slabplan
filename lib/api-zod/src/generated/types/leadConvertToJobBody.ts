@@ -9,13 +9,25 @@ import type { LeadConvertToJobBodyJob } from "./leadConvertToJobBodyJob";
 import type { LeadConvertToJobBodyNewClient } from "./leadConvertToJobBodyNewClient";
 
 /**
- * Optional payload for `POST /leads/{id}/convert-to-job`. Provide either `clientId` to attach the new job to an existing client, or `newClient` to create a client inline. `job` carries optional overrides applied on top of the lead's pre-fill values.
+ * Optional payload for `POST /leads/{id}/convert-to-job`. `clientId` attaches the new job to an existing client; `newClient` creates a client inline. The endpoint also accepts an omitted client choice for backwards compatibility, but `clientId` and `newClient` are mutually exclusive. `job` carries optional overrides applied on top of the lead's pre-fill values.
  */
-export interface LeadConvertToJobBody {
-  /** Existing client to associate with the new job. */
-  clientId?: string;
-  /** Inline client to create as part of the conversion. Mutually exclusive with `clientId`. */
-  newClient?: LeadConvertToJobBodyNewClient;
+type LeadConvertToJobBodyBase = {
   /** Overrides for the job that will be created. Anything omitted falls back to the lead's value. */
   job?: LeadConvertToJobBodyJob;
-}
+};
+
+export type LeadConvertToJobBody =
+  | (LeadConvertToJobBodyBase & {
+      /** Existing client to associate with the new job. */
+      clientId: string;
+      newClient?: never;
+    })
+  | (LeadConvertToJobBodyBase & {
+      clientId?: never;
+      /** Inline client to create as part of the conversion. Mutually exclusive with `clientId`. */
+      newClient: LeadConvertToJobBodyNewClient;
+    })
+  | (LeadConvertToJobBodyBase & {
+      clientId?: undefined;
+      newClient?: undefined;
+    });

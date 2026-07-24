@@ -1,4 +1,4 @@
-import { useState } from "react"
+import React, { Fragment, useState, type ReactNode } from "react"
 import {
   AlertCircle,
   CheckCircle2,
@@ -21,25 +21,255 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`
 }
 
-export const TOOL_INPUT_PREVIEW_LIMIT = 600
-
-export function truncateToolInputPreview(value: string): string {
-  return value.length > TOOL_INPUT_PREVIEW_LIMIT
-    ? `${value.slice(0, TOOL_INPUT_PREVIEW_LIMIT)}…`
-    : value
-}
-
 function formatInput(input: unknown): string {
   if (input == null) return "—"
-  if (typeof input === "string") {
-    return truncateToolInputPreview(input)
-  }
+  if (typeof input === "string") return input
   try {
     const json = JSON.stringify(input, null, 2)
-    return truncateToolInputPreview(json)
+    return json.length > 600 ? json.slice(0, 600) + "…" : json
   } catch {
-    return truncateToolInputPreview(String(input))
+    return String(input)
   }
+}
+
+function parseInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  const parts: ReactNode[] = []
+  const matcher = /(\*\*([^*]+)\*\*|`([^`]+)`)/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = matcher.exec(text)) != null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index))
+    }
+
+    if (match[2] != null) {
+      parts.push(
+        <strong
+          key={`${keyPrefix}-b-${match.index}`}
+          className="font-semibold text-slate-900"
+        >
+          {match[2]}
+        </strong>,
+      )
+    } else if (match[3] != null) {
+      parts.push(
+        <code
+          key={`${keyPrefix}-c-${match.index}`}
+          className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.85em] text-slate-700"
+        >
+          {match[3]}
+        </code>,
+      )
+    }
+
+    lastIndex = matcher.lastIndex
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex))
+  }
+
+  return parts.length > 0 ? parts : [text]
+}
+
+function stripDecorativeHeadingPrefix(text: string): string {
+  return text
+    .replace(/^[\s\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]+/u, "")
+    .trim()
+}
+
+function tableCells(line: string): string[] | null {
+  const trimmed = line.trim()
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return null
+  return trimmed
+    .slice(1, -1)
+    .split("|")
+    .map((cell) => cell.trim())
+}
+
+function isTableDivider(line: string): boolean {
+  const cells = tableCells(line)
+  return (
+    cells != null &&
+    cells.length > 0 &&
+    cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+  )
+}
+
+function MarkdownDataRows({
+  headers,
+  rows,
+  blockKey,
+}: {
+  headers: string[]
+  rows: string[][]
+  blockKey: string
+}) {
+  return (
+    <div className="space-y-1.5" data-message-table="true">
+      {rows.map((row, rowIndex) => {
+        const title = row[0]?.trim()
+        const details = headers
+          .map((header, index) => ({
+            header: header.trim(),
+            value: row[index]?.trim() ?? "",
+          }))
+          .filter((item, index) => index !== 0 && item.header && item.value)
+
+        return (
+          <div
+            key={`${blockKey}-row-${rowIndex}`}
+            className="rounded-md border border-slate-200 bg-slate-50/80 p-2"
+          >
+            {title ? (
+              <div className="text-sm font-semibold leading-snug text-slate-900">
+                {parseInlineMarkdown(
+                  title,
+                  `${blockKey}-row-${rowIndex}-title`,
+                )}
+              </div>
+            ) : null}
+            {details.length > 0 ? (
+              <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs leading-snug">
+                {details.map((item, detailIndex) => (
+                  <Fragment key={`${blockKey}-row-${rowIndex}-${detailIndex}`}>
+                    <dt className="font-medium text-slate-500">
+                      {item.header}
+                    </dt>
+                    <dd className="min-w-0 break-words text-slate-800">
+                      {parseInlineMarkdown(
+                        item.value,
+                        `${blockKey}-row-${rowIndex}-${detailIndex}-value`,
+                      )}
+                    </dd>
+                  </Fragment>
+                ))}
+              </dl>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function MarkdownMessageContent({ content }: { content: string }) {
+  const lines = content.replace(/\r\n/g, "\n").split("\n")
+  const blocks: ReactNode[] = []
+  let index = 0
+
+  const pushParagraph = (paragraphLines: string[], blockIndex: number) => {
+    const text = paragraphLines.join("\n").trim()
+    if (!text) return
+    blocks.push(
+      <p
+        key={`p-${blockIndex}`}
+        className="whitespace-pre-line leading-relaxed"
+      >
+        {parseInlineMarkdown(text, `p-${blockIndex}`)}
+      </p>,
+    )
+  }
+
+  while (index < lines.length) {
+    const line = lines[index] ?? ""
+    const trimmed = line.trim()
+
+    if (!trimmed) {
+      index += 1
+      continue
+    }
+
+    const headingMatch = /^(#{1,4})\s+(.+)$/.exec(trimmed)
+    if (headingMatch) {
+      const heading = stripDecorativeHeadingPrefix(headingMatch[2] ?? "")
+      blocks.push(
+        <h3
+          key={`h-${index}`}
+          className="pt-1 text-[13px] font-semibold leading-snug text-slate-950 first:pt-0"
+        >
+          {parseInlineMarkdown(heading, `h-${index}`)}
+        </h3>,
+      )
+      index += 1
+      continue
+    }
+
+    if (/^-{3,}$/.test(trimmed)) {
+      blocks.push(<div key={`hr-${index}`} className="h-px bg-slate-200" />)
+      index += 1
+      continue
+    }
+
+    const headerCells = tableCells(trimmed)
+    if (headerCells && isTableDivider(lines[index + 1] ?? "")) {
+      const rows: string[][] = []
+      index += 2
+      while (index < lines.length) {
+        const cells = tableCells(lines[index] ?? "")
+        if (!cells || isTableDivider(lines[index] ?? "")) break
+        rows.push(cells)
+        index += 1
+      }
+
+      if (rows.length > 0) {
+        blocks.push(
+          <MarkdownDataRows
+            key={`table-${index}`}
+            headers={headerCells}
+            rows={rows}
+            blockKey={`table-${index}`}
+          />,
+        )
+      }
+      continue
+    }
+
+    const bulletMatch = /^[-*]\s+(.+)$/.exec(trimmed)
+    if (bulletMatch) {
+      const items: string[] = []
+      while (index < lines.length) {
+        const itemMatch = /^[-*]\s+(.+)$/.exec((lines[index] ?? "").trim())
+        if (!itemMatch) break
+        items.push(itemMatch[1] ?? "")
+        index += 1
+      }
+
+      blocks.push(
+        <ul
+          key={`ul-${index}`}
+          className="list-disc space-y-1 pl-4 leading-relaxed"
+        >
+          {items.map((item, itemIndex) => (
+            <li key={`ul-${index}-${itemIndex}`}>
+              {parseInlineMarkdown(item, `ul-${index}-${itemIndex}`)}
+            </li>
+          ))}
+        </ul>,
+      )
+      continue
+    }
+
+    const paragraphLines: string[] = []
+    while (index < lines.length) {
+      const next = lines[index] ?? ""
+      const nextTrimmed = next.trim()
+      if (
+        !nextTrimmed ||
+        /^(#{1,4})\s+/.test(nextTrimmed) ||
+        /^-{3,}$/.test(nextTrimmed) ||
+        /^[-*]\s+/.test(nextTrimmed)
+      ) {
+        break
+      }
+      paragraphLines.push(next)
+      index += 1
+    }
+    pushParagraph(paragraphLines, index)
+  }
+
+  return <div className="space-y-2">{blocks}</div>
 }
 
 function ToolCallRow({
@@ -61,7 +291,7 @@ function ToolCallRow({
         isError
           ? "border-red-200 bg-red-50"
           : isPending
-            ? "border-primary/20 bg-primary/10"
+            ? "border-primary/20 bg-primary/5"
             : "border-slate-200 bg-slate-50",
       )}
     >
@@ -200,7 +430,10 @@ function ActionsSection({
   )
 }
 
-export default function ChatMessage({ message, onCitationNavigate }: ChatMessageProps) {
+export default function ChatMessage({
+  message,
+  onCitationNavigate,
+}: ChatMessageProps) {
   const isUser = message.role === "user"
   const isAssistant = message.role === "assistant"
 
@@ -208,13 +441,23 @@ export default function ChatMessage({ message, onCitationNavigate }: ChatMessage
     <div className={cn("flex w-full flex-col gap-2", isUser && "items-end")}>
       <div
         className={cn(
-          "max-w-[92%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words",
+          "max-w-[92%] rounded-lg px-3 py-2 text-sm break-words",
           isUser
-            ? "bg-[hsl(var(--nav))] text-white"
+            ? "whitespace-pre-wrap bg-[#1D1D1D] text-white"
             : "bg-white text-slate-800 border border-slate-200",
         )}
       >
-        {message.content || (isAssistant ? <em className="text-slate-400">…</em> : "")}
+        {message.content ? (
+          isAssistant ? (
+            <MarkdownMessageContent content={message.content} />
+          ) : (
+            message.content
+          )
+        ) : isAssistant ? (
+          <em className="text-slate-400">…</em>
+        ) : (
+          ""
+        )}
       </div>
 
       {isAssistant && message.citations && message.citations.length > 0 ? (
@@ -236,7 +479,9 @@ export default function ChatMessage({ message, onCitationNavigate }: ChatMessage
         />
       ) : null}
 
-      {isAssistant && message.stoppedReason && message.stoppedReason !== "end_turn" ? (
+      {isAssistant &&
+      message.stoppedReason &&
+      message.stoppedReason !== "end_turn" ? (
         <div className="text-[10px] uppercase tracking-wide text-slate-400">
           stopped: {message.stoppedReason}
         </div>

@@ -56,7 +56,7 @@ const TYPE_META: Record<
   lead: {
     label: "Lead",
     icon: UserPlus,
-    tone: "bg-orange-100 text-orange-700",
+    tone: "bg-primary/10 text-primary",
   },
   file: {
     label: "File",

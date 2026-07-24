@@ -7,7 +7,7 @@
  */
 import * as zod from "zod";
 
-const stringBoolean = zod.preprocess((value) => {
+const booleanQueryParam = zod.preprocess((value) => {
   if (typeof value !== "string") return value;
   const normalized = value.trim().toLowerCase();
   if (normalized === "true") return true;
@@ -47,7 +47,7 @@ export const BillingGetStatusResponse = zod.object({
  * Creates a Stripe Checkout subscription session for the active organization.
  * @summary POST /billing/checkout-sessions
  */
-export const BillingPostCheckoutSessionsBodySchema = zod.object({
+export const BillingPostCheckoutSessionsBody = zod.object({
   planKey: zod.enum(["starter", "team", "pro"]),
 });
 
@@ -69,9 +69,17 @@ confirmed values to `/jobs/{jobId}/financials/change-orders`.
 
  * @summary POST /jobs/{jobId}/financials/change-orders/parse
  */
+export const financialsPostJobsJobidFinancialsChangeOrdersParsePathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
 export const FinancialsPostJobsJobidFinancialsChangeOrdersParseParams =
   zod.object({
-    jobId: zod.coerce.string().uuid(),
+    jobId: zod.coerce
+      .string()
+      .uuid()
+      .regex(financialsPostJobsJobidFinancialsChangeOrdersParsePathJobIdRegExp),
   });
 
 export const financialsPostJobsJobidFinancialsChangeOrdersParseHeaderIdempotencyKeyMin = 8;
@@ -102,7 +110,7 @@ export const FinancialsPostJobsJobidFinancialsChangeOrdersParseResponse =
   zod.object({
     number: zod.string(),
     description: zod.string().nullable(),
-    amountCents: zod.number().int(),
+    amountCents: zod.number(),
     fileId: zod.string().uuid().nullable(),
   });
 
@@ -146,7 +154,26 @@ export const AuthPostAuthLoginHeader = zod.object({
 
 export const AuthPostAuthLoginBody = zod.record(zod.string(), zod.unknown());
 
-export const AuthPostAuthLoginResponse = zod.unknown();
+export const AuthPostAuthLoginResponse = zod.object({
+  accessToken: zod.string(),
+  refreshToken: zod
+    .string()
+    .optional()
+    .describe(
+      "Returned only to native mobile clients that send `X-Cadstone-Client: mobile`; browser clients receive the refresh token only as an HTTP-only cookie.",
+    ),
+  expiresIn: zod.number().min(1),
+  user: zod.object({
+    id: zod.string().uuid(),
+    email: zod.string().email(),
+    fullName: zod.string(),
+    role: zod.string(),
+    avatarUrl: zod.string().nullable(),
+    phone: zod.string().nullable(),
+    createdAt: zod.string().optional(),
+    updatedAt: zod.string().optional(),
+  }),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/auth.ts.
@@ -166,7 +193,26 @@ export const AuthPostAuthLogoutHeader = zod.object({
     ),
 });
 
-export const AuthPostAuthLogoutResponse = zod.unknown();
+export const AuthPostAuthLogoutResponse = zod.object({
+  accessToken: zod.string(),
+  refreshToken: zod
+    .string()
+    .optional()
+    .describe(
+      "Returned only to native mobile clients that send `X-Cadstone-Client: mobile`; browser clients receive the refresh token only as an HTTP-only cookie.",
+    ),
+  expiresIn: zod.number().min(1),
+  user: zod.object({
+    id: zod.string().uuid(),
+    email: zod.string().email(),
+    fullName: zod.string(),
+    role: zod.string(),
+    avatarUrl: zod.string().nullable(),
+    phone: zod.string().nullable(),
+    createdAt: zod.string().optional(),
+    updatedAt: zod.string().optional(),
+  }),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/auth.ts.
@@ -186,7 +232,46 @@ export const AuthPostAuthRefreshHeader = zod.object({
     ),
 });
 
-export const AuthPostAuthRefreshResponse = zod.unknown();
+export const AuthPostAuthRefreshResponse = zod.object({
+  accessToken: zod.string(),
+  refreshToken: zod
+    .string()
+    .optional()
+    .describe(
+      "Returned only to native mobile clients that send `X-Cadstone-Client: mobile`; browser clients receive the refresh token only as an HTTP-only cookie.",
+    ),
+  expiresIn: zod.number().min(1),
+  user: zod.object({
+    id: zod.string().uuid(),
+    email: zod.string().email(),
+    fullName: zod.string(),
+    role: zod.string(),
+    avatarUrl: zod.string().nullable(),
+    phone: zod.string().nullable(),
+    createdAt: zod.string().optional(),
+    updatedAt: zod.string().optional(),
+  }),
+});
+
+/**
+ * Public endpoint. Validates a one-time setup token and returns the invited account details so the invitee can confirm the email address before choosing a password. This endpoint does not consume the token.
+ * @summary GET /auth/invite
+ */
+
+export const AuthGetAuthInviteQueryParams = zod.object({
+  token: zod.coerce.string().min(1),
+});
+
+export const AuthGetAuthInviteResponse = zod
+  .object({
+    email: zod.string().email(),
+    fullName: zod.string(),
+    role: zod.enum(["admin", "project_manager", "crew_member", "drafter"]),
+    inviteTokenExpiresAt: zod.string().datetime({}),
+  })
+  .describe(
+    "Response body for `GET \/auth\/invite`. Shows the invited account details tied to a valid setup token without consuming it.",
+  );
 
 /**
  * Public endpoint. Exchanges a one-time setup token (issued by an admin via POST /users) for a real password and immediately logs the user in. The token is single-use and short-lived.
@@ -206,15 +291,23 @@ export const AuthPostAuthAcceptInviteHeader = zod.object({
     ),
 });
 
+export const authPostAuthAcceptInviteBodyEmailMin = 3;
+export const authPostAuthAcceptInviteBodyEmailMax = 255;
+
 export const authPostAuthAcceptInviteBodyPasswordMin = 8;
 
 export const AuthPostAuthAcceptInviteBody = zod
   .object({
     token: zod.string().min(1),
+    email: zod
+      .string()
+      .email()
+      .min(authPostAuthAcceptInviteBodyEmailMin)
+      .max(authPostAuthAcceptInviteBodyEmailMax),
     password: zod.string().min(authPostAuthAcceptInviteBodyPasswordMin),
   })
   .describe(
-    "Request body for `POST \/auth\/accept-invite`. The invitee posts the raw token from their setup link plus the password they want to use. On success the user is logged in (refresh cookie + access token in response).",
+    "Request body for `POST \/auth\/accept-invite`. The invitee posts the raw token from their setup link, confirms the invited email address, and sends the password they want to use. On success the user is logged in (refresh cookie + access token in response).",
   );
 
 export const AuthPostAuthAcceptInviteResponse = zod.unknown();
@@ -230,7 +323,7 @@ export const usersGetUsersQueryLimitMax = 200;
 export const usersGetUsersQueryOffsetMin = 0;
 
 export const UsersGetUsersQueryParams = zod.object({
-  includeInactive: stringBoolean
+  includeInactive: booleanQueryParam
     .default(usersGetUsersQueryIncludeInactiveDefault)
     .describe(
       "Admin-only. When `true` the response also includes deactivated users.",
@@ -239,7 +332,7 @@ export const UsersGetUsersQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Comma-separated list of role names to filter by (`admin`, `project_manager`, `crew_member`).",
+      "Comma-separated list of role names to filter by (`admin`, `project_manager`, `crew_member`, `drafter`).",
     ),
   page: zod.coerce
     .number()
@@ -264,7 +357,7 @@ export const UsersGetUsersResponse = zod.unknown();
 /**
  * Admin-only. Invite a new worker. Creates the user with a random unguessable placeholder password and a single-use setup token. The raw token is returned exactly once (never persisted in plain text).
 
-The server also attempts to send the setup link via the configured transactional email provider (Resend). The response body always includes:
+The server also attempts to send the setup link via the configured transactional email provider when one is approved and wired. The response body always includes:
   - `inviteToken` — the raw one-time token (also embedded in `inviteUrl`).
   - `invitePath` — relative path including the token, for in-product navigation.
   - `inviteUrl` — absolute URL the email body uses; safe to copy/paste as a fallback.
@@ -300,7 +393,7 @@ export const UsersPostUsersBody = zod
       .string()
       .min(usersPostUsersBodyFullNameMin)
       .max(usersPostUsersBodyFullNameMax),
-    role: zod.enum(["admin", "project_manager", "crew_member"]),
+    role: zod.enum(["admin", "project_manager", "crew_member", "drafter"]),
   })
   .describe(
     "Request body for `POST \/users` — admin invites a new worker. The user is created with a random placeholder password and the response contains a one-time setup token & path that must be handed to the invitee out of band.",
@@ -310,8 +403,12 @@ export const UsersPostUsersBody = zod
  * Admin-only. Update a worker's full name, role, or active flag. Admins cannot deactivate their own account through this endpoint.
  * @summary PATCH /users/{id}
  */
+export const usersPatchUsersIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
 export const UsersPatchUsersIdParams = zod.object({
-  id: zod.coerce.string().uuid(),
+  id: zod.coerce.string().uuid().regex(usersPatchUsersIdPathIdRegExp),
 });
 
 export const usersPatchUsersIdHeaderIdempotencyKeyMin = 8;
@@ -328,17 +425,19 @@ export const UsersPatchUsersIdHeader = zod.object({
     ),
 });
 
-export const usersPatchUsersIdBodyFourFullNameMin = 2;
-export const usersPatchUsersIdBodyFourFullNameMax = 255;
+export const usersPatchUsersIdBodyFullNameMin = 2;
+export const usersPatchUsersIdBodyFullNameMax = 255;
 
 export const UsersPatchUsersIdBody = zod
   .object({
     fullName: zod
       .string()
-      .min(usersPatchUsersIdBodyFourFullNameMin)
-      .max(usersPatchUsersIdBodyFourFullNameMax)
+      .min(usersPatchUsersIdBodyFullNameMin)
+      .max(usersPatchUsersIdBodyFullNameMax)
       .optional(),
-    role: zod.enum(["admin", "project_manager", "crew_member"]).optional(),
+    role: zod
+      .enum(["admin", "project_manager", "crew_member", "drafter"])
+      .optional(),
     isActive: zod.boolean().optional(),
   })
   .refine(
@@ -355,16 +454,23 @@ export const UsersPatchUsersIdBody = zod
 export const UsersPatchUsersIdResponse = zod.unknown();
 
 /**
- * Admin-only. Re-send the existing invite email for a user whose setup is still pending, WITHOUT minting a new token. Use this when the invitee lost the email or it bounced — any link already in flight remains valid.
+ * Admin-only legacy compatibility endpoint. Re-send the existing invite email for a user whose setup is still pending only when the server still has a legacy raw invite token. Modern invite flows store only token hashes, so most pending invites cannot be resent without minting a replacement.
 
-Returns the same shape as `POST /users/{id}/invite` (a `user`, `inviteToken`, `invitePath`, `inviteUrl`, `inviteTokenExpiresAt`, and `emailDelivery`), but the token is the *current* one rather than a freshly-minted replacement.
+Returns the same shape as `POST /users/{id}/invite` (a `user`, `inviteToken`, `invitePath`, `inviteUrl`, `inviteTokenExpiresAt`, and `emailDelivery`) when a legacy raw token is available, but never invalidates an existing pending invite. Use `POST /users/{id}/invite` to issue and email a fresh one-time setup link.
 
-Returns `400` if the user has already completed setup, has no pending invite, or the existing token has expired. In those cases the admin should use the regular `POST /users/{id}/invite` endpoint to issue a fresh one.
+Returns `400` if the user has already completed setup, has no pending invite, the existing token has expired, or the raw token is not stored. In those cases the admin should use the regular `POST /users/{id}/invite` endpoint to issue a fresh one.
 
  * @summary POST /users/{id}/invite/resend
  */
+export const usersPostUsersIdInviteResendPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
 export const UsersPostUsersIdInviteResendParams = zod.object({
-  id: zod.coerce.string().uuid(),
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(usersPostUsersIdInviteResendPathIdRegExp),
 });
 
 export const usersPostUsersIdInviteResendHeaderIdempotencyKeyMin = 8;
@@ -451,6 +557,7 @@ export const UsersPutUsersMeBody = zod
     phone: zod.string().nullish(),
     avatarUrl: zod.string().nullish(),
   })
+  .strict()
   .describe("Request body for `PATCH \/users\/me\/profile`.");
 
 export const UsersPutUsersMeResponse = zod.unknown();
@@ -480,6 +587,7 @@ export const UsersPostUsersMePasswordBody = zod
     currentPassword: zod.string().min(1),
     newPassword: zod.string().min(usersPostUsersMePasswordBodyNewPasswordMin),
   })
+  .strict()
   .describe("Request body for `POST \/users\/me\/change-password`.");
 
 export const UsersPostUsersMePasswordResponse = zod.unknown();
@@ -713,6 +821,10 @@ export const clientsGetClientsIdResponseClientJobsItemContractValueCentsMax = 90
 export const clientsGetClientsIdResponseClientJobsItemAmountPaidCentsMin = 0;
 export const clientsGetClientsIdResponseClientJobsItemAmountPaidCentsMax = 9007199254740991;
 
+export const clientsGetClientsIdResponseClientJobsItemProjectedStartRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const clientsGetClientsIdResponseClientJobsItemProjectedCompletionRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
 export const clientsGetClientsIdResponseClientRollupsContractValueCentsMin = 0;
 export const clientsGetClientsIdResponseClientRollupsContractValueCentsMax = 9007199254740991;
 
@@ -788,7 +900,6 @@ export const ClientsGetClientsIdResponse = zod
                   .describe("Decimal price serialized as string."),
                 contractValueCents: zod
                   .number()
-                  .int()
                   .min(
                     clientsGetClientsIdResponseClientJobsItemContractValueCentsMin,
                   )
@@ -801,7 +912,6 @@ export const ClientsGetClientsIdResponse = zod
                   ),
                 amountPaidCents: zod
                   .number()
-                  .int()
                   .min(
                     clientsGetClientsIdResponseClientJobsItemAmountPaidCentsMin,
                   )
@@ -812,8 +922,24 @@ export const ClientsGetClientsIdResponse = zod
                   .describe(
                     "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
                   ),
-                projectedStart: zod.string().date().nullish(),
-                projectedCompletion: zod.string().date().nullish(),
+                projectedStart: zod
+                  .string()
+                  .regex(
+                    clientsGetClientsIdResponseClientJobsItemProjectedStartRegExp,
+                  )
+                  .nullish()
+                  .describe(
+                    "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.",
+                  ),
+                projectedCompletion: zod
+                  .string()
+                  .regex(
+                    clientsGetClientsIdResponseClientJobsItemProjectedCompletionRegExp,
+                  )
+                  .nullish()
+                  .describe(
+                    "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.",
+                  ),
                 updatedAt: zod.string().datetime({}).nullish(),
                 createdAt: zod.string().datetime({}),
               })
@@ -831,7 +957,6 @@ export const ClientsGetClientsIdResponse = zod
           .object({
             contractValueCents: zod
               .number()
-              .int()
               .min(
                 clientsGetClientsIdResponseClientRollupsContractValueCentsMin,
               )
@@ -928,6 +1053,10 @@ export const clientsPutClientsIdResponseClientJobsItemContractValueCentsMax = 90
 export const clientsPutClientsIdResponseClientJobsItemAmountPaidCentsMin = 0;
 export const clientsPutClientsIdResponseClientJobsItemAmountPaidCentsMax = 9007199254740991;
 
+export const clientsPutClientsIdResponseClientJobsItemProjectedStartRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const clientsPutClientsIdResponseClientJobsItemProjectedCompletionRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
 export const clientsPutClientsIdResponseClientRollupsContractValueCentsMin = 0;
 export const clientsPutClientsIdResponseClientRollupsContractValueCentsMax = 9007199254740991;
 
@@ -1003,7 +1132,6 @@ export const ClientsPutClientsIdResponse = zod
                   .describe("Decimal price serialized as string."),
                 contractValueCents: zod
                   .number()
-                  .int()
                   .min(
                     clientsPutClientsIdResponseClientJobsItemContractValueCentsMin,
                   )
@@ -1016,7 +1144,6 @@ export const ClientsPutClientsIdResponse = zod
                   ),
                 amountPaidCents: zod
                   .number()
-                  .int()
                   .min(
                     clientsPutClientsIdResponseClientJobsItemAmountPaidCentsMin,
                   )
@@ -1027,8 +1154,24 @@ export const ClientsPutClientsIdResponse = zod
                   .describe(
                     "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
                   ),
-                projectedStart: zod.string().date().nullish(),
-                projectedCompletion: zod.string().date().nullish(),
+                projectedStart: zod
+                  .string()
+                  .regex(
+                    clientsPutClientsIdResponseClientJobsItemProjectedStartRegExp,
+                  )
+                  .nullish()
+                  .describe(
+                    "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.",
+                  ),
+                projectedCompletion: zod
+                  .string()
+                  .regex(
+                    clientsPutClientsIdResponseClientJobsItemProjectedCompletionRegExp,
+                  )
+                  .nullish()
+                  .describe(
+                    "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.",
+                  ),
                 updatedAt: zod.string().datetime({}).nullish(),
                 createdAt: zod.string().datetime({}),
               })
@@ -1046,7 +1189,6 @@ export const ClientsPutClientsIdResponse = zod
           .object({
             contractValueCents: zod
               .number()
-              .int()
               .min(
                 clientsPutClientsIdResponseClientRollupsContractValueCentsMin,
               )
@@ -1205,6 +1347,11 @@ export const clientsGetClientsIdJobsResponseJobsItemContractValueCentsMax = 9007
 export const clientsGetClientsIdJobsResponseJobsItemAmountPaidCentsMin = 0;
 export const clientsGetClientsIdJobsResponseJobsItemAmountPaidCentsMax = 9007199254740991;
 
+export const clientsGetClientsIdJobsResponseJobsItemProjectedStartRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const clientsGetClientsIdJobsResponseJobsItemProjectedCompletionRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+
 export const ClientsGetClientsIdJobsResponse = zod
   .object({
     jobs: zod.array(
@@ -1247,8 +1394,22 @@ export const ClientsGetClientsIdJobsResponse = zod
             .describe(
               "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never `bigint`.",
             ),
-          projectedStart: zod.string().date().nullish(),
-          projectedCompletion: zod.string().date().nullish(),
+          projectedStart: zod
+            .string()
+            .regex(clientsGetClientsIdJobsResponseJobsItemProjectedStartRegExp)
+            .nullish()
+            .describe(
+              "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.",
+            ),
+          projectedCompletion: zod
+            .string()
+            .regex(
+              clientsGetClientsIdJobsResponseJobsItemProjectedCompletionRegExp,
+            )
+            .nullish()
+            .describe(
+              "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.",
+            ),
           updatedAt: zod.string().datetime({}).nullish(),
           createdAt: zod.string().datetime({}),
         })
@@ -1426,7 +1587,7 @@ export const JobsGetJobsQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). The server returns the first page in the cursor envelope\nalong with `pagination.nextCursor`. Echo `nextCursor` back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored. A `limit` query without `cursor`\ndoes not select cursor mode.\n",
     ),
   limit: zod.coerce
     .number()
@@ -2384,19 +2545,19 @@ export const LeadsGetLeadsQueryParams = zod.object({
     .enum(["true", "false"])
     .optional()
     .describe(
-      'When `true`, leads that have already been converted to a job are filtered out. The cadstone UI sends this by default and clears it when the \"Show converted\" toggle is enabled.',
+      'When `true`, leads that have already been converted to a job are filtered out. The SlabPlan UI sends this by default and clears it when the \"Show converted\" toggle is enabled.',
     ),
   onlyConverted: zod
     .enum(["true", "false"])
     .optional()
     .describe(
-      'When `true`, only leads that have been converted to a job are returned. Used by the cadstone Leads list when the user picks the \"Converted\" status filter.',
+      'When `true`, only leads that have been converted to a job are returned. Used by the SlabPlan Leads list when the user picks the \"Converted\" status filter.',
     ),
   cursor: zod.coerce
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). The server returns the first page in the cursor envelope\nalong with `pagination.nextCursor`. Echo `nextCursor` back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored. A `limit` query without `cursor`\ndoes not select cursor mode.\n",
     ),
   limit: zod.coerce
     .number()
@@ -2410,6 +2571,9 @@ export const LeadsGetLeadsQueryParams = zod.object({
 
 export const leadsGetLeadsResponseLeadsItemConfidenceMin = 0;
 export const leadsGetLeadsResponseLeadsItemConfidenceMax = 100;
+
+export const leadsGetLeadsResponseLeadsItemProjectedSalesDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
 
 export const leadsGetLeadsResponsePaginationTotalItemsMin = 0;
 
@@ -2429,7 +2593,13 @@ export const LeadsGetLeadsResponse = zod
             .min(leadsGetLeadsResponseLeadsItemConfidenceMin)
             .max(leadsGetLeadsResponseLeadsItemConfidenceMax)
             .nullish(),
-          projectedSalesDate: zod.string().date().nullish(),
+          projectedSalesDate: zod
+            .string()
+            .regex(leadsGetLeadsResponseLeadsItemProjectedSalesDateRegExp)
+            .nullish()
+            .describe(
+              "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — \*\*not\*\* an ISO timestamp and \*\*not\*\* coerced to a `Date`.",
+            ),
           estimatedRevenueMin: zod
             .string()
             .nullish()
@@ -2640,6 +2810,10 @@ export const LeadsGetLeadsIdParams = zod.object({
 export const leadsGetLeadsIdResponseLeadConfidenceMin = 0;
 export const leadsGetLeadsIdResponseLeadConfidenceMax = 100;
 
+export const leadsGetLeadsIdResponseLeadProjectedSalesDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
 export const LeadsGetLeadsIdResponse = zod
   .object({
     lead: zod
@@ -2655,7 +2829,13 @@ export const LeadsGetLeadsIdResponse = zod
           .min(leadsGetLeadsIdResponseLeadConfidenceMin)
           .max(leadsGetLeadsIdResponseLeadConfidenceMax)
           .nullish(),
-        projectedSalesDate: zod.string().date().nullish(),
+        projectedSalesDate: zod
+          .string()
+          .regex(leadsGetLeadsIdResponseLeadProjectedSalesDateRegExp)
+          .nullish()
+          .describe(
+            "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — \*\*not\*\* an ISO timestamp and \*\*not\*\* coerced to a `Date`.",
+          ),
         estimatedRevenueMin: zod.string().nullish(),
         estimatedRevenueMax: zod.string().nullish(),
         status: zod.enum([
@@ -2915,6 +3095,10 @@ export const LeadsPutLeadsIdBody = zod
 export const leadsPutLeadsIdResponseLeadConfidenceMin = 0;
 export const leadsPutLeadsIdResponseLeadConfidenceMax = 100;
 
+export const leadsPutLeadsIdResponseLeadProjectedSalesDateRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
 export const LeadsPutLeadsIdResponse = zod
   .object({
     lead: zod
@@ -2930,7 +3114,13 @@ export const LeadsPutLeadsIdResponse = zod
           .min(leadsPutLeadsIdResponseLeadConfidenceMin)
           .max(leadsPutLeadsIdResponseLeadConfidenceMax)
           .nullish(),
-        projectedSalesDate: zod.string().date().nullish(),
+        projectedSalesDate: zod
+          .string()
+          .regex(leadsPutLeadsIdResponseLeadProjectedSalesDateRegExp)
+          .nullish()
+          .describe(
+            "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — \*\*not\*\* an ISO timestamp and \*\*not\*\* coerced to a `Date`.",
+          ),
         estimatedRevenueMin: zod.string().nullish(),
         estimatedRevenueMax: zod.string().nullish(),
         status: zod.enum([
@@ -3134,39 +3324,59 @@ export const LeadsPostLeadsIdContactsHeader = zod.object({
     ),
 });
 
-export const leadsPostLeadsIdContactsBodyThreeStateMax = 2;
+export const leadsPostLeadsIdContactsBodyOneStateMax = 2;
 
-export const LeadsPostLeadsIdContactsBody = zod.object({
-      sourceContactId: zod
-        .string()
-        .uuid()
-        .optional()
-        .describe(
-          "Optional: clone an existing lead contact by id rather than creating a new one from scratch.",
-        ),
-      firstName: zod.string().nullish(),
-      lastName: zod.string().nullish(),
-      displayName: zod.string().nullish(),
-      streetAddress: zod.string().nullish(),
-      city: zod.string().nullish(),
-      state: zod
-        .string()
-        .max(leadsPostLeadsIdContactsBodyThreeStateMax)
-        .nullish(),
-      zipCode: zod.string().nullish(),
-      phone: zod.string().nullish(),
-      cellPhone: zod.string().nullish(),
-      email: zod.string().email().nullish(),
-      label: zod.string().nullish(),
-    })
-  .refine(
-    (value) =>
-      Boolean(value.sourceContactId) ||
-      (Boolean(value.displayName) && Boolean(value.email)),
-    {
-      message: "Provide sourceContactId or displayName and email.",
-    },
-  )
+export const leadsPostLeadsIdContactsBodyTwoStateMax = 2;
+
+export const LeadsPostLeadsIdContactsBody = zod
+  .union([
+    zod
+      .object({
+        sourceContactId: zod
+          .string()
+          .uuid()
+          .describe(
+            "Clone an existing lead contact by id rather than creating a new one from scratch.",
+          ),
+        firstName: zod.string().nullish(),
+        lastName: zod.string().nullish(),
+        displayName: zod.string().nullish(),
+        streetAddress: zod.string().nullish(),
+        city: zod.string().nullish(),
+        state: zod
+          .string()
+          .max(leadsPostLeadsIdContactsBodyOneStateMax)
+          .nullish(),
+        zipCode: zod.string().nullish(),
+        phone: zod.string().nullish(),
+        cellPhone: zod.string().nullish(),
+        email: zod.string().email().nullish(),
+        label: zod.string().nullish(),
+      })
+      .describe(
+        "Clone an existing lead contact into this lead. Other fields may be supplied but are ignored by the server.",
+      ),
+    zod
+      .object({
+        firstName: zod.string().nullish(),
+        lastName: zod.string().nullish(),
+        displayName: zod.string().min(1),
+        streetAddress: zod.string().nullish(),
+        city: zod.string().nullish(),
+        state: zod
+          .string()
+          .max(leadsPostLeadsIdContactsBodyTwoStateMax)
+          .nullish(),
+        zipCode: zod.string().nullish(),
+        phone: zod.string().nullish(),
+        cellPhone: zod.string().nullish(),
+        email: zod.string().email(),
+        label: zod.string().nullish(),
+      })
+      .describe(
+        "Create a new lead contact from manually supplied contact fields.",
+      ),
+  ])
   .describe(
     "Request body for creating a lead contact (`POST \/leads\/{id}\/contacts`). When `sourceContactId` is set the new contact is cloned from an existing contact and the other fields are optional. Otherwise `displayName` and `email` are required.",
   );
@@ -3298,7 +3508,7 @@ export const LeadsDeleteLeadsIdContactsContactIdResponse = zod
   );
 
 /**
- * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * Small-file-only direct multipart upload for lead attachments via multipart form field `files`. Replit production runs on Cloud Run, whose HTTP/1 request body cap is 32 MiB; callers must use `/leads/{id}/attachments/upload-policy?fileSize=<bytes>` before sending bytes and must use `/leads/{id}/attachments/chunked` when a PDF/ZIP/project package is above the policy's `multipart.maxRecommendedBytes`. Direct multipart requests above that recommendation can be rejected by Google Frontend with HTML 413 before the API can format JSON.
  * @summary POST /leads/{id}/attachments
  */
 export const leadsPostLeadsIdAttachmentsPathIdRegExp = new RegExp(
@@ -3322,6 +3532,277 @@ export const LeadsPostLeadsIdAttachmentsHeader = zod.object({
       "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
     ),
 });
+
+export const leadsPostLeadsIdAttachmentsBodyFilesMax = 20;
+
+export const LeadsPostLeadsIdAttachmentsBody = zod.object({
+  files: zod
+    .array(zod.instanceof(File))
+    .max(leadsPostLeadsIdAttachmentsBodyFilesMax),
+});
+
+/**
+ * Returns the correct upload route for a lead attachment before bytes are sent. API agents should call this with `fileSize` for every PDF, ZIP, and project package; files above `multipart.maxRecommendedBytes` must use the chunked endpoint to avoid upstream Google Frontend HTML 413 responses.
+ * @summary Get lead attachment upload policy
+ */
+export const leadsGetLeadsIdAttachmentsUploadPolicyPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsGetLeadsIdAttachmentsUploadPolicyParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsGetLeadsIdAttachmentsUploadPolicyPathIdRegExp),
+});
+
+export const leadsGetLeadsIdAttachmentsUploadPolicyQueryOriginalNameMax = 255;
+
+export const leadsGetLeadsIdAttachmentsUploadPolicyQueryMimeTypeMax = 100;
+
+export const LeadsGetLeadsIdAttachmentsUploadPolicyQueryParams = zod.object({
+  fileSize: zod.coerce
+    .number()
+    .min(1)
+    .optional()
+    .describe(
+      "Candidate file size in bytes. Include this to receive a multipart-vs-chunked recommendation.",
+    ),
+  originalName: zod.coerce
+    .string()
+    .min(1)
+    .max(leadsGetLeadsIdAttachmentsUploadPolicyQueryOriginalNameMax)
+    .optional()
+    .describe(
+      "Candidate filename, used only to echo a concrete chunked start payload.",
+    ),
+  mimeType: zod.coerce
+    .string()
+    .max(leadsGetLeadsIdAttachmentsUploadPolicyQueryMimeTypeMax)
+    .optional()
+    .describe(
+      "Candidate MIME type, used only to echo a concrete chunked start payload.",
+    ),
+});
+
+export const LeadsGetLeadsIdAttachmentsUploadPolicyResponse = zod.object({
+  leadId: zod.string().uuid(),
+  multipart: zod.object({
+    endpoint: zod.string(),
+    fieldName: zod.enum(["files"]),
+    maxFiles: zod.number().min(1),
+    maxAppFileSizeBytes: zod.number().min(1),
+    edgeRequestLimitBytes: zod
+      .number()
+      .min(1)
+      .describe(
+        "Production Cloud Run HTTP\/1 request cap. Direct multipart requests near or above this can be rejected before the API runs.",
+      ),
+    edgeRequestLimitDisplay: zod.string(),
+    maxRecommendedBytes: zod
+      .number()
+      .min(1)
+      .describe(
+        "Use chunked upload above this conservative size to avoid production proxy multipart limits.",
+      ),
+    maxRecommendedDisplay: zod.string(),
+    guidance: zod.string(),
+  }),
+  chunked: zod.object({
+    supported: zod.boolean(),
+    maxTotalBytes: zod.number().min(1),
+    maxChunkBytes: zod.number().min(1),
+    sessionTtlMs: zod.number().min(1),
+    rawChunkContentType: zod.string(),
+    base64ChunkContentTypes: zod.array(zod.string()),
+    endpoints: zod.object({
+      start: zod.string(),
+      status: zod.string(),
+      chunk: zod.string(),
+      complete: zod.string(),
+      abort: zod.string(),
+    }),
+    startBody: zod
+      .object({
+        originalName: zod.string(),
+        mimeType: zod.string(),
+        totalSize: zod.number().min(1),
+        totalChunks: zod.number().min(1),
+        contentHash: zod.string(),
+      })
+      .describe(
+        "Example JSON body for `chunked.endpoints.start`. Replace `contentHash` with a SHA-256 hex digest or omit it.",
+      ),
+  }),
+  file: zod.union([
+    zod.object({
+      originalName: zod.string().nullable(),
+      mimeType: zod.string().nullable(),
+      size: zod.number().min(1).nullable(),
+      recommendedUploadMode: zod.enum(["multipart", "chunked"]),
+      reason: zod.string(),
+    }),
+    zod.null(),
+  ]),
+});
+
+/**
+ * Creates a resumable upload session for one large lead attachment. Use this path for large ZIP/project packages that may exceed proxy multipart request limits; upload chunks with PUT, then call complete to assemble, validate, and persist the attachment. Chunk PUT accepts raw application/octet-stream bytes or base64-encoded text/plain/application/base64 bytes for the same chunk when a client needs to avoid pre-app binary upload rejection.
+ * @summary Start a chunked lead attachment upload session
+ */
+export const leadsPostLeadsIdAttachmentsChunkedPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsPostLeadsIdAttachmentsChunkedParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsPostLeadsIdAttachmentsChunkedPathIdRegExp),
+});
+
+export const leadsPostLeadsIdAttachmentsChunkedHeaderIdempotencyKeyMin = 8;
+export const leadsPostLeadsIdAttachmentsChunkedHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPostLeadsIdAttachmentsChunkedHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPostLeadsIdAttachmentsChunkedHeaderIdempotencyKeyMin)
+    .max(leadsPostLeadsIdAttachmentsChunkedHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const leadsPostLeadsIdAttachmentsChunkedBodyOriginalNameMax = 255;
+
+export const leadsPostLeadsIdAttachmentsChunkedBodyMimeTypeMax = 100;
+
+export const leadsPostLeadsIdAttachmentsChunkedBodyContentHashRegExp =
+  new RegExp("^[a-fA-F0-9]{64}$");
+
+export const LeadsPostLeadsIdAttachmentsChunkedBody = zod
+  .object({
+    originalName: zod
+      .string()
+      .min(1)
+      .max(leadsPostLeadsIdAttachmentsChunkedBodyOriginalNameMax),
+    mimeType: zod
+      .string()
+      .max(leadsPostLeadsIdAttachmentsChunkedBodyMimeTypeMax)
+      .optional(),
+    totalSize: zod.number().min(1),
+    totalChunks: zod.number().min(1),
+    contentHash: zod
+      .string()
+      .regex(leadsPostLeadsIdAttachmentsChunkedBodyContentHashRegExp)
+      .optional(),
+  })
+  .describe(
+    "Request schema for starting a chunked lead attachment upload. Use for large lead ZIP\/project packages that should avoid proxy multipart limits.",
+  );
+
+/**
+ * @summary Get chunked lead attachment upload session status
+ */
+export const leadsGetLeadsIdAttachmentsChunkedUploadIdPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const LeadsGetLeadsIdAttachmentsChunkedUploadIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsGetLeadsIdAttachmentsChunkedUploadIdPathIdRegExp),
+  uploadId: zod.coerce.string().uuid(),
+});
+
+export const LeadsGetLeadsIdAttachmentsChunkedUploadIdResponse = zod.unknown();
+
+/**
+ * @summary Abort a chunked lead attachment upload session
+ */
+export const leadsDeleteLeadsIdAttachmentsChunkedUploadIdPathIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const LeadsDeleteLeadsIdAttachmentsChunkedUploadIdParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(leadsDeleteLeadsIdAttachmentsChunkedUploadIdPathIdRegExp),
+  uploadId: zod.coerce.string().uuid(),
+});
+
+export const LeadsDeleteLeadsIdAttachmentsChunkedUploadIdResponse =
+  zod.unknown();
+
+/**
+ * Uploads one chunk for a lead attachment session. Send raw bytes as application/octet-stream, or send the same chunk base64-encoded as text/plain or application/base64 to avoid upstream binary body inspection while keeping app-side validation and problem+json errors.
+ * @summary Upload one chunk for a chunked lead attachment upload session
+ */
+export const leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexPathIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+export const leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexPathChunkIndexMin = 0;
+
+export const LeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexParams =
+  zod.object({
+    id: zod.coerce
+      .string()
+      .uuid()
+      .regex(
+        leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexPathIdRegExp,
+      ),
+    uploadId: zod.coerce.string().uuid(),
+    chunkIndex: zod.coerce
+      .number()
+      .min(
+        leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexPathChunkIndexMin,
+      ),
+  });
+
+export const LeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexResponse =
+  zod.unknown();
+
+/**
+ * @summary Complete a chunked lead attachment upload session
+ */
+export const leadsPostLeadsIdAttachmentsChunkedUploadIdCompletePathIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const LeadsPostLeadsIdAttachmentsChunkedUploadIdCompleteParams =
+  zod.object({
+    id: zod.coerce
+      .string()
+      .uuid()
+      .regex(leadsPostLeadsIdAttachmentsChunkedUploadIdCompletePathIdRegExp),
+    uploadId: zod.coerce.string().uuid(),
+  });
+
+export const leadsPostLeadsIdAttachmentsChunkedUploadIdCompleteHeaderIdempotencyKeyMin = 8;
+export const leadsPostLeadsIdAttachmentsChunkedUploadIdCompleteHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPostLeadsIdAttachmentsChunkedUploadIdCompleteHeader =
+  zod.object({
+    "Idempotency-Key": zod
+      .string()
+      .min(
+        leadsPostLeadsIdAttachmentsChunkedUploadIdCompleteHeaderIdempotencyKeyMin,
+      )
+      .max(
+        leadsPostLeadsIdAttachmentsChunkedUploadIdCompleteHeaderIdempotencyKeyMax,
+      )
+      .optional()
+      .describe(
+        "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+      ),
+  });
 
 /**
  * Route defined in artifacts/api-server/src/routes/leads.ts.
@@ -3405,6 +3886,11 @@ export const leadsPostLeadsIdConvertToJobBodyJobTitleMax = 255;
 
 export const leadsPostLeadsIdConvertToJobBodyJobStateMax = 2;
 
+export const leadsPostLeadsIdConvertToJobBodyJobProjectedStartRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const leadsPostLeadsIdConvertToJobBodyJobProjectedCompletionRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+
 export const LeadsPostLeadsIdConvertToJobBody = zod
   .object({
     clientId: zod
@@ -3451,8 +3937,20 @@ export const LeadsPostLeadsIdConvertToJobBody = zod
           .string()
           .nullish()
           .describe("Decimal serialized as string."),
-        projectedStart: zod.string().date().nullish(),
-        projectedCompletion: zod.string().date().nullish(),
+        projectedStart: zod
+          .string()
+          .regex(leadsPostLeadsIdConvertToJobBodyJobProjectedStartRegExp)
+          .nullish()
+          .describe(
+            "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.",
+          ),
+        projectedCompletion: zod
+          .string()
+          .regex(leadsPostLeadsIdConvertToJobBodyJobProjectedCompletionRegExp)
+          .nullish()
+          .describe(
+            "Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.",
+          ),
         jobType: zod
           .union([
             zod.literal("kitchen_countertops"),
@@ -3472,8 +3970,12 @@ export const LeadsPostLeadsIdConvertToJobBody = zod
         "Overrides for the job that will be created. Anything omitted falls back to the lead's value.",
       ),
   })
+  .refine((value) => !(value.clientId && value.newClient), {
+    message: "Provide either clientId or newClient, not both.",
+    path: ["clientId"],
+  })
   .describe(
-    "Optional payload for `POST \/leads\/{id}\/convert-to-job`. Provide either `clientId` to attach the new job to an existing client, or `newClient` to create a client inline. `job` carries optional overrides applied on top of the lead's pre-fill values.",
+    "Optional payload for `POST \/leads\/{id}\/convert-to-job`. `clientId` attaches the new job to an existing client; `newClient` creates a client inline. The endpoint also accepts an omitted client choice for backwards compatibility, but `clientId` and `newClient` are mutually exclusive. `job` carries optional overrides applied on top of the lead's pre-fill values.",
   );
 
 /**
@@ -3567,7 +4069,83 @@ export const FoldersPostJobsJobIdFoldersBody = zod
     mediaType: zod.enum(["document", "photo", "video"]),
     parentFolderId: zod.string().uuid().nullish(),
   })
+  .strict()
   .describe("Request body for creating a job folder.");
+
+/**
+ * Agent-friendly folder discovery endpoint. Returns all visible job folders for one media type or all media types, including stable IDs, parent-child relationships, and path metadata.
+ * @summary Return the complete visible folder tree for a job
+ */
+export const foldersGetJobsJobIdFolderTreePathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersGetJobsJobIdFolderTreePathParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(foldersGetJobsJobIdFolderTreePathJobIdRegExp),
+});
+
+export const foldersGetJobsJobIdFolderTreeQueryMediaTypeDefault = `all`;
+
+export const FoldersGetJobsJobIdFolderTreeQueryParams = zod.object({
+  mediaType: zod
+    .enum(["document", "photo", "video", "all"])
+    .default(foldersGetJobsJobIdFolderTreeQueryMediaTypeDefault),
+});
+
+export const FoldersGetJobsJobIdFolderTreeResponse = zod.unknown();
+
+/**
+ * Resolves a document, photo, or video folder path using server-side normalization for numeric prefixes, punctuation, apostrophes, and whitespace. Optionally creates missing path segments, including nested photo/video subfolders for migration imports.
+ * @summary Resolve or create a job folder by path
+ */
+export const foldersPostJobsJobIdFoldersResolvePathJobIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FoldersPostJobsJobIdFoldersResolveParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(foldersPostJobsJobIdFoldersResolvePathJobIdRegExp),
+});
+
+export const foldersPostJobsJobIdFoldersResolveHeaderIdempotencyKeyMin = 8;
+export const foldersPostJobsJobIdFoldersResolveHeaderIdempotencyKeyMax = 255;
+
+export const FoldersPostJobsJobIdFoldersResolveHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(foldersPostJobsJobIdFoldersResolveHeaderIdempotencyKeyMin)
+    .max(foldersPostJobsJobIdFoldersResolveHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const foldersPostJobsJobIdFoldersResolveBodyMediaTypeDefault = `document`;
+
+export const foldersPostJobsJobIdFoldersResolveBodyCreateIfMissingDefault = false;
+
+export const FoldersPostJobsJobIdFoldersResolveBody = zod
+  .object({
+    mediaType: zod
+      .enum(["document", "photo", "video"])
+      .default(foldersPostJobsJobIdFoldersResolveBodyMediaTypeDefault),
+    path: zod.string().min(1).optional(),
+    pathSegments: zod.array(zod.string().min(1)).min(1).optional(),
+    createIfMissing: zod
+      .boolean()
+      .default(foldersPostJobsJobIdFoldersResolveBodyCreateIfMissingDefault),
+  })
+  .describe(
+    "Request schema derived from folderResolveSchema in artifacts\/api-server\/src\/routes\/folders.ts.",
+  );
+
+export const FoldersPostJobsJobIdFoldersResolveResponse = zod.unknown();
 
 /**
  * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with folderUpdateSchema.
@@ -3605,6 +4183,7 @@ export const FoldersPutFoldersIdBody = zod
         admin: zod.boolean().optional(),
         project_manager: zod.boolean().optional(),
         crew_member: zod.boolean().optional(),
+        drafter: zod.boolean().optional(),
         internal: zod.boolean().optional(),
         users: zod.record(zod.string(), zod.boolean()).optional(),
       })
@@ -3614,11 +4193,13 @@ export const FoldersPutFoldersIdBody = zod
         admin: zod.boolean().optional(),
         project_manager: zod.boolean().optional(),
         crew_member: zod.boolean().optional(),
+        drafter: zod.boolean().optional(),
         internal: zod.boolean().optional(),
         users: zod.record(zod.string(), zod.boolean()).optional(),
       })
       .nullish(),
   })
+  .strict()
   .describe(
     "Request body for renaming a folder or updating folder permissions.",
   );
@@ -3709,6 +4290,7 @@ export const FoldersPutFoldersIdMoveBody = zod
   .object({
     destinationFolderId: zod.string().uuid().nullish(),
   })
+  .strict()
   .describe("Request body for moving a folder.");
 
 export const FoldersPutFoldersIdMoveResponse = zod.unknown();
@@ -3861,21 +4443,21 @@ export const FilesGetFoldersIdFilesQueryParams = zod.object({
     .describe(
       "Sort key (e.g. `modified_newest`, `modified_oldest`, `name_asc`, `name_desc`). Default `modified_newest`.",
     ),
-  includeDeleted: stringBoolean
+  includeDeleted: booleanQueryParam
     .optional()
     .describe("Include soft-deleted files. Default false."),
   cursor: zod.coerce
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). The server returns the first page in the cursor envelope\nalong with `pagination.nextCursor`. Echo `nextCursor` back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored. A `limit` query without `cursor`\ndoes not select cursor mode.\n",
     ),
 });
 
 export const FilesGetFoldersIdFilesResponse = zod.unknown();
 
 /**
- * Route defined in artifacts/api-server/src/routes/files.ts.
+ * Direct multipart upload for files in a folder. Server-side 403 responses are returned as application/problem+json with machine-readable `errors.code` values such as `CSRF_HEADER_REQUIRED` or `UPLOAD_FOLDER_FORBIDDEN`. If a client receives a non-JSON/plain 403 before the app can format the response, retry the same file through the chunked endpoints under `/folders/{id}/files/chunked`; photo and video uploads from the web app use that chunked path by default.
  * @summary POST /folders/{id}/files
  */
 export const filesPostFoldersIdFilesPathIdRegExp = new RegExp(
@@ -3899,6 +4481,336 @@ export const FilesPostFoldersIdFilesHeader = zod.object({
       "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
     ),
 });
+
+/**
+ * Returns machine-readable duplicate status for a filename, size, and optional SHA-256 checksum in the target folder.
+ * @summary Preflight duplicate detection for a folder upload
+ */
+export const filesGetFoldersIdFilesDuplicatesPathIdRegExp = new RegExp(
+  "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+);
+
+export const FilesGetFoldersIdFilesDuplicatesPathParams = zod.object({
+  id: zod.coerce
+    .string()
+    .uuid()
+    .regex(filesGetFoldersIdFilesDuplicatesPathIdRegExp),
+});
+
+export const filesGetFoldersIdFilesDuplicatesQuerySizeMin = 0;
+
+export const filesGetFoldersIdFilesDuplicatesQueryChecksumRegExp = new RegExp(
+  "^[a-fA-F0-9]{64}$",
+);
+
+export const FilesGetFoldersIdFilesDuplicatesQueryParams = zod.object({
+  filename: zod.coerce.string(),
+  size: zod.coerce
+    .number()
+    .min(filesGetFoldersIdFilesDuplicatesQuerySizeMin)
+    .optional(),
+  checksum: zod.coerce
+    .string()
+    .regex(filesGetFoldersIdFilesDuplicatesQueryChecksumRegExp)
+    .optional(),
+});
+
+export const FilesGetFoldersIdFilesDuplicatesResponse = zod.unknown();
+
+/**
+ * Resolves the destination folder by path, optionally creates missing path segments, then uploads files through the standard validation/storage pipeline.
+ * @summary Upload files to a job folder by normalized path
+ */
+export const FilesPostJobsJobIdFilesByPathParams = zod.object({
+  jobId: zod.coerce.string().uuid(),
+});
+
+export const filesPostJobsJobIdFilesByPathHeaderIdempotencyKeyMin = 8;
+export const filesPostJobsJobIdFilesByPathHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostJobsJobIdFilesByPathHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostJobsJobIdFilesByPathHeaderIdempotencyKeyMin)
+    .max(filesPostJobsJobIdFilesByPathHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const filesPostJobsJobIdFilesByPathBodyMediaTypeDefault = `document`;
+export const filesPostJobsJobIdFilesByPathBodyCreateIfMissingDefault = false;
+export const filesPostJobsJobIdFilesByPathBodyDuplicateActionDefault = `keep_both`;
+
+export const FilesPostJobsJobIdFilesByPathBody = zod
+  .object({
+    files: zod.array(zod.instanceof(File)),
+    folderPath: zod.string().optional(),
+    path: zod.string().optional(),
+    pathSegments: zod
+      .string()
+      .optional()
+      .describe("JSON array string or slash-delimited path."),
+    mediaType: zod
+      .enum(["document", "photo", "video"])
+      .default(filesPostJobsJobIdFilesByPathBodyMediaTypeDefault),
+    createIfMissing: zod
+      .boolean()
+      .default(filesPostJobsJobIdFilesByPathBodyCreateIfMissingDefault),
+    note: zod.string().nullish(),
+    videoDurations: zod
+      .string()
+      .optional()
+      .describe("JSON array of per-file video durations in seconds."),
+    duplicateAction: zod
+      .enum(["keep_both", "skip_exact", "fail_on_conflict"])
+      .default(filesPostJobsJobIdFilesByPathBodyDuplicateActionDefault),
+  })
+  .describe(
+    "Multipart request schema for uploading files to a job folder by path.",
+  );
+
+/**
+ * Creates a resumable upload session for one large file. Upload chunks with PUT, then call complete to assemble, validate, and persist the file. Chunk PUT accepts raw application/octet-stream bytes or base64-encoded text/plain/application/base64 bytes for the same chunk; retry a raw chunk as base64 when a client receives a non-JSON/plain 403 before the app can format a problem response.
+ * @summary Start a chunked file upload session
+ */
+export const FilesPostFoldersIdFilesChunkedParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const filesPostFoldersIdFilesChunkedHeaderIdempotencyKeyMin = 8;
+export const filesPostFoldersIdFilesChunkedHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostFoldersIdFilesChunkedHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostFoldersIdFilesChunkedHeaderIdempotencyKeyMin)
+    .max(filesPostFoldersIdFilesChunkedHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const filesPostFoldersIdFilesChunkedBodyOriginalNameMax = 255;
+
+export const filesPostFoldersIdFilesChunkedBodyMimeTypeMax = 100;
+
+export const filesPostFoldersIdFilesChunkedBodyContentHashRegExp = new RegExp(
+  "^[a-fA-F0-9]{64}$",
+);
+export const filesPostFoldersIdFilesChunkedBodyDuplicateActionDefault = `keep_both`;
+export const filesPostFoldersIdFilesChunkedBodyVideoDurationSecondsMin = 0;
+
+export const FilesPostFoldersIdFilesChunkedBody = zod
+  .object({
+    originalName: zod
+      .string()
+      .min(1)
+      .max(filesPostFoldersIdFilesChunkedBodyOriginalNameMax),
+    mimeType: zod
+      .string()
+      .max(filesPostFoldersIdFilesChunkedBodyMimeTypeMax)
+      .optional(),
+    totalSize: zod.number().min(1),
+    totalChunks: zod.number().min(1),
+    contentHash: zod
+      .string()
+      .regex(filesPostFoldersIdFilesChunkedBodyContentHashRegExp)
+      .optional(),
+    note: zod.string().nullish(),
+    duplicateAction: zod
+      .enum(["keep_both", "skip_exact", "fail_on_conflict"])
+      .default(filesPostFoldersIdFilesChunkedBodyDuplicateActionDefault),
+    videoDurationSeconds: zod
+      .number()
+      .min(filesPostFoldersIdFilesChunkedBodyVideoDurationSecondsMin)
+      .optional(),
+  })
+  .describe(
+    "Request schema derived from chunkedUploadStartSchema in artifacts\/api-server\/src\/routes\/files.ts.",
+  );
+
+/**
+ * @summary Get chunked upload session status
+ */
+export const FilesGetFoldersIdFilesChunkedUploadIdParams = zod.object({
+  id: zod.coerce.string().uuid(),
+  uploadId: zod.coerce.string().uuid(),
+});
+
+export const FilesGetFoldersIdFilesChunkedUploadIdResponse = zod.unknown();
+
+/**
+ * @summary Abort a chunked upload session
+ */
+export const FilesDeleteFoldersIdFilesChunkedUploadIdParams = zod.object({
+  id: zod.coerce.string().uuid(),
+  uploadId: zod.coerce.string().uuid(),
+});
+
+export const FilesDeleteFoldersIdFilesChunkedUploadIdResponse = zod.unknown();
+
+/**
+ * Uploads one chunk for a file session. Send raw bytes as application/octet-stream, or send the same chunk base64-encoded as text/plain or application/base64 to avoid upstream binary body inspection while keeping app-side validation and problem+json errors.
+ * @summary Upload one chunk for a chunked upload session
+ */
+export const filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexPathChunkIndexMin = 0;
+
+export const FilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexParams =
+  zod.object({
+    id: zod.coerce.string().uuid(),
+    uploadId: zod.coerce.string().uuid(),
+    chunkIndex: zod.coerce
+      .number()
+      .min(
+        filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexPathChunkIndexMin,
+      ),
+  });
+
+export const FilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexResponse =
+  zod.unknown();
+
+/**
+ * @summary Complete a chunked upload session
+ */
+export const FilesPostFoldersIdFilesChunkedUploadIdCompleteParams = zod.object({
+  id: zod.coerce.string().uuid(),
+  uploadId: zod.coerce.string().uuid(),
+});
+
+export const filesPostFoldersIdFilesChunkedUploadIdCompleteHeaderIdempotencyKeyMin = 8;
+export const filesPostFoldersIdFilesChunkedUploadIdCompleteHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostFoldersIdFilesChunkedUploadIdCompleteHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostFoldersIdFilesChunkedUploadIdCompleteHeaderIdempotencyKeyMin)
+    .max(filesPostFoldersIdFilesChunkedUploadIdCompleteHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+/**
+ * Soft-deletes a selected set of files in one transaction after authorizing every file.
+ * @summary Delete selected files
+ */
+export const filesPostFilesBatchDeleteHeaderIdempotencyKeyMin = 8;
+export const filesPostFilesBatchDeleteHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostFilesBatchDeleteHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostFilesBatchDeleteHeaderIdempotencyKeyMin)
+    .max(filesPostFilesBatchDeleteHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const filesPostFilesBatchDeleteBodyFileIdsMax = 250;
+
+export const FilesPostFilesBatchDeleteBody = zod
+  .object({
+    fileIds: zod
+      .array(zod.string().uuid())
+      .min(1)
+      .max(filesPostFilesBatchDeleteBodyFileIdsMax),
+  })
+  .describe(
+    "Request schema derived from batchFilesSchema in artifacts\/api-server\/src\/routes\/files.ts.",
+  );
+
+export const FilesPostFilesBatchDeleteResponse = zod.unknown();
+
+/**
+ * Moves selected files to a different folder in the same job, media type, and scope.
+ * @summary Move selected files
+ */
+export const filesPostFilesBatchMoveHeaderIdempotencyKeyMin = 8;
+export const filesPostFilesBatchMoveHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostFilesBatchMoveHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostFilesBatchMoveHeaderIdempotencyKeyMin)
+    .max(filesPostFilesBatchMoveHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const filesPostFilesBatchMoveBodyFileIdsMax = 250;
+
+export const FilesPostFilesBatchMoveBody = zod
+  .object({
+    fileIds: zod
+      .array(zod.string().uuid())
+      .min(1)
+      .max(filesPostFilesBatchMoveBodyFileIdsMax),
+    destinationFolderId: zod.string().uuid(),
+  })
+  .describe(
+    "Request schema derived from batchFilesDestinationSchema in artifacts\/api-server\/src\/routes\/files.ts.",
+  );
+
+export const FilesPostFilesBatchMoveResponse = zod.unknown();
+
+/**
+ * Copies selected file records to a different folder in the same job, media type, and scope while preserving file metadata.
+ * @summary Copy selected files
+ */
+export const filesPostFilesBatchCopyHeaderIdempotencyKeyMin = 8;
+export const filesPostFilesBatchCopyHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostFilesBatchCopyHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostFilesBatchCopyHeaderIdempotencyKeyMin)
+    .max(filesPostFilesBatchCopyHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const filesPostFilesBatchCopyBodyFileIdsMax = 250;
+
+export const FilesPostFilesBatchCopyBody = zod
+  .object({
+    fileIds: zod
+      .array(zod.string().uuid())
+      .min(1)
+      .max(filesPostFilesBatchCopyBodyFileIdsMax),
+    destinationFolderId: zod.string().uuid(),
+  })
+  .describe(
+    "Request schema derived from batchFilesDestinationSchema in artifacts\/api-server\/src\/routes\/files.ts.",
+  );
+
+export const FilesPostFilesBatchCopyResponse = zod.unknown();
+
+/**
+ * Streams authorized selected files in a ZIP archive.
+ * @summary Download selected files as a ZIP
+ */
+export const filesPostFilesBatchDownloadBodyFileIdsMax = 250;
+
+export const FilesPostFilesBatchDownloadBody = zod
+  .object({
+    fileIds: zod
+      .array(zod.string().uuid())
+      .min(1)
+      .max(filesPostFilesBatchDownloadBodyFileIdsMax),
+  })
+  .describe(
+    "Request schema derived from batchFilesSchema in artifacts\/api-server\/src\/routes\/files.ts.",
+  );
 
 /**
  * Route defined in artifacts/api-server/src/routes/files.ts. Validated request body with renameFileSchema.
@@ -3932,6 +4844,7 @@ export const FilesPutFilesIdBody = zod
   .object({
     originalName: zod.string().min(1).max(filesPutFilesIdBodyOriginalNameMax),
   })
+  .strict()
   .describe("Request body for renaming a file.");
 
 export const FilesPutFilesIdResponse = zod.unknown();
@@ -4051,6 +4964,12 @@ export const DailyLogsGetJobsJobIdDailyLogsPathParams = zod.object({
 
 export const dailyLogsGetJobsJobIdDailyLogsQueryPageSizeMax = 500;
 
+export const dailyLogsGetJobsJobIdDailyLogsQueryFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const dailyLogsGetJobsJobIdDailyLogsQueryToRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
 export const dailyLogsGetJobsJobIdDailyLogsQueryLimitMax = 100;
 
 export const DailyLogsGetJobsJobIdDailyLogsQueryParams = zod.object({
@@ -4080,12 +4999,12 @@ export const DailyLogsGetJobsJobIdDailyLogsQueryParams = zod.object({
     .describe("Filter to logs authored by a specific user."),
   from: zod.coerce
     .string()
-    .date()
+    .regex(dailyLogsGetJobsJobIdDailyLogsQueryFromRegExp)
     .optional()
     .describe("Inclusive lower bound on log date (YYYY-MM-DD)."),
   to: zod.coerce
     .string()
-    .date()
+    .regex(dailyLogsGetJobsJobIdDailyLogsQueryToRegExp)
     .optional()
     .describe("Inclusive upper bound on log date (YYYY-MM-DD)."),
   tag: zod.coerce
@@ -4119,7 +5038,7 @@ export const DailyLogsGetJobsJobIdDailyLogsQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). The server returns the first page in the cursor envelope\nalong with `pagination.nextCursor`. Echo `nextCursor` back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored. A `limit` query without `cursor`\ndoes not select cursor mode.\n",
     ),
 });
 
@@ -4221,7 +5140,7 @@ export const DailyLogsGetJobsJobIdDailyLogsResponse = zod
     ]),
   })
   .describe(
-    "Paged daily-log list. The `pagination` field uses `Pagination` in page mode and `CursorPagination` only when the request supplies an explicit `cursor` parameter.",
+    "Paged daily-log list. The `pagination` field uses `Pagination` (page mode) unless the request supplied the `cursor` query key, in which case it uses `CursorPagination`. A `limit` query by itself does not select cursor mode.",
   );
 
 /**
@@ -4916,13 +5835,17 @@ export const DailyLogsGetDailyLogsIdCommentsResponse = zod.object({
         body: zod.string(),
         mentions: zod.array(zod.string()),
         attachments: zod.array(
-          zod.object({
-            name: zod.string(),
-            url: zod.string().nullish(),
-            mimeType: zod.string().nullish(),
-            fileId: zod.string().uuid().nullish(),
-            fileUrl: zod.string().nullish(),
-          }),
+          zod
+            .object({
+              name: zod.string(),
+              url: zod.string().nullable(),
+              mimeType: zod.string().nullish(),
+              fileId: zod.string().uuid().nullish(),
+              fileUrl: zod.string().nullish(),
+            })
+            .describe(
+              "Attachment shown on a daily-log comment. Legacy comments use `url`; file-backed comments use `fileId`\/`fileUrl` and keep `url` as null.",
+            ),
         ),
         links: zod.array(zod.string()),
         reactions: zod
@@ -5074,13 +5997,17 @@ export const DailyLogsPostDailyLogsIdCommentsCommentIdReactionsResponse =
           body: zod.string(),
           mentions: zod.array(zod.string()),
           attachments: zod.array(
-            zod.object({
-              name: zod.string(),
-              url: zod.string().nullish(),
-              mimeType: zod.string().nullish(),
-              fileId: zod.string().uuid().nullish(),
-              fileUrl: zod.string().nullish(),
-            }),
+            zod
+              .object({
+                name: zod.string(),
+                url: zod.string().nullable(),
+                mimeType: zod.string().nullish(),
+                fileId: zod.string().uuid().nullish(),
+                fileUrl: zod.string().nullish(),
+              })
+              .describe(
+                "Attachment shown on a daily-log comment. Legacy comments use `url`; file-backed comments use `fileId`\/`fileUrl` and keep `url` as null.",
+              ),
           ),
           links: zod.array(zod.string()),
           reactions: zod
@@ -5466,6 +6393,13 @@ export const dailyLogsGetDailyLogsFeedQueryPageSizeMax = 100;
 
 export const dailyLogsGetDailyLogsFeedQueryLimitMax = 100;
 
+export const dailyLogsGetDailyLogsFeedQueryFromRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const dailyLogsGetDailyLogsFeedQueryToRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
 export const DailyLogsGetDailyLogsFeedQueryParams = zod.object({
   page: zod.coerce
     .number()
@@ -5486,10 +6420,16 @@ export const DailyLogsGetDailyLogsFeedQueryParams = zod.object({
   clientId: zod.coerce.string().uuid().optional(),
   jobId: zod.coerce.string().uuid().optional(),
   createdBy: zod.coerce.string().uuid().optional(),
-  from: zod.coerce.string().date().nullish(),
-  to: zod.coerce.string().date().nullish(),
-  hasAttachments: stringBoolean.optional(),
-  hasComments: stringBoolean.optional(),
+  from: zod.coerce
+    .string()
+    .regex(dailyLogsGetDailyLogsFeedQueryFromRegExp)
+    .nullish(),
+  to: zod.coerce
+    .string()
+    .regex(dailyLogsGetDailyLogsFeedQueryToRegExp)
+    .nullish(),
+  hasAttachments: booleanQueryParam.optional(),
+  hasComments: booleanQueryParam.optional(),
 });
 
 export const dailyLogsGetDailyLogsFeedResponsePaginationOneTotalItemsMin = 0;
@@ -5588,7 +6528,7 @@ export const DailyLogsGetDailyLogsFeedResponse = zod
     ]),
   })
   .describe(
-    "Paged daily-log list. The `pagination` field uses `Pagination` in page mode and `CursorPagination` only when the request supplies an explicit `cursor` parameter.",
+    "Paged daily-log list. The `pagination` field uses `Pagination` (page mode) unless the request supplied the `cursor` query key, in which case it uses `CursorPagination`. A `limit` query by itself does not select cursor mode.",
   );
 
 /**
@@ -5639,7 +6579,7 @@ export const DailyLogAdminGetDailyLogsMineQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). The server returns the first page in the cursor envelope\nalong with `pagination.nextCursor`. Echo `nextCursor` back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored. A `limit` query without `cursor`\ndoes not select cursor mode.\n",
     ),
 });
 
@@ -5735,7 +6675,7 @@ export const DailyLogAdminGetDailyLogsMineResponse = zod
     ]),
   })
   .describe(
-    "Response for `GET \/daily-logs\/mine`. The `pagination` field uses the offset shape (`page`\/`pageSize`\/`total`\/…) unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.",
+    "Response for `GET \/daily-logs\/mine`. The `pagination` field uses the offset shape (`page`\/`pageSize`\/`total`\/…) unless the request supplied the `cursor` query key, in which case it uses `CursorPagination`. A `limit` query by itself does not select cursor mode.",
   );
 
 /**
@@ -6573,86 +7513,63 @@ export const SchedulePostJobsJobIdWorkdayExceptionsHeader = zod.object({
     ),
 });
 
-export const schedulePostJobsJobIdWorkdayExceptionsBodyOneTitleMax = 255;
+export const schedulePostJobsJobIdWorkdayExceptionsBodyTitleMax = 255;
 
-export const schedulePostJobsJobIdWorkdayExceptionsBodyOneStartDateRegExp =
+export const schedulePostJobsJobIdWorkdayExceptionsBodyStartDateRegExp =
   new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
-export const schedulePostJobsJobIdWorkdayExceptionsBodyOneEndDateRegExp =
+export const schedulePostJobsJobIdWorkdayExceptionsBodyEndDateRegExp =
   new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
-export const schedulePostJobsJobIdWorkdayExceptionsBodyOneSameEveryYearDefault = false;
-export const schedulePostJobsJobIdWorkdayExceptionsBodyOneJobIdsDefault = [];
-export const schedulePostJobsJobIdWorkdayExceptionsBodyOneJobIdsMax = 0;
-
-export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoTitleMax = 255;
-
-export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoStartDateRegExp =
-  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
-export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoEndDateRegExp =
-  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
-export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoSameEveryYearDefault = false;
-export const schedulePostJobsJobIdWorkdayExceptionsBodyTwoAppliesToAllJobsDefault = false;
+export const schedulePostJobsJobIdWorkdayExceptionsBodySameEveryYearDefault = false;
+export const schedulePostJobsJobIdWorkdayExceptionsBodyAppliesToAllJobsDefault = false;
+export const schedulePostJobsJobIdWorkdayExceptionsBodyJobIdsDefault = [];
 
 export const SchedulePostJobsJobIdWorkdayExceptionsBody = zod
-  .union([
-    zod.object({
-      title: zod
-        .string()
-        .min(1)
-        .max(schedulePostJobsJobIdWorkdayExceptionsBodyOneTitleMax),
-      type: zod.enum(["non_workday", "extra_workday"]),
-      startDate: zod
-        .string()
-        .regex(schedulePostJobsJobIdWorkdayExceptionsBodyOneStartDateRegExp),
-      endDate: zod
-        .string()
-        .regex(schedulePostJobsJobIdWorkdayExceptionsBodyOneEndDateRegExp),
-      sameEveryYear: zod
-        .boolean()
-        .default(
-          schedulePostJobsJobIdWorkdayExceptionsBodyOneSameEveryYearDefault,
-        ),
-      categoryId: zod.string().uuid().nullish(),
-      appliesToAllJobs: zod
-        .literal(true)
-        .describe(
-          "When true, applies the exception to every active job. Admin role required.",
-        ),
-      jobIds: zod
-        .array(zod.string().uuid())
-        .max(schedulePostJobsJobIdWorkdayExceptionsBodyOneJobIdsMax)
-        .default(schedulePostJobsJobIdWorkdayExceptionsBodyOneJobIdsDefault),
-      notes: zod.string().nullish(),
-    }),
-    zod.object({
-      title: zod
-        .string()
-        .min(1)
-        .max(schedulePostJobsJobIdWorkdayExceptionsBodyTwoTitleMax),
-      type: zod.enum(["non_workday", "extra_workday"]),
-      startDate: zod
-        .string()
-        .regex(schedulePostJobsJobIdWorkdayExceptionsBodyTwoStartDateRegExp),
-      endDate: zod
-        .string()
-        .regex(schedulePostJobsJobIdWorkdayExceptionsBodyTwoEndDateRegExp),
-      sameEveryYear: zod
-        .boolean()
-        .default(
-          schedulePostJobsJobIdWorkdayExceptionsBodyTwoSameEveryYearDefault,
-        ),
-      categoryId: zod.string().uuid().nullish(),
-      appliesToAllJobs: zod
-        .literal(false)
-        .default(
-          schedulePostJobsJobIdWorkdayExceptionsBodyTwoAppliesToAllJobsDefault,
-        )
-        .describe(
-          "When false or omitted, `jobIds` must contain at least one job.",
-        ),
-      jobIds: zod.array(zod.string().uuid()).min(1),
-      notes: zod.string().nullish(),
-    }),
-  ])
+  .object({
+    title: zod
+      .string()
+      .min(1)
+      .max(schedulePostJobsJobIdWorkdayExceptionsBodyTitleMax),
+    type: zod.enum(["non_workday", "extra_workday"]),
+    startDate: zod
+      .string()
+      .regex(schedulePostJobsJobIdWorkdayExceptionsBodyStartDateRegExp),
+    endDate: zod
+      .string()
+      .regex(schedulePostJobsJobIdWorkdayExceptionsBodyEndDateRegExp),
+    sameEveryYear: zod
+      .boolean()
+      .default(schedulePostJobsJobIdWorkdayExceptionsBodySameEveryYearDefault),
+    categoryId: zod.string().uuid().nullish(),
+    appliesToAllJobs: zod
+      .boolean()
+      .default(
+        schedulePostJobsJobIdWorkdayExceptionsBodyAppliesToAllJobsDefault,
+      )
+      .describe(
+        "When true, applies the exception to every active job. Admin role required.",
+      ),
+    jobIds: zod
+      .array(zod.string().uuid())
+      .default(schedulePostJobsJobIdWorkdayExceptionsBodyJobIdsDefault),
+    notes: zod.string().nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.appliesToAllJobs && value.jobIds.length === 0) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "Select at least one job.",
+        path: ["jobIds"],
+      });
+    }
+
+    if (value.endDate < value.startDate) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "End date must be on or after the start date.",
+        path: ["endDate"],
+      });
+    }
+  })
   .describe(
     "Request body for `POST \/jobs\/{jobId}\/workday-exceptions`. Either `appliesToAllJobs` must be true (admin-only) or `jobIds` must contain at least one job the caller can manage.",
   );
@@ -7031,6 +7948,519 @@ export const SchedulePostJobsJobIdScheduleNotifyAssignedUsersResponse =
   });
 
 /**
+ * Atomically publishes draft schedule item creates, updates, deletes, and notes for one job. Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleDraftPublishPayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule/draft-publish
+ */
+export const schedulePostJobsJobIdScheduleDraftPublishPathJobIdRegExp =
+  new RegExp(
+    "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+  );
+
+export const SchedulePostJobsJobIdScheduleDraftPublishParams = zod.object({
+  jobId: zod.coerce
+    .string()
+    .uuid()
+    .regex(schedulePostJobsJobIdScheduleDraftPublishPathJobIdRegExp),
+});
+
+export const schedulePostJobsJobIdScheduleDraftPublishHeaderIdempotencyKeyMin = 8;
+export const schedulePostJobsJobIdScheduleDraftPublishHeaderIdempotencyKeyMax = 255;
+
+export const SchedulePostJobsJobIdScheduleDraftPublishHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(schedulePostJobsJobIdScheduleDraftPublishHeaderIdempotencyKeyMin)
+    .max(schedulePostJobsJobIdScheduleDraftPublishHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemClientIdMax = 128;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadTitleMax = 255;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadAssigneeIdsDefault =
+  [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadNotifyUserIdsDefault =
+  [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadStartDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadWorkDaysDefault = 1;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadWorkDaysMax = 365;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadEndDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadIsHourlyDefault = false;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadStartTimeRegExp =
+  new RegExp("^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$");
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadEndTimeRegExp =
+  new RegExp("^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$");
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadProgressDefault = 0;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadProgressMin = 0;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadProgressMax = 100;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadReminderDefault = `none`;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadTagsItemMax = 100;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadTagsDefault =
+  [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsItemScheduleItemIdMax = 128;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsItemLagDaysDefault = 0;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsItemLagDaysMin = 0;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsItemLagDaysMax = 365;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsDefault =
+  [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadShowOnGanttDefault = true;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadVisibleToEstimatorsDefault = true;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadVisibleToInstallersDefault = true;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadVisibleToOfficeStaffDefault = true;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadIsCompleteDefault = false;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadIsPersonalTodoDefault = false;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateDefault = [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyCreateMax = 500;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadTitleMax = 255;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadAssigneeIdsDefault =
+  [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadNotifyUserIdsDefault =
+  [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadStartDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadWorkDaysDefault = 1;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadWorkDaysMax = 365;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadEndDateRegExp =
+  new RegExp("^\\d{4}-\\d{2}-\\d{2}$");
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadIsHourlyDefault = false;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadStartTimeRegExp =
+  new RegExp("^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$");
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadEndTimeRegExp =
+  new RegExp("^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$");
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadProgressDefault = 0;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadProgressMin = 0;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadProgressMax = 100;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadReminderDefault = `none`;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadTagsItemMax = 100;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadTagsDefault =
+  [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsItemScheduleItemIdMax = 128;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsItemLagDaysDefault = 0;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsItemLagDaysMin = 0;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsItemLagDaysMax = 365;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsDefault =
+  [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadShowOnGanttDefault = true;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadVisibleToEstimatorsDefault = true;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadVisibleToInstallersDefault = true;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadVisibleToOfficeStaffDefault = true;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadIsCompleteDefault = false;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadIsPersonalTodoDefault = false;
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateDefault = [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyUpdateMax = 500;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyDeleteIdsDefault = [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyDeleteIdsMax = 500;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyNotesItemClientNoteIdMax = 128;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyNotesItemClientItemIdMax = 128;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyNotesItemNoteMax = 10000;
+
+export const schedulePostJobsJobIdScheduleDraftPublishBodyNotesDefault = [];
+export const schedulePostJobsJobIdScheduleDraftPublishBodyNotesMax = 1000;
+
+export const SchedulePostJobsJobIdScheduleDraftPublishBody = zod
+  .object({
+    create: zod
+      .array(
+        zod.object({
+          clientId: zod
+            .string()
+            .min(1)
+            .max(
+              schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemClientIdMax,
+            ),
+          payload: zod
+            .object({
+              title: zod
+                .string()
+                .min(1)
+                .max(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadTitleMax,
+                ),
+              displayColor: zod.string().nullish(),
+              assigneeIds: zod
+                .array(zod.string().uuid())
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadAssigneeIdsDefault,
+                ),
+              notifyUserIds: zod
+                .array(zod.string().uuid())
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadNotifyUserIdsDefault,
+                ),
+              startDate: zod
+                .string()
+                .regex(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadStartDateRegExp,
+                ),
+              workDays: zod
+                .number()
+                .min(1)
+                .max(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadWorkDaysMax,
+                )
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadWorkDaysDefault,
+                ),
+              endDate: zod
+                .string()
+                .regex(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadEndDateRegExp,
+                )
+                .nullish(),
+              isHourly: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadIsHourlyDefault,
+                ),
+              startTime: zod
+                .string()
+                .regex(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadStartTimeRegExp,
+                )
+                .nullish(),
+              endTime: zod
+                .string()
+                .regex(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadEndTimeRegExp,
+                )
+                .nullish(),
+              progress: zod
+                .number()
+                .min(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadProgressMin,
+                )
+                .max(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadProgressMax,
+                )
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadProgressDefault,
+                ),
+              reminder: zod
+                .enum([
+                  "none",
+                  "1_hour_before",
+                  "2_hours_before",
+                  "4_hours_before",
+                  "8_hours_before",
+                  "12_hours_before",
+                  "1_day_before",
+                  "2_days_before",
+                ])
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadReminderDefault,
+                ),
+              notes: zod.string().nullish(),
+              tags: zod
+                .array(
+                  zod
+                    .string()
+                    .min(1)
+                    .max(
+                      schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadTagsItemMax,
+                    ),
+                )
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadTagsDefault,
+                ),
+              predecessors: zod
+                .array(
+                  zod.object({
+                    scheduleItemId: zod
+                      .string()
+                      .min(1)
+                      .max(
+                        schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsItemScheduleItemIdMax,
+                      ),
+                    dependencyType: zod.enum([
+                      "finish_to_start",
+                      "start_to_start",
+                      "finish_to_finish",
+                      "start_to_finish",
+                    ]),
+                    lagDays: zod
+                      .number()
+                      .min(
+                        schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsItemLagDaysMin,
+                      )
+                      .max(
+                        schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsItemLagDaysMax,
+                      )
+                      .default(
+                        schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsItemLagDaysDefault,
+                      ),
+                  }),
+                )
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadPredecessorsDefault,
+                ),
+              phaseId: zod.string().uuid().nullish(),
+              showOnGantt: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadShowOnGanttDefault,
+                ),
+              visibleToEstimators: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadVisibleToEstimatorsDefault,
+                ),
+              visibleToInstallers: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadVisibleToInstallersDefault,
+                ),
+              visibleToOfficeStaff: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadVisibleToOfficeStaffDefault,
+                ),
+              isComplete: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadIsCompleteDefault,
+                ),
+              isPersonalTodo: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyCreateItemPayloadIsPersonalTodoDefault,
+                ),
+            })
+            .describe(
+              "Schedule item payload used by draft publish. Predecessors may reference either persisted schedule item UUIDs or draft `clientId` values from the same publish request.",
+            ),
+        }),
+      )
+      .max(schedulePostJobsJobIdScheduleDraftPublishBodyCreateMax)
+      .default(schedulePostJobsJobIdScheduleDraftPublishBodyCreateDefault),
+    update: zod
+      .array(
+        zod.object({
+          id: zod.string().uuid(),
+          payload: zod
+            .object({
+              title: zod
+                .string()
+                .min(1)
+                .max(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadTitleMax,
+                ),
+              displayColor: zod.string().nullish(),
+              assigneeIds: zod
+                .array(zod.string().uuid())
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadAssigneeIdsDefault,
+                ),
+              notifyUserIds: zod
+                .array(zod.string().uuid())
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadNotifyUserIdsDefault,
+                ),
+              startDate: zod
+                .string()
+                .regex(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadStartDateRegExp,
+                ),
+              workDays: zod
+                .number()
+                .min(1)
+                .max(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadWorkDaysMax,
+                )
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadWorkDaysDefault,
+                ),
+              endDate: zod
+                .string()
+                .regex(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadEndDateRegExp,
+                )
+                .nullish(),
+              isHourly: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadIsHourlyDefault,
+                ),
+              startTime: zod
+                .string()
+                .regex(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadStartTimeRegExp,
+                )
+                .nullish(),
+              endTime: zod
+                .string()
+                .regex(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadEndTimeRegExp,
+                )
+                .nullish(),
+              progress: zod
+                .number()
+                .min(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadProgressMin,
+                )
+                .max(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadProgressMax,
+                )
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadProgressDefault,
+                ),
+              reminder: zod
+                .enum([
+                  "none",
+                  "1_hour_before",
+                  "2_hours_before",
+                  "4_hours_before",
+                  "8_hours_before",
+                  "12_hours_before",
+                  "1_day_before",
+                  "2_days_before",
+                ])
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadReminderDefault,
+                ),
+              notes: zod.string().nullish(),
+              tags: zod
+                .array(
+                  zod
+                    .string()
+                    .min(1)
+                    .max(
+                      schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadTagsItemMax,
+                    ),
+                )
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadTagsDefault,
+                ),
+              predecessors: zod
+                .array(
+                  zod.object({
+                    scheduleItemId: zod
+                      .string()
+                      .min(1)
+                      .max(
+                        schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsItemScheduleItemIdMax,
+                      ),
+                    dependencyType: zod.enum([
+                      "finish_to_start",
+                      "start_to_start",
+                      "finish_to_finish",
+                      "start_to_finish",
+                    ]),
+                    lagDays: zod
+                      .number()
+                      .min(
+                        schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsItemLagDaysMin,
+                      )
+                      .max(
+                        schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsItemLagDaysMax,
+                      )
+                      .default(
+                        schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsItemLagDaysDefault,
+                      ),
+                  }),
+                )
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadPredecessorsDefault,
+                ),
+              phaseId: zod.string().uuid().nullish(),
+              showOnGantt: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadShowOnGanttDefault,
+                ),
+              visibleToEstimators: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadVisibleToEstimatorsDefault,
+                ),
+              visibleToInstallers: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadVisibleToInstallersDefault,
+                ),
+              visibleToOfficeStaff: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadVisibleToOfficeStaffDefault,
+                ),
+              isComplete: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadIsCompleteDefault,
+                ),
+              isPersonalTodo: zod
+                .boolean()
+                .default(
+                  schedulePostJobsJobIdScheduleDraftPublishBodyUpdateItemPayloadIsPersonalTodoDefault,
+                ),
+            })
+            .describe(
+              "Schedule item payload used by draft publish. Predecessors may reference either persisted schedule item UUIDs or draft `clientId` values from the same publish request.",
+            ),
+        }),
+      )
+      .max(schedulePostJobsJobIdScheduleDraftPublishBodyUpdateMax)
+      .default(schedulePostJobsJobIdScheduleDraftPublishBodyUpdateDefault),
+    deleteIds: zod
+      .array(zod.string().uuid())
+      .max(schedulePostJobsJobIdScheduleDraftPublishBodyDeleteIdsMax)
+      .default(schedulePostJobsJobIdScheduleDraftPublishBodyDeleteIdsDefault),
+    notes: zod
+      .array(
+        zod.object({
+          clientNoteId: zod
+            .string()
+            .min(1)
+            .max(
+              schedulePostJobsJobIdScheduleDraftPublishBodyNotesItemClientNoteIdMax,
+            )
+            .optional(),
+          clientItemId: zod
+            .string()
+            .min(1)
+            .max(
+              schedulePostJobsJobIdScheduleDraftPublishBodyNotesItemClientItemIdMax,
+            )
+            .optional(),
+          scheduleItemId: zod.string().uuid().optional(),
+          note: zod
+            .string()
+            .min(1)
+            .max(schedulePostJobsJobIdScheduleDraftPublishBodyNotesItemNoteMax),
+        }),
+      )
+      .max(schedulePostJobsJobIdScheduleDraftPublishBodyNotesMax)
+      .default(schedulePostJobsJobIdScheduleDraftPublishBodyNotesDefault),
+  })
+  .describe("Atomic draft publish request for one job schedule.");
+
+export const SchedulePostJobsJobIdScheduleDraftPublishResponse = zod.object({
+  success: zod.boolean(),
+  createdItemIdsByClientId: zod.record(zod.string(), zod.string().uuid()),
+});
+
+/**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
  * @summary GET /jobs/{jobId}/schedule
  */
@@ -7058,7 +8488,7 @@ export const ScheduleGetJobsJobIdScheduleQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). The server returns the first page in the cursor envelope\nalong with `pagination.nextCursor`. Echo `nextCursor` back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored. A `limit` query without `cursor`\ndoes not select cursor mode.\n",
     ),
 });
 
@@ -7182,28 +8612,32 @@ export const ScheduleGetJobsJobIdScheduleResponse = zod
           "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
         ),
     ),
-    pagination: zod.union([
-      zod.object({
-        page: zod.number(),
-        limit: zod.number(),
-        totalItems: zod.number(),
-        totalPages: zod.number(),
-      }),
-      zod
-        .object({
+    pagination: zod
+      .union([
+        zod.object({
+          page: zod.number(),
           limit: zod.number(),
-          hasMore: zod.boolean(),
-          nextCursor: zod
-            .string()
-            .nullish()
-            .describe(
-              "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
-            ),
-        })
-        .describe(
-          "Pagination shape returned when the request supplied a `cursor` query parameter.",
-        ),
-    ]),
+          totalItems: zod.number(),
+          totalPages: zod.number(),
+        }),
+        zod
+          .object({
+            limit: zod.number(),
+            hasMore: zod.boolean(),
+            nextCursor: zod
+              .string()
+              .nullish()
+              .describe(
+                "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
+              ),
+          })
+          .describe(
+            "Pagination shape returned when the request supplied a `cursor` query parameter.",
+          ),
+      ])
+      .describe(
+        "Offset pagination for page-mode requests, or CursorPagination when the request supplied `?cursor=`.",
+      ),
   })
   .describe(
     "Schedule list response. `pagination` is page-mode unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.",
@@ -7253,10 +8687,10 @@ export const schedulePostJobsJobIdScheduleBodyEndDateRegExp = new RegExp(
 );
 export const schedulePostJobsJobIdScheduleBodyIsHourlyDefault = false;
 export const schedulePostJobsJobIdScheduleBodyStartTimeRegExp = new RegExp(
-  "^\\d{2}:\\d{2}(:\\d{2})?$",
+  "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$",
 );
 export const schedulePostJobsJobIdScheduleBodyEndTimeRegExp = new RegExp(
-  "^\\d{2}:\\d{2}(:\\d{2})?$",
+  "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$",
 );
 export const schedulePostJobsJobIdScheduleBodyProgressDefault = 0;
 export const schedulePostJobsJobIdScheduleBodyProgressMin = 0;
@@ -7320,10 +8754,19 @@ export const SchedulePostJobsJobIdScheduleBody = zod
       .max(schedulePostJobsJobIdScheduleBodyProgressMax)
       .default(schedulePostJobsJobIdScheduleBodyProgressDefault),
     reminder: zod
-      .string()
+      .enum([
+        "none",
+        "1_hour_before",
+        "2_hours_before",
+        "4_hours_before",
+        "8_hours_before",
+        "12_hours_before",
+        "1_day_before",
+        "2_days_before",
+      ])
       .default(schedulePostJobsJobIdScheduleBodyReminderDefault)
       .describe(
-        "One of the configured reminder options (e.g. `none`, `1d`, `1h`).",
+        "One of the configured reminder options (for example `none`, `1_hour_before`, or `1_day_before`).",
       ),
     notes: zod.string().nullish(),
     tags: zod
@@ -7499,28 +8942,32 @@ export const ScheduleGetScheduleResponse = zod
           "Hydrated schedule item with assignees, predecessors, notes stream, attachments, related todos, and derived status\/conflict info.",
         ),
     ),
-    pagination: zod.union([
-      zod.object({
-        page: zod.number(),
-        limit: zod.number(),
-        totalItems: zod.number(),
-        totalPages: zod.number(),
-      }),
-      zod
-        .object({
+    pagination: zod
+      .union([
+        zod.object({
+          page: zod.number(),
           limit: zod.number(),
-          hasMore: zod.boolean(),
-          nextCursor: zod
-            .string()
-            .nullish()
-            .describe(
-              "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
-            ),
-        })
-        .describe(
-          "Pagination shape returned when the request supplied a `cursor` query parameter.",
-        ),
-    ]),
+          totalItems: zod.number(),
+          totalPages: zod.number(),
+        }),
+        zod
+          .object({
+            limit: zod.number(),
+            hasMore: zod.boolean(),
+            nextCursor: zod
+              .string()
+              .nullish()
+              .describe(
+                "Opaque cursor; pass to the next request as `?cursor=…`. `null` when there is no next page.",
+              ),
+          })
+          .describe(
+            "Pagination shape returned when the request supplied a `cursor` query parameter.",
+          ),
+      ])
+      .describe(
+        "Offset pagination for page-mode requests, or CursorPagination when the request supplied `?cursor=`.",
+      ),
   })
   .describe(
     "Schedule list response. `pagination` is page-mode unless the request supplied an explicit `cursor` parameter, in which case it uses `CursorPagination`.",
@@ -7698,10 +9145,10 @@ export const schedulePutScheduleItemsIdBodyEndDateRegExp = new RegExp(
 );
 export const schedulePutScheduleItemsIdBodyIsHourlyDefault = false;
 export const schedulePutScheduleItemsIdBodyStartTimeRegExp = new RegExp(
-  "^\\d{2}:\\d{2}(:\\d{2})?$",
+  "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$",
 );
 export const schedulePutScheduleItemsIdBodyEndTimeRegExp = new RegExp(
-  "^\\d{2}:\\d{2}(:\\d{2})?$",
+  "^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$",
 );
 export const schedulePutScheduleItemsIdBodyProgressDefault = 0;
 export const schedulePutScheduleItemsIdBodyProgressMin = 0;
@@ -7765,10 +9212,19 @@ export const SchedulePutScheduleItemsIdBody = zod
       .max(schedulePutScheduleItemsIdBodyProgressMax)
       .default(schedulePutScheduleItemsIdBodyProgressDefault),
     reminder: zod
-      .string()
+      .enum([
+        "none",
+        "1_hour_before",
+        "2_hours_before",
+        "4_hours_before",
+        "8_hours_before",
+        "12_hours_before",
+        "1_day_before",
+        "2_days_before",
+      ])
       .default(schedulePutScheduleItemsIdBodyReminderDefault)
       .describe(
-        "One of the configured reminder options (e.g. `none`, `1d`, `1h`).",
+        "One of the configured reminder options (for example `none`, `1_hour_before`, or `1_day_before`).",
       ),
     notes: zod.string().nullish(),
     tags: zod
@@ -8275,7 +9731,7 @@ export const DashboardGetDashboardAgendaResponse = zod.unknown();
 
 /**
  * Role-aware Home page payload. Returns a discriminated union keyed by
-`role` (`crew` | `pm` | `admin`). The shape varies by role; see
+`role` (`crew` | `pm` | `drafter` | `admin`). The shape varies by role; see
 artifacts/api-server/src/routes/dashboard.ts for the authoritative
 builder functions. The `crew` payload includes a `forecast` field with
 today's high/low and conditions for the user's primary job site, fetched
@@ -8407,7 +9863,7 @@ export const DashboardGetDashboardHomeResponse = zod
               zod.object({
                 id: zod.string().uuid(),
                 number: zod.string(),
-                amountCents: zod.number().int(),
+                amountCents: zod.number(),
                 jobId: zod.string().uuid(),
                 jobTitle: zod.string().nullable(),
               }),
@@ -8438,6 +9894,46 @@ export const DashboardGetDashboardHomeResponse = zod
       ),
     zod
       .object({
+        role: zod.enum(["drafter"]),
+        today: zod.string(),
+        summary: zod.object({
+          openLeads: zod.number(),
+          openScheduleItems: zod.number(),
+        }),
+        recentLeads: zod.array(
+          zod.object({
+            id: zod.string().uuid(),
+            title: zod.string(),
+            status: zod.string(),
+            city: zod.string().nullable(),
+            state: zod.string().nullable(),
+            confidence: zod.number().nullable(),
+            createdAt: zod.string().datetime({}),
+          }),
+        ),
+        schedule: zod.object({
+          start: zod.string(),
+          end: zod.string(),
+          items: zod.array(
+            zod.object({
+              id: zod.string().uuid(),
+              title: zod.string(),
+              startDate: zod.string(),
+              endDate: zod.string(),
+              progress: zod.number(),
+              isComplete: zod.boolean(),
+              displayColor: zod.string().nullable(),
+              jobId: zod.string().uuid().nullable(),
+              jobTitle: zod.string().nullable(),
+            }),
+          ),
+        }),
+      })
+      .describe(
+        'Role-aware Home payload returned to drafters. Discriminator value \"drafter\".',
+      ),
+    zod
+      .object({
         role: zod.enum(["admin"]),
         today: zod.string(),
         monthStart: zod.string(),
@@ -8445,15 +9941,15 @@ export const DashboardGetDashboardHomeResponse = zod
           activeJobs: zod.number(),
           openLeads: zod.number(),
           newJobsThisMonth: zod.number(),
-          newContractValueThisMonthCents: zod.number().int(),
-          arOutstandingCents: zod.number().int(),
+          newContractValueThisMonthCents: zod.number(),
+          arOutstandingCents: zod.number(),
           pastDueInvoiceCount: zod.number(),
         }),
         topClients: zod.array(
           zod.object({
             clientId: zod.string().uuid().nullable(),
             clientName: zod.string(),
-            openBalanceCents: zod.number().int(),
+            openBalanceCents: zod.number(),
           }),
         ),
         pastDueInvoices: zod.array(
@@ -8461,8 +9957,8 @@ export const DashboardGetDashboardHomeResponse = zod
             id: zod.string().uuid(),
             invoiceNumber: zod.string().nullable(),
             invoiceDate: zod.string().nullable(),
-            totalCents: zod.number().int(),
-            paidCents: zod.number().int(),
+            totalCents: zod.number(),
+            paidCents: zod.number(),
             jobId: zod.string().uuid(),
             jobTitle: zod.string().nullable(),
             clientId: zod.string().uuid().nullable(),
@@ -8509,24 +10005,31 @@ export const DashboardGetDashboardHomeResponse = zod
       ),
   ])
   .describe(
-    "Role-aware \/dashboard\/home response. Discriminated by `role` (crew | pm | admin).",
+    "Role-aware \/dashboard\/home response. Discriminated by `role` (crew | pm | drafter | admin).",
   );
 
 /**
  * Route defined in artifacts/api-server/src/routes/dashboard.ts. Validated query with dashboardScheduleQuerySchema.
  * @summary GET /dashboard/schedule
  */
+export const dashboardGetDashboardScheduleQueryStartRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+export const dashboardGetDashboardScheduleQueryEndRegExp = new RegExp(
+  "^\\d{4}-\\d{2}-\\d{2}$",
+);
+
 export const DashboardGetDashboardScheduleQueryParams = zod.object({
   start: zod.coerce
     .string()
-    .date()
+    .regex(dashboardGetDashboardScheduleQueryStartRegExp)
     .optional()
     .describe(
       "Inclusive lower bound on the schedule range (YYYY-MM-DD). Defaults to today.",
     ),
   end: zod.coerce
     .string()
-    .date()
+    .regex(dashboardGetDashboardScheduleQueryEndRegExp)
     .optional()
     .describe(
       "Inclusive upper bound on the schedule range (YYYY-MM-DD). Defaults to today + 60 days. Must be on or after `start`.",
@@ -8546,6 +10049,8 @@ export const DashboardGetDashboardScheduleResponse = zod.unknown();
  * Route defined in artifacts/api-server/src/routes/activity.ts. Validated query with querySchema. Supports both page-based (`page`/`pageSize`) and cursor-based (`cursor`/`limit`) pagination; when `cursor` is provided, the response's `pagination` field uses the `CursorPagination` shape.
  * @summary GET /activity
  */
+
+export const activityGetActivityQueryPageSizeMax = 100;
 
 export const activityGetActivityQueryLimitMax = 100;
 
@@ -8582,17 +10087,27 @@ export const ActivityGetActivityQueryParams = zod.object({
     .describe(
       "Page number (1-based) for offset pagination. Ignored when `cursor` is supplied.",
     ),
+  pageSize: zod.coerce
+    .number()
+    .min(1)
+    .max(activityGetActivityQueryPageSizeMax)
+    .optional()
+    .describe(
+      "Page size for offset pagination. Ignored when `cursor` is supplied. Default 50; max 100.",
+    ),
   limit: zod.coerce
     .number()
     .min(1)
     .max(activityGetActivityQueryLimitMax)
     .optional()
-    .describe("Page size. Default 50; max 100."),
+    .describe(
+      "Page size for cursor pagination. Legacy page-mode callers may still use it when `pageSize` is omitted. Default 50; max 100.",
+    ),
   cursor: zod.coerce
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). The server returns the first page in the cursor envelope\nalong with `pagination.nextCursor`. Echo `nextCursor` back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored. A `limit` query without `cursor`\ndoes not select cursor mode.\n",
     ),
 });
 
@@ -8652,7 +10167,7 @@ export const SearchGetSearchQueryParams = zod.object({
     .string()
     .optional()
     .describe(
-      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). Requests that only send `?limit=N` remain in page mode unless\nthe endpoint explicitly documents a different bootstrap. Cursor\nresponses include `pagination.nextCursor`; echo that value back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored.\n",
+      "Opaque cursor for stable cursor-based pagination. To bootstrap the\nfirst cursor page, send `?cursor=&limit=N` (cursor present with no\nvalue). The server returns the first page in the cursor envelope\nalong with `pagination.nextCursor`. Echo `nextCursor` back as\n`?cursor=<token>` on subsequent calls. While in cursor mode\n`page`\/`pageSize` are ignored. A `limit` query without `cursor`\ndoes not select cursor mode.\n",
     ),
 });
 
@@ -8701,7 +10216,7 @@ export const SearchGetSearchResponse = zod.object({
         ),
     ])
     .describe(
-      "Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied an explicit `cursor` parameter. Cursor-mode pagination uses `CursorPagination`.",
+      "Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied the `cursor` query key, in which case this field uses `CursorPagination`. A `limit` query by itself does not select cursor mode.",
     ),
 });
 
@@ -8730,6 +10245,12 @@ export const HealthGetHealthzResponse = zod.object({
       message: zod.string(),
     }),
   ),
+  releaseSha: zod
+    .string()
+    .nullish()
+    .describe(
+      "Short Git commit SHA for the deployed build, when the host exposes one.",
+    ),
 });
 
 /**
@@ -8863,19 +10384,82 @@ export const ReportsGetReportsArAgingQueryParams = zod.object({
     .enum(["json", "csv"])
     .default(reportsGetReportsArAgingQueryFormatDefault)
     .describe("Response format. JSON (default) or CSV download."),
-});
+})
+  .superRefine((value, ctx) => {
+    if (value.range === "custom" && (!value.from || !value.to)) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "from and to are required when range=custom.",
+        path: ["from"],
+      });
+    }
+  });
+
+export const reportsGetReportsArAgingResponseRowsItemCurrentMin = 0;
+export const reportsGetReportsArAgingResponseRowsItemCurrentMax = 9007199254740991;
+
+export const reportsGetReportsArAgingResponseRowsItemD1to30Min = 0;
+export const reportsGetReportsArAgingResponseRowsItemD1to30Max = 9007199254740991;
+
+export const reportsGetReportsArAgingResponseRowsItemD31to60Min = 0;
+export const reportsGetReportsArAgingResponseRowsItemD31to60Max = 9007199254740991;
+
+export const reportsGetReportsArAgingResponseRowsItemD61to90Min = 0;
+export const reportsGetReportsArAgingResponseRowsItemD61to90Max = 9007199254740991;
+
+export const reportsGetReportsArAgingResponseRowsItemD90plusMin = 0;
+export const reportsGetReportsArAgingResponseRowsItemD90plusMax = 9007199254740991;
+
+export const reportsGetReportsArAgingResponseRowsItemTotalMin = 0;
+export const reportsGetReportsArAgingResponseRowsItemTotalMax = 9007199254740991;
 
 export const ReportsGetReportsArAgingResponse = zod.object({
   rows: zod.array(
     zod.object({
       clientId: zod.string().nullable(),
       clientName: zod.string(),
-      current: zod.number(),
-      d1to30: zod.number(),
-      d31to60: zod.number(),
-      d61to90: zod.number(),
-      d90plus: zod.number(),
-      total: zod.number(),
+      current: zod
+        .number()
+        .min(reportsGetReportsArAgingResponseRowsItemCurrentMin)
+        .max(reportsGetReportsArAgingResponseRowsItemCurrentMax)
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.",
+        ),
+      d1to30: zod
+        .number()
+        .min(reportsGetReportsArAgingResponseRowsItemD1to30Min)
+        .max(reportsGetReportsArAgingResponseRowsItemD1to30Max)
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.",
+        ),
+      d31to60: zod
+        .number()
+        .min(reportsGetReportsArAgingResponseRowsItemD31to60Min)
+        .max(reportsGetReportsArAgingResponseRowsItemD31to60Max)
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.",
+        ),
+      d61to90: zod
+        .number()
+        .min(reportsGetReportsArAgingResponseRowsItemD61to90Min)
+        .max(reportsGetReportsArAgingResponseRowsItemD61to90Max)
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.",
+        ),
+      d90plus: zod
+        .number()
+        .min(reportsGetReportsArAgingResponseRowsItemD90plusMin)
+        .max(reportsGetReportsArAgingResponseRowsItemD90plusMax)
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.",
+        ),
+      total: zod
+        .number()
+        .min(reportsGetReportsArAgingResponseRowsItemTotalMin)
+        .max(reportsGetReportsArAgingResponseRowsItemTotalMax)
+        .describe(
+          "Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.",
+        ),
     }),
   ),
 });
@@ -8914,19 +10498,28 @@ export const ReportsGetReportsRevenueQueryParams = zod.object({
     .enum(["json", "csv"])
     .default(reportsGetReportsRevenueQueryFormatDefault)
     .describe("Response format. JSON (default) or CSV download."),
-});
+})
+  .superRefine((value, ctx) => {
+    if (value.range === "custom" && (!value.from || !value.to)) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "from and to are required when range=custom.",
+        path: ["from"],
+      });
+    }
+  });
 
 export const ReportsGetReportsRevenueResponse = zod.object({
   months: zod.array(
     zod.object({
       month: zod.string(),
-      billedCents: zod.number().int(),
-      collectedCents: zod.number().int(),
+      billedCents: zod.number(),
+      collectedCents: zod.number(),
       topJobs: zod.array(
         zod.object({
           jobId: zod.string(),
           jobTitle: zod.string(),
-          amountCents: zod.number().int(),
+          amountCents: zod.number(),
         }),
       ),
     }),
@@ -8967,7 +10560,16 @@ export const ReportsGetReportsPipelineQueryParams = zod.object({
     .enum(["json", "csv"])
     .default(reportsGetReportsPipelineQueryFormatDefault)
     .describe("Response format. JSON (default) or CSV download."),
-});
+})
+  .superRefine((value, ctx) => {
+    if (value.range === "custom" && (!value.from || !value.to)) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "from and to are required when range=custom.",
+        path: ["from"],
+      });
+    }
+  });
 
 export const ReportsGetReportsPipelineResponse = zod.object({
   funnel: zod.array(
@@ -9016,7 +10618,16 @@ export const ReportsGetReportsDaysToPaymentQueryParams = zod.object({
     .enum(["json", "csv"])
     .default(reportsGetReportsDaysToPaymentQueryFormatDefault)
     .describe("Response format. JSON (default) or CSV download."),
-});
+})
+  .superRefine((value, ctx) => {
+    if (value.range === "custom" && (!value.from || !value.to)) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "from and to are required when range=custom.",
+        path: ["from"],
+      });
+    }
+  });
 
 export const ReportsGetReportsDaysToPaymentResponse = zod.object({
   byClient: zod.array(
@@ -9073,7 +10684,16 @@ export const ReportsGetReportsJobsByStageQueryParams = zod.object({
     .enum(["json", "csv"])
     .default(reportsGetReportsJobsByStageQueryFormatDefault)
     .describe("Response format. JSON (default) or CSV download."),
-});
+})
+  .superRefine((value, ctx) => {
+    if (value.range === "custom" && (!value.from || !value.to)) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "from and to are required when range=custom.",
+        path: ["from"],
+      });
+    }
+  });
 
 export const ReportsGetReportsJobsByStageResponse = zod.object({
   rows: zod.array(
@@ -9115,3 +10735,77 @@ export const UsersPutUsersMeNotificationPrefsResponse = zod
     prefs: zod.record(zod.string(), zod.boolean()),
   })
   .describe("Per-user notification preferences. Map of event-key → boolean.");
+
+/**
+ * List the authenticated user's recent in-app notifications with unread count.
+ * @summary GET /notifications
+ */
+export const notificationsGetNotificationsQueryLimitDefault = 20;
+export const notificationsGetNotificationsQueryLimitMax = 50;
+
+export const notificationsGetNotificationsQueryUnreadOnlyDefault = false;
+
+export const NotificationsGetNotificationsQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(notificationsGetNotificationsQueryLimitMax)
+    .default(notificationsGetNotificationsQueryLimitDefault),
+  unreadOnly: booleanQueryParam
+    .default(notificationsGetNotificationsQueryUnreadOnlyDefault),
+});
+
+export const notificationsGetNotificationsResponseUnreadCountMin = 0;
+
+export const NotificationsGetNotificationsResponse = zod.object({
+  notifications: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      entityType: zod.string(),
+      entityId: zod.string().uuid().nullable(),
+      action: zod.string(),
+      title: zod.string(),
+      body: zod.string().nullable(),
+      url: zod.string().nullable(),
+      metadata: zod.record(zod.string(), zod.unknown()).nullable(),
+      readAt: zod.string().datetime({}).nullable(),
+      createdAt: zod.string().datetime({}),
+      actor: zod.object({
+        id: zod.string().uuid().nullable(),
+        fullName: zod.string().nullable(),
+        email: zod.string().nullable(),
+      }),
+    }),
+  ),
+  unreadCount: zod
+    .number()
+    .min(notificationsGetNotificationsResponseUnreadCountMin),
+});
+
+/**
+ * Mark one notification as read for the authenticated user.
+ * @summary PATCH /notifications/{id}/read
+ */
+export const NotificationsPatchNotificationsIdReadParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const NotificationsPatchNotificationsIdReadResponse = zod.object({
+  notification: zod.object({
+    id: zod.string().uuid(),
+    readAt: zod.string().datetime({}).nullable(),
+  }),
+});
+
+/**
+ * Mark all unread notifications as read for the authenticated user.
+ * @summary POST /notifications/read-all
+ */
+export const notificationsPostNotificationsReadAllResponseCountMin = 0;
+
+export const NotificationsPostNotificationsReadAllResponse = zod.object({
+  success: zod.boolean(),
+  count: zod
+    .number()
+    .min(notificationsPostNotificationsReadAllResponseCountMin),
+});

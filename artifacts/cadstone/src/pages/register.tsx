@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { authApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { useDocumentTitle } from "@/hooks/use-document-title"
-import { APP_LOGO_PATH, APP_NAME } from "@/lib/brand"
+import { APP_DESCRIPTION, APP_LOGO_PATH, APP_NAME } from "@/lib/brand"
 import { toast } from "sonner"
 
 export default function RegisterPage() {
@@ -51,7 +51,7 @@ export default function RegisterPage() {
           />
           <div>
             <CardTitle className="text-lg text-foreground">Create an account</CardTitle>
-            <CardDescription className="mt-0.5 text-sm text-muted-foreground">{APP_NAME}</CardDescription>
+            <CardDescription className="mt-0.5 text-sm text-muted-foreground">{APP_DESCRIPTION}</CardDescription>
           </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>

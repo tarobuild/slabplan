@@ -356,6 +356,7 @@ export default function JobsPage() {
   const [status, setStatus] = useState<string>("all")
   const [createOpen, setCreateOpen] = useState(false)
   const [createDefaultClientId, setCreateDefaultClientId] = useState<string | undefined>(undefined)
+  const [createDefaultClientName, setCreateDefaultClientName] = useState<string | undefined>(undefined)
   const [createLockClient, setCreateLockClient] = useState(false)
   const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -375,10 +376,11 @@ export default function JobsPage() {
   }
 
   const openCreateDialog = (
-    options?: { defaultClientId?: string; lockClient?: boolean },
+    options?: { defaultClientId?: string; defaultClientName?: string; lockClient?: boolean },
   ) => {
     if (!isAdmin) return
     setCreateDefaultClientId(options?.defaultClientId)
+    setCreateDefaultClientName(options?.defaultClientName)
     setCreateLockClient(Boolean(options?.lockClient && options?.defaultClientId))
     setCreateOpen(true)
   }
@@ -389,34 +391,49 @@ export default function JobsPage() {
       return
     }
 
-    api.get("/users?roles=project_manager,crew_member&limit=200")
+    api.get("/users?roles=project_manager,crew_member,drafter&limit=200")
       .then((r) => setWorkerOptions(r.data.users ?? []))
       .catch((err: unknown) => toastApiError(err, "Failed to load workers"))
   }, [isAdmin])
 
   useEffect(() => {
     const currentState = location.state as Record<string, unknown> | null
-    if (currentState && (currentState as { openCreate?: unknown }).openCreate) {
+    const params = new URLSearchParams(location.search)
+    const queryOpenCreate = params.get("newJob") === "1"
+    const queryClientId = params.get("clientId") ?? undefined
+    const shouldOpenCreate =
+      (currentState && (currentState as { openCreate?: unknown }).openCreate) ||
+      queryOpenCreate
+    if (shouldOpenCreate) {
       // Job creation is admin-only (post-#277). Strip the openCreate hint
       // for non-admins so they never see the create dialog flash open and
       // hit a 403 on submit.
       if (isAdmin) {
         const stateClientId =
-          typeof (currentState as { clientId?: unknown }).clientId === "string"
+          typeof (currentState as { clientId?: unknown } | null)?.clientId === "string"
             ? ((currentState as { clientId?: string }).clientId as string)
-            : undefined
-        const stateLock = Boolean((currentState as { lockClient?: unknown }).lockClient)
+            : queryClientId
+        const stateLock = Boolean((currentState as { lockClient?: unknown } | null)?.lockClient)
         if (stateClientId) {
-          openCreateDialog({ defaultClientId: stateClientId, lockClient: stateLock })
+          openCreateDialog({ defaultClientId: stateClientId, lockClient: stateLock || queryOpenCreate })
         } else {
           setPickerOpen(true)
         }
       }
+      const stateForRest = currentState ?? {}
       const { openCreate: _openCreate, clientId: _cid, lockClient: _lc, ...rest } =
-        currentState as { openCreate?: unknown; clientId?: unknown; lockClient?: unknown } & Record<string, unknown>
+        stateForRest as { openCreate?: unknown; clientId?: unknown; lockClient?: unknown } & Record<string, unknown>
+      if (queryOpenCreate) {
+        params.delete("newJob")
+        params.delete("clientId")
+      }
       const nextState = Object.keys(rest).length > 0 ? rest : null
       navigate(
-        { pathname: location.pathname, search: location.search, hash: location.hash },
+        {
+          pathname: location.pathname,
+          search: params.toString() ? `?${params.toString()}` : "",
+          hash: location.hash,
+        },
         { replace: true, state: nextState },
       )
     }
@@ -1031,6 +1048,7 @@ export default function JobsPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         defaultClientId={createDefaultClientId}
+        defaultClientName={createDefaultClientName}
         lockClient={createLockClient}
         onCreated={handleCreated}
       />
@@ -1039,8 +1057,12 @@ export default function JobsPage() {
         onOpenChange={setPickerOpen}
         title="Pick a client for this job"
         description="Every job belongs to a client. Choose one to start the new-job form."
-        onSelect={(chosenClientId) => {
-          openCreateDialog({ defaultClientId: chosenClientId, lockClient: true })
+        onSelect={(chosenClientId, chosenClientName) => {
+          openCreateDialog({
+            defaultClientId: chosenClientId,
+            defaultClientName: chosenClientName,
+            lockClient: true,
+          })
         }}
       />
     </div>

@@ -17,7 +17,7 @@ import {
 import { withFileViewLogging } from "../lib/file-view-log";
 import { HttpError, asyncHandler } from "../lib/http";
 import { requireAdmin } from "../middleware/require-auth";
-import { streamStoredFileToResponse } from "../lib/storage";
+import { streamPreparedStoredFileToResponse } from "../lib/storage";
 import { uploadArray } from "../lib/uploads";
 import { createUploadPerUserRateLimit } from "../lib/rate-limit";
 import { stringBoolean } from "../lib/zod-helpers";
@@ -227,13 +227,15 @@ router.get(
         }
 
         const displayName = file.originalName ?? file.filename;
-        return streamStoredFileToResponse(
+        return streamPreparedStoredFileToResponse(
           res,
           file.fileUrl,
           {
             disposition: "inline",
             filename: displayName,
             contentType: file.mimeType,
+            cacheControl: "private, no-store",
+            rangeHeader: req.headers.range ?? null,
           },
           progress,
         );

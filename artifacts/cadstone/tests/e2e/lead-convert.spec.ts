@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test"
 import { CESAR, loginViaApi } from "./helpers/auth"
 import { authHeaders } from "./helpers/auth"
 import { deleteJob, requireAnyClient } from "./helpers/api"
+import { visiblePlaceholder } from "./helpers/locators"
 import { CESAR_STATE } from "./helpers/storage"
 
 // Task #319 — exercise the Lead → Job conversion flow end-to-end:
@@ -64,10 +65,7 @@ test.describe("lead convert-to-job", () => {
 
     // 2) Open /leads, find our row, click Convert.
     await page.goto("/leads")
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(leadTitle)
+    await visiblePlaceholder(page, /search/i).fill(leadTitle)
 
     const convertBtn = page.getByTestId(`convert-lead-${createdLeadId}`)
     await expect(convertBtn).toBeVisible({ timeout: 10_000 })
@@ -122,10 +120,7 @@ test.describe("lead convert-to-job", () => {
 
     // 4) Lead is now hidden from the default leads list.
     await page.goto("/leads")
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(leadTitle)
+    await visiblePlaceholder(page, /search/i).fill(leadTitle)
     await expect(
       page.getByTestId(`convert-lead-${createdLeadId}`),
     ).toHaveCount(0, { timeout: 10_000 })

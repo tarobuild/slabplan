@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Copy, Loader2, Mail, Plus, RotateCw, Send, UserPlus } from "lucide-react"
+import { Copy, Loader2, Mail, Plus, RotateCw, UserPlus } from "lucide-react"
 import { toast } from "sonner"
 import {
   getUsersGetUsersQueryKey,
@@ -8,7 +8,6 @@ import {
   usersPatchUsersId,
   usersPostUsers,
   usersPostUsersIdInvite,
-  usersPostUsersIdInviteResend,
   type UsersInviteUserSchema,
   type UsersUpdateUserSchema,
 } from "@workspace/api-client-react"
@@ -54,7 +53,7 @@ type AdminUser = {
   id: string
   email: string
   fullName: string
-  role: "admin" | "project_manager" | "crew_member"
+  role: "admin" | "project_manager" | "crew_member" | "drafter"
   phone: string | null
   avatarUrl: string | null
   createdAt: string
@@ -85,6 +84,7 @@ const ROLE_OPTIONS: Array<{ value: AdminUser["role"]; label: string }> = [
   { value: "admin", label: "Admin" },
   { value: "project_manager", label: "Project manager" },
   { value: "crew_member", label: "Crew member" },
+  { value: "drafter", label: "Drafter" },
 ]
 
 function roleLabel(role: AdminUser["role"]) {
@@ -98,6 +98,10 @@ function buildAbsoluteInviteLink(invitePath: string): string {
   // so we don't double-up slashes when combining with origin.
   const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "")
   return `${window.location.origin}${base}${invitePath}`
+}
+
+function resolveInviteLink(invite: Pick<InviteResponse, "invitePath" | "inviteUrl">): string {
+  return invite.inviteUrl?.trim() || buildAbsoluteInviteLink(invite.invitePath)
 }
 
 async function copyToClipboard(value: string) {
@@ -151,7 +155,7 @@ export default function UsersPage() {
 
   const [pendingPatchId, setPendingPatchId] = useState<string | null>(null)
   const [reissuingId, setReissuingId] = useState<string | null>(null)
-  const [resendingId, setResendingId] = useState<string | null>(null)
+  const latestInviteLink = latestInvite ? resolveInviteLink(latestInvite) : ""
 
   const refreshList = () =>
     queryClient.invalidateQueries({
@@ -179,8 +183,8 @@ export default function UsersPage() {
           `Invite emailed to ${response.user.email}. The setup link is also shown below in case you need to copy it.`,
         )
       } else if (response.emailDelivery?.emailError) {
-        toast.error(
-          `Failed to send invite — copy this link and share it with ${response.user.fullName}.`,
+        toast.info(
+          `Invite created for ${response.user.fullName}. Email was not sent, so copy the setup link below.`,
         )
       } else {
         toast.success(
@@ -241,30 +245,6 @@ export default function UsersPage() {
     )
   }
 
-  const handleResend = async (user: AdminUser) => {
-    setResendingId(user.id)
-    try {
-      const response = (await usersPostUsersIdInviteResend(
-        user.id,
-      )) as InviteResponse
-      if (response.emailDelivery?.emailed) {
-        toast.success(`Setup email re-sent to ${user.email}`)
-      } else if (response.emailDelivery?.emailError) {
-        toast.error(
-          `Resend failed — copy the existing setup link and share it manually.`,
-        )
-        setLatestInvite(response)
-      } else {
-        toast.success(`Setup email re-sent to ${user.fullName}`)
-      }
-      await refreshList()
-    } catch (err: unknown) {
-      toastApiError(err, "Failed to resend invite email")
-    } finally {
-      setResendingId(null)
-    }
-  }
-
   const handleReissue = async (user: AdminUser) => {
     if (
       !window.confirm(
@@ -280,8 +260,8 @@ export default function UsersPage() {
       if (response.emailDelivery?.emailed) {
         toast.success(`New setup link emailed to ${user.email}`)
       } else if (response.emailDelivery?.emailError) {
-        toast.error(
-          `New setup link generated, but the email failed to send — copy the link below.`,
+        toast.info(
+          `New setup link generated. Email was not sent, so copy the link below.`,
         )
       } else {
         toast.success(`New setup link generated for ${user.fullName}`)
@@ -300,7 +280,7 @@ export default function UsersPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Team Members</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Invite workers, change their role, or deactivate accounts. Only
+            Invite workers and drafters, change their role, or deactivate accounts. Only
             admins see this page.
           </p>
         </div>
@@ -324,14 +304,17 @@ export default function UsersPage() {
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-2">
           <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
             <Mail className="size-4" />
-            Setup link for {latestInvite.user.fullName} — copy it now and share
-            it with them. The link expires{" "}
+            Setup link for {latestInvite.user.fullName}
+            {latestInvite.emailDelivery?.emailed
+              ? " was emailed and is ready to copy if needed."
+              : " is ready to copy and share."}{" "}
+            The link expires{" "}
             {new Date(latestInvite.inviteTokenExpiresAt).toLocaleString()}.
           </div>
           <div className="flex items-center gap-2">
             <Input
               readOnly
-              value={buildAbsoluteInviteLink(latestInvite.invitePath)}
+              value={latestInviteLink}
               onFocus={(e) => e.currentTarget.select()}
               className="font-mono text-xs"
             />
@@ -339,11 +322,7 @@ export default function UsersPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() =>
-                copyToClipboard(
-                  buildAbsoluteInviteLink(latestInvite.invitePath),
-                )
-              }
+              onClick={() => copyToClipboard(latestInviteLink)}
             >
               <Copy className="size-3.5" />
             </Button>
@@ -357,10 +336,9 @@ export default function UsersPage() {
             </Button>
           </div>
           <p className="text-xs text-amber-800">
-            Once dismissed, this banner won't be shown again. If the invitee
-            says they never received the email, click "Resend email" on their
-            row to send the same link again. Use "Reissue link" only if you
-            need to invalidate the existing link and start fresh.
+            The invitee will confirm their work email and create their password
+            when they open this one-time setup link. Once dismissed, this banner
+            won't be shown again.
           </p>
         </div>
       ) : null}
@@ -481,25 +459,6 @@ export default function UsersPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {inviteOutstanding && !inviteExpired ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleResend(user)}
-                            disabled={resendingId === user.id || !active}
-                            title="Re-send the existing setup email without invalidating the current link"
-                          >
-                            {resendingId === user.id ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <Send className="size-3.5" />
-                            )}
-                            <span className="ml-1.5 hidden sm:inline">
-                              Resend email
-                            </span>
-                          </Button>
-                        ) : null}
                         <Button
                           type="button"
                           variant="outline"

@@ -4,9 +4,21 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./http": "./src/http-transport.ts",
-    "./stdio": "./src/stdio.ts"
+    ".": {
+      "workspace": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./http": {
+      "workspace": "./src/http-transport.ts",
+      "types": "./dist/http-transport.d.ts",
+      "default": "./dist/http-transport.js"
+    },
+    "./stdio": {
+      "workspace": "./src/stdio.ts",
+      "types": "./dist/stdio.d.ts",
+      "default": "./dist/stdio.js"
+    }
   },
   "bin": {
     "cadstone-mcp": "./bin/cadstone-mcp.mjs"
@@ -16,6 +28,7 @@
     "stdio": "MCP_STDIO_DIRECT=1 tsx ./src/stdio.ts"
   },
   "dependencies": {
+    "@workspace/api-zod": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "tsx": "catalog:",
     "zod": "catalog:"

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { CESAR, authHeaders, loginViaApi } from "./helpers/auth"
+import { visibleText } from "./helpers/locators"
 import { CESAR_STATE } from "./helpers/storage"
 
 test.use({ storageState: CESAR_STATE })
@@ -39,13 +40,17 @@ test.describe("clients CRUD (UI)", () => {
 
     // CREATE — open New Client dialog, fill required field, submit.
     await page.getByRole("button", { name: /new client/i }).first().click()
+    const createDialog = page.getByRole("dialog", { name: /new client/i })
     await page.getByLabel("Company Name *").fill(companyName)
     await page.getByRole("button", { name: /^create client$/i }).click()
+    await expect(createDialog).toBeHidden({ timeout: 15_000 })
 
     // Cache invalidation should make the new row appear without a reload.
-    await expect(page.getByText(companyName).first()).toBeVisible({
+    await expect(visibleText(page, companyName)).toBeVisible({
       timeout: 15_000,
     })
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 10_000 })
 
     // Resolve the created id so afterAll cleanup is deterministic even if a
     // later assertion fails before the UI delete completes.
@@ -58,34 +63,28 @@ test.describe("clients CRUD (UI)", () => {
     expect(createdClientId).toBeTruthy()
 
     // EDIT — open the detail sheet, click the pencil, rename, save.
-    await page.getByText(companyName).first().click()
-    await page
-      .getByRole("button", { name: /edit client/i })
-      .first()
-      .click()
-    const companyInput = page.getByLabel("Company Name *")
+    await page.goto(`/clients?client=${createdClientId}`)
+    await page.locator('button[title="Edit client"]').first().click()
+    const companyInput = page.getByRole("dialog").locator("input").first()
     await companyInput.fill(renamedCompany)
     await page.getByRole("button", { name: /^save$/i }).click()
 
     // The sheet stays open with the renamed title; the underlying list also
     // updates via the mutation hook's invalidation.
-    await expect(page.getByText(renamedCompany).first()).toBeVisible({
+    await expect(visibleText(page, renamedCompany)).toBeVisible({
       timeout: 10_000,
     })
 
     // Close the sheet so the list is the only thing rendering the name,
     // then assert the list shows the renamed entry without a reload.
     await page.keyboard.press("Escape")
-    await expect(page.getByText(renamedCompany).first()).toBeVisible({
+    await expect(visibleText(page, renamedCompany)).toBeVisible({
       timeout: 10_000,
     })
 
     // DELETE — open sheet again, click trash, confirm in the AlertDialog.
-    await page.getByText(renamedCompany).first().click()
-    await page
-      .getByRole("button", { name: /delete client/i })
-      .first()
-      .click()
+    await page.goto(`/clients?client=${createdClientId}`)
+    await page.locator('button[title="Delete client"]').first().click()
     await expect(
       page.getByRole("alertdialog").getByText(/delete client\?/i),
     ).toBeVisible()

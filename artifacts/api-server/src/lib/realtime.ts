@@ -1,8 +1,8 @@
 import type { Server as HttpServer } from "node:http";
+import type { Socket } from "socket.io";
 import { Server } from "socket.io";
-import { ACCESS_TOKEN_TTL_SECONDS, verifyAccessToken } from "./auth";
-import { assertActiveAuthUser } from "./active-user";
-import { attachOrganizationContext } from "./auth-organization";
+import { ACCESS_TOKEN_TTL_SECONDS } from "./auth";
+import { resolveInteractiveAccessToken } from "./access-token";
 import { redactRealtimePayloadForAuth } from "./activity-visibility";
 import {
   isAdmin,
@@ -29,6 +29,47 @@ async function listRealtimeScopeIds(auth: NonNullable<Express.Request["auth"]>) 
   return Array.from(new Set([...(jobIds ?? []), ...(leadIds ?? [])]));
 }
 
+function stringScopeIds(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((scopeId: unknown): scopeId is string => typeof scopeId === "string")
+    : [];
+}
+
+type RealtimeRoomSocket = Pick<Socket, "id" | "join" | "leave"> & {
+  data: {
+    auth?: NonNullable<Express.Request["auth"]>;
+    scopeIds?: string[] | null;
+  };
+};
+
+export async function reconcileRealtimeRooms(
+  socket: RealtimeRoomSocket,
+  auth: NonNullable<Express.Request["auth"]>,
+  nextScopeIds: string[] | null,
+) {
+  const previousScopeIds = stringScopeIds(socket.data.scopeIds);
+  const nextScopeIdSet = new Set(nextScopeIds ?? []);
+
+  await Promise.all(
+    previousScopeIds
+      .filter((scopeId) => !nextScopeIdSet.has(scopeId))
+      .map((scopeId) => socket.leave(scopeId)),
+  );
+
+  if (isAdmin(auth)) {
+    await socket.join(adminRoom);
+  } else {
+    await socket.leave(adminRoom);
+  }
+
+  if (nextScopeIds && nextScopeIds.length > 0) {
+    await socket.join(nextScopeIds);
+  }
+
+  socket.data.auth = auth;
+  socket.data.scopeIds = nextScopeIds;
+}
+
 export function initRealtime(server: HttpServer) {
   if (io) {
     return io;
@@ -53,9 +94,8 @@ export function initRealtime(server: HttpServer) {
           throw new Error("Unauthorized");
         }
 
-        const auth = verifyAccessToken(token);
-        await assertActiveAuthUser(auth);
-        socket.data.auth = await attachOrganizationContext(auth);
+        const auth = await resolveInteractiveAccessToken(token);
+        socket.data.auth = auth;
         socket.data.accessToken = token;
         socket.data.scopeIds = await listRealtimeScopeIds(socket.data.auth);
       })
@@ -74,10 +114,8 @@ export function initRealtime(server: HttpServer) {
       }
 
       try {
-        const auth = verifyAccessToken(token);
-        await assertActiveAuthUser(auth);
-        socket.data.auth = await attachOrganizationContext(auth);
-        socket.data.scopeIds = await listRealtimeScopeIds(socket.data.auth);
+        const auth = await resolveInteractiveAccessToken(token);
+        await reconcileRealtimeRooms(socket, auth, await listRealtimeScopeIds(auth));
         return true;
       } catch (error) {
         logger.info(
@@ -106,26 +144,7 @@ export function initRealtime(server: HttpServer) {
         clearInterval(tokenRevalidationTimer);
       });
 
-      const scopeIds = Array.isArray(socket.data.scopeIds)
-        ? socket.data.scopeIds.filter((scopeId: unknown): scopeId is string => typeof scopeId === "string")
-        : [];
-
-      if (isAdmin(socket.data.auth)) {
-        void socket.join(adminRoom);
-      }
-
-      if (scopeIds.length > 0) {
-        void socket.join(scopeIds);
-      }
-
-      const requestedScopeId =
-        typeof socket.handshake.auth?.jobId === "string"
-          ? socket.handshake.auth.jobId
-          : null;
-
-      if (requestedScopeId && scopeIds.includes(requestedScopeId)) {
-        void socket.join(requestedScopeId);
-      }
+      const scopeIds = stringScopeIds(socket.data.scopeIds);
 
       logger.debug(
         {

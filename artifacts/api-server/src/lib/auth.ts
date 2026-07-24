@@ -263,7 +263,11 @@ export function clearUploadTokenCookie(res: Response): void {
   res.clearCookie(uploadCookieName, uploadCookieOptions);
 }
 
-export function sendAuthResponse(res: Response, user: PublicUser | User): void {
+export function sendAuthResponse(
+  res: Response,
+  user: PublicUser | User,
+  options: { includeRefreshToken?: boolean } = {},
+): void {
   const publicUser = toPublicUser(user);
   const accessToken = signAccessToken(publicUser);
   const refreshToken = signRefreshToken(publicUser);
@@ -275,6 +279,7 @@ export function sendAuthResponse(res: Response, user: PublicUser | User): void {
   res.json({
     accessToken,
     expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+    ...(options.includeRefreshToken ? { refreshToken } : {}),
     user: publicUser,
   });
 }

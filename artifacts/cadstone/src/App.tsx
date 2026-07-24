@@ -1,5 +1,12 @@
-import * as React from "react"
-import { createElement, lazy, Suspense, useEffect, useMemo, useState } from "react"
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react"
 import {
   createBrowserRouter,
   createRoutesFromElements,
@@ -20,6 +27,7 @@ import { FilePreviewProvider } from "@/components/files/file-preview-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { bootstrapAuthSession, FORBIDDEN_EVENT } from "@/lib/api"
+import { AppUpdateNotice } from "@/lib/app-release"
 import { configureApiClient, getQueryClient } from "@/lib/query-client"
 import { useAuthStore } from "@/store/auth"
 
@@ -28,6 +36,7 @@ import { useAuthStore } from "@/store/auth"
 // configuration in place.
 configureApiClient()
 const queryClient = getQueryClient()
+const AuthReadyContext = createContext(false)
 
 const ClientsPage = lazy(() => import("@/pages/clients"))
 const ClientDetailPage = lazy(() => import("@/pages/client-detail"))
@@ -85,7 +94,12 @@ function RouteLoadingScreen() {
   )
 }
 
-function ProtectedRoute({ ready }: { ready: boolean }) {
+function useAuthReady() {
+  return useContext(AuthReadyContext)
+}
+
+function ProtectedRoute() {
+  const ready = useAuthReady()
   const user = useAuthStore((state) => state.user)
 
   if (!ready) {
@@ -102,8 +116,8 @@ function ProtectedRoute({ ready }: { ready: boolean }) {
 export function FilesRedirect() {
   const user = useAuthStore((state) => state.user)
   const target =
-    user?.role === "admin" ? "/clients" : "/jobs"
-  return createElement(Navigate, { to: target, replace: true })
+    user?.role === "admin" ? "/clients" : user?.role === "drafter" ? "/schedule" : "/jobs"
+  return <Navigate to={target} replace />
 }
 
 function ForbiddenListener() {
@@ -134,7 +148,9 @@ function RootShell() {
   )
 }
 
-export function PublicOnlyRoute({ ready }: { ready: boolean }) {
+export function PublicOnlyRoute({ ready: readyOverride }: { ready?: boolean } = {}) {
+  const contextReady = useAuthReady()
+  const ready = readyOverride ?? contextReady
   const user = useAuthStore((state) => state.user)
 
   if (!ready) {
@@ -148,17 +164,17 @@ export function PublicOnlyRoute({ ready }: { ready: boolean }) {
   return <Outlet />
 }
 
-function buildRouter(ready: boolean, basename: string | undefined) {
+function buildRouter(basename: string | undefined) {
   return createBrowserRouter(
     createRoutesFromElements(
       <Route element={<RootShell />}>
-        <Route element={<PublicOnlyRoute ready={ready} />}>
+        <Route element={<PublicOnlyRoute />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
         </Route>
 
-        <Route element={<ProtectedRoute ready={ready} />}>
+        <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             {/*
               Home is role-aware (Task #321): crew gets "My Day", PM gets
@@ -203,6 +219,7 @@ function buildRouter(ready: boolean, basename: string | undefined) {
             <Route element={<RoleGate allow={ROLE_GATES.sales} />}>
               <Route path="/sales" element={<LeadsPage />} />
               <Route path="/sales/leads" element={<LeadsPage />} />
+              <Route path="/leads" element={<Navigate to="/sales/leads" replace />} />
             </Route>
             <Route element={<RoleGate allow={ROLE_GATES.clients} />}>
               <Route path="/clients" element={<ClientsPage />} />
@@ -218,8 +235,10 @@ function buildRouter(ready: boolean, basename: string | undefined) {
                 <Route path="jobs-by-stage" element={<ReportsJobsByStage />} />
               </Route>
             </Route>
-            <Route element={<RoleGate allow={ROLE_GATES.companyViews} redirectTo="/403" />}>
+            <Route element={<RoleGate allow={ROLE_GATES.schedule} redirectTo="/403" />}>
               <Route path="/schedule" element={<CompanySchedulePage />} />
+            </Route>
+            <Route element={<RoleGate allow={ROLE_GATES.dailyLogs} redirectTo="/403" />}>
               <Route path="/daily-logs" element={<CompanyDailyLogsPage />} />
             </Route>
             <Route path="/settings" element={<SettingsLayout />}>
@@ -274,14 +293,14 @@ function App() {
     }
   }, [])
 
-  // The router is rebuilt when `ready` flips so the route guards see the
-  // latest auth state. `basename` is stable for the app lifetime.
-  const router = useMemo(() => buildRouter(ready, basename), [ready, basename])
+  const router = useMemo(() => buildRouter(basename), [basename])
 
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <AuthReadyContext.Provider value={ready}>
+          <RouterProvider router={router} />
+        </AuthReadyContext.Provider>
         <Toaster
           position="top-right"
           duration={4000}
@@ -294,6 +313,7 @@ function App() {
             },
           }}
         />
+        <AppUpdateNotice />
       </QueryClientProvider>
     </ErrorBoundary>
   )

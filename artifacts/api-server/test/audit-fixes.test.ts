@@ -297,8 +297,8 @@ before(async () => {
     },
   ]);
 
-  // Agent conversations seed — half pinned, all owned by the admin account
-  // because the assistant surface is admin-only.
+  // Agent conversations seed — half pinned, all owned by the admin user
+  // because assistant routes are admin-only.
   // lastMessageAt strictly decreasing so the (pinned, lastMessageAt, id)
   // walk is fully deterministic. Pinned rows sort to page 1 first.
   const baseTime = Date.now();
@@ -1069,6 +1069,62 @@ test("POST /leads/:id/convert-to-job — body-driven conversion + convertedJob l
     if (createdJobId) {
       await db.delete(jobs).where(eq(jobs.id, createdJobId));
     }
+    await db.delete(leads).where(eq(leads.id, lead.id));
+  }
+});
+
+test("POST /leads/:id/convert-to-job rejects non-assignable job assignees before creating a job", async () => {
+  const { db } = await import("@workspace/db");
+  const { leads, jobs } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+
+  const [lead] = await db
+    .insert(leads)
+    .values({
+      title: `ZZZ Audit invalid assignee lead ${crypto.randomUUID()}`,
+      status: "qualified",
+      streetAddress: "100 Invalid Assignee Way",
+      city: "Leadville",
+      state: "CA",
+      zipCode: "90210",
+      createdBy: adminUserId,
+    })
+    .returning();
+
+  const overrideTitle = `ZZZ invalid assignee job ${crypto.randomUUID()}`;
+
+  try {
+    const convertRes = await fetch(
+      `${baseUrl}/api/leads/${lead.id}/convert-to-job`,
+      {
+        method: "POST",
+        headers: jsonHeaders(adminToken),
+        body: JSON.stringify({
+          clientId,
+          job: {
+            title: overrideTitle,
+            assigneeIds: [adminUserId],
+          },
+        }),
+      },
+    );
+    assert.equal(convertRes.status, 400);
+    const body = (await convertRes.json()) as { message?: string };
+    assert.match(body.message ?? "", /assignees are invalid/i);
+
+    const createdJobs = await db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(eq(jobs.title, overrideTitle));
+    assert.equal(createdJobs.length, 0);
+
+    const [unchangedLead] = await db
+      .select({ status: leads.status })
+      .from(leads)
+      .where(eq(leads.id, lead.id));
+    assert.equal(unchangedLead.status, "qualified");
+  } finally {
+    await db.delete(jobs).where(eq(jobs.title, overrideTitle));
     await db.delete(leads).where(eq(leads.id, lead.id));
   }
 });

@@ -7,9 +7,9 @@ const source = readFileSync(new URL("./PendingChangeOrdersPage.tsx", import.meta
 test("pending change orders drill-down warns when the dashboard sample is incomplete", () => {
   assert.match(
     source,
-    /data\.atRisk\.pendingChangeOrders > data\.atRisk\.samples\.pendingChangeOrders\.length/,
+    /data\.atRisk\.pendingChangeOrders\s*>\s*data\.atRisk\.samples\.pendingChangeOrders\.length/,
   )
-  assert.match(source, /Showing \{data\.atRisk\.samples\.pendingChangeOrders\.length\} sampled change orders out of \{data\.atRisk\.pendingChangeOrders\}/)
+  assert.match(source, /Showing \{data\.atRisk\.samples\.pendingChangeOrders\.length\}[\s\S]*?sampled change orders out of \{data\.atRisk\.pendingChangeOrders\}/)
   assert.match(source, /Open the job financials report for the full list/)
 })
 

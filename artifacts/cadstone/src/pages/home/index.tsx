@@ -6,12 +6,13 @@ import { toastApiError } from "@/lib/api-errors"
 import { useAuthStore } from "@/store/auth"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import AdminHomePage from "./AdminHomePage"
+import DrafterHomePage from "./DrafterHomePage"
 import MyDayPage from "./MyDayPage"
 import PMHomePage from "./PMHomePage"
-import type { AdminHome, CrewHome, PmHome } from "./types"
+import type { AdminHome, CrewHome, DrafterHome, PmHome } from "./types"
 
 // One endpoint, three layouts. The backend already discriminates the
-// payload by role (`crew | pm | admin`); this component just dispatches to
+// payload by role (`crew | pm | drafter | admin`); this component dispatches to
 // the matching React tree. Falling back to MyDayPage for unknown shapes
 // keeps the page from blanking if the user role and payload role somehow
 // disagree (e.g. mid-deploy).
@@ -59,5 +60,6 @@ export default function HomePage() {
 
   if (data.role === "admin") return <AdminHomePage data={data as AdminHome} />
   if (data.role === "pm") return <PMHomePage data={data as PmHome} />
+  if (data.role === "drafter") return <DrafterHomePage data={data as DrafterHome} />
   return <MyDayPage data={data as CrewHome} />
 }

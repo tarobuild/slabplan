@@ -1,21 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useParams, useSearchParams } from "react-router-dom"
+import { useParams } from "react-router-dom"
 import { useDropzone } from "react-dropzone"
 import {
   AlertTriangle,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
   File,
   FileText,
   Folder,
   FolderOpen,
   Grid2X2,
+  ImageIcon,
   List,
   Loader2,
   MoreHorizontal,
   Play,
   Plus,
+  Scissors,
+  Square,
+  Trash2,
   Upload,
   X,
 } from "lucide-react"
@@ -62,7 +68,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   formatVideoDuration,
   probeVideoDurations,
+  DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
   uploadAcceptForMediaType,
+  uploadFileWithChunks,
   uploadWithProgress,
   validateSelectedFilesAsync,
   videoUploadHint,
@@ -78,14 +86,22 @@ type FolderItem = {
   fileCount: number
   parentFolderId: string | null
   createdAt: string
+  isGlobal: boolean
   viewingPermissions: FolderPermissions
   uploadingPermissions: FolderPermissions
+}
+
+type FolderTreeItem = FolderItem & {
+  mediaType: MediaType
+  path?: string
+  pathSegments?: string[]
 }
 
 type FolderPermissions = {
   admin?: boolean
   project_manager?: boolean
   crew_member?: boolean
+  drafter?: boolean
   internal?: boolean
   users?: Record<string, boolean>
 } | null
@@ -97,6 +113,37 @@ type FolderAssignee = {
   role: string
 }
 
+type FolderRolePermissionKey = "admin" | "project_manager" | "crew_member" | "drafter"
+
+const folderAccessRoles: Array<{
+  key: FolderRolePermissionKey
+  label: string
+  description: string
+  locked?: boolean
+}> = [
+  {
+    key: "admin",
+    label: "Admins",
+    description: "Always manage folders",
+    locked: true,
+  },
+  {
+    key: "project_manager",
+    label: "Project Managers",
+    description: "All project manager users",
+  },
+  {
+    key: "crew_member",
+    label: "Crew Workers",
+    description: "All crew users",
+  },
+  {
+    key: "drafter",
+    label: "Drafters",
+    description: "All drafter users",
+  },
+]
+
 type BreadcrumbItem = {
   id: string
   title: string
@@ -104,7 +151,6 @@ type BreadcrumbItem = {
 
 type FileItem = {
   id: string
-  folderId?: string
   filename: string
   originalName: string | null
   fileUrl: string | null
@@ -124,6 +170,12 @@ type FileItem = {
 type MediaType = "document" | "photo" | "video"
 type ViewMode = "grid" | "list"
 type ScopeMode = "job" | "resource"
+type BatchDestinationMode = "move" | "copy"
+type SignedFileUrlResponse = {
+  url: string
+  expiresAt?: string
+  expiresIn?: number
+}
 
 const SORT_OPTIONS = [
   "name-asc",
@@ -157,7 +209,7 @@ function fmtDate(d: string) {
 
 function FileIcon({ mimeType }: { mimeType: string | null }) {
   if (!mimeType) return <File className="size-4 text-slate-400" />
-  if (mimeType.startsWith("image/")) return <span className="text-primary text-sm">🖼️</span>
+  if (mimeType.startsWith("image/")) return <span className="text-blue-500 text-sm">🖼️</span>
   if (mimeType.startsWith("video/")) return <span className="text-purple-500 text-sm">🎬</span>
   if (mimeType === "application/pdf") return <span className="text-red-500 text-sm">📄</span>
   return <FileText className="size-4 text-slate-400" />
@@ -165,6 +217,28 @@ function FileIcon({ mimeType }: { mimeType: string | null }) {
 
 function displayName(file: FileItem) {
   return file.originalName || file.filename
+}
+
+function openLoadingTab(): Window | null {
+  const newWindow = window.open("about:blank", "_blank")
+  if (!newWindow) {
+    toast.error("Please allow pop-ups to view files in a new tab.")
+    return null
+  }
+
+  try {
+    newWindow.document.write(
+      '<!DOCTYPE html><title>Loading…</title>' +
+        '<body style="margin:0;display:flex;align-items:center;justify-content:center;' +
+        'height:100vh;font-family:sans-serif;color:#cbd5e1;background:#0f172a;">Loading…</body>',
+    )
+    newWindow.opener = null
+  } catch {
+    // about:blank is same-origin, but keep the open path resilient if a
+    // browser extension or policy blocks writes to the loading tab.
+  }
+
+  return newWindow
 }
 
 function explicitFolderPermission(
@@ -203,9 +277,46 @@ function updateFolderUserPermission(
   }
 }
 
+function folderRolePermissionAllows(
+  permissions: FolderPermissions,
+  role: FolderRolePermissionKey,
+) {
+  if (role === "admin") return true
+  if (permissions === null) return true
+  if (permissions.internal === true) return true
+  return permissions[role] === true
+}
+
+function expandFolderRolePermissions(
+  permissions: FolderPermissions,
+): NonNullable<FolderPermissions> {
+  const next: NonNullable<FolderPermissions> = { ...(permissions ?? {}) }
+
+  if (permissions === null || permissions?.internal === true) {
+    next.internal = false
+    next.admin = true
+    next.project_manager = true
+    next.crew_member = true
+    next.drafter = true
+  }
+
+  return next
+}
+
+function updateFolderRolePermission(
+  permissions: FolderPermissions,
+  role: FolderRolePermissionKey,
+  allowed: boolean,
+): FolderPermissions {
+  const next = expandFolderRolePermissions(permissions)
+  next[role] = allowed
+  return next
+}
+
 function roleLabel(role: string) {
   if (role === "project_manager") return "Project Manager"
   if (role === "crew_member") return "Crew Worker"
+  if (role === "drafter") return "Drafter"
   if (role === "admin") return "Admin"
   return role
 }
@@ -283,7 +394,7 @@ export default function FileBrowser({
   const resolvedDefault: ViewMode =
     defaultView ?? (mediaType === "document" ? "list" : "grid")
 
-	  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [currentFolder, setCurrentFolder] = useState<FolderItem | null>(null)
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([])
   const [folders, setFolders] = useState<FolderItem[]>([])
@@ -315,6 +426,15 @@ export default function FileBrowser({
 
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<FileItem | null>(null)
   const [deletingFile, setDeletingFile] = useState(false)
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(() => new Set())
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
+  const [batchDeleting, setBatchDeleting] = useState(false)
+  const [batchDestinationMode, setBatchDestinationMode] =
+    useState<BatchDestinationMode | null>(null)
+  const [destinationFolders, setDestinationFolders] = useState<FolderTreeItem[]>([])
+  const [destinationFolderId, setDestinationFolderId] = useState("")
+  const [destinationLoading, setDestinationLoading] = useState(false)
+  const [batchDestinationSaving, setBatchDestinationSaving] = useState(false)
 
   type UploadTask = {
     id: number
@@ -334,21 +454,46 @@ export default function FileBrowser({
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const [selectedUploadFiles, setSelectedUploadFiles] = useState<File[]>([])
   const [uploadNote, setUploadNote] = useState("")
-	  const fileInputRef = useRef<HTMLInputElement>(null)
-	  const uploadInFlightRef = useRef(false)
-	  const folderLoadSeqRef = useRef(0)
-	  const fileLoadSeqRef = useRef(0)
-  const deepLinkSeqRef = useRef(0)
-  const lastHandledDeepLinkRef = useRef<string | null>(null)
-  const [searchParams] = useSearchParams()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const filePreview = useFilePreview()
+  const currentFolderIdRef = useRef<string | null>(currentFolderId)
+  const folderLoadRequestRef = useRef(0)
+  const fileLoadRequestRef = useRef(0)
+
+  currentFolderIdRef.current = currentFolderId
+
+  function setActiveFolderId(folderId: string | null) {
+    currentFolderIdRef.current = folderId
+    setCurrentFolderId(folderId)
+  }
+
+  function clearFilesForFolderChange() {
+    fileLoadRequestRef.current += 1
+    setFiles([])
+    setFilesLoading(false)
+    setSelectedFileIds(new Set())
+  }
+
+  function isCurrentFolderLoad(requestId: number, parentId: string | null) {
+    return folderLoadRequestRef.current === requestId && currentFolderIdRef.current === parentId
+  }
+
+  function isCurrentFileLoad(requestId: number, folderId: string) {
+    return fileLoadRequestRef.current === requestId && currentFolderIdRef.current === folderId
+  }
 
   const loadFolders = (parentId: string | null = null) => {
-    const requestSeq = ++folderLoadSeqRef.current
+    if (currentFolderIdRef.current !== parentId) return
+    const requestId = ++folderLoadRequestRef.current
     setLoading(true)
     if (!isResourceScope && !jobId) {
-      setLoading(false)
+      if (isCurrentFolderLoad(requestId, parentId)) {
+        setFolders([])
+        setCurrentFolder(null)
+        setBreadcrumb([])
+        setLoading(false)
+      }
       return
     }
     const params = new URLSearchParams()
@@ -363,25 +508,27 @@ export default function FileBrowser({
           : `/jobs/${jobId}/folders?${params}`,
 	      )
 	      .then((r) => {
-          if (requestSeq !== folderLoadSeqRef.current) return
+        if (!isCurrentFolderLoad(requestId, parentId)) return
 	        setFolders(r.data.folders ?? [])
 	        setCurrentFolder(r.data.currentFolder ?? null)
 	        setBreadcrumb(r.data.breadcrumb ?? [])
 	      })
       .catch((err: unknown) => {
-        if (requestSeq === folderLoadSeqRef.current) {
-          toastApiError(err, "Failed to load folders")
-        }
+        if (!isCurrentFolderLoad(requestId, parentId)) return
+        setFolders([])
+        setBreadcrumb([])
+        toastApiError(err, "Failed to load folders")
       })
       .finally(() => {
-        if (requestSeq === folderLoadSeqRef.current) {
+        if (isCurrentFolderLoad(requestId, parentId)) {
           setLoading(false)
         }
       })
   }
 
-  const loadFiles = useCallback((folderId: string) => {
-    const requestSeq = ++fileLoadSeqRef.current
+  const loadFiles = (folderId: string) => {
+    if (currentFolderIdRef.current !== folderId) return
+    const requestId = ++fileLoadRequestRef.current
     setFilesLoading(true)
     api
       .get(
@@ -390,34 +537,42 @@ export default function FileBrowser({
           : `/folders/${folderId}/files?page=1&limit=100`,
       )
       .then((r) => {
-        if (requestSeq === fileLoadSeqRef.current) {
-          setFiles(r.data.files ?? [])
-        }
+        if (!isCurrentFileLoad(requestId, folderId)) return
+        setFiles(r.data.files ?? [])
       })
       .catch((err: unknown) => {
-        if (requestSeq === fileLoadSeqRef.current) {
-          toastApiError(err, "Failed to load files")
-        }
+        if (!isCurrentFileLoad(requestId, folderId)) return
+        setFiles([])
+        toastApiError(err, "Failed to load files")
       })
       .finally(() => {
-        if (requestSeq === fileLoadSeqRef.current) {
+        if (isCurrentFileLoad(requestId, folderId)) {
           setFilesLoading(false)
         }
       })
-  }, [isResourceScope])
+  }
 
 	  useEffect(() => {
-      folderLoadSeqRef.current += 1
-      fileLoadSeqRef.current += 1
-	    setCurrentFolderId(null)
+	    setActiveFolderId(null)
 	    setCurrentFolder(null)
-	    setFiles([])
+	    clearFilesForFolderChange()
 	    setBreadcrumb([])
     setUploadError(null)
     setSelectedUploadFiles([])
     setUploadNote("")
+    setBatchDeleteOpen(false)
+    setBatchDestinationMode(null)
+    setDestinationFolderId("")
 	    loadFolders(null)
 	  }, [jobId, mediaType, scope])
+
+  useEffect(() => {
+    const liveFileIds = new Set(files.map((file) => file.id))
+    setSelectedFileIds((prev) => {
+      const next = new Set(Array.from(prev).filter((fileId) => liveFileIds.has(fileId)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [files])
 
 	  useEffect(() => {
 	    if (user?.role !== "admin" || isResourceScope || !jobId) {
@@ -461,16 +616,17 @@ export default function FileBrowser({
   }
 
 	  const openFolder = (folder: FolderItem) => {
-	    setCurrentFolderId(folder.id)
+	    setActiveFolderId(folder.id)
 	    setCurrentFolder(folder)
+	    clearFilesForFolderChange()
 	    loadFolders(folder.id)
 	    loadFiles(folder.id)
 	  }
 
 	  const navigateTo = (folderId: string | null) => {
-	    setCurrentFolderId(folderId)
+	    setActiveFolderId(folderId)
 	    setCurrentFolder(folderId ? folders.find((folder) => folder.id === folderId) ?? null : null)
-	    setFiles([])
+	    clearFilesForFolderChange()
 	    loadFolders(folderId)
     if (folderId) loadFiles(folderId)
   }
@@ -568,23 +724,19 @@ export default function FileBrowser({
 
   const handleUploadSelection = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return
-    const targetFolderId = currentFolderId
-    if (!targetFolderId) return
-    if (uploadTask || uploadInFlightRef.current) {
+    if (uploadTask) {
       toast.info("Wait for the current upload to finish or cancel it first.")
       if (fileInputRef.current) fileInputRef.current.value = ""
       return
     }
-    uploadInFlightRef.current = true
     const nextFiles = Array.from(e.target.files)
     // Single helper runs the synchronous type/size/count checks and
     // then the async video-duration probe so a long clip is rejected
     // before the upload starts.
-    const validationError = await validateSelectedFilesAsync(nextFiles, mediaType)
+    const validationError = await validateSelectedFilesAsync(nextFiles, mediaType, jobFileValidationOptions)
 
     if (validationError) {
       setUploadError(validationError)
-      uploadInFlightRef.current = false
       if (fileInputRef.current) fileInputRef.current.value = ""
       return
     }
@@ -593,21 +745,18 @@ export default function FileBrowser({
       setUploadError(null)
       setSelectedUploadFiles(nextFiles)
       setUploadDialogOpen(true)
-      uploadInFlightRef.current = false
       return
     }
 
     // Instant upload — no dialog
     if (fileInputRef.current) fileInputRef.current.value = ""
-    uploadInFlightRef.current = false
-    void uploadFilesImmediately(nextFiles, undefined, targetFolderId)
+    void uploadFilesImmediately(nextFiles)
   }
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (uploadTask || uploadInFlightRef.current) return
-    const targetFolderId = currentFolderId
-    if (!targetFolderId || selectedUploadFiles.length === 0) {
+    if (uploadTask) return
+    if (!currentFolderId || selectedUploadFiles.length === 0) {
       setUploadError("Select at least one file to upload.")
       return
     }
@@ -617,67 +766,40 @@ export default function FileBrowser({
       return
     }
 
-    uploadInFlightRef.current = true
+    // Capture the per-file duration the same way the validator does so
+    // the server can persist it once instead of every render re-decoding
+    // the clip (Task #368). Probe failures yield null and we still
+    // upload — the column is purely a UX hint.
+    const durations = await probeVideoDurations(selectedUploadFiles)
     const controller = new AbortController()
     const totalBytes = selectedUploadFiles.reduce((sum, f) => sum + f.size, 0)
     const taskId = Date.now()
+    setUploadTask({
+      id: taskId,
+      fileNames: selectedUploadFiles.map((f) => f.name),
+      fileCount: selectedUploadFiles.length,
+      totalBytes,
+      loaded: 0,
+      percent: 0,
+      status: "uploading",
+      retryAttempt: 0,
+      retryReason: null,
+      abort: () => controller.abort(),
+    })
     try {
-      const formData = new FormData()
-      selectedUploadFiles.forEach((file) => formData.append("files", file))
-      if (uploadNote.trim()) {
-        formData.append("note", uploadNote.trim())
-      }
-      // Capture the per-file duration the same way the validator does so
-      // the server can persist it once instead of every render re-decoding
-      // the clip (Task #368). Probe failures yield null and we still
-      // upload — the column is purely a UX hint.
-      const durations = await probeVideoDurations(selectedUploadFiles)
-      if (durations.some((d) => d != null)) {
-        formData.append("videoDurations", JSON.stringify(durations))
-      }
-      setUploadTask({
-        id: taskId,
-        fileNames: selectedUploadFiles.map((f) => f.name),
-        fileCount: selectedUploadFiles.length,
+      await uploadFilesWithProgress({
+        files: selectedUploadFiles,
+        note: uploadNote.trim(),
+        durations,
+        controller,
+        taskId,
         totalBytes,
-        loaded: 0,
-        percent: 0,
-        status: "uploading",
-        retryAttempt: 0,
-        retryReason: null,
-        abort: () => controller.abort(),
-      })
-      await uploadWithProgress({
-        url: isResourceScope
-          ? `/resources/folders/${targetFolderId}/upload`
-          : `/folders/${targetFolderId}/files`,
-        formData,
-        signal: controller.signal,
-        onProgress: (p) =>
-          setUploadTask((prev) =>
-            prev && prev.id === taskId
-              ? {
-                  ...prev,
-                  loaded: p.loaded,
-                  totalBytes: p.total || prev.totalBytes,
-                  percent: p.percent,
-                  status: "uploading",
-                }
-              : prev,
-          ),
-        onRetry: (attempt, reason) => {
-          setUploadTask((prev) =>
-            prev && prev.id === taskId
-              ? { ...prev, status: "retrying", retryAttempt: attempt, retryReason: reason }
-              : prev,
-          )
-        },
       })
       toast.success(`${selectedUploadFiles.length} file(s) uploaded`)
       setUploadDialogOpen(false)
       setSelectedUploadFiles([])
       setUploadNote("")
-      loadFiles(targetFolderId)
+      loadFiles(currentFolderId)
     } catch (err: unknown) {
       if ((err as { code?: string })?.code === "UPLOAD_ABORTED") {
         toast.info("Upload cancelled")
@@ -685,185 +807,54 @@ export default function FileBrowser({
         toastApiError(err, "Upload failed")
       }
     } finally {
-      uploadInFlightRef.current = false
       setUploadTask(null)
       if (fileInputRef.current) fileInputRef.current.value = ""
     }
   }
 
-  const buildFileViewUrlForFolder = (fileId: string, folderId: string): string =>
-    isResourceScope
-      ? `/resources/folders/${folderId}/files/${fileId}/view`
-      : `/folders/${folderId}/files/${fileId}/view`
-
   const buildFileViewUrl = (fileId: string): string | null => {
     if (!currentFolderId) return null
-    return buildFileViewUrlForFolder(fileId, currentFolderId)
+    return isResourceScope
+      ? `/resources/folders/${currentFolderId}/files/${fileId}/view`
+      : `/folders/${currentFolderId}/files/${fileId}/view`
   }
 
-  const fileItemToPreviewForFolder = useCallback(
-    (file: FileItem, folderId: string): PreviewFile => ({
-      id: file.id,
-      fileId: file.id,
-      viewUrl: buildFileViewUrlForFolder(file.id, folderId),
-      name: displayName(file),
-      mimeType: file.mimeType,
-      fileSize: file.fileSize,
-      uploadedByName: file.uploadedByName,
-      createdAt: file.createdAt,
-    }),
-    [isResourceScope],
-  )
-
-  useEffect(() => {
-    const linkedFolderId = searchParams.get("folder")
-    const linkedFileId = searchParams.get("file")
-
-    if (!linkedFolderId && !linkedFileId) return
-    if (!isResourceScope && !jobId) return
-
-    const deepLinkKey = `${scope}:${jobId ?? ""}:${mediaType}:${linkedFolderId ?? ""}:${linkedFileId ?? ""}`
-    if (lastHandledDeepLinkRef.current === deepLinkKey) return
-
-    lastHandledDeepLinkRef.current = deepLinkKey
-    const requestSeq = ++deepLinkSeqRef.current
-    folderLoadSeqRef.current += 1
-    fileLoadSeqRef.current += 1
-
-    async function openDeepLink() {
-      try {
-        let targetFolderId = linkedFolderId
-        let targetFile: FileItem | null = null
-
-        if (linkedFileId) {
-          const fileResponse = await api.get<{ file: FileItem }>(`/files/${linkedFileId}`)
-          if (requestSeq !== deepLinkSeqRef.current) return
-          targetFile = fileResponse.data.file
-          targetFolderId = targetFile.folderId ?? targetFolderId
-        }
-
-        if (!targetFolderId) return
-
-        setCurrentFolderId(targetFolderId)
-        setCurrentFolder(null)
-        setFiles([])
-        setLoading(true)
-        setFilesLoading(true)
-
-        const params = new URLSearchParams()
-        if (!isResourceScope) params.set("mediaType", mediaType)
-        params.set("parentId", targetFolderId)
-
-        const [folderResponse, fileListResponse] = await Promise.all([
-          api.get(
-            isResourceScope
-              ? `/resources/folders?${params}`
-              : `/jobs/${jobId}/folders?${params}`,
-          ),
-          api.get(
-            isResourceScope
-              ? `/resources/folders/${targetFolderId}/files`
-              : `/folders/${targetFolderId}/files?page=1&limit=100`,
-          ),
-        ])
-
-        if (requestSeq !== deepLinkSeqRef.current) return
-
-        const loadedFiles: FileItem[] = fileListResponse.data.files ?? []
-        setFolders(folderResponse.data.folders ?? [])
-        setCurrentFolder(folderResponse.data.currentFolder ?? null)
-        setBreadcrumb(folderResponse.data.breadcrumb ?? [])
-        setFiles(loadedFiles)
-
-        if (linkedFileId) {
-          const fileToOpen = loadedFiles.find((file) => file.id === linkedFileId) ?? targetFile
-          if (fileToOpen) {
-            const previewFiles = loadedFiles.length > 0 ? loadedFiles : [fileToOpen]
-            const index = Math.max(
-              0,
-              previewFiles.findIndex((file) => file.id === fileToOpen.id),
-            )
-            filePreview.open(
-              previewFiles.map((file) => fileItemToPreviewForFolder(file, targetFolderId)),
-              index,
-            )
-          }
-        }
-      } catch (err: unknown) {
-        if (requestSeq === deepLinkSeqRef.current) {
-          toastApiError(err, "Failed to open linked file")
-        }
-      } finally {
-        if (requestSeq === deepLinkSeqRef.current) {
-          setLoading(false)
-          setFilesLoading(false)
-        }
-      }
+  const handleDownload = async (file: FileItem) => {
+    if (file.storageStatus === "missing" || !file.fileUrl) {
+      toast.error("This file isn't available to download.")
+      return
     }
 
-    void openDeepLink()
-  }, [fileItemToPreviewForFolder, filePreview, isResourceScope, jobId, mediaType, scope, searchParams])
-
-  const handleDownload = async (file: FileItem) => {
-    const url = buildFileViewUrl(file.id)
-    if (!url) return
+    const progressToast = toast.loading("Preparing download…")
     try {
-      const res = await api.get<Blob>(url, { responseType: "blob" })
-      const objectUrl = URL.createObjectURL(res.data)
-      const anchor = document.createElement("a")
-      anchor.href = objectUrl
-      anchor.download = displayName(file)
-      document.body.appendChild(anchor)
-      anchor.click()
-      document.body.removeChild(anchor)
-      URL.revokeObjectURL(objectUrl)
+      const res = await api.post<SignedFileUrlResponse>(`/files/${file.id}/signed-download`)
+      const signedUrl = res.data.url
+      if (!signedUrl) throw new Error("Missing signed download URL")
+      toast.dismiss(progressToast)
+      window.location.assign(signedUrl)
     } catch (err: unknown) {
+      toast.dismiss(progressToast)
       toastApiError(err, "Failed to download file")
     }
   }
 
   const handleViewInNewTab = (file: FileItem) => {
-    // PDFs are previewed in-app so users can use the markup tools.
-    // Other document types (Word, Excel, plain text, etc.) still open in a
-    // new browser tab via the existing blob-URL flow below.
-    if ((file.mimeType ?? "").toLowerCase().includes("pdf")) {
-      openFilePreview(file)
+    if (file.storageStatus === "missing" || !file.fileUrl) {
+      toast.error("This file isn't available to open.")
       return
     }
 
-    const url = buildFileViewUrl(file.id)
-    if (!url) return
-
-    // Open the new tab SYNCHRONOUSLY inside the click handler so the browser
-    // treats it as a direct user gesture. If we awaited the blob fetch before
-    // calling window.open, most browsers would block the popup. We intentionally
-    // omit "noopener" so we can assign the blob URL to newWindow.location after
-    // the fetch resolves — blob URLs are same-origin, so there's no cross-origin
-    // tab-napping risk here.
-    const newWindow = window.open("about:blank", "_blank")
-    if (!newWindow) {
-      toast.error("Please allow pop-ups to view files in a new tab.")
-      return
-    }
-
-    try {
-      newWindow.document.write(
-        '<!DOCTYPE html><title>Loading…</title>' +
-          '<body style="margin:0;display:flex;align-items:center;justify-content:center;' +
-          'height:100vh;font-family:sans-serif;color:#cbd5e1;background:#0f172a;">Loading…</body>',
-      )
-    } catch {
-      // about:blank is same-origin so this should not fail, but fall through
-      // gracefully if any browser prevents the write.
-    }
+    // Open the new tab synchronously inside the click handler so browsers keep
+    // treating it as a direct user action while we mint the signed URL.
+    const newWindow = openLoadingTab()
+    if (!newWindow) return
 
     api
-      .get<Blob>(url, { responseType: "blob" })
+      .post<SignedFileUrlResponse>(`/files/${file.id}/signed-view`)
       .then((res) => {
-        const objectUrl = URL.createObjectURL(res.data)
-        newWindow.location.replace(objectUrl)
-        // Delay revocation so the newly opened tab has time to load the blob.
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+        const signedUrl = res.data.url
+        if (!signedUrl) throw new Error("Missing signed view URL")
+        newWindow.location.replace(signedUrl)
       })
       .catch((err: unknown) => {
         try {
@@ -926,6 +917,157 @@ export default function FileBrowser({
     return arr
   }, [files, sortBy])
 
+  const batchSelectionEnabled = !isResourceScope
+  const selectedFiles = useMemo(
+    () => sortedFiles.filter((file) => selectedFileIds.has(file.id)),
+    [selectedFileIds, sortedFiles],
+  )
+  const selectedFileIdsList = useMemo(
+    () => selectedFiles.map((file) => file.id),
+    [selectedFiles],
+  )
+  const downloadableSelectedFiles = useMemo(
+    () => selectedFiles.filter((file) => file.storageStatus !== "missing" && !!file.fileUrl),
+    [selectedFiles],
+  )
+  const allVisibleFilesSelected =
+    sortedFiles.length > 0 && sortedFiles.every((file) => selectedFileIds.has(file.id))
+  const canBatchManageFiles = user?.role === "admin" && batchSelectionEnabled
+
+  const clearSelectedFiles = useCallback(() => {
+    setSelectedFileIds(new Set())
+  }, [])
+
+  const toggleFileSelection = useCallback((fileId: string) => {
+    setSelectedFileIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(fileId)) {
+        next.delete(fileId)
+      } else {
+        next.add(fileId)
+      }
+      return next
+    })
+  }, [])
+
+  const toggleAllVisibleFiles = useCallback(() => {
+    setSelectedFileIds((prev) => {
+      const next = new Set(prev)
+      if (sortedFiles.length > 0 && sortedFiles.every((file) => next.has(file.id))) {
+        for (const file of sortedFiles) next.delete(file.id)
+      } else {
+        for (const file of sortedFiles) next.add(file.id)
+      }
+      return next
+    })
+  }, [sortedFiles])
+
+  const handleBatchDownload = async () => {
+    const fileIds = downloadableSelectedFiles.map((file) => file.id)
+    if (fileIds.length === 0) return
+
+    try {
+      const res = await api.post<Blob>(
+        "/files/batch/download",
+        { fileIds },
+        { responseType: "blob" },
+      )
+      const objectUrl = URL.createObjectURL(res.data)
+      const anchor = document.createElement("a")
+      anchor.href = objectUrl
+      anchor.download = `selected-${mediaType}-files.zip`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      URL.revokeObjectURL(objectUrl)
+
+      const skippedCount = selectedFiles.length - downloadableSelectedFiles.length
+      if (skippedCount > 0) {
+        toast.info(
+          `Downloaded ${fileIds.length} file${fileIds.length === 1 ? "" : "s"}; skipped ${skippedCount} unavailable file${skippedCount === 1 ? "" : "s"}.`,
+        )
+      } else {
+        toast.success(`Downloaded ${fileIds.length} file${fileIds.length === 1 ? "" : "s"}`)
+      }
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to download selected files")
+    }
+  }
+
+  const openBatchDestinationDialog = async (mode: BatchDestinationMode) => {
+    if (!jobId || isResourceScope || selectedFiles.length === 0) return
+    setBatchDestinationMode(mode)
+    setDestinationFolderId("")
+    setDestinationLoading(true)
+
+    try {
+      const response = await api.get(`/jobs/${jobId}/folder-tree?mediaType=${mediaType}`)
+      const folders = (response.data.folders ?? []) as FolderTreeItem[]
+      setDestinationFolders(folders.filter((folder) => folder.id !== currentFolderId))
+    } catch (err: unknown) {
+      setBatchDestinationMode(null)
+      toastApiError(err, "Failed to load destination folders")
+    } finally {
+      setDestinationLoading(false)
+    }
+  }
+
+  const handleBatchDestinationSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!batchDestinationMode || !destinationFolderId || selectedFileIdsList.length === 0) return
+
+    setBatchDestinationSaving(true)
+    const endpoint =
+      batchDestinationMode === "move" ? "/files/batch/move" : "/files/batch/copy"
+    const verb = batchDestinationMode === "move" ? "moved" : "copied"
+
+    try {
+      await api.post(endpoint, {
+        fileIds: selectedFileIdsList,
+        destinationFolderId,
+      })
+      toast.success(
+        `${selectedFileIdsList.length} file${selectedFileIdsList.length === 1 ? "" : "s"} ${verb}`,
+      )
+      setBatchDestinationMode(null)
+      setDestinationFolderId("")
+      clearSelectedFiles()
+      if (currentFolderId) {
+        loadFiles(currentFolderId)
+        loadFolders(currentFolderId)
+      }
+    } catch (err: unknown) {
+      toastApiError(
+        err,
+        `Failed to ${batchDestinationMode === "move" ? "move" : "copy"} selected files`,
+      )
+    } finally {
+      setBatchDestinationSaving(false)
+    }
+  }
+
+  const handleBatchDeleteFiles = async () => {
+    if (selectedFileIdsList.length === 0) return
+    setBatchDeleting(true)
+
+    try {
+      await api.post("/files/batch/delete", { fileIds: selectedFileIdsList })
+      toast.success(
+        `${selectedFileIdsList.length} file${selectedFileIdsList.length === 1 ? "" : "s"} deleted`,
+      )
+      setBatchDeleteOpen(false)
+      clearSelectedFiles()
+      if (currentFolderId) {
+        loadFiles(currentFolderId)
+        loadFolders(currentFolderId)
+      }
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to delete selected files")
+    } finally {
+      setBatchDeleting(false)
+    }
+  }
+
   const fileItemToPreview = useCallback(
     (file: FileItem): PreviewFile => ({
       id: file.id,
@@ -966,54 +1108,44 @@ export default function FileBrowser({
 	    (user?.role === "admin" ||
 	      (!isResourceScope && currentFolderAllowsUpload))
 
-  const uploadFilesImmediately = useCallback(async (
-    files: File[],
-    note?: string,
-    targetFolderId = currentFolderId,
-  ) => {
-    if (!targetFolderId || files.length === 0) return
-    if (uploadTask || uploadInFlightRef.current) {
-      toast.info("Wait for the current upload to finish or cancel it first.")
-      return
-    }
-    setUploadError(null)
-    uploadInFlightRef.current = true
-    const controller = new AbortController()
-    const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
-    const taskId = Date.now()
-    try {
+  const jobFileValidationOptions = useMemo(
+    () => (isResourceScope ? undefined : { maxFileSizeBytes: Number.POSITIVE_INFINITY }),
+    [isResourceScope],
+  )
+
+  async function uploadFilesWithProgress(params: {
+    files: File[]
+    note?: string
+    durations: Array<number | null>
+    controller: AbortController
+    taskId: number
+    totalBytes: number
+  }) {
+    if (!currentFolderId) return
+    const shouldUseChunkedJobUpload =
+      !isResourceScope &&
+      (mediaType !== "document" ||
+        params.files.some((file) => file.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES))
+
+    if (!shouldUseChunkedJobUpload) {
       const formData = new FormData()
-      files.forEach((file) => formData.append("files", file))
-      if (note?.trim()) {
-        formData.append("note", note.trim())
+      params.files.forEach((file) => formData.append("files", file))
+      if (params.note?.trim()) {
+        formData.append("note", params.note.trim())
       }
-      // Same per-file duration capture as the dialog upload path — see
-      // Task #368.
-      const durations = await probeVideoDurations(files)
-      if (durations.some((d) => d != null)) {
-        formData.append("videoDurations", JSON.stringify(durations))
+      if (params.durations.some((d) => d != null)) {
+        formData.append("videoDurations", JSON.stringify(params.durations))
       }
-      setUploadTask({
-        id: taskId,
-        fileNames: files.map((f) => f.name),
-        fileCount: files.length,
-        totalBytes,
-        loaded: 0,
-        percent: 0,
-        status: "uploading",
-        retryAttempt: 0,
-        retryReason: null,
-        abort: () => controller.abort(),
-      })
+
       await uploadWithProgress({
         url: isResourceScope
-          ? `/resources/folders/${targetFolderId}/upload`
-          : `/folders/${targetFolderId}/files`,
+          ? `/resources/folders/${currentFolderId}/upload`
+          : `/folders/${currentFolderId}/files`,
         formData,
-        signal: controller.signal,
+        signal: params.controller.signal,
         onProgress: (p) =>
           setUploadTask((prev) =>
-            prev && prev.id === taskId
+            prev && prev.id === params.taskId
               ? {
                   ...prev,
                   loaded: p.loaded,
@@ -1025,14 +1157,115 @@ export default function FileBrowser({
           ),
         onRetry: (attempt, reason) => {
           setUploadTask((prev) =>
-            prev && prev.id === taskId
+            prev && prev.id === params.taskId
               ? { ...prev, status: "retrying", retryAttempt: attempt, retryReason: reason }
               : prev,
           )
         },
       })
+      return
+    }
+
+    let completedBytes = 0
+    for (const [index, file] of params.files.entries()) {
+      const updateProgress = (loadedForFile: number) => {
+        const loaded = Math.min(params.totalBytes, completedBytes + loadedForFile)
+        const percent =
+          params.totalBytes > 0 ? Math.round((loaded / params.totalBytes) * 100) : 100
+        setUploadTask((prev) =>
+          prev && prev.id === params.taskId
+            ? {
+                ...prev,
+                loaded,
+                totalBytes: params.totalBytes,
+                percent,
+                status: "uploading",
+              }
+            : prev,
+        )
+      }
+
+      if (mediaType !== "document" || file.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES) {
+        await uploadFileWithChunks({
+          folderId: currentFolderId,
+          file,
+          note: params.note,
+          videoDurationSeconds: params.durations[index] ?? null,
+          signal: params.controller.signal,
+          onProgress: (p) => updateProgress(p.loaded),
+          onRetry: (attempt, reason) => {
+            setUploadTask((prev) =>
+              prev && prev.id === params.taskId
+                ? { ...prev, status: "retrying", retryAttempt: attempt, retryReason: reason }
+                : prev,
+            )
+          },
+        })
+      } else {
+        const formData = new FormData()
+        formData.append("files", file)
+        if (params.note?.trim()) {
+          formData.append("note", params.note.trim())
+        }
+        if (params.durations[index] != null) {
+          formData.append("videoDurations", JSON.stringify([params.durations[index]]))
+        }
+        await uploadWithProgress({
+          url: `/folders/${currentFolderId}/files`,
+          formData,
+          signal: params.controller.signal,
+          onProgress: (p) => updateProgress(Math.min(file.size, p.loaded)),
+          onRetry: (attempt, reason) => {
+            setUploadTask((prev) =>
+              prev && prev.id === params.taskId
+                ? { ...prev, status: "retrying", retryAttempt: attempt, retryReason: reason }
+                : prev,
+            )
+          },
+        })
+      }
+
+      completedBytes += file.size
+      updateProgress(file.size)
+    }
+  }
+
+  async function uploadFilesImmediately(files: File[], note?: string) {
+    if (!currentFolderId || files.length === 0) return
+    if (uploadTask) {
+      toast.info("Wait for the current upload to finish or cancel it first.")
+      return
+    }
+    // Same per-file duration capture as the dialog upload path — see
+    // Task #368.
+    const durations = await probeVideoDurations(files)
+    setUploadError(null)
+    const controller = new AbortController()
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
+    const taskId = Date.now()
+    setUploadTask({
+      id: taskId,
+      fileNames: files.map((f) => f.name),
+      fileCount: files.length,
+      totalBytes,
+      loaded: 0,
+      percent: 0,
+      status: "uploading",
+      retryAttempt: 0,
+      retryReason: null,
+      abort: () => controller.abort(),
+    })
+    try {
+      await uploadFilesWithProgress({
+        files,
+        note,
+        durations,
+        controller,
+        taskId,
+        totalBytes,
+      })
       toast.success(`${files.length} file(s) uploaded`)
-      loadFiles(targetFolderId)
+      loadFiles(currentFolderId)
     } catch (err: unknown) {
       if ((err as { code?: string })?.code === "UPLOAD_ABORTED") {
         toast.info("Upload cancelled")
@@ -1040,27 +1273,26 @@ export default function FileBrowser({
         toastApiError(err, "Upload failed")
       }
     } finally {
-      uploadInFlightRef.current = false
       setUploadTask(null)
     }
-  }, [currentFolderId, isResourceScope, loadFiles, uploadTask])
+  }
 
   const onDrop = useCallback(
     async (droppedFiles: File[]) => {
       if (!canUploadFiles) return
-      const targetFolderId = currentFolderId
-      if (!targetFolderId) return
       // Refuse a second concurrent upload — we only track one task and
       // letting another overwrite it would corrupt the progress UI.
-      if (uploadTask || uploadInFlightRef.current) {
+      if (uploadTask) {
         toast.info("Wait for the current upload to finish or cancel it first.")
         return
       }
-      uploadInFlightRef.current = true
-      const validationError = await validateSelectedFilesAsync(droppedFiles, mediaType)
+      const validationError = await validateSelectedFilesAsync(
+        droppedFiles,
+        mediaType,
+        jobFileValidationOptions,
+      )
       if (validationError) {
         setUploadError(validationError)
-        uploadInFlightRef.current = false
         return
       }
       if (showCrewPhotoNote) {
@@ -1068,21 +1300,12 @@ export default function FileBrowser({
         setUploadError(null)
         setSelectedUploadFiles(droppedFiles)
         setUploadDialogOpen(true)
-        uploadInFlightRef.current = false
         return
       }
-      uploadInFlightRef.current = false
       // Instant upload — no dialog
-      void uploadFilesImmediately(droppedFiles, undefined, targetFolderId)
+      void uploadFilesImmediately(droppedFiles)
     },
-    [
-      canUploadFiles,
-      currentFolderId,
-      mediaType,
-      showCrewPhotoNote,
-      uploadTask,
-      uploadFilesImmediately,
-    ],
+    [canUploadFiles, currentFolderId, isResourceScope, mediaType, jobFileValidationOptions, showCrewPhotoNote, uploadTask],
   )
 
   const { getRootProps, getInputProps, isDragActive, open: openDropzone } = useDropzone({
@@ -1094,7 +1317,7 @@ export default function FileBrowser({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-sm min-w-0">
           <button
             onClick={() => navigateTo(null)}
@@ -1121,14 +1344,14 @@ export default function FileBrowser({
           ))}
         </div>
 
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-2 sm:shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <Select
             value={sortBy}
             onValueChange={(v) => {
               if (isSortOption(v)) setSortBy(v)
             }}
           >
-            <SelectTrigger className="h-9 w-full text-xs sm:h-8 sm:w-36">
+            <SelectTrigger className="h-8 w-36 text-xs">
               <SelectValue placeholder="Sort" />
             </SelectTrigger>
             <SelectContent>
@@ -1142,7 +1365,7 @@ export default function FileBrowser({
           </Select>
 
           {canToggleView && (
-            <div className="flex overflow-hidden rounded-md border border-[#E5E7EB]">
+            <div className="flex border border-[#E5E7EB] rounded-md overflow-hidden">
               <button
                 onClick={() => setViewMode("grid")}
                 className={`px-2 py-1.5 transition-colors ${
@@ -1186,7 +1409,6 @@ export default function FileBrowser({
                   fileInputRef.current?.click()
                 }}
                 disabled={uploading}
-                className="w-full justify-center sm:w-auto"
               >
                 {uploading ? (
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -1204,7 +1426,6 @@ export default function FileBrowser({
                 setNewFolderName("")
                 setCreateFolderOpen(true)
               }}
-              className="w-full justify-center sm:w-auto"
             >
               <Plus className="mr-1.5 size-3.5" />
               New Folder
@@ -1289,7 +1510,7 @@ export default function FileBrowser({
                   key={folder.id}
                   folder={folder}
                   isOpen={currentFolderId === folder.id}
-                  showActions={canManageFolders}
+                  showActions={canManageFolders && !folder.isGlobal}
                   onOpen={() => openFolder(folder)}
 	                  onRename={() => {
 	                    setRenameFolderTarget(folder)
@@ -1305,11 +1526,11 @@ export default function FileBrowser({
           {currentFolderId && (
             <div
               {...getRootProps()}
-              className={`relative mt-3 rounded-lg transition-colors ${isDragActive ? "ring-2 ring-primary/45 ring-dashed bg-accent/50" : ""}`}
+              className={`relative mt-3 rounded-lg transition-colors ${isDragActive ? "ring-2 ring-primary/40 ring-dashed bg-primary/10" : ""}`}
             >
-              <input {...getInputProps()} />
+              <input {...getInputProps({ className: "hidden" })} />
               {isDragActive && (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-primary/45 bg-accent/85">
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-primary/40 bg-primary/10/80">
                   <Upload className="mb-2 size-6 text-primary" />
                   <span className="text-sm font-medium text-primary">Drop files here</span>
                 </div>
@@ -1322,6 +1543,21 @@ export default function FileBrowser({
                 </div>
               ) : sortedFiles.length > 0 ? (
                 <div>
+                  {batchSelectionEnabled ? (
+                    <BatchFileSelectionToolbar
+                      selectedCount={selectedFiles.length}
+                      visibleCount={sortedFiles.length}
+                      allVisibleSelected={allVisibleFilesSelected}
+                      downloadableCount={downloadableSelectedFiles.length}
+                      canManage={canBatchManageFiles}
+                      onToggleAll={toggleAllVisibleFiles}
+                      onClear={clearSelectedFiles}
+                      onDownload={handleBatchDownload}
+                      onMove={() => void openBatchDestinationDialog("move")}
+                      onCopy={() => void openBatchDestinationDialog("copy")}
+                      onDelete={() => setBatchDeleteOpen(true)}
+                    />
+                  ) : null}
                   {mediaType === "photo" && viewMode === "grid" ? (
                     <PhotoGrid
                       files={sortedFiles}
@@ -1330,6 +1566,9 @@ export default function FileBrowser({
                       onDownload={handleDownload}
                       onRequestDelete={setDeleteConfirmFile}
                       canManageFile={canManageFile}
+                      selectionEnabled={batchSelectionEnabled}
+                      selectedFileIds={selectedFileIds}
+                      onToggleSelection={toggleFileSelection}
                     />
                   ) : mediaType === "video" && viewMode === "grid" ? (
                     <VideoGrid
@@ -1338,9 +1577,12 @@ export default function FileBrowser({
                       onDownload={handleDownload}
                       onRequestDelete={setDeleteConfirmFile}
                       canManageFile={canManageFile}
+                      selectionEnabled={batchSelectionEnabled}
+                      selectedFileIds={selectedFileIds}
+                      onToggleSelection={toggleFileSelection}
                     />
                   ) : (
-                    <FileList
+                    <FileTable
                       files={sortedFiles}
                       showDuration={mediaType === "video"}
                       mediaType={mediaType}
@@ -1350,17 +1592,20 @@ export default function FileBrowser({
                       onDownload={handleDownload}
                       onRequestDelete={setDeleteConfirmFile}
                       canManageFile={canManageFile}
+                      selectionEnabled={batchSelectionEnabled}
+                      selectedFileIds={selectedFileIds}
+                      onToggleSelection={toggleFileSelection}
                     />
                   )}
                   {canUploadFiles && (
                     <div
                       onClick={() => { setUploadError(null); openDropzone() }}
                       className={`mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-3 transition-colors ${
-                        isDragActive ? "border-primary/45 bg-primary/10" : "border-slate-300 hover:border-primary/45 hover:bg-accent/50"
+                        isDragActive ? "border-primary/40 bg-primary/10" : "border-slate-300 hover:border-primary/40 hover:bg-primary/10"
                       }`}
                     >
                       <Upload className="size-4 text-slate-400" />
-                      <span className="text-sm text-slate-500">Tap to upload files</span>
+                      <span className="text-sm text-slate-500">Drag files here or click to upload</span>
                     </div>
                   )}
                 </div>
@@ -1369,11 +1614,11 @@ export default function FileBrowser({
                   <div
                     onClick={() => { setUploadError(null); openDropzone() }}
                     className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed py-16 text-center transition-colors ${
-                      isDragActive ? "border-primary/45 bg-primary/10" : "border-slate-300 hover:border-primary/45 hover:bg-accent/50"
+                      isDragActive ? "border-primary/40 bg-primary/10" : "border-slate-300 hover:border-primary/40 hover:bg-primary/10"
                     }`}
                   >
                     <Upload className="mx-auto mb-3 size-8 text-slate-300" />
-                    <p className="text-sm font-medium text-slate-500">Tap to upload files</p>
+                    <p className="text-sm font-medium text-slate-500">Drag & drop files here, or click to upload</p>
                     {mediaType === "video" ? (
                       <p className="mt-1 text-xs text-slate-400">{videoUploadHint()}</p>
                     ) : null}
@@ -1388,11 +1633,11 @@ export default function FileBrowser({
                 <div
                   onClick={() => { setUploadError(null); openDropzone() }}
                   className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed py-8 text-center transition-colors ${
-                    isDragActive ? "border-primary/45 bg-primary/10" : "border-slate-300 hover:border-primary/45 hover:bg-accent/50"
+                    isDragActive ? "border-primary/40 bg-primary/10" : "border-slate-300 hover:border-primary/40 hover:bg-primary/10"
                   }`}
                 >
                   <Upload className="mb-2 size-5 text-slate-300" />
-                  <p className="text-sm text-slate-500">Tap to upload files</p>
+                  <p className="text-sm text-slate-500">Drag & drop files here, or click to upload</p>
                   {mediaType === "video" ? (
                     <p className="mt-1 text-xs text-slate-400">{videoUploadHint()}</p>
                   ) : null}
@@ -1441,11 +1686,9 @@ export default function FileBrowser({
           }
         }}
       >
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {mediaType === "photo" ? "Add a note for your photos" : "Upload files"}
-            </DialogTitle>
+            <DialogTitle>Add a note for your photos</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleUploadSubmit} className="space-y-4">
             <div className="text-sm text-slate-500">
@@ -1453,20 +1696,14 @@ export default function FileBrowser({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="upload-note">
-                {mediaType === "photo" ? "Note (required for field photos)" : "Note (optional)"}
-              </Label>
+              <Label htmlFor="upload-note">Note (required)</Label>
               <Input
                 id="upload-note"
                 value={uploadNote}
                 autoFocus
                 onChange={(event) => setUploadNote(event.target.value)}
-                placeholder={
-                  mediaType === "photo"
-                    ? "Describe the area or work shown in these photos"
-                    : "Add context for this upload"
-                }
-                required={showCrewPhotoNote}
+                placeholder="Describe the area or work shown in these photos"
+                required
                 disabled={uploading}
               />
             </div>
@@ -1516,7 +1753,7 @@ export default function FileBrowser({
               </div>
             ) : null}
 
-            <DialogFooter className="gap-2 sm:gap-0">
+            <DialogFooter>
               {uploading ? (
                 <Button
                   type="button"
@@ -1621,60 +1858,118 @@ export default function FileBrowser({
 	          <DialogHeader>
 	            <DialogTitle>Folder Access</DialogTitle>
 	          </DialogHeader>
-	          <div className="space-y-3 py-2">
-	            <div className="grid grid-cols-[1fr_72px_72px] items-center gap-3 border-b border-slate-200 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-	              <span>Person</span>
-	              <span className="text-center">View</span>
-	              <span className="text-center">Upload</span>
-	            </div>
-	            {folderAssignees.length === 0 ? (
-	              <div className="rounded-lg border border-slate-200 px-3 py-6 text-center text-sm text-slate-500">
-	                Assign people to this job first.
+	          <div className="space-y-5 py-2">
+	            <div className="space-y-2">
+	              <div className="px-1 text-sm font-semibold text-slate-900">Roles</div>
+	              <div className="grid grid-cols-[1fr_72px_72px] items-center gap-3 border-b border-slate-200 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+	                <span>Role</span>
+	                <span className="text-center">View</span>
+	                <span className="text-center">Upload</span>
 	              </div>
-	            ) : (
-	              folderAssignees.map((assignee) => {
-	                const canView = folderPermissionAllowsUser(accessViewingPermissions, assignee)
-	                const canUpload = folderPermissionAllowsUser(accessUploadingPermissions, assignee)
+	              {folderAccessRoles.map((role) => {
+	                const canView = folderRolePermissionAllows(accessViewingPermissions, role.key)
+	                const canUpload = folderRolePermissionAllows(accessUploadingPermissions, role.key)
 
 	                return (
 	                  <div
-	                    key={assignee.id}
+	                    key={role.key}
 	                    className="grid grid-cols-[1fr_72px_72px] items-center gap-3 rounded-lg border border-slate-200 px-3 py-2"
 	                  >
 	                    <div className="min-w-0">
 	                      <div className="truncate text-sm font-medium text-slate-900">
-	                        {assignee.fullName}
+	                        {role.label}
 	                      </div>
 	                      <div className="truncate text-xs text-slate-500">
-	                        {roleLabel(assignee.role)}
+	                        {role.description}
 	                      </div>
 	                    </div>
 	                    <div className="flex justify-center">
 	                      <Switch
 	                        checked={canView}
+	                        disabled={role.locked || savingFolderAccess}
 	                        onCheckedChange={(checked) =>
 	                          setAccessViewingPermissions((prev) =>
-	                            updateFolderUserPermission(prev, assignee.id, checked),
+	                            updateFolderRolePermission(prev, role.key, checked),
 	                          )
 	                        }
-	                        aria-label={`${assignee.fullName} can view ${accessFolderTarget?.title ?? "folder"}`}
+	                        aria-label={`${role.label} can view ${accessFolderTarget?.title ?? "folder"}`}
 	                      />
 	                    </div>
 	                    <div className="flex justify-center">
 	                      <Switch
 	                        checked={canUpload}
+	                        disabled={role.locked || savingFolderAccess}
 	                        onCheckedChange={(checked) =>
 	                          setAccessUploadingPermissions((prev) =>
-	                            updateFolderUserPermission(prev, assignee.id, checked),
+	                            updateFolderRolePermission(prev, role.key, checked),
 	                          )
 	                        }
-	                        aria-label={`${assignee.fullName} can upload to ${accessFolderTarget?.title ?? "folder"}`}
+	                        aria-label={`${role.label} can upload to ${accessFolderTarget?.title ?? "folder"}`}
 	                      />
 	                    </div>
 	                  </div>
 	                )
-	              })
-	            )}
+	              })}
+	            </div>
+
+	            <div className="space-y-2">
+	              <div className="px-1 text-sm font-semibold text-slate-900">People</div>
+	              <div className="grid grid-cols-[1fr_72px_72px] items-center gap-3 border-b border-slate-200 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+	                <span>Person</span>
+	                <span className="text-center">View</span>
+	                <span className="text-center">Upload</span>
+	              </div>
+	              {folderAssignees.length === 0 ? (
+	                <div className="rounded-lg border border-slate-200 px-3 py-6 text-center text-sm text-slate-500">
+	                  Assign people to this job first.
+	                </div>
+	              ) : (
+	                folderAssignees.map((assignee) => {
+	                  const canView = folderPermissionAllowsUser(accessViewingPermissions, assignee)
+	                  const canUpload = folderPermissionAllowsUser(accessUploadingPermissions, assignee)
+
+	                  return (
+	                    <div
+	                      key={assignee.id}
+	                      className="grid grid-cols-[1fr_72px_72px] items-center gap-3 rounded-lg border border-slate-200 px-3 py-2"
+	                    >
+	                      <div className="min-w-0">
+	                        <div className="truncate text-sm font-medium text-slate-900">
+	                          {assignee.fullName}
+	                        </div>
+	                        <div className="truncate text-xs text-slate-500">
+	                          {roleLabel(assignee.role)}
+	                        </div>
+	                      </div>
+	                      <div className="flex justify-center">
+	                        <Switch
+	                          checked={canView}
+	                          disabled={savingFolderAccess}
+	                          onCheckedChange={(checked) =>
+	                            setAccessViewingPermissions((prev) =>
+	                              updateFolderUserPermission(prev, assignee.id, checked),
+	                            )
+	                          }
+	                          aria-label={`${assignee.fullName} can view ${accessFolderTarget?.title ?? "folder"}`}
+	                        />
+	                      </div>
+	                      <div className="flex justify-center">
+	                        <Switch
+	                          checked={canUpload}
+	                          disabled={savingFolderAccess}
+	                          onCheckedChange={(checked) =>
+	                            setAccessUploadingPermissions((prev) =>
+	                              updateFolderUserPermission(prev, assignee.id, checked),
+	                            )
+	                          }
+	                          aria-label={`${assignee.fullName} can upload to ${accessFolderTarget?.title ?? "folder"}`}
+	                        />
+	                      </div>
+	                    </div>
+	                  )
+	                })
+	              )}
+	            </div>
 	          </div>
 	          <DialogFooter>
 	            <Button
@@ -1688,7 +1983,7 @@ export default function FileBrowser({
 	            <Button
 	              type="button"
 	              onClick={handleSaveFolderAccess}
-	              disabled={savingFolderAccess || folderAssignees.length === 0}
+	              disabled={savingFolderAccess}
 	            >
 	              {savingFolderAccess && <Loader2 className="mr-2 size-3.5 animate-spin" />}
 	              Save Access
@@ -1772,6 +2067,108 @@ export default function FileBrowser({
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={batchDeleteOpen}
+        onOpenChange={(open) => {
+          if (!open && !batchDeleting) setBatchDeleteOpen(false)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete selected files?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedFiles.length} selected file{selectedFiles.length === 1 ? "" : "s"} will be
+              moved to trash. An admin can restore them from the database within 30 days.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={batchDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                void handleBatchDeleteFiles()
+              }}
+              disabled={batchDeleting || selectedFileIdsList.length === 0}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {batchDeleting && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={batchDestinationMode !== null}
+        onOpenChange={(open) => {
+          if (!open && !batchDestinationSaving) {
+            setBatchDestinationMode(null)
+            setDestinationFolderId("")
+          }
+        }}
+      >
+        <DialogContent>
+          <form onSubmit={handleBatchDestinationSubmit} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>
+                {batchDestinationMode === "copy" ? "Copy selected files" : "Move selected files"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="batch-destination-folder">Destination folder</Label>
+              <Select
+                value={destinationFolderId}
+                onValueChange={setDestinationFolderId}
+                disabled={destinationLoading || batchDestinationSaving}
+              >
+                <SelectTrigger id="batch-destination-folder">
+                  <SelectValue
+                    placeholder={
+                      destinationLoading ? "Loading folders..." : "Choose a folder"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {destinationFolders.map((folder) => (
+                    <SelectItem key={folder.id} value={folder.id}>
+                      {folder.path ?? folder.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!destinationLoading && destinationFolders.length === 0 ? (
+                <p className="text-xs text-slate-500">No other folders available.</p>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setBatchDestinationMode(null)
+                  setDestinationFolderId("")
+                }}
+                disabled={batchDestinationSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  batchDestinationSaving ||
+                  destinationLoading ||
+                  !destinationFolderId ||
+                  selectedFileIdsList.length === 0
+                }
+              >
+                {batchDestinationSaving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                {batchDestinationMode === "copy" ? "Copy" : "Move"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }
@@ -1794,7 +2191,7 @@ function FolderCard({
 	  onDelete: () => void
 	}) {
   return (
-    <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-primary/20 hover:bg-accent/40 transition-colors cursor-pointer select-none">
+    <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-primary/20 hover:bg-primary/5 transition-colors cursor-pointer select-none">
       <button
         className="absolute inset-0 rounded-xl"
         onClick={onOpen}
@@ -1867,6 +2264,38 @@ function FolderCard({
   )
 }
 
+function SelectionToggleButton({
+  selected,
+  label,
+  className = "",
+  onToggle,
+}: {
+  selected: boolean
+  label: string
+  className?: string
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle()
+      }}
+      className={`inline-flex size-7 items-center justify-center rounded-md border transition-colors ${
+        selected
+          ? "border-primary/40 bg-primary/100 text-white"
+          : "border-slate-200 text-slate-500 hover:border-primary/40 hover:text-primary"
+      } ${className}`}
+      aria-pressed={selected}
+      aria-label={label}
+      title={label}
+    >
+      {selected ? <CheckSquare className="size-4" /> : <Square className="size-4" />}
+    </button>
+  )
+}
+
 function AuthPhoto({
   file,
   viewUrl,
@@ -1874,6 +2303,9 @@ function AuthPhoto({
   onDownload,
   onRequestDelete,
   canManage,
+  selectionEnabled,
+  selected,
+  onToggleSelection,
 }: {
   file: FileItem
   viewUrl: string | null
@@ -1881,6 +2313,9 @@ function AuthPhoto({
   onDownload: (file: FileItem) => void
   onRequestDelete: (file: FileItem) => void
   canManage: boolean
+  selectionEnabled: boolean
+  selected: boolean
+  onToggleSelection: () => void
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   // Start as hidden — only once the card has been in (or near) the viewport
@@ -1946,6 +2381,14 @@ function AuthPhoto({
           </div>
         </div>
 
+        {selectionEnabled ? (
+          <SelectionToggleButton
+            selected={selected}
+            label={`Select ${displayName(file)}`}
+            className="absolute top-1.5 left-1.5 z-10 bg-white/95 shadow-sm"
+            onToggle={onToggleSelection}
+          />
+        ) : null}
         <div className="absolute top-1.5 right-1.5 z-10">
           <FileActionsMenu
             file={file}
@@ -1962,14 +2405,16 @@ function AuthPhoto({
   return (
     <div
       ref={containerRef}
-      className="group relative flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-primary/35 transition-colors text-left"
+      className="group relative flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-primary/40 transition-colors text-left"
     >
       <button onClick={onClick} className="flex flex-col text-left">
         <div className="relative aspect-square overflow-hidden bg-slate-100">
           {!isVisible && (
-            <div className="w-full h-full" aria-hidden="true" />
+            <div className="flex h-full w-full items-center justify-center text-slate-300" aria-hidden="true">
+              <ImageIcon className="size-7" />
+            </div>
           )}
-          {isVisible && loading && (
+          {isVisible && loading && !blobUrl && (
             <div className="w-full h-full flex items-center justify-center">
               <Loader2 className="size-5 text-slate-300 animate-spin" />
             </div>
@@ -1982,8 +2427,9 @@ function AuthPhoto({
             />
           )}
           {isVisible && error && !loading && (
-            <div className="w-full h-full flex items-center justify-center text-slate-300">
-              <span className="text-3xl">🖼️</span>
+            <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-slate-400">
+              <ImageIcon className="size-7" />
+              <span className="text-[11px] font-medium">Preview unavailable</span>
             </div>
           )}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors" />
@@ -1997,6 +2443,14 @@ function AuthPhoto({
         </div>
       </button>
 
+      {selectionEnabled ? (
+        <SelectionToggleButton
+          selected={selected}
+          label={`Select ${displayName(file)}`}
+          className="absolute top-1.5 left-1.5 z-10 bg-white/95 shadow-sm"
+          onToggle={onToggleSelection}
+        />
+      ) : null}
       <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
         <FileActionsMenu
           file={file}
@@ -2011,6 +2465,126 @@ function AuthPhoto({
   )
 }
 
+function BatchFileSelectionToolbar({
+  selectedCount,
+  visibleCount,
+  allVisibleSelected,
+  downloadableCount,
+  canManage,
+  onToggleAll,
+  onClear,
+  onDownload,
+  onMove,
+  onCopy,
+  onDelete,
+}: {
+  selectedCount: number
+  visibleCount: number
+  allVisibleSelected: boolean
+  downloadableCount: number
+  canManage: boolean
+  onToggleAll: () => void
+  onClear: () => void
+  onDownload: () => void
+  onMove: () => void
+  onCopy: () => void
+  onDelete: () => void
+}) {
+  const hasSelection = selectedCount > 0
+
+  return (
+    <div className="mb-3 flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8"
+          onClick={onToggleAll}
+          disabled={visibleCount === 0}
+        >
+          {allVisibleSelected ? (
+            <CheckSquare className="mr-1.5 size-3.5" />
+          ) : (
+            <Square className="mr-1.5 size-3.5" />
+          )}
+          {allVisibleSelected ? "Deselect all" : "Select all"}
+        </Button>
+        <span className="text-xs font-medium text-slate-600">
+          {selectedCount} selected
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8"
+          onClick={onDownload}
+          disabled={downloadableCount === 0}
+          title="Download selected files as a ZIP"
+        >
+          <Download className="mr-1.5 size-3.5" />
+          ZIP
+        </Button>
+        {canManage ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={onCopy}
+              disabled={!hasSelection}
+              title="Copy selected files"
+            >
+              <Copy className="mr-1.5 size-3.5" />
+              Copy
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={onMove}
+              disabled={!hasSelection}
+              title="Move selected files"
+            >
+              <Scissors className="mr-1.5 size-3.5" />
+              Move
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={onDelete}
+              disabled={!hasSelection}
+              title="Delete selected files"
+            >
+              <Trash2 className="mr-1.5 size-3.5" />
+              Delete
+            </Button>
+          </>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-8 px-2"
+          onClick={onClear}
+          disabled={!hasSelection}
+          title="Clear selection"
+          aria-label="Clear selected files"
+        >
+          <X className="size-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function PhotoGrid({
   files,
   buildViewUrl,
@@ -2018,6 +2592,9 @@ function PhotoGrid({
   onDownload,
   onRequestDelete,
   canManageFile,
+  selectionEnabled,
+  selectedFileIds,
+  onToggleSelection,
 }: {
   files: FileItem[]
   buildViewUrl: (fileId: string) => string | null
@@ -2025,6 +2602,9 @@ function PhotoGrid({
   onDownload: (file: FileItem) => void
   onRequestDelete: (file: FileItem) => void
   canManageFile: (file: FileItem) => boolean
+  selectionEnabled: boolean
+  selectedFileIds: Set<string>
+  onToggleSelection: (fileId: string) => void
 }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -2037,6 +2617,9 @@ function PhotoGrid({
           onDownload={onDownload}
           onRequestDelete={onRequestDelete}
           canManage={canManageFile(file)}
+          selectionEnabled={selectionEnabled}
+          selected={selectedFileIds.has(file.id)}
+          onToggleSelection={() => onToggleSelection(file.id)}
         />
       ))}
     </div>
@@ -2049,17 +2632,24 @@ function VideoGrid({
   onDownload,
   onRequestDelete,
   canManageFile,
+  selectionEnabled,
+  selectedFileIds,
+  onToggleSelection,
 }: {
   files: FileItem[]
   onOpenPlayer: (file: FileItem) => void
   onDownload: (file: FileItem) => void
   onRequestDelete: (file: FileItem) => void
   canManageFile: (file: FileItem) => boolean
+  selectionEnabled: boolean
+  selectedFileIds: Set<string>
+  onToggleSelection: (fileId: string) => void
 }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
       {files.map((file) => {
         const isMissing = file.storageStatus === "missing"
+        const selected = selectedFileIds.has(file.id)
         if (isMissing) {
           return (
             <div
@@ -2073,6 +2663,14 @@ function VideoGrid({
                 </span>
                 <span className="text-[10px] truncate max-w-full">{displayName(file)}</span>
               </div>
+              {selectionEnabled ? (
+                <SelectionToggleButton
+                  selected={selected}
+                  label={`Select ${displayName(file)}`}
+                  className="absolute top-1.5 left-1.5 z-10 bg-white/95 shadow-sm"
+                  onToggle={() => onToggleSelection(file.id)}
+                />
+              ) : null}
               <div className="absolute top-1.5 right-1.5 z-10">
                 <FileActionsMenu
                   file={file}
@@ -2088,7 +2686,7 @@ function VideoGrid({
         return (
           <div
             key={file.id}
-            className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-primary/35 transition-colors text-left"
+            className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-primary/40 transition-colors text-left"
           >
             <button
               onClick={() => onOpenPlayer(file)}
@@ -2118,6 +2716,14 @@ function VideoGrid({
               </span>
             )}
 
+            {selectionEnabled ? (
+              <SelectionToggleButton
+                selected={selected}
+                label={`Select ${displayName(file)}`}
+                className="absolute top-1.5 left-1.5 z-10 bg-white/95 shadow-sm"
+                onToggle={() => onToggleSelection(file.id)}
+              />
+            ) : null}
             <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
               <FileActionsMenu
                 file={file}
@@ -2214,7 +2820,7 @@ function FileActionsMenu({
   )
 }
 
-function FileList({
+function FileTable({
   files,
   showDuration,
   mediaType,
@@ -2224,6 +2830,9 @@ function FileList({
   onDownload,
   onRequestDelete,
   canManageFile,
+  selectionEnabled,
+  selectedFileIds,
+  onToggleSelection,
 }: {
   files: FileItem[]
   showDuration?: boolean
@@ -2234,109 +2843,22 @@ function FileList({
   onDownload: (file: FileItem) => void
   onRequestDelete: (file: FileItem) => void
   canManageFile: (file: FileItem) => boolean
+  selectionEnabled: boolean
+  selectedFileIds: Set<string>
+  onToggleSelection: (fileId: string) => void
 }) {
   const showNotes = files.some((file) => !!file.note)
 
   return (
-    <>
-      <div className="space-y-2 md:hidden">
-        {files.map((file) => {
-          const label = displayName(file)
-          const isMissing = file.storageStatus === "missing"
-          const canPhoto = mediaType === "photo" && !!onOpenLightbox && !isMissing
-          const canVideo = mediaType === "video" && !!onOpenPlayer && !isMissing
-          const handleOpen = canPhoto
-            ? () => onOpenLightbox!(file)
-            : canVideo
-              ? () => onOpenPlayer!(file)
-              : () => onOpenInNewTab(file)
-
-          return (
-            <div
-              key={file.id}
-              className={`rounded-lg border bg-white p-3 ${
-                isMissing ? "border-amber-200 bg-amber-50/60" : "border-[#E5E7EB]"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={isMissing ? undefined : handleOpen}
-                  disabled={isMissing}
-                  className="flex min-w-0 flex-1 items-start gap-2 text-left disabled:cursor-default"
-                >
-                  {isMissing ? (
-                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
-                  ) : (
-                    <FileIcon mimeType={file.mimeType} />
-                  )}
-                  <span className="min-w-0">
-                    <span
-                      className={`block truncate text-sm font-medium ${
-                        isMissing
-                          ? "text-slate-700 line-through decoration-amber-400"
-                          : "text-primary"
-                      }`}
-                    >
-                      {label}
-                    </span>
-                    <span className="mt-1 block text-xs text-slate-500">
-                      {formatFileSize(file.fileSize)}
-                      {showDuration
-                        ? ` · ${
-                            file.durationSeconds != null
-                              ? formatVideoDuration(file.durationSeconds)
-                              : "No duration"
-                          }`
-                        : ""}
-                    </span>
-                    {isMissing ? (
-                      <span className="mt-1 block text-[11px] font-medium text-amber-700">
-                        Original file unavailable
-                      </span>
-                    ) : null}
-                    {file.note ? (
-                      <span className="mt-1 line-clamp-2 block text-xs text-slate-500">
-                        {file.note}
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-
-                <div className="flex shrink-0 items-center gap-1">
-                  {!isMissing && (
-                    <button
-                      type="button"
-                      onClick={() => onDownload(file)}
-                      className="inline-flex size-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                      aria-label={`Download ${label}`}
-                    >
-                      <Download className="size-4" />
-                    </button>
-                  )}
-                  <FileActionsMenu
-                    file={file}
-                    canManage={canManageFile(file)}
-                    onOpen={isMissing ? undefined : handleOpen}
-                    onDownload={onDownload}
-                    onRequestDelete={onRequestDelete}
-                    triggerAriaLabel={`Actions for ${label}`}
-                  />
-                </div>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
-                <span>{file.uploadedByName ?? "Unknown uploader"}</span>
-                <span>{fmtDate(file.createdAt)}</span>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-    <div className="hidden overflow-hidden rounded-lg border border-[#E5E7EB] bg-white md:block">
+    <div className="rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 border-b border-[#E5E7EB]">
           <tr>
+            {selectionEnabled ? (
+              <th className="w-10 px-3 py-2.5 text-left font-semibold text-slate-600">
+                <span className="sr-only">Select</span>
+              </th>
+            ) : null}
             <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Name</th>
             <th className="px-4 py-2.5 text-left font-semibold text-slate-600">Size</th>
             {showDuration && (
@@ -2361,6 +2883,7 @@ function FileList({
               : canVideo
                 ? () => onOpenPlayer!(file)
                 : () => onOpenInNewTab(file)
+            const selected = selectedFileIds.has(file.id)
             return (
               <tr
                 key={file.id}
@@ -2370,6 +2893,15 @@ function FileList({
                     : "group hover:bg-slate-50"
                 }
               >
+                {selectionEnabled ? (
+                  <td className="px-3 py-3">
+                    <SelectionToggleButton
+                      selected={selected}
+                      label={`Select ${label}`}
+                      onToggle={() => onToggleSelection(file.id)}
+                    />
+                  </td>
+                ) : null}
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     {isMissing ? (
@@ -2461,6 +2993,5 @@ function FileList({
         </tbody>
       </table>
     </div>
-    </>
   )
 }

@@ -15,6 +15,7 @@ import {
   findUserIdByEmail,
   requireAnyClient,
 } from "./helpers/api"
+import { visiblePlaceholder, visibleText } from "./helpers/locators"
 import { PM_STATE } from "./helpers/storage"
 
 /**
@@ -100,13 +101,10 @@ test.describe("golden path — PM (project_manager) positive flows", () => {
     // appear on the PM's /jobs list. This also proves the storageState
     // hydrated a logged-in session — an unauthenticated request would
     // bounce to /login instead.
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(seeded.jobId.slice(0, 12))
-    await expect(
-      page.getByText(/E2E GP pm-positive/i).first(),
-    ).toBeVisible({ timeout: 15_000 })
+    await visiblePlaceholder(page, /search/i).fill(seeded.jobId.slice(0, 12))
+    await expect(visibleText(page, /E2E GP pm-positive/i)).toBeVisible({
+      timeout: 15_000,
+    })
   })
 
   test("PM CAN edit own job, create a schedule item, and read financials", async ({
@@ -123,7 +121,11 @@ test.describe("golden path — PM (project_manager) positive flows", () => {
         ...authHeaders(pmToken),
         "Content-Type": "application/json",
       },
-      data: { title: `${jobId.slice(0, 8)} edited by pm` },
+      data: {
+        title: `${jobId.slice(0, 8)} edited by pm`,
+        clientId: seeded.clientId,
+        projectManagerId: seeded.pmId,
+      },
     })
     expect(
       editAsPm.ok(),

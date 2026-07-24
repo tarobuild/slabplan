@@ -1,21 +1,23 @@
-import { describe, it } from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { test } from "node:test"
+
 import {
   BreadcrumbsProvider,
   useBreadcrumbsOverride,
   useClearBreadcrumbs,
   useSetBreadcrumbs,
-  type BreadcrumbItem,
-} from "./use-breadcrumbs"
+} from "./use-breadcrumbs.tsx"
 
-describe("breadcrumb hook public API", () => {
-  it("exports page-facing setter and clearer hooks", () => {
-    assert.equal(typeof BreadcrumbsProvider, "function")
-    assert.equal(typeof useBreadcrumbsOverride, "function")
-    assert.equal(typeof useSetBreadcrumbs, "function")
-    assert.equal(typeof useClearBreadcrumbs, "function")
+const source = () => readFileSync(new URL("./use-breadcrumbs.tsx", import.meta.url), "utf8")
 
-    const item: BreadcrumbItem = { label: "Client", to: "/clients/123" }
-    assert.deepEqual(item, { label: "Client", to: "/clients/123" })
-  })
+test("breadcrumb override hooks are exported as the page-facing API", () => {
+  assert.equal(typeof BreadcrumbsProvider, "function")
+  assert.equal(typeof useSetBreadcrumbs, "function")
+  assert.equal(typeof useBreadcrumbsOverride, "function")
+  assert.equal(typeof useClearBreadcrumbs, "function")
+
+  const text = source()
+  assert.match(text, /export function useSetBreadcrumbs/)
+  assert.match(text, /export function useClearBreadcrumbs/)
 })

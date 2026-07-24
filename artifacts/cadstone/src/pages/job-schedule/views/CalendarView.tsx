@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
-import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
 import {
   classifyWorkday,
   dateKey,
@@ -76,7 +75,6 @@ interface CalendarViewProps {
   schedulePreview: SchedulePreview | null
   blockDrag: BlockDrag | null
   dragSelection: DragSelection | null
-  canWrite: boolean
   blockClickSuppressRef: MutableRefObject<string | null>
   isBlockDraggable: (item: ScheduleItemRecord) => boolean
   handleBlockPointerDown: (
@@ -91,6 +89,9 @@ interface CalendarViewProps {
   ) => void
   openExistingItem: (id: string) => void
   openQuickCreate: (day: string) => void
+  canWrite: boolean
+  canCreateScheduleItems: boolean
+  showTimesOnMonthView: boolean
   setAppliedFilters: Dispatch<SetStateAction<FilterState>>
   setDraftFilters: Dispatch<SetStateAction<FilterState>>
 }
@@ -121,13 +122,15 @@ export function CalendarView({
   schedulePreview,
   blockDrag,
   dragSelection,
-  canWrite,
   blockClickSuppressRef,
   isBlockDraggable,
   handleBlockPointerDown,
   handleTimedColumnPointerDown,
   openExistingItem,
   openQuickCreate,
+  canWrite,
+  canCreateScheduleItems,
+  showTimesOnMonthView,
   setAppliedFilters,
   setDraftFilters,
 }: CalendarViewProps) {
@@ -217,21 +220,21 @@ export function CalendarView({
             </div>
           ) : (
           <div className="space-y-3">
-          {activeItems.length === 0 && !calendarHintDismissed ? (
-            <div className="flex items-start justify-between gap-3 rounded-lg border border-primary/15 bg-primary/10 px-3 py-2 text-sm text-primary">
+          {canCreateScheduleItems && activeItems.length === 0 && !calendarHintDismissed ? (
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-sm text-blue-900">
               <div className="flex items-center gap-2">
-                <CalendarDays className="size-4 text-primary" />
+                <CalendarDays className="size-4 text-blue-600" />
                 <span>Click any day to add a schedule item.</span>
               </div>
               <button
                 type="button"
                 aria-label="Dismiss hint"
-                className="rounded p-0.5 text-primary/70 hover:bg-primary/10 hover:text-primary"
+                className="rounded p-0.5 text-blue-700/70 hover:bg-blue-100 hover:text-blue-900"
                 onClick={() => {
                   setCalendarHintDismissed(true)
                   if (typeof window !== "undefined" && jobId) {
                     try {
-                      window.sessionStorage.setItem(`${APP_STORAGE_NAMESPACE}:job-schedule:hint-dismissed:${jobId}`, "1")
+                      window.sessionStorage.setItem(`cadstone:job-schedule:hint-dismissed:${jobId}`, "1")
                     } catch {
                       /* ignore storage errors */
                     }
@@ -308,14 +311,15 @@ export function CalendarView({
                           <div
                             key={day}
                             className={cn(
-                              "border-r border-[#E5E7EB] p-2 last:border-r-0 cursor-pointer group/cell relative hover:bg-accent/40 transition-colors",
+                              "border-r border-[#E5E7EB] p-2 last:border-r-0 group/cell relative transition-colors",
+                              canCreateScheduleItems ? "cursor-pointer hover:bg-blue-50/40" : null,
                               workday.isWorkday
                                 ? isCurrentMonth
                                   ? "bg-white"
                                   : "bg-slate-50/70"
                                 : "bg-amber-50/70",
                             )}
-                            onClick={canWrite ? () => openQuickCreate(day) : undefined}
+                            onClick={canCreateScheduleItems ? () => openQuickCreate(day) : undefined}
                           >
                             <div className="flex items-start justify-between gap-2">
                               <span
@@ -336,7 +340,9 @@ export function CalendarView({
                                 </span>
                               ) : null}
                             </div>
-                            <span className="absolute bottom-1 right-1.5 text-slate-300 text-lg leading-none opacity-0 group-hover/cell:opacity-100 transition-opacity">+</span>
+                            {canCreateScheduleItems ? (
+                              <span className="absolute bottom-1 right-1.5 text-slate-300 text-lg leading-none opacity-0 group-hover/cell:opacity-100 transition-opacity">+</span>
+                            ) : null}
                           </div>
                         )
                       })}
@@ -369,6 +375,9 @@ export function CalendarView({
                             <span className="truncate">
                               {segment.item.isPersonalTodo ? (segment.item.isComplete ? "☑ " : "☐ ") : segment.item.isComplete ? "✓ " : ""}
                               {segment.item.title}
+                              {showTimesOnMonthView && segment.item.isHourly && segment.item.startTime
+                                ? ` · ${fmtClockRange(segment.item.startTime, segment.item.endTime)}`
+                                : ""}
                             </span>
                           </button>
                         ))}
@@ -573,10 +582,10 @@ export function CalendarView({
                       data-drop-target={isBlockDropTarget ? "true" : undefined}
                       className={cn(
                         "relative border-r border-[#E5E7EB] last:border-r-0 select-none touch-pan-y transition-colors",
-                        isBlockDropTarget && "bg-primary/15 ring-2 ring-inset ring-primary/35",
+                        isBlockDropTarget && "bg-primary/15 ring-2 ring-inset ring-primary/40",
                       )}
                       style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
-                      onPointerDown={canWrite ? (event) => handleTimedColumnPointerDown(event, dk) : undefined}
+                      onPointerDown={canCreateScheduleItems ? (event) => handleTimedColumnPointerDown(event, dk) : undefined}
                     >
                       {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }).map((_, hourIndex) => (
                         <div
@@ -593,7 +602,7 @@ export function CalendarView({
                         if (isDragged && blockDrag!.dayKey !== dk) {
                           return null
                         }
-                        const draggable = isBlockDraggable(segment.item)
+                        const draggable = canWrite && isBlockDraggable(segment.item)
                         const top = isDragged
                           ? (blockDrag!.startMinutes / 60) * HOUR_HEIGHT + 4
                           : (segment.startHour - DAY_START_HOUR) * HOUR_HEIGHT + 4
@@ -624,7 +633,7 @@ export function CalendarView({
                                 : "text-white",
                               activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
                               draggable && "cursor-grab active:cursor-grabbing",
-                              isDragged && "z-20 cursor-grabbing ring-2 ring-primary/35 shadow-lg",
+                              isDragged && "z-20 cursor-grabbing ring-2 ring-primary/40 shadow-lg",
                             )}
                             style={{
                               top,
@@ -638,7 +647,7 @@ export function CalendarView({
                                 ? (segment.item.displayColor || DEFAULT_SCHEDULE_COLOR)
                                 : colorWithAlpha(segment.item.displayColor, 0.75),
                             }}
-                            onPointerDown={(event) => handleBlockPointerDown(event, segment.item, dk, "move")}
+                            onPointerDown={draggable ? (event) => handleBlockPointerDown(event, segment.item, dk, "move") : undefined}
                             onClick={() => {
                               if (blockClickSuppressRef.current === segment.item.id) {
                                 blockClickSuppressRef.current = null
@@ -693,7 +702,7 @@ export function CalendarView({
                             const height = Math.max(((blockDrag.endMinutes - blockDrag.startMinutes) / 60) * HOUR_HEIGHT - 8, 18)
                             return (
                               <div
-                                className="pointer-events-none absolute left-1 right-1 z-20 overflow-hidden rounded-xl border px-2 py-1 text-left text-xs font-medium shadow-lg ring-2 ring-primary/35"
+                                className="pointer-events-none absolute left-1 right-1 z-20 overflow-hidden rounded-xl border px-2 py-1 text-left text-xs font-medium shadow-lg ring-2 ring-primary/40"
                                 style={{
                                   top,
                                   height,
@@ -722,7 +731,7 @@ export function CalendarView({
                         const height = Math.max(((end - start) / 60) * HOUR_HEIGHT - 8, 18)
                         return (
                           <div
-                            className="pointer-events-none absolute inset-x-1 overflow-hidden rounded-xl border-2 border-dashed border-primary bg-primary/15 px-2 py-1 text-[11px] font-semibold text-primary shadow-sm"
+                            className="pointer-events-none absolute inset-x-1 overflow-hidden rounded-xl border-2 border-dashed border-primary/40 bg-primary/15 px-2 py-1 text-[11px] font-semibold text-primary shadow-sm"
                             style={{ top, height }}
                           >
                             {fmtClockRange(minutesToTimeString(start), minutesToTimeString(end))}
@@ -878,7 +887,7 @@ export function CalendarView({
                     !classifyWorkday(calendarAnchorDate, workdayExceptions).isWorkday && "bg-amber-50/50",
                   )}
                   style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * HOUR_HEIGHT}px` }}
-                  onPointerDown={canWrite ? (event) => handleTimedColumnPointerDown(event, dk) : undefined}
+                      onPointerDown={canCreateScheduleItems ? (event) => handleTimedColumnPointerDown(event, dk) : undefined}
                 >
                   {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }).map((_, hourIndex) => (
                     <div
@@ -890,7 +899,7 @@ export function CalendarView({
                   {buildDayTimelineSegments(dateKey(calendarAnchorDate), filteredItems.filter((item) => item.isHourly)).map((segment) => {
                     const dayDk = dateKey(calendarAnchorDate)
                     const isDragged = !!blockDrag && blockDrag.itemId === segment.item.id
-                    const draggable = isBlockDraggable(segment.item)
+                    const draggable = canWrite && isBlockDraggable(segment.item)
                     const top = isDragged
                       ? (blockDrag!.startMinutes / 60) * HOUR_HEIGHT + 6
                       : (segment.startHour - DAY_START_HOUR) * HOUR_HEIGHT + 6
@@ -921,7 +930,7 @@ export function CalendarView({
                             : "text-white",
                           activeConflictIds.has(segment.item.id) && "ring-2 ring-rose-200",
                           draggable && "cursor-grab active:cursor-grabbing",
-                          isDragged && "z-20 cursor-grabbing ring-2 ring-primary/35 shadow-lg",
+                          isDragged && "z-20 cursor-grabbing ring-2 ring-primary/40 shadow-lg",
                         )}
                         style={{
                           top,
@@ -935,7 +944,7 @@ export function CalendarView({
                             ? (segment.item.displayColor || DEFAULT_SCHEDULE_COLOR)
                             : colorWithAlpha(segment.item.displayColor, 0.75),
                         }}
-                        onPointerDown={(event) => handleBlockPointerDown(event, segment.item, dayDk, "move")}
+                        onPointerDown={draggable ? (event) => handleBlockPointerDown(event, segment.item, dayDk, "move") : undefined}
                         onClick={() => {
                           if (blockClickSuppressRef.current === segment.item.id) {
                             blockClickSuppressRef.current = null
@@ -986,7 +995,7 @@ export function CalendarView({
                     const height = Math.max(((end - start) / 60) * HOUR_HEIGHT - 10, 24)
                     return (
                       <div
-                        className="pointer-events-none absolute inset-x-1.5 overflow-hidden rounded-xl border-2 border-dashed border-primary bg-primary/15 px-3 py-2 text-left text-xs font-semibold text-primary shadow-sm"
+                        className="pointer-events-none absolute inset-x-1.5 overflow-hidden rounded-xl border-2 border-dashed border-primary/40 bg-primary/15 px-3 py-2 text-left text-xs font-semibold text-primary shadow-sm"
                         style={{ top, height }}
                       >
                         {fmtClockRange(minutesToTimeString(start), minutesToTimeString(end))}
@@ -1039,12 +1048,12 @@ export function CalendarView({
                       <>
                         <div
                           aria-hidden
-                          className="pointer-events-none absolute inset-x-0 z-10 rounded-2xl bg-primary/15 ring-2 ring-inset ring-primary/35 transition-[top,height] duration-75"
+                          className="pointer-events-none absolute inset-x-0 z-10 rounded-2xl bg-primary/15 ring-2 ring-inset ring-primary/40 transition-[top,height] duration-75"
                           style={{ top, height }}
                         />
                         <div
                           aria-hidden
-                          className="pointer-events-none absolute right-2 z-30 rounded-md bg-primary/95 px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm"
+                          className="pointer-events-none absolute right-2 z-30 rounded-md bg-primary/100/95 px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm"
                           style={{ top: Math.max(baseTop - 18, 2) }}
                         >
                           {fmtClockRange(minutesToTimeString(startMin), minutesToTimeString(endMin))}

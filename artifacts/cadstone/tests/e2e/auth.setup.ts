@@ -206,7 +206,7 @@ setup("authenticate PM fixture (project_manager)", async ({ context }) => {
   // refresh cookie on the context (replacing Cesar's cookie from the
   // login above, since both endpoints use stone_track_refresh_token).
   const acceptRes = await context.request.post("/api/auth/accept-invite", {
-    data: { token: inviteToken, password: pmCreds.password },
+    data: { token: inviteToken, email: PM_EMAIL, password: pmCreds.password },
     headers: { "X-Requested-With": "XMLHttpRequest" },
   })
   if (!acceptRes.ok()) {

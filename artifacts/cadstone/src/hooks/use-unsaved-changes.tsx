@@ -29,6 +29,14 @@ const DEFAULT_CANCEL_LABEL = "Keep editing"
 const BEFORE_UNLOAD_MESSAGE =
   "You have unsaved changes. Leave without saving them?"
 
+export function unsavedGuardLocationKey(location: {
+  pathname: string
+  search: string
+  hash: string
+}) {
+  return `${location.pathname}${location.search}${location.hash}`
+}
+
 export function useUnsavedChangesGuard(
   isDirty: boolean,
   options: UnsavedChangesGuardOptions = {},
@@ -60,7 +68,9 @@ export function useUnsavedChangesGuard(
   // navigate(), back/forward) and prompts before leaving.
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      isDirty && currentLocation.pathname !== nextLocation.pathname,
+      isDirty &&
+      unsavedGuardLocationKey(currentLocation) !==
+        unsavedGuardLocationKey(nextLocation),
   )
 
   const [pendingAction, setPendingAction] = useState<{ run: () => void } | null>(

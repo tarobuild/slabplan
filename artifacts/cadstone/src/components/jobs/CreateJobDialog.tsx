@@ -1,55 +1,55 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState, type FormEvent } from "react"
+import { Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import {
   useJobsPostJobs,
   type JobsJobCreatePayloadSchema,
   type JobsJobPayloadSchema,
-} from "@workspace/api-client-react";
-import { ClientsPostClientsBody, JobsPostJobsBody } from "@workspace/api-zod";
-import { api } from "@/lib/api";
-import { toastApiError } from "@/lib/api-errors";
-import { validatePayload } from "@/lib/validate-payload";
-import { invalidateAppData } from "@/lib/data-refresh";
-import { Button } from "@/components/ui/button";
+} from "@workspace/api-client-react"
+import { ClientsPostClientsBody, JobsPostJobsBody } from "@workspace/api-zod"
+import { api } from "@/lib/api"
+import { toastApiError } from "@/lib/api-errors"
+import { validatePayload } from "@/lib/validate-payload"
+import { invalidateAppData } from "@/lib/data-refresh"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/ui/select"
 import WorkerAssignmentPicker, {
   type WorkerOption,
-} from "@/components/WorkerAssignmentPicker";
-import { useAuthStore } from "@/store/auth";
+} from "@/components/WorkerAssignmentPicker"
+import { useAuthStore } from "@/store/auth"
 
-type ClientOption = { id: string; companyName: string };
+type ClientOption = { id: string; companyName: string }
 
 type CreateJobForm = {
-  title: string;
-  status: string;
-  jobType: string;
-  contractType: string;
-  streetAddress: string;
-  city: string;
-  state: string;
-  zipCode: string;
-  contractPrice: string;
-  projectedStart: string;
-  projectedCompletion: string;
-  clientId: string;
-  assigneeIds: string[];
-};
+  title: string
+  status: string
+  jobType: string
+  contractType: string
+  streetAddress: string
+  city: string
+  state: string
+  zipCode: string
+  contractPrice: string
+  projectedStart: string
+  projectedCompletion: string
+  clientId: string
+  assigneeIds: string[]
+}
 
 const emptyForm: CreateJobForm = {
   title: "",
@@ -65,7 +65,7 @@ const emptyForm: CreateJobForm = {
   projectedCompletion: "",
   clientId: "",
   assigneeIds: [],
-};
+}
 
 const JOB_TYPES = [
   "kitchen_countertops",
@@ -74,7 +74,7 @@ const JOB_TYPES = [
   "backsplash",
   "full_house_project",
   "custom",
-] as const;
+] as const
 const JOB_TYPE_LABELS: Record<string, string> = {
   kitchen_countertops: "Kitchen Countertops",
   bathrooms: "Bathrooms",
@@ -82,18 +82,19 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   backsplash: "Backsplash",
   full_house_project: "Full House Project",
   custom: "Custom",
-};
-const ADD_NEW_CLIENT_VALUE = "__add_new_client__";
+}
+const ADD_NEW_CLIENT_VALUE = "__add_new_client__"
 const toLabel = (s: string) =>
-  JOB_TYPE_LABELS[s] ?? s.replace(/\b\w/g, (c) => c.toUpperCase());
+  JOB_TYPE_LABELS[s] ?? s.replace(/\b\w/g, (c) => c.toUpperCase())
 
 export type CreateJobDialogProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  defaultClientId?: string;
-  lockClient?: boolean;
-  onCreated?: (newJobId: string | undefined) => void;
-};
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  defaultClientId?: string
+  defaultClientName?: string
+  lockClient?: boolean
+  onCreated?: (newJobId: string | undefined) => void
+}
 
 /**
  * Self-contained "Create Job" dialog. Used by /jobs and by the client
@@ -106,99 +107,115 @@ export default function CreateJobDialog({
   open,
   onOpenChange,
   defaultClientId,
+  defaultClientName,
   lockClient,
   onCreated,
 }: CreateJobDialogProps) {
-  const user = useAuthStore((state) => state.user);
-  const isAdmin = user?.role === "admin";
+  const user = useAuthStore((state) => state.user)
+  const isAdmin = user?.role === "admin"
 
-  const [step, setStep] = useState<1 | 2>(1);
-  const [form, setForm] = useState<CreateJobForm>(emptyForm);
-  const [clientOptions, setClientOptions] = useState<ClientOption[]>([]);
-  const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([]);
-  const [showCreateClient, setShowCreateClient] = useState(false);
-  const [newClientCompanyName, setNewClientCompanyName] = useState("");
-  const [newClientContactName, setNewClientContactName] = useState("");
-  const [newClientEmail, setNewClientEmail] = useState("");
-  const [newClientPhone, setNewClientPhone] = useState("");
-  const [creatingClient, setCreatingClient] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1)
+  const [form, setForm] = useState<CreateJobForm>(emptyForm)
+  const [clientOptions, setClientOptions] = useState<ClientOption[]>([])
+  const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([])
+  const [showCreateClient, setShowCreateClient] = useState(false)
+  const [newClientCompanyName, setNewClientCompanyName] = useState("")
+  const [newClientContactName, setNewClientContactName] = useState("")
+  const [newClientEmail, setNewClientEmail] = useState("")
+  const [newClientPhone, setNewClientPhone] = useState("")
+  const [creatingClient, setCreatingClient] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  const createJobMutation = useJobsPostJobs();
+  const createJobMutation = useJobsPostJobs()
+  const effectiveClientId = lockClient
+    ? defaultClientId || ""
+    : form.clientId || ""
+  const selectedClientName =
+    clientOptions.find((client) => client.id === effectiveClientId)?.companyName ??
+    (lockClient ? defaultClientName : null) ??
+    null
 
   // Reset form ONLY on the open transition (false → true). Re-running
   // the reset whenever `defaultClientId` changes mid-flow could wipe
   // user-entered fields and the chosen clientId between steps.
-  const wasOpenRef = useRef(false);
+  const wasOpenRef = useRef(false)
   useEffect(() => {
     if (open && !wasOpenRef.current) {
-      setForm({ ...emptyForm, clientId: defaultClientId ?? "" });
-      setStep(1);
-      setShowCreateClient(false);
-      setNewClientCompanyName("");
-      setNewClientContactName("");
-      setNewClientEmail("");
-      setNewClientPhone("");
+      setForm({ ...emptyForm, clientId: defaultClientId ?? "" })
+      setStep(1)
+      setShowCreateClient(false)
+      setNewClientCompanyName("")
+      setNewClientContactName("")
+      setNewClientEmail("")
+      setNewClientPhone("")
     }
-    wasOpenRef.current = open;
-  }, [open, defaultClientId]);
+    wasOpenRef.current = open
+  }, [open, defaultClientId])
 
   useEffect(() => {
-    if (!open || !lockClient) return;
-    setForm((current) => ({ ...current, clientId: defaultClientId ?? "" }));
-  }, [open, lockClient, defaultClientId]);
+    if (!open || !lockClient) return
+    setForm((current) => ({ ...current, clientId: defaultClientId ?? "" }))
+  }, [open, lockClient, defaultClientId])
 
   useEffect(() => {
-    if (!open || !isAdmin) return;
+    if (!open || !isAdmin) return
     api
       .get("/clients?pageSize=100")
       .then((r) => setClientOptions(r.data.clients ?? []))
-      .catch((err: unknown) => toastApiError(err, "Failed to load clients"));
-  }, [open, isAdmin]);
+      .catch((err: unknown) => toastApiError(err, "Failed to load clients"))
+  }, [open, isAdmin])
 
   useEffect(() => {
-    if (!open || !isAdmin) return;
+    if (!open || !isAdmin) return
     api
-      .get("/users?roles=project_manager,crew_member&limit=200")
+      .get("/users?roles=project_manager,crew_member,drafter&limit=200")
       .then((r) => setWorkerOptions(r.data.users ?? []))
-      .catch((err: unknown) => toastApiError(err, "Failed to load workers"));
-  }, [open, isAdmin]);
+      .catch((err: unknown) => toastApiError(err, "Failed to load workers"))
+  }, [open, isAdmin])
 
-  const setField =
-    (k: keyof CreateJobForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setField = (k: keyof CreateJobForm) => (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
   const handleDialogOpenChange = (next: boolean) => {
-    onOpenChange(next);
-  };
+    onOpenChange(next)
+  }
+
+  const resetCreateClientFields = () => {
+    setShowCreateClient(false)
+    setNewClientCompanyName("")
+    setNewClientContactName("")
+    setNewClientEmail("")
+    setNewClientPhone("")
+  }
 
   const handleCreateClient = async () => {
     if (!newClientCompanyName.trim()) {
-      toast.error("Company name is required");
-      return;
+      toast.error("Company name is required")
+      return
     }
     const clientPayload = validatePayload(ClientsPostClientsBody, {
       companyName: newClientCompanyName.trim(),
       email: newClientEmail.trim() || null,
       phone: newClientPhone.trim() || null,
-    });
-    if (!clientPayload) return;
-    setCreatingClient(true);
+    })
+    if (!clientPayload) return
+    setCreatingClient(true)
     try {
-      const response = await api.post("/clients", clientPayload);
-      const nextClient = response.data.client;
+      const response = await api.post("/clients", clientPayload)
+      const nextClient = response.data.client
 
       setClientOptions((current) =>
         [...current, nextClient].sort((left, right) =>
           left.companyName.localeCompare(right.companyName),
         ),
-      );
-      setForm((current) => ({ ...current, clientId: nextClient.id }));
+      )
+      setForm((current) => ({ ...current, clientId: nextClient.id }))
 
       if (newClientContactName.trim()) {
-        const nameParts = newClientContactName.trim().split(/\s+/);
-        const firstName = nameParts[0] || null;
-        const lastName = nameParts.slice(1).join(" ") || null;
+        const nameParts = newClientContactName.trim().split(/\s+/)
+        const firstName = nameParts[0] || null
+        const lastName = nameParts.slice(1).join(" ") || null
         try {
           await api.post(`/clients/${nextClient.id}/contacts`, {
             firstName,
@@ -206,48 +223,40 @@ export default function CreateJobDialog({
             email: newClientEmail.trim() || null,
             phone: newClientPhone.trim() || null,
             isPrimary: true,
-          });
+          })
         } catch (err: unknown) {
           toastApiError(
             err,
-            "Client was created, but the primary contact could not be saved. The contact fields are still here for reference.",
-          );
-          return;
+            "Client was created, but the primary contact could not be saved.",
+          )
+          return
         }
       }
 
-      setShowCreateClient(false);
-      setNewClientCompanyName("");
-      setNewClientContactName("");
-      setNewClientEmail("");
-      setNewClientPhone("");
-      toast.success("Client created");
+      resetCreateClientFields()
+      toast.success("Client created")
     } catch (err: unknown) {
-      toastApiError(err, "Failed to create client");
+      toastApiError(err, "Failed to create client")
     } finally {
-      setCreatingClient(false);
+      setCreatingClient(false)
     }
-  };
+  }
 
   const handleCreate = async (e: FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
     // Belt-and-suspenders: when the parent locked the client (picker
     // flow), defaultClientId is authoritative. Fall back to it if the
     // local form state ever loses the value mid-flow.
-    const effectiveClientId = lockClient
-      ? defaultClientId || ""
-      : form.clientId || "";
     if (!effectiveClientId) {
-      toast.error("Pick a client before creating the job.");
-      setStep(1);
-      return;
+      toast.error("Pick a client before creating the job.")
+      setStep(1)
+      return
     }
     const payload: JobsJobCreatePayloadSchema = {
       title: form.title,
       status: form.status as JobsJobPayloadSchema["status"],
       jobType: (form.jobType || null) as JobsJobPayloadSchema["jobType"],
-      contractType: (form.contractType ||
-        null) as JobsJobPayloadSchema["contractType"],
+      contractType: (form.contractType || null) as JobsJobPayloadSchema["contractType"],
       streetAddress: form.streetAddress || null,
       city: form.city || null,
       state: form.state || null,
@@ -257,30 +266,30 @@ export default function CreateJobDialog({
       projectedCompletion: form.projectedCompletion || null,
       clientId: effectiveClientId,
       assigneeIds: isAdmin ? form.assigneeIds : [],
-    };
-    const validated = validatePayload(JobsPostJobsBody, payload);
-    if (!validated) return;
-    setSaving(true);
-    const hadStartDate = Boolean(form.projectedStart);
+    }
+    const validated = validatePayload(JobsPostJobsBody, payload)
+    if (!validated) return
+    setSaving(true)
+    const hadStartDate = Boolean(form.projectedStart)
     try {
-      const res = await createJobMutation.mutateAsync({ data: validated });
-      const newJobId = res?.job?.id;
-      toast.success("Job created");
+      const res = await createJobMutation.mutateAsync({ data: validated })
+      const newJobId = res?.job?.id
+      toast.success("Job created")
       if (!hadStartDate) {
         toast("Add a start date later", {
           description:
             "This job won't appear on the calendar until you set a start date.",
-        });
+        })
       }
-      onOpenChange(false);
-      invalidateAppData(["jobs", "navigation"]);
-      onCreated?.(newJobId);
+      onOpenChange(false)
+      invalidateAppData(["jobs", "navigation"])
+      onCreated?.(newJobId)
     } catch (err: unknown) {
-      toastApiError(err, "Failed to create job");
+      toastApiError(err, "Failed to create job")
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
@@ -288,28 +297,22 @@ export default function CreateJobDialog({
         <DialogHeader className="shrink-0 px-6 pt-6 pb-2">
           <DialogTitle>Create Job</DialogTitle>
           <p className="text-xs text-slate-400">
-            {step === 1
-              ? "Step 1 of 2 — Job Basics"
-              : "Step 2 of 2 — Location & Contract"}
+            {step === 1 ? "Step 1 of 2 — Job Basics" : "Step 2 of 2 — Location & Contract"}
           </p>
         </DialogHeader>
         <form
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             if (step === 1) {
-              e.preventDefault();
-              const effectiveClientId = lockClient
-                ? defaultClientId || ""
-                : form.clientId || "";
-              if (!form.title.trim()) return;
+              e.preventDefault()
               if (!effectiveClientId) {
-                toast.error("Pick a client before continuing.");
-                return;
+                toast.error("Pick a client before continuing.")
+                return
               }
-              setStep(2);
-              return;
+              if (form.title.trim()) setStep(2)
+              return
             }
-            void handleCreate(e);
+            void handleCreate(e)
           }}
         >
           {step === 1 ? (
@@ -331,42 +334,45 @@ export default function CreateJobDialog({
                     <span className="text-[10px] text-slate-400">(locked)</span>
                   ) : null}
                 </Label>
-                <Select
-                  value={
-                    (lockClient ? defaultClientId : form.clientId) || "_none"
-                  }
-                  disabled={lockClient}
-                  onValueChange={(value) => {
-                    if (value === ADD_NEW_CLIENT_VALUE) {
-                      setShowCreateClient(true);
-                      return;
-                    }
-                    setShowCreateClient(false);
-                    setForm((current) => ({
-                      ...current,
-                      clientId: value === "_none" ? "" : value,
-                    }));
-                  }}
-                >
-                  <SelectTrigger>
+                {lockClient ? (
+                  <div className="flex h-9 w-full items-center rounded-md border border-input bg-slate-50 px-3 text-sm text-slate-700">
+                    {selectedClientName ?? "Selected client"}
+                  </div>
+                ) : (
+                  <Select
+                    value={form.clientId || "_none"}
+                    onValueChange={(value) => {
+                      if (value === ADD_NEW_CLIENT_VALUE) {
+                        setShowCreateClient(true)
+                        return
+                      }
+                      setShowCreateClient(false)
+                      setForm((current) => ({
+                        ...current,
+                        clientId: value === "_none" ? "" : value,
+                      }))
+                    }}
+                  >
+                    <SelectTrigger>
                     <SelectValue placeholder="Select a client" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none" disabled>
-                      Select a client
-                    </SelectItem>
-                    {clientOptions.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.companyName}
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none" disabled>
+                        Select a client
                       </SelectItem>
-                    ))}
-                    {isAdmin ? (
-                      <SelectItem value={ADD_NEW_CLIENT_VALUE}>
-                        Add new client…
-                      </SelectItem>
-                    ) : null}
-                  </SelectContent>
-                </Select>
+                      {clientOptions.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.companyName}
+                        </SelectItem>
+                      ))}
+                      {isAdmin ? (
+                        <SelectItem value={ADD_NEW_CLIENT_VALUE}>
+                          Add new client…
+                        </SelectItem>
+                      ) : null}
+                    </SelectContent>
+                  </Select>
+                )}
                 {isAdmin && showCreateClient ? (
                   <div className="rounded-md border border-[#E5E7EB] bg-slate-50 p-3 space-y-3">
                     <div className="space-y-1.5">
@@ -374,9 +380,7 @@ export default function CreateJobDialog({
                       <Input
                         id="new-client-company"
                         value={newClientCompanyName}
-                        onChange={(event) =>
-                          setNewClientCompanyName(event.target.value)
-                        }
+                        onChange={(event) => setNewClientCompanyName(event.target.value)}
                         placeholder="e.g. Acme Builders"
                       />
                     </div>
@@ -385,9 +389,7 @@ export default function CreateJobDialog({
                       <Input
                         id="new-client-contact"
                         value={newClientContactName}
-                        onChange={(event) =>
-                          setNewClientContactName(event.target.value)
-                        }
+                        onChange={(event) => setNewClientContactName(event.target.value)}
                         placeholder="e.g. John Smith"
                       />
                     </div>
@@ -400,9 +402,7 @@ export default function CreateJobDialog({
                           inputMode="email"
                           autoComplete="email"
                           value={newClientEmail}
-                          onChange={(event) =>
-                            setNewClientEmail(event.target.value)
-                          }
+                          onChange={(event) => setNewClientEmail(event.target.value)}
                           placeholder="john@example.com"
                         />
                       </div>
@@ -414,9 +414,7 @@ export default function CreateJobDialog({
                           inputMode="tel"
                           autoComplete="tel"
                           value={newClientPhone}
-                          onChange={(event) =>
-                            setNewClientPhone(event.target.value)
-                          }
+                          onChange={(event) => setNewClientPhone(event.target.value)}
                           placeholder="(555) 123-4567"
                         />
                       </div>
@@ -427,9 +425,7 @@ export default function CreateJobDialog({
                         onClick={handleCreateClient}
                         disabled={creatingClient}
                       >
-                        {creatingClient && (
-                          <Loader2 className="mr-2 size-3.5 animate-spin" />
-                        )}
+                        {creatingClient && <Loader2 className="mr-2 size-3.5 animate-spin" />}
                         Add Client
                       </Button>
                     </div>
@@ -537,18 +533,13 @@ export default function CreateJobDialog({
                 <Label>Contract Type</Label>
                 <div className="flex gap-6 pt-0.5">
                   {(["fixed_price", "open_book"] as const).map((ct) => (
-                    <label
-                      key={ct}
-                      className="flex items-start gap-2 cursor-pointer"
-                    >
+                    <label key={ct} className="flex items-start gap-2 cursor-pointer">
                       <input
                         type="radio"
                         name="createContractType"
                         value={ct}
                         checked={form.contractType === ct}
-                        onChange={() =>
-                          setForm((f) => ({ ...f, contractType: ct }))
-                        }
+                        onChange={() => setForm((f) => ({ ...f, contractType: ct }))}
                         className="mt-0.5 accent-primary"
                       />
                       <div>
@@ -592,24 +583,21 @@ export default function CreateJobDialog({
                 </Button>
                 <Button
                   type="submit"
-                  disabled={!form.title.trim()}
-                  className="hover:opacity-90 transition-opacity"
+                  disabled={!form.title.trim() || !effectiveClientId}
+                  className="bg-primary text-primary-foreground transition-opacity hover:bg-primary/90"
                 >
                   Next: Location & Contract →
                 </Button>
               </>
             ) : (
               <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setStep(1)}
-                >
+                <Button type="button" variant="outline" onClick={() => setStep(1)}>
                   ← Back
                 </Button>
                 <Button
                   type="submit"
                   disabled={saving}
+                  style={{ backgroundColor: "#E85D04", color: "#fff" }}
                   className="hover:opacity-90 transition-opacity"
                 >
                   {saving && <Loader2 className="mr-2 size-3.5 animate-spin" />}
@@ -621,5 +609,5 @@ export default function CreateJobDialog({
         </form>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

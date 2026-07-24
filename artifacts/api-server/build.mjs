@@ -1,6 +1,8 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
 import { cp, rm, stat } from "node:fs/promises";
@@ -9,10 +11,58 @@ import { cp, rm, stat } from "node:fs/promises";
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
+const repoRoot = path.resolve(artifactDir, "../..");
+
+async function readGitShortSha(ref) {
+  try {
+    const { stdout } = await execFileAsync("git", ["rev-parse", ref], { cwd: repoRoot });
+    const fromGit = stdout.trim();
+    if (fromGit) return fromGit.slice(0, 12);
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+function isReplitBuildEnvironment() {
+  return Boolean(
+    process.env.REPL_ID ||
+    process.env.REPL_SLUG ||
+    process.env.REPL_OWNER ||
+    process.env.REPLIT_DEPLOYMENT ||
+    process.env.REPLIT_GIT_COMMIT_SHA,
+  );
+}
+
+async function resolveReleaseSha() {
+  // Replit can keep local "Published your App" commits ahead of origin/main
+  // after a Git UI pull. Production release verification must identify the
+  // GitHub source commit, not those local deployment-history commits.
+  const gitRefs = isReplitBuildEnvironment()
+    ? ["@{upstream}", "origin/main", "HEAD"]
+    : ["HEAD"];
+
+  for (const ref of gitRefs) {
+    const fromGit = await readGitShortSha(ref);
+    if (fromGit) return fromGit;
+  }
+
+  const fromEnv =
+    process.env.REPLIT_GIT_COMMIT_SHA ||
+    process.env.GIT_COMMIT ||
+    process.env.RELEASE_SHA ||
+    "";
+  if (fromEnv) return fromEnv.slice(0, 12);
+
+  return "";
+}
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
+  const releaseSha = await resolveReleaseSha();
 
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
@@ -21,7 +71,15 @@ async function buildAll() {
     format: "esm",
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
+    conditions: ["workspace"],
     logLevel: "info",
+    // Internal workspace packages such as @workspace/api-zod and
+    // @workspace/mcp-server expose a custom "workspace" condition that points
+    // at their TypeScript sources. Replit can invoke this package build
+    // without first running the root tsc build that creates those packages'
+    // dist/ outputs, so resolve the source condition while bundling the API
+    // server instead of depending on prebuilt workspace package artifacts.
+    conditions: ["workspace"],
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
     // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.
     // Examples of unbundleable packages:
@@ -142,6 +200,9 @@ async function buildAll() {
       esbuildPluginPino({ transports: ["pino-pretty"] })
     ],
     // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
+    define: {
+      __API_RELEASE_SHA__: JSON.stringify(releaseSha),
+    },
     banner: {
       js: `import { createRequire as __bannerCrReq } from 'node:module';
 import __bannerPath from 'node:path';

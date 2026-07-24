@@ -74,7 +74,7 @@ test("accepts a video well under the limit", async () => {
 
 test("falls through when the probe returns null (unknown duration)", async () => {
   // Mirrors the browser behaviour: if metadata cannot be decoded we
-  // accept the upload; the existing 500 MB size cap is the long-term
+  // accept the upload; the shared size cap is the long-term
   // safety net and we never want a flaky probe to dead-end legitimate
   // uploads.
   const file = fakeFile({ originalname: "exotic.mkv", mimetype: "video/x-matroska" });

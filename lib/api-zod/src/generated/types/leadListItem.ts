@@ -24,6 +24,10 @@ export interface LeadListItem {
    * @maximum 100
    */
   confidence?: number | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — **not** an ISO timestamp and **not** coerced to a `Date`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   projectedSalesDate?: string | null;
   /** Decimal serialized as string. */
   estimatedRevenueMin?: string | null;

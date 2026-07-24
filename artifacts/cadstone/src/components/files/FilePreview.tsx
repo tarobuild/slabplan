@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ChevronLeft,
   ChevronRight,
@@ -14,12 +14,11 @@ import {
 import { toast } from "sonner"
 import { api } from "@/lib/api"
 import { toastApiError } from "@/lib/api-errors"
+import { inferPreviewKind } from "./file-preview-kind"
 
-// PdfViewer (which pulls in react-pdf + pdfjs-dist, ~500 KB) is loaded on
-// demand the first time a user previews a PDF. Keeping it out of the
-// eager bundle shaves the same ~500 KB off the dashboard's first paint
-// for the vast majority of sessions that never open a PDF.
-const PdfViewer = lazy(() => import("./PdfViewer"))
+// PDFs stay in the browser's native viewer. Customer PDFs have repeatedly
+// exposed pdf.js edge cases and high memory use, so the app preview never
+// mounts the in-app PDF renderer.
 
 export type PreviewFile = {
   // One of: a server file id (preferred — used to fetch via the auth'd API),
@@ -39,44 +38,6 @@ export type PreviewFile = {
   fileSize?: number | null
   uploadedByName?: string | null
   createdAt?: string | null
-}
-
-type PreviewKind =
-  | "image"
-  | "video"
-  | "audio"
-  | "pdf"
-  | "text"
-  | "unsupported"
-
-function inferKind(mime: string | null | undefined, name: string): PreviewKind {
-  const m = (mime || "").toLowerCase()
-  if (m.startsWith("image/")) return "image"
-  if (m.startsWith("video/")) return "video"
-  if (m.startsWith("audio/")) return "audio"
-  if (m === "application/pdf") return "pdf"
-  if (
-    m.startsWith("text/") ||
-    m === "application/json" ||
-    m === "application/xml" ||
-    m === "application/javascript" ||
-    m === "application/x-yaml"
-  ) {
-    return "text"
-  }
-
-  // Fall back to extension sniffing for cases where the server didn't set a
-  // useful mime type.
-  const lower = name.toLowerCase()
-  if (/\.(png|jpe?g|gif|webp|svg|heic|bmp|tiff?)$/.test(lower)) return "image"
-  if (/\.(mp4|mov|webm|m4v|avi|mkv)$/.test(lower)) return "video"
-  if (/\.(mp3|wav|m4a|ogg|flac|aac)$/.test(lower)) return "audio"
-  if (/\.pdf$/.test(lower)) return "pdf"
-  if (/\.(txt|md|markdown|json|xml|yml|yaml|csv|log|js|jsx|ts|tsx|css|html?)$/.test(lower)) {
-    return "text"
-  }
-
-  return "unsupported"
 }
 
 function formatFileSize(bytes: number | null | undefined) {
@@ -107,23 +68,14 @@ function isInlineDirectUrl(url: string | null | undefined): boolean {
   return url.startsWith("data:") || url.startsWith("blob:")
 }
 
-function safeApiFileUrl(url: string | null | undefined): string | null {
-  if (!url || isInlineDirectUrl(url)) return null
-  if (!url.startsWith("/")) return null
-  if (url.startsWith("//")) return null
-  if (/^\/(?:files\/[^/]+|folders\/[^/]+\/files\/[^/]+)\/(?:view|download)(?:\?.*)?$/.test(url)) {
-    return url
-  }
-  return null
-}
-
 function buildAuthFetchUrl(file: PreviewFile): string | null {
-  const viewUrl = safeApiFileUrl(file.viewUrl)
-  if (viewUrl) return viewUrl
+  if (file.viewUrl && !isInlineDirectUrl(file.viewUrl)) return file.viewUrl
   const id = file.fileId || file.id
   if (id) return `/files/${id}/view`
-  const directUrl = safeApiFileUrl(file.directUrl)
-  if (directUrl) return directUrl
+  // If the only thing we have is a non-inline directUrl (e.g. a relative or
+  // absolute URL pointing at a protected file), route it through the
+  // authenticated API client rather than a raw browser fetch.
+  if (file.directUrl && !isInlineDirectUrl(file.directUrl)) return file.directUrl
   return null
 }
 
@@ -134,6 +86,118 @@ function inlineDirectUrl(file: PreviewFile): string | null {
 export async function readInlineTextUrl(url: string): Promise<string> {
   const response = await fetch(url)
   return response.text()
+}
+
+type SignedFileUrlResponse = {
+  url: string
+  expiresAt?: string
+  expiresIn?: number
+}
+
+async function mintSignedViewUrl(fileId: string): Promise<string> {
+  const res = await api.post<SignedFileUrlResponse>(`/files/${fileId}/signed-view`)
+  if (!res.data.url) throw new Error("Missing signed view URL")
+  return res.data.url
+}
+
+async function mintSignedDownloadUrl(fileId: string): Promise<string> {
+  const res = await api.post<SignedFileUrlResponse>(`/files/${fileId}/signed-download`)
+  if (!res.data.url) throw new Error("Missing signed download URL")
+  return res.data.url
+}
+
+function openLoadingPreviewTab(): Window | null {
+  const newWindow = window.open("about:blank", "_blank")
+  if (!newWindow) {
+    toast.error("Please allow pop-ups to open this file.")
+    return null
+  }
+
+  try {
+    newWindow.document.write(
+      '<!DOCTYPE html><title>Loading…</title>' +
+        '<body style="margin:0;display:flex;align-items:center;justify-content:center;' +
+        'height:100vh;font-family:sans-serif;color:#cbd5e1;background:#0f172a;">Loading…</body>',
+    )
+    newWindow.opener = null
+  } catch {
+    // Keep the file-open path working even if a browser extension blocks writes.
+  }
+
+  return newWindow
+}
+
+async function downloadPreviewFile(file: PreviewFile) {
+  const inline = inlineDirectUrl(file)
+  if (inline) {
+    const a = document.createElement("a")
+    a.href = inline
+    a.download = file.name || "download"
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    return
+  }
+
+  const fileId = file.fileId || file.id || null
+  if (fileId) {
+    const progressToast = toast.loading("Preparing download…")
+    try {
+      const signedUrl = await mintSignedDownloadUrl(fileId)
+      toast.dismiss(progressToast)
+      window.location.assign(signedUrl)
+    } catch (error) {
+      toast.dismiss(progressToast)
+      throw error
+    }
+    return
+  }
+
+  const url = buildAuthFetchUrl(file)
+  if (!url) {
+    toast.error("This file isn't available to download.")
+    return
+  }
+
+  const res = await api.get<Blob>(url, { responseType: "blob" })
+  const objectUrl = URL.createObjectURL(res.data)
+  const a = document.createElement("a")
+  a.href = objectUrl
+  a.download = file.name || "download"
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+}
+
+async function openPreviewFileInNewTab(file: PreviewFile) {
+  const inline = inlineDirectUrl(file)
+  if (inline) {
+    const w = window.open(inline, "_blank", "noopener")
+    if (!w) toast.error("Please allow pop-ups to open this file.")
+    return
+  }
+
+  const fileId = file.fileId || file.id || null
+  if (!fileId) {
+    toast.error("This file can't be opened in a new tab.")
+    return
+  }
+
+  const newWindow = openLoadingPreviewTab()
+  if (!newWindow) return
+
+  try {
+    const signedUrl = await mintSignedViewUrl(fileId)
+    newWindow.location.replace(signedUrl)
+  } catch (err) {
+    try {
+      newWindow.close()
+    } catch {
+      // ignore
+    }
+    throw err
+  }
 }
 
 type FilePreviewProps = {
@@ -194,7 +258,7 @@ export function FilePreview({ files, initialIndex = 0, open, onClose }: FilePrev
   if (!open || !current) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-900/95 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950/90 backdrop-blur-sm">
       <PreviewHeader
         file={current}
         index={safeIndex}
@@ -249,38 +313,9 @@ function PreviewHeader({
     .filter(Boolean)
     .join(" • ")
 
-  const fileId = file.fileId || file.id || null
-
   const handleDownload = async () => {
     try {
-      // Inline direct URL (data:/blob:) — just trigger an <a download>.
-      const inline = inlineDirectUrl(file)
-      if (inline) {
-        const a = document.createElement("a")
-        a.href = inline
-        a.download = file.name || "download"
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        return
-      }
-
-      // Prefer the dedicated download route when a file id is available, since
-      // it sets the right Content-Disposition and original filename.
-      const url = fileId ? `/files/${fileId}/download` : buildAuthFetchUrl(file)
-      if (!url) {
-        toast.error("This file isn't available to download.")
-        return
-      }
-      const res = await api.get<Blob>(url, { responseType: "blob" })
-      const objectUrl = URL.createObjectURL(res.data)
-      const a = document.createElement("a")
-      a.href = objectUrl
-      a.download = file.name || "download"
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+      await downloadPreviewFile(file)
     } catch (err: unknown) {
       toastApiError(err, "Failed to download file.")
     }
@@ -288,25 +323,7 @@ function PreviewHeader({
 
   const handleOpenInNewTab = async () => {
     try {
-      // Inline data:/blob: URLs — open as-is.
-      const inline = inlineDirectUrl(file)
-      if (inline) {
-        const w = window.open(inline, "_blank", "noopener")
-        if (!w) toast.error("Please allow pop-ups to open this file.")
-        return
-      }
-
-      if (!fileId) {
-        toast.error("This file can't be opened in a new tab.")
-        return
-      }
-
-      // Ask the server for a short-lived signed URL we can hand to a fresh
-      // browser tab. This works without a Bearer token in the new tab.
-      const res = await api.post<{ url: string }>(`/files/${fileId}/signed-view`)
-      const signedUrl = res.data.url
-      const w = window.open(signedUrl, "_blank", "noopener")
-      if (!w) toast.error("Please allow pop-ups to open this file.")
+      await openPreviewFileInNewTab(file)
     } catch (err: unknown) {
       toastApiError(err, "Failed to open file in a new tab.")
     }
@@ -356,10 +373,10 @@ function PreviewHeader({
 }
 
 function PreviewBody({ file }: { file: PreviewFile }) {
-  const kind = useMemo(() => inferKind(file.mimeType, file.name), [file.mimeType, file.name])
+  const kind = useMemo(() => inferPreviewKind(file.mimeType, file.name), [file.mimeType, file.name])
 
-  // Inline direct URL (data:/blob:) gets used as-is; otherwise fetch via the
-  // auth'd API client and turn the response into a blob URL.
+  // Inline direct URL (data:/blob:) gets used as-is; otherwise non-PDF previews
+  // fetch through the auth'd API client and turn the response into a blob URL.
   const fetchUrl = buildAuthFetchUrl(file)
   const directUrl = inlineDirectUrl(file)
 
@@ -375,10 +392,13 @@ function PreviewBody({ file }: { file: PreviewFile }) {
     setError(null)
     setTextContent(null)
 
-    if (directUrl) {
+    if (kind === "pdf") {
+      setBlobUrl(directUrl)
+      setLoading(false)
+    } else if (directUrl) {
       if (kind === "text") {
-        setBlobUrl(null)
         setLoading(true)
+        setBlobUrl(null)
         readInlineTextUrl(directUrl)
           .then((text) => {
             if (!cancelled) setTextContent(text)
@@ -425,6 +445,10 @@ function PreviewBody({ file }: { file: PreviewFile }) {
     }
   }, [fetchUrl, directUrl, kind])
 
+  if (kind === "pdf") {
+    return <PdfExternalView file={file} />
+  }
+
   if (loading) {
     return (
       <div className="flex h-full w-full items-center justify-center">
@@ -465,20 +489,6 @@ function PreviewBody({ file }: { file: PreviewFile }) {
     )
   }
 
-  if (kind === "pdf" && blobUrl) {
-    return (
-      <Suspense
-        fallback={
-          <div className="flex h-full w-full items-center justify-center">
-            <Loader2 className="size-8 animate-spin text-white/60" />
-          </div>
-        }
-      >
-        <PdfViewer src={blobUrl} fileId={file.fileId || file.id || null} />
-      </Suspense>
-    )
-  }
-
   if (kind === "text" && textContent !== null) {
     return (
       <div className="m-4 flex max-h-[calc(100vh-120px)] w-full max-w-4xl overflow-auto rounded-lg bg-white p-6 shadow-xl">
@@ -490,6 +500,54 @@ function PreviewBody({ file }: { file: PreviewFile }) {
   }
 
   return <UnsupportedView file={file} />
+}
+
+function PdfExternalView({ file }: { file: PreviewFile }) {
+  const handleOpen = async () => {
+    try {
+      await openPreviewFileInNewTab(file)
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to open PDF.")
+    }
+  }
+
+  const handleDownload = async () => {
+    try {
+      await downloadPreviewFile(file)
+    } catch (err: unknown) {
+      toastApiError(err, "Failed to download PDF.")
+    }
+  }
+
+  return (
+    <div className="flex max-w-md flex-col items-center gap-4 px-6 text-center text-white">
+      <FileText className="size-14 text-white/40" />
+      <div>
+        <p className="text-sm font-semibold">Open this PDF in your browser</p>
+        <p className="mt-1 text-xs text-white/60">
+          This keeps large PDFs out of the app preview.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium hover:bg-white/20"
+        >
+          <ExternalLink className="size-4" />
+          Open PDF
+        </button>
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium hover:bg-white/20"
+        >
+          <Download className="size-4" />
+          Download
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function ImageViewer({ src, alt }: { src: string; alt: string }) {
@@ -548,7 +606,7 @@ function ImageViewer({ src, alt }: { src: string; alt: string }) {
   }
 
   return (
-    <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden p-4">
       <img
         src={src}
         alt={alt}
@@ -563,7 +621,7 @@ function ImageViewer({ src, alt }: { src: string; alt: string }) {
           cursor: scale > 1 ? "grab" : "default",
           touchAction: scale > 1 ? "none" : "auto",
         }}
-        className="max-h-[calc(100vh-100px)] max-w-full select-none object-contain"
+        className="max-h-[calc(100vh-132px)] max-w-full select-none rounded-sm bg-white object-contain shadow-2xl ring-1 ring-white/10"
       />
 
       <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-slate-950/80 px-2 py-1 text-white shadow-lg">
@@ -603,31 +661,9 @@ function ImageViewer({ src, alt }: { src: string; alt: string }) {
 }
 
 function UnsupportedView({ file }: { file: PreviewFile }) {
-  const fileId = file.fileId || file.id || null
-
   const handleDownload = async () => {
     try {
-      const inline = inlineDirectUrl(file)
-      if (inline) {
-        const a = document.createElement("a")
-        a.href = inline
-        a.download = file.name || "download"
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        return
-      }
-      const url = fileId ? `/files/${fileId}/download` : buildAuthFetchUrl(file)
-      if (!url) return
-      const res = await api.get<Blob>(url, { responseType: "blob" })
-      const objectUrl = URL.createObjectURL(res.data)
-      const a = document.createElement("a")
-      a.href = objectUrl
-      a.download = file.name || "download"
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+      await downloadPreviewFile(file)
     } catch (err: unknown) {
       toastApiError(err, "Failed to download file.")
     }
@@ -635,14 +671,7 @@ function UnsupportedView({ file }: { file: PreviewFile }) {
 
   const handleOpenInNewTab = async () => {
     try {
-      const inline = inlineDirectUrl(file)
-      if (inline) {
-        window.open(inline, "_blank", "noopener")
-        return
-      }
-      if (!fileId) return
-      const res = await api.post<{ url: string }>(`/files/${fileId}/signed-view`)
-      window.open(res.data.url, "_blank", "noopener")
+      await openPreviewFileInNewTab(file)
     } catch (err: unknown) {
       toastApiError(err, "Failed to open file.")
     }

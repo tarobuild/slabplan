@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 
@@ -10,17 +10,9 @@ type ReportRange = {
   to?: string
 }
 
-type ReportQueryParams =
-  | {
-      range: Exclude<RangePreset, "custom">
-      from?: string
-      to?: string
-    }
-  | {
-      range: "custom"
-      from: string
-      to: string
-    }
+type ReportParams =
+  | { range?: Exclude<RangePreset, "custom"> }
+  | { range: "custom"; from: string; to: string }
 
 const RANGE_LABELS: Record<RangePreset, string> = {
   last_30: "Last 30 days",
@@ -30,13 +22,16 @@ const RANGE_LABELS: Record<RangePreset, string> = {
 }
 
 function rangeToParams(r: ReportRange): Record<string, string> {
-  const effectiveRange = r.range === "custom" && (!r.from || !r.to) ? "last_90" : r.range
-  const params: Record<string, string> = { range: effectiveRange }
-  if (effectiveRange === "custom" && r.from && r.to) {
+  const params: Record<string, string> = { range: r.range }
+  if (r.range === "custom" && r.from && r.to) {
     params.from = r.from
     params.to = r.to
   }
   return params
+}
+
+export function isCompleteReportRange(range: ReportRange): boolean {
+  return range.range !== "custom" || Boolean(range.from && range.to)
 }
 
 export function formatMoney(cents: number): string {
@@ -52,22 +47,42 @@ export function ReportToolbar({
 }: {
   value: ReportRange
   onChange: (next: ReportRange) => void
-  csvHref: string
+  csvHref: string | null
   csvFilename: string
 }) {
+  const [selectedRange, setSelectedRange] = useState<RangePreset>(value.range)
   const [from, setFrom] = useState(value.from ?? "")
   const [to, setTo] = useState(value.to ?? "")
 
+  useEffect(() => {
+    setSelectedRange(value.range)
+    if (value.range === "custom") {
+      setFrom(value.from ?? "")
+      setTo(value.to ?? "")
+    }
+  }, [value.from, value.range, value.to])
+
+  function commitCustomRange(nextFrom: string, nextTo: string) {
+    if (nextFrom && nextTo) {
+      onChange({ range: "custom", from: nextFrom, to: nextTo })
+    }
+  }
+
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-white p-3">
+    <div className="flex flex-wrap items-end gap-3 rounded-md border border-[#E5E7EB] bg-white p-3">
       <label className="flex flex-col text-xs text-slate-600">
         Date range
         <select
           className="mt-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
-          value={value.range}
+          value={selectedRange}
           onChange={(e) => {
             const next = e.target.value as RangePreset
-            onChange({ range: next, from: next === "custom" ? from : undefined, to: next === "custom" ? to : undefined })
+            setSelectedRange(next)
+            if (next === "custom") {
+              commitCustomRange(from, to)
+            } else {
+              onChange({ range: next })
+            }
           }}
         >
           {(Object.keys(RANGE_LABELS) as RangePreset[]).map((k) => (
@@ -77,7 +92,7 @@ export function ReportToolbar({
           ))}
         </select>
       </label>
-      {value.range === "custom" && (
+      {selectedRange === "custom" && (
         <>
           <label className="flex flex-col text-xs text-slate-600">
             From
@@ -85,8 +100,9 @@ export function ReportToolbar({
               type="date"
               value={from}
               onChange={(e) => {
-                setFrom(e.target.value)
-                onChange({ range: "custom", from: e.target.value, to })
+                const nextFrom = e.target.value
+                setFrom(nextFrom)
+                commitCustomRange(nextFrom, to)
               }}
               className="mt-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
             />
@@ -97,8 +113,9 @@ export function ReportToolbar({
               type="date"
               value={to}
               onChange={(e) => {
-                setTo(e.target.value)
-                onChange({ range: "custom", from, to: e.target.value })
+                const nextTo = e.target.value
+                setTo(nextTo)
+                commitCustomRange(from, nextTo)
               }}
               className="mt-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
             />
@@ -106,13 +123,23 @@ export function ReportToolbar({
         </>
       )}
       <div className="ml-auto">
-        <a
-          className="inline-flex items-center rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-          href={csvHref}
-          download={csvFilename}
-        >
-          Export CSV
-        </a>
+        {csvHref ? (
+          <a
+            className="inline-flex items-center rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            href={csvHref}
+            download={csvFilename}
+          >
+            Export CSV
+          </a>
+        ) : (
+          <button
+            type="button"
+            className="inline-flex cursor-not-allowed items-center rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-400"
+            disabled
+          >
+            Export CSV
+          </button>
+        )}
       </div>
     </div>
   )
@@ -132,7 +159,7 @@ export function SnapshotToolbar({
   note?: string
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-white p-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-[#E5E7EB] bg-white p-3">
       <span className="text-xs text-slate-500">{note ?? "Snapshot — as of today"}</span>
       <div className="ml-auto">
         <a
@@ -187,14 +214,26 @@ export function useReportRange(): [ReportRange, (r: ReportRange) => void] {
 // Adapter: turn the picker's `ReportRange` into the orval-generated query
 // params shape. All five report endpoints share the same params shape, so
 // we expose a single helper here rather than per-endpoint wrappers.
-export function rangeToReportParams(range: ReportRange): ReportQueryParams {
+export function rangeToReportParams(range: ReportRange): ReportParams | undefined {
   if (range.range === "custom" && range.from && range.to) {
     return { range: "custom", from: range.from, to: range.to }
   }
-  return { range: range.range === "custom" ? "last_90" : range.range }
+  if (range.range === "custom") {
+    return undefined
+  }
+  return { range: range.range }
 }
 
-export function csvDownloadHref(path: string, range: ReportRange): string {
+export function isCsvReportData(data: unknown): data is string {
+  return typeof data === "string"
+}
+
+export function jsonReportData<T>(data: T | string | undefined): T | undefined {
+  return isCsvReportData(data) ? undefined : data
+}
+
+export function csvDownloadHref(path: string, range: ReportRange): string | null {
+  if (!isCompleteReportRange(range)) return null
   const params = new URLSearchParams({ ...rangeToParams(range), format: "csv" })
   return `/api/reports/${path}?${params.toString()}`
 }

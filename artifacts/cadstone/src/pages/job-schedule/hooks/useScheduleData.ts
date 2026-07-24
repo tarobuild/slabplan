@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react"
-import { scheduleGetJobsJobIdSchedule } from "@workspace/api-client-react"
+import {
+  scheduleGetJobsJobIdSchedule,
+  type ScheduleListResponsePagination,
+} from "@workspace/api-client-react"
 import { api } from "@/lib/api"
 import {
   type ScheduleBaselineRecord,
@@ -20,6 +23,10 @@ import type {
 } from "../types"
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>
+type OffsetSchedulePagination = Extract<
+  ScheduleListResponsePagination,
+  { totalPages: number; totalItems: number }
+>
 
 interface UseScheduleDataOptions {
   jobId: string | undefined
@@ -27,6 +34,15 @@ interface UseScheduleDataOptions {
   setCalendarPeriod: Setter<CalendarPeriod>
   onItemsFetched: (items: ScheduleItemRecord[]) => void
   historyOpen: boolean
+}
+
+function requireOffsetSchedulePagination(
+  pagination: ScheduleListResponsePagination,
+): OffsetSchedulePagination {
+  if ("totalPages" in pagination && "totalItems" in pagination) {
+    return pagination
+  }
+  throw new Error("Schedule page request returned cursor pagination.")
 }
 
 export function useScheduleData({
@@ -51,22 +67,21 @@ export function useScheduleData({
 
   const appliedDefaultViewRef = useRef(false)
   const onItemsFetchedRef = useRef(onItemsFetched)
-  const latestJobIdRef = useRef(jobId)
+  const currentJobIdRef = useRef(jobId)
+
+  currentJobIdRef.current = jobId
+
+  function isCurrentJob(requestJobId: string) {
+    return currentJobIdRef.current === requestJobId
+  }
 
   useEffect(() => {
     onItemsFetchedRef.current = onItemsFetched
   }, [onItemsFetched])
 
-  useEffect(() => {
-    latestJobIdRef.current = jobId
-  }, [jobId])
-
-  const isCurrentJob = (requestedJobId: string | undefined) =>
-    latestJobIdRef.current === requestedJobId
-
   async function fetchItems() {
-    const requestedJobId = jobId
-    if (!requestedJobId) {
+    const requestJobId = jobId
+    if (!requestJobId) {
       return
     }
 
@@ -76,61 +91,61 @@ export function useScheduleData({
     let totalPages = 1
     let totalItems = 0
     while (page <= totalPages && page <= 20) {
-      const response = await scheduleGetJobsJobIdSchedule(requestedJobId, {
+      const response = await scheduleGetJobsJobIdSchedule(requestJobId, {
         page,
         limit: pageSize,
       })
-      if (!isCurrentJob(requestedJobId)) return
       collected.push(...((response.data ?? []) as unknown as ScheduleItemRecord[]))
-      if (response.pagination && "totalPages" in response.pagination) {
-        totalPages = response.pagination.totalPages
-        totalItems = response.pagination.totalItems
-      } else {
-        totalPages = 1
-        totalItems = collected.length
-      }
+      const pagination = requireOffsetSchedulePagination(response.pagination)
+      totalPages = pagination.totalPages
+      totalItems = pagination.totalItems
       page += 1
     }
-    const nextItems = collected
-    if (isCurrentJob(requestedJobId)) {
-      setItems(nextItems)
-      setItemsTotal(totalItems)
-      onItemsFetchedRef.current(nextItems)
+    if (!isCurrentJob(requestJobId)) {
+      return
     }
+    const nextItems = collected
+    setItems(nextItems)
+    setItemsTotal(totalItems)
+    onItemsFetchedRef.current(nextItems)
   }
 
   async function fetchBaseline() {
-    const requestedJobId = jobId
-    if (!requestedJobId) {
+    const requestJobId = jobId
+    if (!requestJobId) {
       return
     }
 
-    const response = await api.get<{ baseline: ScheduleBaselineRecord | null }>(`/jobs/${requestedJobId}/schedule/baseline`)
-    if (isCurrentJob(requestedJobId)) {
-      setBaseline(response.data.baseline ?? null)
+    const response = await api.get<{ baseline: ScheduleBaselineRecord | null }>(`/jobs/${requestJobId}/schedule/baseline`)
+    if (!isCurrentJob(requestJobId)) {
+      return
     }
+    setBaseline(response.data.baseline ?? null)
   }
 
   async function fetchWorkdayExceptions() {
-    const requestedJobId = jobId
-    if (!requestedJobId) {
+    const requestJobId = jobId
+    if (!requestJobId) {
       return
     }
 
-    const response = await api.get<{ exceptions: ScheduleWorkdayException[] }>(`/jobs/${requestedJobId}/workday-exceptions`)
-    if (isCurrentJob(requestedJobId)) {
-      setWorkdayExceptions(response.data.exceptions ?? [])
+    const response = await api.get<{ exceptions: ScheduleWorkdayException[] }>(`/jobs/${requestJobId}/workday-exceptions`)
+    if (!isCurrentJob(requestJobId)) {
+      return
     }
+    setWorkdayExceptions(response.data.exceptions ?? [])
   }
 
   async function fetchSettings() {
-    const requestedJobId = jobId
-    if (!requestedJobId) {
+    const requestJobId = jobId
+    if (!requestJobId) {
       return
     }
 
-    const response = await api.get<ScheduleSettings>(`/jobs/${requestedJobId}/schedule/settings`)
-    if (!isCurrentJob(requestedJobId)) return
+    const response = await api.get<ScheduleSettings>(`/jobs/${requestJobId}/schedule/settings`)
+    if (!isCurrentJob(requestJobId)) {
+      return
+    }
     const nextSettings: ScheduleSettings = {
       ...DEFAULT_SETTINGS,
       ...response.data,
@@ -174,42 +189,35 @@ export function useScheduleData({
   }
 
   async function fetchHistory() {
-    const requestedJobId = jobId
-    if (!requestedJobId) {
+    const requestJobId = jobId
+    if (!requestJobId) {
       return
     }
 
     setHistoryLoading(true)
 
     try {
-      const response = await api.get<{ data: ActivityEntry[] }>(`/activity?jobId=${requestedJobId}&page=1&limit=100`)
-      if (isCurrentJob(requestedJobId)) {
-        setHistoryEntries(
-          (response.data.data ?? []).filter((entry) => entry.entityType.startsWith("schedule_")),
-        )
+      const response = await api.get<{ data: ActivityEntry[] }>(`/activity?jobId=${requestJobId}&page=1&limit=100`)
+      if (!isCurrentJob(requestJobId)) {
+        return
       }
+      setHistoryEntries(
+        (response.data.data ?? []).filter((entry) => entry.entityType.startsWith("schedule_")),
+      )
     } catch (err) {
-      if (isCurrentJob(requestedJobId)) {
+      if (isCurrentJob(requestJobId)) {
         toastApiError(err, "Failed to load schedule history")
       }
     } finally {
-      if (isCurrentJob(requestedJobId)) {
+      if (isCurrentJob(requestJobId)) {
         setHistoryLoading(false)
       }
     }
   }
 
   async function loadData() {
-    const requestedJobId = jobId
-    if (!requestedJobId) {
-      setItems([])
-      setItemsTotal(0)
-      onItemsFetchedRef.current([])
-      setBaseline(null)
-      setWorkdayExceptions([])
-      setHistoryEntries([])
-      setLoading(false)
-      setHistoryLoading(false)
+    const requestJobId = jobId
+    if (!requestJobId) {
       return
     }
 
@@ -218,11 +226,11 @@ export function useScheduleData({
     try {
       await Promise.all([fetchItems(), fetchUsers(), fetchJobs(), fetchSettings(), fetchBaseline(), fetchWorkdayExceptions()])
     } catch (err) {
-      if (isCurrentJob(requestedJobId)) {
+      if (isCurrentJob(requestJobId)) {
         toastApiError(err, "Failed to load schedule")
       }
     } finally {
-      if (isCurrentJob(requestedJobId)) {
+      if (isCurrentJob(requestJobId)) {
         setLoading(false)
       }
     }

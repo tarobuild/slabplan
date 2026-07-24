@@ -143,14 +143,22 @@ export function resolveSafeFileServingHeaders(
       ? "inline"
       : "attachment";
 
-  const filename = options.originalName || "file";
-  // RFC 6266: filename uses the legacy quoted form (with double-quotes
-  // and backslashes stripped so they cannot terminate the header
-  // early), and filename* uses RFC 5987 percent-encoding so non-ASCII
-  // filenames survive intact.
-  const safeFilename = filename.replace(/["\\]/g, "");
-  const encoded = encodeURIComponent(filename);
-  const contentDispositionHeader = `${disposition}; filename="${safeFilename}"; filename*=UTF-8''${encoded}`;
+  const rawName = options.originalName || "file";
+  // Keep the legacy quoted fallback strictly ASCII: Node rejects response
+  // header values containing characters outside its accepted byte range.
+  // Modern browsers prefer filename*, which preserves the exact UTF-8 name.
+  const asciiFallback =
+    rawName
+      .replace(/["\\]/g, "")
+      .replace(/[^\x20-\x7e]/g, "_")
+      .trim() || "file";
+  // encodeURIComponent leaves !'()* unescaped, but RFC 5987 attr-char does
+  // not allow them in this extended Content-Disposition parameter.
+  const encoded = encodeURIComponent(rawName).replace(
+    /[!'()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  const contentDispositionHeader = `${disposition}; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
 
   return { contentType, disposition, contentDispositionHeader };
 }

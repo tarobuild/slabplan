@@ -1,5 +1,7 @@
 import path from "node:path";
+import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
+import { StringDecoder } from "node:string_decoder";
 import { fileTypeFromFile } from "file-type";
 import { inflateSync, strFromU8 } from "fflate";
 import { HttpError } from "./http";
@@ -334,6 +336,8 @@ interface MismatchOptions {
   detail?: string;
   pdfHeaderOffset?: number | null;
   errorCode?: string;
+  encryptedPdf?: boolean;
+  unlockRequired?: boolean;
 }
 
 function makeMismatchError(
@@ -362,6 +366,12 @@ function makeMismatchError(
       sniffedMimeType: sniffedMime,
       ...(options.pdfHeaderOffset !== undefined
         ? { pdfHeaderOffset: options.pdfHeaderOffset }
+        : {}),
+      ...(options.encryptedPdf !== undefined
+        ? { encryptedPdf: options.encryptedPdf }
+        : {}),
+      ...(options.unlockRequired !== undefined
+        ? { unlockRequired: options.unlockRequired }
         : {}),
     },
     "unsupported-media-type",
@@ -472,9 +482,11 @@ async function validatePdf(
   if (inspection.encrypted) {
     throw makeMismatchError(PDF_CATEGORY, claimedMime, extension, "application/pdf", {
       detail:
-        "This PDF appears to be password-protected. Remove the password and try again.",
+        "This PDF is encrypted or locked. It may open locally without prompting, but it must be exported as an unlocked PDF before upload.",
       pdfHeaderOffset: inspection.headerOffset,
       errorCode: "UPLOAD_PDF_ENCRYPTED",
+      encryptedPdf: true,
+      unlockRequired: true,
     });
   }
 }
@@ -485,68 +497,68 @@ async function validatePdf(
 // only documents whose root element is `<svg>` and reject any inline
 // scripts / `javascript:` URLs / event-handler attributes before
 // allowing the upload through.
-const SVG_SCAN_CHUNK_BYTES = 64 * 1024;
-const SVG_PATTERN_OVERLAP_BYTES = 256;
 const SVG_FORBIDDEN = [
   /<script\b/i,
   /javascript:/i,
   /\son\w+\s*=/i,
   /<foreignObject\b/i,
 ];
-
-async function inspectSvg(filePath: string): Promise<{
-  hasSvgRoot: boolean;
-  unsafe: boolean;
-}> {
-  const handle = await fs.open(filePath, "r");
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  const buffer = Buffer.alloc(SVG_SCAN_CHUNK_BYTES);
-  let hasSvgRoot = false;
-  let carry = "";
-
-  try {
-    while (true) {
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
-      if (bytesRead === 0) {
-        break;
-      }
-
-      const text = carry + decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
-      hasSvgRoot ||= /<svg\b/i.test(text);
-      if (SVG_FORBIDDEN.some((pattern) => pattern.test(text))) {
-        return { hasSvgRoot, unsafe: true };
-      }
-      carry = text.slice(-SVG_PATTERN_OVERLAP_BYTES);
-    }
-
-    const finalText = carry + decoder.decode();
-    hasSvgRoot ||= /<svg\b/i.test(finalText);
-    return {
-      hasSvgRoot,
-      unsafe: SVG_FORBIDDEN.some((pattern) => pattern.test(finalText)),
-    };
-  } finally {
-    await handle.close();
-  }
-}
-
+const SVG_SCAN_TAIL_CHARS = 256;
 async function validateSvg(
   file: Express.Multer.File,
   claimedMime: string,
   extension: string,
 ): Promise<void> {
-  const inspection = await inspectSvg(file.path);
-  if (!inspection.hasSvgRoot) {
-    throw makeMismatchError(SVG_CATEGORY, claimedMime, extension, null, {
-      detail: "This file isn't an SVG image.",
-    });
+  const decoder = new StringDecoder("utf8");
+  let tail = "";
+  let sawSvg = false;
+
+  try {
+    for await (const chunk of createReadStream(file.path)) {
+      const text = tail + decoder.write(chunk as Buffer);
+      sawSvg ||= /<svg\b/i.test(text);
+      for (const pattern of SVG_FORBIDDEN) {
+        if (pattern.test(text)) {
+          throw makeMismatchError(SVG_CATEGORY, claimedMime, extension, "image/svg+xml", {
+            detail:
+              "SVG files with inline scripts, event handlers, or javascript: URLs are not allowed.",
+            errorCode: "UPLOAD_SVG_UNSAFE",
+          });
+        }
+      }
+      tail = text.slice(-SVG_SCAN_TAIL_CHARS);
+    }
+
+    const finalText = tail + decoder.end();
+    sawSvg ||= /<svg\b/i.test(finalText);
+    for (const pattern of SVG_FORBIDDEN) {
+      if (pattern.test(finalText)) {
+        throw makeMismatchError(SVG_CATEGORY, claimedMime, extension, "image/svg+xml", {
+          detail:
+            "SVG files with inline scripts, event handlers, or javascript: URLs are not allowed.",
+          errorCode: "UPLOAD_SVG_UNSAFE",
+        });
+      }
+    }
+  } catch (err) {
+    if (err instanceof HttpError) {
+      throw err;
+    }
+    logger.warn(
+      { err, path: file.path, originalName: file.originalname },
+      "SVG magic-byte read failed; rejecting upload",
+    );
+    throw new HttpError(
+      415,
+      "Could not read uploaded file to verify its type. Try re-saving the file and uploading again.",
+      { code: "MAGIC_BYTE_SNIFF_FAILED" },
+      "unsupported-media-type",
+    );
   }
 
-  if (inspection.unsafe) {
-    throw makeMismatchError(SVG_CATEGORY, claimedMime, extension, "image/svg+xml", {
-      detail:
-        "SVG files with inline scripts, event handlers, or javascript: URLs are not allowed.",
-      errorCode: "UPLOAD_SVG_UNSAFE",
+  if (!sawSvg) {
+    throw makeMismatchError(SVG_CATEGORY, claimedMime, extension, null, {
+      detail: "This file isn't an SVG image.",
     });
   }
 }
@@ -556,7 +568,7 @@ async function validateSvg(
 // record from the tail, walk the central directory, locate the named
 // entry (`[Content_Types].xml` for OOXML, `mimetype` for ODF), then
 // read just that entry's compressed bytes from disk and inflate. This
-// works for archives of any size up to the upload limit (500 MB) and
+// works for archives of any size up to the shared upload limit and
 // caps decompressed bytes per entry to MAX_INSPECTED_ENTRY_BYTES so a
 // crafted high-ratio zip can't OOM the server.
 const ZIP_LOCAL_FILE_HEADER = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
@@ -682,7 +694,11 @@ async function readZipEntryBytes(
   if (entry.method === 8) {
     // Zip entries are raw DEFLATE (no zlib header) — use inflateSync.
     try {
-      return inflateSync(compressed);
+      const inflated = inflateSync(compressed, {
+        out: new Uint8Array(MAX_INSPECTED_ENTRY_BYTES + 1),
+      });
+      if (inflated.length > MAX_INSPECTED_ENTRY_BYTES) return null;
+      return inflated;
     } catch (err) {
       logger.warn({ err, path: filePath, entry: entry.name }, "deflate failed");
       return null;

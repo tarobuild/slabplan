@@ -31,7 +31,15 @@ export interface JobSummary {
    * @maximum 9007199254740991
    */
   amountPaidCents?: number | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   projectedStart?: string | null;
+  /**
+   * Calendar date in `YYYY-MM-DD` format. Sent and stored as a plain string — not an ISO timestamp and not coerced to a `Date`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
   projectedCompletion?: string | null;
   updatedAt?: string | null;
   createdAt: string;

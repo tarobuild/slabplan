@@ -6,6 +6,7 @@ import {
   changeOrders,
   clients,
   financialTrackers,
+  invoiceLinePayments,
   jobs,
   leads,
   sovAreas,
@@ -98,24 +99,25 @@ function sendCsv(res: Response, filename: string, headers: string[], rows: unkno
 // ---------------------------------------------------------------------------
 // 1. A/R Aging by Client
 //
-// "Outstanding" per invoice is the gross invoice amount until an explicit cash
-// collection source is modeled. Invoice line matches are SOV allocations, not
-// customer payments, so reports must not subtract them as collected cash.
+// "Outstanding" per invoice = totalCents - sum(invoice_line_payments). Bucket
+// by age = today - invoice_date.
 // ---------------------------------------------------------------------------
 
 // Zod response contracts. These are exported so callers (and the unit
 // tests) can validate the shape of every payload — frontend axios calls
 // rely on them as the de-facto interface contract until /reports lands
 // in the shared openapi.yaml.
+const moneyCentsSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+
 export const arAgingRowSchema = z.object({
   clientId: z.string().nullable(),
   clientName: z.string(),
-  current: z.number(),
-  d1to30: z.number(),
-  d31to60: z.number(),
-  d61to90: z.number(),
-  d90plus: z.number(),
-  total: z.number(),
+  current: moneyCentsSchema,
+  d1to30: moneyCentsSchema,
+  d31to60: moneyCentsSchema,
+  d61to90: moneyCentsSchema,
+  d90plus: moneyCentsSchema,
+  total: moneyCentsSchema,
 });
 export const arAgingResponseSchema = z.object({ rows: z.array(arAgingRowSchema) });
 
@@ -172,11 +174,13 @@ async function loadArAging(auth?: AuthContext): Promise<ArAgingRow[]> {
       clientName: clients.companyName,
       invoiceDate: trackerInvoices.invoiceDate,
       totalCents: trackerInvoices.totalCents,
+      paidCents: sql<number>`coalesce(sum(${invoiceLinePayments.amountCents}), 0)`,
     })
     .from(trackerInvoices)
     .innerJoin(financialTrackers, eq(trackerInvoices.trackerId, financialTrackers.id))
     .innerJoin(jobs, eq(financialTrackers.jobId, jobs.id))
     .leftJoin(clients, eq(jobs.clientId, clients.id))
+    .leftJoin(invoiceLinePayments, eq(invoiceLinePayments.invoiceId, trackerInvoices.id))
     .where(and(isNull(jobs.deletedAt), auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined))
     .groupBy(
       trackerInvoices.id,
@@ -189,7 +193,7 @@ async function loadArAging(auth?: AuthContext): Promise<ArAgingRow[]> {
   const byClient = new Map<string, ArAgingRow>();
   const today = new Date();
   for (const r of rows) {
-    const outstanding = Math.max(0, Number(r.totalCents ?? 0));
+    const outstanding = Math.max(0, Number(r.totalCents ?? 0) - Number(r.paidCents ?? 0));
     if (outstanding === 0) continue;
     const key = r.clientId ?? "__unassigned__";
     const name = r.clientName ?? "Unknown client";
@@ -311,6 +315,27 @@ async function loadRevenue(range: Range, auth?: AuthContext): Promise<RevenueMon
     )
     .groupBy(sql`to_char(${trackerInvoices.invoiceDate}, 'YYYY-MM')`, jobs.id, jobs.title);
 
+  const collectedRows = await db
+    .select({
+      month: sql<string>`to_char(${invoiceLinePayments.createdAt}, 'YYYY-MM')`,
+      total: sql<number>`coalesce(sum(${invoiceLinePayments.amountCents}), 0)`,
+    })
+    .from(invoiceLinePayments)
+    .innerJoin(trackerInvoices, eq(invoiceLinePayments.invoiceId, trackerInvoices.id))
+    .innerJoin(financialTrackers, eq(trackerInvoices.trackerId, financialTrackers.id))
+    .innerJoin(jobs, eq(financialTrackers.jobId, jobs.id))
+    .where(
+      and(
+        isNull(jobs.deletedAt),
+        auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined,
+        gte(invoiceLinePayments.createdAt, new Date(`${startDate}T00:00:00Z`)),
+        // Upper bound = end-of-day on `range.to` so payments outside a
+        // custom window can't leak into the included month buckets.
+        lte(invoiceLinePayments.createdAt, new Date(`${range.to}T23:59:59Z`)),
+      ),
+    )
+    .groupBy(sql`to_char(${invoiceLinePayments.createdAt}, 'YYYY-MM')`);
+
   const billedByMonth = new Map<string, number>();
   const topJobsByMonth = new Map<string, Map<string, { title: string; total: number }>>();
   for (const r of billedRows) {
@@ -325,6 +350,12 @@ async function loadRevenue(range: Range, auth?: AuthContext): Promise<RevenueMon
     existing.total += Number(r.total);
     jobMap.set(r.jobId, existing);
   }
+  const collectedByMonth = new Map<string, number>();
+  for (const r of collectedRows) {
+    if (!r.month) continue;
+    collectedByMonth.set(r.month, Number(r.total));
+  }
+
   return months.map((month) => {
     const jobMap = topJobsByMonth.get(month) ?? new Map();
     const topJobs = Array.from(jobMap.entries())
@@ -334,7 +365,7 @@ async function loadRevenue(range: Range, auth?: AuthContext): Promise<RevenueMon
     return {
       month,
       billedCents: billedByMonth.get(month) ?? 0,
-      collectedCents: 0,
+      collectedCents: collectedByMonth.get(month) ?? 0,
       topJobs,
     };
   });
@@ -462,15 +493,78 @@ router.get(
 // 4. Days to Payment
 // ---------------------------------------------------------------------------
 
-type DaysToPaymentBucket = z.infer<typeof daysBucketSchema>;
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
+  return sorted[Math.max(0, idx)];
+}
 
-async function loadDaysToPayment(range: Range, auth?: AuthContext): Promise<{
-  byClient: DaysToPaymentBucket[];
-  byJobType: DaysToPaymentBucket[];
-}> {
-  void range;
-  void auth;
-  return { byClient: [], byJobType: [] };
+async function loadDaysToPayment(range: Range, auth?: AuthContext) {
+  const fromDate = new Date(`${range.from}T00:00:00Z`);
+  const toDate = new Date(`${range.to}T23:59:59Z`);
+  const rows = await db
+    .select({
+      clientId: jobs.clientId,
+      clientName: clients.companyName,
+      jobType: jobs.jobType,
+      invoiceDate: trackerInvoices.invoiceDate,
+      appliedAt: trackerInvoices.appliedAt,
+    })
+    .from(trackerInvoices)
+    .innerJoin(financialTrackers, eq(trackerInvoices.trackerId, financialTrackers.id))
+    .innerJoin(jobs, eq(financialTrackers.jobId, jobs.id))
+    .leftJoin(clients, eq(jobs.clientId, clients.id))
+    .where(
+      and(
+        isNull(jobs.deletedAt),
+        auth ? organizationScopeCondition(auth, jobs.organizationId) : undefined,
+        gte(trackerInvoices.appliedAt, fromDate),
+        lte(trackerInvoices.appliedAt, toDate),
+      ),
+    );
+
+  type Bucket = { id: string; label: string; days: number[] };
+  const byClient = new Map<string, Bucket>();
+  const byType = new Map<string, Bucket>();
+
+  for (const r of rows) {
+    if (!r.invoiceDate || !r.appliedAt) continue;
+    const inv = new Date(`${r.invoiceDate}T00:00:00Z`);
+    const days = (r.appliedAt.getTime() - inv.getTime()) / (24 * 60 * 60 * 1000);
+    if (days < 0) continue;
+    const cKey = r.clientId ?? "__unassigned__";
+    const cName = r.clientName ?? "Unknown client";
+    const cBucket = byClient.get(cKey) ?? { id: cKey, label: cName, days: [] };
+    cBucket.days.push(days);
+    byClient.set(cKey, cBucket);
+    const tKey = r.jobType ?? "__none__";
+    const tName = r.jobType ?? "Unspecified";
+    const tBucket = byType.get(tKey) ?? { id: tKey, label: tName, days: [] };
+    tBucket.days.push(days);
+    byType.set(tKey, tBucket);
+  }
+
+  const summarize = (b: Bucket) => {
+    const sorted = [...b.days].sort((a, b) => a - b);
+    const avg =
+      sorted.length > 0 ? sorted.reduce((sum, days) => sum + days, 0) / sorted.length : 0;
+    return {
+      id: b.id,
+      label: b.label,
+      count: sorted.length,
+      avgDays: Math.round(avg * 10) / 10,
+      p90Days: Math.round(percentile(sorted, 90) * 10) / 10,
+    };
+  };
+
+  return {
+    byClient: Array.from(byClient.values())
+      .map(summarize)
+      .sort((a, b) => b.avgDays - a.avgDays),
+    byJobType: Array.from(byType.values())
+      .map(summarize)
+      .sort((a, b) => b.avgDays - a.avgDays),
+  };
 }
 
 router.get(
@@ -554,6 +648,7 @@ export default router;
 // Exported for unit tests.
 export const __testing = {
   resolveRange,
+  percentile,
   rangeQuerySchema,
   loadArAging,
   loadRevenue,

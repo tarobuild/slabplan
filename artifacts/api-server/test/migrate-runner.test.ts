@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import { after, before, test } from "node:test";
 import pg from "pg";
 
@@ -16,6 +17,7 @@ const testDatabaseUrl =
 // without disturbing the shared `public` schema (which other suites
 // depend on).
 const sharedPool = new pg.Pool({ connectionString: testDatabaseUrl });
+const migrationsDir = new URL("../../../lib/db/migrations/", import.meta.url);
 
 before(async () => {
   // Sanity check that the test DB is reachable.
@@ -232,67 +234,16 @@ test(
   "applyMigrations against a pre-pushed schema baselines 0000 and applies the rest cleanly",
   async () => {
     await withScratchDatabase(async (scratchPool) => {
-      // Stand up a minimal "drizzle-kit push" baseline: just the tables
-      // and columns that 0004-0009 actually touch, so the idempotent
-      // post-baseline migrations can run against it without us having to
-      // execute the non-idempotent 0000.
+      // Stand up the original pushed baseline. Later Stone Track tenant
+      // migrations touch most business tables, so a hand-written subset is
+      // no longer representative of a real pre-migration database.
       const setupClient = await scratchPool.connect();
       try {
-        await setupClient.query(`
-          create table users (
-            id uuid primary key,
-            created_at timestamp with time zone default now() not null,
-            updated_at timestamp with time zone default now() not null
-          );
-          create table jobs (
-            id uuid primary key,
-            client_id uuid,
-            contract_type varchar(50),
-            updated_at timestamp with time zone default now() not null
-          );
-          create table leads (
-            id uuid primary key
-          );
-          create table daily_logs (
-            id uuid primary key
-          );
-          create table schedule_items (
-            id uuid primary key
-          );
-          create table clients (
-            id uuid primary key,
-            company_name varchar(255) not null,
-            client_id uuid,
-            notes text,
-            created_at timestamp with time zone default now() not null,
-            updated_at timestamp with time zone default now() not null
-          );
-          create table client_contacts (
-            id uuid primary key,
-            client_id uuid references clients(id) on delete cascade not null,
-            first_name varchar(100),
-            last_name varchar(100),
-            created_at timestamp with time zone default now() not null,
-            updated_at timestamp with time zone default now() not null
-          );
-          create table folders (
-            id uuid primary key,
-            title varchar(255) not null,
-            job_id uuid references jobs(id) on delete cascade,
-            parent_folder_id uuid,
-            media_type varchar(50) not null,
-            deleted_at timestamp with time zone
-          );
-          create table files (
-            id uuid primary key,
-            folder_id uuid references folders(id) on delete cascade,
-            created_at timestamp with time zone default now() not null
-          );
-          create table daily_log_settings (
-            id uuid primary key,
-            singleton boolean not null default true
-          );
-        `);
+        const baselineSql = readFileSync(
+          new URL("0000_far_doctor_strange.sql", migrationsDir),
+          "utf8",
+        );
+        await setupClient.query(baselineSql);
       } finally {
         setupClient.release();
       }
@@ -305,17 +256,9 @@ test(
         "0000 should be recorded as already-applied, not executed",
       );
 
-      const expectedApplied = [
-        "0004_files-folder-created-id-index.sql",
-        "0005_pat-and-idempotency.sql",
-        "0006_agent.sql",
-        "0007_user_invitations.sql",
-        "0008_folder_scope_columns.sql",
-        "0009_schema_audit_alignment.sql",
-        "0010_clients_first_money.sql",
-        "0011_financial_tracker.sql",
-        "0012_schema_hardening.sql",
-      ];
+      const expectedApplied = readdirSync(migrationsDir)
+        .filter((name) => name.endsWith(".sql") && name !== "0000_far_doctor_strange.sql")
+        .sort();
       assert.deepEqual(
         result.applied.sort(),
         expectedApplied.sort(),
@@ -345,6 +288,12 @@ test(
           `select to_regclass('job_assignees') is not null as exists`,
         );
         assert.equal(jobAssignees[0].exists, true, "job_assignees should exist after 0009");
+        await verifyClient.query(
+          `insert into organizations (id, name, slug, status)
+             values ('00000000-0000-4000-8000-000000000001',
+                     'Migration Test', 'migration-test', 'active')
+             on conflict (id) do nothing`,
+        );
 
         // 0012 — schema hardening checks. Each CHECK should reject the
         // matching bad insert; cascades and NOT NULL guards must hold.
@@ -352,8 +301,8 @@ test(
         // jobs.contract_type CHECK rejects unknown values.
         await assert.rejects(
           verifyClient.query(
-            `insert into jobs (id, contract_type, updated_at)
-               values ('11111111-1111-1111-1111-111111111111', 'bogus', now())`,
+            `insert into jobs (id, title, contract_type, updated_at)
+               values ('11111111-1111-1111-1111-111111111111', 'Invalid contract test', 'bogus', now())`,
           ),
           /jobs_contract_type_check/i,
           "jobs.contract_type CHECK must reject non-enum values",
@@ -373,8 +322,9 @@ test(
 
         // client_contacts CHECK rejects rows with neither name set.
         await verifyClient.query(
-          `insert into clients (id, company_name)
-             values ('33333333-3333-3333-3333-333333333333', 'Acme')`,
+          `insert into clients (id, company_name, organization_id)
+             values ('33333333-3333-3333-3333-333333333333', 'Acme',
+                     '00000000-0000-4000-8000-000000000001')`,
         );
         await assert.rejects(
           verifyClient.query(
@@ -390,7 +340,10 @@ test(
         // agent_messages.stopped_reason CHECK rejects unknown values.
         // agent_conversations + agent_messages were created by 0006.
         await verifyClient.query(
-          `insert into users (id) values ('77777777-7777-7777-7777-777777777777')`,
+          `insert into users (id, email, password_hash, full_name)
+             values ('77777777-7777-7777-7777-777777777777',
+                     'migration-test@example.com', 'not-a-real-hash',
+                     'Migration Test User')`,
         );
         await verifyClient.query(
           `insert into agent_conversations (id, user_id)
@@ -399,10 +352,11 @@ test(
         );
         await assert.rejects(
           verifyClient.query(
-            `insert into agent_messages (id, conversation_id, role, stopped_reason)
+            `insert into agent_messages (id, conversation_id, role, stopped_reason, organization_id)
                values ('99999999-9999-9999-9999-999999999999',
                        '88888888-8888-8888-8888-888888888888',
-                       'assistant', 'definitely_not_a_real_reason')`,
+                       'assistant', 'definitely_not_a_real_reason',
+                       '00000000-0000-4000-8000-000000000001')`,
           ),
           /agent_messages_stopped_reason_check/i,
           "agent_messages.stopped_reason CHECK must reject non-enum values",
@@ -410,14 +364,17 @@ test(
 
         // financial_trackers.job_id cascades on jobs delete.
         await verifyClient.query(
-          `insert into jobs (id, client_id, updated_at)
+          `insert into jobs (id, title, client_id, organization_id, updated_at)
              values ('55555555-5555-5555-5555-555555555555',
-                     '33333333-3333-3333-3333-333333333333', now())`,
+                     'Cascade test job',
+                     '33333333-3333-3333-3333-333333333333',
+                     '00000000-0000-4000-8000-000000000001', now())`,
         );
         await verifyClient.query(
-          `insert into financial_trackers (id, job_id, created_at, updated_at)
+          `insert into financial_trackers (id, job_id, organization_id, created_at, updated_at)
              values ('66666666-6666-6666-6666-666666666666',
-                     '55555555-5555-5555-5555-555555555555', now(), now())`,
+                     '55555555-5555-5555-5555-555555555555',
+                     '00000000-0000-4000-8000-000000000001', now(), now())`,
         );
         await verifyClient.query(
           `delete from jobs where id = '55555555-5555-5555-5555-555555555555'`,

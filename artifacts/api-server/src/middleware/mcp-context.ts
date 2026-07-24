@@ -61,7 +61,3 @@ function secretsMatch(candidate: string, expected: string): boolean {
 export function getMcpContext(): McpContext | undefined {
   return storage.getStore();
 }
-
-function runWithMcpContext<T>(ctx: McpContext, fn: () => T): T {
-  return storage.run(ctx, fn);
-}

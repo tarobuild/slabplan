@@ -37,7 +37,7 @@ async function assertCrewHome(page: Page) {
     page
       .getByTestId("home-schedule-item")
       .first()
-      .or(page.getByRole("heading", { name: /today's schedule/i })),
+      .or(page.getByText(/today's schedule/i).first()),
   ).toBeVisible({ timeout: 10_000 })
 }
 

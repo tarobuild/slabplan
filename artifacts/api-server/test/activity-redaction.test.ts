@@ -18,6 +18,8 @@ const restrictedFolderId = crypto.randomUUID();
 const personalTodoId = crypto.randomUUID();
 const restrictedFolderActivityId = crypto.randomUUID();
 const personalTodoActivityId = crypto.randomUUID();
+const visibleActivityId1 = crypto.randomUUID();
+const visibleActivityId2 = crypto.randomUUID();
 
 const adminEmail = `admin-${adminUserId}@activity-redaction-test.local`;
 const workerEmail = `worker-${workerUserId}@activity-redaction-test.local`;
@@ -119,6 +121,30 @@ before(async () => {
         current: { title: "Admin Private Todo" },
       },
     },
+    {
+      id: visibleActivityId1,
+      entityType: "job",
+      entityId: jobId,
+      action: "updated",
+      userId: adminUserId,
+      metadata: {
+        description: "Visible job update 1",
+        jobId,
+      },
+      createdAt: new Date("2026-01-02T00:00:00.000Z"),
+    },
+    {
+      id: visibleActivityId2,
+      entityType: "job",
+      entityId: jobId,
+      action: "updated",
+      userId: adminUserId,
+      metadata: {
+        description: "Visible job update 2",
+        jobId,
+      },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    },
   ]);
 
   const stamp = new Date();
@@ -158,7 +184,12 @@ after(async () => {
   const { inArray, eq } = await import("drizzle-orm");
 
   try {
-    await db.delete(activityLog).where(inArray(activityLog.id, [restrictedFolderActivityId, personalTodoActivityId]));
+    await db.delete(activityLog).where(inArray(activityLog.id, [
+      restrictedFolderActivityId,
+      personalTodoActivityId,
+      visibleActivityId1,
+      visibleActivityId2,
+    ]));
     await db.delete(jobs).where(eq(jobs.id, jobId));
     await db.delete(users).where(inArray(users.id, [adminUserId, workerUserId]));
   } finally {
@@ -184,6 +215,50 @@ test("worker activity feed omits admin-only folders and another user's personal 
   assert.equal(body.data.some((row) => row.id === personalTodoActivityId), false);
   assert.equal(serialized.includes("Admin Vault Folder"), false);
   assert.equal(serialized.includes("Admin Private Todo"), false);
+});
+
+test("worker activity pagination counts only rows visible after redaction", async () => {
+  const response = await fetch(`${baseUrl}/api/activity?jobId=${jobId}&limit=1&page=1`, {
+    headers: { authorization: `Bearer ${workerAccessJwt}` },
+  });
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    data: Array<{ id: string }>;
+    pagination: { totalItems: number; totalPages: number };
+  };
+
+  assert.deepEqual(body.data.map((row) => row.id), [visibleActivityId1]);
+  assert.equal(body.pagination.totalItems, 2);
+  assert.equal(body.pagination.totalPages, 2);
+});
+
+test("worker activity cursor pagination skips hidden rows before computing hasMore", async () => {
+  const firstResponse = await fetch(`${baseUrl}/api/activity?jobId=${jobId}&limit=1&cursor=`, {
+    headers: { authorization: `Bearer ${workerAccessJwt}` },
+  });
+
+  assert.equal(firstResponse.status, 200);
+  const first = (await firstResponse.json()) as {
+    data: Array<{ id: string }>;
+    pagination: { hasMore: boolean; nextCursor: string | null };
+  };
+  assert.deepEqual(first.data.map((row) => row.id), [visibleActivityId1]);
+  assert.equal(first.pagination.hasMore, true);
+  assert.equal(typeof first.pagination.nextCursor, "string");
+
+  const secondResponse = await fetch(`${baseUrl}/api/activity?jobId=${jobId}&limit=1&cursor=${encodeURIComponent(first.pagination.nextCursor ?? "")}`, {
+    headers: { authorization: `Bearer ${workerAccessJwt}` },
+  });
+
+  assert.equal(secondResponse.status, 200);
+  const second = (await secondResponse.json()) as {
+    data: Array<{ id: string }>;
+    pagination: { hasMore: boolean; nextCursor: string | null };
+  };
+  assert.deepEqual(second.data.map((row) => row.id), [visibleActivityId2]);
+  assert.equal(second.pagination.hasMore, false);
+  assert.equal(second.pagination.nextCursor, null);
 });
 
 test("admin activity feed still includes restricted metadata", async () => {
@@ -221,12 +296,14 @@ test("realtime activity payload is redacted per recipient", async () => {
     userId: workerUserId,
     email: workerEmail,
     role: "crew_member",
+    organizationId: "00000000-0000-4000-8000-000000000001",
   });
   const adminPayload = await redactRealtimePayloadForAuth("activity:created", payload, {
     type: "access",
     userId: adminUserId,
     email: adminEmail,
     role: "admin",
+    organizationId: "00000000-0000-4000-8000-000000000001",
   });
 
   assert.equal(workerPayload, null);

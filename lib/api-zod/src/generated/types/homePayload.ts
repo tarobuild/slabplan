@@ -7,9 +7,10 @@
  */
 import type { AdminHome } from "./adminHome";
 import type { CrewHome } from "./crewHome";
+import type { DrafterHome } from "./drafterHome";
 import type { PmHome } from "./pmHome";
 
 /**
- * Role-aware /dashboard/home response. Discriminated by `role` (crew | pm | admin).
+ * Role-aware /dashboard/home response. Discriminated by `role` (crew | pm | drafter | admin).
  */
-export type HomePayload = CrewHome | PmHome | AdminHome;
+export type HomePayload = CrewHome | PmHome | DrafterHome | AdminHome;

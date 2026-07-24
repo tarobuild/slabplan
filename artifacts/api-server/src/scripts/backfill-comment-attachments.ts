@@ -19,7 +19,7 @@
  * objects pointing at non-existent rows. The next run will re-attempt
  * the row from scratch.
  */
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, pool } from "@workspace/db";
 import { dailyLogComments, dailyLogs, files, folders } from "@workspace/db/schema";
 import {
@@ -29,7 +29,8 @@ import {
   writeUploadedBuffer,
 } from "../lib/storage";
 
-const DATA_URL_RE = /^data:([\w./+-]+);base64,([\s\S]*)$/i;
+const DATA_URL_RE = /^data:([\w./+-]+);base64,(.*)$/i;
+const CANONICAL_BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 type RawAttachment = Record<string, unknown>;
 
@@ -62,6 +63,11 @@ interface BackfillStats {
   rowFailures: number;
 }
 
+interface BackfillOptions {
+  commentIds?: readonly string[];
+  dailyLogIds?: readonly string[];
+}
+
 function isPlainObject(value: unknown): value is RawAttachment {
   return (
     value !== null && typeof value === "object" && !Array.isArray(value)
@@ -77,16 +83,18 @@ function parseDataUrl(
   return { mime: match[1], data: match[2] };
 }
 
-function decodeStrictBase64(data: string): Buffer | null {
-  const normalized = data.replace(/\s+/g, "");
-  if (!normalized || normalized.length % 4 === 1) return null;
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) return null;
-
-  const buffer = Buffer.from(normalized, "base64");
-  const canonicalInput = normalized.replace(/=+$/, "");
-  const canonicalDecoded = buffer.toString("base64").replace(/=+$/, "");
-  if (canonicalInput !== canonicalDecoded) return null;
-  return buffer.length > 0 ? buffer : null;
+function decodeCanonicalBase64(data: string): Buffer | null {
+  if (data.length % 4 !== 0 || !CANONICAL_BASE64_RE.test(data)) {
+    return null;
+  }
+  const buffer = Buffer.from(data, "base64");
+  if (buffer.length === 0) {
+    return null;
+  }
+  if (buffer.toString("base64") !== data) {
+    return null;
+  }
+  return buffer;
 }
 
 function safeName(value: unknown): string {
@@ -233,15 +241,63 @@ async function processCommentRow(
 
   try {
     await db.transaction(async (tx) => {
-      if (!row.organizationId) {
+      await tx.execute(sql`
+        SELECT id FROM daily_log_comments
+        WHERE id = ${row.id} AND deleted_at IS NULL
+        FOR UPDATE
+      `);
+
+      const [lockedRow] = await tx
+        .select({
+          dailyLogId: dailyLogComments.dailyLogId,
+          organizationId: sql<string | null>`coalesce(${dailyLogComments.organizationId}, ${dailyLogs.organizationId})`,
+          createdBy: dailyLogComments.createdBy,
+          attachments: dailyLogComments.attachments,
+        })
+        .from(dailyLogComments)
+        .leftJoin(dailyLogs, eq(dailyLogComments.dailyLogId, dailyLogs.id))
+        .where(and(eq(dailyLogComments.id, row.id), isNull(dailyLogComments.deletedAt)))
+        .limit(1);
+
+      if (!lockedRow) {
+        return;
+      }
+
+      const lockedAttachments = lockedRow.attachments;
+      if (!Array.isArray(lockedAttachments) || lockedAttachments.length === 0) {
+        return;
+      }
+
+      const lockedHasLegacy = lockedAttachments.some((entry) => {
+        if (!isPlainObject(entry)) return false;
+        return parseDataUrl(entry.url) !== null;
+      });
+      if (!lockedHasLegacy) {
+        for (const entry of lockedAttachments) {
+          if (
+            isPlainObject(entry) &&
+            typeof entry.fileId === "string" &&
+            entry.fileId.length > 0
+          ) {
+            result.alreadyConverted += 1;
+          }
+        }
+        return;
+      }
+
+      if (!lockedRow.organizationId) {
         throw new Error(`Daily log comment ${row.id} is missing organizationId`);
       }
 
-      const folder = await ensureCommentFolder(tx, row.dailyLogId, row.organizationId);
+      const folder = await ensureCommentFolder(
+        tx,
+        lockedRow.dailyLogId,
+        lockedRow.organizationId,
+      );
 
       const newAttachments: StoredAttachment[] = [];
 
-      for (const entry of attachments) {
+      for (const entry of lockedAttachments) {
         if (!isPlainObject(entry)) {
           // Unrecognized shape — drop so the row stops carrying junk.
           result.dropped += 1;
@@ -273,8 +329,9 @@ async function processCommentRow(
           continue;
         }
 
-        const buffer = decodeStrictBase64(dataUrl.data);
+        const buffer = decodeCanonicalBase64(dataUrl.data);
         if (!buffer) {
+          // Malformed base64 — drop so we don't carry an unreadable entry.
           result.dropped += 1;
           continue;
         }
@@ -283,8 +340,8 @@ async function processCommentRow(
         const mimeType = safeMime(entry.mimeType, dataUrl.mime);
         const storedFileName = buildStoredFileName(originalName);
         const uploadPath = buildUploadPath({
-          organizationId: row.organizationId,
-          jobId: `daily-log-${row.dailyLogId}-comments`,
+          organizationId: lockedRow.organizationId,
+          jobId: `daily-log-${lockedRow.dailyLogId}-comments`,
           mediaType: "photo",
           storedFileName,
         });
@@ -297,7 +354,7 @@ async function processCommentRow(
         const [createdFile] = await tx
           .insert(files)
           .values({
-            organizationId: row.organizationId,
+            organizationId: lockedRow.organizationId,
             folderId: folder.id,
             filename: storedFileName,
             originalName,
@@ -307,7 +364,7 @@ async function processCommentRow(
             // Comments can outlive their author (createdBy is set null on
             // user delete); persist whatever we have so the audit trail
             // matches the comment row.
-            uploadedBy: row.createdBy,
+            uploadedBy: lockedRow.createdBy,
           })
           .returning({ id: files.id });
 
@@ -352,6 +409,7 @@ async function processCommentRow(
 
 export async function backfillCommentAttachments(
   storage: StorageWriter = realStorage,
+  options: BackfillOptions = {},
 ): Promise<BackfillStats> {
   const stats: BackfillStats = {
     commentsScanned: 0,
@@ -367,6 +425,14 @@ export async function backfillCommentAttachments(
   // (per-daily-log) that materializing all rows with a non-empty attachments
   // array fits comfortably in memory; if that ever changes, switch to a
   // cursor-based scan.
+  const filters = [isNull(dailyLogComments.deletedAt)];
+  if (options.commentIds && options.commentIds.length > 0) {
+    filters.push(inArray(dailyLogComments.id, [...options.commentIds]));
+  }
+  if (options.dailyLogIds && options.dailyLogIds.length > 0) {
+    filters.push(inArray(dailyLogComments.dailyLogId, [...options.dailyLogIds]));
+  }
+
   const rows = await db
     .select({
       id: dailyLogComments.id,
@@ -377,7 +443,7 @@ export async function backfillCommentAttachments(
     })
     .from(dailyLogComments)
     .leftJoin(dailyLogs, eq(dailyLogComments.dailyLogId, dailyLogs.id))
-    .where(isNull(dailyLogComments.deletedAt));
+    .where(and(...filters));
 
   for (const row of rows) {
     stats.commentsScanned += 1;

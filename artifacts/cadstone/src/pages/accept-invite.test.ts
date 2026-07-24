@@ -27,7 +27,7 @@ test("invite acceptance covers missing token and password validation branches", 
 })
 
 test("invite acceptance submits a validated payload, authenticates, and navigates", () => {
-  assert.match(source, /const payload: AuthAcceptInviteSchema = \{ token, password \}/)
+  assert.match(source, /const payload: AuthAcceptInviteSchema = \{[\s\S]*token,[\s\S]*email: normalizedEmail,[\s\S]*password,[\s\S]*\}/)
   assert.match(source, /validatePayload\(AuthPostAuthAcceptInviteBody, payload\)/)
   assert.match(source, /authPostAuthAcceptInvite\(\s*validated,\s*\)/)
   assert.match(source, /setAuth\(response\.user, response\.accessToken\)/)

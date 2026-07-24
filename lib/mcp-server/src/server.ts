@@ -1,7 +1,7 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ApiClient, ApiError, type ApiClientOptions } from "./api-client";
-import { TOOL_DEFINITIONS, TOOL_OUTPUT_SCHEMAS } from "./tools";
-import { listResources, parseResourceUri, readResource } from "./resources";
+import { ApiClient, ApiError, type ApiClientOptions } from "./api-client.js";
+import { TOOL_DEFINITIONS, TOOL_OUTPUT_SCHEMAS } from "./tools.js";
+import { listResources, parseResourceUri, readResource } from "./resources.js";
 
 export type CreateCadstoneMcpServerOptions = {
   baseUrl: string;

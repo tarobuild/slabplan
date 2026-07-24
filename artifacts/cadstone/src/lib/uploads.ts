@@ -1,4 +1,5 @@
 import {
+  DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
   DANGEROUS_UPLOAD_EXTENSIONS,
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_COUNT,
@@ -128,7 +129,6 @@ export function validateSelectedFiles(
 type DurationProbe = (file: File) => Promise<number | null>
 
 const DEFAULT_PROBE_TIMEOUT_MS = 8000
-const DEFAULT_UPLOAD_TIMEOUT_MS = 120_000
 
 function defaultProbeDuration(file: File): Promise<number | null> {
   if (typeof document === "undefined" || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
@@ -140,7 +140,6 @@ function defaultProbeDuration(file: File): Promise<number | null> {
     video.preload = "metadata"
     video.muted = true
     let settled = false
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
 
     const cleanup = () => {
       try {
@@ -159,10 +158,6 @@ function defaultProbeDuration(file: File): Promise<number | null> {
     const finish = (value: number | null) => {
       if (settled) return
       settled = true
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle)
-        timeoutHandle = null
-      }
       cleanup()
       resolve(value)
     }
@@ -172,7 +167,7 @@ function defaultProbeDuration(file: File): Promise<number | null> {
       finish(Number.isFinite(duration) && duration > 0 ? duration : null)
     }
     video.onerror = () => finish(null)
-    timeoutHandle = setTimeout(() => finish(null), DEFAULT_PROBE_TIMEOUT_MS)
+    setTimeout(() => finish(null), DEFAULT_PROBE_TIMEOUT_MS)
 
     try {
       video.src = url
@@ -284,7 +279,6 @@ export async function validateSelectedFilesAsync(
 
 import { refreshSession } from "./api"
 import { useAuthStore } from "@/store/auth"
-import { apiUrl } from "./api-origin"
 
 export interface UploadProgress {
   loaded: number
@@ -303,7 +297,7 @@ export interface UploadOptions {
   signal?: AbortSignal
   /** Override max retry attempts (default 3). */
   maxAttempts?: number
-  /** Request timeout in milliseconds (default 2 minutes). */
+  /** Request timeout in milliseconds (default 10 minutes). */
   timeoutMs?: number
 }
 
@@ -327,6 +321,9 @@ function makeUploadError(
 }
 
 const RETRY_DELAYS_MS = [1000, 3000, 8000]
+export const DEFAULT_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000
+export const DEFAULT_CHUNKED_UPLOAD_CHUNK_SIZE_BYTES = 16 * 1024 * 1024
+export { DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES }
 
 function isTransientStatus(status: number | undefined): boolean {
   if (status === undefined) return true
@@ -353,6 +350,26 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
+function isPlainForbiddenUploadError(error: unknown): error is UploadError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as UploadError).status === 403 &&
+    (error as UploadError).code === "UPLOAD_FORBIDDEN_PLAIN_RESPONSE"
+  )
+}
+
+async function blobToBase64Body(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ""
+  const batchSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += batchSize) {
+    const slice = bytes.subarray(offset, offset + batchSize)
+    binary += String.fromCharCode(...slice)
+  }
+  return btoa(binary)
+}
+
 interface XhrAttemptResult<T> {
   ok: true
   data: T
@@ -367,14 +384,14 @@ function sendOnce<T>(opts: UploadOptions): Promise<XhrAttemptResult<T> | XhrAtte
     const xhr = new XMLHttpRequest()
     const token = useAuthStore.getState().accessToken
 
-    xhr.open("POST", apiUrl(`/api${opts.url}`), true)
+    xhr.open("POST", `/api${opts.url}`, true)
     xhr.withCredentials = true
-    xhr.timeout = Math.max(1, opts.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS)
     xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest")
     if (token) {
       xhr.setRequestHeader("Authorization", `Bearer ${token}`)
     }
     xhr.responseType = "text"
+    xhr.timeout = opts.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS
 
     if (opts.onProgress) {
       xhr.upload.addEventListener("progress", (event) => {
@@ -421,16 +438,13 @@ function sendOnce<T>(opts: UploadOptions): Promise<XhrAttemptResult<T> | XhrAtte
         return
       }
 
-      const problem = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null
-      const detail =
-        (problem?.detail as string | undefined) ||
-        (problem?.message as string | undefined) ||
-        `Upload failed with status ${status}.`
-      const errors = problem?.errors as Record<string, unknown> | undefined
-      const code = (errors?.code as string | undefined) ?? deriveDefaultCode(status)
       resolve({
         ok: false,
-        error: makeUploadError(detail, status, code, problem),
+        error: buildUploadErrorFromResponse(
+          status,
+          parsed,
+          typeof xhr.getResponseHeader === "function" ? xhr.getResponseHeader("Content-Type") : null,
+        ),
       })
     }
 
@@ -470,6 +484,375 @@ function sendOnce<T>(opts: UploadOptions): Promise<XhrAttemptResult<T> | XhrAtte
   })
 }
 
+async function authedJsonRequest<T>(
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal,
+): Promise<T> {
+  let triedReAuth = false
+
+  for (;;) {
+    const token = useAuthStore.getState().accessToken
+    const headers = new Headers(init.headers)
+    headers.set("X-Requested-With", "XMLHttpRequest")
+    if (!headers.has("Content-Type") && init.body) {
+      headers.set("Content-Type", "application/json")
+    }
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`)
+    }
+
+    const response = await fetch(`/api${url}`, {
+      ...init,
+      headers,
+      credentials: "include",
+      signal,
+    })
+
+    if (response.status === 401 && !triedReAuth) {
+      triedReAuth = true
+      const refreshed = await refreshSession()
+      if (refreshed) continue
+    }
+
+    const text = await response.text()
+    let parsed: unknown = null
+    try {
+      parsed = text ? JSON.parse(text) : null
+    } catch {
+      parsed = text
+    }
+
+    if (response.ok) {
+      return parsed as T
+    }
+
+    throw buildUploadErrorFromResponse(response.status, parsed, response.headers.get("Content-Type"))
+  }
+}
+
+function sendRawChunkOnce<T>(opts: {
+  url: string
+  blob: Blob
+  signal?: AbortSignal
+  timeoutMs?: number
+  onProgress?: (progress: UploadProgress) => void
+}): Promise<XhrAttemptResult<T> | XhrAttemptError> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest()
+    const token = useAuthStore.getState().accessToken
+
+    xhr.open("PUT", `/api${opts.url}`, true)
+    xhr.withCredentials = true
+    xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest")
+    xhr.setRequestHeader("Content-Type", "application/octet-stream")
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`)
+    }
+    xhr.responseType = "text"
+    xhr.timeout = opts.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (!event.lengthComputable || !opts.onProgress) return
+      opts.onProgress({
+        loaded: event.loaded,
+        total: event.total,
+        percent: Math.round((event.loaded / event.total) * 100),
+      })
+    })
+
+    const onAbort = () => {
+      try {
+        xhr.abort()
+      } catch {
+        /* ignore */
+      }
+    }
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        resolve({
+          ok: false,
+          error: makeUploadError("Upload aborted", undefined, "UPLOAD_ABORTED"),
+        })
+        return
+      }
+      opts.signal.addEventListener("abort", onAbort, { once: true })
+    }
+
+    xhr.onload = () => {
+      opts.signal?.removeEventListener("abort", onAbort)
+      const status = xhr.status
+      const text = xhr.responseText || ""
+      let parsed: unknown = null
+      try {
+        parsed = text ? JSON.parse(text) : null
+      } catch {
+        parsed = text
+      }
+
+      if (status >= 200 && status < 300) {
+        resolve({ ok: true, data: parsed as T })
+        return
+      }
+
+      resolve({
+        ok: false,
+        error: buildUploadErrorFromResponse(
+          status,
+          parsed,
+          typeof xhr.getResponseHeader === "function" ? xhr.getResponseHeader("Content-Type") : null,
+        ),
+      })
+    }
+
+    xhr.onerror = () => {
+      opts.signal?.removeEventListener("abort", onAbort)
+      resolve({
+        ok: false,
+        error: makeUploadError(
+          "Network error during upload.",
+          undefined,
+          "UPLOAD_NETWORK_ERROR",
+        ),
+      })
+    }
+
+    xhr.ontimeout = () => {
+      opts.signal?.removeEventListener("abort", onAbort)
+      resolve({
+        ok: false,
+        error: makeUploadError(
+          "Upload timed out. Try again.",
+          undefined,
+          "UPLOAD_NETWORK_TIMEOUT",
+        ),
+      })
+    }
+
+    xhr.onabort = () => {
+      opts.signal?.removeEventListener("abort", onAbort)
+      resolve({
+        ok: false,
+        error: makeUploadError("Upload aborted", undefined, "UPLOAD_ABORTED"),
+      })
+    }
+
+    xhr.send(opts.blob)
+  })
+}
+
+function sendBase64ChunkOnce<T>(opts: {
+  url: string
+  body: string
+  decodedSize: number
+  signal?: AbortSignal
+  timeoutMs?: number
+  onProgress?: (progress: UploadProgress) => void
+}): Promise<XhrAttemptResult<T> | XhrAttemptError> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest()
+    const token = useAuthStore.getState().accessToken
+
+    xhr.open("PUT", `/api${opts.url}`, true)
+    xhr.withCredentials = true
+    xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest")
+    xhr.setRequestHeader("Content-Type", "text/plain")
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`)
+    }
+    xhr.responseType = "text"
+    xhr.timeout = opts.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (!event.lengthComputable || !opts.onProgress) return
+      const encodedPercent = event.total > 0 ? event.loaded / event.total : 0
+      const loaded = Math.min(opts.decodedSize, Math.round(opts.decodedSize * encodedPercent))
+      opts.onProgress({
+        loaded,
+        total: opts.decodedSize,
+        percent: Math.round((loaded / opts.decodedSize) * 100),
+      })
+    })
+
+    const onAbort = () => {
+      try {
+        xhr.abort()
+      } catch {
+        /* ignore */
+      }
+    }
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        resolve({
+          ok: false,
+          error: makeUploadError("Upload aborted", undefined, "UPLOAD_ABORTED"),
+        })
+        return
+      }
+      opts.signal.addEventListener("abort", onAbort, { once: true })
+    }
+
+    xhr.onload = () => {
+      opts.signal?.removeEventListener("abort", onAbort)
+      const status = xhr.status
+      const text = xhr.responseText || ""
+      let parsed: unknown = null
+      try {
+        parsed = text ? JSON.parse(text) : null
+      } catch {
+        parsed = text
+      }
+
+      if (status >= 200 && status < 300) {
+        resolve({ ok: true, data: parsed as T })
+        return
+      }
+
+      resolve({
+        ok: false,
+        error: buildUploadErrorFromResponse(
+          status,
+          parsed,
+          typeof xhr.getResponseHeader === "function" ? xhr.getResponseHeader("Content-Type") : null,
+        ),
+      })
+    }
+
+    xhr.onerror = () => {
+      opts.signal?.removeEventListener("abort", onAbort)
+      resolve({
+        ok: false,
+        error: makeUploadError(
+          "Network error during upload.",
+          undefined,
+          "UPLOAD_NETWORK_ERROR",
+        ),
+      })
+    }
+
+    xhr.ontimeout = () => {
+      opts.signal?.removeEventListener("abort", onAbort)
+      resolve({
+        ok: false,
+        error: makeUploadError(
+          "Upload timed out. Try again.",
+          undefined,
+          "UPLOAD_NETWORK_TIMEOUT",
+        ),
+      })
+    }
+
+    xhr.onabort = () => {
+      opts.signal?.removeEventListener("abort", onAbort)
+      resolve({
+        ok: false,
+        error: makeUploadError("Upload aborted", undefined, "UPLOAD_ABORTED"),
+      })
+    }
+
+    xhr.send(opts.body)
+  })
+}
+
+async function sendRawChunkWithRetry<T>(options: {
+  url: string
+  blob: Blob
+  signal?: AbortSignal
+  timeoutMs?: number
+  maxAttempts?: number
+  onProgress?: (progress: UploadProgress) => void
+  onRetry?: (attempt: number, reason: string) => void
+}): Promise<T> {
+  const maxAttempts = options.maxAttempts ?? 3
+  let triedReAuth = false
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (options.signal?.aborted) {
+      throw makeUploadError("Upload aborted", undefined, "UPLOAD_ABORTED")
+    }
+
+    const result = await sendRawChunkOnce<T>(options)
+    if (result.ok) return result.data
+
+    if (result.error.status === 401 && !triedReAuth) {
+      triedReAuth = true
+      const refreshed = await refreshSession()
+      if (refreshed) {
+        attempt -= 1
+        continue
+      }
+      throw result.error
+    }
+
+    const status = result.error.status
+    if (status !== undefined && status < 500 && status !== 408 && status !== 425 && status !== 429) {
+      throw result.error
+    }
+    if (!isTransientStatus(status)) {
+      throw result.error
+    }
+    if (attempt >= maxAttempts) {
+      throw result.error
+    }
+
+    const wait = RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)]
+    options.onRetry?.(attempt + 1, result.error.message)
+    await delay(wait, options.signal)
+  }
+
+  throw makeUploadError("Upload failed", undefined, "UPLOAD_FAILED")
+}
+
+async function sendBase64ChunkWithRetry<T>(options: {
+  url: string
+  body: string
+  decodedSize: number
+  signal?: AbortSignal
+  timeoutMs?: number
+  maxAttempts?: number
+  onProgress?: (progress: UploadProgress) => void
+  onRetry?: (attempt: number, reason: string) => void
+}): Promise<T> {
+  const maxAttempts = options.maxAttempts ?? 3
+  let triedReAuth = false
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (options.signal?.aborted) {
+      throw makeUploadError("Upload aborted", undefined, "UPLOAD_ABORTED")
+    }
+
+    const result = await sendBase64ChunkOnce<T>(options)
+    if (result.ok) return result.data
+
+    if (result.error.status === 401 && !triedReAuth) {
+      triedReAuth = true
+      const refreshed = await refreshSession()
+      if (refreshed) {
+        attempt -= 1
+        continue
+      }
+      throw result.error
+    }
+
+    const status = result.error.status
+    if (status !== undefined && status < 500 && status !== 408 && status !== 425 && status !== 429) {
+      throw result.error
+    }
+    if (!isTransientStatus(status)) {
+      throw result.error
+    }
+    if (attempt >= maxAttempts) {
+      throw result.error
+    }
+
+    const wait = RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)]
+    options.onRetry?.(attempt + 1, result.error.message)
+    await delay(wait, options.signal)
+  }
+
+  throw makeUploadError("Upload failed", undefined, "UPLOAD_FAILED")
+}
+
 function deriveDefaultCode(status: number): string {
   if (status === 401) return "UPLOAD_AUTH_EXPIRED"
   if (status === 403) return "UPLOAD_FORBIDDEN"
@@ -478,6 +861,34 @@ function deriveDefaultCode(status: number): string {
   if (status === 408 || status === 504) return "UPLOAD_NETWORK_TIMEOUT"
   if (status >= 500) return "UPLOAD_SERVER_ERROR"
   return "UPLOAD_FAILED"
+}
+
+function buildUploadErrorFromResponse(
+  status: number,
+  parsed: unknown,
+  responseContentType: string | null,
+): UploadError {
+  const problem = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null
+  const detail =
+    (problem?.detail as string | undefined) ||
+    (problem?.message as string | undefined) ||
+    `Upload failed with status ${status}.`
+  const errors = problem?.errors as Record<string, unknown> | undefined
+  const code =
+    (errors?.code as string | undefined) ||
+    (status === 403 && !problem ? "UPLOAD_FORBIDDEN_PLAIN_RESPONSE" : deriveDefaultCode(status))
+  const rawBody = typeof parsed === "string" ? parsed.slice(0, 1000) : undefined
+
+  return makeUploadError(
+    detail,
+    status,
+    code,
+    problem ?? {
+      structured: false,
+      responseContentType,
+      rawBody,
+    },
+  )
 }
 
 /**
@@ -537,4 +948,131 @@ export async function uploadWithProgress<T = unknown>(
   }
 
   throw lastError ?? makeUploadError("Upload failed", undefined, "UPLOAD_FAILED")
+}
+
+async function uploadFileWithChunksToBaseUrl<T = unknown>(options: {
+  baseUrl: string
+  file: File
+  startBody?: Record<string, unknown>
+  chunkSizeBytes?: number
+  signal?: AbortSignal
+  timeoutMs?: number
+  onProgress?: (progress: UploadProgress) => void
+  onRetry?: (attempt: number, reason: string) => void
+}): Promise<T> {
+  const chunkSizeBytes = options.chunkSizeBytes ?? DEFAULT_CHUNKED_UPLOAD_CHUNK_SIZE_BYTES
+  const totalChunks = Math.max(1, Math.ceil(options.file.size / chunkSizeBytes))
+
+  const start = await authedJsonRequest<{
+    session: { uploadId: string }
+  }>(
+    options.baseUrl,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        originalName: options.file.name,
+        mimeType: options.file.type || "application/octet-stream",
+        totalSize: options.file.size,
+        totalChunks,
+        ...(options.startBody ?? {}),
+      }),
+    },
+    options.signal,
+  )
+
+  const uploadId = start.session.uploadId
+  let completedBytes = 0
+
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+    const startByte = chunkIndex * chunkSizeBytes
+    const endByte = Math.min(options.file.size, startByte + chunkSizeBytes)
+    const blob = options.file.slice(startByte, endByte)
+
+    const reportChunkProgress = (progress: UploadProgress) => {
+      const loaded = Math.min(options.file.size, completedBytes + progress.loaded)
+      options.onProgress?.({
+        loaded,
+        total: options.file.size,
+        percent: Math.round((loaded / options.file.size) * 100),
+      })
+    }
+    const chunkUrl = `${options.baseUrl}/${uploadId}/chunks/${chunkIndex}`
+
+    try {
+      await sendRawChunkWithRetry({
+        url: chunkUrl,
+        blob,
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        onRetry: options.onRetry,
+        onProgress: reportChunkProgress,
+      })
+    } catch (error) {
+      if (!isPlainForbiddenUploadError(error)) {
+        throw error
+      }
+
+      options.onRetry?.(1, "Retrying chunk with base64 transport after plain 403.")
+      await sendBase64ChunkWithRetry({
+        url: chunkUrl,
+        body: await blobToBase64Body(blob),
+        decodedSize: blob.size,
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        onRetry: options.onRetry,
+        onProgress: reportChunkProgress,
+      })
+    }
+
+    completedBytes = endByte
+    options.onProgress?.({
+      loaded: completedBytes,
+      total: options.file.size,
+      percent: Math.round((completedBytes / options.file.size) * 100),
+    })
+  }
+
+  return authedJsonRequest<T>(
+    `${options.baseUrl}/${uploadId}/complete`,
+    { method: "POST" },
+    options.signal,
+  )
+}
+
+export async function uploadFileWithChunks<T = unknown>(options: {
+  folderId: string
+  file: File
+  note?: string | null
+  duplicateAction?: "keep_both" | "skip_exact" | "fail_on_conflict"
+  videoDurationSeconds?: number | null
+  chunkSizeBytes?: number
+  signal?: AbortSignal
+  timeoutMs?: number
+  onProgress?: (progress: UploadProgress) => void
+  onRetry?: (attempt: number, reason: string) => void
+}): Promise<T> {
+  return uploadFileWithChunksToBaseUrl({
+    ...options,
+    baseUrl: `/folders/${options.folderId}/files/chunked`,
+    startBody: {
+      note: options.note?.trim() || undefined,
+      duplicateAction: options.duplicateAction ?? "keep_both",
+      videoDurationSeconds: options.videoDurationSeconds ?? undefined,
+    },
+  })
+}
+
+export async function uploadLeadAttachmentWithChunks<T = unknown>(options: {
+  leadId: string
+  file: File
+  chunkSizeBytes?: number
+  signal?: AbortSignal
+  timeoutMs?: number
+  onProgress?: (progress: UploadProgress) => void
+  onRetry?: (attempt: number, reason: string) => void
+}): Promise<T> {
+  return uploadFileWithChunksToBaseUrl({
+    ...options,
+    baseUrl: `/leads/${options.leadId}/attachments/chunked`,
+  })
 }

@@ -6,8 +6,11 @@ import {
   _resetRateLimitCleanupForTests,
   clearRateLimitBucket,
   createGlobalApiRateLimit,
+  createUploadPerUserRateLimit,
   createPerUserApiRateLimit,
   createRateLimit,
+  DEFAULT_UPLOAD_PER_USER_MAX,
+  DEFAULT_UPLOAD_PER_USER_WINDOW_MS,
 } from "../src/lib/rate-limit.ts";
 import { HttpError } from "../src/lib/http.ts";
 
@@ -116,6 +119,44 @@ test("createRateLimit blocks requests after the configured threshold", async () 
   assert.ok(retryAfter >= 1 && retryAfter <= 60);
 });
 
+test("createRateLimit rejects invalid local quota configuration", () => {
+  assert.throws(
+    () =>
+      createRateLimit({
+        keyPrefix: "test:invalid:max",
+        max: 0,
+        windowMs: 60_000,
+        message: "invalid",
+        resolveKey: () => "key",
+      }),
+    /max.*positive integer/i,
+  );
+
+  assert.throws(
+    () =>
+      createRateLimit({
+        keyPrefix: "test:invalid:window",
+        max: 1,
+        windowMs: Number.NaN,
+        message: "invalid",
+        resolveKey: () => "key",
+      }),
+    /windowMs.*positive integer/i,
+  );
+
+  assert.throws(
+    () =>
+      createRateLimit({
+        keyPrefix: "test:invalid:window-overflow",
+        max: 1,
+        windowMs: 2_147_483_648,
+        message: "invalid",
+        resolveKey: () => "key",
+      }),
+    /windowMs.*2147483647/,
+  );
+});
+
 test("two users sharing one IP get separate per-user buckets", async () => {
   // Use unique key prefixes via a fresh limiter so other tests cannot bleed in.
   const perUser = createRateLimit({
@@ -190,6 +231,30 @@ test("createPerUserApiRateLimit is a no-op for unauthenticated requests", async 
   const err = await runMiddleware(middleware, createRequest({ ip: "10.1.1.1" }), response);
   assert.equal(err, undefined);
   assert.equal(headers.get("X-RateLimit-Limit"), undefined);
+});
+
+test("upload limiter defaults allow bulk migrations with a short retry window", async () => {
+  const middleware = createUploadPerUserRateLimit();
+  const userId = `upload-migration-${Date.now()}-${Math.random()}`;
+  const request = createRequest({ auth: { userId } });
+  const { response, headers } = createResponse();
+
+  const before = Date.now();
+  const err = await runMiddleware(middleware, request, response);
+
+  assert.equal(err, undefined);
+  assert.equal(headers.get("X-RateLimit-Limit"), String(DEFAULT_UPLOAD_PER_USER_MAX));
+  assert.equal(
+    headers.get("X-RateLimit-Remaining"),
+    String(DEFAULT_UPLOAD_PER_USER_MAX - 1),
+  );
+
+  const resetAtMs = Number(headers.get("X-RateLimit-Reset")) * 1000;
+  assert.ok(resetAtMs > before);
+  assert.ok(
+    resetAtMs <= before + DEFAULT_UPLOAD_PER_USER_WINDOW_MS + 5_000,
+    "upload reset window should stay near the 15 minute default",
+  );
 });
 
 test("when both limiters fire the headers reflect the stricter (binding) limit", async () => {

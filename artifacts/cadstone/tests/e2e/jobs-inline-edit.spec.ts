@@ -12,6 +12,7 @@ import {
   findUserIdByEmail,
   requireAnyClient,
 } from "./helpers/api"
+import { visiblePlaceholder } from "./helpers/locators"
 import { CESAR_STATE, WORKER_STATE } from "./helpers/storage"
 
 // These specs cover the inline editors on the /jobs list:
@@ -73,10 +74,7 @@ test.describe("jobs inline editors — admin", () => {
     const jobId = createdJobId
 
     await page.goto("/jobs")
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(title)
+    await visiblePlaceholder(page, /search/i).fill(title)
 
     // Wait for the search-debounced refetch to settle on a single row.
     await expect(
@@ -217,10 +215,7 @@ test.describe("jobs inline editors — worker (read-only)", () => {
     })
 
     await page.goto("/jobs")
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(title)
+    await visiblePlaceholder(page, /search/i).fill(title)
 
     await expect(
       page.getByRole("link", { name: `Open job ${title}` }),

@@ -32,6 +32,8 @@ export type JobOption = {
 
 export type ViewMode = "calendar" | "list" | "gantt"
 export type ScheduleSection = "schedule" | "baseline" | "workday-exceptions"
+export type ScheduleExportKind = "schedule" | "baseline" | "exceptions"
+export type ScheduleExportFormat = "pdf" | "csv"
 export type CalendarPeriod = "month" | "week" | "day" | "agenda"
 export type ListDisplayMode = "phases" | "notes"
 export type GanttScale = "day" | "week" | "month" | "year"

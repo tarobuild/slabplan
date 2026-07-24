@@ -195,6 +195,10 @@ const FILE_VIEW_ROUTE_PATTERNS: ReadonlyArray<{
     route: "/api/files/:id/view-signed",
   },
   {
+    pattern: /^\/files\/([^/]+)\/download-signed$/,
+    route: "/api/files/:id/download-signed",
+  },
+  {
     pattern: /^\/folders\/[^/]+\/files\/([^/]+)\/view$/,
     route: "/api/folders/:folderId/files/:fileId/view",
   },

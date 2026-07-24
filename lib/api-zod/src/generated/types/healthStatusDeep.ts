@@ -15,4 +15,6 @@ export interface HealthStatusDeep {
   /** @minimum 0 */
   durationMs: number;
   errors: HealthStatusDeepErrorsItem[];
+  /** Short Git commit SHA for the deployed build, when the host exposes one. */
+  releaseSha?: string | null;
 }

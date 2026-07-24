@@ -10,7 +10,7 @@ import type { DailyLogListItem } from "./dailyLogListItem";
 import type { Pagination } from "./pagination";
 
 /**
- * Paged daily-log list. The `pagination` field uses `Pagination` in page mode and `CursorPagination` only when the request supplies an explicit `cursor` parameter.
+ * Paged daily-log list. The `pagination` field uses `Pagination` (page mode) unless the request supplied the `cursor` query key, in which case it uses `CursorPagination`. A `limit` query by itself does not select cursor mode.
  */
 export interface DailyLogListResponse {
   logs: DailyLogListItem[];

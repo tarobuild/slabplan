@@ -10,7 +10,12 @@ import type { UsersUpdateUserSchemaRole } from "./usersUpdateUserSchemaRole";
 /**
  * Request body for `PATCH /users/{id}` — admin updates a worker's full name, role, or active flag. At least one field must be provided. An admin cannot deactivate their own account through this endpoint.
  */
-type UsersUpdateUserSchemaBase = {
+type AtLeastOne<T, Keys extends keyof T = keyof T> = Pick<T, Exclude<keyof T, Keys>> &
+  {
+    [K in Keys]-?: Required<Pick<T, K>> & Partial<Pick<T, Exclude<Keys, K>>>;
+  }[Keys];
+
+type UsersUpdateUserSchemaFields = {
   /**
    * @minLength 2
    * @maxLength 255
@@ -20,7 +25,4 @@ type UsersUpdateUserSchemaBase = {
   isActive?: boolean;
 };
 
-export type UsersUpdateUserSchema =
-  | (UsersUpdateUserSchemaBase & { fullName: string })
-  | (UsersUpdateUserSchemaBase & { role: UsersUpdateUserSchemaRole })
-  | (UsersUpdateUserSchemaBase & { isActive: boolean });
+export type UsersUpdateUserSchema = AtLeastOne<UsersUpdateUserSchemaFields>;

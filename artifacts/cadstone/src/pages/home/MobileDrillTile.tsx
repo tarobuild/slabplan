@@ -8,12 +8,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { loadAllDrillPages } from "./MobileDrillTile.pagination"
 
 const UNASSIGNED_KEY = "__unassigned__"
-const ACTIVE_JOBS_PAGE_SIZE = 200
-const SCHEDULE_PAGE_SIZE = 100
-const OPEN_SCHEDULE_STATUSES = ["overdue", "in_progress", "upcoming"] as const
+const DRILL_PAGE_SIZE = 100
 
 type TileProps = {
   label: string
@@ -24,8 +21,6 @@ type TileProps = {
   drillTitle: string
   drillKind: "active-jobs" | "open-leads" | "open-schedule"
   testId?: string
-  mobileTestId?: string
-  desktopTestId?: string
 }
 
 /**
@@ -42,12 +37,8 @@ export function MobileDrillTile({
   drillTitle,
   drillKind,
   testId,
-  mobileTestId,
-  desktopTestId,
 }: TileProps) {
   const [open, setOpen] = useState(false)
-  const resolvedMobileTestId = mobileTestId ?? (testId ? `${testId}-mobile` : undefined)
-  const resolvedDesktopTestId = desktopTestId ?? (testId ? `${testId}-desktop` : undefined)
   const tileBody = (
     <>
       {icon ? (
@@ -73,14 +64,14 @@ export function MobileDrillTile({
     </>
   )
   const cls =
-    "block w-full rounded-lg border border-border bg-white p-4 text-left transition hover:border-primary/35 hover:bg-accent/40"
+    "block w-full rounded-lg border border-[#E5E7EB] bg-white p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
         className={`md:hidden ${cls}`}
-        data-testid={resolvedMobileTestId}
+        data-testid={testId}
         aria-label={`${label}: ${value}. View list.`}
       >
         {tileBody}
@@ -88,7 +79,7 @@ export function MobileDrillTile({
       <Link
         to={to}
         className={`hidden md:block ${cls}`}
-        data-testid={resolvedDesktopTestId}
+        data-testid={testId}
       >
         {tileBody}
       </Link>
@@ -105,11 +96,11 @@ export function MobileDrillTile({
               <DrillContent kind={drillKind} onNavigate={() => setOpen(false)} />
             </div>
           ) : null}
-          <div className="mt-4 border-t border-border pt-3">
+          <div className="mt-4 border-t border-[#E5E7EB] pt-3">
             <Link
               to={to}
               onClick={() => setOpen(false)}
-              className="text-sm font-medium text-primary hover:text-primary/80"
+              className="text-sm font-medium text-primary hover:text-primary"
             >
               View full page →
             </Link>
@@ -140,6 +131,55 @@ function DrillStatus({ children }: { children: ReactNode }) {
   )
 }
 
+type DrillRequest = (
+  url: string,
+  config: { params: Record<string, unknown> },
+) => Promise<{ data: unknown }>
+
+type CursorPagination = {
+  hasMore?: boolean
+  nextCursor?: string | null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function readArray<T>(data: unknown, key: string): T[] {
+  if (!isRecord(data)) return []
+  const value = data[key]
+  return Array.isArray(value) ? (value as T[]) : []
+}
+
+function readCursorPagination(data: unknown): CursorPagination {
+  if (!isRecord(data) || !isRecord(data.pagination)) return { hasMore: false }
+  return data.pagination
+}
+
+export async function loadAllDrillPages<T>(
+  url: string,
+  params: Record<string, unknown>,
+  readItems: (data: unknown) => T[],
+  request: DrillRequest = api.get.bind(api),
+): Promise<T[]> {
+  const items: T[] = []
+  let cursor = ""
+
+  for (;;) {
+    const response = await request(url, {
+      params: { ...params, cursor, limit: DRILL_PAGE_SIZE },
+    })
+    items.push(...readItems(response.data))
+
+    const pagination = readCursorPagination(response.data)
+    if (!pagination.hasMore) return items
+    if (!pagination.nextCursor) {
+      throw new Error("Drill-down pagination is missing nextCursor.")
+    }
+    cursor = pagination.nextCursor
+  }
+}
+
 // -------------------- Active jobs (grouped by client) --------------------
 type DrillJob = {
   id: string
@@ -149,20 +189,21 @@ type DrillJob = {
   clientName: string | null
 }
 
+export function loadActiveJobs(request?: DrillRequest) {
+  return loadAllDrillPages<DrillJob>(
+    "/jobs",
+    { status: "open" },
+    (data) => readArray<DrillJob>(data, "jobs"),
+    request,
+  )
+}
+
 function ActiveJobsDrill({ onNavigate }: { onNavigate: () => void }) {
   const [jobs, setJobs] = useState<DrillJob[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let active = true
-    loadAllDrillPages<DrillJob>(async (page) => {
-      const r = await api.get("/jobs", {
-        params: { page, pageSize: ACTIVE_JOBS_PAGE_SIZE, status: "open" },
-      })
-      return {
-        items: (r.data.jobs ?? r.data ?? []) as DrillJob[],
-        pagination: r.data.pagination,
-      }
-    })
+    loadActiveJobs()
       .then((list) => {
         if (!active) return
         setJobs(list)
@@ -177,11 +218,12 @@ function ActiveJobsDrill({ onNavigate }: { onNavigate: () => void }) {
 
   const groups = useMemo(() => {
     if (!jobs) return []
+    const open = jobs.filter((j) => j.status === "open")
     const map = new Map<
       string,
       { key: string; clientId: string | null; clientName: string; jobs: DrillJob[] }
     >()
-    for (const j of jobs) {
+    for (const j of open) {
       const key = j.clientId ?? UNASSIGNED_KEY
       const name = j.clientId
         ? j.clientName ?? "(Unnamed client)"
@@ -214,12 +256,12 @@ function ActiveJobsDrill({ onNavigate }: { onNavigate: () => void }) {
   return (
     <div className="space-y-3">
       {groups.map((g) => (
-        <div key={g.key} className="overflow-hidden rounded-lg border border-border">
+        <div key={g.key} className="overflow-hidden rounded-lg border border-[#E5E7EB]">
           {g.clientId ? (
             <Link
               to={`/clients/${g.clientId}`}
               onClick={onNavigate}
-              className="flex items-center justify-between gap-2 bg-muted px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-primary"
+              className="flex items-center justify-between gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:text-primary"
             >
               <span className="truncate">{g.clientName}</span>
               <span className="shrink-0 text-[10px] text-slate-400">
@@ -240,7 +282,7 @@ function ActiveJobsDrill({ onNavigate }: { onNavigate: () => void }) {
                 <Link
                   to={`/jobs/${j.id}`}
                   onClick={onNavigate}
-                  className="block min-h-[44px] px-3 py-2.5 text-sm font-medium text-slate-800 hover:bg-accent/40"
+                  className="block min-h-[44px] px-3 py-2.5 text-sm font-medium text-slate-800 hover:bg-primary/5"
                 >
                   {j.title}
                 </Link>
@@ -263,17 +305,30 @@ type DrillLead = {
 }
 
 const OPEN_LEAD_STATUSES = new Set(["open", "qualified", "in_negotiation"])
+const OPEN_LEAD_STATUS_LIST = ["open", "qualified", "in_negotiation"] as const
+
+export async function loadOpenLeads(request?: DrillRequest) {
+  const pages = await Promise.all(
+    OPEN_LEAD_STATUS_LIST.map((status) =>
+      loadAllDrillPages<DrillLead>(
+        "/leads",
+        { status },
+        (data) => readArray<DrillLead>(data, "leads"),
+        request,
+      ),
+    ),
+  )
+  return pages.flat().sort((a, b) => a.title.localeCompare(b.title))
+}
 
 function OpenLeadsDrill({ onNavigate }: { onNavigate: () => void }) {
   const [leads, setLeads] = useState<DrillLead[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let active = true
-    api
-      .get("/leads?pageSize=100")
-      .then((r) => {
+    loadOpenLeads()
+      .then((list) => {
         if (!active) return
-        const list = (r.data.leads ?? r.data ?? []) as DrillLead[]
         setLeads(list)
       })
       .catch(() => {
@@ -295,15 +350,15 @@ function OpenLeadsDrill({ onNavigate }: { onNavigate: () => void }) {
   if (open.length === 0) return <DrillStatus>No open leads.</DrillStatus>
 
   return (
-    <ul className="overflow-hidden rounded-lg border border-border">
+    <ul className="overflow-hidden rounded-lg border border-[#E5E7EB]">
       {open.map((l) => {
         const loc = [l.city, l.state].filter(Boolean).join(", ")
         return (
           <li key={l.id} className="border-t border-slate-100 first:border-t-0">
             <Link
-              to={`/sales/leads?lead=${encodeURIComponent(l.id)}`}
+              to={`/sales/leads?lead=${l.id}`}
               onClick={onNavigate}
-              className="flex min-h-[44px] flex-col justify-center px-3 py-2.5 hover:bg-accent/40"
+              className="flex min-h-[44px] flex-col justify-center px-3 py-2.5 hover:bg-primary/5"
             >
               <span className="truncate text-sm font-medium text-slate-800">
                 {l.title}
@@ -331,27 +386,37 @@ type DrillScheduleItem = {
   clientName?: string | null
 }
 
+const OPEN_SCHEDULE_STATUSES = ["overdue", "in_progress", "upcoming"] as const
+
+function compareScheduleItems(a: DrillScheduleItem, b: DrillScheduleItem) {
+  const date = (a.startDate ?? "").localeCompare(b.startDate ?? "")
+  if (date !== 0) return date
+  return a.title.localeCompare(b.title)
+}
+
+export async function loadOpenScheduleItems(request?: DrillRequest) {
+  const pages = await Promise.all(
+    OPEN_SCHEDULE_STATUSES.map((status) =>
+      loadAllDrillPages<DrillScheduleItem>(
+        "/schedule",
+        { status },
+        (data) => readArray<DrillScheduleItem>(data, "data"),
+        request,
+      ),
+    ),
+  )
+  return pages.flat().sort(compareScheduleItems)
+}
+
 function OpenScheduleDrill({ onNavigate }: { onNavigate: () => void }) {
   const [items, setItems] = useState<DrillScheduleItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let active = true
-    Promise.all(
-      OPEN_SCHEDULE_STATUSES.map((status) =>
-        loadAllDrillPages<DrillScheduleItem>(async (page) => {
-          const r = await api.get("/schedule", {
-            params: { page, limit: SCHEDULE_PAGE_SIZE, status },
-          })
-          return {
-            items: (r.data.data ?? r.data.items ?? []) as DrillScheduleItem[],
-            pagination: r.data.pagination,
-          }
-        }),
-      ),
-    )
-      .then((pages) => {
+    loadOpenScheduleItems()
+      .then((list) => {
         if (!active) return
-        setItems(pages.flat())
+        setItems(list)
       })
       .catch(() => {
         if (active) setError("Couldn't load schedule.")
@@ -373,7 +438,7 @@ function OpenScheduleDrill({ onNavigate }: { onNavigate: () => void }) {
     return <DrillStatus>No open schedule items.</DrillStatus>
 
   return (
-    <ul className="overflow-hidden rounded-lg border border-border">
+    <ul className="overflow-hidden rounded-lg border border-[#E5E7EB]">
       {open.map((i) => {
         const range = i.startDate
           ? i.endDate && i.endDate !== i.startDate
@@ -385,7 +450,7 @@ function OpenScheduleDrill({ onNavigate }: { onNavigate: () => void }) {
             <Link
               to={`/jobs/${i.jobId}/schedule`}
               onClick={onNavigate}
-              className="flex min-h-[44px] flex-col justify-center px-3 py-2.5 hover:bg-accent/40"
+              className="flex min-h-[44px] flex-col justify-center px-3 py-2.5 hover:bg-primary/5"
             >
               <span className="truncate text-sm font-medium text-slate-800">
                 {i.title}

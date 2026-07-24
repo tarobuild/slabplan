@@ -38,6 +38,9 @@ import type {
 interface ListViewProps {
   itemsTotal: number
   loading: boolean
+  canCreateScheduleItems: boolean
+  currentJobTitle: string
+  showJobNameOnAllListedJobs: boolean
   isEmpty: boolean
   activeItems: ScheduleItemRecord[]
   groupedListItems: Array<{ label: string; items: ScheduleItemRecord[] }>
@@ -54,7 +57,6 @@ interface ListViewProps {
   listStart: number
   listEnd: number
   sortedListItemsLength: number
-  canWrite: boolean
   setListDisplayMode: Dispatch<SetStateAction<ListDisplayMode>>
   setSelectedListIds: Dispatch<SetStateAction<string[]>>
   setAppliedFilters: Dispatch<SetStateAction<FilterState>>
@@ -69,6 +71,9 @@ export function ListView(props: ListViewProps) {
   const {
     itemsTotal,
     loading,
+    canCreateScheduleItems,
+    currentJobTitle,
+    showJobNameOnAllListedJobs,
     isEmpty,
     activeItems,
     groupedListItems,
@@ -85,7 +90,6 @@ export function ListView(props: ListViewProps) {
     listStart,
     listEnd,
     sortedListItemsLength,
-    canWrite,
     setListDisplayMode,
     setSelectedListIds,
     setAppliedFilters,
@@ -144,17 +148,17 @@ export function ListView(props: ListViewProps) {
                 ? "Create the first schedule item to populate this table."
                 : "Adjust the active filter to see matching schedule items here."
             }
-            actionLabel={activeItems.length === 0 && !canWrite ? undefined : activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
+            actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
             onAction={
-              activeItems.length === 0
-                ? canWrite
-                  ? () => openNewItem()
-                  : undefined
-                : () => {
+              activeItems.length === 0 && canCreateScheduleItems
+                ? () => openNewItem()
+                : activeItems.length > 0
+                  ? () => {
                     const reset = buildFilterPreset("all")
                     setAppliedFilters(reset)
                     setDraftFilters(reset)
                   }
+                  : undefined
             }
           />
         ) : (
@@ -240,6 +244,11 @@ export function ListView(props: ListViewProps) {
                                   {item.isPersonalTodo ? (item.isComplete ? "☑ " : "☐ ") : ""}
                                   {item.title}
                                 </span>
+                                {showJobNameOnAllListedJobs ? (
+                                  <span className="mt-0.5 block truncate text-xs text-slate-500">
+                                    {currentJobTitle}
+                                  </span>
+                                ) : null}
                                 {listDisplayMode === "notes" && (item.notes || item.notesStream?.[0]?.note) ? (
                                   <span className="mt-1 block truncate text-xs text-slate-500">
                                     {(item.notes || item.notesStream?.[0]?.note || "").replace(/\s+/g, " ")}

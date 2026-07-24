@@ -136,7 +136,7 @@ test.describe("schedule role gates", () => {
 
       await page.getByRole("tab", { name: /^baseline$/i }).click()
       await expect(
-        page.getByRole("button", { name: /^set baseline$/i }),
+        page.getByRole("button", { name: /^set baseline$/i }).first(),
       ).toBeVisible()
     })
   })

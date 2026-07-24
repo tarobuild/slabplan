@@ -3,7 +3,10 @@
 // one side, both tests fail and force a coordinated update.
 
 import assert from "node:assert/strict"
+import * as nodeFs from "node:fs/promises"
+import * as nodePath from "node:path"
 import { test } from "node:test"
+import { fileURLToPath } from "node:url"
 
 // The patterns are duplicated inside src/lib/sentry.ts (the web
 // runtime can't import from artifacts/api-server), so this test
@@ -140,4 +143,24 @@ test("web PII filter survives circular references", () => {
   const evt: Record<string, unknown> = { name: "circular" }
   evt.self = evt
   assert.equal(eventContainsPii(evt), false)
+})
+
+test("entrypoint initializes Sentry before importing the app module", async () => {
+  const here = nodePath.dirname(fileURLToPath(import.meta.url))
+  const mainSource = await nodeFs.readFile(nodePath.join(here, "..", "main.tsx"), "utf8")
+  const sentryInitSource = await nodeFs.readFile(nodePath.join(here, "sentry-init.ts"), "utf8")
+  const importStatements = mainSource.match(/^import .+$/gm) ?? []
+
+  assert.equal(
+    importStatements[0],
+    'import "./lib/sentry-init"',
+    "Sentry's side-effect initializer must be the first entrypoint import",
+  )
+  assert.match(sentryInitSource, /initSentry\(\)/)
+  assert.match(mainSource, /import App from "\.\/App"/)
+  assert.doesNotMatch(
+    mainSource,
+    /initSentry\(\)/,
+    "initSentry cannot be a main.tsx top-level statement because static imports run first",
+  )
 })

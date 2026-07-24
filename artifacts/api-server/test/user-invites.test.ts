@@ -24,7 +24,7 @@ const emailsToCleanup = new Set<string>([adminEmail, crewEmail]);
 
 // In-memory log of every transactional email the routes attempt to
 // send. Tests inspect this to confirm the right payload shape (subject,
-// recipient, link) is dispatched without ever needing a real Resend
+// recipient, link) is dispatched without ever needing a real provider
 // account. The stub itself is wired in `before()` via
 // `__setEmailSenderForTests`.
 type CapturedEmail = {
@@ -52,12 +52,16 @@ before(async () => {
   const auth = await import("../src/lib/auth.ts");
   const bcryptModule = (await import("bcrypt")).default;
   const { db } = await import("@workspace/db");
-  const { users } = await import("@workspace/db/schema");
+  const { rateLimitBuckets, users } = await import("@workspace/db/schema");
+  const { like } = await import("drizzle-orm");
 
   await prepareApp();
+  await db
+    .delete(rateLimitBuckets)
+    .where(like(rateLimitBuckets.bucketKey, "auth:login:%"));
 
   // Stub the transactional email sender so the invite route never tries
-  // to reach Resend during tests. The stub captures every payload for
+  // to reach a provider during tests. The stub captures every payload for
   // assertion and can be configured to fail on demand via
   // `nextEmailFailureMessage`.
   const emailModule = await import("../src/lib/email.ts");
@@ -131,8 +135,8 @@ after(async () => {
   const emailModule = await import("../src/lib/email.ts");
   emailModule.__setEmailSenderForTests(null);
   const { db, pool } = await import("@workspace/db");
-  const { users, idempotencyKeys } = await import("@workspace/db/schema");
-  const { inArray } = await import("drizzle-orm");
+  const { users, idempotencyKeys, rateLimitBuckets } = await import("@workspace/db/schema");
+  const { inArray, like } = await import("drizzle-orm");
 
   try {
     const allEmails = Array.from(emailsToCleanup);
@@ -142,6 +146,9 @@ after(async () => {
         .where(inArray(idempotencyKeys.userId, [adminUserId, crewUserId]));
       await db.delete(users).where(inArray(users.email, allEmails));
     }
+    await db
+      .delete(rateLimitBuckets)
+      .where(like(rateLimitBuckets.bucketKey, "auth:login:%"));
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => {
@@ -174,6 +181,34 @@ const PUBLIC_HEADERS = {
   "content-type": "application/json",
   "x-requested-with": "XMLHttpRequest",
 } as const;
+
+const INVITE_URL_ENV_KEYS = [
+  "APP_PUBLIC_URL",
+  "APP_ORIGIN",
+  "FRONTEND_ORIGIN",
+  "PUBLIC_APP_ORIGIN",
+  "CUSTOM_DOMAIN_ORIGIN",
+  "NODE_ENV",
+  "REPLIT_DEV_DOMAIN",
+] as const;
+
+function snapshotEnv(keys: readonly string[]) {
+  const snapshot: Record<string, string | undefined> = {};
+  for (const key of keys) {
+    snapshot[key] = process.env[key];
+  }
+  return snapshot;
+}
+
+function restoreEnv(snapshot: Record<string, string | undefined>) {
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
 
 test("invite endpoint sends a transactional email with the setup link and reports lastInviteEmailSentAt", async () => {
   const inviteeEmail = `email-${crypto.randomUUID()}@user-invites-test.local`;
@@ -234,6 +269,100 @@ test("invite endpoint sends a transactional email with the setup link and report
   assert.ok(stored?.inviteTokenHash, "hashed invite token must be stored for acceptance");
 });
 
+test("invite endpoint prefers the configured public app origin over a Replit dev host", async () => {
+  const snapshot = snapshotEnv(INVITE_URL_ENV_KEYS);
+  const inviteeEmail = `public-origin-${crypto.randomUUID()}@user-invites-test.local`;
+  trackInvitedEmail(inviteeEmail);
+
+  try {
+    process.env.APP_PUBLIC_URL = "slabplan.vercel.app/";
+    process.env.REPLIT_DEV_DOMAIN = "broken-dev-link.replit.dev";
+
+    const ok = await fetch(`${baseUrl}/api/users`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        email: inviteeEmail,
+        fullName: "Public Origin Link",
+        role: "crew_member",
+      }),
+    });
+    assert.equal(ok.status, 201);
+    const body = (await ok.json()) as { inviteUrl: string };
+
+    assert.match(body.inviteUrl, /^https:\/\/slabplan\.vercel\.app\/accept-invite\?token=/);
+    assert.doesNotMatch(body.inviteUrl, /replit/i);
+  } finally {
+    restoreEnv(snapshot);
+  }
+});
+
+test("production invite endpoint falls back to the canonical SlabPlan host instead of Replit", async () => {
+  const snapshot = snapshotEnv(INVITE_URL_ENV_KEYS);
+  const inviteeEmail = `canonical-origin-${crypto.randomUUID()}@user-invites-test.local`;
+  trackInvitedEmail(inviteeEmail);
+
+  try {
+    delete process.env.APP_PUBLIC_URL;
+    delete process.env.APP_ORIGIN;
+    delete process.env.FRONTEND_ORIGIN;
+    delete process.env.PUBLIC_APP_ORIGIN;
+    delete process.env.CUSTOM_DOMAIN_ORIGIN;
+    process.env.NODE_ENV = "production";
+    process.env.REPLIT_DEV_DOMAIN = "broken-dev-link.replit.dev";
+
+    const ok = await fetch(`${baseUrl}/api/users`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        email: inviteeEmail,
+        fullName: "Canonical Origin Link",
+        role: "crew_member",
+      }),
+    });
+    assert.equal(ok.status, 201);
+    const body = (await ok.json()) as { inviteUrl: string };
+
+    assert.match(body.inviteUrl, /^https:\/\/slabplan\.vercel\.app\/accept-invite\?token=/);
+    assert.doesNotMatch(body.inviteUrl, /replit/i);
+  } finally {
+    restoreEnv(snapshot);
+  }
+});
+
+test("production invite endpoint ignores configured Replit origins", async () => {
+  const snapshot = snapshotEnv(INVITE_URL_ENV_KEYS);
+  const inviteeEmail = `skip-replit-origin-${crypto.randomUUID()}@user-invites-test.local`;
+  trackInvitedEmail(inviteeEmail);
+
+  try {
+    process.env.APP_PUBLIC_URL = "https://cadstone-works-tool.replit.app";
+    delete process.env.APP_ORIGIN;
+    delete process.env.FRONTEND_ORIGIN;
+    delete process.env.PUBLIC_APP_ORIGIN;
+    delete process.env.CUSTOM_DOMAIN_ORIGIN;
+    process.env.NODE_ENV = "production";
+    process.env.REPLIT_DEV_DOMAIN = "broken-dev-link.replit.dev";
+
+    const ok = await fetch(`${baseUrl}/api/users`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        email: inviteeEmail,
+        fullName: "Skip Replit Link",
+        role: "crew_member",
+      }),
+    });
+    assert.equal(ok.status, 201);
+    const body = (await ok.json()) as { inviteUrl: string };
+
+    assert.match(body.inviteUrl, /^https:\/\/slabplan\.vercel\.app\/accept-invite\?token=/);
+    assert.doesNotMatch(body.inviteUrl, /replit/i);
+  } finally {
+    restoreEnv(snapshot);
+  }
+});
+
 test("invite endpoint surfaces email failure but still creates the user and returns the link", async () => {
   const inviteeEmail = `failmail-${crypto.randomUUID()}@user-invites-test.local`;
   trackInvitedEmail(inviteeEmail);
@@ -285,7 +414,11 @@ test("reissue for a user who already set their password sends a password-reset e
   const accepted = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
-    body: JSON.stringify({ token: inviteToken, password: "OnboardedPass#1" }),
+    body: JSON.stringify({
+      token: inviteToken,
+      email: inviteeEmail,
+      password: "OnboardedPass#1",
+    }),
   });
   assert.equal(accepted.status, 200, "user must complete onboarding before reset path triggers");
   const onboardedSession = (await accepted.json()) as { accessToken: string };
@@ -335,6 +468,13 @@ test("reissue for a user who already set their password sends a password-reset e
   });
   assert.equal(oldSession.status, 401, "admin password reset must invalidate existing sessions");
 
+  const oldPasswordLogin = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: PUBLIC_HEADERS,
+    body: JSON.stringify({ email: inviteeEmail, password: "OnboardedPass#1" }),
+  });
+  assert.equal(oldPasswordLogin.status, 401, "admin password reset must invalidate the old password immediately");
+
   const [revokedPat] = await db
     .select({ revokedAt: personalAccessTokens.revokedAt })
     .from(personalAccessTokens)
@@ -381,6 +521,40 @@ test("only admins can invite users; crew members get 403", async () => {
   assert.match(body.invitePath, /^\/accept-invite\?token=/);
 });
 
+test("admin user list includes pending invite expiration for setup status", async () => {
+  const inviteeEmail = `listed-${crypto.randomUUID()}@user-invites-test.local`;
+  trackInvitedEmail(inviteeEmail);
+
+  const inviteRes = await fetch(`${baseUrl}/api/users`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      email: inviteeEmail,
+      fullName: "Listed Invitee",
+      role: "crew_member",
+    }),
+  });
+  assert.equal(inviteRes.status, 201);
+  const invited = (await inviteRes.json()) as {
+    user: { id: string };
+    inviteTokenExpiresAt: string;
+  };
+
+  const listRes = await fetch(`${baseUrl}/api/users?includeInactive=true`, {
+    headers: adminHeaders(),
+  });
+  assert.equal(listRes.status, 200);
+  const listBody = (await listRes.json()) as {
+    users: Array<{ id: string; inviteTokenExpiresAt?: string | null }>;
+  };
+  const listed = listBody.users.find((row) => row.id === invited.user.id);
+  assert.equal(
+    listed?.inviteTokenExpiresAt,
+    invited.inviteTokenExpiresAt,
+    "admin team list must include invite expiry so the UI can show pending setup",
+  );
+});
+
 test("accept-invite consumes the token exactly once and refuses replays", async () => {
   const inviteeEmail = `accept-${crypto.randomUUID()}@user-invites-test.local`;
   trackInvitedEmail(inviteeEmail);
@@ -397,11 +571,48 @@ test("accept-invite consumes the token exactly once and refuses replays", async 
   assert.equal(inviteRes.status, 201);
   const { inviteToken } = (await inviteRes.json()) as { inviteToken: string };
 
+  const preview = await fetch(
+    `${baseUrl}/api/auth/invite?token=${encodeURIComponent(inviteToken)}`,
+    {
+      headers: PUBLIC_HEADERS,
+    },
+  );
+  assert.equal(preview.status, 200, "fresh token must preview account setup");
+  const previewBody = (await preview.json()) as {
+    email: string;
+    fullName: string;
+    role: string;
+    inviteTokenExpiresAt: string;
+  };
+  assert.equal(previewBody.email, inviteeEmail.toLowerCase());
+  assert.equal(previewBody.fullName, "Single Use Invitee");
+  assert.equal(previewBody.role, "project_manager");
+  assert.ok(previewBody.inviteTokenExpiresAt, "preview should include expiry");
+
+  const mismatch = await fetch(`${baseUrl}/api/auth/accept-invite`, {
+    method: "POST",
+    headers: PUBLIC_HEADERS,
+    body: JSON.stringify({
+      token: inviteToken,
+      email: `wrong-${inviteeEmail}`,
+      password: "WrongEmail#1234",
+    }),
+  });
+  assert.equal(
+    mismatch.status,
+    400,
+    "invitee must confirm the email address tied to the setup link",
+  );
+
   // First accept must succeed and log the user in.
   const accept1 = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
-    body: JSON.stringify({ token: inviteToken, password: "FirstPass#1234" }),
+    body: JSON.stringify({
+      token: inviteToken,
+      email: inviteeEmail,
+      password: "FirstPass#1234",
+    }),
   });
   assert.equal(accept1.status, 200, "fresh token must be accepted");
   const session = (await accept1.json()) as {
@@ -416,7 +627,11 @@ test("accept-invite consumes the token exactly once and refuses replays", async 
   const accept2 = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
-    body: JSON.stringify({ token: inviteToken, password: "SecondPass#1234" }),
+    body: JSON.stringify({
+      token: inviteToken,
+      email: inviteeEmail,
+      password: "SecondPass#1234",
+    }),
   });
   assert.equal(accept2.status, 401, "second use of same token must be rejected");
 
@@ -428,6 +643,47 @@ test("accept-invite consumes the token exactly once and refuses replays", async 
     body: JSON.stringify({ email: inviteeEmail, password: "FirstPass#1234" }),
   });
   assert.equal(login.status, 200, "set-by-invite password must work for login");
+});
+
+test("resend refuses hash-only pending invites without invalidating the current token", async () => {
+  const inviteeEmail = `resend-safe-${crypto.randomUUID()}@user-invites-test.local`;
+  trackInvitedEmail(inviteeEmail);
+
+  const inviteRes = await fetch(`${baseUrl}/api/users`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      email: inviteeEmail,
+      fullName: "Resend Safe Invitee",
+      role: "crew_member",
+    }),
+  });
+  assert.equal(inviteRes.status, 201);
+  const { inviteToken, user } = (await inviteRes.json()) as {
+    inviteToken: string;
+    user: { id: string };
+  };
+
+  const resend = await fetch(`${baseUrl}/api/users/${user.id}/invite/resend`, {
+    method: "POST",
+    headers: adminHeaders(),
+  });
+  assert.equal(resend.status, 400, "hash-only invites cannot resend the original link");
+
+  const accept = await fetch(`${baseUrl}/api/auth/accept-invite`, {
+    method: "POST",
+    headers: PUBLIC_HEADERS,
+    body: JSON.stringify({
+      token: inviteToken,
+      email: inviteeEmail,
+      password: "StillValid#1234",
+    }),
+  });
+  assert.equal(
+    accept.status,
+    200,
+    "failed resend must not invalidate the invite already in flight",
+  );
 });
 
 test("expired and bogus tokens are rejected", async () => {
@@ -460,14 +716,22 @@ test("expired and bogus tokens are rejected", async () => {
   const expired = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
-    body: JSON.stringify({ token: inviteToken, password: "AnyPass#1234" }),
+    body: JSON.stringify({
+      token: inviteToken,
+      email: inviteeEmail,
+      password: "AnyPass#1234",
+    }),
   });
   assert.equal(expired.status, 401, "expired token must not be accepted");
 
   const bogus = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
-    body: JSON.stringify({ token: "totally-fake-token", password: "AnyPass#1234" }),
+    body: JSON.stringify({
+      token: "totally-fake-token",
+      email: inviteeEmail,
+      password: "AnyPass#1234",
+    }),
   });
   assert.equal(bogus.status, 401, "unknown token must not be accepted");
 });
@@ -494,7 +758,11 @@ test("deactivated users cannot log in even with the right password", async () =>
   const accept = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
-    body: JSON.stringify({ token: inviteToken, password: "Worker#Pass1234" }),
+    body: JSON.stringify({
+      token: inviteToken,
+      email: inviteeEmail,
+      password: "Worker#Pass1234",
+    }),
   });
   assert.equal(accept.status, 200);
 
@@ -556,13 +824,100 @@ test("deactivated users cannot log in even with the right password", async () =>
   );
 });
 
+test("profile update preserves omitted nullable fields", async () => {
+  const profileUserId = crypto.randomUUID();
+  const profileEmail = `profile-${profileUserId}@user-invites-test.local`;
+  trackInvitedEmail(profileEmail);
+
+  const bcryptModule = (await import("bcrypt")).default;
+  const auth = await import("../src/lib/auth.ts");
+  const { db } = await import("@workspace/db");
+  const { users } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const now = new Date();
+
+  await db.insert(users).values({
+    id: profileUserId,
+    email: profileEmail,
+    passwordHash: await bcryptModule.hash("Profile#Pass1", 10),
+    fullName: "Profile Before",
+    role: "crew_member",
+    phone: "555-0100",
+    avatarUrl: "https://assets.example.com/avatar.png",
+  });
+
+  const token = auth.signAccessToken({
+    id: profileUserId,
+    email: profileEmail,
+    fullName: "Profile Before",
+    role: "crew_member",
+    avatarUrl: "https://assets.example.com/avatar.png",
+    phone: "555-0100",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const response = await fetch(`${baseUrl}/api/users/me`, {
+    method: "PUT",
+    headers: {
+      ...PUBLIC_HEADERS,
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ fullName: "Profile After" }),
+  });
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    user: { fullName: string; phone: string | null; avatarUrl: string | null };
+  };
+  assert.equal(body.user.fullName, "Profile After");
+  assert.equal(body.user.phone, "555-0100");
+  assert.equal(body.user.avatarUrl, "https://assets.example.com/avatar.png");
+
+  const [stored] = await db
+    .select({ phone: users.phone, avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(eq(users.id, profileUserId))
+    .limit(1);
+  assert.equal(stored?.phone, "555-0100");
+  assert.equal(stored?.avatarUrl, "https://assets.example.com/avatar.png");
+});
+
+test("notification preference partial saves merge concurrent keys", async () => {
+  const keyA = `schedule_${crypto.randomUUID()}`;
+  const keyB = `daily_${crypto.randomUUID()}`;
+
+  const [first, second] = await Promise.all([
+    fetch(`${baseUrl}/api/users/me/notification-prefs`, {
+      method: "PUT",
+      headers: crewHeaders(),
+      body: JSON.stringify({ prefs: { [keyA]: true } }),
+    }),
+    fetch(`${baseUrl}/api/users/me/notification-prefs`, {
+      method: "PUT",
+      headers: crewHeaders(),
+      body: JSON.stringify({ prefs: { [keyB]: false } }),
+    }),
+  ]);
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+
+  const response = await fetch(`${baseUrl}/api/users/me/notification-prefs`, {
+    headers: crewHeaders(),
+  });
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { prefs: Record<string, boolean> };
+  assert.equal(body.prefs[keyA], true);
+  assert.equal(body.prefs[keyB], false);
+});
+
 test("admin can demote another active admin when an active admin remains", async () => {
   const otherAdminId = crypto.randomUUID();
   const otherAdminEmail = `other-admin-${otherAdminId}@user-invites-test.local`;
   trackInvitedEmail(otherAdminEmail);
 
   const { db } = await import("@workspace/db");
-  const { users } = await import("@workspace/db/schema");
+  const { organizationMemberships, users } = await import("@workspace/db/schema");
 
   await db.insert(users).values({
     id: otherAdminId,
@@ -570,6 +925,12 @@ test("admin can demote another active admin when an active admin remains", async
     passwordHash: "test-not-a-real-hash",
     fullName: "ZZZ Other Active Admin",
     role: "admin",
+  });
+  await db.insert(organizationMemberships).values({
+    organizationId: "00000000-0000-4000-8000-000000000001",
+    userId: otherAdminId,
+    role: "admin",
+    isDefault: true,
   });
 
   const response = await fetch(`${baseUrl}/api/users/${otherAdminId}`, {
@@ -667,14 +1028,22 @@ test("admin can promote / demote and reissue invite tokens", async () => {
   const oldFails = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
-    body: JSON.stringify({ token: originalToken, password: "Anything#1234" }),
+    body: JSON.stringify({
+      token: originalToken,
+      email: inviteeEmail,
+      password: "Anything#1234",
+    }),
   });
   assert.equal(oldFails.status, 401, "stale token must be rejected after reissue");
 
   const newWorks = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
-    body: JSON.stringify({ token: reissued.inviteToken, password: "FreshPass#1234" }),
+    body: JSON.stringify({
+      token: reissued.inviteToken,
+      email: inviteeEmail,
+      password: "FreshPass#1234",
+    }),
   });
   assert.equal(newWorks.status, 200, "fresh token must be accepted");
 });

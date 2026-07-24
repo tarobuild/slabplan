@@ -21,6 +21,9 @@ import type {
   AnyValue,
   ArAgingResponse,
   AuthAcceptInviteSchema,
+  AuthGetAuthInviteParams,
+  AuthInvitePreview,
+  AuthResponse,
   BillingGetStatus200,
   BillingPostCheckoutSessions201,
   BillingPostCheckoutSessionsBody,
@@ -53,12 +56,19 @@ import type {
   DailyLogsTodoTogglePayloadSchema,
   DashboardGetDashboardScheduleParams,
   DaysToPaymentResponse,
+  FilesBatchFilesDestinationSchema,
+  FilesBatchFilesSchema,
+  FilesChunkedUploadStartSchema,
+  FilesGetFoldersIdFilesDuplicatesParams,
   FilesGetFoldersIdFilesParams,
   FilesRenameFileSchema,
+  FilesUploadFilesByPathSchema,
   FinancialsPostJobsJobidFinancialsChangeOrdersParse200,
   FinancialsPostJobsJobidFinancialsChangeOrdersParseBody,
   FoldersFolderBodySchema,
+  FoldersFolderResolveSchema,
   FoldersFolderUpdateSchema,
+  FoldersGetJobsJobIdFolderTreeParams,
   FoldersMoveFolderSchema,
   GenericObject,
   HealthStatus,
@@ -74,6 +84,7 @@ import type {
   JobsGetJobsParams,
   JobsJobCreatePayloadSchema,
   JobsJobPayloadSchema,
+  LeadAttachmentUploadPolicyResponse,
   LeadAttachmentsCreatedResponse,
   LeadContactResponse,
   LeadConvertToJobBody,
@@ -85,11 +96,18 @@ import type {
   LeadsContactCreateSchema,
   LeadsContactUpdateSchema,
   LeadsGetLeadsContactsParams,
+  LeadsGetLeadsIdAttachmentsUploadPolicyParams,
   LeadsGetLeadsParams,
+  LeadsLeadAttachmentChunkedUploadStartSchema,
   LeadsLeadPayloadSchema,
+  LeadsPostLeadsIdAttachmentsBody,
   MyDailyLogsResponse,
   NotificationPrefsResponse,
   NotificationPrefsUpdateRequest,
+  NotificationReadResponse,
+  NotificationsGetNotificationsParams,
+  NotificationsListResponse,
+  NotificationsReadAllResponse,
   PersonalAccessTokenCreatePayload,
   PersonalAccessTokenCreated,
   PersonalAccessTokenList,
@@ -112,6 +130,8 @@ import type {
   ScheduleNotifyResponse,
   SchedulePhaseListResponse,
   SchedulePhaseResponse,
+  ScheduleScheduleDraftPublishPayloadSchema,
+  ScheduleScheduleDraftPublishResponseSchema,
   ScheduleScheduleNotePayloadSchema,
   ScheduleSchedulePayloadSchema,
   ScheduleSchedulePhasePayloadSchema,
@@ -135,7 +155,7 @@ import type {
   WorkdayExceptionsListResponse,
 } from "./api.schemas";
 
-import { customFetch, mergeRequestHeaders } from "../custom-fetch";
+import { customFetch, jsonContentTypeHeaders } from "../custom-fetch";
 import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
@@ -153,7 +173,7 @@ export const getBillingGetStatusUrl = () => {
 };
 
 export const billingGetStatus = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<BillingGetStatus200> => {
   return customFetch<BillingGetStatus200>(getBillingGetStatusUrl(), {
     ...options,
@@ -230,14 +250,14 @@ export const getBillingPostCheckoutSessionsUrl = () => {
 
 export const billingPostCheckoutSessions = async (
   billingPostCheckoutSessionsBody: BillingPostCheckoutSessionsBody,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<BillingPostCheckoutSessions201> => {
   return customFetch<BillingPostCheckoutSessions201>(
     getBillingPostCheckoutSessionsUrl(),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(billingPostCheckoutSessionsBody),
     },
   );
@@ -320,7 +340,7 @@ export const getBillingPostCustomerPortalSessionsUrl = () => {
 };
 
 export const billingPostCustomerPortalSessions = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<BillingPostCustomerPortalSessions201> => {
   return customFetch<BillingPostCustomerPortalSessions201>(
     getBillingPostCustomerPortalSessionsUrl(),
@@ -407,7 +427,7 @@ export const getBillingPostStripeWebhookUrl = () => {
 };
 
 export const billingPostStripeWebhook = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<BillingPostStripeWebhook200> => {
   return customFetch<BillingPostStripeWebhook200>(
     getBillingPostStripeWebhookUrl(),
@@ -501,7 +521,7 @@ export const getFinancialsPostJobsJobidFinancialsChangeOrdersParseUrl = (
 export const financialsPostJobsJobidFinancialsChangeOrdersParse = async (
   jobId: string,
   financialsPostJobsJobidFinancialsChangeOrdersParseBody: FinancialsPostJobsJobidFinancialsChangeOrdersParseBody,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<FinancialsPostJobsJobidFinancialsChangeOrdersParse200> => {
   const formData = new FormData();
   formData.append(
@@ -632,12 +652,12 @@ export const getAuthPostAuthRegisterUrl = () => {
 
 export const authPostAuthRegister = async (
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getAuthPostAuthRegisterUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(genericObject),
   });
 };
@@ -719,12 +739,12 @@ export const getAuthPostAuthLoginUrl = () => {
 
 export const authPostAuthLogin = async (
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getAuthPostAuthLoginUrl(), {
+  options?: RequestInit,
+): Promise<AuthResponse> => {
+  return customFetch<AuthResponse>(getAuthPostAuthLoginUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(genericObject),
   });
 };
@@ -805,9 +825,9 @@ export const getAuthPostAuthLogoutUrl = () => {
 };
 
 export const authPostAuthLogout = async (
-  options?: SecondParameter<typeof customFetch>,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getAuthPostAuthLogoutUrl(), {
+  options?: RequestInit,
+): Promise<AuthResponse> => {
+  return customFetch<AuthResponse>(getAuthPostAuthLogoutUrl(), {
     ...options,
     method: "POST",
   });
@@ -887,9 +907,9 @@ export const getAuthPostAuthRefreshUrl = () => {
 };
 
 export const authPostAuthRefresh = async (
-  options?: SecondParameter<typeof customFetch>,
-): Promise<AnyValue> => {
-  return customFetch<AnyValue>(getAuthPostAuthRefreshUrl(), {
+  options?: RequestInit,
+): Promise<AuthResponse> => {
+  return customFetch<AuthResponse>(getAuthPostAuthRefreshUrl(), {
     ...options,
     method: "POST",
   });
@@ -961,6 +981,104 @@ export const useAuthPostAuthRefresh = <
 };
 
 /**
+ * Public endpoint. Validates a one-time setup token and returns the invited account details so the invitee can confirm the email address before choosing a password. This endpoint does not consume the token.
+ * @summary GET /auth/invite
+ */
+export const getAuthGetAuthInviteUrl = (params: AuthGetAuthInviteParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value != null) {
+      normalizedParams.append(key, value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/auth/invite?${stringifiedParams}`
+    : `/api/auth/invite`;
+};
+
+export const authGetAuthInvite = async (
+  params: AuthGetAuthInviteParams,
+  options?: RequestInit,
+): Promise<AuthInvitePreview> => {
+  return customFetch<AuthInvitePreview>(getAuthGetAuthInviteUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getAuthGetAuthInviteQueryKey = (
+  params?: AuthGetAuthInviteParams,
+) => {
+  return [`/api/auth/invite`, ...(params ? [params] : [])] as const;
+};
+
+export const getAuthGetAuthInviteQueryOptions = <
+  TData = Awaited<ReturnType<typeof authGetAuthInvite>>,
+  TError = ErrorType<Problem>,
+>(
+  params: AuthGetAuthInviteParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof authGetAuthInvite>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAuthGetAuthInviteQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof authGetAuthInvite>>
+  > = ({ signal }) => authGetAuthInvite(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof authGetAuthInvite>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type AuthGetAuthInviteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof authGetAuthInvite>>
+>;
+export type AuthGetAuthInviteQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /auth/invite
+ */
+
+export function useAuthGetAuthInvite<
+  TData = Awaited<ReturnType<typeof authGetAuthInvite>>,
+  TError = ErrorType<Problem>,
+>(
+  params: AuthGetAuthInviteParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof authGetAuthInvite>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getAuthGetAuthInviteQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * Public endpoint. Exchanges a one-time setup token (issued by an admin via POST /users) for a real password and immediately logs the user in. The token is single-use and short-lived.
  * @summary POST /auth/accept-invite
  */
@@ -970,12 +1088,12 @@ export const getAuthPostAuthAcceptInviteUrl = () => {
 
 export const authPostAuthAcceptInvite = async (
   authAcceptInviteSchema: AuthAcceptInviteSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getAuthPostAuthAcceptInviteUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(authAcceptInviteSchema),
   });
 };
@@ -1056,7 +1174,7 @@ export const getUsersGetUsersUrl = (params?: UsersGetUsersParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -1070,7 +1188,7 @@ export const getUsersGetUsersUrl = (params?: UsersGetUsersParams) => {
 
 export const usersGetUsers = async (
   params?: UsersGetUsersParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersGetUsersUrl(params), {
     ...options,
@@ -1146,7 +1264,7 @@ export function useUsersGetUsers<
 /**
  * Admin-only. Invite a new worker. Creates the user with a random unguessable placeholder password and a single-use setup token. The raw token is returned exactly once (never persisted in plain text).
 
-The server also attempts to send the setup link via the configured transactional email provider (Resend). The response body always includes:
+The server also attempts to send the setup link via the configured transactional email provider when one is approved and wired. The response body always includes:
   - `inviteToken` — the raw one-time token (also embedded in `inviteUrl`).
   - `invitePath` — relative path including the token, for in-product navigation.
   - `inviteUrl` — absolute URL the email body uses; safe to copy/paste as a fallback.
@@ -1162,12 +1280,12 @@ export const getUsersPostUsersUrl = () => {
 
 export const usersPostUsers = async (
   usersInviteUserSchema: UsersInviteUserSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPostUsersUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(usersInviteUserSchema),
   });
 };
@@ -1250,12 +1368,12 @@ export const getUsersPatchUsersIdUrl = (id: string) => {
 export const usersPatchUsersId = async (
   id: string,
   usersUpdateUserSchema: UsersUpdateUserSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPatchUsersIdUrl(id), {
     ...options,
     method: "PATCH",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(usersUpdateUserSchema),
   });
 };
@@ -1328,11 +1446,11 @@ export const useUsersPatchUsersId = <
 };
 
 /**
- * Admin-only. Re-send the existing invite email for a user whose setup is still pending, WITHOUT minting a new token. Use this when the invitee lost the email or it bounced — any link already in flight remains valid.
+ * Admin-only legacy compatibility endpoint. Re-send the existing invite email for a user whose setup is still pending only when the server still has a legacy raw invite token. Modern invite flows store only token hashes, so most pending invites cannot be resent without minting a replacement.
 
-Returns the same shape as `POST /users/{id}/invite` (a `user`, `inviteToken`, `invitePath`, `inviteUrl`, `inviteTokenExpiresAt`, and `emailDelivery`), but the token is the *current* one rather than a freshly-minted replacement.
+Returns the same shape as `POST /users/{id}/invite` (a `user`, `inviteToken`, `invitePath`, `inviteUrl`, `inviteTokenExpiresAt`, and `emailDelivery`) when a legacy raw token is available, but never invalidates an existing pending invite. Use `POST /users/{id}/invite` to issue and email a fresh one-time setup link.
 
-Returns `400` if the user has already completed setup, has no pending invite, or the existing token has expired. In those cases the admin should use the regular `POST /users/{id}/invite` endpoint to issue a fresh one.
+Returns `400` if the user has already completed setup, has no pending invite, the existing token has expired, or the raw token is not stored. In those cases the admin should use the regular `POST /users/{id}/invite` endpoint to issue a fresh one.
 
  * @summary POST /users/{id}/invite/resend
  */
@@ -1342,7 +1460,7 @@ export const getUsersPostUsersIdInviteResendUrl = (id: string) => {
 
 export const usersPostUsersIdInviteResend = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPostUsersIdInviteResendUrl(id), {
     ...options,
@@ -1430,7 +1548,7 @@ export const getUsersPostUsersIdInviteUrl = (id: string) => {
 
 export const usersPostUsersIdInvite = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPostUsersIdInviteUrl(id), {
     ...options,
@@ -1514,7 +1632,7 @@ export const getUsersGetUsersMeUrl = () => {
 };
 
 export const usersGetUsersMe = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersGetUsersMeUrl(), {
     ...options,
@@ -1591,12 +1709,12 @@ export const getUsersPutUsersMeUrl = () => {
 
 export const usersPutUsersMe = async (
   usersUpdateProfileSchema: UsersUpdateProfileSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPutUsersMeUrl(), {
     ...options,
     method: "PUT",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(usersUpdateProfileSchema),
   });
 };
@@ -1678,12 +1796,12 @@ export const getUsersPostUsersMePasswordUrl = () => {
 
 export const usersPostUsersMePassword = async (
   usersChangePasswordSchema: UsersChangePasswordSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getUsersPostUsersMePasswordUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(usersChangePasswordSchema),
   });
 };
@@ -1764,7 +1882,7 @@ export const getClientsGetClientsUrl = (params?: ClientsGetClientsParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -1778,7 +1896,7 @@ export const getClientsGetClientsUrl = (params?: ClientsGetClientsParams) => {
 
 export const clientsGetClients = async (
   params?: ClientsGetClientsParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ClientListResponse> => {
   return customFetch<ClientListResponse>(getClientsGetClientsUrl(params), {
     ...options,
@@ -1864,12 +1982,12 @@ export const getClientsPostClientsUrl = () => {
 
 export const clientsPostClients = async (
   clientsClientPayloadSchema: ClientsClientPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ClientDetailResponse> => {
   return customFetch<ClientDetailResponse>(getClientsPostClientsUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(clientsClientPayloadSchema),
   });
 };
@@ -1952,7 +2070,7 @@ export const getClientsGetClientsIdUrl = (id: string) => {
 
 export const clientsGetClientsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ClientDetailResponse> => {
   return customFetch<ClientDetailResponse>(getClientsGetClientsIdUrl(id), {
     ...options,
@@ -2041,12 +2159,12 @@ export const getClientsPutClientsIdUrl = (id: string) => {
 export const clientsPutClientsId = async (
   id: string,
   clientsClientPayloadSchema: ClientsClientPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ClientDetailResponse> => {
   return customFetch<ClientDetailResponse>(getClientsPutClientsIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(clientsClientPayloadSchema),
   });
 };
@@ -2129,7 +2247,7 @@ export const getClientsDeleteClientsIdUrl = (id: string) => {
 
 export const clientsDeleteClientsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getClientsDeleteClientsIdUrl(id), {
     ...options,
@@ -2214,7 +2332,7 @@ export const getClientsGetClientsIdContactsUrl = (id: string) => {
 
 export const clientsGetClientsIdContacts = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getClientsGetClientsIdContactsUrl(id), {
     ...options,
@@ -2305,14 +2423,14 @@ export const getClientsPostClientsIdContactsUrl = (id: string) => {
 export const clientsPostClientsIdContacts = async (
   id: string,
   clientsContactPayloadSchema: ClientsContactPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ClientsPostClientsIdContacts201> => {
   return customFetch<ClientsPostClientsIdContacts201>(
     getClientsPostClientsIdContactsUrl(id),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(clientsContactPayloadSchema),
     },
   );
@@ -2396,7 +2514,7 @@ export const getClientsGetClientsIdJobsUrl = (id: string) => {
 
 export const clientsGetClientsIdJobs = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ClientJobsResponse> => {
   return customFetch<ClientJobsResponse>(getClientsGetClientsIdJobsUrl(id), {
     ...options,
@@ -2491,14 +2609,14 @@ export const clientsPutClientsIdContactsContactId = async (
   id: string,
   contactId: string,
   clientsContactPayloadSchema: ClientsContactPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ClientsPutClientsIdContactsContactId200> => {
   return customFetch<ClientsPutClientsIdContactsContactId200>(
     getClientsPutClientsIdContactsContactIdUrl(id, contactId),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(clientsContactPayloadSchema),
     },
   );
@@ -2614,7 +2732,7 @@ export const getClientsDeleteClientsIdContactsContactIdUrl = (
 export const clientsDeleteClientsIdContactsContactId = async (
   id: string,
   contactId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getClientsDeleteClientsIdContactsContactIdUrl(id, contactId),
@@ -2707,7 +2825,7 @@ export const getJobsGetJobsUrl = (params?: JobsGetJobsParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -2721,7 +2839,7 @@ export const getJobsGetJobsUrl = (params?: JobsGetJobsParams) => {
 
 export const jobsGetJobs = async (
   params?: JobsGetJobsParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<JobListResponse> => {
   return customFetch<JobListResponse>(getJobsGetJobsUrl(params), {
     ...options,
@@ -2804,12 +2922,12 @@ export const getJobsPostJobsUrl = () => {
 
 export const jobsPostJobs = async (
   jobsJobCreatePayloadSchema: JobsJobCreatePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<JobDetailResponse> => {
   return customFetch<JobDetailResponse>(getJobsPostJobsUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(jobsJobCreatePayloadSchema),
   });
 };
@@ -2891,7 +3009,7 @@ export const getJobsGetJobsIdUrl = (id: string) => {
 
 export const jobsGetJobsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<JobDetailResponse> => {
   return customFetch<JobDetailResponse>(getJobsGetJobsIdUrl(id), {
     ...options,
@@ -2980,12 +3098,12 @@ export const getJobsPutJobsIdUrl = (id: string) => {
 export const jobsPutJobsId = async (
   id: string,
   jobsJobPayloadSchema: JobsJobPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<JobDetailResponse> => {
   return customFetch<JobDetailResponse>(getJobsPutJobsIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(jobsJobPayloadSchema),
   });
 };
@@ -3067,7 +3185,7 @@ export const getJobsDeleteJobsIdUrl = (id: string) => {
 
 export const jobsDeleteJobsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getJobsDeleteJobsIdUrl(id), {
     ...options,
@@ -3152,7 +3270,7 @@ export const getJobsGetJobsIdAssigneesUrl = (id: string) => {
 
 export const jobsGetJobsIdAssignees = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<JobAssigneesResponse> => {
   return customFetch<JobAssigneesResponse>(getJobsGetJobsIdAssigneesUrl(id), {
     ...options,
@@ -3242,12 +3360,12 @@ export const getJobsPostJobsIdAssigneesUrl = (id: string) => {
 export const jobsPostJobsIdAssignees = async (
   id: string,
   jobsAssigneePayloadSchema: JobsAssigneePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<JobAssigneesResponse> => {
   return customFetch<JobAssigneesResponse>(getJobsPostJobsIdAssigneesUrl(id), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(jobsAssigneePayloadSchema),
   });
 };
@@ -3334,7 +3452,7 @@ export const getJobsDeleteJobsIdAssigneesUseridUrl = (
 export const jobsDeleteJobsIdAssigneesUserid = async (
   id: string,
   userId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<JobAssigneesResponse> => {
   return customFetch<JobAssigneesResponse>(
     getJobsDeleteJobsIdAssigneesUseridUrl(id, userId),
@@ -3429,14 +3547,14 @@ export const jobsPatchJobsIdAssigneesUseridFinancialsAccess = async (
   id: string,
   userId: string,
   jobsAssigneeFinancialsAccessSchema: JobsAssigneeFinancialsAccessSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<JobAssigneeResponse> => {
   return customFetch<JobAssigneeResponse>(
     getJobsPatchJobsIdAssigneesUseridFinancialsAccessUrl(id, userId),
     {
       ...options,
       method: "PATCH",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(jobsAssigneeFinancialsAccessSchema),
     },
   );
@@ -3551,7 +3669,7 @@ export const getLeadsGetLeadsContactsUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -3565,7 +3683,7 @@ export const getLeadsGetLeadsContactsUrl = (
 
 export const leadsGetLeadsContacts = async (
   params?: LeadsGetLeadsContactsParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<LeadGlobalContactsListResponse> => {
   return customFetch<LeadGlobalContactsListResponse>(
     getLeadsGetLeadsContactsUrl(params),
@@ -3653,7 +3771,7 @@ export const getLeadsGetLeadsUrl = (params?: LeadsGetLeadsParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -3667,7 +3785,7 @@ export const getLeadsGetLeadsUrl = (params?: LeadsGetLeadsParams) => {
 
 export const leadsGetLeads = async (
   params?: LeadsGetLeadsParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<LeadListResponse> => {
   return customFetch<LeadListResponse>(getLeadsGetLeadsUrl(params), {
     ...options,
@@ -3750,12 +3868,12 @@ export const getLeadsPostLeadsUrl = () => {
 
 export const leadsPostLeads = async (
   leadsLeadPayloadSchema: LeadsLeadPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<LeadDetailResponse> => {
   return customFetch<LeadDetailResponse>(getLeadsPostLeadsUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(leadsLeadPayloadSchema),
   });
 };
@@ -3837,7 +3955,7 @@ export const getLeadsGetLeadsIdUrl = (id: string) => {
 
 export const leadsGetLeadsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<LeadDetailResponse> => {
   return customFetch<LeadDetailResponse>(getLeadsGetLeadsIdUrl(id), {
     ...options,
@@ -3926,12 +4044,12 @@ export const getLeadsPutLeadsIdUrl = (id: string) => {
 export const leadsPutLeadsId = async (
   id: string,
   leadsLeadPayloadSchema: LeadsLeadPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<LeadDetailResponse> => {
   return customFetch<LeadDetailResponse>(getLeadsPutLeadsIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(leadsLeadPayloadSchema),
   });
 };
@@ -4013,7 +4131,7 @@ export const getLeadsDeleteLeadsIdUrl = (id: string) => {
 
 export const leadsDeleteLeadsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getLeadsDeleteLeadsIdUrl(id), {
     ...options,
@@ -4099,12 +4217,12 @@ export const getLeadsPostLeadsIdContactsUrl = (id: string) => {
 export const leadsPostLeadsIdContacts = async (
   id: string,
   leadsContactCreateSchema: LeadsContactCreateSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<LeadContactResponse> => {
   return customFetch<LeadContactResponse>(getLeadsPostLeadsIdContactsUrl(id), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(leadsContactCreateSchema),
   });
 };
@@ -4192,14 +4310,14 @@ export const leadsPutLeadsIdContactsContactId = async (
   id: string,
   contactId: string,
   leadsContactUpdateSchema: LeadsContactUpdateSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<LeadContactResponse> => {
   return customFetch<LeadContactResponse>(
     getLeadsPutLeadsIdContactsContactIdUrl(id, contactId),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(leadsContactUpdateSchema),
     },
   );
@@ -4294,7 +4412,7 @@ export const getLeadsDeleteLeadsIdContactsContactIdUrl = (
 export const leadsDeleteLeadsIdContactsContactId = async (
   id: string,
   contactId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getLeadsDeleteLeadsIdContactsContactIdUrl(id, contactId),
@@ -4376,7 +4494,7 @@ export const useLeadsDeleteLeadsIdContactsContactId = <
 };
 
 /**
- * Route defined in artifacts/api-server/src/routes/leads.ts.
+ * Small-file-only direct multipart upload for lead attachments via multipart form field `files`. Replit production runs on Cloud Run, whose HTTP/1 request body cap is 32 MiB; callers must use `/leads/{id}/attachments/upload-policy?fileSize=<bytes>` before sending bytes and must use `/leads/{id}/attachments/chunked` when a PDF/ZIP/project package is above the policy's `multipart.maxRecommendedBytes`. Direct multipart requests above that recommendation can be rejected by Google Frontend with HTML 413 before the API can format JSON.
  * @summary POST /leads/{id}/attachments
  */
 export const getLeadsPostLeadsIdAttachmentsUrl = (id: string) => {
@@ -4385,13 +4503,20 @@ export const getLeadsPostLeadsIdAttachmentsUrl = (id: string) => {
 
 export const leadsPostLeadsIdAttachments = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  leadsPostLeadsIdAttachmentsBody: LeadsPostLeadsIdAttachmentsBody,
+  options?: RequestInit,
 ): Promise<LeadAttachmentsCreatedResponse> => {
+  const formData = new FormData();
+  leadsPostLeadsIdAttachmentsBody.files.forEach((value) =>
+    formData.append(`files`, value),
+  );
+
   return customFetch<LeadAttachmentsCreatedResponse>(
     getLeadsPostLeadsIdAttachmentsUrl(id),
     {
       ...options,
       method: "POST",
+      body: formData,
     },
   );
 };
@@ -4403,14 +4528,14 @@ export const getLeadsPostLeadsIdAttachmentsMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
     TError,
-    { id: string },
+    { id: string; data: BodyType<LeadsPostLeadsIdAttachmentsBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
   TError,
-  { id: string },
+  { id: string; data: BodyType<LeadsPostLeadsIdAttachmentsBody> },
   TContext
 > => {
   const mutationKey = ["leadsPostLeadsIdAttachments"];
@@ -4424,11 +4549,11 @@ export const getLeadsPostLeadsIdAttachmentsMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
-    { id: string }
+    { id: string; data: BodyType<LeadsPostLeadsIdAttachmentsBody> }
   > = (props) => {
-    const { id } = props ?? {};
+    const { id, data } = props ?? {};
 
-    return leadsPostLeadsIdAttachments(id, requestOptions);
+    return leadsPostLeadsIdAttachments(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -4437,7 +4562,8 @@ export const getLeadsPostLeadsIdAttachmentsMutationOptions = <
 export type LeadsPostLeadsIdAttachmentsMutationResult = NonNullable<
   Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>
 >;
-
+export type LeadsPostLeadsIdAttachmentsMutationBody =
+  BodyType<LeadsPostLeadsIdAttachmentsBody>;
 export type LeadsPostLeadsIdAttachmentsMutationError = ErrorType<Problem>;
 
 /**
@@ -4450,17 +4576,717 @@ export const useLeadsPostLeadsIdAttachments = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
     TError,
-    { id: string },
+    { id: string; data: BodyType<LeadsPostLeadsIdAttachmentsBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof leadsPostLeadsIdAttachments>>,
   TError,
-  { id: string },
+  { id: string; data: BodyType<LeadsPostLeadsIdAttachmentsBody> },
   TContext
 > => {
   return useMutation(getLeadsPostLeadsIdAttachmentsMutationOptions(options));
+};
+
+/**
+ * Returns the correct upload route for a lead attachment before bytes are sent. API agents should call this with `fileSize` for every PDF, ZIP, and project package; files above `multipart.maxRecommendedBytes` must use the chunked endpoint to avoid upstream Google Frontend HTML 413 responses.
+ * @summary Get lead attachment upload policy
+ */
+export const getLeadsGetLeadsIdAttachmentsUploadPolicyUrl = (
+  id: string,
+  params?: LeadsGetLeadsIdAttachmentsUploadPolicyParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value != null) {
+      normalizedParams.append(key, value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/leads/${id}/attachments/upload-policy?${stringifiedParams}`
+    : `/api/leads/${id}/attachments/upload-policy`;
+};
+
+export const leadsGetLeadsIdAttachmentsUploadPolicy = async (
+  id: string,
+  params?: LeadsGetLeadsIdAttachmentsUploadPolicyParams,
+  options?: RequestInit,
+): Promise<LeadAttachmentUploadPolicyResponse> => {
+  return customFetch<LeadAttachmentUploadPolicyResponse>(
+    getLeadsGetLeadsIdAttachmentsUploadPolicyUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getLeadsGetLeadsIdAttachmentsUploadPolicyQueryKey = (
+  id: string,
+  params?: LeadsGetLeadsIdAttachmentsUploadPolicyParams,
+) => {
+  return [
+    `/api/leads/${id}/attachments/upload-policy`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getLeadsGetLeadsIdAttachmentsUploadPolicyQueryOptions = <
+  TData = Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsUploadPolicy>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  params?: LeadsGetLeadsIdAttachmentsUploadPolicyParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsUploadPolicy>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getLeadsGetLeadsIdAttachmentsUploadPolicyQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsUploadPolicy>>
+  > = ({ signal }) =>
+    leadsGetLeadsIdAttachmentsUploadPolicy(id, params, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsUploadPolicy>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LeadsGetLeadsIdAttachmentsUploadPolicyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsUploadPolicy>>
+>;
+export type LeadsGetLeadsIdAttachmentsUploadPolicyQueryError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Get lead attachment upload policy
+ */
+
+export function useLeadsGetLeadsIdAttachmentsUploadPolicy<
+  TData = Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsUploadPolicy>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  params?: LeadsGetLeadsIdAttachmentsUploadPolicyParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsUploadPolicy>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLeadsGetLeadsIdAttachmentsUploadPolicyQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Creates a resumable upload session for one large lead attachment. Use this path for large ZIP/project packages that may exceed proxy multipart request limits; upload chunks with PUT, then call complete to assemble, validate, and persist the attachment. Chunk PUT accepts raw application/octet-stream bytes or base64-encoded text/plain/application/base64 bytes for the same chunk when a client needs to avoid pre-app binary upload rejection.
+ * @summary Start a chunked lead attachment upload session
+ */
+export const getLeadsPostLeadsIdAttachmentsChunkedUrl = (id: string) => {
+  return `/api/leads/${id}/attachments/chunked`;
+};
+
+export const leadsPostLeadsIdAttachmentsChunked = async (
+  id: string,
+  leadsLeadAttachmentChunkedUploadStartSchema: LeadsLeadAttachmentChunkedUploadStartSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getLeadsPostLeadsIdAttachmentsChunkedUrl(id), {
+    ...options,
+    method: "POST",
+    headers: jsonContentTypeHeaders(options?.headers),
+    body: JSON.stringify(leadsLeadAttachmentChunkedUploadStartSchema),
+  });
+};
+
+export const getLeadsPostLeadsIdAttachmentsChunkedMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsChunked>>,
+    TError,
+    { id: string; data: BodyType<LeadsLeadAttachmentChunkedUploadStartSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsChunked>>,
+  TError,
+  { id: string; data: BodyType<LeadsLeadAttachmentChunkedUploadStartSchema> },
+  TContext
+> => {
+  const mutationKey = ["leadsPostLeadsIdAttachmentsChunked"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsChunked>>,
+    { id: string; data: BodyType<LeadsLeadAttachmentChunkedUploadStartSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return leadsPostLeadsIdAttachmentsChunked(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPostLeadsIdAttachmentsChunkedMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsChunked>>
+>;
+export type LeadsPostLeadsIdAttachmentsChunkedMutationBody =
+  BodyType<LeadsLeadAttachmentChunkedUploadStartSchema>;
+export type LeadsPostLeadsIdAttachmentsChunkedMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Start a chunked lead attachment upload session
+ */
+export const useLeadsPostLeadsIdAttachmentsChunked = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsChunked>>,
+    TError,
+    { id: string; data: BodyType<LeadsLeadAttachmentChunkedUploadStartSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsChunked>>,
+  TError,
+  { id: string; data: BodyType<LeadsLeadAttachmentChunkedUploadStartSchema> },
+  TContext
+> => {
+  return useMutation(
+    getLeadsPostLeadsIdAttachmentsChunkedMutationOptions(options),
+  );
+};
+
+/**
+ * @summary Get chunked lead attachment upload session status
+ */
+export const getLeadsGetLeadsIdAttachmentsChunkedUploadIdUrl = (
+  id: string,
+  uploadId: string,
+) => {
+  return `/api/leads/${id}/attachments/chunked/${uploadId}`;
+};
+
+export const leadsGetLeadsIdAttachmentsChunkedUploadId = async (
+  id: string,
+  uploadId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getLeadsGetLeadsIdAttachmentsChunkedUploadIdUrl(id, uploadId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getLeadsGetLeadsIdAttachmentsChunkedUploadIdQueryKey = (
+  id: string,
+  uploadId: string,
+) => {
+  return [`/api/leads/${id}/attachments/chunked/${uploadId}`] as const;
+};
+
+export const getLeadsGetLeadsIdAttachmentsChunkedUploadIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsChunkedUploadId>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  uploadId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsChunkedUploadId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getLeadsGetLeadsIdAttachmentsChunkedUploadIdQueryKey(id, uploadId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsChunkedUploadId>>
+  > = ({ signal }) =>
+    leadsGetLeadsIdAttachmentsChunkedUploadId(id, uploadId, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(id && uploadId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsChunkedUploadId>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LeadsGetLeadsIdAttachmentsChunkedUploadIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsChunkedUploadId>>
+>;
+export type LeadsGetLeadsIdAttachmentsChunkedUploadIdQueryError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Get chunked lead attachment upload session status
+ */
+
+export function useLeadsGetLeadsIdAttachmentsChunkedUploadId<
+  TData = Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsChunkedUploadId>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  uploadId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof leadsGetLeadsIdAttachmentsChunkedUploadId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLeadsGetLeadsIdAttachmentsChunkedUploadIdQueryOptions(
+    id,
+    uploadId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Abort a chunked lead attachment upload session
+ */
+export const getLeadsDeleteLeadsIdAttachmentsChunkedUploadIdUrl = (
+  id: string,
+  uploadId: string,
+) => {
+  return `/api/leads/${id}/attachments/chunked/${uploadId}`;
+};
+
+export const leadsDeleteLeadsIdAttachmentsChunkedUploadId = async (
+  id: string,
+  uploadId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getLeadsDeleteLeadsIdAttachmentsChunkedUploadIdUrl(id, uploadId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getLeadsDeleteLeadsIdAttachmentsChunkedUploadIdMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsChunkedUploadId>>,
+    TError,
+    { id: string; uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsChunkedUploadId>>,
+  TError,
+  { id: string; uploadId: string },
+  TContext
+> => {
+  const mutationKey = ["leadsDeleteLeadsIdAttachmentsChunkedUploadId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsChunkedUploadId>>,
+    { id: string; uploadId: string }
+  > = (props) => {
+    const { id, uploadId } = props ?? {};
+
+    return leadsDeleteLeadsIdAttachmentsChunkedUploadId(
+      id,
+      uploadId,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsDeleteLeadsIdAttachmentsChunkedUploadIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsChunkedUploadId>>
+  >;
+
+export type LeadsDeleteLeadsIdAttachmentsChunkedUploadIdMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Abort a chunked lead attachment upload session
+ */
+export const useLeadsDeleteLeadsIdAttachmentsChunkedUploadId = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsChunkedUploadId>>,
+    TError,
+    { id: string; uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsDeleteLeadsIdAttachmentsChunkedUploadId>>,
+  TError,
+  { id: string; uploadId: string },
+  TContext
+> => {
+  return useMutation(
+    getLeadsDeleteLeadsIdAttachmentsChunkedUploadIdMutationOptions(options),
+  );
+};
+
+/**
+ * Uploads one chunk for a lead attachment session. Send raw bytes as application/octet-stream, or send the same chunk base64-encoded as text/plain or application/base64 to avoid upstream binary body inspection while keeping app-side validation and problem+json errors.
+ * @summary Upload one chunk for a chunked lead attachment upload session
+ */
+export const getLeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexUrl = (
+  id: string,
+  uploadId: string,
+  chunkIndex: number,
+) => {
+  return `/api/leads/${id}/attachments/chunked/${uploadId}/chunks/${chunkIndex}`;
+};
+
+export const leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex = async (
+  id: string,
+  uploadId: string,
+  chunkIndex: number,
+  leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexBody: Blob | string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getLeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexUrl(
+      id,
+      uploadId,
+      chunkIndex,
+    ),
+    {
+      ...options,
+      method: "PUT",
+      body: JSON.stringify(
+        leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexBody,
+      ),
+    },
+  );
+};
+
+export const getLeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexMutationOptions =
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<
+          typeof leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex
+        >
+      >,
+      TError,
+      {
+        id: string;
+        uploadId: string;
+        chunkIndex: number;
+        data: BodyType<Blob | string>;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex
+      >
+    >,
+    TError,
+    {
+      id: string;
+      uploadId: string;
+      chunkIndex: number;
+      data: BodyType<Blob | string>;
+    },
+    TContext
+  > => {
+    const mutationKey = [
+      "leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex",
+    ];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<
+          typeof leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex
+        >
+      >,
+      {
+        id: string;
+        uploadId: string;
+        chunkIndex: number;
+        data: BodyType<Blob | string>;
+      }
+    > = (props) => {
+      const { id, uploadId, chunkIndex, data } = props ?? {};
+
+      return leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex(
+        id,
+        uploadId,
+        chunkIndex,
+        data,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type LeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<
+        typeof leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex
+      >
+    >
+  >;
+export type LeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexMutationBody =
+  BodyType<Blob | string>;
+export type LeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Upload one chunk for a chunked lead attachment upload session
+ */
+export const useLeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<
+        typeof leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex
+      >
+    >,
+    TError,
+    {
+      id: string;
+      uploadId: string;
+      chunkIndex: number;
+      data: BodyType<Blob | string>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<
+    ReturnType<typeof leadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndex>
+  >,
+  TError,
+  {
+    id: string;
+    uploadId: string;
+    chunkIndex: number;
+    data: BodyType<Blob | string>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getLeadsPutLeadsIdAttachmentsChunkedUploadIdChunksChunkIndexMutationOptions(
+      options,
+    ),
+  );
+};
+
+/**
+ * @summary Complete a chunked lead attachment upload session
+ */
+export const getLeadsPostLeadsIdAttachmentsChunkedUploadIdCompleteUrl = (
+  id: string,
+  uploadId: string,
+) => {
+  return `/api/leads/${id}/attachments/chunked/${uploadId}/complete`;
+};
+
+export const leadsPostLeadsIdAttachmentsChunkedUploadIdComplete = async (
+  id: string,
+  uploadId: string,
+  options?: RequestInit,
+): Promise<LeadAttachmentsCreatedResponse> => {
+  return customFetch<LeadAttachmentsCreatedResponse>(
+    getLeadsPostLeadsIdAttachmentsChunkedUploadIdCompleteUrl(id, uploadId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getLeadsPostLeadsIdAttachmentsChunkedUploadIdCompleteMutationOptions =
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof leadsPostLeadsIdAttachmentsChunkedUploadIdComplete>
+      >,
+      TError,
+      { id: string; uploadId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof leadsPostLeadsIdAttachmentsChunkedUploadIdComplete>
+    >,
+    TError,
+    { id: string; uploadId: string },
+    TContext
+  > => {
+    const mutationKey = ["leadsPostLeadsIdAttachmentsChunkedUploadIdComplete"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof leadsPostLeadsIdAttachmentsChunkedUploadIdComplete>
+      >,
+      { id: string; uploadId: string }
+    > = (props) => {
+      const { id, uploadId } = props ?? {};
+
+      return leadsPostLeadsIdAttachmentsChunkedUploadIdComplete(
+        id,
+        uploadId,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type LeadsPostLeadsIdAttachmentsChunkedUploadIdCompleteMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof leadsPostLeadsIdAttachmentsChunkedUploadIdComplete>
+    >
+  >;
+
+export type LeadsPostLeadsIdAttachmentsChunkedUploadIdCompleteMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Complete a chunked lead attachment upload session
+ */
+export const useLeadsPostLeadsIdAttachmentsChunkedUploadIdComplete = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof leadsPostLeadsIdAttachmentsChunkedUploadIdComplete>
+    >,
+    TError,
+    { id: string; uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<
+    ReturnType<typeof leadsPostLeadsIdAttachmentsChunkedUploadIdComplete>
+  >,
+  TError,
+  { id: string; uploadId: string },
+  TContext
+> => {
+  return useMutation(
+    getLeadsPostLeadsIdAttachmentsChunkedUploadIdCompleteMutationOptions(
+      options,
+    ),
+  );
 };
 
 /**
@@ -4477,7 +5303,7 @@ export const getLeadsDeleteLeadsIdAttachmentsAttachmentIdUrl = (
 export const leadsDeleteLeadsIdAttachmentsAttachmentId = async (
   id: string,
   attachmentId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getLeadsDeleteLeadsIdAttachmentsAttachmentIdUrl(id, attachmentId),
@@ -4574,14 +5400,14 @@ export const getLeadsPostLeadsIdConvertToJobUrl = (id: string) => {
 export const leadsPostLeadsIdConvertToJob = async (
   id: string,
   leadConvertToJobBody?: LeadConvertToJobBody,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<LeadConvertToJobResponse> => {
   return customFetch<LeadConvertToJobResponse>(
     getLeadsPostLeadsIdConvertToJobUrl(id),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(leadConvertToJobBody),
     },
   );
@@ -4666,12 +5492,12 @@ export const getLeadsPostLeadsIdActivitiesUrl = (id: string) => {
 export const leadsPostLeadsIdActivities = async (
   id: string,
   leadsActivityCreateSchema: LeadsActivityCreateSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getLeadsPostLeadsIdActivitiesUrl(id), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(leadsActivityCreateSchema),
   });
 };
@@ -4754,7 +5580,7 @@ export const getFoldersGetJobsJobIdFoldersUrl = (jobId: string) => {
 
 export const foldersGetJobsJobIdFolders = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersGetJobsJobIdFoldersUrl(jobId), {
     ...options,
@@ -4848,12 +5674,12 @@ export const getFoldersPostJobsJobIdFoldersUrl = (jobId: string) => {
 export const foldersPostJobsJobIdFolders = async (
   jobId: string,
   foldersFolderBodySchema: FoldersFolderBodySchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPostJobsJobIdFoldersUrl(jobId), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(foldersFolderBodySchema),
   });
 };
@@ -4927,6 +5753,223 @@ export const useFoldersPostJobsJobIdFolders = <
 };
 
 /**
+ * Agent-friendly folder discovery endpoint. Returns all visible job folders for one media type or all media types, including stable IDs, parent-child relationships, and path metadata.
+ * @summary Return the complete visible folder tree for a job
+ */
+export const getFoldersGetJobsJobIdFolderTreeUrl = (
+  jobId: string,
+  params?: FoldersGetJobsJobIdFolderTreeParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value != null) {
+      normalizedParams.append(key, value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/jobs/${jobId}/folder-tree?${stringifiedParams}`
+    : `/api/jobs/${jobId}/folder-tree`;
+};
+
+export const foldersGetJobsJobIdFolderTree = async (
+  jobId: string,
+  params?: FoldersGetJobsJobIdFolderTreeParams,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getFoldersGetJobsJobIdFolderTreeUrl(jobId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getFoldersGetJobsJobIdFolderTreeQueryKey = (
+  jobId: string,
+  params?: FoldersGetJobsJobIdFolderTreeParams,
+) => {
+  return [
+    `/api/jobs/${jobId}/folder-tree`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getFoldersGetJobsJobIdFolderTreeQueryOptions = <
+  TData = Awaited<ReturnType<typeof foldersGetJobsJobIdFolderTree>>,
+  TError = ErrorType<Problem>,
+>(
+  jobId: string,
+  params?: FoldersGetJobsJobIdFolderTreeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof foldersGetJobsJobIdFolderTree>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getFoldersGetJobsJobIdFolderTreeQueryKey(jobId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof foldersGetJobsJobIdFolderTree>>
+  > = ({ signal }) =>
+    foldersGetJobsJobIdFolderTree(jobId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof foldersGetJobsJobIdFolderTree>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type FoldersGetJobsJobIdFolderTreeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof foldersGetJobsJobIdFolderTree>>
+>;
+export type FoldersGetJobsJobIdFolderTreeQueryError = ErrorType<Problem>;
+
+/**
+ * @summary Return the complete visible folder tree for a job
+ */
+
+export function useFoldersGetJobsJobIdFolderTree<
+  TData = Awaited<ReturnType<typeof foldersGetJobsJobIdFolderTree>>,
+  TError = ErrorType<Problem>,
+>(
+  jobId: string,
+  params?: FoldersGetJobsJobIdFolderTreeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof foldersGetJobsJobIdFolderTree>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFoldersGetJobsJobIdFolderTreeQueryOptions(
+    jobId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Resolves a document, photo, or video folder path using server-side normalization for numeric prefixes, punctuation, apostrophes, and whitespace. Optionally creates missing path segments, including nested photo/video subfolders for migration imports.
+ * @summary Resolve or create a job folder by path
+ */
+export const getFoldersPostJobsJobIdFoldersResolveUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/folders/resolve`;
+};
+
+export const foldersPostJobsJobIdFoldersResolve = async (
+  jobId: string,
+  foldersFolderResolveSchema: FoldersFolderResolveSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getFoldersPostJobsJobIdFoldersResolveUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: jsonContentTypeHeaders(options?.headers),
+      body: JSON.stringify(foldersFolderResolveSchema),
+    },
+  );
+};
+
+export const getFoldersPostJobsJobIdFoldersResolveMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPostJobsJobIdFoldersResolve>>,
+    TError,
+    { jobId: string; data: BodyType<FoldersFolderResolveSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof foldersPostJobsJobIdFoldersResolve>>,
+  TError,
+  { jobId: string; data: BodyType<FoldersFolderResolveSchema> },
+  TContext
+> => {
+  const mutationKey = ["foldersPostJobsJobIdFoldersResolve"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof foldersPostJobsJobIdFoldersResolve>>,
+    { jobId: string; data: BodyType<FoldersFolderResolveSchema> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return foldersPostJobsJobIdFoldersResolve(jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FoldersPostJobsJobIdFoldersResolveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof foldersPostJobsJobIdFoldersResolve>>
+>;
+export type FoldersPostJobsJobIdFoldersResolveMutationBody =
+  BodyType<FoldersFolderResolveSchema>;
+export type FoldersPostJobsJobIdFoldersResolveMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Resolve or create a job folder by path
+ */
+export const useFoldersPostJobsJobIdFoldersResolve = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof foldersPostJobsJobIdFoldersResolve>>,
+    TError,
+    { jobId: string; data: BodyType<FoldersFolderResolveSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof foldersPostJobsJobIdFoldersResolve>>,
+  TError,
+  { jobId: string; data: BodyType<FoldersFolderResolveSchema> },
+  TContext
+> => {
+  return useMutation(
+    getFoldersPostJobsJobIdFoldersResolveMutationOptions(options),
+  );
+};
+
+/**
  * Route defined in artifacts/api-server/src/routes/folders.ts. Validated request body with folderUpdateSchema.
  * @summary PUT /folders/{id}
  */
@@ -4937,12 +5980,12 @@ export const getFoldersPutFoldersIdUrl = (id: string) => {
 export const foldersPutFoldersId = async (
   id: string,
   foldersFolderUpdateSchema: FoldersFolderUpdateSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPutFoldersIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(foldersFolderUpdateSchema),
   });
 };
@@ -5025,7 +6068,7 @@ export const getFoldersDeleteFoldersIdUrl = (id: string) => {
 
 export const foldersDeleteFoldersId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersDeleteFoldersIdUrl(id), {
     ...options,
@@ -5110,7 +6153,7 @@ export const getFoldersPostFoldersIdCopyUrl = (id: string) => {
 
 export const foldersPostFoldersIdCopy = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPostFoldersIdCopyUrl(id), {
     ...options,
@@ -5196,12 +6239,12 @@ export const getFoldersPutFoldersIdMoveUrl = (id: string) => {
 export const foldersPutFoldersIdMove = async (
   id: string,
   foldersMoveFolderSchema: FoldersMoveFolderSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPutFoldersIdMoveUrl(id), {
     ...options,
     method: "PUT",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(foldersMoveFolderSchema),
   });
 };
@@ -5284,7 +6327,7 @@ export const getFoldersPostFoldersIdRestoreUrl = (id: string) => {
 
 export const foldersPostFoldersIdRestore = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersPostFoldersIdRestoreUrl(id), {
     ...options,
@@ -5369,7 +6412,7 @@ export const getFoldersDeleteFoldersIdPurgeUrl = (id: string) => {
 
 export const foldersDeleteFoldersIdPurge = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersDeleteFoldersIdPurgeUrl(id), {
     ...options,
@@ -5454,7 +6497,7 @@ export const getFoldersGetFoldersIdDownloadUrl = (id: string) => {
 
 export const foldersGetFoldersIdDownload = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersGetFoldersIdDownloadUrl(id), {
     ...options,
@@ -5544,7 +6587,7 @@ export const getFoldersGetJobsJobIdTrashUrl = (jobId: string) => {
 
 export const foldersGetJobsJobIdTrash = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersGetJobsJobIdTrashUrl(jobId), {
     ...options,
@@ -5634,7 +6677,7 @@ export const getFoldersDeleteJobsJobIdTrashUrl = (jobId: string) => {
 
 export const foldersDeleteJobsJobIdTrash = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFoldersDeleteJobsJobIdTrashUrl(jobId), {
     ...options,
@@ -5720,7 +6763,7 @@ export const getFilesGetFoldersIdFilesUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -5735,7 +6778,7 @@ export const getFilesGetFoldersIdFilesUrl = (
 export const filesGetFoldersIdFiles = async (
   id: string,
   params?: FilesGetFoldersIdFilesParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesGetFoldersIdFilesUrl(id, params), {
     ...options,
@@ -5825,7 +6868,7 @@ export function useFilesGetFoldersIdFiles<
 }
 
 /**
- * Route defined in artifacts/api-server/src/routes/files.ts.
+ * Direct multipart upload for files in a folder. Server-side 403 responses are returned as application/problem+json with machine-readable `errors.code` values such as `CSRF_HEADER_REQUIRED` or `UPLOAD_FOLDER_FORBIDDEN`. If a client receives a non-JSON/plain 403 before the app can format the response, retry the same file through the chunked endpoints under `/folders/{id}/files/chunked`; photo and video uploads from the web app use that chunked path by default.
  * @summary POST /folders/{id}/files
  */
 export const getFilesPostFoldersIdFilesUrl = (id: string) => {
@@ -5834,7 +6877,7 @@ export const getFilesPostFoldersIdFilesUrl = (id: string) => {
 
 export const filesPostFoldersIdFiles = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesPostFoldersIdFilesUrl(id), {
     ...options,
@@ -5910,6 +6953,1160 @@ export const useFilesPostFoldersIdFiles = <
 };
 
 /**
+ * Returns machine-readable duplicate status for a filename, size, and optional SHA-256 checksum in the target folder.
+ * @summary Preflight duplicate detection for a folder upload
+ */
+export const getFilesGetFoldersIdFilesDuplicatesUrl = (
+  id: string,
+  params: FilesGetFoldersIdFilesDuplicatesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value != null) {
+      normalizedParams.append(key, value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/folders/${id}/files/duplicates?${stringifiedParams}`
+    : `/api/folders/${id}/files/duplicates`;
+};
+
+export const filesGetFoldersIdFilesDuplicates = async (
+  id: string,
+  params: FilesGetFoldersIdFilesDuplicatesParams,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getFilesGetFoldersIdFilesDuplicatesUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getFilesGetFoldersIdFilesDuplicatesQueryKey = (
+  id: string,
+  params?: FilesGetFoldersIdFilesDuplicatesParams,
+) => {
+  return [
+    `/api/folders/${id}/files/duplicates`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getFilesGetFoldersIdFilesDuplicatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof filesGetFoldersIdFilesDuplicates>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  params: FilesGetFoldersIdFilesDuplicatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof filesGetFoldersIdFilesDuplicates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getFilesGetFoldersIdFilesDuplicatesQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof filesGetFoldersIdFilesDuplicates>>
+  > = ({ signal }) =>
+    filesGetFoldersIdFilesDuplicates(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof filesGetFoldersIdFilesDuplicates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type FilesGetFoldersIdFilesDuplicatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof filesGetFoldersIdFilesDuplicates>>
+>;
+export type FilesGetFoldersIdFilesDuplicatesQueryError = ErrorType<Problem>;
+
+/**
+ * @summary Preflight duplicate detection for a folder upload
+ */
+
+export function useFilesGetFoldersIdFilesDuplicates<
+  TData = Awaited<ReturnType<typeof filesGetFoldersIdFilesDuplicates>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  params: FilesGetFoldersIdFilesDuplicatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof filesGetFoldersIdFilesDuplicates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFilesGetFoldersIdFilesDuplicatesQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Resolves the destination folder by path, optionally creates missing path segments, then uploads files through the standard validation/storage pipeline.
+ * @summary Upload files to a job folder by normalized path
+ */
+export const getFilesPostJobsJobIdFilesByPathUrl = (jobId: string) => {
+  return `/api/jobs/${jobId}/files/by-path`;
+};
+
+export const filesPostJobsJobIdFilesByPath = async (
+  jobId: string,
+  filesUploadFilesByPathSchema: FilesUploadFilesByPathSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  const formData = new FormData();
+  filesUploadFilesByPathSchema.files.forEach((value) =>
+    formData.append(`files`, value),
+  );
+  if (filesUploadFilesByPathSchema.folderPath !== undefined) {
+    formData.append(`folderPath`, filesUploadFilesByPathSchema.folderPath);
+  }
+  if (filesUploadFilesByPathSchema.path !== undefined) {
+    formData.append(`path`, filesUploadFilesByPathSchema.path);
+  }
+  if (filesUploadFilesByPathSchema.pathSegments !== undefined) {
+    formData.append(`pathSegments`, filesUploadFilesByPathSchema.pathSegments);
+  }
+  if (filesUploadFilesByPathSchema.mediaType !== undefined) {
+    formData.append(`mediaType`, filesUploadFilesByPathSchema.mediaType);
+  }
+  if (filesUploadFilesByPathSchema.createIfMissing !== undefined) {
+    formData.append(
+      `createIfMissing`,
+      filesUploadFilesByPathSchema.createIfMissing.toString(),
+    );
+  }
+  if (
+    filesUploadFilesByPathSchema.note !== undefined &&
+    filesUploadFilesByPathSchema.note !== null
+  ) {
+    formData.append(`note`, filesUploadFilesByPathSchema.note);
+  }
+  if (filesUploadFilesByPathSchema.videoDurations !== undefined) {
+    formData.append(
+      `videoDurations`,
+      filesUploadFilesByPathSchema.videoDurations,
+    );
+  }
+  if (filesUploadFilesByPathSchema.duplicateAction !== undefined) {
+    formData.append(
+      `duplicateAction`,
+      filesUploadFilesByPathSchema.duplicateAction,
+    );
+  }
+
+  return customFetch<AnyValue>(getFilesPostJobsJobIdFilesByPathUrl(jobId), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getFilesPostJobsJobIdFilesByPathMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostJobsJobIdFilesByPath>>,
+    TError,
+    { jobId: string; data: BodyType<FilesUploadFilesByPathSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostJobsJobIdFilesByPath>>,
+  TError,
+  { jobId: string; data: BodyType<FilesUploadFilesByPathSchema> },
+  TContext
+> => {
+  const mutationKey = ["filesPostJobsJobIdFilesByPath"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostJobsJobIdFilesByPath>>,
+    { jobId: string; data: BodyType<FilesUploadFilesByPathSchema> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return filesPostJobsJobIdFilesByPath(jobId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostJobsJobIdFilesByPathMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostJobsJobIdFilesByPath>>
+>;
+export type FilesPostJobsJobIdFilesByPathMutationBody =
+  BodyType<FilesUploadFilesByPathSchema>;
+export type FilesPostJobsJobIdFilesByPathMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Upload files to a job folder by normalized path
+ */
+export const useFilesPostJobsJobIdFilesByPath = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostJobsJobIdFilesByPath>>,
+    TError,
+    { jobId: string; data: BodyType<FilesUploadFilesByPathSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostJobsJobIdFilesByPath>>,
+  TError,
+  { jobId: string; data: BodyType<FilesUploadFilesByPathSchema> },
+  TContext
+> => {
+  return useMutation(getFilesPostJobsJobIdFilesByPathMutationOptions(options));
+};
+
+/**
+ * Creates a resumable upload session for one large file. Upload chunks with PUT, then call complete to assemble, validate, and persist the file. Chunk PUT accepts raw application/octet-stream bytes or base64-encoded text/plain/application/base64 bytes for the same chunk; retry a raw chunk as base64 when a client receives a non-JSON/plain 403 before the app can format a problem response.
+ * @summary Start a chunked file upload session
+ */
+export const getFilesPostFoldersIdFilesChunkedUrl = (id: string) => {
+  return `/api/folders/${id}/files/chunked`;
+};
+
+export const filesPostFoldersIdFilesChunked = async (
+  id: string,
+  filesChunkedUploadStartSchema: FilesChunkedUploadStartSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesPostFoldersIdFilesChunkedUrl(id), {
+    ...options,
+    method: "POST",
+    headers: jsonContentTypeHeaders(options?.headers),
+    body: JSON.stringify(filesChunkedUploadStartSchema),
+  });
+};
+
+export const getFilesPostFoldersIdFilesChunkedMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesChunked>>,
+    TError,
+    { id: string; data: BodyType<FilesChunkedUploadStartSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesChunked>>,
+  TError,
+  { id: string; data: BodyType<FilesChunkedUploadStartSchema> },
+  TContext
+> => {
+  const mutationKey = ["filesPostFoldersIdFilesChunked"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesChunked>>,
+    { id: string; data: BodyType<FilesChunkedUploadStartSchema> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return filesPostFoldersIdFilesChunked(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostFoldersIdFilesChunkedMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesChunked>>
+>;
+export type FilesPostFoldersIdFilesChunkedMutationBody =
+  BodyType<FilesChunkedUploadStartSchema>;
+export type FilesPostFoldersIdFilesChunkedMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Start a chunked file upload session
+ */
+export const useFilesPostFoldersIdFilesChunked = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesChunked>>,
+    TError,
+    { id: string; data: BodyType<FilesChunkedUploadStartSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesChunked>>,
+  TError,
+  { id: string; data: BodyType<FilesChunkedUploadStartSchema> },
+  TContext
+> => {
+  return useMutation(getFilesPostFoldersIdFilesChunkedMutationOptions(options));
+};
+
+/**
+ * @summary Get chunked upload session status
+ */
+export const getFilesGetFoldersIdFilesChunkedUploadIdUrl = (
+  id: string,
+  uploadId: string,
+) => {
+  return `/api/folders/${id}/files/chunked/${uploadId}`;
+};
+
+export const filesGetFoldersIdFilesChunkedUploadId = async (
+  id: string,
+  uploadId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getFilesGetFoldersIdFilesChunkedUploadIdUrl(id, uploadId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getFilesGetFoldersIdFilesChunkedUploadIdQueryKey = (
+  id: string,
+  uploadId: string,
+) => {
+  return [`/api/folders/${id}/files/chunked/${uploadId}`] as const;
+};
+
+export const getFilesGetFoldersIdFilesChunkedUploadIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof filesGetFoldersIdFilesChunkedUploadId>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  uploadId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof filesGetFoldersIdFilesChunkedUploadId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getFilesGetFoldersIdFilesChunkedUploadIdQueryKey(id, uploadId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof filesGetFoldersIdFilesChunkedUploadId>>
+  > = ({ signal }) =>
+    filesGetFoldersIdFilesChunkedUploadId(id, uploadId, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(id && uploadId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof filesGetFoldersIdFilesChunkedUploadId>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type FilesGetFoldersIdFilesChunkedUploadIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof filesGetFoldersIdFilesChunkedUploadId>>
+>;
+export type FilesGetFoldersIdFilesChunkedUploadIdQueryError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Get chunked upload session status
+ */
+
+export function useFilesGetFoldersIdFilesChunkedUploadId<
+  TData = Awaited<ReturnType<typeof filesGetFoldersIdFilesChunkedUploadId>>,
+  TError = ErrorType<Problem>,
+>(
+  id: string,
+  uploadId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof filesGetFoldersIdFilesChunkedUploadId>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getFilesGetFoldersIdFilesChunkedUploadIdQueryOptions(
+    id,
+    uploadId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Abort a chunked upload session
+ */
+export const getFilesDeleteFoldersIdFilesChunkedUploadIdUrl = (
+  id: string,
+  uploadId: string,
+) => {
+  return `/api/folders/${id}/files/chunked/${uploadId}`;
+};
+
+export const filesDeleteFoldersIdFilesChunkedUploadId = async (
+  id: string,
+  uploadId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getFilesDeleteFoldersIdFilesChunkedUploadIdUrl(id, uploadId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getFilesDeleteFoldersIdFilesChunkedUploadIdMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesDeleteFoldersIdFilesChunkedUploadId>>,
+    TError,
+    { id: string; uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesDeleteFoldersIdFilesChunkedUploadId>>,
+  TError,
+  { id: string; uploadId: string },
+  TContext
+> => {
+  const mutationKey = ["filesDeleteFoldersIdFilesChunkedUploadId"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesDeleteFoldersIdFilesChunkedUploadId>>,
+    { id: string; uploadId: string }
+  > = (props) => {
+    const { id, uploadId } = props ?? {};
+
+    return filesDeleteFoldersIdFilesChunkedUploadId(
+      id,
+      uploadId,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesDeleteFoldersIdFilesChunkedUploadIdMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof filesDeleteFoldersIdFilesChunkedUploadId>>
+  >;
+
+export type FilesDeleteFoldersIdFilesChunkedUploadIdMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Abort a chunked upload session
+ */
+export const useFilesDeleteFoldersIdFilesChunkedUploadId = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesDeleteFoldersIdFilesChunkedUploadId>>,
+    TError,
+    { id: string; uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesDeleteFoldersIdFilesChunkedUploadId>>,
+  TError,
+  { id: string; uploadId: string },
+  TContext
+> => {
+  return useMutation(
+    getFilesDeleteFoldersIdFilesChunkedUploadIdMutationOptions(options),
+  );
+};
+
+/**
+ * Uploads one chunk for a file session. Send raw bytes as application/octet-stream, or send the same chunk base64-encoded as text/plain or application/base64 to avoid upstream binary body inspection while keeping app-side validation and problem+json errors.
+ * @summary Upload one chunk for a chunked upload session
+ */
+export const getFilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexUrl = (
+  id: string,
+  uploadId: string,
+  chunkIndex: number,
+) => {
+  return `/api/folders/${id}/files/chunked/${uploadId}/chunks/${chunkIndex}`;
+};
+
+export const filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex = async (
+  id: string,
+  uploadId: string,
+  chunkIndex: number,
+  filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexBody: Blob | string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getFilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexUrl(
+      id,
+      uploadId,
+      chunkIndex,
+    ),
+    {
+      ...options,
+      method: "PUT",
+      body: JSON.stringify(
+        filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexBody,
+      ),
+    },
+  );
+};
+
+export const getFilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexMutationOptions =
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex>
+      >,
+      TError,
+      {
+        id: string;
+        uploadId: string;
+        chunkIndex: number;
+        data: BodyType<Blob | string>;
+      },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<
+      ReturnType<typeof filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex>
+    >,
+    TError,
+    {
+      id: string;
+      uploadId: string;
+      chunkIndex: number;
+      data: BodyType<Blob | string>;
+    },
+    TContext
+  > => {
+    const mutationKey = [
+      "filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex",
+    ];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex>
+      >,
+      {
+        id: string;
+        uploadId: string;
+        chunkIndex: number;
+        data: BodyType<Blob | string>;
+      }
+    > = (props) => {
+      const { id, uploadId, chunkIndex, data } = props ?? {};
+
+      return filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex(
+        id,
+        uploadId,
+        chunkIndex,
+        data,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type FilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexMutationResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex>
+    >
+  >;
+export type FilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexMutationBody =
+  BodyType<Blob | string>;
+export type FilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Upload one chunk for a chunked upload session
+ */
+export const useFilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<
+      ReturnType<typeof filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex>
+    >,
+    TError,
+    {
+      id: string;
+      uploadId: string;
+      chunkIndex: number;
+      data: BodyType<Blob | string>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<
+    ReturnType<typeof filesPutFoldersIdFilesChunkedUploadIdChunksChunkIndex>
+  >,
+  TError,
+  {
+    id: string;
+    uploadId: string;
+    chunkIndex: number;
+    data: BodyType<Blob | string>;
+  },
+  TContext
+> => {
+  return useMutation(
+    getFilesPutFoldersIdFilesChunkedUploadIdChunksChunkIndexMutationOptions(
+      options,
+    ),
+  );
+};
+
+/**
+ * @summary Complete a chunked upload session
+ */
+export const getFilesPostFoldersIdFilesChunkedUploadIdCompleteUrl = (
+  id: string,
+  uploadId: string,
+) => {
+  return `/api/folders/${id}/files/chunked/${uploadId}/complete`;
+};
+
+export const filesPostFoldersIdFilesChunkedUploadIdComplete = async (
+  id: string,
+  uploadId: string,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getFilesPostFoldersIdFilesChunkedUploadIdCompleteUrl(id, uploadId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getFilesPostFoldersIdFilesChunkedUploadIdCompleteMutationOptions =
+  <TError = ErrorType<Problem>, TContext = unknown>(options?: {
+    mutation?: UseMutationOptions<
+      Awaited<
+        ReturnType<typeof filesPostFoldersIdFilesChunkedUploadIdComplete>
+      >,
+      TError,
+      { id: string; uploadId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  }): UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesChunkedUploadIdComplete>>,
+    TError,
+    { id: string; uploadId: string },
+    TContext
+  > => {
+    const mutationKey = ["filesPostFoldersIdFilesChunkedUploadIdComplete"];
+    const { mutation: mutationOptions, request: requestOptions } = options
+      ? options.mutation &&
+        "mutationKey" in options.mutation &&
+        options.mutation.mutationKey
+        ? options
+        : { ...options, mutation: { ...options.mutation, mutationKey } }
+      : { mutation: { mutationKey }, request: undefined };
+
+    const mutationFn: MutationFunction<
+      Awaited<
+        ReturnType<typeof filesPostFoldersIdFilesChunkedUploadIdComplete>
+      >,
+      { id: string; uploadId: string }
+    > = (props) => {
+      const { id, uploadId } = props ?? {};
+
+      return filesPostFoldersIdFilesChunkedUploadIdComplete(
+        id,
+        uploadId,
+        requestOptions,
+      );
+    };
+
+    return { mutationFn, ...mutationOptions };
+  };
+
+export type FilesPostFoldersIdFilesChunkedUploadIdCompleteMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesChunkedUploadIdComplete>>
+  >;
+
+export type FilesPostFoldersIdFilesChunkedUploadIdCompleteMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Complete a chunked upload session
+ */
+export const useFilesPostFoldersIdFilesChunkedUploadIdComplete = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesChunkedUploadIdComplete>>,
+    TError,
+    { id: string; uploadId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesChunkedUploadIdComplete>>,
+  TError,
+  { id: string; uploadId: string },
+  TContext
+> => {
+  return useMutation(
+    getFilesPostFoldersIdFilesChunkedUploadIdCompleteMutationOptions(options),
+  );
+};
+
+/**
+ * Soft-deletes a selected set of files in one transaction after authorizing every file.
+ * @summary Delete selected files
+ */
+export const getFilesPostFilesBatchDeleteUrl = () => {
+  return `/api/files/batch/delete`;
+};
+
+export const filesPostFilesBatchDelete = async (
+  filesBatchFilesSchema: FilesBatchFilesSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesPostFilesBatchDeleteUrl(), {
+    ...options,
+    method: "POST",
+    headers: jsonContentTypeHeaders(options?.headers),
+    body: JSON.stringify(filesBatchFilesSchema),
+  });
+};
+
+export const getFilesPostFilesBatchDeleteMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesBatchDelete>>,
+    TError,
+    { data: BodyType<FilesBatchFilesSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostFilesBatchDelete>>,
+  TError,
+  { data: BodyType<FilesBatchFilesSchema> },
+  TContext
+> => {
+  const mutationKey = ["filesPostFilesBatchDelete"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostFilesBatchDelete>>,
+    { data: BodyType<FilesBatchFilesSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return filesPostFilesBatchDelete(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostFilesBatchDeleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostFilesBatchDelete>>
+>;
+export type FilesPostFilesBatchDeleteMutationBody =
+  BodyType<FilesBatchFilesSchema>;
+export type FilesPostFilesBatchDeleteMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Delete selected files
+ */
+export const useFilesPostFilesBatchDelete = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesBatchDelete>>,
+    TError,
+    { data: BodyType<FilesBatchFilesSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFilesBatchDelete>>,
+  TError,
+  { data: BodyType<FilesBatchFilesSchema> },
+  TContext
+> => {
+  return useMutation(getFilesPostFilesBatchDeleteMutationOptions(options));
+};
+
+/**
+ * Moves selected files to a different folder in the same job, media type, and scope.
+ * @summary Move selected files
+ */
+export const getFilesPostFilesBatchMoveUrl = () => {
+  return `/api/files/batch/move`;
+};
+
+export const filesPostFilesBatchMove = async (
+  filesBatchFilesDestinationSchema: FilesBatchFilesDestinationSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesPostFilesBatchMoveUrl(), {
+    ...options,
+    method: "POST",
+    headers: jsonContentTypeHeaders(options?.headers),
+    body: JSON.stringify(filesBatchFilesDestinationSchema),
+  });
+};
+
+export const getFilesPostFilesBatchMoveMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesBatchMove>>,
+    TError,
+    { data: BodyType<FilesBatchFilesDestinationSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostFilesBatchMove>>,
+  TError,
+  { data: BodyType<FilesBatchFilesDestinationSchema> },
+  TContext
+> => {
+  const mutationKey = ["filesPostFilesBatchMove"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostFilesBatchMove>>,
+    { data: BodyType<FilesBatchFilesDestinationSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return filesPostFilesBatchMove(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostFilesBatchMoveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostFilesBatchMove>>
+>;
+export type FilesPostFilesBatchMoveMutationBody =
+  BodyType<FilesBatchFilesDestinationSchema>;
+export type FilesPostFilesBatchMoveMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Move selected files
+ */
+export const useFilesPostFilesBatchMove = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesBatchMove>>,
+    TError,
+    { data: BodyType<FilesBatchFilesDestinationSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFilesBatchMove>>,
+  TError,
+  { data: BodyType<FilesBatchFilesDestinationSchema> },
+  TContext
+> => {
+  return useMutation(getFilesPostFilesBatchMoveMutationOptions(options));
+};
+
+/**
+ * Copies selected file records to a different folder in the same job, media type, and scope while preserving file metadata.
+ * @summary Copy selected files
+ */
+export const getFilesPostFilesBatchCopyUrl = () => {
+  return `/api/files/batch/copy`;
+};
+
+export const filesPostFilesBatchCopy = async (
+  filesBatchFilesDestinationSchema: FilesBatchFilesDestinationSchema,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(getFilesPostFilesBatchCopyUrl(), {
+    ...options,
+    method: "POST",
+    headers: jsonContentTypeHeaders(options?.headers),
+    body: JSON.stringify(filesBatchFilesDestinationSchema),
+  });
+};
+
+export const getFilesPostFilesBatchCopyMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesBatchCopy>>,
+    TError,
+    { data: BodyType<FilesBatchFilesDestinationSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostFilesBatchCopy>>,
+  TError,
+  { data: BodyType<FilesBatchFilesDestinationSchema> },
+  TContext
+> => {
+  const mutationKey = ["filesPostFilesBatchCopy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostFilesBatchCopy>>,
+    { data: BodyType<FilesBatchFilesDestinationSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return filesPostFilesBatchCopy(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostFilesBatchCopyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostFilesBatchCopy>>
+>;
+export type FilesPostFilesBatchCopyMutationBody =
+  BodyType<FilesBatchFilesDestinationSchema>;
+export type FilesPostFilesBatchCopyMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Copy selected files
+ */
+export const useFilesPostFilesBatchCopy = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesBatchCopy>>,
+    TError,
+    { data: BodyType<FilesBatchFilesDestinationSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFilesBatchCopy>>,
+  TError,
+  { data: BodyType<FilesBatchFilesDestinationSchema> },
+  TContext
+> => {
+  return useMutation(getFilesPostFilesBatchCopyMutationOptions(options));
+};
+
+/**
+ * Streams authorized selected files in a ZIP archive.
+ * @summary Download selected files as a ZIP
+ */
+export const getFilesPostFilesBatchDownloadUrl = () => {
+  return `/api/files/batch/download`;
+};
+
+export const filesPostFilesBatchDownload = async (
+  filesBatchFilesSchema: FilesBatchFilesSchema,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getFilesPostFilesBatchDownloadUrl(), {
+    ...options,
+    method: "POST",
+    headers: jsonContentTypeHeaders(options?.headers),
+    body: JSON.stringify(filesBatchFilesSchema),
+  });
+};
+
+export const getFilesPostFilesBatchDownloadMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesBatchDownload>>,
+    TError,
+    { data: BodyType<FilesBatchFilesSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostFilesBatchDownload>>,
+  TError,
+  { data: BodyType<FilesBatchFilesSchema> },
+  TContext
+> => {
+  const mutationKey = ["filesPostFilesBatchDownload"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostFilesBatchDownload>>,
+    { data: BodyType<FilesBatchFilesSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return filesPostFilesBatchDownload(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostFilesBatchDownloadMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostFilesBatchDownload>>
+>;
+export type FilesPostFilesBatchDownloadMutationBody =
+  BodyType<FilesBatchFilesSchema>;
+export type FilesPostFilesBatchDownloadMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Download selected files as a ZIP
+ */
+export const useFilesPostFilesBatchDownload = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFilesBatchDownload>>,
+    TError,
+    { data: BodyType<FilesBatchFilesSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFilesBatchDownload>>,
+  TError,
+  { data: BodyType<FilesBatchFilesSchema> },
+  TContext
+> => {
+  return useMutation(getFilesPostFilesBatchDownloadMutationOptions(options));
+};
+
+/**
  * Route defined in artifacts/api-server/src/routes/files.ts. Validated request body with renameFileSchema.
  * @summary PUT /files/{id}
  */
@@ -5920,12 +8117,12 @@ export const getFilesPutFilesIdUrl = (id: string) => {
 export const filesPutFilesId = async (
   id: string,
   filesRenameFileSchema: FilesRenameFileSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesPutFilesIdUrl(id), {
     ...options,
     method: "PUT",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(filesRenameFileSchema),
   });
 };
@@ -6007,7 +8204,7 @@ export const getFilesDeleteFilesIdUrl = (id: string) => {
 
 export const filesDeleteFilesId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesDeleteFilesIdUrl(id), {
     ...options,
@@ -6092,7 +8289,7 @@ export const getFilesPostFilesIdRestoreUrl = (id: string) => {
 
 export const filesPostFilesIdRestore = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesPostFilesIdRestoreUrl(id), {
     ...options,
@@ -6177,7 +8374,7 @@ export const getFilesDeleteFilesIdPurgeUrl = (id: string) => {
 
 export const filesDeleteFilesIdPurge = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesDeleteFilesIdPurgeUrl(id), {
     ...options,
@@ -6262,7 +8459,7 @@ export const getFilesGetFilesIdDownloadUrl = (id: string) => {
 
 export const filesGetFilesIdDownload = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getFilesGetFilesIdDownloadUrl(id), {
     ...options,
@@ -6353,7 +8550,7 @@ export const getDailyLogsGetJobsJobIdDailyLogsUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -6368,7 +8565,7 @@ export const getDailyLogsGetJobsJobIdDailyLogsUrl = (
 export const dailyLogsGetJobsJobIdDailyLogs = async (
   jobId: string,
   params?: DailyLogsGetJobsJobIdDailyLogsParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogListResponse> => {
   return customFetch<DailyLogListResponse>(
     getDailyLogsGetJobsJobIdDailyLogsUrl(jobId, params),
@@ -6478,14 +8675,14 @@ export const getDailyLogsPostJobsJobIdDailyLogsUrl = (jobId: string) => {
 export const dailyLogsPostJobsJobIdDailyLogs = async (
   jobId: string,
   dailyLogsDailyLogPayloadSchema: DailyLogsDailyLogPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogDetailResponse> => {
   return customFetch<DailyLogDetailResponse>(
     getDailyLogsPostJobsJobIdDailyLogsUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
     },
   );
@@ -6571,7 +8768,7 @@ export const getDailyLogsGetDailyLogsIdUrl = (id: string) => {
 
 export const dailyLogsGetDailyLogsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogDetailResponse> => {
   return customFetch<DailyLogDetailResponse>(
     getDailyLogsGetDailyLogsIdUrl(id),
@@ -6665,14 +8862,14 @@ export const getDailyLogsPutDailyLogsIdUrl = (id: string) => {
 export const dailyLogsPutDailyLogsId = async (
   id: string,
   dailyLogsDailyLogPayloadSchema: DailyLogsDailyLogPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogDetailResponse> => {
   return customFetch<DailyLogDetailResponse>(
     getDailyLogsPutDailyLogsIdUrl(id),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(dailyLogsDailyLogPayloadSchema),
     },
   );
@@ -6756,7 +8953,7 @@ export const getDailyLogsDeleteDailyLogsIdUrl = (id: string) => {
 
 export const dailyLogsDeleteDailyLogsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getDailyLogsDeleteDailyLogsIdUrl(id), {
     ...options,
@@ -6841,7 +9038,7 @@ export const getDailyLogsPostDailyLogsIdPublishUrl = (id: string) => {
 
 export const dailyLogsPostDailyLogsIdPublish = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogDetailResponse> => {
   return customFetch<DailyLogDetailResponse>(
     getDailyLogsPostDailyLogsIdPublishUrl(id),
@@ -6935,7 +9132,7 @@ export const getDailyLogsGetWeatherUrl = () => {
 };
 
 export const dailyLogsGetWeather = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogWeatherResponse> => {
   return customFetch<DailyLogWeatherResponse>(getDailyLogsGetWeatherUrl(), {
     ...options,
@@ -7012,7 +9209,7 @@ export const getDailyLogsPostDailyLogsIdLikeUrl = (id: string) => {
 
 export const dailyLogsPostDailyLogsIdLike = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogLikeResponse> => {
   return customFetch<DailyLogLikeResponse>(
     getDailyLogsPostDailyLogsIdLikeUrl(id),
@@ -7100,7 +9297,7 @@ export const getDailyLogsGetDailyLogsIdCommentsUrl = (id: string) => {
 
 export const dailyLogsGetDailyLogsIdComments = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogCommentsResponse> => {
   return customFetch<DailyLogCommentsResponse>(
     getDailyLogsGetDailyLogsIdCommentsUrl(id),
@@ -7197,14 +9394,14 @@ export const getDailyLogsPostDailyLogsIdCommentsUrl = (id: string) => {
 export const dailyLogsPostDailyLogsIdComments = async (
   id: string,
   dailyLogsCommentPayloadSchema: DailyLogsCommentPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogCommentsResponse> => {
   return customFetch<DailyLogCommentsResponse>(
     getDailyLogsPostDailyLogsIdCommentsUrl(id),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(dailyLogsCommentPayloadSchema),
     },
   );
@@ -7295,14 +9492,14 @@ export const dailyLogsPostDailyLogsIdCommentsCommentIdReactions = async (
   id: string,
   commentId: string,
   dailyLogsCommentReactionPayloadSchema: DailyLogsCommentReactionPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogCommentsResponse> => {
   return customFetch<DailyLogCommentsResponse>(
     getDailyLogsPostDailyLogsIdCommentsCommentIdReactionsUrl(id, commentId),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(dailyLogsCommentReactionPayloadSchema),
     },
   );
@@ -7428,14 +9625,14 @@ export const getDailyLogsPostDailyLogsIdTodosUrl = (id: string) => {
 export const dailyLogsPostDailyLogsIdTodos = async (
   id: string,
   dailyLogsTodoPayloadSchema: DailyLogsTodoPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogTodosResponse> => {
   return customFetch<DailyLogTodosResponse>(
     getDailyLogsPostDailyLogsIdTodosUrl(id),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(dailyLogsTodoPayloadSchema),
     },
   );
@@ -7524,14 +9721,14 @@ export const dailyLogsPostDailyLogsIdTodosTodoIdToggle = async (
   id: string,
   todoId: string,
   dailyLogsTodoTogglePayloadSchema: DailyLogsTodoTogglePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogTodosResponse> => {
   return customFetch<DailyLogTodosResponse>(
     getDailyLogsPostDailyLogsIdTodosTodoIdToggleUrl(id, todoId),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(dailyLogsTodoTogglePayloadSchema),
     },
   );
@@ -7649,7 +9846,7 @@ export const getDailyLogsPostDailyLogsIdCommentAttachmentsUrl = (
 
 export const dailyLogsPostDailyLogsIdCommentAttachments = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogCommentAttachmentsCreatedResponse> => {
   return customFetch<DailyLogCommentAttachmentsCreatedResponse>(
     getDailyLogsPostDailyLogsIdCommentAttachmentsUrl(id),
@@ -7741,7 +9938,7 @@ export const getDailyLogsPostDailyLogsIdAttachmentsUrl = (id: string) => {
 
 export const dailyLogsPostDailyLogsIdAttachments = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogAttachmentsCreatedResponse> => {
   return customFetch<DailyLogAttachmentsCreatedResponse>(
     getDailyLogsPostDailyLogsIdAttachmentsUrl(id),
@@ -7836,7 +10033,7 @@ export const getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdUrl = (
 export const dailyLogsDeleteDailyLogsIdAttachmentsAttachmentId = async (
   id: string,
   attachmentId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getDailyLogsDeleteDailyLogsIdAttachmentsAttachmentIdUrl(id, attachmentId),
@@ -7941,7 +10138,7 @@ export const getDailyLogAdminGetDailyLogsSettingsUrl = () => {
 };
 
 export const dailyLogAdminGetDailyLogsSettings = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDailyLogAdminGetDailyLogsSettingsUrl(), {
     ...options,
@@ -8021,12 +10218,12 @@ export const getDailyLogAdminPutDailyLogsSettingsUrl = () => {
 
 export const dailyLogAdminPutDailyLogsSettings = async (
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDailyLogAdminPutDailyLogsSettingsUrl(), {
     ...options,
     method: "PUT",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(genericObject),
   });
 };
@@ -8110,7 +10307,7 @@ export const getDailyLogAdminGetDailyLogsCustomFieldsUrl = () => {
 };
 
 export const dailyLogAdminGetDailyLogsCustomFields = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDailyLogAdminGetDailyLogsCustomFieldsUrl(), {
     ...options,
@@ -8192,12 +10389,12 @@ export const getDailyLogAdminPostDailyLogsCustomFieldsUrl = () => {
 
 export const dailyLogAdminPostDailyLogsCustomFields = async (
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDailyLogAdminPostDailyLogsCustomFieldsUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(genericObject),
   });
 };
@@ -8286,14 +10483,14 @@ export const getDailyLogAdminPutDailyLogsCustomFieldsFieldIdUrl = (
 export const dailyLogAdminPutDailyLogsCustomFieldsFieldId = async (
   fieldId: string,
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getDailyLogAdminPutDailyLogsCustomFieldsFieldIdUrl(fieldId),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -8387,7 +10584,7 @@ export const getDailyLogAdminDeleteDailyLogsCustomFieldsFieldIdUrl = (
 
 export const dailyLogAdminDeleteDailyLogsCustomFieldsFieldId = async (
   fieldId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getDailyLogAdminDeleteDailyLogsCustomFieldsFieldIdUrl(fieldId),
@@ -8484,7 +10681,7 @@ export const getDailyLogsGetDailyLogsFeedUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -8498,7 +10695,7 @@ export const getDailyLogsGetDailyLogsFeedUrl = (
 
 export const dailyLogsGetDailyLogsFeed = async (
   params?: DailyLogsGetDailyLogsFeedParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<DailyLogListResponse> => {
   return customFetch<DailyLogListResponse>(
     getDailyLogsGetDailyLogsFeedUrl(params),
@@ -8591,7 +10788,7 @@ export const getDailyLogAdminGetDailyLogsMineUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -8605,7 +10802,7 @@ export const getDailyLogAdminGetDailyLogsMineUrl = (
 
 export const dailyLogAdminGetDailyLogsMine = async (
   params?: DailyLogAdminGetDailyLogsMineParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<MyDailyLogsResponse> => {
   return customFetch<MyDailyLogsResponse>(
     getDailyLogAdminGetDailyLogsMineUrl(params),
@@ -8698,7 +10895,7 @@ export const getScheduleGetJobsJobIdScheduleSettingsUrl = (jobId: string) => {
 
 export const scheduleGetJobsJobIdScheduleSettings = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleSettings> => {
   return customFetch<ScheduleSettings>(
     getScheduleGetJobsJobIdScheduleSettingsUrl(jobId),
@@ -8798,14 +10995,14 @@ export const getSchedulePutJobsJobIdScheduleSettingsUrl = (jobId: string) => {
 export const schedulePutJobsJobIdScheduleSettings = async (
   jobId: string,
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleSettingsUpdateResponse> => {
   return customFetch<ScheduleSettingsUpdateResponse>(
     getSchedulePutJobsJobIdScheduleSettingsUrl(jobId),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -8895,14 +11092,14 @@ export const getSchedulePostJobsJobIdScheduleSettingsPhasesUrl = (
 export const schedulePostJobsJobIdScheduleSettingsPhases = async (
   jobId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getSchedulePostJobsJobIdScheduleSettingsPhasesUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
     },
   );
@@ -8999,14 +11196,14 @@ export const schedulePutJobsJobIdScheduleSettingsPhasesPhaseId = async (
   jobId: string,
   phaseId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getSchedulePutJobsJobIdScheduleSettingsPhasesPhaseIdUrl(jobId, phaseId),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
     },
   );
@@ -9129,7 +11326,7 @@ export const getScheduleGetJobsJobIdSchedulePhasesUrl = (jobId: string) => {
 
 export const scheduleGetJobsJobIdSchedulePhases = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SchedulePhaseListResponse> => {
   return customFetch<SchedulePhaseListResponse>(
     getScheduleGetJobsJobIdSchedulePhasesUrl(jobId),
@@ -9229,14 +11426,14 @@ export const getSchedulePostJobsJobIdSchedulePhasesUrl = (jobId: string) => {
 export const schedulePostJobsJobIdSchedulePhases = async (
   jobId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SchedulePhaseResponse> => {
   return customFetch<SchedulePhaseResponse>(
     getSchedulePostJobsJobIdSchedulePhasesUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
     },
   );
@@ -9328,14 +11525,14 @@ export const schedulePutJobsJobIdSchedulePhasesPhaseId = async (
   jobId: string,
   phaseId: string,
   scheduleSchedulePhasePayloadSchema: ScheduleSchedulePhasePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SchedulePhaseResponse> => {
   return customFetch<SchedulePhaseResponse>(
     getSchedulePutJobsJobIdSchedulePhasesPhaseIdUrl(jobId, phaseId),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(scheduleSchedulePhasePayloadSchema),
     },
   );
@@ -9452,7 +11649,7 @@ export const getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdUrl = (
 export const scheduleDeleteJobsJobIdSchedulePhasesPhaseId = async (
   jobId: string,
   phaseId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteJobsJobIdSchedulePhasesPhaseIdUrl(jobId, phaseId),
@@ -9551,14 +11748,14 @@ export const getSchedulePostJobsJobIdScheduleSettingsTagsUrl = (
 export const schedulePostJobsJobIdScheduleSettingsTags = async (
   jobId: string,
   scheduleScheduleSettingPayloadSchema: ScheduleScheduleSettingPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleSettingTagResponse> => {
   return customFetch<ScheduleSettingTagResponse>(
     getSchedulePostJobsJobIdScheduleSettingsTagsUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(scheduleScheduleSettingPayloadSchema),
     },
   );
@@ -9655,14 +11852,14 @@ export const schedulePutJobsJobIdScheduleSettingsTagsTagId = async (
   jobId: string,
   tagId: string,
   scheduleScheduleSettingPayloadSchema: ScheduleScheduleSettingPayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(
     getSchedulePutJobsJobIdScheduleSettingsTagsTagIdUrl(jobId, tagId),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(scheduleScheduleSettingPayloadSchema),
     },
   );
@@ -9775,7 +11972,7 @@ export const getScheduleGetJobsJobIdScheduleBaselineUrl = (jobId: string) => {
 
 export const scheduleGetJobsJobIdScheduleBaseline = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleBaselineResponse> => {
   return customFetch<ScheduleBaselineResponse>(
     getScheduleGetJobsJobIdScheduleBaselineUrl(jobId),
@@ -9874,7 +12071,7 @@ export const getSchedulePostJobsJobIdScheduleBaselineUrl = (jobId: string) => {
 
 export const schedulePostJobsJobIdScheduleBaseline = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleBaselineResponse> => {
   return customFetch<ScheduleBaselineResponse>(
     getSchedulePostJobsJobIdScheduleBaselineUrl(jobId),
@@ -9965,7 +12162,7 @@ export const getSchedulePutJobsJobIdScheduleBaselineUrl = (jobId: string) => {
 
 export const schedulePutJobsJobIdScheduleBaseline = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleBaselineResponse> => {
   return customFetch<ScheduleBaselineResponse>(
     getSchedulePutJobsJobIdScheduleBaselineUrl(jobId),
@@ -10058,7 +12255,7 @@ export const getScheduleDeleteJobsJobIdScheduleBaselineUrl = (
 
 export const scheduleDeleteJobsJobIdScheduleBaseline = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteJobsJobIdScheduleBaselineUrl(jobId),
@@ -10152,14 +12349,14 @@ export const getSchedulePostJobsJobIdWorkdayExceptionsCategoriesUrl = (
 export const schedulePostJobsJobIdWorkdayExceptionsCategories = async (
   jobId: string,
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<WorkdayExceptionCategoryResponse> => {
   return customFetch<WorkdayExceptionCategoryResponse>(
     getSchedulePostJobsJobIdWorkdayExceptionsCategoriesUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -10262,7 +12459,7 @@ export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId = async (
   jobId: string,
   categoryId: string,
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<WorkdayExceptionCategoryResponse> => {
   return customFetch<WorkdayExceptionCategoryResponse>(
     getSchedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryIdUrl(
@@ -10272,7 +12469,7 @@ export const schedulePutJobsJobIdWorkdayExceptionsCategoriesCategoryId = async (
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -10389,7 +12586,7 @@ export const getScheduleGetJobsJobIdWorkdayExceptionsUrl = (jobId: string) => {
 
 export const scheduleGetJobsJobIdWorkdayExceptions = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<WorkdayExceptionsListResponse> => {
   return customFetch<WorkdayExceptionsListResponse>(
     getScheduleGetJobsJobIdWorkdayExceptionsUrl(jobId),
@@ -10490,14 +12687,14 @@ export const getSchedulePostJobsJobIdWorkdayExceptionsUrl = (jobId: string) => {
 export const schedulePostJobsJobIdWorkdayExceptions = async (
   jobId: string,
   workdayExceptionPayload: WorkdayExceptionPayload,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<WorkdayExceptionResponse> => {
   return customFetch<WorkdayExceptionResponse>(
     getSchedulePostJobsJobIdWorkdayExceptionsUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(workdayExceptionPayload),
     },
   );
@@ -10589,14 +12786,14 @@ export const schedulePutJobsJobIdWorkdayExceptionsExceptionId = async (
   jobId: string,
   exceptionId: string,
   workdayExceptionUpdatePayload: WorkdayExceptionUpdatePayload,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<WorkdayExceptionResponse> => {
   return customFetch<WorkdayExceptionResponse>(
     getSchedulePutJobsJobIdWorkdayExceptionsExceptionIdUrl(jobId, exceptionId),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(workdayExceptionUpdatePayload),
     },
   );
@@ -10719,7 +12916,7 @@ export const getScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdUrl = (
 export const scheduleDeleteJobsJobIdWorkdayExceptionsExceptionId = async (
   jobId: string,
   exceptionId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteJobsJobIdWorkdayExceptionsExceptionIdUrl(
@@ -10832,7 +13029,7 @@ export const getSchedulePostJobsJobIdScheduleTrackConflictsUrl = (
 
 export const schedulePostJobsJobIdScheduleTrackConflicts = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleConflictsResponse> => {
   return customFetch<ScheduleConflictsResponse>(
     getSchedulePostJobsJobIdScheduleTrackConflictsUrl(jobId),
@@ -10926,7 +13123,7 @@ export const getSchedulePostJobsJobIdScheduleNotifyAssignedUsersUrl = (
 
 export const schedulePostJobsJobIdScheduleNotifyAssignedUsers = async (
   jobId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleNotifyResponse> => {
   return customFetch<ScheduleNotifyResponse>(
     getSchedulePostJobsJobIdScheduleNotifyAssignedUsersUrl(jobId),
@@ -11018,6 +13215,114 @@ export const useSchedulePostJobsJobIdScheduleNotifyAssignedUsers = <
 };
 
 /**
+ * Atomically publishes draft schedule item creates, updates, deletes, and notes for one job. Route defined in artifacts/api-server/src/routes/schedule.ts. Validated request body with scheduleDraftPublishPayloadSchema.
+ * @summary POST /jobs/{jobId}/schedule/draft-publish
+ */
+export const getSchedulePostJobsJobIdScheduleDraftPublishUrl = (
+  jobId: string,
+) => {
+  return `/api/jobs/${jobId}/schedule/draft-publish`;
+};
+
+export const schedulePostJobsJobIdScheduleDraftPublish = async (
+  jobId: string,
+  scheduleScheduleDraftPublishPayloadSchema: ScheduleScheduleDraftPublishPayloadSchema,
+  options?: RequestInit,
+): Promise<ScheduleScheduleDraftPublishResponseSchema> => {
+  return customFetch<ScheduleScheduleDraftPublishResponseSchema>(
+    getSchedulePostJobsJobIdScheduleDraftPublishUrl(jobId),
+    {
+      ...options,
+      method: "POST",
+      headers: jsonContentTypeHeaders(options?.headers),
+      body: JSON.stringify(scheduleScheduleDraftPublishPayloadSchema),
+    },
+  );
+};
+
+export const getSchedulePostJobsJobIdScheduleDraftPublishMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleDraftPublish>>,
+    TError,
+    {
+      jobId: string;
+      data: BodyType<ScheduleScheduleDraftPublishPayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleDraftPublish>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleScheduleDraftPublishPayloadSchema> },
+  TContext
+> => {
+  const mutationKey = ["schedulePostJobsJobIdScheduleDraftPublish"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleDraftPublish>>,
+    { jobId: string; data: BodyType<ScheduleScheduleDraftPublishPayloadSchema> }
+  > = (props) => {
+    const { jobId, data } = props ?? {};
+
+    return schedulePostJobsJobIdScheduleDraftPublish(
+      jobId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SchedulePostJobsJobIdScheduleDraftPublishMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleDraftPublish>>
+  >;
+export type SchedulePostJobsJobIdScheduleDraftPublishMutationBody =
+  BodyType<ScheduleScheduleDraftPublishPayloadSchema>;
+export type SchedulePostJobsJobIdScheduleDraftPublishMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary POST /jobs/{jobId}/schedule/draft-publish
+ */
+export const useSchedulePostJobsJobIdScheduleDraftPublish = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleDraftPublish>>,
+    TError,
+    {
+      jobId: string;
+      data: BodyType<ScheduleScheduleDraftPublishPayloadSchema>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof schedulePostJobsJobIdScheduleDraftPublish>>,
+  TError,
+  { jobId: string; data: BodyType<ScheduleScheduleDraftPublishPayloadSchema> },
+  TContext
+> => {
+  return useMutation(
+    getSchedulePostJobsJobIdScheduleDraftPublishMutationOptions(options),
+  );
+};
+
+/**
  * Route defined in artifacts/api-server/src/routes/schedule.ts.
  * @summary GET /jobs/{jobId}/schedule
  */
@@ -11028,7 +13333,7 @@ export const getScheduleGetJobsJobIdScheduleUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -11043,7 +13348,7 @@ export const getScheduleGetJobsJobIdScheduleUrl = (
 export const scheduleGetJobsJobIdSchedule = async (
   jobId: string,
   params?: ScheduleGetJobsJobIdScheduleParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleListResponse> => {
   return customFetch<ScheduleListResponse>(
     getScheduleGetJobsJobIdScheduleUrl(jobId, params),
@@ -11147,14 +13452,14 @@ export const getSchedulePostJobsJobIdScheduleUrl = (jobId: string) => {
 export const schedulePostJobsJobIdSchedule = async (
   jobId: string,
   scheduleSchedulePayloadSchema: ScheduleSchedulePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleItemResponse> => {
   return customFetch<ScheduleItemResponse>(
     getSchedulePostJobsJobIdScheduleUrl(jobId),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(scheduleSchedulePayloadSchema),
     },
   );
@@ -11237,7 +13542,7 @@ export const getScheduleGetScheduleUrl = () => {
 };
 
 export const scheduleGetSchedule = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleListResponse> => {
   return customFetch<ScheduleListResponse>(getScheduleGetScheduleUrl(), {
     ...options,
@@ -11314,7 +13619,7 @@ export const getScheduleGetScheduleItemsIdUrl = (id: string) => {
 
 export const scheduleGetScheduleItemsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleItemResponse> => {
   return customFetch<ScheduleItemResponse>(
     getScheduleGetScheduleItemsIdUrl(id),
@@ -11408,14 +13713,14 @@ export const getSchedulePutScheduleItemsIdUrl = (id: string) => {
 export const schedulePutScheduleItemsId = async (
   id: string,
   scheduleSchedulePayloadSchema: ScheduleSchedulePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleItemResponse> => {
   return customFetch<ScheduleItemResponse>(
     getSchedulePutScheduleItemsIdUrl(id),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(scheduleSchedulePayloadSchema),
     },
   );
@@ -11499,7 +13804,7 @@ export const getScheduleDeleteScheduleItemsIdUrl = (id: string) => {
 
 export const scheduleDeleteScheduleItemsId = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(getScheduleDeleteScheduleItemsIdUrl(id), {
     ...options,
@@ -11585,14 +13890,14 @@ export const getSchedulePostScheduleItemsIdTodosUrl = (id: string) => {
 export const schedulePostScheduleItemsIdTodos = async (
   id: string,
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleTodoResponse> => {
   return customFetch<ScheduleTodoResponse>(
     getSchedulePostScheduleItemsIdTodosUrl(id),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -11683,14 +13988,14 @@ export const schedulePutScheduleItemsIdTodosTodoId = async (
   id: string,
   todoId: string,
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleTodoResponse> => {
   return customFetch<ScheduleTodoResponse>(
     getSchedulePutScheduleItemsIdTodosTodoIdUrl(id, todoId),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -11786,7 +14091,7 @@ export const getScheduleDeleteScheduleItemsIdTodosTodoIdUrl = (
 export const scheduleDeleteScheduleItemsIdTodosTodoId = async (
   id: string,
   todoId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteScheduleItemsIdTodosTodoIdUrl(id, todoId),
@@ -11879,14 +14184,14 @@ export const getSchedulePostScheduleItemsIdNotesUrl = (id: string) => {
 export const schedulePostScheduleItemsIdNotes = async (
   id: string,
   scheduleScheduleNotePayloadSchema: ScheduleScheduleNotePayloadSchema,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleNoteResponse> => {
   return customFetch<ScheduleNoteResponse>(
     getSchedulePostScheduleItemsIdNotesUrl(id),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(scheduleScheduleNotePayloadSchema),
     },
   );
@@ -11972,7 +14277,7 @@ export const getSchedulePostScheduleItemsIdAttachmentsUrl = (id: string) => {
 
 export const schedulePostScheduleItemsIdAttachments = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleAttachmentsCreatedResponse> => {
   return customFetch<ScheduleAttachmentsCreatedResponse>(
     getSchedulePostScheduleItemsIdAttachmentsUrl(id),
@@ -12066,14 +14371,14 @@ export const getSchedulePostScheduleItemsIdAttachmentsNewDocUrl = (
 export const schedulePostScheduleItemsIdAttachmentsNewDoc = async (
   id: string,
   genericObject: GenericObject,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<ScheduleAttachmentResponse> => {
   return customFetch<ScheduleAttachmentResponse>(
     getSchedulePostScheduleItemsIdAttachmentsNewDocUrl(id),
     {
       ...options,
       method: "POST",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(genericObject),
     },
   );
@@ -12169,7 +14474,7 @@ export const getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdUrl = (
 export const scheduleDeleteScheduleItemsIdAttachmentsAttachmentId = async (
   id: string,
   attachmentId: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SuccessResponse> => {
   return customFetch<SuccessResponse>(
     getScheduleDeleteScheduleItemsIdAttachmentsAttachmentIdUrl(
@@ -12281,7 +14586,7 @@ export const getDashboardGetDashboardStatsUrl = () => {
 };
 
 export const dashboardGetDashboardStats = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDashboardGetDashboardStatsUrl(), {
     ...options,
@@ -12358,7 +14663,7 @@ export const getDashboardGetDashboardAgendaUrl = () => {
 };
 
 export const dashboardGetDashboardAgenda = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDashboardGetDashboardAgendaUrl(), {
     ...options,
@@ -12429,7 +14734,7 @@ export function useDashboardGetDashboardAgenda<
 
 /**
  * Role-aware Home page payload. Returns a discriminated union keyed by
-`role` (`crew` | `pm` | `admin`). The shape varies by role; see
+`role` (`crew` | `pm` | `drafter` | `admin`). The shape varies by role; see
 artifacts/api-server/src/routes/dashboard.ts for the authoritative
 builder functions. The `crew` payload includes a `forecast` field with
 today's high/low and conditions for the user's primary job site, fetched
@@ -12444,7 +14749,7 @@ export const getDashboardGetDashboardHomeUrl = () => {
 };
 
 export const dashboardGetDashboardHome = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<HomePayload> => {
   return customFetch<HomePayload>(getDashboardGetDashboardHomeUrl(), {
     ...options,
@@ -12522,7 +14827,7 @@ export const getDashboardGetDashboardScheduleUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -12536,7 +14841,7 @@ export const getDashboardGetDashboardScheduleUrl = (
 
 export const dashboardGetDashboardSchedule = async (
   params?: DashboardGetDashboardScheduleParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getDashboardGetDashboardScheduleUrl(params), {
     ...options,
@@ -12626,7 +14931,7 @@ export const getActivityGetActivityUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -12640,7 +14945,7 @@ export const getActivityGetActivityUrl = (
 
 export const activityGetActivity = async (
   params?: ActivityGetActivityParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getActivityGetActivityUrl(params), {
     ...options,
@@ -12732,7 +15037,7 @@ export const getSearchGetSearchUrl = (params?: SearchGetSearchParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -12746,7 +15051,7 @@ export const getSearchGetSearchUrl = (params?: SearchGetSearchParams) => {
 
 export const searchGetSearch = async (
   params?: SearchGetSearchParams,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<SearchGetSearch200> => {
   return customFetch<SearchGetSearch200>(getSearchGetSearchUrl(params), {
     ...options,
@@ -12828,7 +15133,7 @@ export const getHealthGetLivezUrl = () => {
 };
 
 export const healthGetLivez = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<HealthStatus> => {
   return customFetch<HealthStatus>(getHealthGetLivezUrl(), {
     ...options,
@@ -12904,7 +15209,7 @@ export const getHealthGetHealthzUrl = () => {
 };
 
 export const healthGetHealthz = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<HealthStatusDeep> => {
   return customFetch<HealthStatusDeep>(getHealthGetHealthzUrl(), {
     ...options,
@@ -12981,12 +15286,12 @@ export const getClientErrorsPostClientErrorUrl = () => {
 
 export const clientErrorsPostClientError = async (
   clientErrorsClientErrorPayload: ClientErrorsClientErrorPayload,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<void> => {
   return customFetch<void>(getClientErrorsPostClientErrorUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(clientErrorsClientErrorPayload),
   });
 };
@@ -13067,7 +15372,7 @@ export const getAccountTokensListUrl = () => {
 };
 
 export const accountTokensList = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<PersonalAccessTokenList> => {
   return customFetch<PersonalAccessTokenList>(getAccountTokensListUrl(), {
     ...options,
@@ -13143,12 +15448,12 @@ export const getAccountTokensCreateUrl = () => {
 
 export const accountTokensCreate = async (
   personalAccessTokenCreatePayload: PersonalAccessTokenCreatePayload,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<PersonalAccessTokenCreated> => {
   return customFetch<PersonalAccessTokenCreated>(getAccountTokensCreateUrl(), {
     ...options,
     method: "POST",
-    headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+    headers: jsonContentTypeHeaders(options?.headers),
     body: JSON.stringify(personalAccessTokenCreatePayload),
   });
 };
@@ -13230,7 +15535,7 @@ export const getAccountTokensRevokeUrl = (id: string) => {
 
 export const accountTokensRevoke = async (
   id: string,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<void> => {
   return customFetch<void>(getAccountTokensRevokeUrl(id), {
     ...options,
@@ -13315,7 +15620,7 @@ export const getReportsGetReportsArAgingUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -13327,26 +15632,21 @@ export const getReportsGetReportsArAgingUrl = (
     : `/api/reports/ar-aging`;
 };
 
-export function reportsGetReportsArAging(
-  params: ReportsGetReportsArAgingParams & { format: "csv" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<string>;
-export function reportsGetReportsArAging(
-  params?: ReportsGetReportsArAgingParams & { format?: "json" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<ArAgingResponse>;
-export function reportsGetReportsArAging(
+export const reportsGetReportsArAging = async (
   params?: ReportsGetReportsArAgingParams,
-  options?: SecondParameter<typeof customFetch>,
-): Promise<ArAgingResponse | string> {
-  return customFetch<ArAgingResponse | string>(getReportsGetReportsArAgingUrl(params), {
-    ...options,
-    method: "GET",
-  });
-}
+  options?: RequestInit,
+): Promise<ArAgingResponse | string> => {
+  return customFetch<ArAgingResponse | string>(
+    getReportsGetReportsArAgingUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
 
 export const getReportsGetReportsArAgingQueryKey = (
-  params?: ReportsGetReportsArAgingParams & { format?: "json" },
+  params?: ReportsGetReportsArAgingParams,
 ) => {
   return [`/api/reports/ar-aging`, ...(params ? [params] : [])] as const;
 };
@@ -13355,7 +15655,7 @@ export const getReportsGetReportsArAgingQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsArAging>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsArAgingParams & { format?: "json" },
+  params?: ReportsGetReportsArAgingParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsArAging>>,
@@ -13395,7 +15695,7 @@ export function useReportsGetReportsArAging<
   TData = Awaited<ReturnType<typeof reportsGetReportsArAging>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsArAgingParams & { format?: "json" },
+  params?: ReportsGetReportsArAgingParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsArAging>>,
@@ -13424,7 +15724,7 @@ export const getReportsGetReportsRevenueUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -13436,26 +15736,21 @@ export const getReportsGetReportsRevenueUrl = (
     : `/api/reports/revenue`;
 };
 
-export function reportsGetReportsRevenue(
-  params: ReportsGetReportsRevenueParams & { format: "csv" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<string>;
-export function reportsGetReportsRevenue(
-  params?: ReportsGetReportsRevenueParams & { format?: "json" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<RevenueResponse>;
-export function reportsGetReportsRevenue(
+export const reportsGetReportsRevenue = async (
   params?: ReportsGetReportsRevenueParams,
-  options?: SecondParameter<typeof customFetch>,
-): Promise<RevenueResponse | string> {
-  return customFetch<RevenueResponse | string>(getReportsGetReportsRevenueUrl(params), {
-    ...options,
-    method: "GET",
-  });
-}
+  options?: RequestInit,
+): Promise<RevenueResponse | string> => {
+  return customFetch<RevenueResponse | string>(
+    getReportsGetReportsRevenueUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
 
 export const getReportsGetReportsRevenueQueryKey = (
-  params?: ReportsGetReportsRevenueParams & { format?: "json" },
+  params?: ReportsGetReportsRevenueParams,
 ) => {
   return [`/api/reports/revenue`, ...(params ? [params] : [])] as const;
 };
@@ -13464,7 +15759,7 @@ export const getReportsGetReportsRevenueQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsRevenueParams & { format?: "json" },
+  params?: ReportsGetReportsRevenueParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
@@ -13504,7 +15799,7 @@ export function useReportsGetReportsRevenue<
   TData = Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsRevenueParams & { format?: "json" },
+  params?: ReportsGetReportsRevenueParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsRevenue>>,
@@ -13533,7 +15828,7 @@ export const getReportsGetReportsPipelineUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -13545,26 +15840,21 @@ export const getReportsGetReportsPipelineUrl = (
     : `/api/reports/pipeline`;
 };
 
-export function reportsGetReportsPipeline(
-  params: ReportsGetReportsPipelineParams & { format: "csv" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<string>;
-export function reportsGetReportsPipeline(
-  params?: ReportsGetReportsPipelineParams & { format?: "json" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<PipelineResponse>;
-export function reportsGetReportsPipeline(
+export const reportsGetReportsPipeline = async (
   params?: ReportsGetReportsPipelineParams,
-  options?: SecondParameter<typeof customFetch>,
-): Promise<PipelineResponse | string> {
-  return customFetch<PipelineResponse | string>(getReportsGetReportsPipelineUrl(params), {
-    ...options,
-    method: "GET",
-  });
-}
+  options?: RequestInit,
+): Promise<PipelineResponse | string> => {
+  return customFetch<PipelineResponse | string>(
+    getReportsGetReportsPipelineUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
 
 export const getReportsGetReportsPipelineQueryKey = (
-  params?: ReportsGetReportsPipelineParams & { format?: "json" },
+  params?: ReportsGetReportsPipelineParams,
 ) => {
   return [`/api/reports/pipeline`, ...(params ? [params] : [])] as const;
 };
@@ -13573,7 +15863,7 @@ export const getReportsGetReportsPipelineQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsPipelineParams & { format?: "json" },
+  params?: ReportsGetReportsPipelineParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
@@ -13613,7 +15903,7 @@ export function useReportsGetReportsPipeline<
   TData = Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsPipelineParams & { format?: "json" },
+  params?: ReportsGetReportsPipelineParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsPipeline>>,
@@ -13645,7 +15935,7 @@ export const getReportsGetReportsDaysToPaymentUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -13657,26 +15947,21 @@ export const getReportsGetReportsDaysToPaymentUrl = (
     : `/api/reports/days-to-payment`;
 };
 
-export function reportsGetReportsDaysToPayment(
-  params: ReportsGetReportsDaysToPaymentParams & { format: "csv" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<string>;
-export function reportsGetReportsDaysToPayment(
-  params?: ReportsGetReportsDaysToPaymentParams & { format?: "json" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<DaysToPaymentResponse>;
-export function reportsGetReportsDaysToPayment(
+export const reportsGetReportsDaysToPayment = async (
   params?: ReportsGetReportsDaysToPaymentParams,
-  options?: SecondParameter<typeof customFetch>,
-): Promise<DaysToPaymentResponse | string> {
-  return customFetch<DaysToPaymentResponse | string>(getReportsGetReportsDaysToPaymentUrl(params), {
-    ...options,
-    method: "GET",
-  });
-}
+  options?: RequestInit,
+): Promise<DaysToPaymentResponse | string> => {
+  return customFetch<DaysToPaymentResponse | string>(
+    getReportsGetReportsDaysToPaymentUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
 
 export const getReportsGetReportsDaysToPaymentQueryKey = (
-  params?: ReportsGetReportsDaysToPaymentParams & { format?: "json" },
+  params?: ReportsGetReportsDaysToPaymentParams,
 ) => {
   return [`/api/reports/days-to-payment`, ...(params ? [params] : [])] as const;
 };
@@ -13685,7 +15970,7 @@ export const getReportsGetReportsDaysToPaymentQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsDaysToPaymentParams & { format?: "json" },
+  params?: ReportsGetReportsDaysToPaymentParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
@@ -13725,7 +16010,7 @@ export function useReportsGetReportsDaysToPayment<
   TData = Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsDaysToPaymentParams & { format?: "json" },
+  params?: ReportsGetReportsDaysToPaymentParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsDaysToPayment>>,
@@ -13757,7 +16042,7 @@ export const getReportsGetReportsJobsByStageUrl = (
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) {
+    if (value != null) {
       normalizedParams.append(key, value.toString());
     }
   });
@@ -13769,26 +16054,21 @@ export const getReportsGetReportsJobsByStageUrl = (
     : `/api/reports/jobs-by-stage`;
 };
 
-export function reportsGetReportsJobsByStage(
-  params: ReportsGetReportsJobsByStageParams & { format: "csv" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<string>;
-export function reportsGetReportsJobsByStage(
-  params?: ReportsGetReportsJobsByStageParams & { format?: "json" },
-  options?: SecondParameter<typeof customFetch>,
-): Promise<JobsByStageResponse>;
-export function reportsGetReportsJobsByStage(
+export const reportsGetReportsJobsByStage = async (
   params?: ReportsGetReportsJobsByStageParams,
-  options?: SecondParameter<typeof customFetch>,
-): Promise<JobsByStageResponse | string> {
-  return customFetch<JobsByStageResponse | string>(getReportsGetReportsJobsByStageUrl(params), {
-    ...options,
-    method: "GET",
-  });
-}
+  options?: RequestInit,
+): Promise<JobsByStageResponse | string> => {
+  return customFetch<JobsByStageResponse | string>(
+    getReportsGetReportsJobsByStageUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
 
 export const getReportsGetReportsJobsByStageQueryKey = (
-  params?: ReportsGetReportsJobsByStageParams & { format?: "json" },
+  params?: ReportsGetReportsJobsByStageParams,
 ) => {
   return [`/api/reports/jobs-by-stage`, ...(params ? [params] : [])] as const;
 };
@@ -13797,7 +16077,7 @@ export const getReportsGetReportsJobsByStageQueryOptions = <
   TData = Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsJobsByStageParams & { format?: "json" },
+  params?: ReportsGetReportsJobsByStageParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
@@ -13837,7 +16117,7 @@ export function useReportsGetReportsJobsByStage<
   TData = Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
   TError = ErrorType<Problem>,
 >(
-  params?: ReportsGetReportsJobsByStageParams & { format?: "json" },
+  params?: ReportsGetReportsJobsByStageParams,
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof reportsGetReportsJobsByStage>>,
@@ -13868,7 +16148,7 @@ export const getUsersGetUsersMeNotificationPrefsUrl = () => {
 };
 
 export const usersGetUsersMeNotificationPrefs = async (
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<NotificationPrefsResponse> => {
   return customFetch<NotificationPrefsResponse>(
     getUsersGetUsersMeNotificationPrefsUrl(),
@@ -13950,14 +16230,14 @@ export const getUsersPutUsersMeNotificationPrefsUrl = () => {
 
 export const usersPutUsersMeNotificationPrefs = async (
   notificationPrefsUpdateRequest: NotificationPrefsUpdateRequest,
-  options?: SecondParameter<typeof customFetch>,
+  options?: RequestInit,
 ): Promise<NotificationPrefsResponse> => {
   return customFetch<NotificationPrefsResponse>(
     getUsersPutUsersMeNotificationPrefsUrl(),
     {
       ...options,
       method: "PUT",
-      headers: mergeRequestHeaders({ "Content-Type": "application/json" }, options?.headers),
+      headers: jsonContentTypeHeaders(options?.headers),
       body: JSON.stringify(notificationPrefsUpdateRequest),
     },
   );
@@ -14030,5 +16310,291 @@ export const useUsersPutUsersMeNotificationPrefs = <
 > => {
   return useMutation(
     getUsersPutUsersMeNotificationPrefsMutationOptions(options),
+  );
+};
+
+/**
+ * List the authenticated user's recent in-app notifications with unread count.
+ * @summary GET /notifications
+ */
+export const getNotificationsGetNotificationsUrl = (
+  params?: NotificationsGetNotificationsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value != null) {
+      normalizedParams.append(key, value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/notifications?${stringifiedParams}`
+    : `/api/notifications`;
+};
+
+export const notificationsGetNotifications = async (
+  params?: NotificationsGetNotificationsParams,
+  options?: RequestInit,
+): Promise<NotificationsListResponse> => {
+  return customFetch<NotificationsListResponse>(
+    getNotificationsGetNotificationsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getNotificationsGetNotificationsQueryKey = (
+  params?: NotificationsGetNotificationsParams,
+) => {
+  return [`/api/notifications`, ...(params ? [params] : [])] as const;
+};
+
+export const getNotificationsGetNotificationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof notificationsGetNotifications>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: NotificationsGetNotificationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof notificationsGetNotifications>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getNotificationsGetNotificationsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof notificationsGetNotifications>>
+  > = ({ signal }) =>
+    notificationsGetNotifications(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof notificationsGetNotifications>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type NotificationsGetNotificationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof notificationsGetNotifications>>
+>;
+export type NotificationsGetNotificationsQueryError = ErrorType<Problem>;
+
+/**
+ * @summary GET /notifications
+ */
+
+export function useNotificationsGetNotifications<
+  TData = Awaited<ReturnType<typeof notificationsGetNotifications>>,
+  TError = ErrorType<Problem>,
+>(
+  params?: NotificationsGetNotificationsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof notificationsGetNotifications>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getNotificationsGetNotificationsQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Mark one notification as read for the authenticated user.
+ * @summary PATCH /notifications/{id}/read
+ */
+export const getNotificationsPatchNotificationsIdReadUrl = (id: string) => {
+  return `/api/notifications/${id}/read`;
+};
+
+export const notificationsPatchNotificationsIdRead = async (
+  id: string,
+  options?: RequestInit,
+): Promise<NotificationReadResponse> => {
+  return customFetch<NotificationReadResponse>(
+    getNotificationsPatchNotificationsIdReadUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+    },
+  );
+};
+
+export const getNotificationsPatchNotificationsIdReadMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof notificationsPatchNotificationsIdRead>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof notificationsPatchNotificationsIdRead>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["notificationsPatchNotificationsIdRead"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof notificationsPatchNotificationsIdRead>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return notificationsPatchNotificationsIdRead(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type NotificationsPatchNotificationsIdReadMutationResult = NonNullable<
+  Awaited<ReturnType<typeof notificationsPatchNotificationsIdRead>>
+>;
+
+export type NotificationsPatchNotificationsIdReadMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary PATCH /notifications/{id}/read
+ */
+export const useNotificationsPatchNotificationsIdRead = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof notificationsPatchNotificationsIdRead>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof notificationsPatchNotificationsIdRead>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getNotificationsPatchNotificationsIdReadMutationOptions(options),
+  );
+};
+
+/**
+ * Mark all unread notifications as read for the authenticated user.
+ * @summary POST /notifications/read-all
+ */
+export const getNotificationsPostNotificationsReadAllUrl = () => {
+  return `/api/notifications/read-all`;
+};
+
+export const notificationsPostNotificationsReadAll = async (
+  options?: RequestInit,
+): Promise<NotificationsReadAllResponse> => {
+  return customFetch<NotificationsReadAllResponse>(
+    getNotificationsPostNotificationsReadAllUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getNotificationsPostNotificationsReadAllMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof notificationsPostNotificationsReadAll>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof notificationsPostNotificationsReadAll>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["notificationsPostNotificationsReadAll"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof notificationsPostNotificationsReadAll>>,
+    void
+  > = () => {
+    return notificationsPostNotificationsReadAll(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type NotificationsPostNotificationsReadAllMutationResult = NonNullable<
+  Awaited<ReturnType<typeof notificationsPostNotificationsReadAll>>
+>;
+
+export type NotificationsPostNotificationsReadAllMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary POST /notifications/read-all
+ */
+export const useNotificationsPostNotificationsReadAll = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof notificationsPostNotificationsReadAll>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof notificationsPostNotificationsReadAll>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(
+    getNotificationsPostNotificationsReadAllMutationOptions(options),
   );
 };

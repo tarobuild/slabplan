@@ -125,7 +125,9 @@ test("backfill rewrites legacy base64 attachments to fileId/fileUrl entries", as
   });
 
   const fake = makeFakeStorage();
-  const stats = await backfillCommentAttachments(fake.storage);
+  const stats = await backfillCommentAttachments(fake.storage, {
+    commentIds: [commentId],
+  });
 
   assert.equal(stats.attachmentsConverted >= 1, true, JSON.stringify(stats));
   assert.equal(stats.rowFailures, 0);
@@ -179,14 +181,36 @@ test("backfill rewrites legacy base64 attachments to fileId/fileUrl entries", as
 });
 
 test("backfill is idempotent — re-running on already-converted comments writes nothing", async () => {
+  const { db } = await import("@workspace/db");
+  const { dailyLogComments } = await import("@workspace/db/schema");
   const { backfillCommentAttachments } = await import(
     "../src/scripts/backfill-comment-attachments.ts"
   );
-  const fake = makeFakeStorage();
-  const stats = await backfillCommentAttachments(fake.storage);
 
-  // The previous test already converted everything, so this run must be a
-  // pure no-op: nothing converted, nothing dropped, no storage writes.
+  const commentId = crypto.randomUUID();
+  await db.insert(dailyLogComments).values({
+    id: commentId,
+    dailyLogId,
+    createdBy: adminUserId,
+    body: "already converted attachment",
+    attachments: [
+      {
+        fileId: crypto.randomUUID(),
+        fileUrl: "/api/files/comment-attachments/already.png",
+        name: "already.png",
+        mimeType: "image/png",
+      },
+    ],
+    reactions: {},
+  });
+
+  const fake = makeFakeStorage();
+  const stats = await backfillCommentAttachments(fake.storage, {
+    commentIds: [commentId],
+  });
+
+  // This row is already on the fileId/fileUrl shape, so the scoped run
+  // must be a pure no-op: nothing converted, nothing dropped, no storage writes.
   assert.equal(
     stats.attachmentsConverted,
     0,
@@ -197,6 +221,130 @@ test("backfill is idempotent — re-running on already-converted comments writes
   assert.equal(fake.deletes.length, 0);
 });
 
+test("concurrent backfills do not write duplicate storage objects for one stale row", async () => {
+  const { db } = await import("@workspace/db");
+  const { dailyLogComments } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const { backfillCommentAttachments } = await import(
+    "../src/scripts/backfill-comment-attachments.ts"
+  );
+
+  const commentId = crypto.randomUUID();
+  await db.insert(dailyLogComments).values({
+    id: commentId,
+    dailyLogId,
+    createdBy: adminUserId,
+    body: "concurrent legacy attachment",
+    attachments: [
+      {
+        name: "concurrent.png",
+        url: tinyPngDataUrl,
+        mimeType: "image/png",
+      },
+    ],
+    reactions: {},
+  });
+
+  const writes: CapturedWrite[] = [];
+  let firstWriteStartedResolve!: () => void;
+  let releaseFirstWrite!: () => void;
+  const firstWriteStarted = new Promise<void>((resolve) => {
+    firstWriteStartedResolve = resolve;
+  });
+  const firstWriteRelease = new Promise<void>((resolve) => {
+    releaseFirstWrite = resolve;
+  });
+  const storage = {
+    async write(
+      fileUrl: string,
+      buffer: Buffer,
+      options: { contentType?: string | null },
+    ) {
+      writes.push({
+        fileUrl,
+        size: buffer.length,
+        contentType: options.contentType,
+      });
+      if (writes.length === 1) {
+        firstWriteStartedResolve();
+        await firstWriteRelease;
+      }
+    },
+    async delete() {},
+  };
+
+  const first = backfillCommentAttachments(storage, { commentIds: [commentId] });
+  await firstWriteStarted;
+  const second = backfillCommentAttachments(storage, { commentIds: [commentId] });
+  releaseFirstWrite();
+  const [firstStats, secondStats] = await Promise.all([first, second]);
+
+  assert.equal(firstStats.rowFailures, 0);
+  assert.equal(secondStats.rowFailures, 0);
+  assert.equal(
+    writes.length,
+    1,
+    "the second backfill must re-read the locked row and skip storage writes",
+  );
+
+  const [updated] = await db
+    .select({ attachments: dailyLogComments.attachments })
+    .from(dailyLogComments)
+    .where(eq(dailyLogComments.id, commentId));
+  const attachments = updated.attachments as Array<Record<string, unknown>>;
+  assert.equal(attachments.length, 1);
+  assert.equal(typeof attachments[0].fileId, "string");
+});
+
+test("backfill drops malformed base64 data URLs without writing storage or files rows", async () => {
+  const { db } = await import("@workspace/db");
+  const { dailyLogComments, files } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const { backfillCommentAttachments } = await import(
+    "../src/scripts/backfill-comment-attachments.ts"
+  );
+
+  const commentId = crypto.randomUUID();
+  await db.insert(dailyLogComments).values({
+    id: commentId,
+    dailyLogId,
+    createdBy: adminUserId,
+    body: "malformed data url",
+    attachments: [
+      {
+        name: "malformed.png",
+        url: "data:image/png;base64,not-base64%%%",
+        mimeType: "image/png",
+      },
+    ],
+    reactions: {},
+  });
+
+  const fake = makeFakeStorage();
+  const stats = await backfillCommentAttachments(fake.storage, {
+    commentIds: [commentId],
+  });
+
+  assert.ok(stats.attachmentsDropped >= 1, JSON.stringify(stats));
+  assert.equal(stats.rowFailures, 0);
+  assert.equal(fake.writes.length, 0, "malformed base64 must not be written to storage");
+  assert.equal(fake.deletes.length, 0);
+
+  const [updated] = await db
+    .select({ attachments: dailyLogComments.attachments })
+    .from(dailyLogComments)
+    .where(eq(dailyLogComments.id, commentId));
+  assert.deepEqual(updated.attachments, []);
+
+  const malformedRows = await db
+    .select({ id: files.id })
+    .from(files)
+    .where(eq(files.originalName, "malformed.png"));
+  assert.equal(malformedRows.length, 0, "malformed base64 must not create a files row");
+
+  await db.delete(dailyLogComments).where(eq(dailyLogComments.id, commentId));
+});
+
 test("backfill leaves non-data URLs alone but converts mixed rows", async () => {
   const { db } = await import("@workspace/db");
   const { dailyLogComments } = await import("@workspace/db/schema");
@@ -204,6 +352,22 @@ test("backfill leaves non-data URLs alone but converts mixed rows", async () => 
   const { backfillCommentAttachments } = await import(
     "../src/scripts/backfill-comment-attachments.ts"
   );
+
+  const unrelatedCommentId = crypto.randomUUID();
+  await db.insert(dailyLogComments).values({
+    id: unrelatedCommentId,
+    dailyLogId,
+    createdBy: adminUserId,
+    body: "unrelated legacy attachment",
+    attachments: [
+      {
+        name: "unrelated.png",
+        url: tinyPngDataUrl,
+        mimeType: "image/png",
+      },
+    ],
+    reactions: {},
+  });
 
   const commentId = crypto.randomUUID();
   await db.insert(dailyLogComments).values({
@@ -227,10 +391,13 @@ test("backfill leaves non-data URLs alone but converts mixed rows", async () => 
   });
 
   const fake = makeFakeStorage();
-  const stats = await backfillCommentAttachments(fake.storage);
+  const stats = await backfillCommentAttachments(fake.storage, {
+    commentIds: [commentId],
+  });
 
   assert.equal(stats.attachmentsConverted, 1, JSON.stringify(stats));
   assert.equal(stats.rowFailures, 0);
+  assert.equal(fake.writes.length, 1);
 
   const [updated] = await db
     .select({ attachments: dailyLogComments.attachments })
@@ -249,6 +416,15 @@ test("backfill leaves non-data URLs alone but converts mixed rows", async () => 
   assert.ok(converted);
   assert.equal(typeof converted.fileId, "string");
   assert.equal(typeof converted.fileUrl, "string");
+
+  const [unrelated] = await db
+    .select({ attachments: dailyLogComments.attachments })
+    .from(dailyLogComments)
+    .where(eq(dailyLogComments.id, unrelatedCommentId));
+  const unrelatedAttachments =
+    unrelated.attachments as Array<Record<string, unknown>>;
+  assert.equal(unrelatedAttachments.length, 1);
+  assert.equal(unrelatedAttachments[0].url, tinyPngDataUrl);
 });
 
 test("backfill reports failure and leaves the row untouched when storage.write throws", async () => {
@@ -287,7 +463,9 @@ test("backfill reports failure and leaves the row untouched when storage.write t
     },
   };
 
-  const stats = await backfillCommentAttachments(failingStorage);
+  const stats = await backfillCommentAttachments(failingStorage, {
+    commentIds: [commentId],
+  });
 
   // Tests share a database; assert on what THIS row's failure produced
   // rather than on global rowFailures.
@@ -368,7 +546,9 @@ test("backfill compensates by deleting written objects when the DB transaction f
 
   let stats;
   try {
-    stats = await backfillCommentAttachments(trackingStorage);
+    stats = await backfillCommentAttachments(trackingStorage, {
+      commentIds: [commentId],
+    });
   } finally {
     dbAny.transaction = originalTransaction;
   }
@@ -437,7 +617,9 @@ test("backfill strips leftover base64 url from records that already carry a file
     reactions: {},
   });
 
-  const stats = await backfillCommentAttachments(makeFakeStorage().storage);
+  const stats = await backfillCommentAttachments(makeFakeStorage().storage, {
+    commentIds: [commentId],
+  });
 
   // Other tests may have left rows behind; this row's outcome is asserted
   // via the resulting attachments JSON below.

@@ -11,17 +11,33 @@ import type { ReportRangeParamParameter } from "./reportRangeParamParameter";
 import type { ReportToParamParameter } from "./reportToParamParameter";
 
 type ReportsGetReportsArAgingParamsBase = {
+  /**
+   * Response format. JSON (default) or CSV download.
+   */
   format?: ReportFormatParamParameter;
 };
 
-export type ReportsGetReportsArAgingParams =
-  | (ReportsGetReportsArAgingParamsBase & {
-      range?: Exclude<ReportRangeParamParameter, "custom">;
-      from?: ReportFromParamParameter;
-      to?: ReportToParamParameter;
-    })
-  | (ReportsGetReportsArAgingParamsBase & {
-      range: "custom";
-      from: ReportFromParamParameter;
-      to: ReportToParamParameter;
-    });
+type ReportsGetReportsArAgingParamsPreset = ReportsGetReportsArAgingParamsBase & {
+  /**
+   * Preset date range. Use `custom` together with `from` and `to`.
+   */
+  range?: Exclude<ReportRangeParamParameter, "custom">;
+  from?: never;
+  to?: never;
+};
+
+type ReportsGetReportsArAgingParamsCustom = ReportsGetReportsArAgingParamsBase & {
+  range: "custom";
+  /**
+   * Inclusive start date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  from: ReportFromParamParameter;
+  /**
+   * Inclusive end date (YYYY-MM-DD). Required when `range=custom`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
+   */
+  to: ReportToParamParameter;
+};
+
+export type ReportsGetReportsArAgingParams = ReportsGetReportsArAgingParamsPreset | ReportsGetReportsArAgingParamsCustom;

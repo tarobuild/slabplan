@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Loader2, Search } from "lucide-react"
 import {
   useClientsGetClients,
@@ -155,10 +155,17 @@ export function ConvertLeadDialog({
   const [jobType, setJobType] = useState<JobType | "">("")
   const [projectManagerId, setProjectManagerId] = useState<string>("")
   const [assigneeIds, setAssigneeIds] = useState<string[]>([])
+  const initializedLeadIdRef = useRef<string | null>(null)
 
   // Reset everything every time the dialog opens for a fresh lead
   useEffect(() => {
-    if (!open || !lead) return
+    if (!open || !lead) {
+      if (!open) initializedLeadIdRef.current = null
+      return
+    }
+    if (initializedLeadIdRef.current === lead.id) return
+    initializedLeadIdRef.current = lead.id
+
     setStep(1)
     setClientMode("existing")
     setClientId("")
@@ -195,7 +202,7 @@ export function ConvertLeadDialog({
     setJobType(validJobType ? validJobType.value : "")
     setProjectManagerId("")
     setAssigneeIds([])
-  }, [open, lead])
+  }, [open, lead?.id])
 
   const clientsParams = { search: clientSearch || undefined, pageSize: 50 }
   const clientsQuery = useClientsGetClients(clientsParams, {
@@ -216,16 +223,23 @@ export function ConvertLeadDialog({
   const assignableUsers = useMemo<AssignableUser[]>(() => {
     const users = usersQuery.data?.users ?? []
     return users.filter((u: AssignableUser) =>
-      ["admin", "project_manager", "crew_member"].includes(u.role ?? ""),
+      ["admin", "project_manager", "crew_member", "drafter"].includes(u.role ?? ""),
     )
   }, [usersQuery.data])
 
   const convertMutation = useLeadsPostLeadsIdConvertToJob()
+  const visibleClients = clientsQuery.data?.clients ?? []
+  const selectedClientVisible = visibleClients.some((client) => client.id === clientId)
 
   const canAdvance =
     clientMode === "new"
       ? newClient.companyName.trim().length > 0
-      : !!clientId
+      : !!clientId && selectedClientVisible
+
+  function handleClientSearchChange(value: string) {
+    setClientSearch(value)
+    setClientId("")
+  }
 
   function toggleAssignee(id: string) {
     setAssigneeIds((prev) =>
@@ -236,24 +250,7 @@ export function ConvertLeadDialog({
   async function handleConvert() {
     if (!lead) return
 
-    const body: LeadConvertToJobBody = { job: {} }
-    if (clientMode === "existing" && clientId) {
-      body.clientId = clientId
-    } else if (clientMode === "new") {
-      const nc: ClientsClientPayloadSchema = {
-        companyName: newClient.companyName.trim(),
-        email: newClient.email.trim() || null,
-        phone: newClient.phone.trim() || null,
-        streetAddress: newClient.streetAddress.trim() || null,
-        city: newClient.city.trim() || null,
-        state: newClient.state.trim() || null,
-        zipCode: newClient.zipCode.trim() || null,
-        notes: newClient.notes.trim() || null,
-      }
-      body.newClient = nc
-    }
-
-    body.job = {
+    const job: NonNullable<LeadConvertToJobBody["job"]> = {
       title: jobTitle.trim() || lead.title,
       streetAddress: streetAddress.trim() || null,
       city: city.trim() || null,
@@ -265,6 +262,25 @@ export function ConvertLeadDialog({
       jobType: jobType ? (jobType as JobType) : null,
       projectManagerId: projectManagerId || null,
       assigneeIds,
+    }
+
+    let body: LeadConvertToJobBody
+    if (clientMode === "existing" && clientId) {
+      body = { clientId, job }
+    } else if (clientMode === "new") {
+      const newClientPayload: ClientsClientPayloadSchema = {
+        companyName: newClient.companyName.trim(),
+        email: newClient.email.trim() || null,
+        phone: newClient.phone.trim() || null,
+        streetAddress: newClient.streetAddress.trim() || null,
+        city: newClient.city.trim() || null,
+        state: newClient.state.trim() || null,
+        zipCode: newClient.zipCode.trim() || null,
+        notes: newClient.notes.trim() || null,
+      }
+      body = { newClient: newClientPayload, job }
+    } else {
+      body = { job }
     }
 
     try {
@@ -332,7 +348,7 @@ export function ConvertLeadDialog({
                   <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
                   <Input
                     value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
+                    onChange={(e) => handleClientSearchChange(e.target.value)}
                     placeholder="Search clients…"
                     className="pl-8 h-9"
                   />
@@ -345,12 +361,12 @@ export function ConvertLeadDialog({
                     <div className="p-4 text-sm text-slate-500 flex items-center gap-2">
                       <Loader2 className="size-4 animate-spin" /> Loading clients…
                     </div>
-                  ) : (clientsQuery.data?.clients ?? []).length === 0 ? (
+                  ) : visibleClients.length === 0 ? (
                     <div className="p-4 text-sm text-slate-500">
                       No clients match. Try “Create new client” instead.
                     </div>
                   ) : (
-                    (clientsQuery.data?.clients ?? []).map((c) => (
+                    visibleClients.map((c) => (
                       <button
                         key={c.id}
                         type="button"

@@ -53,10 +53,6 @@ function isPathActive(path: string, item: TabItem): boolean {
   return path.startsWith(`${item.to}/`)
 }
 
-export function mobileNavColumnTemplate(primaryTabCount: number): string {
-  return `repeat(${primaryTabCount + 1}, minmax(0, 1fr))`
-}
-
 export default function MobileBottomNav() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -64,12 +60,12 @@ export default function MobileBottomNav() {
   const [moreOpen, setMoreOpen] = useState(false)
   const role = user?.role
   const isFieldUser = role === "project_manager" || role === "crew_member"
+  const isDrafter = role === "drafter"
 
   const primaryTabs: TabItem[] = isFieldUser
     ? [
         { label: "Home", to: "/dashboard", icon: Home },
         { label: "My Jobs", to: "/jobs", icon: Briefcase },
-        { label: "Files", to: "/resources", icon: FileText },
         { label: "Logs", to: "/daily-logs/mine", icon: ClipboardList },
       ]
     : [
@@ -77,19 +73,28 @@ export default function MobileBottomNav() {
         ...(hasRoleAccess(role, ROLE_GATES.clients)
           ? [{ label: "Clients", to: "/clients", icon: Users }]
           : []),
-        ...(hasRoleAccess(role, ROLE_GATES.sales)
-          ? [{ label: "Sales", to: "/sales/leads", icon: Sparkles, matchPrefixes: ["/sales"] }]
+        ...(hasRoleAccess(role, ROLE_GATES.myJobs)
+          ? [{ label: "Jobs", to: "/jobs", icon: Briefcase }]
           : []),
-        { label: "Files", to: "/resources", icon: FileText },
+        ...(hasRoleAccess(role, ROLE_GATES.schedule)
+          ? [{ label: "Schedule", to: "/schedule", icon: Calendar }]
+          : []),
       ]
 
   const moreItems: MoreItem[] = [
-    ...(hasRoleAccess(role, ROLE_GATES.companyViews)
-      ? [{ label: "Schedule", to: "/schedule", icon: Calendar }]
-      : []),
-    ...(hasRoleAccess(role, ROLE_GATES.companyViews)
-      ? [{ label: "Logs", to: "/daily-logs", icon: ClipboardList }]
-      : []),
+    { label: "Resources", to: "/resources", icon: FileText, hidden: isDrafter },
+    {
+      label: "Daily Logs",
+      to: "/daily-logs",
+      icon: ClipboardList,
+      allow: ROLE_GATES.dailyLogs,
+    },
+    {
+      label: "Sales",
+      to: "/sales",
+      icon: Sparkles,
+      allow: ROLE_GATES.sales,
+    },
     {
       label: "Reports",
       to: "/reports",
@@ -104,6 +109,7 @@ export default function MobileBottomNav() {
             label: "My Daily Logs",
             to: "/daily-logs/mine",
             icon: ClipboardList,
+            hidden: isDrafter,
           },
         ]),
     { label: "Settings", to: "/settings", icon: Settings },
@@ -125,13 +131,10 @@ export default function MobileBottomNav() {
       <nav
         data-print-hide="true"
         aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white shadow-[0_-1px_2px_rgba(0,0,0,0.04)] lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white shadow-[0_-1px_2px_rgba(0,0,0,0.04)] md:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <ul
-          className="grid"
-          style={{ gridTemplateColumns: mobileNavColumnTemplate(primaryTabs.length) }}
-        >
+        <ul className="grid grid-cols-4">
           {primaryTabs.map((tab) => {
             const active =
               tab.to.includes("?")
@@ -145,7 +148,7 @@ export default function MobileBottomNav() {
                     "flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors",
                     active
                       ? "text-primary"
-                      : "text-muted-foreground hover:text-foreground",
+                      : "text-slate-500 hover:text-slate-800",
                   )}
                   aria-label={tab.label}
                   aria-current={active ? "page" : undefined}
@@ -180,7 +183,7 @@ export default function MobileBottomNav() {
           className="rounded-t-xl p-0"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
-          <SheetHeader className="border-b border-border px-4 py-3 text-left">
+          <SheetHeader className="border-b border-slate-100 px-4 py-3 text-left">
             <SheetTitle className="text-base">More</SheetTitle>
           </SheetHeader>
           <nav aria-label="More navigation" className="flex flex-col gap-0.5 p-2">
@@ -193,12 +196,12 @@ export default function MobileBottomNav() {
                   cn(
                     "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-accent text-primary"
-                      : "text-foreground hover:bg-accent/60",
+                      ? "bg-primary/10 text-primary"
+                      : "text-slate-700 hover:bg-slate-100",
                   )
                 }
               >
-                <item.icon className="size-4 text-muted-foreground" aria-hidden="true" />
+                <item.icon className="size-4 text-slate-400" aria-hidden="true" />
                 {item.label}
               </NavLink>
             ))}
@@ -209,9 +212,9 @@ export default function MobileBottomNav() {
                 await logoutSession()
                 navigate("/login", { replace: true })
               }}
-              className="mt-1 flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-foreground hover:bg-accent/60"
+              className="mt-1 flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
             >
-              <LogOut className="size-4 text-muted-foreground" aria-hidden="true" />
+              <LogOut className="size-4 text-slate-400" aria-hidden="true" />
               Logout
             </button>
           </nav>

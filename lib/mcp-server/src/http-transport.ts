@@ -4,7 +4,7 @@ import {
   createCadstoneMcpServer,
   type CreateCadstoneMcpServerOptions,
   type ToolAuditHook,
-} from "./server";
+} from "./server.js";
 
 /**
  * Express-compatible request handler for the streamable-HTTP MCP transport.

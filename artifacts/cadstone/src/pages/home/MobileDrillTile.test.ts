@@ -1,76 +1,138 @@
 import assert from "node:assert/strict"
-import { afterEach, before, beforeEach, test } from "node:test"
+import { test } from "node:test"
 
-import { JSDOM } from "jsdom"
+import {
+  loadActiveJobs,
+  loadAllDrillPages,
+  loadOpenLeads,
+  loadOpenScheduleItems,
+} from "./MobileDrillTile.tsx"
 
-const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-  url: "http://localhost/",
-  pretendToBeVisual: true,
-})
-
-function defineGlobal(key: string, value: unknown) {
-  Object.defineProperty(globalThis, key, {
-    value,
-    writable: true,
-    configurable: true,
-  })
+type Call = {
+  url: string
+  params: Record<string, unknown>
 }
 
-defineGlobal("window", dom.window)
-defineGlobal("document", dom.window.document)
-defineGlobal("navigator", dom.window.navigator)
-defineGlobal("HTMLElement", dom.window.HTMLElement)
-defineGlobal("Node", dom.window.Node)
-defineGlobal("Element", dom.window.Element)
-defineGlobal("getComputedStyle", dom.window.getComputedStyle.bind(dom.window))
+test("loadAllDrillPages follows cursor pagination until the final page", async () => {
+  const calls: Call[] = []
+  const pages = [
+    { jobs: [{ id: "job-1" }], pagination: { hasMore: true, nextCursor: "cursor-2" } },
+    { jobs: [{ id: "job-2" }], pagination: { hasMore: false, nextCursor: null } },
+  ]
 
-const React = await import("react")
-const { createElement } = React
-defineGlobal("React", React)
-const { act } = await import("react")
-const { createRoot } = await import("react-dom/client")
-const { MemoryRouter } = await import("react-router-dom")
-const { MobileDrillTile } = await import("./MobileDrillTile.tsx")
+  const items = await loadAllDrillPages<{ id: string }>(
+    "/jobs",
+    { status: "open" },
+    (data) => (data as { jobs: Array<{ id: string }> }).jobs,
+    async (url, config) => {
+      calls.push({ url, params: config.params })
+      return { data: pages[calls.length - 1] }
+    },
+  )
 
-let container: HTMLDivElement
-let root: ReturnType<typeof createRoot>
-
-before(() => {
-  ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  assert.deepEqual(items.map((item) => item.id), ["job-1", "job-2"])
+  assert.deepEqual(calls, [
+    { url: "/jobs", params: { status: "open", cursor: "", limit: 100 } },
+    { url: "/jobs", params: { status: "open", cursor: "cursor-2", limit: 100 } },
+  ])
 })
 
-beforeEach(() => {
-  container = dom.window.document.createElement("div")
-  dom.window.document.body.appendChild(container)
-  root = createRoot(container)
-})
-
-afterEach(async () => {
-  await act(async () => {
-    root.unmount()
-  })
-  container.remove()
-})
-
-test("MobileDrillTile gives mobile and desktop controls unambiguous test ids", async () => {
-  await act(async () => {
-    root.render(
-      createElement(
-        MemoryRouter,
-        null,
-        createElement(MobileDrillTile, {
-          label: "Active jobs",
-          value: 4,
-          to: "/jobs",
-          drillTitle: "Active jobs",
-          drillKind: "active-jobs",
-          testId: "home-summary-active-jobs",
-        }),
+test("loadAllDrillPages fails loudly when a continuing page has no next cursor", async () => {
+  await assert.rejects(
+    () =>
+      loadAllDrillPages(
+        "/jobs",
+        {},
+        () => [],
+        async () => ({ data: { jobs: [], pagination: { hasMore: true, nextCursor: null } } }),
       ),
-    )
+    /missing nextCursor/,
+  )
+})
+
+test("active jobs drill uses server-side status and cursor pagination", async () => {
+  const calls: Call[] = []
+
+  await loadActiveJobs(async (url, config) => {
+    calls.push({ url, params: config.params })
+    return { data: { jobs: [], pagination: { hasMore: false, nextCursor: null } } }
   })
 
-  assert.equal(container.querySelectorAll('[data-testid="home-summary-active-jobs"]').length, 0)
-  assert.equal(container.querySelectorAll('[data-testid="home-summary-active-jobs-mobile"]').length, 1)
-  assert.equal(container.querySelectorAll('[data-testid="home-summary-active-jobs-desktop"]').length, 1)
+  assert.deepEqual(calls, [
+    { url: "/jobs", params: { status: "open", cursor: "", limit: 100 } },
+  ])
+})
+
+test("open leads drill fetches every open status with cursor pagination", async () => {
+  const calls: Call[] = []
+
+  const leads = await loadOpenLeads(async (url, config) => {
+    calls.push({ url, params: config.params })
+    const status = String(config.params.status)
+    const cursor = String(config.params.cursor)
+    if (status === "open" && cursor === "") {
+      return {
+        data: {
+          leads: [{ id: "lead-2", title: "Beta", status }],
+          pagination: { hasMore: true, nextCursor: "open-2" },
+        },
+      }
+    }
+    return {
+      data: {
+        leads: [{ id: `${status}-${cursor || "first"}`, title: status, status }],
+        pagination: { hasMore: false, nextCursor: null },
+      },
+    }
+  })
+
+  assert.equal(calls.every((call) => call.url === "/leads"), true)
+  assert.equal(calls.every((call) => call.params.limit === 100), true)
+  assert.deepEqual(
+    Array.from(new Set(calls.map((call) => call.params.status))).sort(),
+    ["in_negotiation", "open", "qualified"],
+  )
+  assert.deepEqual(
+    calls.filter((call) => call.params.status === "open").map((call) => call.params.cursor),
+    ["", "open-2"],
+  )
+  assert.deepEqual(
+    leads.map((lead) => lead.title),
+    ["Beta", "in_negotiation", "open", "qualified"],
+  )
+})
+
+test("open schedule drill fetches all incomplete status buckets with cursor pagination", async () => {
+  const calls: Call[] = []
+
+  const items = await loadOpenScheduleItems(async (url, config) => {
+    calls.push({ url, params: config.params })
+    const status = String(config.params.status)
+    return {
+      data: {
+        data: [
+          {
+            id: status,
+            title: status,
+            startDate: status === "overdue" ? "2025-01-01" : "2025-01-02",
+            endDate: null,
+            isComplete: false,
+            jobId: `job-${status}`,
+          },
+        ],
+        pagination: { hasMore: false, nextCursor: null },
+      },
+    }
+  })
+
+  assert.equal(calls.every((call) => call.url === "/schedule"), true)
+  assert.equal(calls.every((call) => call.params.limit === 100), true)
+  assert.deepEqual(
+    Array.from(new Set(calls.map((call) => call.params.status))).sort(),
+    ["in_progress", "overdue", "upcoming"],
+  )
+  assert.deepEqual(
+    items.map((item) => item.id),
+    ["overdue", "in_progress", "upcoming"],
+  )
 })

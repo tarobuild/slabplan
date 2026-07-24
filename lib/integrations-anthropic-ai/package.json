@@ -7,12 +7,16 @@
     ".": "./src/index.ts",
     "./batch": "./src/batch/index.ts"
   },
+  "scripts": {
+    "test": "tsx --test $(find test -name '*.test.ts' -print)"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "p-limit": "^7.3.0",
     "p-retry": "^7.1.1"
   },
   "devDependencies": {
-    "@types/node": "catalog:"
+    "@types/node": "catalog:",
+    "tsx": "catalog:"
   }
 }

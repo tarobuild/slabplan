@@ -35,21 +35,21 @@ export type LeadsGetLeadsParams = {
    */
   excludeStatuses?: string;
   /**
-   * When `true`, leads that have already been converted to a job are filtered out. The cadstone UI sends this by default and clears it when the "Show converted" toggle is enabled.
+   * When `true`, leads that have already been converted to a job are filtered out. The SlabPlan UI sends this by default and clears it when the "Show converted" toggle is enabled.
    */
   excludeConverted?: LeadsGetLeadsExcludeConverted;
   /**
-   * When `true`, only leads that have been converted to a job are returned. Used by the cadstone Leads list when the user picks the "Converted" status filter.
+   * When `true`, only leads that have been converted to a job are returned. Used by the SlabPlan Leads list when the user picks the "Converted" status filter.
    */
   onlyConverted?: LeadsGetLeadsOnlyConverted;
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value). Requests that only send `?limit=N` remain in page mode unless
-the endpoint explicitly documents a different bootstrap. Cursor
-responses include `pagination.nextCursor`; echo that value back as
+value). The server returns the first page in the cursor envelope
+along with `pagination.nextCursor`. Echo `nextCursor` back as
 `?cursor=<token>` on subsequent calls. While in cursor mode
-`page`/`pageSize` are ignored.
+`page`/`pageSize` are ignored. A `limit` query without `cursor`
+does not select cursor mode.
 
  */
   cursor?: CursorParamParameter;

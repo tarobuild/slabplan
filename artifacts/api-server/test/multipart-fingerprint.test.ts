@@ -4,6 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type { Request } from "express";
 
+import { HttpError } from "../src/lib/http.ts";
 import { hashMultipartRequest } from "../src/middleware/idempotency.ts";
 
 // Build a minimal Request-shaped object that exposes the fields the
@@ -104,38 +105,54 @@ test("changing a non-file form field changes the fingerprint", () => {
   assert.notEqual(a, b, "form fields must participate in the fingerprint");
 });
 
-test("a file with no contentHash does NOT match a file with a real hash", () => {
-  // If a non-hashing storage engine ever leaks back in, the fingerprint
-  // must still distinguish "we have no idea what was uploaded" from "we
-  // know exactly what was uploaded" — otherwise we'd silently treat
-  // every unknown upload as identical.
-  const known = hashMultipartRequest(
-    makeReq({
-      files: [
-        {
-          fieldname: "f",
-          originalname: "x",
-          mimetype: "application/octet-stream",
-          size: 1,
-          contentHash: "c".repeat(64),
-        },
-      ],
-    }),
+test("a file with no contentHash fails closed before fingerprinting", () => {
+  assert.throws(
+    () =>
+      hashMultipartRequest(
+        makeReq({
+          files: [
+            {
+              fieldname: "f",
+              originalname: "x",
+              mimetype: "application/octet-stream",
+              size: 1,
+              // no contentHash on purpose
+            },
+          ],
+        }),
+      ),
+    (error) => {
+      assert.ok(error instanceof HttpError);
+      assert.equal(error.statusCode, 500);
+      assert.equal(error.type, "multipart-content-hash-missing");
+      return true;
+    },
   );
-  const unknown = hashMultipartRequest(
-    makeReq({
-      files: [
-        {
-          fieldname: "f",
-          originalname: "x",
-          mimetype: "application/octet-stream",
-          size: 1,
-          // no contentHash on purpose
-        },
-      ],
-    }),
+});
+
+test("a file with malformed contentHash fails closed before fingerprinting", () => {
+  assert.throws(
+    () =>
+      hashMultipartRequest(
+        makeReq({
+          files: [
+            {
+              fieldname: "f",
+              originalname: "x",
+              mimetype: "application/octet-stream",
+              size: 1,
+              contentHash: "not-a-sha",
+            },
+          ],
+        }),
+      ),
+    (error) => {
+      assert.ok(error instanceof HttpError);
+      assert.equal(error.statusCode, 500);
+      assert.equal(error.type, "multipart-content-hash-missing");
+      return true;
+    },
   );
-  assert.notEqual(known, unknown);
 });
 
 test("hashing storage engine attaches a SHA-256 contentHash matching the bytes", async () => {
@@ -187,6 +204,9 @@ test("hashing storage engine attaches a SHA-256 contentHash matching the bytes",
       },
       method: "POST",
       url: "/test",
+      get(name: string) {
+        return (this.headers as Record<string, string>)[name.toLowerCase()];
+      },
     },
   );
   // multer's `wrapMulter` calls multipartIdempotencyMiddleware, which in

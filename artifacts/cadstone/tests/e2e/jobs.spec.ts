@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 import { CESAR, loginViaApi } from "./helpers/auth"
 import { createTestJob, deleteJob, requireAnyClient } from "./helpers/api"
+import { visiblePlaceholder } from "./helpers/locators"
 import { CESAR_STATE } from "./helpers/storage"
 
 test.use({ storageState: CESAR_STATE })
@@ -35,11 +36,7 @@ test.describe("jobs", () => {
     await page.goto("/jobs")
 
     // The newly created job should be findable via the search box.
-    const searchBox = page
-      .getByPlaceholder(/search/i)
-      .or(page.getByRole("textbox", { name: /search/i }))
-      .first()
-    await searchBox.fill(title)
+    await visiblePlaceholder(page, /search/i).fill(title)
     await expect(page.getByText(title).first()).toBeVisible({ timeout: 10_000 })
 
     // Deep-link straight to the job detail page and confirm the tabs render.

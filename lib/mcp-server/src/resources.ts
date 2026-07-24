@@ -1,4 +1,4 @@
-import { ApiClient } from "./api-client";
+import { ApiClient } from "./api-client.js";
 
 export type McpResourceDescriptor = {
   uri: string;
@@ -41,8 +41,7 @@ export async function listResources(client: ApiClient): Promise<McpResourceDescr
         query: { pageSize: 25 },
         toolName: "resources/list",
       })
-      .then((r) => r.data)
-      .catch(() => ({ jobs: [] })),
+      .then((r) => r.data),
     client
       .request<{ leads?: Array<{ id: string; title: string }> }>({
         method: "GET",
@@ -50,8 +49,7 @@ export async function listResources(client: ApiClient): Promise<McpResourceDescr
         query: { pageSize: 25 },
         toolName: "resources/list",
       })
-      .then((r) => r.data)
-      .catch(() => ({ leads: [] })),
+      .then((r) => r.data),
     client
       .request<{ clients?: Array<{ id: string; companyName: string }> }>({
         method: "GET",
@@ -59,8 +57,7 @@ export async function listResources(client: ApiClient): Promise<McpResourceDescr
         query: { pageSize: 25 },
         toolName: "resources/list",
       })
-      .then((r) => r.data)
-      .catch(() => ({ clients: [] })),
+      .then((r) => r.data),
   ]);
 
   const descriptors: McpResourceDescriptor[] = [];

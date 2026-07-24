@@ -64,6 +64,8 @@ interface GanttViewProps {
   ganttShowPhases: boolean
   ganttCriticalPath: boolean
   loading: boolean
+  canWrite: boolean
+  canCreateScheduleItems: boolean
   ganttItems: ScheduleItemRecord[]
   activeItems: ScheduleItemRecord[]
   ganttRows: GanttRow[]
@@ -83,7 +85,6 @@ interface GanttViewProps {
   dayWidth: number
   workdayExceptions: ScheduleWorkdayException[]
   scheduleOffline: boolean
-  canWrite: boolean
   setGanttScale: Dispatch<SetStateAction<GanttScale>>
   setGanttShowPhases: Dispatch<SetStateAction<boolean>>
   setGanttCriticalPath: Dispatch<SetStateAction<boolean>>
@@ -109,6 +110,8 @@ export function GanttView(props: GanttViewProps) {
     ganttShowPhases,
     ganttCriticalPath,
     loading,
+    canWrite,
+    canCreateScheduleItems,
     ganttItems,
     activeItems,
     ganttRows,
@@ -128,7 +131,6 @@ export function GanttView(props: GanttViewProps) {
     dayWidth,
     workdayExceptions,
     scheduleOffline,
-    canWrite,
     setGanttScale,
     setGanttShowPhases,
     setGanttCriticalPath,
@@ -204,17 +206,17 @@ export function GanttView(props: GanttViewProps) {
                 ? "Create a schedule item with Show on Gantt enabled to build the job timeline."
                 : "Adjust the current filters or enable Show on Gantt on more schedule items."
             }
-            actionLabel={activeItems.length === 0 && !canWrite ? undefined : activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
+            actionLabel={activeItems.length === 0 ? "New Schedule Item" : "Clear Filters"}
             onAction={
-              activeItems.length === 0
-                ? canWrite
-                  ? () => openNewItem()
-                  : undefined
-                : () => {
+              activeItems.length === 0 && canCreateScheduleItems
+                ? () => openNewItem()
+                : activeItems.length > 0
+                  ? () => {
                     const reset = buildFilterPreset("all")
                     setAppliedFilters(reset)
                     setDraftFilters(reset)
                   }
+                  : undefined
             }
           />
         ) : (
@@ -264,17 +266,21 @@ export function GanttView(props: GanttViewProps) {
                           </div>
                           <div className="text-sm text-slate-500">{fmtDate(row.item.startDate)}</div>
                           <div className="text-sm text-slate-500">{row.item.workDays}</div>
-                          <button
-                            type="button"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              openExistingItem(row.item.id)
-                            }}
-                          >
-                            <Edit3 className="size-4" />
-                          </button>
                           {canWrite ? (
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openExistingItem(row.item.id)
+                              }}
+                            >
+                              <Edit3 className="size-4" />
+                            </button>
+                          ) : (
+                            <div />
+                          )}
+                          {canCreateScheduleItems ? (
                             <button
                               type="button"
                               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
@@ -327,7 +333,7 @@ export function GanttView(props: GanttViewProps) {
 
                     <div className="relative">
                       <div
-                        className="pointer-events-none absolute inset-y-0 z-10 w-px bg-primary/60"
+                        className="pointer-events-none absolute inset-y-0 z-10 w-px bg-primary/100/60"
                         style={{ left: `${todayOffsetPx}px` }}
                       />
                       {schedulePreview && ganttPreviewBounds ? (
@@ -378,7 +384,7 @@ export function GanttView(props: GanttViewProps) {
                           return <div key={row.key} className="h-[38px] border-b border-[#E5E7EB] bg-slate-50" />
                         }
                         const isDragged = !!ganttDrag && ganttDrag.itemId === row.item.id
-                        const draggable = isGanttBarDraggable(row.item)
+                        const draggable = canWrite && isGanttBarDraggable(row.item)
                         const barStartDate = isDragged ? ganttDrag!.startDate : row.item.startDate
                         const barWorkDays = isDragged ? ganttDrag!.workDays : Math.max(row.item.workDays, 1)
                         const barEndDate = isDragged
@@ -416,7 +422,7 @@ export function GanttView(props: GanttViewProps) {
                                   : "border-transparent",
                                 activeConflictIds.has(row.item.id) && "border-rose-500 ring-2 ring-rose-200",
                                 draggable && "cursor-grab active:cursor-grabbing",
-                                isDragged && "z-20 cursor-grabbing ring-2 ring-primary/35",
+                                isDragged && "z-20 cursor-grabbing ring-2 ring-primary/40",
                               )}
                               style={{
                                 left: `${diffInDays(ganttRange.start, parseDate(barStartDate)) * dayWidth}px`,
@@ -424,7 +430,7 @@ export function GanttView(props: GanttViewProps) {
                                 height: "28px",
                                 backgroundColor: colorWithAlpha((ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor, 0.18),
                               }}
-                              onPointerDown={(event) => handleGanttBarPointerDown(event, row.item, "move")}
+                              onPointerDown={draggable ? (event) => handleGanttBarPointerDown(event, row.item, "move") : undefined}
                             >
                               <div
                                 className="h-full"
@@ -454,7 +460,7 @@ export function GanttView(props: GanttViewProps) {
             </div>
 
             {canWrite ? (
-            <div data-print-hide="true" className="flex flex-col gap-3 border-t border-[#E5E7EB] bg-accent/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div data-print-hide="true" className="flex flex-col gap-3 border-t border-[#E5E7EB] bg-primary/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-sm font-semibold text-slate-900">Try Draft mode. Make changes confidently with features like undo and redo.</p>
               </div>

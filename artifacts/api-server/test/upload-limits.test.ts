@@ -102,8 +102,9 @@ test("backend and shared upload limits stay in sync", () => {
   assert.equal(BACKEND_MAX_UPLOAD_FILE_COUNT, MAX_UPLOAD_FILE_COUNT);
 });
 
-test("formatUploadSize renders bytes / KB / MB without rounding to 0 MB", () => {
-  assert.equal(formatUploadSize(MAX_UPLOAD_FILE_BYTES), "500 MB");
+test("formatUploadSize renders bytes / KB / MB / GB without rounding to 0 MB", () => {
+  assert.equal(formatUploadSize(MAX_UPLOAD_FILE_BYTES), "2 GB");
+  assert.equal(formatUploadSize(1536 * 1024 * 1024), "1.5 GB");
   assert.equal(formatUploadSize(2048), "2 KB");
   assert.equal(formatUploadSize(100), "100 B");
   assert.equal(formatUploadSize(0), "0 B");
@@ -151,14 +152,15 @@ test("oversize file returns 413 problem+json with limit named", async () => {
     status: number;
     detail: string;
     message: string;
-    errors?: { limit?: number; code?: string };
+    errors?: { limit?: number; code?: string; legacyCode?: string; multerCode?: string };
   };
 
   assert.equal(body.status, 413);
   assert.equal(body.title, "Payload Too Large");
   assert.equal(body.type, `${PROBLEM_TYPE_BASE}/payload-too-large`);
   assert.equal(body.errors?.limit, 100);
-  assert.equal(body.errors?.code, "UPLOAD_TOO_LARGE");
+  assert.equal(body.errors?.code, "FILE_TOO_LARGE");
+  assert.equal(body.errors?.legacyCode, "UPLOAD_TOO_LARGE");
   assert.equal(body.errors?.multerCode, "LIMIT_FILE_SIZE");
   // The detail must name the actual byte limit so users see the real cap,
   // not a stale value baked into the client. formatUploadSize is the same

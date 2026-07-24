@@ -8,7 +8,7 @@
 import type { CursorPagination } from "./cursorPagination";
 
 /**
- * Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied an explicit `cursor` parameter. Cursor-mode pagination uses `CursorPagination`.
+ * Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied the `cursor` query key, in which case this field uses `CursorPagination`. A `limit` query by itself does not select cursor mode.
  */
 export type SearchGetSearch200Pagination =
   | {

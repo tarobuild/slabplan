@@ -13,4 +13,5 @@ export const UsersInviteUserSchemaRole = {
   admin: "admin",
   project_manager: "project_manager",
   crew_member: "crew_member",
+  drafter: "drafter",
 } as const;

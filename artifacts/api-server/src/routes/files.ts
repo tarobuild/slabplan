@@ -1,10 +1,13 @@
 import { z } from "zod";
 import { Router, type IRouter } from "express";
 import {
+  assertCanAccessJob,
+  assertCanCreateJobFolder,
   assertCanManageFile,
   assertCanUploadToFolder,
   assertCanViewFile,
   assertCanViewFolder,
+  type AuthContext,
 } from "../lib/authorization";
 import {
   FILE_VIEW_TOKEN_TTL_SECONDS,
@@ -16,7 +19,23 @@ import { users } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { decodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { sanitizeDownloadFilename } from "../lib/downloads";
-import { getFileOrThrow, listFilesForFolder, moveFile, purgeFile, renameFile, restoreFile, saveUploadedFiles, softDeleteFile } from "../lib/file-manager";
+import {
+  copyFiles,
+  detectFileDuplicate,
+  duplicateActionValues,
+  getFileOrThrow,
+  listFilesForFolder,
+  moveFile,
+  moveFiles,
+  purgeFile,
+  renameFile,
+  resolveJobFolderPath,
+  restoreFile,
+  saveUploadedFiles,
+  softDeleteFile,
+  softDeleteFiles,
+  streamSelectedFilesZip,
+} from "../lib/file-manager";
 import {
   TOOL_TYPES,
   createAnnotation,
@@ -28,11 +47,24 @@ import {
 import { isAdmin } from "../lib/authorization";
 import { withFileViewLogging } from "../lib/file-view-log";
 import { HttpError, asyncHandler } from "../lib/http";
-import { streamStoredFileToResponse } from "../lib/storage";
-import { uploadArray } from "../lib/uploads";
+import { streamPreparedStoredFileToResponse } from "../lib/storage";
+import { cleanupTempUpload, uploadArray } from "../lib/uploads";
 import { createUploadPerUserRateLimit } from "../lib/rate-limit";
 import { assertActiveUserById } from "../lib/active-user";
 import { stringBoolean } from "../lib/zod-helpers";
+import {
+  assembleChunkedUpload,
+  assertChunkedUploadAccess,
+  createChunkedUploadSession,
+  getChunkedUploadSession,
+  getChunkedUploadStatus,
+  isBase64ChunkRequest,
+  removeChunkedUploadSession,
+  writeBase64ChunkFromRequest,
+  writeChunkFromRequest,
+} from "../lib/chunked-upload";
+import { validateMagicBytesForFiles } from "../lib/upload-magic-bytes";
+import { validateVideoDurationsForFiles } from "../lib/upload-video-duration";
 
 const uploadRateLimit = createUploadPerUserRateLimit();
 
@@ -70,6 +102,50 @@ const moveFileSchema = z.object({
   destinationFolderId: z.string().uuid(),
 });
 
+const batchFileIdListSchema = z
+  .array(z.string().uuid())
+  .min(1)
+  .max(250)
+  .transform((fileIds) => Array.from(new Set(fileIds)));
+
+const batchFilesSchema = z.object({
+  fileIds: batchFileIdListSchema,
+});
+
+const batchFilesDestinationSchema = batchFilesSchema.extend({
+  destinationFolderId: z.string().uuid(),
+});
+
+const duplicateActionSchema = z.enum(duplicateActionValues).optional().default("keep_both");
+
+const booleanMultipartField = z
+  .union([z.boolean(), z.string(), z.null(), z.undefined()])
+  .transform((value) => {
+    if (typeof value === "boolean") return value;
+    if (typeof value !== "string") return false;
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  });
+
+const pathSegmentsField = z
+  .union([z.array(z.string()), z.string(), z.null(), z.undefined()])
+  .transform((value): string[] | null => {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== "string" || value.trim().length === 0) return null;
+    const trimmed = value.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map((segment) => String(segment));
+        }
+      } catch {
+        return null;
+      }
+    }
+    return trimmed.split("/");
+  });
+
 // Per-file video durations the client probed at selection time. Sent as
 // a JSON-encoded array of (number | null), one entry per `files`
 // upload in the same order. Anything we can't parse is treated as if
@@ -103,6 +179,35 @@ const uploadFilesSchema = z.object({
       return trimmed.length > 0 ? trimmed : null;
     }),
   videoDurations: videoDurationsField.optional(),
+  duplicateAction: duplicateActionSchema,
+});
+
+const duplicateQuerySchema = z.object({
+  filename: z.string().trim().min(1).max(255),
+  size: z.coerce.number().int().nonnegative().optional(),
+  checksum: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).optional(),
+});
+
+const uploadFilesByPathSchema = uploadFilesSchema.extend({
+  mediaType: z.enum(["document", "photo", "video"]).default("document"),
+  folderPath: z.string().trim().min(1).optional(),
+  path: z.string().trim().min(1).optional(),
+  pathSegments: pathSegmentsField.optional(),
+  createIfMissing: booleanMultipartField.optional().default(false),
+}).refine((value) => value.folderPath || value.path || value.pathSegments, {
+  message: "folderPath, path, or pathSegments is required.",
+  path: ["folderPath"],
+});
+
+const chunkedUploadStartSchema = z.object({
+  originalName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().max(100).optional(),
+  totalSize: z.coerce.number().int().positive(),
+  totalChunks: z.coerce.number().int().positive(),
+  contentHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).optional(),
+  note: uploadFilesSchema.shape.note.optional(),
+  duplicateAction: duplicateActionSchema,
+  videoDurationSeconds: z.coerce.number().positive().optional(),
 });
 
 function getParam(value: string | string[] | undefined, label: string) {
@@ -113,6 +218,40 @@ function getParam(value: string | string[] | undefined, label: string) {
   }
 
   return normalized;
+}
+
+function getIntParam(value: string | string[] | undefined, label: string) {
+  const raw = getParam(value, label);
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new HttpError(400, `Invalid ${label}.`, { code: "INVALID_ROUTE_PARAM", param: label }, "validation");
+  }
+  return parsed;
+}
+
+async function assertCanUploadToFolderForUploadRoute(
+  auth: AuthContext,
+  folderId: string,
+  endpoint = "POST /api/folders/{folderId}/files",
+) {
+  try {
+    return await assertCanUploadToFolder(auth, folderId);
+  } catch (error) {
+    if (error instanceof HttpError && error.statusCode === 403) {
+      throw new HttpError(
+        403,
+        error.message,
+        {
+          code: "UPLOAD_FOLDER_FORBIDDEN",
+          folderId,
+          endpoint,
+          retryable: false,
+        },
+        error.type ?? "forbidden",
+      );
+    }
+    throw error;
+  }
 }
 
 router.get(
@@ -154,13 +293,36 @@ router.get(
   }),
 );
 
+router.get(
+  "/folders/:id/files/duplicates",
+  asyncHandler(async (req, res) => {
+    const query = duplicateQuerySchema.safeParse(req.query);
+
+    if (!query.success) {
+      throw new HttpError(400, "Invalid duplicate lookup query.", query.error.flatten());
+    }
+
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanViewFolder(req.auth!, folderId);
+
+    const duplicate = await detectFileDuplicate({
+      folderId,
+      originalName: query.data.filename,
+      fileSize: query.data.size ?? null,
+      contentHash: query.data.checksum ?? null,
+    });
+
+    res.json({ duplicate });
+  }),
+);
+
 router.post(
   "/folders/:id/files",
   uploadRateLimit,
   uploadArray("files", 20),
   asyncHandler(async (req, res) => {
     const folderId = getParam(req.params.id, "folder id");
-    const folder = await assertCanUploadToFolder(req.auth!, folderId);
+    const folder = await assertCanUploadToFolderForUploadRoute(req.auth!, folderId);
     const body = uploadFilesSchema.safeParse(req.body ?? {});
 
     if (!body.success) {
@@ -178,10 +340,294 @@ router.post(
       userId: req.auth!.userId,
       uploadedFiles,
       note: body.data.note,
+      duplicateAction: body.data.duplicateAction,
       videoDurationsSeconds: body.data.videoDurations ?? null,
     });
 
     res.status(201).json(result);
+  }),
+);
+
+router.post(
+  "/jobs/:jobId/files/by-path",
+  uploadRateLimit,
+  uploadArray("files", 20),
+  asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.jobId, "job id");
+    const body = uploadFilesByPathSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid path upload payload.", body.error.flatten());
+    }
+
+    await assertCanAccessJob(req.auth!, jobId);
+    if (body.data.createIfMissing) {
+      await assertCanCreateJobFolder(req.auth!, jobId, body.data.mediaType);
+    }
+
+    const resolved = await resolveJobFolderPath({
+      jobId,
+      mediaType: body.data.mediaType,
+      path: body.data.folderPath ?? body.data.path ?? null,
+      pathSegments: body.data.pathSegments ?? null,
+      createIfMissing: body.data.createIfMissing,
+      userId: req.auth!.userId,
+    });
+    const folder = await assertCanUploadToFolderForUploadRoute(
+      req.auth!,
+      resolved.folder.id,
+      "POST /api/jobs/{jobId}/files/by-path",
+    );
+
+    if (folder.mediaType === "photo" && req.auth!.role === "crew_member" && !body.data.note) {
+      throw new HttpError(400, "A note is required when crew members upload photos.");
+    }
+
+    const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+    const result = await saveUploadedFiles({
+      folderId: folder.id,
+      userId: req.auth!.userId,
+      uploadedFiles,
+      note: body.data.note,
+      duplicateAction: body.data.duplicateAction,
+      videoDurationsSeconds: body.data.videoDurations ?? null,
+    });
+
+    res.status(201).json({
+      ...result,
+      resolvedFolder: resolved,
+    });
+  }),
+);
+
+router.post(
+  "/folders/:id/files/chunked",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    const folder = await assertCanUploadToFolderForUploadRoute(
+      req.auth!,
+      folderId,
+      "POST /api/folders/{folderId}/files/chunked",
+    );
+    const body = chunkedUploadStartSchema.safeParse(req.body ?? {});
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid chunked upload payload.", body.error.flatten());
+    }
+
+    if (folder.mediaType === "photo" && req.auth!.role === "crew_member" && !body.data.note) {
+      throw new HttpError(400, "A note is required when crew members upload photos.");
+    }
+
+    const session = await createChunkedUploadSession({
+      folderId,
+      userId: req.auth!.userId,
+      originalName: body.data.originalName,
+      mimeType: body.data.mimeType,
+      totalSize: body.data.totalSize,
+      totalChunks: body.data.totalChunks,
+      contentHash: body.data.contentHash ?? null,
+      note: body.data.note,
+      duplicateAction: body.data.duplicateAction,
+      videoDurationSeconds: body.data.videoDurationSeconds ?? null,
+    });
+
+    res.status(201).json({
+      session,
+      status: await getChunkedUploadStatus(session),
+    });
+  }),
+);
+
+router.get(
+  "/folders/:id/files/chunked/:uploadId",
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolderForUploadRoute(
+      req.auth!,
+      folderId,
+      "GET /api/folders/{folderId}/files/chunked/{uploadId}",
+    );
+    const uploadId = getParam(req.params.uploadId, "upload id");
+    const session = await getChunkedUploadSession(uploadId);
+    assertChunkedUploadAccess(session, { folderId, userId: req.auth!.userId });
+
+    res.json({
+      session,
+      status: await getChunkedUploadStatus(session),
+    });
+  }),
+);
+
+router.put(
+  "/folders/:id/files/chunked/:uploadId/chunks/:chunkIndex",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolderForUploadRoute(
+      req.auth!,
+      folderId,
+      "PUT /api/folders/{folderId}/files/chunked/{uploadId}/chunks/{chunkIndex}",
+    );
+    const uploadId = getParam(req.params.uploadId, "upload id");
+    const chunkIndex = getIntParam(req.params.chunkIndex, "chunk index");
+    const session = await getChunkedUploadSession(uploadId);
+    assertChunkedUploadAccess(session, { folderId, userId: req.auth!.userId });
+
+    const result = isBase64ChunkRequest(req)
+      ? await writeBase64ChunkFromRequest(req, session, chunkIndex)
+      : await writeChunkFromRequest(req, session, chunkIndex);
+    res.json(result);
+  }),
+);
+
+router.post(
+  "/folders/:id/files/chunked/:uploadId/complete",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolderForUploadRoute(
+      req.auth!,
+      folderId,
+      "POST /api/folders/{folderId}/files/chunked/{uploadId}/complete",
+    );
+    const uploadId = getParam(req.params.uploadId, "upload id");
+    const session = await getChunkedUploadSession(uploadId);
+    assertChunkedUploadAccess(session, { folderId, userId: req.auth!.userId });
+
+    const uploadedFile = await assembleChunkedUpload(session);
+
+    try {
+      await validateMagicBytesForFiles([uploadedFile]);
+      await validateVideoDurationsForFiles([uploadedFile]);
+      const result = await saveUploadedFiles({
+        folderId,
+        userId: req.auth!.userId,
+        uploadedFiles: [uploadedFile],
+        note: session.note,
+        duplicateAction: session.duplicateAction,
+        videoDurationsSeconds: [session.videoDurationSeconds],
+      });
+      await removeChunkedUploadSession(uploadId);
+
+      res.status(201).json({
+        uploadId,
+        status: result.uploadResults[0]?.status ?? "uploaded",
+        ...result,
+      });
+    } catch (error) {
+      await cleanupTempUpload(uploadedFile);
+      throw error;
+    }
+  }),
+);
+
+router.delete(
+  "/folders/:id/files/chunked/:uploadId",
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    await assertCanUploadToFolderForUploadRoute(
+      req.auth!,
+      folderId,
+      "DELETE /api/folders/{folderId}/files/chunked/{uploadId}",
+    );
+    const uploadId = getParam(req.params.uploadId, "upload id");
+    const session = await getChunkedUploadSession(uploadId);
+    assertChunkedUploadAccess(session, { folderId, userId: req.auth!.userId });
+
+    await removeChunkedUploadSession(uploadId);
+    res.json({ success: true });
+  }),
+);
+
+router.post(
+  "/files/batch/delete",
+  asyncHandler(async (req, res) => {
+    const body = batchFilesSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid batch delete payload.", body.error.flatten());
+    }
+
+    await Promise.all(
+      body.data.fileIds.map((fileId) => assertCanManageFile(req.auth!, fileId)),
+    );
+
+    const deleted = await softDeleteFiles({
+      fileIds: body.data.fileIds,
+      userId: req.auth!.userId,
+    });
+
+    res.json({ success: true, count: deleted.length, files: deleted });
+  }),
+);
+
+router.post(
+  "/files/batch/move",
+  asyncHandler(async (req, res) => {
+    const body = batchFilesDestinationSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid batch move payload.", body.error.flatten());
+    }
+
+    await Promise.all([
+      ...body.data.fileIds.map((fileId) => assertCanManageFile(req.auth!, fileId)),
+      assertCanUploadToFolder(req.auth!, body.data.destinationFolderId),
+    ]);
+
+    const moved = await moveFiles({
+      fileIds: body.data.fileIds,
+      destinationFolderId: body.data.destinationFolderId,
+      userId: req.auth!.userId,
+    });
+
+    res.json({ success: true, count: moved.length, files: moved });
+  }),
+);
+
+router.post(
+  "/files/batch/copy",
+  asyncHandler(async (req, res) => {
+    const body = batchFilesDestinationSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid batch copy payload.", body.error.flatten());
+    }
+
+    await Promise.all([
+      ...body.data.fileIds.map((fileId) => assertCanManageFile(req.auth!, fileId)),
+      assertCanUploadToFolder(req.auth!, body.data.destinationFolderId),
+    ]);
+
+    const copied = await copyFiles({
+      fileIds: body.data.fileIds,
+      destinationFolderId: body.data.destinationFolderId,
+      userId: req.auth!.userId,
+    });
+
+    res.json({ success: true, count: copied.length, files: copied });
+  }),
+);
+
+router.post(
+  "/files/batch/download",
+  asyncHandler(async (req, res) => {
+    const body = batchFilesSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid batch download payload.", body.error.flatten());
+    }
+
+    await Promise.all(
+      body.data.fileIds.map((fileId) => assertCanViewFile(req.auth!, fileId)),
+    );
+
+    await streamSelectedFilesZip({
+      fileIds: body.data.fileIds,
+      res,
+    });
   }),
 );
 
@@ -299,10 +745,11 @@ router.get(
       throw new HttpError(404, "Stored file missing.");
     }
 
-    await streamStoredFileToResponse(res, file.fileUrl, {
+    await streamPreparedStoredFileToResponse(res, file.fileUrl, {
       disposition: "attachment",
       filename: sanitizeDownloadFilename(file.originalName),
       contentType: file.mimeType,
+      rangeHeader: req.headers.range ?? null,
     });
   }),
 );
@@ -336,13 +783,15 @@ router.get(
         }
 
         const displayName = file.originalName ?? file.filename;
-        return streamStoredFileToResponse(
+        return streamPreparedStoredFileToResponse(
           res,
           file.fileUrl,
           {
             disposition: "inline",
             filename: displayName,
             contentType: file.mimeType,
+            cacheControl: "private, no-store",
+            rangeHeader: req.headers.range ?? null,
           },
           progress,
         );
@@ -373,13 +822,15 @@ router.get(
         }
 
         const displayName = file.originalName ?? file.filename;
-        return streamStoredFileToResponse(
+        return streamPreparedStoredFileToResponse(
           res,
           file.fileUrl,
           {
             disposition: "inline",
             filename: displayName,
             contentType: file.mimeType,
+            cacheControl: "private, no-store",
+            rangeHeader: req.headers.range ?? null,
           },
           progress,
         );
@@ -561,7 +1012,12 @@ router.post(
     const fileId = getParam(req.params.id, "file id");
     await assertCanViewFile(req.auth!, fileId);
     await assertActiveUserById(req.auth!.userId);
+    const file = await getFileOrThrow(fileId);
+    if (!file.fileUrl) {
+      throw new HttpError(404, "Stored file missing.");
+    }
 
+    const expiresAt = new Date(Date.now() + FILE_VIEW_TOKEN_TTL_SECONDS * 1000).toISOString();
     const [user] = await db
       .select()
       .from(users)
@@ -573,12 +1029,45 @@ router.post(
     }
 
     const token = signFileViewToken(toPublicUser(user), fileId);
-    const expiresAt = new Date(Date.now() + FILE_VIEW_TOKEN_TTL_SECONDS * 1000).toISOString();
 
     res.json({
       url: `/api/files/${fileId}/view-signed?token=${encodeURIComponent(token)}`,
       expiresAt,
       expiresIn: FILE_VIEW_TOKEN_TTL_SECONDS,
+      delivery: "application",
+    });
+  }),
+);
+
+router.post(
+  "/files/:id/signed-download",
+  asyncHandler(async (req, res) => {
+    const fileId = getParam(req.params.id, "file id");
+    await assertCanViewFile(req.auth!, fileId);
+    await assertActiveUserById(req.auth!.userId);
+    const file = await getFileOrThrow(fileId);
+    if (!file.fileUrl) {
+      throw new HttpError(404, "Stored file missing.");
+    }
+
+    const expiresAt = new Date(Date.now() + FILE_VIEW_TOKEN_TTL_SECONDS * 1000).toISOString();
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, req.auth!.userId), eq(users.isActive, true), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!user) {
+      throw new HttpError(401, "Authentication required.");
+    }
+
+    const token = signFileViewToken(toPublicUser(user), fileId);
+
+    res.json({
+      url: `/api/files/${fileId}/download-signed?token=${encodeURIComponent(token)}`,
+      expiresAt,
+      expiresIn: FILE_VIEW_TOKEN_TTL_SECONDS,
+      delivery: "application",
     });
   }),
 );

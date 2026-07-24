@@ -281,6 +281,76 @@ test("copyFolder skips soft-deleted descendants and files", async () => {
   assert.equal(copiedFiles[0].filename, "live.pdf");
 });
 
+test("deleted job template folders stay deleted after folder list refresh", async () => {
+  const { db } = await import("@workspace/db");
+  const { folders } = await import("@workspace/db/schema");
+  const { and, eq, isNull, isNotNull } = await import("drizzle-orm");
+  const { listFoldersForJob, softDeleteFolder } = await import("../src/lib/file-manager.ts");
+
+  const auth = {
+    userId: adminUserId,
+    email: adminEmail,
+    role: "admin",
+    type: "access" as const,
+    organizationId: "00000000-0000-4000-8000-000000000001",
+  };
+
+  const firstLoad = await listFoldersForJob({
+    jobId,
+    mediaType: "document",
+    parentId: null,
+    all: false,
+    auth,
+  });
+  const plansFolder = firstLoad.folders.find((folder) => folder.title === "01. PLANS");
+  assert.ok(plansFolder, "expected system template folder to be seeded on first load");
+
+  await softDeleteFolder({ folderId: plansFolder.id, userId: adminUserId });
+
+  const refreshLoad = await listFoldersForJob({
+    jobId,
+    mediaType: "document",
+    parentId: null,
+    all: false,
+    auth,
+  });
+  assert.equal(
+    refreshLoad.folders.some((folder) => folder.title === "01. PLANS"),
+    false,
+    "folder list refresh must not recreate a template folder the user deleted",
+  );
+
+  const activePlansFolders = await db
+    .select({ id: folders.id })
+    .from(folders)
+    .where(
+      and(
+        eq(folders.jobId, jobId),
+        eq(folders.scope, "job"),
+        eq(folders.mediaType, "document"),
+        eq(folders.title, "01. PLANS"),
+        isNull(folders.parentFolderId),
+        isNull(folders.deletedAt),
+      ),
+    );
+  assert.equal(activePlansFolders.length, 0, "deleted template must not have an active replacement");
+
+  const deletedPlansFolders = await db
+    .select({ id: folders.id })
+    .from(folders)
+    .where(
+      and(
+        eq(folders.jobId, jobId),
+        eq(folders.scope, "job"),
+        eq(folders.mediaType, "document"),
+        eq(folders.title, "01. PLANS"),
+        isNull(folders.parentFolderId),
+        isNotNull(folders.deletedAt),
+      ),
+    );
+  assert.equal(deletedPlansFolders.length, 1, "original template folder should remain in trash");
+});
+
 test("restoreFolder leaves individually-deleted descendants in the trash", async () => {
   const { db } = await import("@workspace/db");
   const { files, folders } = await import("@workspace/db/schema");

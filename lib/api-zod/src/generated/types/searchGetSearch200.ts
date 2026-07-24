@@ -10,6 +10,6 @@ import type { SearchGetSearch200ResultsItem } from "./searchGetSearch200ResultsI
 
 export type SearchGetSearch200 = {
   results: SearchGetSearch200ResultsItem[];
-  /** Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied an explicit `cursor` parameter. Cursor-mode pagination uses `CursorPagination`. */
+  /** Page-mode pagination (`{page, pageSize, hasMore}`) unless the request supplied the `cursor` query key, in which case this field uses `CursorPagination`. A `limit` query by itself does not select cursor mode. */
   pagination: SearchGetSearch200Pagination;
 };

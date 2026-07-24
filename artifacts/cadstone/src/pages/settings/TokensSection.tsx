@@ -41,6 +41,10 @@ function formatTokenDate(value: string | null | undefined): string {
   }
 }
 
+export function canCreateToken(creatingToken: boolean, revealedSecret: string | null) {
+  return !creatingToken && !revealedSecret
+}
+
 export default function TokensSection() {
   useDocumentTitle("API Tokens · Settings")
   const queryClient = useQueryClient()
@@ -55,6 +59,7 @@ export default function TokensSection() {
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
   const [tokenToRevoke, setTokenToRevoke] = useState<ApiToken | null>(null)
+  const createEnabled = canCreateToken(creatingToken, revealedSecret)
 
   useEffect(() => {
     if (tokensQuery.error) {
@@ -64,6 +69,10 @@ export default function TokensSection() {
 
   const handleCreateToken = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (revealedSecret) {
+      toast.error("Copy or dismiss the visible token before creating another.")
+      return
+    }
     const name = tokenName.trim()
     if (!name) {
       toast.error("Token name is required")
@@ -151,6 +160,7 @@ export default function TokensSection() {
                 onChange={(e) => setTokenName(e.target.value)}
                 placeholder="e.g. Reporting bot"
                 maxLength={100}
+                disabled={!createEnabled}
               />
             </div>
             <div className="space-y-1.5">
@@ -159,6 +169,7 @@ export default function TokensSection() {
                 id="token-scope"
                 value={tokenScope}
                 onChange={(e) => setTokenScope(e.target.value as "read" | "read_write")}
+                disabled={!createEnabled}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
               >
                 <option value="read_write">Read &amp; write</option>
@@ -171,6 +182,7 @@ export default function TokensSection() {
                 id="token-expires"
                 value={tokenExpiresInDays}
                 onChange={(e) => setTokenExpiresInDays(e.target.value as typeof tokenExpiresInDays)}
+                disabled={!createEnabled}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
               >
                 <option value="never">Never</option>
@@ -181,8 +193,13 @@ export default function TokensSection() {
               </select>
             </div>
           </div>
+          {revealedSecret ? (
+            <p className="text-sm text-amber-700">
+              Copy or dismiss the visible token before creating another.
+            </p>
+          ) : null}
           <div className="flex justify-end">
-            <Button type="submit" disabled={creatingToken}>
+            <Button type="submit" disabled={!createEnabled}>
               {creatingToken ? (
                 <Loader2 className="mr-2 size-3.5 animate-spin" />
               ) : (

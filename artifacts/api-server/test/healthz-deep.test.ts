@@ -9,6 +9,7 @@ const testDatabaseUrl =
 let server: Server;
 let baseUrl: string;
 let healthTesting: typeof import("../src/routes/health").__healthCheckTesting;
+const previousReleaseSha = process.env.RELEASE_SHA;
 
 before(async () => {
   process.env.NODE_ENV = "test";
@@ -17,6 +18,7 @@ before(async () => {
   process.env.DATABASE_URL ??= testDatabaseUrl;
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
   process.env.REPLIT_DEV_DOMAIN = "workspace.kirk.replit.dev";
+  process.env.RELEASE_SHA = "1234567890abcdef";
 
   const { default: app, prepareApp } = await import("../src/app.ts");
   await prepareApp();
@@ -39,12 +41,18 @@ afterEach(() => {
 });
 
 after(async () => {
-  if (!server) return;
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
-  const { pool } = await import("@workspace/db");
-  await pool.end();
+  if (server) {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    const { pool } = await import("@workspace/db");
+    await pool.end();
+  }
+  if (previousReleaseSha === undefined) {
+    delete process.env.RELEASE_SHA;
+  } else {
+    process.env.RELEASE_SHA = previousReleaseSha;
+  }
 });
 
 test("healthz returns 200 + status:ok when both deps respond", async () => {
@@ -61,6 +69,7 @@ test("healthz returns 200 + status:ok when both deps respond", async () => {
     storage: boolean;
     durationMs: number;
     errors: unknown[];
+    releaseSha: string | null;
   };
   assert.equal(body.status, "ok");
   assert.equal(body.db, true);
@@ -68,6 +77,7 @@ test("healthz returns 200 + status:ok when both deps respond", async () => {
   assert.equal(typeof body.durationMs, "number");
   assert.ok(body.durationMs >= 0);
   assert.deepEqual(body.errors, []);
+  assert.equal(body.releaseSha, "1234567890ab");
 });
 
 test("healthz reports db:false + 503 when the database check fails", async () => {

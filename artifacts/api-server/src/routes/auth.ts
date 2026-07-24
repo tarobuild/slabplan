@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import bcrypt from "bcrypt";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import {
   organizationMemberships,
@@ -21,16 +21,44 @@ import {
 } from "../lib/auth";
 import { HttpError, asyncHandler } from "../lib/http";
 import { clearRateLimitBucket, createRateLimit } from "../lib/rate-limit";
-import { requireAuth } from "../middleware/require-auth";
+import {
+  createSupabaseAuthUser,
+  isSupabasePasswordLoginEnabled,
+  refreshSupabaseSession,
+  revokeSupabaseSession,
+  sendSupabaseAuthResponse,
+  signInWithSupabasePassword,
+  updateSupabaseAuthUser,
+} from "../lib/supabase-auth-session";
+import { requireAdmin, requireAuth } from "../middleware/require-auth";
 
 // NOTE: There is no public `/forgot-password` or `/reset-password` route by design.
 // Admins force a password reset by reissuing the invite token via
-// `POST /api/users/:id/invite`, which now triggers a transactional invite
-// email (Resend) wired through `src/lib/email.ts`. See `replit.md`
-// ("Transactional email") for the operator setup.
+// `POST /api/users/:id/invite`, which attempts transactional delivery through
+// `src/lib/email.ts` when an approved provider is configured.
 
 const router: IRouter = Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MOBILE_CLIENT_HEADER = "x-cadstone-client";
+
+function isMobileClientRequest(req: Request) {
+  return req.get(MOBILE_CLIENT_HEADER) === "mobile";
+}
+
+function readRefreshToken(req: Request) {
+  const cookieToken = req.cookies?.[refreshCookieName];
+
+  if (typeof cookieToken === "string" && cookieToken.length > 0) {
+    return cookieToken;
+  }
+
+  if (!isMobileClientRequest(req)) {
+    return null;
+  }
+
+  const bodyToken = req.body?.refreshToken;
+  return typeof bodyToken === "string" && bodyToken.length > 0 ? bodyToken : null;
+}
 
 // Pre-computed bcrypt hash of a dummy password used to ensure the "user not
 // found" code path spends roughly the same CPU time as the "wrong password"
@@ -222,6 +250,56 @@ async function findActiveUserById(id: string) {
   return user ?? null;
 }
 
+async function signInWithSupabaseOrClaimLegacyPassword(
+  email: string,
+  password: string,
+) {
+  try {
+    return await signInWithSupabasePassword(email, password);
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.statusCode !== 401) {
+      throw error;
+    }
+  }
+
+  const user = await findActiveUserByEmailWithPasswordHash(email);
+
+  if (!user) {
+    await bcrypt.compare(password, DUMMY_HASH);
+    throw new HttpError(401, "Invalid email or password.");
+  }
+
+  if (!user.isActive) {
+    await bcrypt.compare(password, user.passwordHash);
+    throw new HttpError(
+      401,
+      "This account has been deactivated. Contact an administrator.",
+    );
+  }
+
+  const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+  if (!isValidPassword) {
+    throw new HttpError(401, "Invalid email or password.");
+  }
+
+  if (!user.supabaseAuthUserId) {
+    throw new HttpError(409, "This account is not linked to Supabase Auth yet.");
+  }
+
+  await updateSupabaseAuthUser(user.supabaseAuthUserId, {
+    email: user.email,
+    email_confirm: true,
+    password,
+    user_metadata: { full_name: user.fullName },
+    app_metadata: {
+      cadstone_user_id: user.id,
+      cadstone_role: user.role,
+    },
+  });
+
+  return signInWithSupabasePassword(email, password);
+}
+
 router.post(
   "/register",
   asyncHandler(async (req, res) => {
@@ -292,6 +370,15 @@ router.post(
     const email = normalizeEmail(req.body.email);
     const password = normalizeLoginPassword(req.body.password);
 
+    if (isSupabasePasswordLoginEnabled()) {
+      const session = await signInWithSupabaseOrClaimLegacyPassword(email, password);
+      await clearLoginRateLimitForRequest(req);
+      sendSupabaseAuthResponse(res, session, {
+        includeRefreshToken: isMobileClientRequest(req),
+      });
+      return;
+    }
+
     const user = await findActiveUserByEmailWithPasswordHash(email);
 
     if (!user) {
@@ -324,7 +411,7 @@ router.post(
     // successful sign-in.
     await clearLoginRateLimitForRequest(req);
 
-    sendAuthResponse(res, user);
+    sendAuthResponse(res, user, { includeRefreshToken: isMobileClientRequest(req) });
   }),
 );
 
@@ -332,16 +419,64 @@ function hashInviteToken(rawToken: string) {
   return crypto.createHash("sha256").update(rawToken).digest("hex");
 }
 
+function normalizeInviteToken(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new HttpError(400, "Setup token is required.");
+  }
+  return value.trim();
+}
+
+async function findValidInviteByToken(rawToken: string) {
+  const tokenHash = hashInviteToken(rawToken);
+  const now = new Date();
+
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(
+      and(
+        eq(users.inviteTokenHash, tokenHash),
+        gt(users.inviteTokenExpiresAt, now),
+        isNull(users.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!user) {
+    throw new HttpError(401, "Setup link is invalid or has expired.");
+  }
+
+  if (!user.isActive) {
+    throw new HttpError(
+      401,
+      "This account has been deactivated. Contact an administrator.",
+    );
+  }
+
+  return { user, tokenHash };
+}
+
+router.get(
+  "/invite",
+  asyncHandler(async (req, res) => {
+    const rawToken = normalizeInviteToken(req.query.token);
+    const { user } = await findValidInviteByToken(rawToken);
+
+    res.json({
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      inviteTokenExpiresAt: user.inviteTokenExpiresAt!.toISOString(),
+    });
+  }),
+);
+
 router.post(
   "/accept-invite",
   asyncHandler(async (req, res) => {
-    const rawToken =
-      typeof req.body?.token === "string" ? req.body.token.trim() : "";
+    const rawToken = normalizeInviteToken(req.body?.token);
+    const confirmedEmail = normalizeEmail(req.body?.email);
     const newPassword = req.body?.password;
-
-    if (!rawToken) {
-      throw new HttpError(400, "Setup token is required.");
-    }
 
     if (typeof newPassword !== "string") {
       throw new HttpError(400, "Password is required.");
@@ -349,33 +484,42 @@ router.post(
 
     const password = normalizePassword(newPassword, "Password");
 
-    const tokenHash = hashInviteToken(rawToken);
-    const now = new Date();
+    const { user, tokenHash } = await findValidInviteByToken(rawToken);
 
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(
-        and(
-          eq(users.inviteTokenHash, tokenHash),
-          gt(users.inviteTokenExpiresAt, now),
-          isNull(users.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    if (!user) {
-      throw new HttpError(401, "Setup link is invalid or has expired.");
-    }
-
-    if (!user.isActive) {
-      throw new HttpError(
-        401,
-        "This account has been deactivated. Contact an administrator.",
-      );
+    if (user.email !== confirmedEmail) {
+      throw new HttpError(400, "Email does not match this setup link.");
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const now = new Date();
+    let supabaseAuthUserId = user.supabaseAuthUserId;
+
+    if (isSupabasePasswordLoginEnabled()) {
+      if (supabaseAuthUserId) {
+        await updateSupabaseAuthUser(supabaseAuthUserId, {
+          email: user.email,
+          email_confirm: true,
+          password,
+          user_metadata: { full_name: user.fullName },
+          app_metadata: {
+            cadstone_user_id: user.id,
+            cadstone_role: user.role,
+          },
+        });
+      } else {
+        const created = await createSupabaseAuthUser({
+          email: user.email,
+          email_confirm: true,
+          password,
+          user_metadata: { full_name: user.fullName },
+          app_metadata: {
+            cadstone_user_id: user.id,
+            cadstone_role: user.role,
+          },
+        });
+        supabaseAuthUserId = created.id;
+      }
+    }
 
     // Atomic single-use: the WHERE clause repeats the token-hash so a
     // concurrent second request hitting the same token sees zero rows
@@ -386,6 +530,7 @@ router.post(
         .set({
           passwordHash,
           passwordSetAt: now,
+          supabaseAuthUserId,
           inviteTokenHash: null,
           inviteToken: null,
           inviteTokenExpiresAt: null,
@@ -418,23 +563,53 @@ router.post(
       throw new HttpError(401, "Setup link is invalid or has expired.");
     }
 
-    sendAuthResponse(res, updated[0]!);
+    if (isSupabasePasswordLoginEnabled()) {
+      const session = await signInWithSupabasePassword(user.email, password);
+      sendSupabaseAuthResponse(res, session, {
+        includeRefreshToken: isMobileClientRequest(req),
+      });
+      return;
+    }
+
+    sendAuthResponse(res, updated[0]!, {
+      includeRefreshToken: isMobileClientRequest(req),
+    });
   }),
 );
 
-router.post("/logout", (_req, res) => {
+router.post("/logout", asyncHandler(async (req, res) => {
+  if (isSupabasePasswordLoginEnabled()) {
+    const authHeader = req.get("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : null;
+    await revokeSupabaseSession(token);
+  }
+
   clearRefreshTokenCookie(res);
   clearUploadTokenCookie(res);
   res.json({ success: true });
-});
+}));
 
 router.post(
   "/refresh",
   asyncHandler(async (req, res) => {
-    const refreshToken = req.cookies?.[refreshCookieName];
+    const refreshToken = readRefreshToken(req);
 
-    if (typeof refreshToken !== "string" || refreshToken.length === 0) {
+    if (!refreshToken) {
       throw new HttpError(401, "Refresh token missing.");
+    }
+
+    if (isSupabasePasswordLoginEnabled()) {
+      try {
+        const session = await refreshSupabaseSession(refreshToken);
+        sendSupabaseAuthResponse(res, session, {
+          includeRefreshToken: isMobileClientRequest(req),
+        });
+        return;
+      } catch (error) {
+        clearRefreshTokenCookie(res);
+        clearUploadTokenCookie(res);
+        throw error;
+      }
     }
 
     const claims = verifyRefreshToken(refreshToken);
@@ -454,7 +629,7 @@ router.post(
       throw new HttpError(401, "Refresh token invalid.");
     }
 
-    sendAuthResponse(res, user);
+    sendAuthResponse(res, user, { includeRefreshToken: isMobileClientRequest(req) });
   }),
 );
 

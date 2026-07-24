@@ -16,6 +16,7 @@ const { pool } = await import("@workspace/db");
 const { applyMigrations } = await import("@workspace/db/migrate");
 const { default: app, prepareApp } = await import("./app");
 const { logger } = await import("./lib/logger");
+const { resolveSupabaseUrl } = await import("./lib/supabase-url");
 const { initRealtime } = await import("./lib/realtime");
 const {
   startScheduleAutoCompleteSweeper,
@@ -49,7 +50,7 @@ async function bootstrap() {
       nodeEnv: process.env["NODE_ENV"] ?? null,
       hasSupabaseDb: Boolean(process.env["SUPABASE_DATABASE_URL"]),
       hasJwtUpload: Boolean(process.env["JWT_UPLOAD_SECRET"]),
-      hasSupabaseUrl: Boolean(process.env["SUPABASE_URL"]),
+      hasSupabaseUrl: Boolean(resolveSupabaseUrl()),
       hasSupabaseStorageBucket: Boolean(process.env["SUPABASE_STORAGE_BUCKET"]),
       hasSupabaseServiceRoleKey: Boolean(process.env["SUPABASE_SERVICE_ROLE_KEY"]),
     },

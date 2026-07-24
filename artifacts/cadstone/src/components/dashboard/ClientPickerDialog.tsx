@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Building2, Loader2, Search } from "lucide-react"
 import {
   Dialog,
@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api"
 import { toastApiError } from "@/lib/api-errors"
 
+const CLIENT_PAGE_SIZE = 100
+
 type PickableClient = {
   id: string
   companyName: string
@@ -20,47 +22,12 @@ type PickableClient = {
   archived?: boolean
 }
 
-const CLIENT_PICKER_PAGE_SIZE = 100
-
-type ClientPickerPage = {
-  clients?: PickableClient[]
-  pagination?: {
-    page?: number
-    totalPages?: number
-  }
-}
-
-async function loadAllPickableClients(search: string) {
-  const allClients: PickableClient[] = []
-  let page = 1
-
-  while (true) {
-    const response = await api.get<ClientPickerPage>("/clients", {
-      params: {
-        page,
-        pageSize: CLIENT_PICKER_PAGE_SIZE,
-        status: "all",
-        search: search.trim() || undefined,
-      },
-    })
-
-    const raw = response.data?.clients ?? []
-    allClients.push(...raw)
-
-    const totalPages = response.data?.pagination?.totalPages
-    if (typeof totalPages !== "number" || page >= totalPages) break
-    page += 1
-  }
-
-  return allClients.filter((c) => !c.archived)
-}
-
 type ClientPickerDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
   description?: string
-  onSelect: (clientId: string) => void
+  onSelect: (clientId: string, clientName: string) => void
 }
 
 export function ClientPickerDialog({
@@ -72,48 +39,81 @@ export function ClientPickerDialog({
 }: ClientPickerDialogProps) {
   const [clients, setClients] = useState<PickableClient[]>([])
   const [loading, setLoading] = useState(false)
-  const [loadError, setLoadError] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
-  const [loadNonce, setLoadNonce] = useState(0)
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
+  const requestIdRef = useRef(0)
+
+  const loadClients = useCallback(
+    async (nextPage: number, mode: "replace" | "append") => {
+      const requestId = requestIdRef.current + 1
+      requestIdRef.current = requestId
+      if (mode === "replace") {
+        setClients([])
+        setLoading(true)
+      } else {
+        setLoadingMore(true)
+      }
+      setLoadError(null)
+
+      const query = search.trim()
+
+      try {
+        const response = await api.get("/clients", {
+          params: {
+            page: nextPage,
+            pageSize: CLIENT_PAGE_SIZE,
+            status: "all",
+            search: query || undefined,
+          },
+        })
+        if (requestIdRef.current !== requestId) return
+        const raw: PickableClient[] = response.data?.clients ?? []
+        const selectable = raw.filter((c) => !c.archived)
+        setClients((current) =>
+          mode === "append" ? [...current, ...selectable] : selectable,
+        )
+        setPage(nextPage)
+        setHasMore(Boolean(response.data?.pagination?.hasMore))
+      } catch (err: unknown) {
+        if (requestIdRef.current !== requestId) return
+        if (mode === "replace") setClients([])
+        setHasMore(false)
+        setLoadError("Clients could not be loaded. Try again in a moment.")
+        toastApiError(err, "Failed to load clients")
+      } finally {
+        if (requestIdRef.current === requestId) {
+          setLoading(false)
+          setLoadingMore(false)
+        }
+      }
+    },
+    [search],
+  )
 
   useEffect(() => {
     if (!open) return
-    let cancelled = false
-    const timeoutId = window.setTimeout(() => {
-      setLoading(true)
-      setLoadError(false)
-      setClients([])
-      // Use status=all (not the default "active") so brand-new clients
-      // show up immediately. The default "active" filter requires at least
-      // one open job or an outstanding balance — which means a freshly
-      // created client would be invisible in this assign-a-job picker.
-      // Archived clients are filtered out below so they aren't selectable.
-      loadAllPickableClients(search)
-        .then((loadedClients) => {
-          if (cancelled) return
-          setClients(loadedClients)
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return
-          setClients([])
-          setLoadError(true)
-          toastApiError(err, "Failed to load clients")
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false)
-        })
-    }, 250)
-    return () => {
-      cancelled = true
-      window.clearTimeout(timeoutId)
-    }
-  }, [open, search, loadNonce])
+    // Use status=all (not the default "active") so brand-new clients
+    // show up immediately. The default "active" filter requires at least
+    // one open job or an outstanding balance — which means a freshly
+    // created client would be invisible in this assign-a-job picker.
+    // Archived clients are filtered out client-side so they aren't selectable,
+    // while search itself is sent to the server so matches beyond page 1 are
+    // reachable.
+    void loadClients(1, "replace")
+  }, [loadClients, open])
 
   useEffect(() => {
     if (!open) {
+      requestIdRef.current += 1
       setSearch("")
       setClients([])
-      setLoadError(false)
+      setHasMore(false)
+      setPage(1)
+      setLoading(false)
+      setLoadingMore(false)
     }
   }, [open])
 
@@ -144,17 +144,8 @@ export function ClientPickerDialog({
                 Loading clients…
               </div>
             ) : loadError ? (
-              <div className="px-4 py-6 text-center text-sm text-slate-500">
-                <p>Couldn't load clients.</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  onClick={() => setLoadNonce((value) => value + 1)}
-                >
-                  Try again
-                </Button>
+              <div className="px-4 py-6 text-center text-sm text-red-600">
+                {loadError}
               </div>
             ) : clients.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-slate-500">
@@ -163,34 +154,57 @@ export function ClientPickerDialog({
                   : "No clients yet — create one from the Clients page."}
               </div>
             ) : (
-              <ul className="divide-y divide-slate-100">
-                {clients.map((client) => (
-                  <li key={client.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSelect(client.id)
-                        onOpenChange(false)
-                      }}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
-                    >
-                      <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <Building2 className="size-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-slate-800">
-                          {client.companyName}
+              <>
+                <ul className="divide-y divide-slate-100">
+                  {clients.map((client) => (
+                    <li key={client.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelect(client.id, client.companyName)
+                          onOpenChange(false)
+                        }}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
+                      >
+                        <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                          <Building2 className="size-4" />
                         </span>
-                        {(client.city || client.state) && (
-                          <span className="block truncate text-xs text-slate-500">
-                            {[client.city, client.state].filter(Boolean).join(", ")}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-slate-800">
+                            {client.companyName}
                           </span>
-                        )}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                          {(client.city || client.state) && (
+                            <span className="block truncate text-xs text-slate-500">
+                              {[client.city, client.state].filter(Boolean).join(", ")}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {hasMore ? (
+                  <div className="border-t border-slate-100 p-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      disabled={loadingMore}
+                      onClick={() => loadClients(page + 1, "append")}
+                    >
+                      {loadingMore ? (
+                        <>
+                          <Loader2 className="mr-2 size-4 animate-spin" />
+                          Loading more…
+                        </>
+                      ) : (
+                        "Load more clients"
+                      )}
+                    </Button>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
           <div className="flex justify-end">

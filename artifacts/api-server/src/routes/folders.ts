@@ -12,11 +12,13 @@ import {
   createFolder,
   emptyTrash,
   getFolderOrThrow,
+  listFolderTreeForJob,
   listFoldersForJob,
   listTrash,
   moveFolder,
   purgeFolder,
   renameOrUpdateFolder,
+  resolveJobFolderPath,
   restoreFolder,
   softDeleteFolder,
   streamFolderZip,
@@ -33,6 +35,22 @@ const folderListQuerySchema = z.object({
   all: stringBoolean.optional().default(false),
 });
 
+const folderTreeQuerySchema = z.object({
+  mediaType: z.enum(["document", "photo", "video", "all"]).optional().default("all"),
+});
+
+const folderResolveSchema = z
+  .object({
+    mediaType: z.enum(["document", "photo", "video"]).default("document"),
+    path: z.string().trim().min(1).optional(),
+    pathSegments: z.array(z.string().trim().min(1)).min(1).optional(),
+    createIfMissing: z.boolean().optional().default(false),
+  })
+  .refine((value) => value.path || value.pathSegments, {
+    message: "Either path or pathSegments is required.",
+    path: ["path"],
+  });
+
 const folderBodySchema = z.object({
   title: z.string().trim().min(1).max(255),
   mediaType: z.enum(["document", "photo", "video"]),
@@ -44,6 +62,7 @@ const folderPermissionSchema = z
     admin: z.boolean().optional(),
     project_manager: z.boolean().optional(),
     crew_member: z.boolean().optional(),
+    drafter: z.boolean().optional(),
     internal: z.boolean().optional(),
     users: z.record(z.string().uuid(), z.boolean()).optional(),
   })
@@ -72,6 +91,62 @@ function getParam(value: string | string[] | undefined, label: string) {
 
   return normalized;
 }
+
+router.get(
+  "/jobs/:jobId/folder-tree",
+  asyncHandler(async (req, res) => {
+    const query = folderTreeQuerySchema.safeParse(req.query);
+
+    if (!query.success) {
+      throw new HttpError(400, "Invalid folder tree query.", query.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    await assertCanAccessJob(req.auth!, jobId);
+
+    const result = await listFolderTreeForJob({
+      jobId,
+      mediaType: query.data.mediaType === "all" ? null : query.data.mediaType,
+      auth: req.auth!,
+    });
+
+    res.json(result);
+  }),
+);
+
+router.post(
+  "/jobs/:jobId/folders/resolve",
+  asyncHandler(async (req, res) => {
+    const body = folderResolveSchema.safeParse(req.body);
+
+    if (!body.success) {
+      throw new HttpError(400, "Invalid folder resolve payload.", body.error.flatten());
+    }
+
+    const jobId = getParam(req.params.jobId, "job id");
+    await assertCanAccessJob(req.auth!, jobId);
+    if (body.data.createIfMissing) {
+      await assertCanCreateJobFolder(req.auth!, jobId, body.data.mediaType);
+    }
+
+    const result = await resolveJobFolderPath({
+      jobId,
+      mediaType: body.data.mediaType,
+      path: body.data.path ?? null,
+      pathSegments: body.data.pathSegments ?? null,
+      createIfMissing: body.data.createIfMissing,
+      userId: req.auth!.userId,
+    });
+
+    if (body.data.createIfMissing) {
+      await assertCanUploadToFolder(req.auth!, result.folder.id);
+    } else {
+      await assertCanViewFolder(req.auth!, result.folder.id);
+    }
+
+    res.json(result);
+  }),
+);
 
 router.get(
   "/jobs/:jobId/folders",
@@ -109,7 +184,7 @@ router.post(
     const jobId = getParam(req.params.jobId, "job id");
     await assertCanCreateJobFolder(req.auth!, jobId, body.data.mediaType);
     if (body.data.parentFolderId) {
-      await assertCanViewFolder(req.auth!, body.data.parentFolderId);
+      await assertCanUploadToFolder(req.auth!, body.data.parentFolderId);
     }
 
     const folder = await createFolder({

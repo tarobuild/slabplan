@@ -2,20 +2,20 @@
 /**
  * Daily Postgres backup → Supabase Storage.
  *
- * Runs `pg_dump` against the database referenced by SUPABASE_DATABASE_URL
- * (falling back to DATABASE_URL), gzip-compresses the output, and uploads
- * it to the configured Supabase Storage bucket under
+ * Runs `pg_dump` against the database referenced by SUPABASE_DATABASE_URL,
+ * gzip-compresses the output, and uploads it to the configured Supabase
+ * Storage bucket under
  * `backups/db/YYYY-MM-DD.sql.gz`. Then it prunes old backups according to
  * a daily / weekly / monthly retention policy:
  *   - daily   : keep the last 14
  *   - weekly  : keep the last 12 (one per ISO week)
  *   - monthly : keep the last 12 (one per calendar month)
  *
- * Designed to run from a scheduler once per day. Uses the same Supabase
- * Storage env vars as the production API server.
+ * Designed to run from a Replit Scheduled Deployment ("cron") once per
+ * day. Uses the same Supabase Storage env vars as the production API server.
  *
  * Required env:
- *   - SUPABASE_DATABASE_URL or DATABASE_URL — Postgres connection string
+ *   - SUPABASE_DATABASE_URL — Supabase Postgres connection string
  *   - SUPABASE_URL
  *   - SUPABASE_STORAGE_BUCKET
  *   - SUPABASE_SERVICE_ROLE_KEY
@@ -26,13 +26,14 @@
  *   - LOG_LEVEL      (default: "info")
  *
  * Output is one structured JSON object per significant step on stdout, so
- * `pino-http`'s consumers and deployment logs can ingest it
+ * `pino-http`'s consumers and Replit's deployment logs can ingest it
  * without parsing a wall of pg_dump chatter.
  */
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdtemp, rm, stat } from "node:fs/promises";
-import os from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
@@ -49,12 +50,30 @@ const pinoLogger = pino({
   base: { component: "db-backup" },
 });
 
-const dbUrl = process.env.SUPABASE_DATABASE_URL ?? process.env.DATABASE_URL;
+const dbUrl = process.env.SUPABASE_DATABASE_URL;
 const backupPrefix = (process.env.BACKUP_PREFIX ?? "backups/db").replace(
   /\/+$/,
   "",
 );
 const pgDumpBin = process.env.PG_DUMP_BIN ?? "pg_dump";
+
+function pgEnvFromDatabaseUrl(databaseUrl) {
+  const url = new URL(databaseUrl);
+  const env = {};
+
+  if (url.hostname) env.PGHOST = url.hostname;
+  if (url.port) env.PGPORT = url.port;
+  if (url.pathname && url.pathname !== "/") {
+    env.PGDATABASE = decodeURIComponent(url.pathname.slice(1));
+  }
+  if (url.username) env.PGUSER = decodeURIComponent(url.username);
+  if (url.password) env.PGPASSWORD = decodeURIComponent(url.password);
+
+  const sslmode = url.searchParams.get("sslmode");
+  if (sslmode) env.PGSSLMODE = sslmode;
+
+  return env;
+}
 
 function log(level, event, extra = {}) {
   const fn = pinoLogger[level] ?? pinoLogger.info;
@@ -74,7 +93,7 @@ function fail(event, extra) {
  */
 async function findMostRecentSuccessfulBackup(excludeIsoDate) {
   try {
-    const files = await getStorage().listAllObjects(`${backupPrefix}/`);
+    const files = await storage.listAllObjects(`${backupPrefix}/`);
     let best = null;
     for (const f of files) {
       const m = /\/(\d{4}-\d{2}-\d{2})\.sql\.gz$/.exec(f.name);
@@ -102,46 +121,10 @@ async function findMostRecentSuccessfulBackup(excludeIsoDate) {
 }
 
 if (!dbUrl) {
-  fail("missing_env", { var: "SUPABASE_DATABASE_URL or DATABASE_URL" });
+  fail("missing_env", { var: "SUPABASE_DATABASE_URL" });
 }
 
-let storage;
-
-function getStorage() {
-  if (!storage) {
-    storage = createSupabaseStorage();
-  }
-  return storage;
-}
-
-function buildPgDumpInvocation(rawUrl) {
-  const parsed = new URL(rawUrl);
-  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
-  if (!database) {
-    throw new Error("Database URL must include a database name.");
-  }
-
-  const args = [
-    "--no-owner",
-    "--no-privileges",
-    "--format=plain",
-    "--host",
-    parsed.hostname,
-    "--port",
-    parsed.port || "5432",
-    "--username",
-    decodeURIComponent(parsed.username),
-    "--dbname",
-    database,
-  ];
-  return {
-    args,
-    env: {
-      ...process.env,
-      PGPASSWORD: decodeURIComponent(parsed.password),
-    },
-  };
-}
+const storage = createSupabaseStorage();
 
 function todayUtc() {
   const now = new Date();
@@ -168,19 +151,23 @@ function monthKey(d) {
 async function runBackup() {
   const { iso } = todayUtc();
   const objectName = `${backupPrefix}/${iso}.sql.gz`;
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "slabplan-db-backup-"));
+  const tempObjectName = `${backupPrefix}/.tmp/${iso}-${randomUUID()}.sql.gz`;
+  const tempDir = await mkdtemp(path.join(tmpdir(), "slabplan-db-backup-"));
   const tempFile = path.join(tempDir, `${iso}.sql.gz`);
 
-  const storageClient = getStorage();
-
-  log("info", "backup_start", { objectName, bucket: storageClient.bucketName });
+  log("info", "backup_start", { objectName, bucket: storage.bucketName });
 
   try {
-    const pgDump = buildPgDumpInvocation(dbUrl);
     const dump = spawn(
       pgDumpBin,
-      pgDump.args,
-      { stdio: ["ignore", "pipe", "pipe"], env: pgDump.env },
+      ["--no-owner", "--no-privileges", "--format=plain"],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          ...pgEnvFromDatabaseUrl(dbUrl),
+        },
+      },
     );
 
     let stderrTail = "";
@@ -199,29 +186,43 @@ async function runBackup() {
       });
     });
 
+    const gzip = createGzip({ level: 6 });
+
     const t0 = Date.now();
     await Promise.all([
       dumpExit,
-      pipeline(dump.stdout, createGzip({ level: 6 }), createWriteStream(tempFile)),
+      pipeline(dump.stdout, gzip, createWriteStream(tempFile)),
     ]);
 
-    const { size } = await stat(tempFile);
-    if (!size) {
+    const tempStat = await stat(tempFile);
+    if (!tempStat.size) {
       throw new Error(
         "Compressed backup is zero bytes; treating as failure even though pg_dump exited 0.",
       );
     }
 
-    await storageClient.uploadStream(objectName, createReadStream(tempFile), {
+    await storage.uploadStream(tempObjectName, createReadStream(tempFile), {
       contentType: "application/gzip",
       cacheControl: "private, max-age=0",
-      contentLengthBytes: size,
     });
 
-    const meta = await storageClient.getObjectInfo(objectName);
+    const tempMeta = await storage.getObjectInfo(tempObjectName);
+    const tempSizeBytes = Number(tempMeta?.sizeBytes ?? 0);
+    if (!tempSizeBytes) {
+      throw new Error("Uploaded temporary backup is zero bytes.");
+    }
+
+    await storage.uploadStream(objectName, createReadStream(tempFile), {
+      contentType: "application/gzip",
+      cacheControl: "private, max-age=0",
+    });
+
+    const meta = await storage.getObjectInfo(objectName);
     const sizeBytes = Number(meta?.sizeBytes ?? 0);
-    if (!sizeBytes) {
-      throw new Error("Uploaded backup is zero bytes.");
+    if (sizeBytes !== tempStat.size) {
+      throw new Error(
+        `Uploaded backup size mismatch: expected ${tempStat.size} bytes, got ${sizeBytes}.`,
+      );
     }
 
     log("info", "backup_uploaded", {
@@ -232,6 +233,12 @@ async function runBackup() {
 
     return { objectName, sizeBytes };
   } finally {
+    await storage.deleteObject(tempObjectName).catch((err) => {
+      log("warn", "temp_backup_delete_failed", {
+        objectName: tempObjectName,
+        err: err?.message ?? String(err),
+      });
+    });
     await rm(tempDir, { recursive: true, force: true });
   }
 }
@@ -285,15 +292,14 @@ function classifyForRetention(files, today) {
 
 async function pruneOldBackups() {
   const today = todayUtc();
-  const storageClient = getStorage();
-  const files = await storageClient.listAllObjects(`${backupPrefix}/`);
+  const files = await storage.listAllObjects(`${backupPrefix}/`);
   const { kept, toDelete, total } = classifyForRetention(files, today);
 
   log("info", "prune_summary", { total, keeping: kept, deleting: toDelete.length });
 
   for (const e of toDelete) {
     try {
-      await storageClient.deleteObject(e.file.name);
+      await storage.deleteObject(e.file.name);
       log("info", "prune_deleted", { objectName: e.file.name, dateStr: e.dateStr });
     } catch (err) {
       // Don't abort the whole job for one delete failure; the next run
@@ -335,7 +341,7 @@ async function pruneOldBackups() {
       ].join("\n"),
       context: {
         date: todayIso,
-        bucket: storage ? storage.bucketName : null,
+        bucket: storage.bucketName,
         backupPrefix,
         error: errMsg,
         lastSuccessful: lastGood,

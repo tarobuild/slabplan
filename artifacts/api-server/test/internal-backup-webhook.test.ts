@@ -21,6 +21,8 @@ before(async () => {
   process.env.DATABASE_URL ??= testDatabaseUrl;
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
   process.env.REPLIT_DEV_DOMAIN = "workspace.kirk.replit.dev";
+  process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL ??= "http://stub.invalid";
+  process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY ??= "test-key";
   delete process.env.BACKUP_TRIGGER_SECRET;
 
   const { default: app, prepareApp } = await import("../src/app.ts");

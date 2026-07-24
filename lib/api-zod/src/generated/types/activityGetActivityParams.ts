@@ -35,7 +35,13 @@ export type ActivityGetActivityParams = {
    */
   page?: number;
   /**
-   * Page size. Default 50; max 100.
+   * Page size for offset pagination. Ignored when `cursor` is supplied. Default 50; max 100.
+   * @minimum 1
+   * @maximum 100
+   */
+  pageSize?: number;
+  /**
+   * Page size for cursor pagination. Legacy page-mode callers may still use it when `pageSize` is omitted. Default 50; max 100.
    * @minimum 1
    * @maximum 100
    */
@@ -43,11 +49,11 @@ export type ActivityGetActivityParams = {
   /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
-value). Requests that only send `?limit=N` remain in page mode unless
-the endpoint explicitly documents a different bootstrap. Cursor
-responses include `pagination.nextCursor`; echo that value back as
+value). The server returns the first page in the cursor envelope
+along with `pagination.nextCursor`. Echo `nextCursor` back as
 `?cursor=<token>` on subsequent calls. While in cursor mode
-`page`/`pageSize` are ignored.
+`page`/`pageSize` are ignored. A `limit` query without `cursor`
+does not select cursor mode.
 
  */
   cursor?: CursorParamParameter;

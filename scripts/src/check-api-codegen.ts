@@ -7,7 +7,9 @@ const ROOT = path.resolve(__dirname, "..", "..");
 
 const GENERATED_PATHS = [
   "lib/api-client-react/src/generated",
+  "lib/api-client-react/src/index.ts",
   "lib/api-zod/src/generated",
+  "lib/api-zod/src/index.ts",
 ];
 
 function run(cmd: string, args: string[]): void {
@@ -37,7 +39,7 @@ function captureGitStatus(paths: string[]): string {
 console.log("Running API codegen to check for drift...");
 run("pnpm", ["--filter", "@workspace/api-spec", "run", "codegen"]);
 
-console.log("\nChecking for drift under generated client directories...");
+console.log("\nChecking for drift under generated client files...");
 const drift = captureGitStatus(GENERATED_PATHS);
 
 if (drift.trim().length > 0) {
@@ -49,10 +51,10 @@ if (drift.trim().length > 0) {
   console.error("Drifted files:");
   console.error(drift);
   console.error(
-    "Fix: run `pnpm --filter @workspace/api-spec run codegen` and commit the resulting changes under:",
+    "Fix: run `pnpm --filter @workspace/api-spec run codegen` and commit the resulting generated changes:",
   );
   for (const p of GENERATED_PATHS) {
-    console.error(`  - ${p}/`);
+    console.error(`  - ${p}`);
   }
   process.exit(1);
 }

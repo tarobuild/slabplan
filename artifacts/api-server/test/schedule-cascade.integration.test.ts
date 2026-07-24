@@ -25,7 +25,9 @@ const writeCascadeJobId = crypto.randomUUID();
 const sweeperJobId = crypto.randomUUID();
 const sweeperJobDisabledId = crypto.randomUUID();
 const concurrentJobId = crypto.randomUUID();
+const draftPublishJobId = crypto.randomUUID();
 const baselineReadOnlyJobId = crypto.randomUUID();
+const baselineConcurrentJobId = crypto.randomUUID();
 const baselineVisibilityJobId = crypto.randomUUID();
 const allJobIds = [
   readOnlyJobId,
@@ -33,11 +35,14 @@ const allJobIds = [
   sweeperJobId,
   sweeperJobDisabledId,
   concurrentJobId,
+  draftPublishJobId,
   baselineReadOnlyJobId,
+  baselineConcurrentJobId,
   baselineVisibilityJobId,
 ];
 
 const WRITE_SQL = /^\s*(update|insert|delete)\b/i;
+const NON_DOMAIN_WRITE_SQL = /^\s*(?:delete from|insert into)\s+rate_limit_buckets\b/i;
 
 // Wrap pool.query to record any UPDATE/INSERT/DELETE statements issued
 // while installed. Returns the recorded list and a restore function.
@@ -47,7 +52,7 @@ function installWriteInterceptor(pool: Pool) {
   pool.query = ((...args: Parameters<Pool["query"]>) => {
     const arg = args[0];
     const text = typeof arg === "string" ? arg : (arg as { text?: string }).text ?? "";
-    if (WRITE_SQL.test(text)) {
+    if (WRITE_SQL.test(text) && !NON_DOMAIN_WRITE_SQL.test(text)) {
       writes.push(text.split("\n")[0]!.slice(0, 200));
     }
     return original(...args);
@@ -91,6 +96,10 @@ before(async () => {
       role: "crew_member",
     },
   ]);
+  const { resolveOrganizationContextForUser } = await import(
+    "../src/lib/auth-organization.ts"
+  );
+  await resolveOrganizationContextForUser(adminUserId);
 
   await db.insert(jobs).values(
     allJobIds.map((id, i) => ({
@@ -493,6 +502,41 @@ test("write paths persist the cascade to disk in the same transaction", async ()
   assert.equal(bAfter!.endDate, "2025-02-19", `B.endDate; got ${bAfter!.endDate}`);
 });
 
+test("POST /jobs/:jobId/schedule/draft-publish rolls back all item writes on failure", async () => {
+  const { db } = await import("@workspace/db");
+  const { scheduleItems } = await import("@workspace/db/schema");
+  const { and, eq, isNull } = await import("drizzle-orm");
+
+  const res = await authedJson("POST", `/api/jobs/${draftPublishJobId}/schedule/draft-publish`, {
+    create: [
+      {
+        clientId: "draft-valid",
+        payload: {
+          title: "ZZZ valid draft publish item",
+          startDate: "2025-01-06",
+        },
+      },
+      {
+        clientId: "draft-bad-assignee",
+        payload: {
+          title: "ZZZ invalid assignee draft publish item",
+          startDate: "2025-01-07",
+          assigneeIds: [crypto.randomUUID()],
+        },
+      },
+    ],
+  });
+
+  assert.notEqual(res.status, 200, "invalid draft publish should fail");
+
+  const rows = await db
+    .select({ id: scheduleItems.id })
+    .from(scheduleItems)
+    .where(and(eq(scheduleItems.jobId, draftPublishJobId), isNull(scheduleItems.deletedAt)));
+
+  assert.deepEqual(rows, [], "no schedule item from the failed bulk publish should persist");
+});
+
 test("sweepAllAutomaticCompletion flips overdue items only when settings.opt-in is on", async () => {
   const { db } = await import("@workspace/db");
   const { scheduleItems, scheduleSettings } = await import("@workspace/db/schema");
@@ -753,16 +797,14 @@ test("concurrent GET /jobs/:jobId/schedule/baseline requests do not race or writ
     await import("@workspace/db/schema");
   const { eq, inArray } = await import("drizzle-orm");
 
-  // Use a fresh chain on the existing baselineReadOnlyJob — the prior
-  // test already proved that job has no settings/phases lazy-init.
-  // Different ids so this test stands alone and the write-interceptor
-  // assertion is unambiguous.
+  // Use a fresh job so this test stands alone despite schedule_baselines
+  // being unique per job.
   const itemAId = crypto.randomUUID();
   const itemBId = crypto.randomUUID();
   await db.insert(scheduleItems).values([
     {
       id: itemAId,
-      jobId: baselineReadOnlyJobId,
+      jobId: baselineConcurrentJobId,
       title: "ZZZ baseline concurrent A",
       startDate: "2025-06-02",
       workDays: 5,
@@ -771,7 +813,7 @@ test("concurrent GET /jobs/:jobId/schedule/baseline requests do not race or writ
     },
     {
       id: itemBId,
-      jobId: baselineReadOnlyJobId,
+      jobId: baselineConcurrentJobId,
       title: "ZZZ baseline concurrent B",
       startDate: "2025-06-03",
       workDays: 3,
@@ -788,7 +830,7 @@ test("concurrent GET /jobs/:jobId/schedule/baseline requests do not race or writ
   const baselineId = crypto.randomUUID();
   await db.insert(scheduleBaselines).values({
     id: baselineId,
-    jobId: baselineReadOnlyJobId,
+    jobId: baselineConcurrentJobId,
     capturedAt: new Date(),
     capturedBy: adminUserId,
     itemsSnapshot: [
@@ -820,7 +862,7 @@ test("concurrent GET /jobs/:jobId/schedule/baseline requests do not race or writ
   try {
     const responses = await Promise.all(
       Array.from({ length: 8 }, () =>
-        authedGet(`/api/jobs/${baselineReadOnlyJobId}/schedule/baseline`),
+        authedGet(`/api/jobs/${baselineConcurrentJobId}/schedule/baseline`),
       ),
     );
     for (const res of responses) {

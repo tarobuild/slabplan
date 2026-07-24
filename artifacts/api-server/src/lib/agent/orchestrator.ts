@@ -27,6 +27,7 @@ CRITICAL RULES:
 3. When you reference a record (a job, lead, client, file, daily log, schedule item, etc.), the UI will automatically render a clickable chip from the record's id in the tool result. You don't need to format URLs yourself — just mention the record naturally (e.g. "the foundation pour log on March 12").
 4. Respect the user's permissions: tool calls run as the calling user. If a tool returns "not found" or empty, that may mean the record exists but the user can't see it; don't speculate.
 5. Keep answers tight. Pull only the data you need; prefer search before listing everything; cite specific records with their titles and dates.
+6. Write for a narrow in-app side panel. Prefer short sections and bullets over wide markdown tables, and avoid decorative emoji.
 
 You have read tools like \`search\`, \`list_jobs\`, \`get_job\`, \`list_daily_logs\`, \`get_daily_log\`, \`list_files\`, \`get_file\`, \`list_schedule_items\`, \`list_leads\`, \`get_lead\`, \`list_clients\`, \`read_activity\`, \`list_users\`, and \`whoami\`. Start with \`search\` for broad queries.`;
 
@@ -141,6 +142,7 @@ export async function runAgentTurn(
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let stoppedReason: AgentMessageStoppedReason | undefined;
+  let assistantApiFailed = false;
   const isAborted = () => signal?.aborted === true;
 
   function pushCitations(more: AgentCitation[]) {
@@ -185,6 +187,7 @@ export async function runAgentTurn(
         err instanceof Error ? err.message : "Failed to call the assistant.";
       opts.emit({ type: "error", message });
       stoppedReason = "api_error";
+      assistantApiFailed = true;
       break;
     }
 
@@ -400,6 +403,15 @@ export async function runAgentTurn(
     };
   }
 
+  if (assistantApiFailed) {
+    return {
+      ok: false,
+      aborted: false,
+      totalInputTokens,
+      totalOutputTokens,
+    };
+  }
+
   const saved = await opts.saveAssistantMessage({
     text: assistantText,
     toolCalls,
@@ -431,10 +443,11 @@ function isAbortError(err: unknown): boolean {
   if (err instanceof Error) {
     if (err.name === "AbortError") return true;
     // Anthropic SDK 0.x and undici both surface a `code` of "ABORT_ERR" for
-    // aborted fetches; check both shapes so a future SDK upgrade still routes
-    // cancellation through the clean-abort path.
+    // aborted fetches; route that through the clean-abort path. Plain
+    // ECONNRESET can also mean an upstream network failure, so it must stay
+    // on the API-error path unless the caller's AbortSignal is already set.
     const code = (err as Error & { code?: string }).code;
-    if (code === "ABORT_ERR" || code === "ECONNRESET") return true;
+    if (code === "ABORT_ERR") return true;
   }
   return false;
 }

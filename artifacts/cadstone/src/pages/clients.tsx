@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import {
   Building2,
   Loader2,
@@ -190,6 +190,7 @@ export default function ClientsPage() {
   useDocumentTitle("Clients")
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [statusFilter, setStatusFilter] = useState<ClientStatus>("active")
@@ -226,6 +227,26 @@ export default function ClientsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const deepLinkClientId = searchParams.get("client")
   const lastDeepLinkRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const state = location.state as { openCreate?: unknown } | null
+    if (!state?.openCreate) return
+    setClientForm(emptyClientForm)
+    setCreateOpen(true)
+    const nextState = { ...state }
+    delete nextState.openCreate
+    navigate(
+      {
+        pathname: location.pathname,
+        search: location.search,
+        hash: location.hash,
+      },
+      {
+        replace: true,
+        state: Object.keys(nextState).length > 0 ? nextState : null,
+      },
+    )
+  }, [location.hash, location.pathname, location.search, location.state, navigate])
 
   const listParams = useMemo(
     () => ({

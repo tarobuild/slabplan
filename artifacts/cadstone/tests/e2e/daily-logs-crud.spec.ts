@@ -92,9 +92,13 @@ test.describe("daily logs CRUD (UI)", () => {
       timeout: 15_000,
     })
 
-    // DELETE — open the more-actions menu in the detail view and click Delete.
-    await page.locator('button:has(svg.lucide-more-horizontal)').first().click()
-    await page.getByRole("menuitem", { name: /^delete$/i }).click()
+    // DELETE — reopen the edit dialog and use its delete confirmation.
+    await page.locator('button:has(svg.lucide-pencil)').first().click()
+    await page.getByRole("dialog", { name: /edit daily log/i }).getByRole("button", { name: /^delete$/i }).click()
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: /^delete$/i })
+      .click()
 
     await expect(page.getByText(renamedNotes)).toHaveCount(0, {
       timeout: 15_000,

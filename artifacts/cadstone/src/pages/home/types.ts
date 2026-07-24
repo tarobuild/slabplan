@@ -87,6 +87,26 @@ export type PmHome = {
   summary: { activeJobs: number; openLeads: number; openScheduleItems: number }
 }
 
+export type DrafterHome = {
+  role: "drafter"
+  today: string
+  summary: { openLeads: number; openScheduleItems: number }
+  recentLeads: AdminHome["recentLeads"]
+  schedule: { start: string; end: string; items: DrafterScheduleItem[] }
+}
+
+type DrafterScheduleItem = {
+  id: string
+  title: string
+  startDate: string
+  endDate: string
+  progress: number
+  isComplete: boolean
+  displayColor: string | null
+  jobId: string | null
+  jobTitle: string | null
+}
+
 type PmWeekItem = {
   id: string
   title: string

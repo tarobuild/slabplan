@@ -50,6 +50,7 @@ const fileListFileIds = [
   crypto.randomUUID(),
   crypto.randomUUID(),
 ];
+const scheduleUploadedFileIds: string[] = [];
 
 // Schedule items seeded into `accessibleJobId` to exercise the SQL-side
 // visibility filter on `GET /jobs/:jobId/schedule`. Each item has a unique
@@ -135,6 +136,10 @@ before(async () => {
   process.env.DATABASE_URL ??= testDatabaseUrl;
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
   process.env.REPLIT_DEV_DOMAIN = "workspace.kirk.replit.dev";
+  process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL ??= "http://stub.invalid";
+  process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY ??= "test-key";
+  process.env.CADSTONE_STORAGE_BACKEND = "local";
+  process.env.CADSTONE_LOCAL_STORAGE_ROOT = ".local/test-storage";
 
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
@@ -326,8 +331,8 @@ before(async () => {
   await db.insert(activityLog).values([
     ...accessibleActivityIds.map((id, i) => ({
       id,
-      entityType: "file",
-      entityId: crypto.randomUUID(),
+      entityType: "job",
+      entityId: accessibleJobId,
       action: "created",
       userId: pmUserId,
       metadata: { jobId: accessibleJobId, description: `accessible-${i}` },
@@ -335,8 +340,8 @@ before(async () => {
     })),
     ...inaccessibleActivityIds.map((id, i) => ({
       id,
-      entityType: "file",
-      entityId: crypto.randomUUID(),
+      entityType: "job",
+      entityId: inaccessibleJobId,
       action: "created",
       userId: otherAdminId,
       metadata: { jobId: inaccessibleJobId, description: `inaccessible-${i}` },
@@ -506,6 +511,7 @@ after(async () => {
     leadTags,
     leads,
     scheduleItemAssignees,
+    scheduleItemAttachments,
     scheduleItems,
     users,
     folders,
@@ -514,8 +520,16 @@ after(async () => {
   const { inArray } = await import("drizzle-orm");
 
   try {
-    await db.delete(files).where(inArray(files.id, fileListFileIds));
+    await db
+      .delete(scheduleItemAttachments)
+      .where(inArray(scheduleItemAttachments.scheduleItemId, scheduleItemIds));
+    await db
+      .delete(files)
+      .where(inArray(files.id, [...fileListFileIds, ...scheduleUploadedFileIds]));
     await db.delete(folders).where(inArray(folders.id, [fileListFolderId]));
+    await db
+      .delete(folders)
+      .where(inArray(folders.scheduleItemId, scheduleItemIds));
     await db
       .delete(activityLog)
       .where(inArray(activityLog.id, testActivityIds));
@@ -611,6 +625,26 @@ test("GET /activity honors page and limit when scoped to a job", async () => {
   for (const id of accessibleActivityIds) {
     assert.equal(allReturnedIds.has(id), true);
   }
+});
+
+test("GET /activity honors pageSize for offset pagination", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/activity?jobId=${accessibleJobId}&pageSize=2&page=1`,
+    { headers: { authorization: `Bearer ${adminToken}` } },
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    data: Array<{ id: string }>;
+    pagination: Record<string, number>;
+  };
+
+  assert.equal(body.data.length, 2);
+  assert.equal(body.pagination.page, 1);
+  assert.equal(body.pagination.pageSize, 2);
+  assert.equal(body.pagination.limit, 2);
+  assert.equal(body.pagination.totalItems, 3);
+  assert.equal(body.pagination.totalPages, 2);
 });
 
 test("GET /activity rejects requests for jobs the caller cannot see", async () => {
@@ -2738,6 +2772,45 @@ test("POST /schedule-items/:id/todos allows an assigned crew member to add a col
   };
   assert.equal(body.todo.title, "Crew assignee follow-up");
   assert.ok(body.todo.id);
+});
+
+test("POST /schedule-items/:id/attachments allows an assigned crew member to upload jobsite media", async () => {
+  const pngBytes = Uint8Array.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+    0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
+    0x54, 0x78, 0x9c, 0x63, 0x60, 0x00, 0x00, 0x00,
+    0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33, 0x00,
+    0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+    0x42, 0x60, 0x82,
+  ]);
+  const form = new FormData();
+  form.append("files", new Blob([pngBytes], { type: "image/png" }), "crew-progress.png");
+
+  const response = await fetch(
+    `${baseUrl}/api/schedule-items/${scheduleAssignedCrewId}/attachments`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${crewToken}`,
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: form,
+    },
+  );
+
+  if (response.status !== 201) {
+    assert.fail(await response.text());
+  }
+  const body = (await response.json()) as {
+    attachments: Array<{ fileId: string; originalName: string; mimeType: string | null }>;
+  };
+  assert.equal(body.attachments.length, 1);
+  assert.equal(body.attachments[0]?.originalName, "crew-progress.png");
+  assert.equal(body.attachments[0]?.mimeType, "image/png");
+  scheduleUploadedFileIds.push(body.attachments[0]!.fileId);
 });
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import { createServer, type Server as HttpServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
+import { MAX_UPLOAD_FILE_BYTES } from "@workspace/api-zod";
 
 // ---------------------------------------------------------------------------
 // End-to-end regression for #274.
@@ -94,6 +95,26 @@ async function waitForHealth(url: string, timeoutMs: number) {
 async function startFakeSupabaseStorage(): Promise<string> {
   storageServer = createServer((req, res) => {
     const url = req.url ?? "";
+    if (req.method === "GET" && url === "/storage/v1/bucket/cadstone-files") {
+      res.writeHead(200, { "content-type": "application/json" }).end(
+        JSON.stringify({
+          id: "cadstone-files",
+          name: "cadstone-files",
+          public: false,
+          file_size_limit: MAX_UPLOAD_FILE_BYTES,
+        }),
+      );
+      return;
+    }
+    if (req.method === "PUT" && url === "/storage/v1/bucket/cadstone-files") {
+      req.resume();
+      req.on("end", () => {
+        res
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify({ id: "cadstone-files" }));
+      });
+      return;
+    }
     if (req.method === "HEAD" && url === "/storage/v1/bucket/cadstone-files") {
       res.writeHead(200).end();
       return;
@@ -216,6 +237,9 @@ before(async () => {
       SUPABASE_URL: storageBaseUrl,
       SUPABASE_STORAGE_BUCKET: "cadstone-files",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key",
+      CADSTONE_STORAGE_BACKEND: "supabase",
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: "http://stub.invalid",
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: "test-key",
       CORS_ALLOWED_ORIGINS: "https://app.example.com",
     },
   });

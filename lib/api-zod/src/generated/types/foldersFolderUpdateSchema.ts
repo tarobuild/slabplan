@@ -5,7 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { FolderPermission } from "./folderPermission";
+import type { FoldersFolderUpdateSchemaUploadingPermissions } from "./foldersFolderUpdateSchemaUploadingPermissions";
+import type { FoldersFolderUpdateSchemaViewingPermissions } from "./foldersFolderUpdateSchemaViewingPermissions";
 
 /**
  * Request body for renaming a folder or updating folder permissions.
@@ -16,6 +17,6 @@ export interface FoldersFolderUpdateSchema {
    * @maxLength 255
    */
   title?: string;
-  viewingPermissions?: FolderPermission | null;
-  uploadingPermissions?: FolderPermission | null;
+  viewingPermissions?: FoldersFolderUpdateSchemaViewingPermissions;
+  uploadingPermissions?: FoldersFolderUpdateSchemaUploadingPermissions;
 }

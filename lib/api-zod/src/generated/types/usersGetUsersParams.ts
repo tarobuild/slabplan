@@ -12,7 +12,7 @@ export type UsersGetUsersParams = {
    */
   includeInactive?: boolean;
   /**
-   * Comma-separated list of role names to filter by (`admin`, `project_manager`, `crew_member`).
+   * Comma-separated list of role names to filter by (`admin`, `project_manager`, `crew_member`, `drafter`).
    */
   roles?: string;
   /**

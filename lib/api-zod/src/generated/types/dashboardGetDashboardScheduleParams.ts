@@ -9,10 +9,12 @@
 export type DashboardGetDashboardScheduleParams = {
   /**
    * Inclusive lower bound on the schedule range (YYYY-MM-DD). Defaults to today.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
    */
   start?: string;
   /**
    * Inclusive upper bound on the schedule range (YYYY-MM-DD). Defaults to today + 60 days. Must be on or after `start`.
+   * @pattern ^\d{4}-\d{2}-\d{2}$
    */
   end?: string;
   /**

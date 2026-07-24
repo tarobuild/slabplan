@@ -217,6 +217,43 @@ test("missing original name still produces a valid header bundle", () => {
   assert.match(headers.contentDispositionHeader, /^attachment; filename="file"/);
 });
 
+test("Content-Disposition keeps an ASCII fallback and lossless RFC 5987 name", () => {
+  const names = [
+    "plain file.pdf",
+    "café-niño.pdf",
+    "608 Radcliffe – ’plans’.zip",
+    "施工図面.pdf",
+    "stone-🪨-plan.pdf",
+    'quote"and\\slash.pdf',
+    `${"a".repeat(210)}.pdf`,
+    "",
+  ];
+
+  for (const originalName of names) {
+    const headers = resolveSafeFileServingHeaders({
+      originalName,
+      requestedDisposition: "attachment",
+    });
+    const fallback = /filename="([^"]*)"/.exec(
+      headers.contentDispositionHeader,
+    )?.[1];
+    const extended = /filename\*=UTF-8''([^;]*)/.exec(
+      headers.contentDispositionHeader,
+    )?.[1];
+
+    assert.ok(fallback, `missing quoted filename for ${originalName}`);
+    assert.match(fallback, /^[\x20-\x7e]+$/);
+    assert.ok(extended, `missing filename* for ${originalName}`);
+    assert.equal(decodeURIComponent(extended), originalName || "file");
+  }
+
+  const reserved = resolveSafeFileServingHeaders({
+    originalName: "reserved!'()*.pdf",
+    requestedDisposition: "attachment",
+  }).contentDispositionHeader;
+  assert.match(reserved, /reserved%21%27%28%29%2A\.pdf/);
+});
+
 // ---------------------------------------------------------------------------
 // CSP shape: the constant is exposed to other modules (folder ZIPs use it
 // directly), so guard the policy is at least as restrictive as expected.

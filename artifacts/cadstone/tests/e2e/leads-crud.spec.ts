@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { CESAR, authHeaders, loginViaApi } from "./helpers/auth"
+import { visibleText } from "./helpers/locators"
 import { CESAR_STATE } from "./helpers/storage"
 
 test.use({ storageState: CESAR_STATE })
@@ -36,10 +37,12 @@ test.describe("leads CRUD (UI)", () => {
 
     // CREATE — open the New Lead dialog and submit.
     await page.getByRole("button", { name: /new lead/i }).first().click()
+    const createDialog = page.getByRole("dialog", { name: /new lead/i })
     await page.getByLabel("Title *").fill(title)
     await page.getByRole("button", { name: /create lead/i }).click()
+    await expect(createDialog).toBeHidden({ timeout: 15_000 })
 
-    await expect(page.getByText(title).first()).toBeVisible({ timeout: 15_000 })
+    await expect(visibleText(page, title)).toBeVisible({ timeout: 15_000 })
 
     const listRes = await request.get(
       `/api/leads?search=${encodeURIComponent(title)}&page=1&pageSize=1`,
@@ -50,24 +53,25 @@ test.describe("leads CRUD (UI)", () => {
     expect(createdLeadId).toBeTruthy()
 
     // EDIT — click the row to open the sheet, click Edit, rename, save.
-    await page.getByText(title).first().click()
+    await visibleText(page, title).click()
     await page
       .getByRole("button", { name: /^edit$/i })
       .first()
       .click()
 
-    const titleInput = page.getByLabel("Title *")
+    const sheet = page.getByRole("dialog").filter({ hasText: title }).last()
+    const titleInput = sheet.locator("input").first()
     await titleInput.fill(renamedTitle)
     await page.getByRole("button", { name: /^save$/i }).first().click()
 
-    await expect(page.getByText(renamedTitle).first()).toBeVisible({
+    await expect(visibleText(page, renamedTitle)).toBeVisible({
       timeout: 10_000,
     })
 
     // Close the sheet and verify the list reflects the new title without a
     // reload (cache invalidation from useLeadsPutLeadsId).
     await page.keyboard.press("Escape")
-    await expect(page.getByText(renamedTitle).first()).toBeVisible({
+    await expect(visibleText(page, renamedTitle)).toBeVisible({
       timeout: 10_000,
     })
 

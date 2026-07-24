@@ -11,6 +11,7 @@ export interface FolderPermission {
   admin?: boolean;
   project_manager?: boolean;
   crew_member?: boolean;
+  drafter?: boolean;
   internal?: boolean;
   users?: FolderPermissionUsers;
 }

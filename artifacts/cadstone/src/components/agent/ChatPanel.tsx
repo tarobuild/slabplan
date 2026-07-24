@@ -38,8 +38,8 @@ import {
   type StreamHandle,
 } from "@/lib/agent-api"
 import { useAgentPanelStore } from "@/store/agent"
-import { APP_NAME } from "@/lib/brand"
 import { cn } from "@/lib/utils"
+import { APP_NAME } from "@/lib/brand"
 import { toast } from "sonner"
 import ChatMessage from "./ChatMessage"
 import { reconcileFailedSendMessages } from "./chat-message-reconciliation"
@@ -59,17 +59,24 @@ function newAssistantPlaceholder(conversationId: string): AgentMessage {
   }
 }
 
+function agentErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
+}
+
 export default function ChatPanel() {
   const { open, setOpen, activeConversationId, setActiveConversation } =
     useAgentPanelStore()
   const [conversations, setConversations] = useState<AgentConversation[]>([])
   const [messages, setMessages] = useState<AgentMessage[]>([])
   const [usage, setUsage] = useState<AgentUsage | null>(null)
+  const [usageLoading, setUsageLoading] = useState(false)
+  const [usageError, setUsageError] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
   const [statusText, setStatusText] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const streamRef = useRef<StreamHandle | null>(null)
+  const streamConversationIdRef = useRef<string | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const messageLoadSeqRef = useRef(0)
   const localMessageSeqRef = useRef(0)
@@ -82,32 +89,40 @@ export default function ChatPanel() {
   }, [messages, statusText, open])
 
   // Load conversations + usage when opening.
-  const refreshConversations = useCallback(async (): Promise<
-    AgentConversation[] | null
-  > => {
+  const refreshConversations = useCallback(async (toastOnError = false) => {
     try {
       const list = await listConversations()
       setConversations(list)
       return list
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load conversations")
-      return null
+      if (toastOnError) {
+        toast.error(agentErrorMessage(err, "Failed to load conversations"))
+      }
+      throw err
     }
   }, [])
 
   const refreshUsage = useCallback(async () => {
+    setUsageLoading(true)
+    setUsageError(null)
     try {
       setUsage(await getUsage())
-    } catch {
-      /* ignore */
+    } catch (err) {
+      setUsage(null)
+      setUsageError(agentErrorMessage(err, "Assistant usage could not be loaded."))
+      toast.error(agentErrorMessage(err, "Assistant usage could not be loaded."))
+    } finally {
+      setUsageLoading(false)
     }
   }, [])
 
   useEffect(() => {
     if (!open) return
-    void refreshConversations()
+    if (activeConversationId) {
+      void refreshConversations(true).catch(() => undefined)
+    }
     void refreshUsage()
-  }, [open, refreshConversations, refreshUsage])
+  }, [open, activeConversationId, refreshConversations, refreshUsage])
 
   // Start a conversation if none active.
   useEffect(() => {
@@ -115,9 +130,13 @@ export default function ChatPanel() {
     if (activeConversationId) return
     let cancelled = false
     void (async () => {
-      const list = await refreshConversations()
+      let list: AgentConversation[]
+      try {
+        list = await refreshConversations(true)
+      } catch {
+        return
+      }
       if (cancelled) return
-      if (list === null) return
       const pinnedFirst = list[0]
       if (pinnedFirst) {
         setActiveConversation(pinnedFirst.id)
@@ -128,7 +147,7 @@ export default function ChatPanel() {
           setConversations((prev) => [created, ...prev])
           setActiveConversation(created.id)
         } catch (err) {
-          toast.error(err instanceof Error ? err.message : "Failed to start conversation")
+          toast.error(agentErrorMessage(err, "Failed to start conversation"))
         }
       }
     })()
@@ -139,6 +158,13 @@ export default function ChatPanel() {
 
   // Load messages on conversation change.
   useEffect(() => {
+    if (
+      streamRef.current &&
+      streamConversationIdRef.current &&
+      streamConversationIdRef.current !== activeConversationId
+    ) {
+      streamRef.current.abort()
+    }
     if (!activeConversationId) {
       messageLoadSeqRef.current += 1
       setMessages([])
@@ -181,6 +207,7 @@ export default function ChatPanel() {
 
   async function handleNewChat() {
     streamRef.current?.abort()
+    streamConversationIdRef.current = null
     try {
       const created = await createConversation()
       setConversations((prev) => [created, ...prev])
@@ -236,6 +263,10 @@ export default function ChatPanel() {
   function handleSend() {
     const trimmed = draft.trim()
     if (!trimmed || busy || !activeConversationId) return
+    if (usageLoading || usageError || !usage) {
+      toast.error("Assistant usage is unavailable. Reload usage before sending.")
+      return
+    }
     if (usage?.exceeded) {
       toast.error(
         `You've reached your monthly assistant usage limit (${usage.cap.toLocaleString()} tokens). It resets on the 1st.`,
@@ -349,7 +380,18 @@ export default function ChatPanel() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === placeholder.id
-                  ? { ...m, content: m.content || `(Error: ${event.message})` }
+                  ? {
+                      ...m,
+                      content: m.content || `(Error: ${event.message})`,
+                      toolCalls:
+                        toolCalls.length > 0
+                          ? toolCalls.map((call) =>
+                              call.status === "pending"
+                                ? { ...call, status: "error", errorMessage: event.message }
+                                : call,
+                            )
+                          : m.toolCalls,
+                    }
                   : m,
               ),
             )
@@ -360,6 +402,7 @@ export default function ChatPanel() {
         setBusy(false)
         setStatusText(null)
         streamRef.current = null
+        streamConversationIdRef.current = null
       },
       onError: (message) => {
         toast.error(message)
@@ -374,11 +417,15 @@ export default function ChatPanel() {
         setBusy(false)
         setStatusText(null)
         streamRef.current = null
+        streamConversationIdRef.current = null
       },
     })
+    streamConversationIdRef.current = conversationId
   }
 
   const usagePct = usage ? Math.min(100, Math.round((usage.totalTokens / usage.cap) * 100)) : 0
+  const usageUnavailable = usageLoading || Boolean(usageError) || !usage
+  const composerDisabled = busy || usageUnavailable || usage?.exceeded === true
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -394,7 +441,7 @@ export default function ChatPanel() {
           logs, schedule items, clients, or activity.
         </SheetDescription>
         {/* Header */}
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2">
           <Sparkles className="size-4 text-primary" />
           <div className="flex-1 min-w-0">
             <button
@@ -419,6 +466,22 @@ export default function ChatPanel() {
                 <span>
                   {usage.totalTokens.toLocaleString()} / {usage.cap.toLocaleString()}
                 </span>
+              </div>
+            ) : usageLoading ? (
+              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-400">
+                <Loader2 className="size-3 animate-spin" />
+                Loading usage…
+              </div>
+            ) : usageError ? (
+              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-red-600">
+                <span>Usage unavailable.</span>
+                <button
+                  type="button"
+                  className="underline underline-offset-2"
+                  onClick={() => void refreshUsage()}
+                >
+                  Retry
+                </button>
               </div>
             ) : null}
           </div>
@@ -454,7 +517,7 @@ export default function ChatPanel() {
 
         {/* History dropdown */}
         {showHistory ? (
-          <div className="max-h-60 overflow-y-auto border-b border-border bg-muted px-2 py-2">
+          <div className="max-h-60 overflow-y-auto border-b border-slate-200 bg-slate-50 px-2 py-2">
             {conversations.length === 0 ? (
               <p className="px-2 py-3 text-center text-xs text-slate-500">
                 No previous conversations.
@@ -466,8 +529,8 @@ export default function ChatPanel() {
                   className={cn(
                     "group flex items-center gap-1 rounded px-2 py-1.5 text-xs",
                     c.id === activeConversationId
-                      ? "bg-accent text-primary"
-                      : "text-foreground hover:bg-accent/60",
+                      ? "bg-primary/10 text-primary"
+                      : "text-slate-700 hover:bg-slate-100",
                   )}
                 >
                   <button
@@ -519,7 +582,7 @@ export default function ChatPanel() {
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-background px-3 py-3">
           {messages.length === 0 ? (
             <div className="mx-auto mt-8 max-w-xs space-y-3 text-center text-sm text-slate-500">
-              <Sparkles className="mx-auto size-6 text-[hsl(var(--oxide))]" />
+              <Sparkles className="mx-auto size-6 text-primary" />
               <p className="font-semibold text-slate-700">
                 Read-only assistant for {APP_NAME}
               </p>
@@ -547,7 +610,7 @@ export default function ChatPanel() {
         </div>
 
         {/* Composer */}
-        <div className="border-t border-border bg-white p-2">
+        <div className="border-t border-slate-200 bg-white p-2">
           <div className="flex items-end gap-2">
             <Textarea
               value={draft}
@@ -559,18 +622,22 @@ export default function ChatPanel() {
                 }
               }}
               placeholder={
-                usage?.exceeded
+                usageError
+                  ? "Usage unavailable"
+                  : usageLoading || !usage
+                    ? "Loading usage…"
+                    : usage?.exceeded
                   ? "Monthly limit reached"
                   : "Ask about jobs, leads, files…"
               }
-              disabled={busy || usage?.exceeded === true}
+              disabled={composerDisabled}
               rows={2}
               className="min-h-0 resize-none text-sm"
             />
             <button
               type="button"
               onClick={handleSend}
-              disabled={busy || !draft.trim() || usage?.exceeded === true}
+              disabled={composerDisabled || !draft.trim()}
               className={cn(
                 "flex size-9 shrink-0 items-center justify-center rounded-md text-white transition-colors",
                 "bg-primary hover:bg-primary/90 disabled:bg-slate-300",

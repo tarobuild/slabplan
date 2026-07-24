@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label"
 import { authApi } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { useDocumentTitle } from "@/hooks/use-document-title"
-import { APP_LOGO_PATH, APP_NAME } from "@/lib/brand"
+import { APP_LOGO_PATH, APP_NAME, APP_TAGLINE } from "@/lib/brand"
 import { toast } from "sonner"
 
 export default function LoginPage() {
@@ -46,7 +46,7 @@ export default function LoginPage() {
         <div className="mb-6">
           <h1 className="text-4xl font-semibold text-foreground">Sign in</h1>
           <p className="mt-2 text-base text-muted-foreground">
-            Welcome back to {APP_NAME}.
+            Welcome back to {APP_NAME}. {APP_TAGLINE}
           </p>
         </div>
 

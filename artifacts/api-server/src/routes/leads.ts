@@ -11,7 +11,14 @@ import {
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
+import {
+  DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
+  DIRECT_UPLOAD_EDGE_LIMIT_BYTES,
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_COUNT,
+  formatUploadSize,
+} from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import {
   activityLog,
@@ -27,6 +34,7 @@ import {
   leadStatuses,
   leadTags,
   leads,
+  organizationMemberships,
   users,
 } from "@workspace/db/schema";
 import {
@@ -40,6 +48,7 @@ import { getMcpContext } from "../middleware/mcp-context";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
+import { ensureAssignableJobAssigneeIds } from "../lib/job-assignees";
 import { decodeCursor, encodeCursor, isCursorModeRequested } from "../lib/cursor";
 import { requireAdmin, requireManagerOrAbove } from "../middleware/require-auth";
 import {
@@ -60,11 +69,44 @@ import {
   uploadArray,
 } from "../lib/uploads";
 import { createUploadPerUserRateLimit } from "../lib/rate-limit";
+import {
+  assembleChunkedUpload,
+  assertChunkedUploadAccess,
+  createChunkedUploadSession,
+  getChunkedUploadLimits,
+  getChunkedUploadSession,
+  getChunkedUploadStatus,
+  isBase64ChunkRequest,
+  removeChunkedUploadSession,
+  writeBase64ChunkFromRequest,
+  writeChunkFromRequest,
+} from "../lib/chunked-upload";
+import { validateMagicBytesForFiles } from "../lib/upload-magic-bytes";
+import { validateVideoDurationsForFiles } from "../lib/upload-video-duration";
 
 const uploadRateLimit = createUploadPerUserRateLimit();
 
 const router: IRouter = Router();
-router.use(requireManagerOrAbove);
+
+function requireLeadReadAccess(req: Request, _res: Response, next: NextFunction) {
+  const role = req.auth?.role;
+
+  if (role === "admin" || role === "project_manager" || role === "drafter") {
+    next();
+    return;
+  }
+
+  next(
+    new HttpError(
+      403,
+      "You do not have permission to perform that action.",
+      undefined,
+      "forbidden",
+    ),
+  );
+}
+
+router.use(requireLeadReadAccess);
 
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
@@ -265,6 +307,134 @@ const activityCreateSchema = z.object({
   notes: optionalString,
 });
 
+const leadAttachmentChunkedUploadStartSchema = z.object({
+  originalName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().max(100).optional(),
+  totalSize: z.coerce.number().int().positive(),
+  totalChunks: z.coerce.number().int().positive(),
+  contentHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).optional(),
+});
+
+const leadAttachmentUploadPolicyQuerySchema = z.object({
+  fileSize: z.coerce.number().int().positive().optional(),
+  originalName: z.string().trim().min(1).max(255).optional(),
+  mimeType: z.string().trim().max(100).optional(),
+});
+
+function leadAttachmentEndpoints(leadId: string) {
+  return {
+    multipart: `/api/leads/${leadId}/attachments`,
+    uploadPolicy: `/api/leads/${leadId}/attachments/upload-policy`,
+    chunkedStart: `/api/leads/${leadId}/attachments/chunked`,
+    chunkedStatus: `/api/leads/${leadId}/attachments/chunked/{uploadId}`,
+    chunkedChunk: `/api/leads/${leadId}/attachments/chunked/{uploadId}/chunks/{chunkIndex}`,
+    chunkedComplete: `/api/leads/${leadId}/attachments/chunked/{uploadId}/complete`,
+    chunkedAbort: `/api/leads/${leadId}/attachments/chunked/{uploadId}`,
+  };
+}
+
+function buildLeadAttachmentUploadPolicy(
+  leadId: string,
+  file?: z.infer<typeof leadAttachmentUploadPolicyQuerySchema>,
+) {
+  const chunkedLimits = getChunkedUploadLimits();
+  const endpoints = leadAttachmentEndpoints(leadId);
+  const fileSize = file?.fileSize ?? null;
+  const shouldUseChunked =
+    typeof fileSize === "number" && fileSize > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES;
+
+  return {
+    leadId,
+    multipart: {
+      endpoint: endpoints.multipart,
+      fieldName: "files",
+      maxFiles: MAX_UPLOAD_FILE_COUNT,
+      maxAppFileSizeBytes: MAX_UPLOAD_FILE_BYTES,
+      edgeRequestLimitBytes: DIRECT_UPLOAD_EDGE_LIMIT_BYTES,
+      edgeRequestLimitDisplay: formatUploadSize(DIRECT_UPLOAD_EDGE_LIMIT_BYTES),
+      maxRecommendedBytes: DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
+      maxRecommendedDisplay: formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES),
+      guidance:
+        "Use this multipart path only for normal-sized lead attachments. Replit production sits behind Cloud Run's HTTP/1 request-size cap, so use chunked upload for files above maxRecommendedBytes to avoid upstream HTML 413s.",
+    },
+    chunked: {
+      supported: true,
+      maxTotalBytes: chunkedLimits.maxTotalBytes,
+      maxChunkBytes: chunkedLimits.maxChunkBytes,
+      sessionTtlMs: chunkedLimits.sessionTtlMs,
+      rawChunkContentType: "application/octet-stream",
+      base64ChunkContentTypes: ["text/plain", "application/base64"],
+      endpoints: {
+        start: endpoints.chunkedStart,
+        status: endpoints.chunkedStatus,
+        chunk: endpoints.chunkedChunk,
+        complete: endpoints.chunkedComplete,
+        abort: endpoints.chunkedAbort,
+      },
+      startBody: {
+        originalName: file?.originalName ?? "example.pdf",
+        mimeType: file?.mimeType ?? "application/octet-stream",
+        totalSize: fileSize ?? 1,
+        totalChunks: fileSize
+          ? Math.ceil(fileSize / chunkedLimits.maxChunkBytes)
+          : 1,
+        contentHash: "optional sha256 hex digest",
+      },
+    },
+    file: file
+      ? {
+          originalName: file.originalName ?? null,
+          mimeType: file.mimeType ?? null,
+          size: fileSize,
+          recommendedUploadMode: shouldUseChunked ? "chunked" : "multipart",
+          reason: shouldUseChunked
+            ? `This file is above the ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)} direct multipart threshold; use the lead attachment chunked endpoints.`
+            : `This file is within the ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)} direct multipart threshold.`,
+        }
+      : null,
+  };
+}
+
+function rejectOversizedLeadAttachmentMultipart(req: Request, _res: Response, next: NextFunction) {
+  const contentLengthHeader = req.get("content-length")?.trim();
+  const contentLength = contentLengthHeader ? Number(contentLengthHeader) : null;
+  if (
+    contentLength === null ||
+    !Number.isSafeInteger(contentLength) ||
+    contentLength <= DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES
+  ) {
+    next();
+    return;
+  }
+
+  const leadId = getParam(req.params.id, "lead id");
+  const endpoints = leadAttachmentEndpoints(leadId);
+  next(
+    new HttpError(
+      413,
+      `Lead attachment multipart requests above ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)} must use the chunked upload path.`,
+      {
+        code: "LEAD_ATTACHMENT_USE_CHUNKED_UPLOAD",
+        contentLength,
+        edgeRequestLimitBytes: DIRECT_UPLOAD_EDGE_LIMIT_BYTES,
+        maxRecommendedBytes: DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
+        multipartFieldName: "files",
+        chunkedUploadSupported: true,
+        uploadPolicyEndpoint: endpoints.uploadPolicy,
+        chunkedStartEndpoint: endpoints.chunkedStart,
+      },
+      "payload-too-large",
+    ),
+  );
+}
+
+const requireLeadAttachmentManageAccess = asyncHandler(async (req, _res, next) => {
+  const leadId = getParam(req.params.id, "lead id");
+  await assertCanManageLead(req.auth!, leadId);
+  await getLeadOrThrow(leadId);
+  next();
+});
+
 function getParam(value: string | string[] | undefined, label: string) {
   const normalized = Array.isArray(value) ? value[0] : value;
 
@@ -273,6 +443,15 @@ function getParam(value: string | string[] | undefined, label: string) {
   }
 
   return normalized;
+}
+
+function getIntParam(value: string | string[] | undefined, label: string) {
+  const raw = getParam(value, label);
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new HttpError(400, `Invalid ${label}.`, { code: "INVALID_ROUTE_PARAM", param: label }, "validation");
+  }
+  return parsed;
 }
 
 function normalizeUniqueStrings(values: string[]) {
@@ -406,6 +585,108 @@ async function ensureLeadAttachmentFolder(
   return created;
 }
 
+async function storeLeadAttachment(params: {
+  leadId: string;
+  folder: Awaited<ReturnType<typeof ensureLeadAttachmentFolder>>;
+  uploadedFile: Express.Multer.File;
+  userId: string;
+  organizationId: string;
+}) {
+  const { leadId, folder, uploadedFile, userId, organizationId } = params;
+  validateUploadForMediaType("document", uploadedFile);
+
+  const storedName = buildStoredFileName(uploadedFile.originalname);
+  const { fileUrl } = buildUploadPath({
+    jobId: `lead-${leadId}`,
+    mediaType: "document",
+    storedFileName: storedName,
+  });
+
+  try {
+    if (uploadedFile.path) {
+      await writeUploadedFromPath(fileUrl, uploadedFile.path, {
+        contentType: uploadedFile.mimetype,
+      });
+    } else {
+      await writeUploadedBuffer(fileUrl, uploadedFile.buffer, {
+        contentType: uploadedFile.mimetype,
+      });
+    }
+  } finally {
+    await cleanupTempUpload(uploadedFile);
+  }
+
+  const { file, attachment } = await persistWithStorageRollback({
+    fileUrl,
+    context: "lead-attachment-upload:rollback",
+    persist: async () =>
+      await db.transaction(async (tx) => {
+        const [createdFile] = await tx
+          .insert(files)
+          .values({
+            organizationId,
+            folderId: folder.id,
+            filename: storedName,
+            originalName: uploadedFile.originalname,
+            fileUrl,
+            fileSize: uploadedFile.size,
+            contentHash:
+              typeof uploadedFile.contentHash === "string" &&
+              /^[a-f0-9]{64}$/i.test(uploadedFile.contentHash)
+                ? uploadedFile.contentHash.toLowerCase()
+                : null,
+            mimeType: uploadedFile.mimetype,
+            uploadedBy: userId,
+          })
+          .returning();
+
+        const [createdAttachment] = await tx
+          .insert(leadAttachments)
+          .values({
+            organizationId,
+            leadId,
+            fileId: createdFile.id,
+          })
+          .returning();
+
+        return { file: createdFile, attachment: createdAttachment };
+      }),
+    postCommit: async ({ file: createdFile, attachment: createdAttachment }) => {
+      await writeActivity({
+        entityType: "lead",
+        entityId: leadId,
+        action: "attachment_uploaded",
+        userId,
+        jobId: null,
+        leadId,
+        description: `Uploaded attachment ${createdFile.originalName}`,
+        organizationId,
+        extra: {
+          fileId: createdFile.id,
+          attachmentId: createdAttachment.id,
+        },
+      });
+    },
+    rollback: async ({ file: createdFile, attachment: createdAttachment }) => {
+      await db
+        .delete(leadAttachments)
+        .where(eq(leadAttachments.id, createdAttachment.id));
+      await db.delete(files).where(eq(files.id, createdFile.id));
+    },
+  });
+
+  return {
+    id: attachment.id,
+    fileId: file.id,
+    originalName: file.originalName,
+    fileUrl: file.fileUrl,
+    fileSize: file.fileSize,
+    mimeType: file.mimeType,
+    createdAt: file.createdAt,
+    storageStatus: "ok" as const,
+  };
+}
+
 async function maybeDeletePhysicalFile(fileUrl: string | null | undefined, fileId: string) {
   if (!fileUrl) {
     return;
@@ -447,9 +728,38 @@ async function syncLeadSalespeople(
   userIds: string[],
   organizationId: string,
 ) {
-  await db.delete(leadSalespeople).where(eq(leadSalespeople.leadId, leadId));
-
   const uniqueUserIds = Array.from(new Set(userIds));
+
+  if (uniqueUserIds.length > 0) {
+    const rows = await db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(
+        organizationMemberships,
+        eq(organizationMemberships.userId, users.id),
+      )
+      .where(
+        and(
+          inArray(users.id, uniqueUserIds),
+          inArray(organizationMemberships.role, [
+            "owner",
+            "admin",
+            "project_manager",
+            "drafter",
+          ]),
+          eq(organizationMemberships.organizationId, organizationId),
+          eq(users.isActive, true),
+          isNull(organizationMemberships.deletedAt),
+          isNull(users.deletedAt),
+        ),
+      );
+
+    if (rows.length !== uniqueUserIds.length) {
+      throw new HttpError(400, "One or more assigned sales users are invalid.");
+    }
+  }
+
+  await db.delete(leadSalespeople).where(eq(leadSalespeople.leadId, leadId));
 
   if (uniqueUserIds.length > 0) {
     await db.insert(leadSalespeople).values(
@@ -1097,6 +1407,7 @@ router.get(
 
 router.post(
   "/",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = leadPayloadSchema.safeParse(req.body);
 
@@ -1167,11 +1478,16 @@ router.put(
         ),
       );
 
-    await Promise.all([
-      syncLeadSalespeople(leadId, body.data.salespeople, organizationId),
+    const syncOperations: Array<Promise<unknown>> = [
       syncLeadTags(leadId, body.data.tags, organizationId),
       syncLeadSources(leadId, body.data.leadSource, body.data.sources, organizationId),
-    ]);
+    ];
+    if (req.auth!.role !== "drafter") {
+      syncOperations.push(
+        syncLeadSalespeople(leadId, body.data.salespeople, organizationId),
+      );
+    }
+    await Promise.all(syncOperations);
 
     await writeActivity({
       entityType: "lead",
@@ -1199,6 +1515,7 @@ router.put(
 
 router.delete(
   "/:id",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     await assertCanManageLead(req.auth!, leadId);
@@ -1249,6 +1566,7 @@ router.delete(
 
 router.post(
   "/:id/contacts",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = contactCreateSchema.safeParse(req.body);
 
@@ -1321,6 +1639,7 @@ router.post(
 
 router.put(
   "/:id/contacts/:contactId",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = contactUpdateSchema.safeParse(req.body);
 
@@ -1384,6 +1703,7 @@ router.put(
 
 router.delete(
   "/:id/contacts/:contactId",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     const contactId = getParam(req.params.contactId, "contact id");
@@ -1431,6 +1751,8 @@ router.delete(
 router.post(
   "/:id/attachments",
   uploadRateLimit,
+  requireLeadAttachmentManageAccess,
+  rejectOversizedLeadAttachmentMultipart,
   uploadArray("files", 20),
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
@@ -1448,108 +1770,165 @@ router.post(
     const attachments = [];
 
     for (const uploadedFile of uploadedFiles) {
-      validateUploadForMediaType("document", uploadedFile);
-
-      const storedName = buildStoredFileName(uploadedFile.originalname);
-      const { fileUrl } = buildUploadPath({
-        jobId: `lead-${leadId}`,
-        mediaType: "document",
-        storedFileName: storedName,
-      });
-
-      try {
-        if (uploadedFile.path) {
-          await writeUploadedFromPath(fileUrl, uploadedFile.path, {
-            contentType: uploadedFile.mimetype,
-          });
-        } else {
-          await writeUploadedBuffer(fileUrl, uploadedFile.buffer, {
-            contentType: uploadedFile.mimetype,
-          });
-        }
-      } finally {
-        await cleanupTempUpload(uploadedFile);
-      }
-
-      // Wrap the DB inserts and the activity log write in a single
-      // upload-rollback boundary. The persist step uses a transaction so
-      // a half-written pair (file row without attachment) cannot
-      // escape. If the activity log write fails after the transaction
-      // commits, the rollback callback removes the committed rows and
-      // the helper deletes the freshly uploaded object so storage and
-      // database stay in sync.
-      const { file, attachment } = await persistWithStorageRollback({
-        fileUrl,
-        context: "lead-attachment-upload:rollback",
-        persist: async () =>
-          await db.transaction(async (tx) => {
-            const [createdFile] = await tx
-              .insert(files)
-              .values({
-                organizationId,
-                folderId: folder.id,
-                filename: storedName,
-                originalName: uploadedFile.originalname,
-                fileUrl,
-                fileSize: uploadedFile.size,
-                mimeType: uploadedFile.mimetype,
-                uploadedBy: req.auth!.userId,
-              })
-              .returning();
-
-            const [createdAttachment] = await tx
-              .insert(leadAttachments)
-              .values({
-                organizationId,
-                leadId,
-                fileId: createdFile.id,
-              })
-              .returning();
-
-            return { file: createdFile, attachment: createdAttachment };
-          }),
-        postCommit: async ({ file: createdFile, attachment: createdAttachment }) => {
-          await writeActivity({
-            entityType: "lead",
-            entityId: leadId,
-            action: "attachment_uploaded",
-            userId: req.auth!.userId,
-            jobId: null,
-            leadId,
-            description: `Uploaded attachment ${createdFile.originalName}`,
-            organizationId,
-            extra: {
-              fileId: createdFile.id,
-              attachmentId: createdAttachment.id,
-            },
-          });
-        },
-        rollback: async ({ file: createdFile, attachment: createdAttachment }) => {
-          await db
-            .delete(leadAttachments)
-            .where(eq(leadAttachments.id, createdAttachment.id));
-          await db.delete(files).where(eq(files.id, createdFile.id));
-        },
-      });
-
-      attachments.push({
-        id: attachment.id,
-        fileId: file.id,
-        originalName: file.originalName,
-        fileUrl: file.fileUrl,
-        fileSize: file.fileSize,
-        mimeType: file.mimeType,
-        createdAt: file.createdAt,
-        storageStatus: "ok" as const,
-      });
+      attachments.push(
+        await storeLeadAttachment({
+          leadId,
+          folder,
+          uploadedFile,
+          userId: req.auth!.userId,
+          organizationId,
+        }),
+      );
     }
 
     res.status(201).json({ attachments });
   }),
 );
 
+router.get(
+  "/:id/attachments/upload-policy",
+  asyncHandler(async (req, res) => {
+    const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth!, leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+
+    const query = leadAttachmentUploadPolicyQuerySchema.safeParse(req.query ?? {});
+    if (!query.success) {
+      throw new HttpError(400, "Invalid lead attachment upload policy query.", query.error.flatten());
+    }
+
+    res.json(buildLeadAttachmentUploadPolicy(leadId, query.data));
+  }),
+);
+
+router.post(
+  "/:id/attachments/chunked",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth!, leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+
+    const body = leadAttachmentChunkedUploadStartSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      throw new HttpError(400, "Invalid lead attachment chunked upload payload.", body.error.flatten());
+    }
+
+    const folder = await ensureLeadAttachmentFolder(leadId, req.auth!);
+    const session = await createChunkedUploadSession({
+      folderId: folder.id,
+      userId: req.auth!.userId,
+      originalName: body.data.originalName,
+      mimeType: body.data.mimeType,
+      totalSize: body.data.totalSize,
+      totalChunks: body.data.totalChunks,
+      contentHash: body.data.contentHash ?? null,
+      note: null,
+      duplicateAction: "keep_both",
+      videoDurationSeconds: null,
+    });
+
+    res.status(201).json({
+      session,
+      status: await getChunkedUploadStatus(session),
+    });
+  }),
+);
+
+router.get(
+  "/:id/attachments/chunked/:uploadId",
+  asyncHandler(async (req, res) => {
+    const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth!, leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const folder = await ensureLeadAttachmentFolder(leadId, req.auth!);
+    const uploadId = getParam(req.params.uploadId, "upload id");
+    const session = await getChunkedUploadSession(uploadId);
+    assertChunkedUploadAccess(session, { folderId: folder.id, userId: req.auth!.userId });
+
+    res.json({
+      session,
+      status: await getChunkedUploadStatus(session),
+    });
+  }),
+);
+
+router.put(
+  "/:id/attachments/chunked/:uploadId/chunks/:chunkIndex",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth!, leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const folder = await ensureLeadAttachmentFolder(leadId, req.auth!);
+    const uploadId = getParam(req.params.uploadId, "upload id");
+    const chunkIndex = getIntParam(req.params.chunkIndex, "chunk index");
+    const session = await getChunkedUploadSession(uploadId);
+    assertChunkedUploadAccess(session, { folderId: folder.id, userId: req.auth!.userId });
+
+    const result = isBase64ChunkRequest(req)
+      ? await writeBase64ChunkFromRequest(req, session, chunkIndex)
+      : await writeChunkFromRequest(req, session, chunkIndex);
+    res.json(result);
+  }),
+);
+
+router.post(
+  "/:id/attachments/chunked/:uploadId/complete",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth!, leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const folder = await ensureLeadAttachmentFolder(leadId, req.auth!);
+    const uploadId = getParam(req.params.uploadId, "upload id");
+    const session = await getChunkedUploadSession(uploadId);
+    assertChunkedUploadAccess(session, { folderId: folder.id, userId: req.auth!.userId });
+
+    const uploadedFile = await assembleChunkedUpload(session);
+
+    try {
+      await validateMagicBytesForFiles([uploadedFile]);
+      await validateVideoDurationsForFiles([uploadedFile]);
+      const attachment = await storeLeadAttachment({
+        leadId,
+        folder,
+        uploadedFile,
+        userId: req.auth!.userId,
+        organizationId: getActiveOrganizationId(req.auth!),
+      });
+      await removeChunkedUploadSession(uploadId);
+
+      res.status(201).json({
+        uploadId,
+        attachments: [attachment],
+      });
+    } catch (error) {
+      await cleanupTempUpload(uploadedFile);
+      throw error;
+    }
+  }),
+);
+
+router.delete(
+  "/:id/attachments/chunked/:uploadId",
+  asyncHandler(async (req, res) => {
+    const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth!, leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const folder = await ensureLeadAttachmentFolder(leadId, req.auth!);
+    const uploadId = getParam(req.params.uploadId, "upload id");
+    const session = await getChunkedUploadSession(uploadId);
+    assertChunkedUploadAccess(session, { folderId: folder.id, userId: req.auth!.userId });
+
+    await removeChunkedUploadSession(uploadId);
+    res.json({ success: true });
+  }),
+);
+
 router.delete(
   "/:id/attachments/:attachmentId",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const leadId = getParam(req.params.id, "lead id");
     const attachmentId = getParam(req.params.attachmentId, "attachment id");
@@ -1726,7 +2105,7 @@ router.post(
     }
 
     const overrides = body.job ?? {};
-    const assigneeIds = Array.from(new Set(overrides.assigneeIds ?? []));
+    const assigneeIds = await ensureAssignableJobAssigneeIds(overrides.assigneeIds ?? []);
     const mcpCtx = getMcpContext();
 
     const { job } = await db.transaction(async (tx) => {
@@ -1949,6 +2328,7 @@ router.post(
 
 router.post(
   "/:id/activities",
+  requireManagerOrAbove,
   asyncHandler(async (req, res) => {
     const body = activityCreateSchema.safeParse(req.body);
 

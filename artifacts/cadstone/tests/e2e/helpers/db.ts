@@ -8,7 +8,7 @@ import crypto from "node:crypto"
  * `file_url` points at a non-existent storage object so the listing
  * endpoint annotates it as `storageStatus: "missing"` and the UI
  * renders the amber "Original file unavailable" tile. Going through
- * the upload API would actually write an object to GCS, defeating the
+ * the upload API would actually write an object to storage, defeating the
  * point — so we skip the API and INSERT straight into Postgres.
  *
  * The connection string follows the same default the API server uses
@@ -40,7 +40,7 @@ async function withClient<T>(
 
 /**
  * Build a `/uploads/...` path that is guaranteed not to exist in the
- * GCS bucket. The leading segment intentionally namespaces these
+ * storage bucket. The leading segment intentionally namespaces these
  * orphan rows so a human poking at storage knows they were synthetic.
  */
 export function buildOrphanFileUrl(extension = "txt"): string {

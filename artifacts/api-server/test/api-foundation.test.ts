@@ -391,6 +391,26 @@ test("/search cursor is fully self-contained: follow-up requests echo just `curs
   assert.equal(decoded.k[2], "hello");
 });
 
+test("/search per-source cap covers the advertised pagination window", async () => {
+  const src = await fs.readFile(
+    path.resolve(import.meta.dirname, "../src/routes/search.ts"),
+    "utf8",
+  );
+
+  assert.match(src, /const MAX_PAGE_SIZE = 25;/);
+  assert.match(src, /const MAX_PAGE = 20;/);
+  assert.match(
+    src,
+    /const MAX_PER_SOURCE_FETCH = MAX_PAGE \* MAX_PAGE_SIZE \+ 1;/,
+    "/search must fetch enough per source for every documented page plus one hasMore lookahead row",
+  );
+  assert.match(
+    src,
+    /const queryLimit = Math\.min\(endIndex \+ 1, MAX_PER_SOURCE_FETCH\);/,
+    "/search must base per-source fetches on the requested page end plus lookahead",
+  );
+});
+
 test("daily-logs cursor mode does SQL-side tag filtering and a single bounded read", async () => {
   // Regression: an earlier rev applied tag filtering in memory after a
   // capped batched scan, which could silently truncate sparse matches.

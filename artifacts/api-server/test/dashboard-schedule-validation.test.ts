@@ -1,7 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { dashboardScheduleQuerySchema } from "../src/routes/dashboard.ts";
+import { dashboardScheduleQuerySchema, todayIso } from "../src/routes/dashboard.ts";
+
+test("dashboard todayIso uses local calendar dates instead of UTC dates", () => {
+  const previousTz = process.env.TZ;
+  process.env.TZ = "America/Los_Angeles";
+  try {
+    const localLateNight = new Date("2026-05-18T06:30:00.000Z");
+    assert.equal(todayIso(localLateNight), "2026-05-17");
+    assert.equal(localLateNight.toISOString().slice(0, 10), "2026-05-18");
+  } finally {
+    if (previousTz === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = previousTz;
+    }
+  }
+});
 
 test("dashboard schedule query accepts an empty query (defaults applied at the route)", () => {
   const result = dashboardScheduleQuerySchema.safeParse({});

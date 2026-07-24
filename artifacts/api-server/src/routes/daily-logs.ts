@@ -48,6 +48,7 @@ import {
 } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { logger } from "../lib/logger";
+import { createUserNotificationsBestEffort } from "../lib/notifications";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
 import { getActiveOrganizationId, organizationScopeCondition } from "../lib/tenant-scope";
@@ -1282,7 +1283,11 @@ router.post(
       throw new HttpError(400, "Invalid daily log payload.", body.error.flatten());
     }
 
-    const jobId = body.data.jobId ?? getParam(req.params.jobId, "job id");
+    const jobId = getParam(req.params.jobId, "job id");
+    if (body.data.jobId && body.data.jobId !== jobId) {
+      throw new HttpError(400, "Daily log jobId must match the URL job id.");
+    }
+
     const job = await ensureJobExists(jobId);
     await assertCanCreateDailyLog(req.auth!, jobId);
 
@@ -1326,6 +1331,14 @@ router.post(
   }),
 );
 
+const queryBoolean = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  return value;
+}, z.boolean());
+
 const companyDailyLogFeedQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(25),
@@ -1337,8 +1350,8 @@ const companyDailyLogFeedQuerySchema = z.object({
   createdBy: z.string().uuid().optional(),
   from: optionalDate,
   to: optionalDate,
-  hasAttachments: stringBoolean.optional(),
-  hasComments: stringBoolean.optional(),
+  hasAttachments: queryBoolean.optional(),
+  hasComments: queryBoolean.optional(),
 });
 
 router.get(
@@ -1398,7 +1411,7 @@ router.get(
     }
     if (query.data.hasComments) {
       baseConditions.push(
-        sql`EXISTS (SELECT 1 FROM ${dailyLogComments} WHERE ${dailyLogComments.dailyLogId} = ${dailyLogs.id})`,
+        sql`EXISTS (SELECT 1 FROM ${dailyLogComments} WHERE ${dailyLogComments.dailyLogId} = ${dailyLogs.id} AND ${dailyLogComments.deletedAt} IS NULL)`,
       );
     }
 
@@ -1710,11 +1723,30 @@ router.post(
       .where(eq(dailyLogs.id, logId));
 
     const hydrated = await hydrateDailyLog(logId, req.auth!.userId);
+    const notifyUsers = hydrated.log.notifyUsers ?? [];
+
+    await createUserNotificationsBestEffort({
+      organizationId:
+        existing.organizationId ?? getActiveOrganizationId(req.auth!)!,
+      recipientUserIds: notifyUsers.map((user) => user.id),
+      actorUserId: req.auth!.userId,
+      entityType: "daily_log",
+      entityId: logId,
+      action: "published",
+      title: `Daily log published: ${hydrated.log.title || hydrated.log.logDate}`,
+      body: `A daily log was published for ${hydrated.log.logDate}.`,
+      url: `/jobs/${existing.jobId}/daily-logs`,
+      metadata: {
+        dailyLogId: logId,
+        jobId: existing.jobId,
+        logDate: hydrated.log.logDate,
+      },
+    });
 
     logger.info(
       {
         dailyLogId: logId,
-        recipients: hydrated.log.notifyUsers.map((user) => ({
+        recipients: notifyUsers.map((user) => ({
           id: user.id,
           email: user.email,
           name: user.fullName,
@@ -1793,6 +1825,8 @@ router.post(
     const dailyLogJobId = requireDailyLogJobId(dailyLog);
 
     const { liked, likesCount } = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM daily_logs WHERE id = ${logId} FOR UPDATE`);
+
       const [existingLike] = await tx
         .select({ id: dailyLogLikes.id })
         .from(dailyLogLikes)
@@ -2006,6 +2040,10 @@ router.post(
     await getDailyLogOrThrow(logId);
 
     await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT id FROM daily_log_comments WHERE id = ${commentId} AND daily_log_id = ${logId} AND deleted_at IS NULL FOR UPDATE`,
+      );
+
       const [comment] = await tx
         .select({
           id: dailyLogComments.id,

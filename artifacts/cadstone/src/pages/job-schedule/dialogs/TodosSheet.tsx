@@ -24,6 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { schedulePayloadFromItem } from "../draft"
 
 type TodosSheetProps = {
   open: boolean
@@ -110,10 +111,12 @@ export function TodosSheet({
   }
 
   async function handleTogglePersonalTodo(item: ScheduleItemRecord) {
+    const nextIsComplete = !item.isComplete
     try {
-      await api.post(`/schedule-items/${item.id}/complete`, {
-        isComplete: !item.isComplete,
-        progress: item.isComplete ? 0 : 100,
+      await api.put(`/schedule-items/${item.id}`, {
+        ...schedulePayloadFromItem(item),
+        isComplete: nextIsComplete,
+        progress: nextIsComplete ? 100 : 0,
       })
       await onRefresh()
     } catch (err) {

@@ -74,6 +74,8 @@ export TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgres://cadstone:cadstone@127.
 export DATABASE_URL="$TEST_DATABASE_URL"
 # Make sure the api-server doesn't try to dial Supabase.
 export SUPABASE_DATABASE_URL=""
+export CADSTONE_STORAGE_BACKEND="${CADSTONE_STORAGE_BACKEND:-local}"
+export CADSTONE_LOCAL_STORAGE_ROOT="${CADSTONE_LOCAL_STORAGE_ROOT:-$REPO_ROOT/.local/cadstone-e2e-storage}"
 
 # 3. Ports the playwright config + api-server expect.
 export API_PORT="${API_PORT:-8080}"

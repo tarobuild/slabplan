@@ -134,7 +134,7 @@ before(async () => {
     title: "ZZZ Annotation Test Folder",
     scope: "job",
     jobId,
-    mediaType: "documents",
+    mediaType: "document",
   });
 
   await db.insert(files).values([

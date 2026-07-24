@@ -9,10 +9,40 @@
 export interface ArAgingRow {
   clientId: string | null;
   clientName: string;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   current: number;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   d1to30: number;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   d31to60: number;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   d61to90: number;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   d90plus: number;
+  /**
+   * Whole cents (USD). Bounded by JS `Number.MAX_SAFE_INTEGER`; never decimal dollars or bigint.
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   total: number;
 }

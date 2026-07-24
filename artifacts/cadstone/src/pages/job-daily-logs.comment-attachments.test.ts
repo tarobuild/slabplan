@@ -10,9 +10,10 @@ test("comment draft attachment previews are revoked on close, submit, remove, an
   assert.match(source, /const attachmentsRef = useRef<CommentDraftAttachment\[\]>\(\[\]\)/)
   assert.match(source, /attachmentsRef\.current = attachments/)
 
-  assert.match(source, /if \(!open\) \{\s+revokeCommentDraftAttachmentPreviews\(attachmentsRef\.current\)\s+attachmentsRef\.current = \[\]/s)
+  assert.match(source, /if \(!open\) \{[\s\S]*clearDraftAttachments\(\)/)
   assert.match(source, /return \(\) => \{\s+revokeCommentDraftAttachmentPreviews\(attachmentsRef\.current\)\s+attachmentsRef\.current = \[\]\s+\}/s)
-  assert.match(source, /revokeCommentDraftAttachmentPreviews\(attachments\)\s+attachmentsRef\.current = \[\]\s+setAttachments\(\[\]\)/s)
+  assert.match(source, /function clearDraftAttachments\(\) \{[\s\S]*revokeCommentDraftAttachmentPreviews\(attachmentsRef\.current\)[\s\S]*attachmentsRef\.current = \[\][\s\S]*setAttachments\(\[\]\)/)
+  assert.match(source, /setBody\(""\)[\s\S]*clearDraftAttachments\(\)/)
   assert.match(source, /if \(target\) URL\.revokeObjectURL\(target\.previewUrl\)/)
 })
 

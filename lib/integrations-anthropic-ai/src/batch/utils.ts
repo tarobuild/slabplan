@@ -36,6 +36,10 @@ export interface BatchOptions {
   onProgress?: (completed: number, total: number, item: unknown) => void;
 }
 
+export type BatchSseResult<R> =
+  | { ok: true; value: R }
+  | { ok: false; error: string };
+
 export function isRateLimitError(error: unknown): boolean {
   const errorMsg = error instanceof Error ? error.message : String(error);
   return (
@@ -93,44 +97,44 @@ export async function batchProcessWithSSE<T, R>(
   processor: (item: T, index: number) => Promise<R>,
   sendEvent: (event: { type: string; [key: string]: unknown }) => void,
   options: Omit<BatchOptions, "concurrency" | "onProgress"> = {}
-): Promise<Array<R | undefined>> {
+): Promise<Array<BatchSseResult<R>>> {
   const { retries = 5, minTimeout = 1000, maxTimeout = 15000 } = options;
 
   sendEvent({ type: "started", total: items.length });
 
-  const results: Array<R | undefined> = [];
+  const results: Array<BatchSseResult<R>> = [];
   let errors = 0;
 
   for (let index = 0; index < items.length; index++) {
     const item = items[index];
-    sendEvent({ type: "processing", index, item });
+    sendEvent({ type: "processing", index });
 
     try {
       const result = await pRetry(
-        () => processor(item, index),
-        {
-          retries,
-          minTimeout,
-          maxTimeout,
-          factor: 2,
-          onFailedAttempt: ({ error }) => {
-            if (!isRateLimitError(error)) {
-              throw new AbortError(
-                error instanceof Error ? error : new Error(String(error))
-              );
+        async () => {
+          try {
+            return await processor(item, index);
+          } catch (error: unknown) {
+            if (isRateLimitError(error)) {
+              throw error;
             }
-          },
-        }
+            throw new AbortError(
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        },
+        { retries, minTimeout, maxTimeout, factor: 2 }
       );
-      results.push(result);
+      results.push({ ok: true, value: result });
       sendEvent({ type: "progress", index, result });
     } catch (error) {
       errors++;
-      results.push(undefined);
+      const message = error instanceof Error ? error.message : "Processing failed";
+      results.push({ ok: false, error: message });
       sendEvent({
         type: "progress",
         index,
-        error: error instanceof Error ? error.message : "Processing failed",
+        error: message,
       });
     }
   }

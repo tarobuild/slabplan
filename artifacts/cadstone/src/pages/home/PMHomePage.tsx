@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { AlertTriangle, CalendarRange, FileText, Plus } from "lucide-react"
+import { AlertTriangle, Briefcase, CalendarRange, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -30,17 +30,12 @@ export default function PMHomePage({ data }: { data: PmHome }) {
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm" variant="outline">
             <Link to="/jobs">
-              <Plus className="mr-1.5 size-4" /> New Job
-            </Link>
-          </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link to="/sales/leads">
-              <Plus className="mr-1.5 size-4" /> New Lead
+              <Briefcase className="mr-1.5 size-4" /> My Jobs
             </Link>
           </Button>
           <Button asChild size="sm" variant="outline">
             <Link to="/daily-logs/mine">
-              <Plus className="mr-1.5 size-4" /> Daily Log
+              <FileText className="mr-1.5 size-4" /> Daily Logs
             </Link>
           </Button>
         </div>
@@ -56,14 +51,6 @@ export default function PMHomePage({ data }: { data: PmHome }) {
           testId="home-pm-summary-active-jobs"
         />
         <MobileDrillTile
-          label="Open leads"
-          value={summary.openLeads}
-          to="/sales/leads"
-          drillTitle="Open leads"
-          drillKind="open-leads"
-          testId="home-pm-summary-open-leads"
-        />
-        <MobileDrillTile
           label="Open schedule items"
           value={summary.openScheduleItems}
           to="/dashboard"
@@ -71,6 +58,18 @@ export default function PMHomePage({ data }: { data: PmHome }) {
           drillKind="open-schedule"
           testId="home-pm-summary-open-schedule"
         />
+        <Link
+          to="/daily-logs/mine"
+          className="block w-full rounded-lg border border-[#E5E7EB] bg-white p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
+          data-testid="home-pm-summary-team-logs"
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Team logs (24h)
+          </p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+            {teamLogs.length}
+          </p>
+        </Link>
       </div>
 
       <Card className="border-border" data-testid="home-pm-at-risk">

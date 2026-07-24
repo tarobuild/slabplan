@@ -11,6 +11,8 @@ declare namespace Express {
       organizationStatus?: string;
       iat?: number;
       authTime?: number;
+      authProvider?: "legacy" | "supabase" | "pat";
+      supabaseAuthUserId?: string;
       patId?: string;
       patScope?: "read" | "read_write";
     };

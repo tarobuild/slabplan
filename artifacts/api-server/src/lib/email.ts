@@ -1,26 +1,14 @@
-import { Resend } from "resend";
 import { logger } from "./logger";
-import { APP_NAME } from "./brand";
 
 /**
  * Transactional email service.
  *
- * Uses Resend (https://resend.com) under the hood — picked over SendGrid for
- * the simpler API and generous free tier on a 5-user internal tool. The
- * provider client is constructed lazily so unit tests can stub the sender
- * via `__setEmailSenderForTests` without ever requiring `RESEND_API_KEY`
- * to be set in the test environment.
- *
- * Required env vars in production:
- *   - `RESEND_API_KEY` — the Resend API key (set via Replit secrets).
- *   - `EMAIL_FROM`     — the verified "From" address, e.g.
- *                        `SlabPlan <noreply@mail.example.com>`.
- *
- * Optional:
- *   - `EMAIL_REPLY_TO` — defaults to unset.
- *
- * Both `sendInvite` and `sendPasswordReset` throw on failure so the caller
- * can surface a clear error to the admin (and we never silently no-op).
+ * No production provider is wired in this codebase. Repository policy
+ * explicitly excludes the previously proposed provider, and there is no other
+ * approved provider dependency here. Tests can stub the sender via
+ * `__setEmailSenderForTests`.
+ * In production, sends throw loudly so callers can surface delivery failure
+ * and provide the manual invite/reset link instead of silently no-oping.
  */
 
 export type SendInviteParams = {
@@ -50,56 +38,12 @@ export type EmailSender = {
 };
 
 let testSender: EmailSender | null = null;
-let resendClient: Resend | null = null;
-
-function getResend(): Resend {
-  if (resendClient) return resendClient;
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "RESEND_API_KEY is not configured. Add the secret in Replit and redeploy.",
-    );
-  }
-  resendClient = new Resend(apiKey);
-  return resendClient;
-}
-
-function getFromAddress(): string {
-  const from = process.env.EMAIL_FROM?.trim();
-  if (!from) {
-    throw new Error(
-      "EMAIL_FROM is not configured. Set it to a verified sender, e.g. 'SlabPlan <noreply@mail.example.com>'.",
-    );
-  }
-  return from;
-}
 
 const productionSender: EmailSender = {
-  async send({ to, subject, text, tag }) {
-    const resend = getResend();
-    const from = getFromAddress();
-    const replyTo = process.env.EMAIL_REPLY_TO?.trim() || undefined;
-
-    const result = await resend.emails.send({
-      from,
-      to,
-      subject,
-      text,
-      replyTo,
-      tags: [{ name: "category", value: tag }],
-    });
-
-    if (result.error) {
-      throw new Error(
-        `Resend rejected the message (${result.error.name ?? "unknown"}): ${result.error.message ?? "no detail"}`,
-      );
-    }
-
-    if (!result.data?.id) {
-      throw new Error("Resend returned no message id; treating as failure.");
-    }
-
-    return { id: result.data.id };
+  async send({ tag }) {
+    throw new Error(
+      `Transactional email provider is not configured for ${tag}; configure an approved provider before enabling automatic email delivery.`,
+    );
   },
 };
 
@@ -119,35 +63,35 @@ export function __setEmailSenderForTests(stub: EmailSender | null): EmailSender 
 
 function buildInviteEmail(params: SendInviteParams) {
   const greeting = params.inviteeName ? `Hi ${params.inviteeName},` : "Hi,";
-  const subject = `${params.inviterName} invited you to ${APP_NAME}`;
+  const subject = `${params.inviterName} invited you to SlabPlan`;
   const text = [
     greeting,
     "",
-    `${params.inviterName} has set up an account for you on ${APP_NAME}.`,
+    `${params.inviterName} has set up an account for you on SlabPlan.`,
     "Use the link below to set your password and sign in:",
     "",
     params.inviteLink,
     "",
     "This link expires in 7 days and can only be used once. If you weren't expecting this, you can safely ignore this email.",
     "",
-    `- ${APP_NAME}`,
+    "— SlabPlan",
   ].join("\n");
   return { subject, text };
 }
 
 function buildPasswordResetEmail(params: SendPasswordResetParams) {
-  const subject = `Reset your ${APP_NAME} password`;
+  const subject = "Reset your SlabPlan password";
   const text = [
     "Hi,",
     "",
-    `We received a request to reset the password for your ${APP_NAME} account.`,
+    "We received a request to reset the password for your SlabPlan account.",
     "Use the link below to choose a new password:",
     "",
     params.resetLink,
     "",
     "This link expires in 7 days and can only be used once. If you didn't request a reset, you can safely ignore this email.",
     "",
-    `- ${APP_NAME}`,
+    "— SlabPlan",
   ].join("\n");
   return { subject, text };
 }

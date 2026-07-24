@@ -6,6 +6,7 @@ import {
   HealthGetLivezResponse,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
+import { getRelease } from "../lib/sentry";
 import { headBucket } from "../lib/storage";
 
 const router: IRouter = Router();
@@ -126,6 +127,7 @@ router.get("/healthz", async (_req, res, next) => {
       storage: storageResult.ok,
       durationMs,
       errors,
+      releaseSha: getRelease() ?? null,
     });
 
     if (!allOk) {

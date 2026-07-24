@@ -126,6 +126,7 @@ export default defineConfig({
       dependencies: ["setup"],
       use: {
         ...devices["iPhone 13"],
+        browserName: "chromium",
         baseURL,
         ...(chromiumExecutable
           ? { launchOptions: { executablePath: chromiumExecutable } }

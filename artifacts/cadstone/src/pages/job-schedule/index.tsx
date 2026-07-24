@@ -15,9 +15,8 @@ import {
   type ScheduleWorkdayException,
 } from "@/lib/schedule"
 import { useAuthStore } from "@/store/auth"
-import { canWriteRole } from "@/lib/role-access"
+import { canCreateScheduleItemRole, canWriteRole } from "@/lib/role-access"
 import { invalidateAppData } from "@/lib/data-refresh"
-import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
 import { ScheduleItemDialog, type SchedulePreview } from "@/components/schedule/ScheduleItemDialog"
 import { ScheduleQuickCreate, type QuickCreateState } from "@/components/schedule/ScheduleQuickCreate"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -59,6 +58,8 @@ import type {
   GanttRow,
   GanttScale,
   ListDisplayMode,
+  ScheduleExportFormat,
+  ScheduleExportKind,
   ScheduleSection,
   ScheduleTemplate,
   SortDirection,
@@ -79,16 +80,37 @@ import { TodosSheet } from "./dialogs/TodosSheet"
 import { useScheduleData } from "./hooks/useScheduleData"
 import { useScheduleDraft } from "./hooks/useScheduleDraft"
 import { useScheduleDragHandlers } from "./hooks/useScheduleDragHandlers"
+import { buildScheduleExportRows, downloadCsv } from "./csv-export"
+
+function ScheduleExportHeader({
+  jobTitle,
+  title,
+  detail,
+}: {
+  jobTitle: string
+  title: string
+  detail: string
+}) {
+  return (
+    <div
+      data-schedule-export-header="true"
+      className="hidden rounded-xl border border-[#E5E7EB] bg-white px-5 py-5 shadow-sm"
+    >
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{jobTitle}</div>
+      <h1 className="mt-2 text-2xl font-semibold text-slate-950">{title}</h1>
+      <div className="mt-2 text-sm text-slate-500">{detail}</div>
+    </div>
+  )
+}
 
 export default function JobSchedulePage() {
   useDocumentTitle("Schedule")
   const { jobId } = useParams<{ jobId: string }>()
   const currentUser = useAuthStore((s) => s.user)
-  // Hide write affordances (Set Baseline, Workday Exception editor,
-  // Settings cog, New Schedule Item, Delete All, etc.) for PMs and crew. Writes
-  // are still authoritatively enforced server-side; this just keeps the
-  // UI honest. See `canWrite` convention in replit.md.
+  // Keep admin-level schedule management separate from the narrower schedule
+  // item create flow drafters use on assigned jobs.
   const canWrite = canWriteRole(currentUser?.role)
+  const canCreateScheduleItems = canCreateScheduleItemRole(currentUser?.role)
   const monthPickerRef = useRef<HTMLInputElement | null>(null)
   const ganttTimelineRef = useRef<HTMLDivElement | null>(null)
   const scheduleExportRef = useRef<HTMLDivElement | null>(null)
@@ -132,7 +154,6 @@ export default function JobSchedulePage() {
   const [dialogInitTitle, setDialogInitTitle] = useState<string | null>(null)
   const [dialogInitAssigneeIds, setDialogInitAssigneeIds] = useState<string[] | null>(null)
   const [dialogInitIsHourly, setDialogInitIsHourly] = useState<boolean | null>(null)
-  const handledFocusItemRef = useRef<string | null>(null)
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const [quickCreateDate, setQuickCreateDate] = useState<string | null>(null)
   const [quickCreateStartTime, setQuickCreateStartTime] = useState<string | null>(null)
@@ -229,7 +250,7 @@ export default function JobSchedulePage() {
 
     if (typeof window !== "undefined") {
       try {
-        const dismissed = window.sessionStorage.getItem(`${APP_STORAGE_NAMESPACE}:job-schedule:hint-dismissed:${jobId}`) === "1"
+        const dismissed = window.sessionStorage.getItem(`cadstone:job-schedule:hint-dismissed:${jobId}`) === "1"
         setCalendarHintDismissed(dismissed)
       } catch {
         setCalendarHintDismissed(false)
@@ -462,7 +483,6 @@ export default function JobSchedulePage() {
     workdayExceptions,
     dayWidth,
     scheduleOffline,
-    canWrite,
     refreshScheduleData,
     openQuickCreate,
   })
@@ -884,35 +904,27 @@ export default function JobSchedulePage() {
       return
     }
 
-    if (scheduleOffline) {
-      applyDraftMutation(() => [])
-      setTrackedConflictIds([])
-      setSelectedListIds([])
-      setDialogOpen(false)
-      setActiveItemId(null)
-      toast.success("Draft schedule items cleared")
-      return
+    if (!scheduleOffline) {
+      enterDraftMode()
     }
 
-    try {
-      await Promise.all(activeItems.map((item) => api.delete(`/schedule-items/${item.id}`)))
-      setTrackedConflictIds([])
-      setSelectedListIds([])
-      setDialogOpen(false)
-      setActiveItemId(null)
-      await refreshScheduleData()
-      invalidateAppData(["jobs"])
-      toast.success("All schedule items deleted")
-    } catch (error) {
-      toastApiError(error, "Failed to delete all schedule items")
-    }
+    applyDraftMutation(() => [])
+    setTrackedConflictIds([])
+    setSelectedListIds([])
+    setDialogOpen(false)
+    setActiveItemId(null)
+    toast.success(
+      scheduleOffline
+        ? "Draft schedule items cleared"
+        : "All schedule items staged for deletion. Publish the draft to apply.",
+    )
   }
 
   async function handleApplyTemplate(template: ScheduleTemplate) {
     setTemplateApplyingId(template.id)
 
     try {
-      if (scheduleOffline) {
+      const addTemplateToDraft = () => {
         applyDraftMutation((currentItems) => {
           let predecessorId: string | null = null
           const now = new Date().toISOString()
@@ -981,6 +993,10 @@ export default function JobSchedulePage() {
 
           return [...currentItems, ...createdItems]
         })
+      }
+
+      if (scheduleOffline) {
+        addTemplateToDraft()
         setTemplateDialogOpen(false)
         toast.success(`${template.name} added to the draft`)
         return
@@ -990,47 +1006,10 @@ export default function JobSchedulePage() {
         return
       }
 
-      let predecessorId: string | null = null
-
-      for (const templateItem of template.items) {
-        const response: { data: { item: ScheduleItemRecord } } = await api.post(`/jobs/${jobId}/schedule`, {
-          title: templateItem.title,
-          displayColor: templateItem.displayColor || DEFAULT_SCHEDULE_COLOR,
-          assigneeIds: [],
-          startDate: todayStr(),
-          workDays: templateItem.workDays,
-          endDate: null,
-          isHourly: false,
-          startTime: null,
-          endTime: null,
-          progress: 0,
-          reminder: "none",
-          notes: null,
-          notifyUserIds: [],
-          tags: [],
-          predecessors: predecessorId
-            ? [
-                {
-                  scheduleItemId: predecessorId,
-                  dependencyType: "finish_to_start",
-                  lagDays: 0,
-                },
-              ]
-            : [],
-          phaseId: null,
-          showOnGantt: true,
-          visibleToEstimators: true,
-          visibleToInstallers: true,
-          visibleToOfficeStaff: true,
-          isComplete: false,
-        })
-
-        predecessorId = response.data.item.id
-      }
-
+      enterDraftMode()
+      addTemplateToDraft()
       setTemplateDialogOpen(false)
-      await refreshScheduleData()
-      toast.success(`${template.name} imported`)
+      toast.success(`${template.name} staged in Draft mode. Publish the draft to apply.`)
     } catch (error) {
       toastApiError(error, "Failed to import template")
     } finally {
@@ -1038,7 +1017,18 @@ export default function JobSchedulePage() {
     }
   }
 
-  async function handleExport(kind: "schedule" | "baseline" | "exceptions") {
+  async function handleExport(kind: ScheduleExportKind, format: ScheduleExportFormat) {
+    if (format === "csv") {
+      const rows = buildScheduleExportRows(kind, {
+        items,
+        baseline,
+        workdayExceptions,
+      })
+      downloadCsv(`slabplan-${kind}-${jobId || "job"}.csv`, rows)
+      toast.success("CSV export ready")
+      return
+    }
+
     const target =
       kind === "schedule"
         ? scheduleExportRef.current
@@ -1049,6 +1039,26 @@ export default function JobSchedulePage() {
     if (!target) {
       toast.error("Nothing is available to export right now")
       return
+    }
+
+    const restoreStyles: Array<() => void> = []
+    const hideForExport = Array.from(target.querySelectorAll<HTMLElement>('[data-print-hide="true"]'))
+    const exportHeaders = Array.from(target.querySelectorAll<HTMLElement>('[data-schedule-export-header="true"]'))
+
+    for (const element of hideForExport) {
+      const previousDisplay = element.style.display
+      restoreStyles.push(() => {
+        element.style.display = previousDisplay
+      })
+      element.style.display = "none"
+    }
+
+    for (const element of exportHeaders) {
+      const previousDisplay = element.style.display
+      restoreStyles.push(() => {
+        element.style.display = previousDisplay
+      })
+      element.style.display = settings.includeHeaderOnPdfExports ? "block" : "none"
     }
 
     try {
@@ -1067,17 +1077,19 @@ export default function JobSchedulePage() {
       })
 
       pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height)
-      pdf.save(`stone-track-${kind}-${jobId || "job"}.pdf`)
+      pdf.save(`slabplan-${kind}-${jobId || "job"}.pdf`)
       toast.success("PDF export ready")
     } catch (error) {
       toastApiError(error, "Failed to export PDF")
+    } finally {
+      for (const restore of restoreStyles.reverse()) {
+        restore()
+      }
     }
   }
 
   function openNewItem(startDate?: string, startTime?: string, endTime?: string) {
-    if (!canWrite) {
-      return
-    }
+    if (!canCreateScheduleItems) return
     setActiveItemId(null)
     setDialogInitDate(startDate ?? null)
     setDialogInitStartTime(startTime ?? null)
@@ -1093,16 +1105,12 @@ export default function JobSchedulePage() {
   // `state: { openCreate: true }`. The flag is consumed once.
   const scheduleLocation = useLocation()
   const scheduleNavigate = useNavigate()
-	  useEffect(() => {
-    const focusItemId = new URLSearchParams(scheduleLocation.search).get("focus")
-    if (focusItemId && handledFocusItemRef.current !== focusItemId) {
-      handledFocusItemRef.current = focusItemId
-      openExistingItem(focusItemId)
-    }
-
-	    const incoming = scheduleLocation.state as Record<string, unknown> | null
+  useEffect(() => {
+    const incoming = scheduleLocation.state as Record<string, unknown> | null
     if (incoming && (incoming as { openCreate?: unknown }).openCreate) {
-      openNewItem()
+      if (canCreateScheduleItems) {
+        openNewItem()
+      }
       const { openCreate: _openCreate, ...rest } = incoming as {
         openCreate?: unknown
       } & Record<string, unknown>
@@ -1117,7 +1125,7 @@ export default function JobSchedulePage() {
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-	  }, [scheduleLocation.search, scheduleLocation.state])
+  }, [scheduleLocation.state])
 
 
   function openExistingItem(itemId: string) {
@@ -1130,6 +1138,11 @@ export default function JobSchedulePage() {
   }
 
   function openQuickCreate(startDate: string, startTime?: string, endTime?: string) {
+    if (!canCreateScheduleItems) return
+    if (scheduleOffline) {
+      openNewItem(startDate, startTime, endTime)
+      return
+    }
     setQuickCreateDate(startDate)
     setQuickCreateStartTime(startTime ?? null)
     setQuickCreateEndTime(endTime ?? null)
@@ -1141,6 +1154,7 @@ export default function JobSchedulePage() {
   }
 
   function handleQuickMoreOptions(state: QuickCreateState) {
+    if (!canCreateScheduleItems) return
     setActiveItemId(null)
     setDialogInitDate(state.date)
     setDialogInitStartTime(state.isHourly ? state.startTime : null)
@@ -1304,6 +1318,17 @@ export default function JobSchedulePage() {
           </TabsList>
 
           <TabsContent ref={scheduleExportRef} value="schedule" className="mt-0 space-y-4">
+            <ScheduleExportHeader
+              jobTitle={currentJobTitle}
+              title="Schedule"
+              detail={
+                viewMode === "calendar"
+                  ? currentRangeLabel
+                  : viewMode === "list"
+                    ? `${sortedListItems.length} item${sortedListItems.length === 1 ? "" : "s"}`
+                    : `${ganttItems.length} timeline item${ganttItems.length === 1 ? "" : "s"}`
+              }
+            />
             <ScheduleToolbar
               viewMode={viewMode}
               setViewMode={setViewMode}
@@ -1320,6 +1345,7 @@ export default function JobSchedulePage() {
               activeFilterCount={activeFilterCount}
               hasActiveItems={activeItems.length > 0}
               canWrite={canWrite}
+              canCreateScheduleItems={canCreateScheduleItems}
               enterDraftMode={enterDraftMode}
               handleDiscardDraft={handleDiscardDraft}
               handleDraftUndo={handleDraftUndo}
@@ -1360,13 +1386,15 @@ export default function JobSchedulePage() {
                 schedulePreview={schedulePreview}
                 blockDrag={blockDrag}
                 dragSelection={dragSelection}
-                canWrite={canWrite}
                 blockClickSuppressRef={blockClickSuppressRef}
                 isBlockDraggable={isBlockDraggable}
                 handleBlockPointerDown={handleBlockPointerDown}
                 handleTimedColumnPointerDown={handleTimedColumnPointerDown}
                 openExistingItem={openExistingItem}
                 openQuickCreate={openQuickCreate}
+                canWrite={canWrite}
+                canCreateScheduleItems={canCreateScheduleItems}
+                showTimesOnMonthView={settings.showTimesOnMonthView}
                 setAppliedFilters={setAppliedFilters}
                 setDraftFilters={setDraftFilters}
               />
@@ -1376,6 +1404,9 @@ export default function JobSchedulePage() {
               <ListView
                 itemsTotal={itemsTotal}
                 loading={loading}
+                canCreateScheduleItems={canCreateScheduleItems}
+                currentJobTitle={currentJobTitle}
+                showJobNameOnAllListedJobs={settings.showJobNameOnAllListedJobs}
                 isEmpty={isEmpty}
                 activeItems={activeItems}
                 groupedListItems={groupedListItems}
@@ -1392,7 +1423,6 @@ export default function JobSchedulePage() {
                 listStart={listStart}
                 listEnd={listEnd}
                 sortedListItemsLength={sortedListItems.length}
-                canWrite={canWrite}
                 setListDisplayMode={setListDisplayMode}
                 setSelectedListIds={setSelectedListIds}
                 setAppliedFilters={setAppliedFilters}
@@ -1411,6 +1441,8 @@ export default function JobSchedulePage() {
                 ganttShowPhases={ganttShowPhases}
                 ganttCriticalPath={ganttCriticalPath}
                 loading={loading}
+                canWrite={canWrite}
+                canCreateScheduleItems={canCreateScheduleItems}
                 ganttItems={ganttItems}
                 activeItems={activeItems}
                 ganttRows={ganttRows}
@@ -1430,7 +1462,6 @@ export default function JobSchedulePage() {
                 dayWidth={dayWidth}
                 workdayExceptions={workdayExceptions}
                 scheduleOffline={scheduleOffline}
-                canWrite={canWrite}
                 setGanttScale={setGanttScale}
                 setGanttShowPhases={setGanttShowPhases}
                 setGanttCriticalPath={setGanttCriticalPath}
@@ -1447,13 +1478,17 @@ export default function JobSchedulePage() {
             ) : null}
           </TabsContent>
 
-          <TabsContent ref={baselineExportRef} value="baseline" className="mt-0">
+          <TabsContent ref={baselineExportRef} value="baseline" className="mt-0 space-y-4">
+            <ScheduleExportHeader
+              jobTitle={currentJobTitle}
+              title="Baseline"
+              detail="Baseline comparison"
+            />
             <BaselineTab
               baseline={baseline}
               scheduleOffline={scheduleOffline}
               canWrite={canWrite}
               setSettingsOpen={setSettingsOpen}
-              setFilterOpen={setFilterOpen}
               enterDraftMode={enterDraftMode}
               handleDiscardDraft={handleDiscardDraft}
               handleResetBaseline={handleResetBaseline}
@@ -1462,7 +1497,12 @@ export default function JobSchedulePage() {
             />
           </TabsContent>
 
-          <TabsContent ref={exceptionsExportRef} value="workday-exceptions" className="mt-0">
+          <TabsContent ref={exceptionsExportRef} value="workday-exceptions" className="mt-0 space-y-4">
+            <ScheduleExportHeader
+              jobTitle={currentJobTitle}
+              title="Workday Exceptions"
+              detail={`${workdayExceptions.length} exception${workdayExceptions.length === 1 ? "" : "s"}`}
+            />
             <ExceptionsTab
               jobId={jobId}
               jobs={jobs}
@@ -1477,7 +1517,6 @@ export default function JobSchedulePage() {
               editingCategories={editingCategories}
               settings={settings}
               setSettingsOpen={setSettingsOpen}
-              setFilterOpen={setFilterOpen}
               setWorkdayEditorOpen={setWorkdayEditorOpen}
               setWorkdayForm={setWorkdayForm}
               setCategoryEditorOpen={setCategoryEditorOpen}
@@ -1574,7 +1613,6 @@ export default function JobSchedulePage() {
           refreshSettings={fetchSettings}
           onRefresh={refreshScheduleData}
           draftMode={scheduleOffline}
-          readOnly={!canWrite}
           onDraftSave={handleDraftSaveItem}
           onDraftAddNote={handleDraftAddNote}
           onDraftDelete={handleDraftDeleteItem}

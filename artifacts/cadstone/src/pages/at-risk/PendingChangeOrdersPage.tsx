@@ -9,19 +9,45 @@ import { useDocumentTitle } from "@/hooks/use-document-title"
 import { toastApiError } from "@/lib/api-errors"
 import { formatCents, type PmHome } from "../home/types"
 
+type PendingChangeOrdersAtRiskContentProps = {
+  payload: unknown
+  loading: boolean
+  error: unknown
+  onRetry?: () => void
+}
+
 // Drill-down list for the PM Home "Pending change orders" at-risk tile.
-// Renders sampled rows from /dashboard/home and warns clearly when the
-// aggregate pending-change-order count exceeds the rendered sample.
+// Renders directly from /dashboard/home so we don't have to introduce a
+// dedicated cross-job change-orders endpoint just for this page.
 export default function PendingChangeOrdersAtRiskPage() {
   useDocumentTitle("Pending change orders — At-risk")
-  const { data: payload, isLoading: loading, error } = useDashboardGetDashboardHome()
-  const data = payload && payload.role === "pm" ? (payload as PmHome) : null
-  const notPm = !!payload && payload.role !== "pm"
-  const loadFailed = !!error && !payload
+  const { data: payload, isLoading: loading, error, refetch } = useDashboardGetDashboardHome()
 
   useEffect(() => {
     if (error) toastApiError(error, "Failed to load at-risk list")
   }, [error])
+
+  return (
+    <PendingChangeOrdersAtRiskContent
+      payload={payload}
+      loading={loading}
+      error={error}
+      onRetry={() => void refetch()}
+    />
+  )
+}
+
+export function PendingChangeOrdersAtRiskContent({
+  payload,
+  loading,
+  error,
+  onRetry,
+}: PendingChangeOrdersAtRiskContentProps) {
+  const data = payload && typeof payload === "object" && "role" in payload && payload.role === "pm"
+    ? (payload as PmHome)
+    : null
+  const notPm = !!payload && typeof payload === "object" && "role" in payload && payload.role !== "pm"
+  const failedWithoutPayload = !!error && !payload
 
   return (
     <div className="space-y-4" data-testid="at-risk-pending-cos">
@@ -57,23 +83,37 @@ export default function PendingChangeOrdersAtRiskPage() {
               <Skeleton className="h-12" />
               <Skeleton className="h-12" />
             </>
-          ) : loadFailed ? (
-            <p className="rounded-md border border-dashed border-red-200 bg-red-50 p-4 text-center text-sm text-red-700">
-              Could not load this at-risk list. Please retry from Home.
-            </p>
           ) : notPm ? (
             <p className="rounded-md border border-dashed border-[#E5E7EB] p-4 text-center text-sm text-slate-500">
               This list is only available to project managers.
             </p>
+          ) : failedWithoutPayload ? (
+            <div className="rounded-md border border-red-200 bg-red-50 p-4 text-center text-sm text-red-700">
+              <p>We couldn't load this at-risk list.</p>
+              {onRetry ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={onRetry}
+                >
+                  Retry
+                </Button>
+              ) : null}
+            </div>
           ) : !data || data.atRisk.samples.pendingChangeOrders.length === 0 ? (
             <p className="rounded-md border border-dashed border-[#E5E7EB] p-4 text-center text-sm text-slate-500">
               No pending change orders.
             </p>
           ) : (
             <>
-              {data.atRisk.pendingChangeOrders > data.atRisk.samples.pendingChangeOrders.length ? (
+              {data.atRisk.pendingChangeOrders >
+              data.atRisk.samples.pendingChangeOrders.length ? (
                 <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  Showing {data.atRisk.samples.pendingChangeOrders.length} sampled change orders out of {data.atRisk.pendingChangeOrders}. Open the job financials report for the full list.
+                  Showing {data.atRisk.samples.pendingChangeOrders.length}{" "}
+                  sampled change orders out of {data.atRisk.pendingChangeOrders}.
+                  Open the job financials report for the full list.
                 </p>
               ) : null}
               {data.atRisk.samples.pendingChangeOrders.map((co) => (

@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   Download,
   Edit3,
-  Filter,
   Loader2,
   Plus,
   Settings2,
@@ -53,7 +52,12 @@ import { Textarea } from "@/components/ui/textarea"
 
 import { EmptyState, MultiSelectPopover } from "../components"
 import { defaultExceptionForm } from "../filters"
-import type { JobOption, WorkdayExceptionForm } from "../types"
+import type {
+  JobOption,
+  ScheduleExportFormat,
+  ScheduleExportKind,
+  WorkdayExceptionForm,
+} from "../types"
 
 interface ExceptionsTabProps {
   jobId: string | undefined
@@ -70,7 +74,6 @@ interface ExceptionsTabProps {
   editingCategories: Record<string, string>
   settings: ScheduleSettings
   setSettingsOpen: Dispatch<SetStateAction<boolean>>
-  setFilterOpen: Dispatch<SetStateAction<boolean>>
   setWorkdayEditorOpen: Dispatch<SetStateAction<boolean>>
   setWorkdayForm: Dispatch<SetStateAction<WorkdayExceptionForm>>
   setCategoryEditorOpen: Dispatch<SetStateAction<boolean>>
@@ -78,7 +81,7 @@ interface ExceptionsTabProps {
   setEditingCategories: Dispatch<SetStateAction<Record<string, string>>>
   enterDraftMode: () => void
   handleDiscardDraft: () => void
-  handleExport: (kind: "baseline" | "exceptions" | "schedule") => void
+  handleExport: (kind: ScheduleExportKind, format: ScheduleExportFormat) => void
   openNewWorkdayException: () => void
   openExistingWorkdayException: (exception: ScheduleWorkdayException) => void
   handleSaveWorkdayException: () => Promise<void> | void
@@ -102,7 +105,6 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
     editingCategories,
     settings,
     setSettingsOpen,
-    setFilterOpen,
     setWorkdayEditorOpen,
     setWorkdayForm,
     setCategoryEditorOpen,
@@ -147,13 +149,10 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExport("exceptions")}>Export PDF</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("exceptions", "csv")}>Export CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("exceptions", "pdf")}>Export PDF</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button type="button" variant="outline" size="sm" className="border-[#E5E7EB] bg-white" onClick={() => setFilterOpen(true)}>
-              <Filter className="size-4" />
-              Filter
-            </Button>
             {canWrite ? (
               <Button type="button" size="sm" onClick={openNewWorkdayException}>
                 <Plus className="size-4" />

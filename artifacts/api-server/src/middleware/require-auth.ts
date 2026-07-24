@@ -1,10 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { isAdmin, isManagerOrAbove, type AppRole } from "../lib/authorization";
+import { resolveInteractiveAccessToken } from "../lib/access-token";
 import { HttpError } from "../lib/http";
-import { verifyAccessToken } from "../lib/auth";
 import { isPatToken, resolvePersonalAccessToken } from "../lib/personal-access-tokens";
-import { assertActiveAuthUser } from "../lib/active-user";
-import { attachOrganizationContext } from "../lib/auth-organization";
 
 export function readBearerToken(req: Request) {
   const authHeader = req.headers.authorization;
@@ -52,6 +50,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
           organizationRole: pat.organizationRole,
           organizationMembershipId: pat.organizationMembershipId,
           organizationStatus: pat.organizationStatus,
+          authProvider: "pat",
           patId: pat.patId,
           patScope: pat.patScope,
         };
@@ -63,20 +62,14 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
     return;
   }
 
-  try {
-    const auth = verifyAccessToken(token);
-    assertActiveAuthUser(auth)
-      .then(() => attachOrganizationContext(auth))
-      .then((authWithOrganization) => {
-        req.auth = authWithOrganization;
-        next();
-      })
-      .catch((error) => {
-        next(error);
-      });
-  } catch (error) {
-    next(error);
-  }
+  resolveInteractiveAccessToken(token)
+    .then((auth) => {
+      req.auth = auth;
+      next();
+    })
+    .catch((error) => {
+      next(error);
+    });
 }
 
 // Some POST endpoints are intentionally side-effect-free reads (e.g. token

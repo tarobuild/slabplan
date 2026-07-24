@@ -50,17 +50,11 @@ test("document uploads block Android .apk and Java .jar", () => {
   expectBlocked({ originalname: "lib.jar", mimetype: "" });
 });
 
-test("photo uploads accept svg at this layer (script payload caught by magic-byte sniffer)", () => {
-  // We accept SVG by extension here; the magic-byte sniffer rejects
-  // SVGs with <script>/on*=/javascript: payloads before storage. Both
-  // gates together are how SVG stays usable for legitimate logos
-  // without becoming a script-XSS vector.
-  assert.doesNotThrow(() =>
-    validateUploadForMediaType("photo", {
-      originalname: "logo.svg",
-      mimetype: "image/svg+xml",
-    }),
-  );
+test("photo uploads block svg as executable web content", () => {
+  expectBlocked({
+    originalname: "logo.svg",
+    mimetype: "image/svg+xml",
+  });
 });
 
 test("photo uploads accept .jpg even with a wrong-looking MIME (server sniffer is authoritative)", () => {

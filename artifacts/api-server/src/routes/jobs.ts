@@ -25,6 +25,7 @@ import {
 } from "@workspace/db/schema";
 import {
   assertCanAccessJob,
+  assertCanManageJob,
   getJobAccess,
   listAccessibleJobIds,
   type AuthContext,
@@ -34,6 +35,7 @@ import { getTrackerTotalsByJobIds } from "./financials";
 import { HttpError, asyncHandler } from "../lib/http";
 import { emitRealtimeEvent } from "../lib/realtime";
 import { buildContainsLikePattern } from "../lib/search";
+import { ensureAssignableJobAssigneeIds } from "../lib/job-assignees";
 import { requireAdmin } from "../middleware/require-auth";
 import {
   getActiveOrganizationId,
@@ -48,6 +50,18 @@ import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 type DbExecutor = Pick<typeof db, "insert" | "delete">;
+
+type JobFinancialFields = {
+  contractPrice: string | null;
+  contractValueCents: number | null;
+  amountPaidCents: number | null;
+  hasTracker: boolean;
+  trackerTotals: Awaited<
+    ReturnType<typeof getTrackerTotalsByJobIds>
+  > extends Map<string, infer T>
+    ? T | null
+    : null;
+};
 
 const jobQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional().default(1),
@@ -65,7 +79,7 @@ const optionalCents = z
     if (value === null || value === undefined || value === "") return null;
     const n = typeof value === "number" ? value : Number(String(value).trim());
     if (!Number.isFinite(n)) return Number.NaN; // invalid sentinel; refine catches it
-    return Math.trunc(n);
+    return n;
   })
   .refine(
     (v) =>
@@ -291,50 +305,6 @@ async function listJobAssignees(jobId: string, auth?: AuthContext) {
   }));
 }
 
-async function ensureAssignableUserIds(userIds: string[], auth?: AuthContext) {
-  const uniqueUserIds = Array.from(new Set(userIds));
-
-  if (uniqueUserIds.length === 0) {
-    return [];
-  }
-
-  const organizationId = auth ? getActiveOrganizationId(auth) : null;
-  const rows = organizationId
-    ? await db
-        .select({
-          id: users.id,
-        })
-        .from(users)
-        .innerJoin(organizationMemberships, eq(organizationMemberships.userId, users.id))
-        .where(
-          and(
-            inArray(users.id, uniqueUserIds),
-            inArray(users.role, ["project_manager", "crew_member"]),
-            eq(organizationMemberships.organizationId, organizationId),
-            isNull(organizationMemberships.deletedAt),
-            isNull(users.deletedAt),
-          ),
-        )
-    : await db
-        .select({
-          id: users.id,
-        })
-        .from(users)
-        .where(
-          and(
-            inArray(users.id, uniqueUserIds),
-            inArray(users.role, ["project_manager", "crew_member"]),
-            isNull(users.deletedAt),
-          ),
-        );
-
-  if (rows.length !== uniqueUserIds.length) {
-    throw new HttpError(400, "One or more assignees are invalid.");
-  }
-
-  return uniqueUserIds;
-}
-
 async function insertJobAssignees(
   jobId: string,
   userIds: string[],
@@ -436,24 +406,47 @@ async function findJobById(id: string, auth?: AuthContext) {
   }
 
   const assignees = await listJobAssignees(id, auth);
+  const access = auth ? await getJobAccess(auth, id) : undefined;
   const trackerMap = await getTrackerTotalsByJobIds([id]);
   const trackerTotals = trackerMap.get(id) ?? null;
+  const financials = shapeJobFinancialFields(
+    {
+      contractPrice: job.contractPrice,
+      contractValueCents: trackerTotals
+        ? trackerTotals.contractWithChangesCents
+        : job.contractValueCents,
+      amountPaidCents: trackerTotals
+        ? trackerTotals.netReceivedCents
+        : job.amountPaidCents,
+      hasTracker: trackerTotals !== null,
+      trackerTotals,
+    },
+    access?.financials ?? !auth,
+  );
 
   return {
     ...job,
     assignees,
-    access: auth ? await getJobAccess(auth, id) : undefined,
-    hasTracker: trackerTotals !== null,
-    trackerTotals,
-    // When a tracker exists, prefer its values for the contract/billed
-    // numbers shown to clients of this endpoint. Falls back to the
-    // job-level money fields when no tracker is configured.
-    contractValueCents: trackerTotals
-      ? trackerTotals.contractWithChangesCents
-      : job.contractValueCents,
-    amountPaidCents: trackerTotals
-      ? trackerTotals.netReceivedCents
-      : job.amountPaidCents,
+    access,
+    ...financials,
+  };
+}
+
+function shapeJobFinancialFields<T extends JobFinancialFields>(
+  fields: T,
+  canViewFinancials: boolean,
+): T {
+  if (canViewFinancials) {
+    return fields;
+  }
+
+  return {
+    ...fields,
+    contractPrice: null,
+    contractValueCents: null,
+    amountPaidCents: null,
+    hasTracker: false,
+    trackerTotals: null,
   };
 }
 
@@ -594,6 +587,7 @@ router.get(
     const enrich = async <
       T extends {
         id: string;
+        contractPrice: string | null;
         contractValueCents: number | null;
         amountPaidCents: number | null;
       },
@@ -606,17 +600,34 @@ router.get(
           hasTracker: false,
           trackerTotals: null,
         }));
-      const trackerMap = await getTrackerTotalsByJobIds(items.map((j) => j.id));
+      const [trackerMap, accessEntries] = await Promise.all([
+        getTrackerTotalsByJobIds(items.map((j) => j.id)),
+        Promise.all(
+          items.map(async (j) => [j.id, await getJobAccess(req.auth!, j.id)] as const),
+        ),
+      ]);
+      const accessByJobId = new Map(accessEntries);
       return items.map((j) => {
         const t = trackerMap.get(j.id) ?? null;
+        const financials = shapeJobFinancialFields(
+          {
+            contractPrice: j.contractPrice,
+            hasTracker: t !== null,
+            trackerTotals: t,
+            // When a tracker exists, prefer its values for the contract/billed
+            // numbers shown to clients of this endpoint. Falls back to the
+            // job-level money fields when no tracker is configured.
+            contractValueCents: t
+              ? t.contractWithChangesCents
+              : j.contractValueCents,
+            amountPaidCents: t ? t.netReceivedCents : j.amountPaidCents,
+          },
+          accessByJobId.get(j.id)?.financials ?? false,
+        );
         return {
           ...j,
-          hasTracker: t !== null,
-          trackerTotals: t,
-          contractValueCents: t
-            ? t.contractWithChangesCents
-            : j.contractValueCents,
-          amountPaidCents: t ? t.netReceivedCents : j.amountPaidCents,
+          access: accessByJobId.get(j.id),
+          ...financials,
         };
       });
     };
@@ -669,8 +680,11 @@ router.post(
     // can assume `req.auth!.role === "admin"`.
     const payload = body.data;
     await assertClientBelongsToActiveOrganization(payload.clientId, req.auth!);
-    const assigneeIds = await ensureAssignableUserIds(payload.assigneeIds, req.auth!);
     const organizationId = getActiveOrganizationId(req.auth!);
+    const assigneeIds = await ensureAssignableJobAssigneeIds(
+      payload.assigneeIds,
+      organizationId,
+    );
 
     const job = await db.transaction(async (tx) => {
       const [createdJob] = await tx
@@ -794,7 +808,10 @@ router.post(
     }
 
     const organizationId = getActiveOrganizationId(req.auth!);
-    const [userId] = await ensureAssignableUserIds([body.data.userId], req.auth!);
+    const [userId] = await ensureAssignableJobAssigneeIds(
+      [body.data.userId],
+      organizationId,
+    );
     await insertJobAssignees(jobId, [userId], organizationId);
 
     res.status(201).json({
@@ -856,6 +873,18 @@ router.patch(
       throw new HttpError(404, "Job not found.");
     }
 
+    const currentAssignee = (await listJobAssignees(jobId)).find(
+      (candidate) => candidate.id === userId,
+    );
+
+    if (!currentAssignee) {
+      throw new HttpError(404, "Assignee not found.");
+    }
+
+    if (currentAssignee.role === "drafter" && body.data.canViewFinancials) {
+      throw new HttpError(400, "Drafters cannot be granted job financials access.");
+    }
+
     const [updated] = await db
       .update(jobAssignees)
       .set({
@@ -896,15 +925,16 @@ router.get(
 
 router.put(
   "/:id",
-  requireAdmin,
   asyncHandler(async (req, res) => {
+    const jobId = getParam(req.params.id, "job id");
+    await assertCanManageJob(req.auth!, jobId);
+
     const body = jobPayloadSchema.safeParse(req.body);
 
     if (!body.success) {
       throw new HttpError(400, "Invalid job payload.", body.error.flatten());
     }
 
-    const jobId = getParam(req.params.id, "job id");
     const existing = await findJobById(jobId, req.auth!);
 
     if (!existing) {

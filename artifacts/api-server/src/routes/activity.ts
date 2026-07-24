@@ -14,6 +14,7 @@ const querySchema = z.object({
   entityType: z.string().trim().min(1).optional(),
   entityId: z.string().uuid().optional(),
   page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().max(100).optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
   cursor: z.string().optional(),
 }).superRefine((value, ctx) => {
@@ -59,6 +60,7 @@ router.get(
     const cursor = cursorPayload
       ? { createdAt: String(cursorPayload.k[0] ?? ""), id: cursorPayload.id }
       : null;
+    const pageSize = query.data.pageSize ?? query.data.limit;
 
     if (noJobAccess && noLeadAccess) {
       if (isCursorMode) {
@@ -72,6 +74,7 @@ router.get(
         data: [],
         pagination: {
           page: query.data.page ?? 1,
+          pageSize: pageSize ?? 50,
           limit: query.data.limit ?? 50,
           total: 0,
           totalItems: 0,
@@ -95,6 +98,7 @@ router.get(
       allowedJobIds: accessibleJobIds,
       allowedLeadIds: accessibleLeadIds,
       page: query.data.page,
+      pageSize,
       limit: query.data.limit,
       cursor,
       isCursorMode,

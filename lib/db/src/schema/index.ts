@@ -42,7 +42,12 @@ const organizationIdColumn = () =>
     onDelete: "cascade",
   });
 
-export const userRoles = ["admin", "project_manager", "crew_member"] as const;
+export const userRoles = [
+  "admin",
+  "project_manager",
+  "crew_member",
+  "drafter",
+] as const;
 export const organizationStatuses = [
   "active",
   "trialing",
@@ -54,6 +59,7 @@ export const organizationMemberRoles = [
   "admin",
   "project_manager",
   "crew_member",
+  "drafter",
 ] as const;
 export const jobStatuses = ["open", "closed", "archived"] as const;
 export const fileMediaTypes = ["document", "photo", "video"] as const;
@@ -139,6 +145,7 @@ export const users = pgTable(
   "users",
   {
     id: uuid("id").primaryKey().$defaultFn(createId),
+    supabaseAuthUserId: uuid("supabase_auth_user_id"),
     email: varchar("email", { length: 255 }).notNull(),
     passwordHash: varchar("password_hash", { length: 255 }).notNull(),
     fullName: varchar("full_name", { length: 255 }).notNull(),
@@ -173,9 +180,12 @@ export const users = pgTable(
     uniqueIndex("users_email_unique")
       .on(table.email)
       .where(sql`${table.deletedAt} is null`),
+    uniqueIndex("users_supabase_auth_user_id_unique")
+      .on(table.supabaseAuthUserId)
+      .where(sql`${table.supabaseAuthUserId} is not null`),
     check(
       "users_role_check",
-      sql`${table.role} in ('admin', 'project_manager', 'crew_member')`,
+      sql`${table.role} in ('admin', 'project_manager', 'crew_member', 'drafter')`,
     ),
     index("users_invite_token_hash_idx").on(table.inviteTokenHash),
     index("users_default_organization_id_idx").on(table.defaultOrganizationId),
@@ -211,7 +221,7 @@ export const organizationMemberships = pgTable(
     ),
     check(
       "organization_memberships_role_check",
-      sql`${table.role} in ('owner', 'admin', 'project_manager', 'crew_member')`,
+      sql`${table.role} in ('owner', 'admin', 'project_manager', 'crew_member', 'drafter')`,
     ),
   ],
 );
@@ -235,6 +245,7 @@ export const billingEvents = pgTable(
 
 export const safeUserColumns = {
   id: users.id,
+  supabaseAuthUserId: users.supabaseAuthUserId,
   email: users.email,
   fullName: users.fullName,
   role: users.role,
@@ -242,6 +253,7 @@ export const safeUserColumns = {
   phone: users.phone,
   defaultOrganizationId: users.defaultOrganizationId,
   isActive: users.isActive,
+  inviteTokenExpiresAt: users.inviteTokenExpiresAt,
   passwordSetAt: users.passwordSetAt,
   lastInviteEmailSentAt: users.lastInviteEmailSentAt,
   lastInviteEmailError: users.lastInviteEmailError,
@@ -249,6 +261,41 @@ export const safeUserColumns = {
   updatedAt: users.updatedAt,
   deletedAt: users.deletedAt,
 } as const;
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    organizationId: organizationIdColumn().notNull(),
+    recipientUserId: uuid("recipient_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    actorUserId: uuid("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    entityType: varchar("entity_type", { length: 100 }).notNull(),
+    entityId: uuid("entity_id"),
+    action: varchar("action", { length: 100 }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    body: text("body"),
+    url: varchar("url", { length: 1000 }),
+    metadata: json("metadata").$type<Record<string, unknown> | null>(),
+    readAt: timestampTz("read_at"),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("notifications_org_recipient_created_at_idx").on(
+      table.organizationId,
+      table.recipientUserId,
+      table.createdAt,
+    ),
+    index("notifications_org_recipient_read_at_idx").on(
+      table.organizationId,
+      table.recipientUserId,
+      table.readAt,
+    ),
+  ],
+);
 
 export const clients = pgTable(
   "clients",
@@ -388,10 +435,6 @@ export const jobAssignees = pgTable(
     createdAt: timestampTz("created_at").defaultNow().notNull(),
   },
   (table) => [
-    unique("financial_trackers_id_organization_id_unique").on(
-      table.id,
-      table.organizationId,
-    ),
     foreignKey({
       columns: [table.jobId, table.organizationId],
       foreignColumns: [jobs.id, jobs.organizationId],
@@ -517,6 +560,7 @@ export const files = pgTable(
     originalName: varchar("original_name", { length: 255 }).notNull(),
     fileUrl: varchar("file_url", { length: 500 }),
     fileSize: bigint("file_size", { mode: "number" }),
+    contentHash: varchar("content_hash", { length: 64 }),
     mimeType: varchar("mime_type", { length: 100 }),
     note: text("note"),
     uploadedBy: uuid("uploaded_by").references(() => users.id, {
@@ -543,6 +587,12 @@ export const files = pgTable(
     index("files_organization_id_idx").on(table.organizationId),
     index("files_folder_id_idx").on(table.folderId),
     index("files_uploaded_by_idx").on(table.uploadedBy),
+    index("files_folder_hash_idx").on(table.folderId, table.contentHash),
+    index("files_folder_name_size_idx").on(
+      table.folderId,
+      table.originalName,
+      table.fileSize,
+    ),
     index("files_folder_created_id_idx").on(
       table.folderId,
       sql`${table.createdAt} DESC`,
@@ -1507,6 +1557,8 @@ export type OrganizationMembership =
   typeof organizationMemberships.$inferSelect;
 export type NewOrganizationMembership =
   typeof organizationMemberships.$inferInsert;
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
 export type Client = typeof clients.$inferSelect;
 export type NewClient = typeof clients.$inferInsert;
 export type ClientContact = typeof clientContacts.$inferSelect;
@@ -1589,6 +1641,10 @@ export const financialTrackers = pgTable(
     ...baseTimestamps,
   },
   (table) => [
+    unique("financial_trackers_id_organization_id_unique").on(
+      table.id,
+      table.organizationId,
+    ),
     foreignKey({
       columns: [table.jobId, table.organizationId],
       foreignColumns: [jobs.id, jobs.organizationId],

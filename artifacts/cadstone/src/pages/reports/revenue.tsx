@@ -7,6 +7,8 @@ import {
   ReportToolbar,
   csvDownloadHref,
   formatMoney,
+  isCsvReportData,
+  jsonReportData,
   rangeToReportParams,
   useReportRange,
 } from "./shared"
@@ -24,8 +26,10 @@ export default function RevenueReport() {
   const [range, setRange] = useReportRange()
   const [mode, setMode] = useState<Mode>("billed")
   const q = useReportsGetReportsRevenue(rangeToReportParams(range))
+  const data = jsonReportData(q.data)
+  const unexpectedCsv = isCsvReportData(q.data)
 
-  const months = q.data?.months ?? []
+  const months = data?.months ?? []
   const allZero = months.every((m) => m.billedCents === 0 && m.collectedCents === 0)
 
   return (
@@ -39,8 +43,8 @@ export default function RevenueReport() {
       <ReportSection title="Revenue by Month">
         {q.isLoading ? (
           <LoadingCard />
-        ) : q.isError ? (
-          <EmptyState title="Couldn't load revenue" />
+        ) : q.isError || unexpectedCsv ? (
+          <EmptyState title="Couldn't load revenue" hint="The report returned CSV where JSON was expected." />
         ) : allZero ? (
           <EmptyState
             title="No revenue in this range"

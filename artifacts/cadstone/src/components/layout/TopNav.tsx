@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import GlobalSearch from "./GlobalSearch"
+import NotificationBell from "./NotificationBell"
 import { api, logoutSession } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { useAgentPanelStore } from "@/store/agent"
@@ -53,6 +54,7 @@ export default function TopNav() {
 
   const role = user?.role
   const isFieldUser = role === "project_manager" || role === "crew_member"
+  const isDrafter = role === "drafter"
   const accountLabel = user?.fullName?.split(" ")[0] ?? "Account"
   const currentJobId = location.pathname.match(/^\/jobs\/([^/]+)/)?.[1] ?? null
 
@@ -63,13 +65,14 @@ export default function TopNav() {
     ? [
         { label: "Home", to: "/dashboard" },
         { label: "My Jobs", to: "/jobs" },
-        { label: "Resources", to: "/resources" },
+        { label: "Resources", to: "/resources", hidden: isDrafter },
       ]
     : [
         { label: "Home", to: "/dashboard" },
         { label: "Clients", to: "/clients", allow: ROLE_GATES.clients },
-        { label: "Schedule", to: "/schedule", allow: ROLE_GATES.companyViews },
-        { label: "Daily Logs", to: "/daily-logs", allow: ROLE_GATES.companyViews },
+        { label: "My Jobs", to: "/jobs", allow: ROLE_GATES.myJobs },
+        { label: "Schedule", to: "/schedule", allow: ROLE_GATES.schedule },
+        { label: "Daily Logs", to: "/daily-logs", allow: ROLE_GATES.dailyLogs },
         { label: "Sales", to: "/sales", allow: ROLE_GATES.sales },
         {
           label: "Reports",
@@ -77,7 +80,7 @@ export default function TopNav() {
           allow: ROLE_GATES.reports,
           hidden: !isFeatureEnabled("reports"),
         },
-        { label: "Resources", to: "/resources" },
+        { label: "Resources", to: "/resources", hidden: isDrafter },
       ]
 
   const visibleLinks = navLinks.filter(
@@ -205,6 +208,8 @@ export default function TopNav() {
           </button>
         ) : null}
 
+        {user ? <NotificationBell /> : null}
+
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -241,10 +246,12 @@ export default function TopNav() {
               <Settings className="size-4" />
               Settings
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/daily-logs/mine")}>
-              <ClipboardList className="size-4" />
-              My Daily Logs
-            </DropdownMenuItem>
+            {!isDrafter ? (
+              <DropdownMenuItem onClick={() => navigate("/daily-logs/mine")}>
+                <ClipboardList className="size-4" />
+                My Daily Logs
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={async () => {

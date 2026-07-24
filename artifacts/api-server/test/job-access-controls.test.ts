@@ -13,19 +13,31 @@ let baseUrl: string;
 let adminToken: string;
 let crewToken: string;
 let pmToken: string;
+let pmNoJobsToken: string;
 
 const runId = crypto.randomUUID();
 const adminUserId = crypto.randomUUID();
 const crewUserId = crypto.randomUUID();
 const pmUserId = crypto.randomUUID();
+const pmNoJobsUserId = crypto.randomUUID();
 const clientId = crypto.randomUUID();
 const jobId = crypto.randomUUID();
 const unassignedJobId = crypto.randomUUID();
+const dailyLogId = crypto.randomUUID();
 const hiddenPhotoFolderId = crypto.randomUUID();
 const uploadBlockedPhotoFolderId = crypto.randomUUID();
+const hiddenDailyLogFolderId = crypto.randomUUID();
 
 function authHeaders(token: string) {
   return { authorization: `Bearer ${token}` };
+}
+
+function jsonHeaders(token: string) {
+  return {
+    ...authHeaders(token),
+    "content-type": "application/json",
+    "x-requested-with": "XMLHttpRequest",
+  };
 }
 
 before(async () => {
@@ -43,7 +55,7 @@ before(async () => {
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
   const { db } = await import("@workspace/db");
-  const { clients, folders, jobAssignees, jobs, users } = await import("@workspace/db/schema");
+  const { clients, dailyLogs, folders, jobAssignees, jobs, users } = await import("@workspace/db/schema");
 
   await prepareApp();
 
@@ -69,6 +81,13 @@ before(async () => {
       fullName: "Assigned PM",
       role: "project_manager",
     },
+    {
+      id: pmNoJobsUserId,
+      email: `pm-no-jobs-${runId}@job-access.local`,
+      passwordHash: "test-not-a-real-hash",
+      fullName: "PM No Jobs",
+      role: "project_manager",
+    },
   ]);
 
   await db.insert(clients).values({
@@ -83,6 +102,9 @@ before(async () => {
       clientId,
       createdBy: adminUserId,
       projectManagerId: null,
+      contractPrice: "12345.67",
+      contractValueCents: 1_234_567,
+      amountPaidCents: 234_500,
     },
     {
       id: unassignedJobId,
@@ -97,6 +119,19 @@ before(async () => {
     { jobId, userId: crewUserId, canViewFinancials: false },
     { jobId, userId: pmUserId, canViewFinancials: false },
   ]);
+
+  await db.insert(dailyLogs).values({
+    id: dailyLogId,
+    jobId,
+    logDate: "2026-05-13",
+    title: `Access Daily Log ${runId}`,
+    notes: "Fixture daily log",
+    weatherData: {},
+    includeWeather: false,
+    createdBy: adminUserId,
+    publishedAt: new Date(),
+    shareInternalUsers: true,
+  });
 
   await db.insert(folders).values([
     {
@@ -116,6 +151,15 @@ before(async () => {
       mediaType: "photo",
       viewingPermissions: { internal: true, users: { [crewUserId]: true } },
       uploadingPermissions: { admin: true, crew_member: true, users: { [crewUserId]: false } },
+    },
+    {
+      id: hiddenDailyLogFolderId,
+      title: `Hidden Daily Log Files ${runId}`,
+      scope: "daily_log",
+      dailyLogId,
+      mediaType: "document",
+      viewingPermissions: { internal: true, users: { [crewUserId]: false } },
+      uploadingPermissions: { admin: true, crew_member: true },
     },
   ]);
 
@@ -149,6 +193,16 @@ before(async () => {
     createdAt: new Date(),
     updatedAt: new Date(),
   });
+  pmNoJobsToken = auth.signAccessToken({
+    id: pmNoJobsUserId,
+    email: `pm-no-jobs-${runId}@job-access.local`,
+    fullName: "PM No Jobs",
+    role: "project_manager",
+    avatarUrl: null,
+    phone: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
 
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -164,14 +218,15 @@ after(async () => {
   }
 
   const { db } = await import("@workspace/db");
-  const { clients, folders, jobAssignees, jobs, users } = await import("@workspace/db/schema");
+  const { clients, dailyLogs, folders, jobAssignees, jobs, users } = await import("@workspace/db/schema");
   const { eq, inArray } = await import("drizzle-orm");
 
-  await db.delete(folders).where(inArray(folders.id, [hiddenPhotoFolderId, uploadBlockedPhotoFolderId]));
+  await db.delete(folders).where(inArray(folders.id, [hiddenPhotoFolderId, uploadBlockedPhotoFolderId, hiddenDailyLogFolderId]));
   await db.delete(jobAssignees).where(eq(jobAssignees.jobId, jobId));
+  await db.delete(dailyLogs).where(eq(dailyLogs.id, dailyLogId));
   await db.delete(jobs).where(inArray(jobs.id, [jobId, unassignedJobId]));
   await db.delete(clients).where(eq(clients.id, clientId));
-  await db.delete(users).where(inArray(users.id, [adminUserId, crewUserId, pmUserId]));
+  await db.delete(users).where(inArray(users.id, [adminUserId, crewUserId, pmUserId, pmNoJobsUserId]));
 });
 
 test("assigned non-admins can view job field pages", async () => {
@@ -196,25 +251,37 @@ test("assigned non-admins can view job field pages", async () => {
   assert.equal(unassignedJob.status, 403);
 });
 
-test("non-admins cannot create, edit, delete, or assign jobs", async () => {
-  const create = await fetch(`${baseUrl}/jobs`, {
+test("daily-log creation rejects body jobId mismatches", async () => {
+  const response = await fetch(`${baseUrl}/jobs/${jobId}/daily-logs`, {
     method: "POST",
     headers: {
       ...authHeaders(crewToken),
       "content-type": "application/json",
       "x-requested-with": "XMLHttpRequest",
     },
+    body: JSON.stringify({
+      jobId: unassignedJobId,
+      logDate: "2026-05-14",
+      notes: "Should not be written to another job",
+      weatherData: {},
+      includeWeather: false,
+    }),
+  });
+
+  assert.equal(response.status, 400);
+});
+
+test("non-admins cannot create, edit, delete, or assign jobs", async () => {
+  const create = await fetch(`${baseUrl}/jobs`, {
+    method: "POST",
+    headers: jsonHeaders(crewToken),
     body: JSON.stringify({ title: `Denied Job ${runId}` }),
   });
   assert.equal(create.status, 403);
 
   const edit = await fetch(`${baseUrl}/jobs/${jobId}`, {
     method: "PUT",
-    headers: {
-      ...authHeaders(crewToken),
-      "content-type": "application/json",
-      "x-requested-with": "XMLHttpRequest",
-    },
+    headers: jsonHeaders(crewToken),
     body: JSON.stringify({ title: `Denied Edit ${runId}` }),
   });
   assert.equal(edit.status, 403);
@@ -230,14 +297,65 @@ test("non-admins cannot create, edit, delete, or assign jobs", async () => {
 
   const assign = await fetch(`${baseUrl}/jobs/${jobId}/assignees`, {
     method: "POST",
-    headers: {
-      ...authHeaders(crewToken),
-      "content-type": "application/json",
-      "x-requested-with": "XMLHttpRequest",
-    },
+    headers: jsonHeaders(crewToken),
     body: JSON.stringify({ userId: pmUserId }),
   });
   assert.equal(assign.status, 403);
+});
+
+test("admin job writes reject fractional cent values instead of truncating", async () => {
+  for (const [field, value] of [
+    ["contractValueCents", 123.99],
+    ["contractValueCents", "123.99"],
+    ["amountPaidCents", 1.5],
+    ["amountPaidCents", "1.5"],
+  ] as const) {
+    const create = await fetch(`${baseUrl}/jobs`, {
+      method: "POST",
+      headers: jsonHeaders(adminToken),
+      body: JSON.stringify({
+        title: `Fractional POST ${field} ${runId}`,
+        clientId,
+        [field]: value,
+      }),
+    });
+    const createBody = await create.text();
+    if (create.status === 201) {
+      const parsed = JSON.parse(createBody) as { job: { id: string } };
+      const { db } = await import("@workspace/db");
+      const { jobs } = await import("@workspace/db/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(jobs).where(eq(jobs.id, parsed.job.id));
+    }
+    assert.equal(create.status, 400, `POST ${field}=${JSON.stringify(value)}: ${createBody}`);
+
+    const update = await fetch(`${baseUrl}/jobs/${jobId}`, {
+      method: "PUT",
+      headers: jsonHeaders(adminToken),
+      body: JSON.stringify({
+        title: `Fractional PUT ${field} ${runId}`,
+        clientId,
+        [field]: value,
+      }),
+    });
+    const updateBody = await update.text();
+    if (update.status === 200) {
+      const { db } = await import("@workspace/db");
+      const { jobs } = await import("@workspace/db/schema");
+      const { eq } = await import("drizzle-orm");
+      await db
+        .update(jobs)
+        .set({
+          title: `Access Job ${runId}`,
+          clientId,
+          contractPrice: "12345.67",
+          contractValueCents: 1_234_567,
+          amountPaidCents: 234_500,
+        })
+        .where(eq(jobs.id, jobId));
+    }
+    assert.equal(update.status, 400, `PUT ${field}=${JSON.stringify(value)}: ${updateBody}`);
+  }
 });
 
 test("financials require the per-job financials grant", async () => {
@@ -245,6 +363,49 @@ test("financials require the per-job financials grant", async () => {
     headers: authHeaders(crewToken),
   });
   assert.equal(denied.status, 403);
+
+  const deniedJobDetail = await fetch(`${baseUrl}/jobs/${jobId}`, {
+    headers: authHeaders(crewToken),
+  });
+  assert.equal(deniedJobDetail.status, 200);
+  const deniedJobDetailBody = (await deniedJobDetail.json()) as {
+    job: {
+      access: { financials: boolean };
+      contractPrice: string | null;
+      contractValueCents: number | null;
+      amountPaidCents: number | null;
+      hasTracker: boolean;
+      trackerTotals: unknown;
+    };
+  };
+  assert.equal(deniedJobDetailBody.job.access.financials, false);
+  assert.equal(deniedJobDetailBody.job.contractPrice, null);
+  assert.equal(deniedJobDetailBody.job.contractValueCents, null);
+  assert.equal(deniedJobDetailBody.job.amountPaidCents, null);
+  assert.equal(deniedJobDetailBody.job.hasTracker, false);
+  assert.equal(deniedJobDetailBody.job.trackerTotals, null);
+
+  const deniedJobList = await fetch(`${baseUrl}/jobs?pageSize=50`, {
+    headers: authHeaders(crewToken),
+  });
+  assert.equal(deniedJobList.status, 200);
+  const deniedJobListBody = (await deniedJobList.json()) as {
+    jobs: Array<{
+      id: string;
+      contractPrice: string | null;
+      contractValueCents: number | null;
+      amountPaidCents: number | null;
+      hasTracker: boolean;
+      trackerTotals: unknown;
+    }>;
+  };
+  const deniedJobListItem = deniedJobListBody.jobs.find((job) => job.id === jobId);
+  assert.ok(deniedJobListItem);
+  assert.equal(deniedJobListItem.contractPrice, null);
+  assert.equal(deniedJobListItem.contractValueCents, null);
+  assert.equal(deniedJobListItem.amountPaidCents, null);
+  assert.equal(deniedJobListItem.hasTracker, false);
+  assert.equal(deniedJobListItem.trackerTotals, null);
 
   const blockedToggle = await fetch(`${baseUrl}/jobs/${jobId}/assignees/${crewUserId}/financials-access`, {
     method: "PATCH",
@@ -274,6 +435,21 @@ test("financials require the per-job financials grant", async () => {
   assert.equal(adminToggleBody.assignee.canViewFinancials, true);
   assert.equal(adminToggleBody.assignee.access.financials, true);
 
+  const allowedJobDetail = await fetch(`${baseUrl}/jobs/${jobId}`, {
+    headers: authHeaders(crewToken),
+  });
+  assert.equal(allowedJobDetail.status, 200);
+  const allowedJobDetailBody = (await allowedJobDetail.json()) as {
+    job: {
+      contractPrice: string | null;
+      contractValueCents: number | null;
+      amountPaidCents: number | null;
+    };
+  };
+  assert.equal(allowedJobDetailBody.job.contractPrice, "12345.67");
+  assert.equal(allowedJobDetailBody.job.contractValueCents, 1_234_567);
+  assert.equal(allowedJobDetailBody.job.amountPaidCents, 234_500);
+
   const allowed = await fetch(`${baseUrl}/jobs/${jobId}/financials`, {
     headers: authHeaders(crewToken),
   });
@@ -281,6 +457,26 @@ test("financials require the per-job financials grant", async () => {
 });
 
 test("project managers and crew share the same field-user model", async () => {
+  const home = await fetch(`${baseUrl}/dashboard/home`, {
+    headers: authHeaders(pmToken),
+  });
+  assert.equal(home.status, 200);
+  const homeBody = (await home.json()) as {
+    role: string;
+    atRisk?: {
+      jobsMissingLogs: number;
+      pendingChangeOrders: number;
+      samples: {
+        missingLogJobs: unknown[];
+        pendingChangeOrders: unknown[];
+      };
+    };
+  };
+  assert.equal(homeBody.role, "pm");
+  assert.ok(homeBody.atRisk);
+  assert.ok(Array.isArray(homeBody.atRisk.samples.missingLogJobs));
+  assert.ok(Array.isArray(homeBody.atRisk.samples.pendingChangeOrders));
+
   const financials = await fetch(`${baseUrl}/jobs/${jobId}/financials`, {
     headers: authHeaders(pmToken),
   });
@@ -303,7 +499,31 @@ test("project managers and crew share the same field-user model", async () => {
   const clients = await fetch(`${baseUrl}/clients`, {
     headers: authHeaders(pmToken),
   });
-  assert.equal(clients.status, 403);
+  assert.equal(clients.status, 200);
+});
+
+test("PM home empty access response keeps the at-risk samples object shape", async () => {
+  const home = await fetch(`${baseUrl}/dashboard/home`, {
+    headers: authHeaders(pmNoJobsToken),
+  });
+  assert.equal(home.status, 200);
+  const homeBody = (await home.json()) as {
+    role: string;
+    atRisk: {
+      samples: {
+        overdue: unknown[];
+        missingLogJobs: unknown[];
+        pendingChangeOrders: unknown[];
+      };
+    };
+  };
+
+  assert.equal(homeBody.role, "pm");
+  assert.deepEqual(homeBody.atRisk.samples, {
+    overdue: [],
+    missingLogJobs: [],
+    pendingChangeOrders: [],
+  });
 });
 
 test("folder per-user overrides control what assignees can see and upload", async () => {
@@ -334,6 +554,11 @@ test("folder per-user overrides control what assignees can see and upload", asyn
     headers: authHeaders(crewToken),
   });
   assert.equal(hiddenDirect.status, 403);
+
+  const hiddenScopedDirect = await fetch(`${baseUrl}/folders/${hiddenDailyLogFolderId}`, {
+    headers: authHeaders(crewToken),
+  });
+  assert.equal(hiddenScopedDirect.status, 403);
 
   const uploadScopedList = await fetch(
     `${baseUrl}/folders/${uploadBlockedPhotoFolderId}/files?includeDeleted=true`,

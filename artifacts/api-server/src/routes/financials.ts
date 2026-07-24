@@ -116,7 +116,45 @@ async function callAnthropicWithLogging(args: {
       },
       "anthropic call failed",
     );
-    throw err;
+    throw new HttpError(
+      502,
+      "AI parsing is temporarily unavailable. Check the AI integration configuration and try again.",
+      { code: "AI_PARSE_FAILED" },
+      "ai-parse-failed",
+    );
+  }
+}
+
+async function saveFinancialUploadOrThrow(
+  args: Parameters<typeof saveUploadedFiles>[0],
+  context: {
+    jobId: string;
+    uploadKind: "estimate" | "invoice" | "change_order";
+  },
+) {
+  try {
+    return await saveUploadedFiles(args);
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+
+    const raw = err instanceof Error ? err.message : String(err);
+    logger.error(
+      {
+        event: "financials.upload.save_failed",
+        jobId: context.jobId,
+        uploadKind: context.uploadKind,
+        errorCode: "FILE_STORAGE_UNAVAILABLE",
+        errorExcerpt: raw.replace(/\s+/g, " ").trim().slice(0, 200),
+      },
+      "financial upload save failed",
+    );
+
+    throw new HttpError(
+      503,
+      "File storage is temporarily unavailable. Check storage configuration and try again.",
+      { code: "FILE_STORAGE_UNAVAILABLE" },
+      "file-storage-unavailable",
+    );
   }
 }
 
@@ -730,12 +768,15 @@ router.post(
     let estimateFileId: string | null = null;
     const financialsFolderId = await findFinancialsFolderId(jobId);
     if (financialsFolderId) {
-      const saved = await saveUploadedFiles({
-        folderId: financialsFolderId,
-        userId: req.auth!.userId,
-        uploadedFiles: [upload],
-        note: "AI-parsed estimate",
-      });
+      const saved = await saveFinancialUploadOrThrow(
+        {
+          folderId: financialsFolderId,
+          userId: req.auth!.userId,
+          uploadedFiles: [upload],
+          note: "AI-parsed estimate",
+        },
+        { jobId, uploadKind: "estimate" },
+      );
       estimateFileId = saved.files[0]?.id ?? null;
     }
 
@@ -1058,12 +1099,15 @@ router.post(
     let fileId: string | null = null;
     const financialsFolderId = await findFinancialsFolderId(jobId);
     if (financialsFolderId) {
-      const saved = await saveUploadedFiles({
-        folderId: financialsFolderId,
-        userId: req.auth!.userId,
-        uploadedFiles: [upload],
-        note: "AI-parsed change order",
-      });
+      const saved = await saveFinancialUploadOrThrow(
+        {
+          folderId: financialsFolderId,
+          userId: req.auth!.userId,
+          uploadedFiles: [upload],
+          note: "AI-parsed change order",
+        },
+        { jobId, uploadKind: "change_order" },
+      );
       fileId = saved.files[0]?.id ?? null;
     }
 
@@ -1681,12 +1725,15 @@ router.post(
     let fileId: string | null = null;
     const financialsFolderId = await findFinancialsFolderId(jobId);
     if (financialsFolderId) {
-      const saved = await saveUploadedFiles({
-        folderId: financialsFolderId,
-        userId: req.auth!.userId,
-        uploadedFiles: [upload],
-        note: "AI-matched invoice",
-      });
+      const saved = await saveFinancialUploadOrThrow(
+        {
+          folderId: financialsFolderId,
+          userId: req.auth!.userId,
+          uploadedFiles: [upload],
+          note: "AI-matched invoice",
+        },
+        { jobId, uploadKind: "invoice" },
+      );
       fileId = saved.files[0]?.id ?? null;
     }
 

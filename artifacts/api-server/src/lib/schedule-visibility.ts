@@ -29,6 +29,13 @@ export function buildScheduleListVisibilityFilter(auth: AuthContext) {
       ),
   );
 
+  if (auth.role === "drafter") {
+    return and(
+      personalTodoFilter,
+      or(eq(scheduleItems.createdBy, userId), assignedToCurrentUser),
+    );
+  }
+
   const roleVisibility =
     auth.role === "project_manager"
       ? or(

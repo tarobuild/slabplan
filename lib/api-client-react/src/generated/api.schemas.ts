@@ -3084,14 +3084,14 @@ export type BillingGetStatus200Organization = {
   hasStripeCustomer: boolean;
   hasStripeSubscription: boolean;
   trialEndsAt: string | null;
+  requiresSubscription: boolean;
+  accessGranted: boolean;
 };
 
 export type BillingGetStatus200PlansItemKey =
   (typeof BillingGetStatus200PlansItemKey)[keyof typeof BillingGetStatus200PlansItemKey];
 
 export const BillingGetStatus200PlansItemKey = {
-  starter: "starter",
-  team: "team",
   pro: "pro",
 } as const;
 

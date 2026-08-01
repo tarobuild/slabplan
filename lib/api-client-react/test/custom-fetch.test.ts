@@ -10,6 +10,7 @@ import {
   setAuthTokenGetter,
   setBaseUrl,
   setForbiddenHandler,
+  setPaymentRequiredHandler,
 } from "../src/custom-fetch.ts";
 
 const originalFetch = globalThis.fetch;
@@ -21,6 +22,7 @@ afterEach(() => {
   setAuthTokenGetter(null);
   setBaseUrl(null);
   setForbiddenHandler(null);
+  setPaymentRequiredHandler(null);
 });
 
 function installFetchSpy() {
@@ -233,6 +235,27 @@ test("customFetch forwards generated-client 403s to the forbidden handler", asyn
   );
 
   assert.deepEqual(forbidden, [{ method: "GET", url: "/api/reports/revenue" }]);
+});
+
+test("customFetch forwards generated-client 402s to the payment-required handler", async () => {
+  const paymentRequired: Array<{ method: string; url: string }> = [];
+
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "subscription required" }), {
+      status: 402,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+
+  setPaymentRequiredHandler((context) => {
+    paymentRequired.push(context);
+  });
+
+  await assert.rejects(
+    () => customFetch("/api/dashboard", { method: "GET" }),
+    ApiError,
+  );
+
+  assert.deepEqual(paymentRequired, [{ method: "GET", url: "/api/dashboard" }]);
 });
 
 test("customFetch does not notify forbidden handler for arbitrary absolute URL 403s", async () => {

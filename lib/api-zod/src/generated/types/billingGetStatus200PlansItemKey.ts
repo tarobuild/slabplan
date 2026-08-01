@@ -10,7 +10,5 @@ export type BillingGetStatus200PlansItemKey =
   (typeof BillingGetStatus200PlansItemKey)[keyof typeof BillingGetStatus200PlansItemKey];
 
 export const BillingGetStatus200PlansItemKey = {
-  starter: "starter",
-  team: "team",
   pro: "pro",
 } as const;

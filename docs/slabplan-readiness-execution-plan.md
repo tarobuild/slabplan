@@ -19,11 +19,11 @@ Work:
 
 - Add admin-only `/settings/billing`.
 - Display current organization billing state.
-- Display Starter, Team, and Pro plans.
+- Display the single `$250/month` Full Access plan.
 - Start Stripe Checkout through `POST /api/billing/checkout-sessions`.
 - Open Stripe customer portal through
   `POST /api/billing/customer-portal-sessions`.
-- Return Stripe success/cancel flows to `/settings/billing`.
+- Return initial Stripe success/cancel flows to `/subscribe`.
 
 ### 2. Browser Monitoring Verification
 

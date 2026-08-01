@@ -27,7 +27,7 @@ Production:
 ```bash
 curl -i https://slabplan-api-production.up.railway.app/api/livez
 curl -i https://slabplan-api-production.up.railway.app/api/healthz
-curl -I https://slabplan.vercel.app/login
+curl -I https://www.slabplan.com/login
 ```
 
 Staging:

@@ -29,10 +29,12 @@ export const BillingGetStatusResponse = zod.object({
     hasStripeCustomer: zod.boolean(),
     hasStripeSubscription: zod.boolean(),
     trialEndsAt: zod.string().datetime({}).nullable(),
+    requiresSubscription: zod.boolean(),
+    accessGranted: zod.boolean(),
   }),
   plans: zod.array(
     zod.object({
-      key: zod.enum(["starter", "team", "pro"]),
+      key: zod.enum(["pro"]),
       name: zod.string(),
       monthlyUsd: zod.number(),
       maxUsers: zod.number(),

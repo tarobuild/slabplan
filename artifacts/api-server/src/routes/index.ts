@@ -29,6 +29,7 @@ import { idempotencyMiddleware } from "../middleware/idempotency";
 import { captureMcpContext } from "../middleware/mcp-context";
 import { fileViewErrorLogger } from "../lib/file-view-log";
 import { createPerUserApiRateLimit } from "../lib/rate-limit";
+import { requirePaidSubscription } from "../lib/billing-access";
 
 const router: IRouter = Router();
 
@@ -75,8 +76,9 @@ router.use(captureMcpContext);
 // idempotency-cached because they have no userId to scope by until they
 // have already executed.
 router.use(idempotencyMiddleware());
-router.use("/account/tokens", accountTokensRouter);
 router.use("/billing", billingRouter);
+router.use(requirePaidSubscription);
+router.use("/account/tokens", accountTokensRouter);
 router.use(activityRouter);
 router.use("/agent", agentRouter);
 router.use(dashboardRouter);

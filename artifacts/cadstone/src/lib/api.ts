@@ -19,6 +19,7 @@ declare module "axios" {
 }
 
 export const FORBIDDEN_EVENT = `${APP_STORAGE_NAMESPACE}:forbidden`
+export const SUBSCRIPTION_REQUIRED_EVENT = `${APP_STORAGE_NAMESPACE}:subscription-required`
 
 type AuthResponse = {
   accessToken: string
@@ -91,6 +92,14 @@ function initializeInterceptors() {
       const requestMethod = (request.method || "get").toLowerCase()
 
       if (
+        error.response?.status === 402 &&
+        !requestUrl.includes("/billing/")
+      ) {
+        notifySubscriptionRequired()
+        return Promise.reject(error)
+      }
+
+      if (
         error.response?.status === 403 &&
         !requestUrl.includes("/auth/") &&
         !request.suppressForbiddenRedirect
@@ -135,6 +144,23 @@ function initializeInterceptors() {
 initializeInterceptors()
 
 let lastForbiddenAt = 0
+
+let lastSubscriptionRequiredAt = 0
+
+export function notifySubscriptionRequired() {
+  const now = Date.now()
+  if (now - lastSubscriptionRequiredAt < 500) {
+    return
+  }
+  lastSubscriptionRequiredAt = now
+
+  if (typeof window === "undefined") {
+    return
+  }
+
+  toast.info("Choose a SlabPlan subscription to continue.")
+  window.dispatchEvent(new CustomEvent(SUBSCRIPTION_REQUIRED_EVENT))
+}
 
 export function notifyForbidden() {
   const now = Date.now()

@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { personalAccessTokens, users, type PersonalAccessToken } from "@workspace/db/schema";
 import { resolveOrganizationContextForUser } from "./auth-organization";
 import { HttpError } from "./http";
+import { assertOrganizationBillingAccess } from "./billing-access";
 
 export const PAT_PREFIX = "cs_pat_";
 export const PAT_SCOPES = ["read", "read_write"] as const;
@@ -94,6 +95,9 @@ export async function resolvePersonalAccessToken(token: string): Promise<Resolve
     row.userId,
     row.organizationId ?? row.defaultOrganizationId,
   );
+  if (organization?.organizationId) {
+    await assertOrganizationBillingAccess(organization.organizationId);
+  }
 
   return {
     type: "pat",

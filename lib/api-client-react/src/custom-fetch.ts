@@ -19,6 +19,10 @@ export type ForbiddenHandler = (context: {
   method: string;
   url: string;
 }) => void;
+export type PaymentRequiredHandler = (context: {
+  method: string;
+  url: string;
+}) => void;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
@@ -32,6 +36,7 @@ let _authTokenGetter: AuthTokenGetter | null = null;
 let _authRefreshHandler: AuthRefreshHandler | null = null;
 let _authFailureHandler: AuthFailureHandler | null = null;
 let _forbiddenHandler: ForbiddenHandler | null = null;
+let _paymentRequiredHandler: PaymentRequiredHandler | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -81,6 +86,15 @@ export function setAuthFailureHandler(handler: AuthFailureHandler | null): void 
  */
 export function setForbiddenHandler(handler: ForbiddenHandler | null): void {
   _forbiddenHandler = handler;
+}
+
+/**
+ * Register a handler called for generated-client 402 responses.
+ */
+export function setPaymentRequiredHandler(
+  handler: PaymentRequiredHandler | null,
+): void {
+  _paymentRequiredHandler = handler;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -452,6 +466,18 @@ function notifyForbiddenResponse(
   _forbiddenHandler?.(requestInfo);
 }
 
+function notifyPaymentRequiredResponse(
+  response: Response,
+  requestInfo: { method: string; url: string },
+  shouldManageAuth: boolean,
+) {
+  if (response.status !== 402 || !shouldManageAuth) {
+    return;
+  }
+
+  _paymentRequiredHandler?.(requestInfo);
+}
+
 function isFormDataBody(value: unknown): value is FormData {
   return typeof FormData !== "undefined" && value instanceof FormData;
 }
@@ -632,6 +658,7 @@ export async function customFetch<T = unknown>(
   }
 
   if (!response.ok) {
+    notifyPaymentRequiredResponse(response, requestInfo, shouldManageAuth);
     await throwApiError(response, requestInfo, shouldManageAuth);
   }
 

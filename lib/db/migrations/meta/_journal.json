@@ -297,6 +297,14 @@
       "tag": "0038_slabplan_metadata_keys",
       "breakpoints": true,
       "checksum": "1d1729915dfd09a7e44221d69a89acfcf41aeceae520a1bae42568420293854a"
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1785620003000,
+      "tag": "0039_paid_access_requirement",
+      "breakpoints": true,
+      "checksum": "d339eb22eb2d0517fd9d1ee2b044b6e386024de9f9bd35adec5959ebd9a77a04"
     }
   ]
 }

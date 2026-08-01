@@ -13,6 +13,7 @@ import {
   isBillingPlanKey,
 } from "../lib/stripe";
 import { getActiveOrganizationId } from "../lib/tenant-scope";
+import { hasBillingAccess } from "../lib/billing-access";
 
 const router: IRouter = Router();
 type BillingDbClient = Pick<typeof db, "select" | "update">;
@@ -107,6 +108,8 @@ router.get(
         hasStripeCustomer: Boolean(organization.stripeCustomerId),
         hasStripeSubscription: Boolean(organization.stripeSubscriptionId),
         trialEndsAt: organization.trialEndsAt?.toISOString() ?? null,
+        requiresSubscription: organization.requiresSubscription,
+        accessGranted: hasBillingAccess(organization),
       },
       plans: getConfiguredBillingPlans(),
       billingConfigured: Boolean(process.env.STRIPE_SECRET_KEY?.trim()),
@@ -140,10 +143,11 @@ router.post(
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
+      payment_method_types: ["card"],
       customer: customerId,
       line_items: [{ price: getStripePriceId(plan.key), quantity: 1 }],
-      success_url: `${publicUrl}/settings/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${publicUrl}/settings/billing?checkout=cancelled`,
+      success_url: `${publicUrl}/subscribe?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${publicUrl}/subscribe?checkout=cancelled`,
       client_reference_id: organization.id,
       metadata: {
         organizationId: organization.id,

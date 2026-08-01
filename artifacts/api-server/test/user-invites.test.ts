@@ -323,7 +323,7 @@ test("production invite endpoint falls back to the canonical SlabPlan host inste
     assert.equal(ok.status, 201);
     const body = (await ok.json()) as { inviteUrl: string };
 
-    assert.match(body.inviteUrl, /^https:\/\/slabplan\.vercel\.app\/accept-invite\?token=/);
+    assert.match(body.inviteUrl, /^https:\/\/www\.slabplan\.com\/accept-invite\?token=/);
     assert.doesNotMatch(body.inviteUrl, /replit/i);
   } finally {
     restoreEnv(snapshot);
@@ -356,7 +356,7 @@ test("production invite endpoint ignores configured Replit origins", async () =>
     assert.equal(ok.status, 201);
     const body = (await ok.json()) as { inviteUrl: string };
 
-    assert.match(body.inviteUrl, /^https:\/\/slabplan\.vercel\.app\/accept-invite\?token=/);
+    assert.match(body.inviteUrl, /^https:\/\/www\.slabplan\.com\/accept-invite\?token=/);
     assert.doesNotMatch(body.inviteUrl, /replit/i);
   } finally {
     restoreEnv(snapshot);

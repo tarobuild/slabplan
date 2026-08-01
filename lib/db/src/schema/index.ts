@@ -126,6 +126,7 @@ export const organizations = pgTable(
     stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
     stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
     trialEndsAt: timestampTz("trial_ends_at"),
+    requiresSubscription: boolean("requires_subscription").notNull().default(false),
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },

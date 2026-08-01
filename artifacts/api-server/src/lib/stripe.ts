@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { HttpError } from "./http";
 
-export const BILLING_PLAN_KEYS = ["starter", "team", "pro"] as const;
+export const BILLING_PLAN_KEYS = ["pro"] as const;
 export type BillingPlanKey = (typeof BILLING_PLAN_KEYS)[number];
 
 export type BillingPlan = {
@@ -14,43 +14,18 @@ export type BillingPlan = {
 };
 
 export const billingPlans: Record<BillingPlanKey, BillingPlan> = {
-  starter: {
-    key: "starter",
-    name: "Starter",
-    monthlyUsd: 79,
-    maxUsers: 3,
-    priceEnv: "STRIPE_PRICE_STARTER",
-    features: [
-      "Jobs, clients, leads, and scheduling",
-      "Private file storage",
-      "Basic reports",
-      "Limited AI document parsing",
-    ],
-  },
-  team: {
-    key: "team",
-    name: "Team",
-    monthlyUsd: 149,
-    maxUsers: 10,
-    priceEnv: "STRIPE_PRICE_TEAM",
-    features: [
-      "Everything in Starter",
-      "Daily logs and team activity",
-      "Financial tracker workflows",
-      "Standard AI assistant usage",
-    ],
-  },
   pro: {
     key: "pro",
-    name: "Pro",
-    monthlyUsd: 249,
+    name: "Full Access",
+    monthlyUsd: 250,
     maxUsers: 25,
     priceEnv: "STRIPE_PRICE_PRO",
     features: [
-      "Everything in Team",
-      "Advanced reports and export workflows",
-      "Higher AI usage allowance",
-      "Priority support",
+      "Every SlabPlan workflow and report",
+      "Up to 25 team members",
+      "Private project files and field media",
+      "AI-assisted document and operations workflows",
+      "Priority onboarding and support",
     ],
   },
 };

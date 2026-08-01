@@ -140,6 +140,34 @@ test("public signup creates an organization, owner membership, and signed-in adm
     .limit(1);
   assert.equal(membership?.role, "owner");
   assert.equal(membership?.isDefault, true);
+
+  const authHeaders = {
+    authorization: `Bearer ${body.accessToken}`,
+    "x-requested-with": "XMLHttpRequest",
+  };
+  const billingResponse = await fetch(`${baseUrl}/billing/status`, {
+    headers: authHeaders,
+  });
+  assert.equal(billingResponse.status, 200);
+  const billing = (await billingResponse.json()) as {
+    organization: {
+      requiresSubscription: boolean;
+      accessGranted: boolean;
+    };
+  };
+  assert.equal(billing.organization.requiresSubscription, true);
+  assert.equal(billing.organization.accessGranted, false);
+
+  const dashboardResponse = await fetch(`${baseUrl}/dashboard`, {
+    headers: authHeaders,
+  });
+  assert.equal(dashboardResponse.status, 402);
+  const dashboardProblem = (await dashboardResponse.json()) as {
+    type?: string;
+    status?: number;
+  };
+  assert.equal(dashboardProblem.status, 402);
+  assert.match(dashboardProblem.type ?? "", /subscription-required/);
 });
 
 test("duplicate signup email does not leave an orphan organization", async () => {

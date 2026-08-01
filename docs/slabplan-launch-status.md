@@ -1,11 +1,12 @@
 # SlabPlan Launch Status
 
-Last updated: 2026-05-17
+Last updated: 2026-08-01
 
 ## Completed
 
 - GitHub repo is connected: `tarobuild/slabplan`.
-- Vercel production frontend is live: `https://slabplan.vercel.app`.
+- Vercel production frontend is live at `https://slabplan.vercel.app` while
+  `slabplan.com` completes registrar checkout and DNS validation.
 - Railway production API is live: `https://slabplan-api-production.up.railway.app`.
 - Railway staging API is live: `https://slabplan-api-staging.up.railway.app`.
 - Supabase staging project exists: `slabplan-staging`.
@@ -24,13 +25,16 @@ Last updated: 2026-05-17
   the `slabplan-web` DSN.
 - Browser-origin Sentry delivery is verified from the production web app using
   the Diagnostics settings page.
-- Stripe test-mode SlabPlan products/prices exist in the Tarobuild Stripe
-  account.
+- Stripe billing uses the Tarobuild account.
 - Stripe checkout, customer portal, and signed webhook API endpoints exist.
 - Stripe test keys, price env vars, webhook endpoints, and webhook secrets are
   configured in Railway production/staging.
-- Billing UI is live under `/settings/billing` and renders Starter, Team, and
-  Pro plans.
+- SlabPlan offers one Full Access plan at `$250/company/month` for up to 25
+  team members.
+- New email signups are routed directly into Stripe-hosted subscription
+  checkout, and unpaid new workspaces are denied access server-side.
+- Existing workspaces are grandfathered by the paid-access migration.
+- A public product and pricing site is served at `/`.
 - Production browser smoke test passes for workspace creation, sign-in,
   dashboard load, billing, diagnostics, and 390px mobile login layout.
 - Production sign-out smoke test passes through the account menu and returns to
@@ -67,7 +71,9 @@ Last updated: 2026-05-17
 
 These require owner/vendor setup before SlabPlan is ready for paying users:
 
-- Buy/connect custom domains.
+- Complete registrar checkout and connect `slabplan.com`.
+- Create the `$250/month` Stripe live price and install live production
+  credentials after account verification.
 - Configure transactional email and sender domain.
 - Run email invite/password-reset smoke tests after email is configured.
 
@@ -76,7 +82,7 @@ These require owner/vendor setup before SlabPlan is ready for paying users:
 ```bash
 curl -sS https://slabplan-api-production.up.railway.app/api/healthz
 curl -sS https://slabplan-api-staging.up.railway.app/api/healthz
-curl -I https://slabplan.vercel.app/login
+curl -I https://www.slabplan.com/login
 ```
 
 Expected API shape:

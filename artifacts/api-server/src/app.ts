@@ -38,6 +38,7 @@ import {
   isCanonicalHostBypassPath,
 } from "./lib/canonical-host";
 import { organizationScopeCondition } from "./lib/tenant-scope";
+import { assertOrganizationBillingAccess } from "./lib/billing-access";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -309,6 +310,9 @@ app.get(/^\/uploads\/(.+)$/, async (req, res, next) => {
     const authWithOrganization = bearerToken
       ? auth
       : await attachOrganizationContext(auth);
+    if (authWithOrganization.organizationId) {
+      await assertOrganizationBillingAccess(authWithOrganization.organizationId);
+    }
 
     const pathname = typeof req.params[0] === "string" ? req.params[0] : "";
 

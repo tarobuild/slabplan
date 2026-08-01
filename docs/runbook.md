@@ -6,7 +6,7 @@ This is the quick operator guide for the live SlabPlan deployment.
 
 | Item | URL |
 |---|---|
-| Production app | `https://slabplan.vercel.app` |
+| Production app | `https://www.slabplan.com` |
 | Production API | `https://slabplan-api-production.up.railway.app` |
 | Production health | `https://slabplan-api-production.up.railway.app/api/healthz` |
 | Staging API | `https://slabplan-api-staging.up.railway.app` |
@@ -27,7 +27,7 @@ Run these after every deploy:
 ```bash
 curl -i https://slabplan-api-production.up.railway.app/api/livez
 curl -i https://slabplan-api-production.up.railway.app/api/healthz
-curl -I https://slabplan.vercel.app/login
+curl -I https://www.slabplan.com/login
 ```
 
 Expected:

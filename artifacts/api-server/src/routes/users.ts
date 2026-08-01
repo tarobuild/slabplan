@@ -20,6 +20,7 @@ import { sendInvite, sendPasswordReset, truncateEmailError } from "../lib/email"
 import { writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
 import { getActiveOrganizationId } from "../lib/tenant-scope";
+import { billingPlans } from "../lib/stripe";
 import {
   isSupabasePasswordLoginEnabled,
   sendSupabaseAuthResponse,
@@ -765,6 +766,23 @@ router.post(
     const inviteUrl = buildInviteUrl(invite.token);
     const organizationId = getActiveOrganizationId(req.auth!);
     const invitePath = buildInvitePath(invite.token);
+    const [{ memberCount }] = await db
+      .select({ memberCount: count() })
+      .from(organizationMemberships)
+      .where(
+        and(
+          eq(organizationMemberships.organizationId, organizationId),
+          isNull(organizationMemberships.deletedAt),
+        ),
+      );
+    if (Number(memberCount) >= billingPlans.pro.maxUsers) {
+      throw new HttpError(
+        409,
+        `This workspace has reached its ${billingPlans.pro.maxUsers}-user plan limit.`,
+        { maxUsers: billingPlans.pro.maxUsers },
+        "seat-limit-reached",
+      );
+    }
 
     const { created, initialJobAccessCount } = await db.transaction(async (tx) => {
       const [createdUser] = await tx

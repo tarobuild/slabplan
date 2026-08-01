@@ -320,6 +320,7 @@ router.post(
           name: organizationName,
           slug,
           status: "trialing",
+          requiresSubscription: true,
         })
         .returning();
 

@@ -6,6 +6,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Users,
+  ArrowRight,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -91,7 +92,7 @@ function PlanCard({
   )
 }
 
-export default function BillingSection() {
+export default function BillingSection({ onboarding = false }: { onboarding?: boolean }) {
   useDocumentTitle("Billing · Settings")
   const statusQuery = useBillingGetStatus()
   const checkoutMutation = useBillingPostCheckoutSessions({
@@ -119,18 +120,36 @@ export default function BillingSection() {
     const params = new URLSearchParams(window.location.search)
     const checkout = params.get("checkout")
     if (checkout === "success") {
-      toast.success("Stripe checkout completed")
-      window.history.replaceState(null, "", "/settings/billing")
-      void statusQuery.refetch()
+      toast.success("Payment received. Activating your workspace…")
+      window.history.replaceState(
+        null,
+        "",
+        onboarding ? "/subscribe" : "/settings/billing",
+      )
+      let attempts = 0
+      const interval = window.setInterval(() => {
+        attempts += 1
+        void statusQuery.refetch()
+        if (attempts >= 12) {
+          window.clearInterval(interval)
+        }
+      }, 1000)
+      return () => window.clearInterval(interval)
     } else if (checkout === "cancelled") {
       toast.info("Stripe checkout cancelled")
-      window.history.replaceState(null, "", "/settings/billing")
+      window.history.replaceState(
+        null,
+        "",
+        onboarding ? "/subscribe" : "/settings/billing",
+      )
     }
-  }, [statusQuery])
+    return undefined
+  }, [onboarding, statusQuery.refetch])
 
   const data = statusQuery.data
   const currentPlan = data?.organization.planKey ?? null
   const hasStripeCustomer = Boolean(data?.organization.hasStripeCustomer)
+  const accessGranted = Boolean(data?.organization.accessGranted)
   const mutationBusy = checkoutMutation.isPending || portalMutation.isPending
 
   return (
@@ -212,7 +231,25 @@ export default function BillingSection() {
                 </Alert>
               ) : null}
 
-              <div className="grid gap-4 lg:grid-cols-3">
+              {onboarding && accessGranted ? (
+                <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
+                  <CheckCircle2 className="size-4 text-emerald-600" />
+                  <AlertTitle>Your workspace is active</AlertTitle>
+                  <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <span>Your SlabPlan subscription is ready.</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => window.location.assign("/dashboard")}
+                    >
+                      Continue to SlabPlan
+                      <ArrowRight className="size-4" />
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div className="grid gap-4">
                 {data.plans.map((plan) => (
                   <PlanCard
                     key={plan.key}

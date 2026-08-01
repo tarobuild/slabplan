@@ -26,7 +26,11 @@ import { ROLE_GATES } from "@/lib/role-access"
 import { FilePreviewProvider } from "@/components/files/file-preview-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
-import { bootstrapAuthSession, FORBIDDEN_EVENT } from "@/lib/api"
+import {
+  bootstrapAuthSession,
+  FORBIDDEN_EVENT,
+  SUBSCRIPTION_REQUIRED_EVENT,
+} from "@/lib/api"
 import { AppUpdateNotice } from "@/lib/app-release"
 import { configureApiClient, getQueryClient } from "@/lib/query-client"
 import { useAuthStore } from "@/store/auth"
@@ -58,6 +62,8 @@ const JobsPage = lazy(() => import("@/pages/jobs"))
 const LeadsPage = lazy(() => import("@/pages/leads"))
 const LoginPage = lazy(() => import("@/pages/login"))
 const RegisterPage = lazy(() => import("@/pages/register"))
+const MarketingPage = lazy(() => import("@/pages/marketing"))
+const SubscribePage = lazy(() => import("@/pages/subscribe"))
 const MyDailyLogsPage = lazy(() => import("@/pages/my-daily-logs"))
 const CompanySchedulePage = lazy(() => import("@/pages/schedule"))
 const CompanyDailyLogsPage = lazy(() => import("@/pages/daily-logs"))
@@ -137,10 +143,34 @@ function ForbiddenListener() {
   return null
 }
 
+function SubscriptionRequiredListener() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    function handleSubscriptionRequired() {
+      navigate("/subscribe", { replace: true })
+    }
+
+    window.addEventListener(
+      SUBSCRIPTION_REQUIRED_EVENT,
+      handleSubscriptionRequired,
+    )
+    return () => {
+      window.removeEventListener(
+        SUBSCRIPTION_REQUIRED_EVENT,
+        handleSubscriptionRequired,
+      )
+    }
+  }, [navigate])
+
+  return null
+}
+
 function RootShell() {
   return (
     <FilePreviewProvider>
       <ForbiddenListener />
+      <SubscriptionRequiredListener />
       <Suspense fallback={<RouteLoadingScreen />}>
         <Outlet />
       </Suspense>
@@ -168,6 +198,7 @@ function buildRouter(basename: string | undefined) {
   return createBrowserRouter(
     createRoutesFromElements(
       <Route element={<RootShell />}>
+        <Route path="/" element={<MarketingPage />} />
         <Route element={<PublicOnlyRoute />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -175,13 +206,13 @@ function buildRouter(basename: string | undefined) {
         </Route>
 
         <Route element={<ProtectedRoute />}>
+          <Route path="/subscribe" element={<SubscribePage />} />
           <Route element={<AppLayout />}>
             {/*
               Home is role-aware (Task #321): crew gets "My Day", PM gets
               "This Week", admin gets "Business Pulse". Both `/` and
               `/dashboard` render it.
             */}
-            <Route path="/" element={<HomePage />} />
             <Route path="/dashboard" element={<HomePage />} />
             <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />

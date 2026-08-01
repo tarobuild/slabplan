@@ -6,6 +6,7 @@ export {
   setAuthRefreshHandler,
   setAuthTokenGetter,
   setForbiddenHandler,
+  setPaymentRequiredHandler,
   ApiError,
   ResponseParseError,
   customFetch,
@@ -18,4 +19,5 @@ export type {
   BodyType,
   ErrorType,
   ForbiddenHandler,
+  PaymentRequiredHandler,
 } from "./custom-fetch";

@@ -6,12 +6,14 @@ import {
   setAuthTokenGetter,
   setBaseUrl,
   setForbiddenHandler,
+  setPaymentRequiredHandler,
 } from "@workspace/api-client-react"
 import { useAuthStore } from "@/store/auth"
 import {
   notifyForbidden,
   notifyForbiddenAction,
   notifySessionExpired,
+  notifySubscriptionRequired,
   refreshSession,
 } from "@/lib/api"
 import { apiOrigin } from "@/lib/api-origin"
@@ -149,5 +151,6 @@ export function configureApiClient(): void {
       notifyForbiddenAction()
     }
   })
+  setPaymentRequiredHandler(notifySubscriptionRequired)
   bridgeDataRefreshToReactQuery()
 }

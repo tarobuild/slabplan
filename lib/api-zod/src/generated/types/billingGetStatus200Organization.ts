@@ -15,4 +15,6 @@ export type BillingGetStatus200Organization = {
   hasStripeCustomer: boolean;
   hasStripeSubscription: boolean;
   trialEndsAt: string | null;
+  requiresSubscription: boolean;
+  accessGranted: boolean;
 };

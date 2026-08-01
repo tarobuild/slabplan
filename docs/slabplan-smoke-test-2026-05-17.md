@@ -59,7 +59,8 @@ Passed checks:
 - Signed in through the production web login form.
 - Reached dashboard.
 - Loaded Billing settings.
-- Confirmed Starter, Team, and Pro plans render.
+- Confirmed the original test catalog rendered. The live product direction was
+  later simplified to one `$250/month` Full Access plan.
 - Loaded Diagnostics settings.
 - Sent controlled browser-origin Sentry diagnostic event.
 - Confirmed browser request to Sentry ingestion host:

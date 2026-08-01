@@ -31,8 +31,8 @@ export default function RegisterPage() {
         password,
       })
       setAuth(data.user, data.accessToken)
-      navigate("/dashboard", { replace: true })
-      toast.success("Account created!")
+      navigate("/subscribe", { replace: true })
+      toast.success("Account created. Choose your SlabPlan subscription.")
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to create account")
     } finally {

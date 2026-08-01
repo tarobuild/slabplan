@@ -6,7 +6,7 @@ SlabPlan is deployed with a split-hosting setup:
 - Vercel: React/Vite frontend
 - Railway: Express API server
 - Supabase: Postgres and private object storage
-- Stripe: Tarobuild account, test-mode SlabPlan catalog created
+- Stripe: Tarobuild account, SlabPlan Full Access billing
 - Anthropic: pending API key, for AI features
 - Sentry: Tarobuild org, SlabPlan web/API projects created
 
@@ -14,7 +14,7 @@ SlabPlan is deployed with a split-hosting setup:
 
 | Environment | Frontend | API | Supabase |
 |---|---|---|---|
-| Production | `https://slabplan.vercel.app` | `https://slabplan-api-production.up.railway.app` | `slabplan-production` / `ifwxnudtubuvntsyfvor` |
+| Production | `https://www.slabplan.com` | `https://slabplan-api-production.up.railway.app` | `slabplan-production` / `ifwxnudtubuvntsyfvor` |
 | Staging | Vercel preview builds | `https://slabplan-api-staging.up.railway.app` | `slabplan-staging` / `grpjbugdrnqbtglyujqg` |
 
 Production and staging use separate Supabase databases and separate Railway
@@ -66,8 +66,6 @@ SENTRY_DSN_API=
 SENTRY_ENVIRONMENT=production
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
-STRIPE_PRICE_STARTER=
-STRIPE_PRICE_TEAM=
 STRIPE_PRICE_PRO=
 ```
 
@@ -122,34 +120,24 @@ upload is still optional and requires a future `SENTRY_AUTH_TOKEN`,
 
 ## Stripe Billing
 
-Stripe is configured under the Tarobuild Stripe account in **test mode only**.
-No live products or prices were created.
+SlabPlan uses one self-serve subscription:
 
-Recommended self-serve tiers are capped at `$249/mo`:
+| Plan | Monthly price | Included |
+|---|---:|---|
+| Full Access | `$250/company` | Full platform, up to 25 users, private storage, AI-assisted workflows, and priority onboarding/support |
 
-| Plan | Test product ID | Test price ID | Monthly test price | Intended fit |
-|---|---|---|---:|---|
-| Starter | `prod_UXCaQQajw04YXP` | `price_1TY8B5GReLNurDCd7A4G2wEK` | `$79` | Small shop getting organized |
-| Team | `prod_UXCaWRSA5OBBGi` | `price_1TY8BHGReLNurDCdda2gcHwR` | `$149` | Active fabrication team |
-| Pro | `prod_UXCatr5E30rz7o` | `price_1TY8BSGReLNurDCdXFEB32u8` | `$249` | Established shop needing more control |
-
-Feature posture:
-
-- Starter: jobs, clients, leads, schedule, files, basic reports, limited AI parsing.
-- Team: Starter plus daily logs, team activity, financial tracker, standard AI usage.
-- Pro: Team plus advanced reports/exports, higher AI allowance, priority support.
-
-Stripe env vars point the app at the test-mode prices:
+The server reads the price identifier from:
 
 ```text
-STRIPE_PRICE_STARTER=
-STRIPE_PRICE_TEAM=
 STRIPE_PRICE_PRO=
 ```
 
-Checkout, customer portal, and signed webhook endpoints exist in the API. Keep
-Stripe in test mode until cancellation behavior, failed-payment behavior, and
-tenant access gating are fully smoke-tested.
+Checkout, customer portal, and signed webhook endpoints exist in the API.
+New workspaces require an `active` or `trialing` Stripe subscription (or an
+explicit unexpired internal trial) before accessing paid API routes. Billing
+routes remain available so customers can start a subscription or repair a
+failed payment. Existing workspaces were grandfathered when migration `0039`
+was applied.
 
 Test-mode Stripe webhook endpoints:
 
@@ -210,18 +198,19 @@ by Git and must not be committed.
 
 ## Domain Shape
 
-Current temporary domains:
+Current platform domains:
 
 ```text
-slabplan.vercel.app
+slabplan.com -> redirects to www.slabplan.com
+www.slabplan.com -> Vercel production frontend
+slabplan.vercel.app -> Vercel fallback frontend
 slabplan-api-production.up.railway.app
 slabplan-api-staging.up.railway.app
 ```
 
-Preferred custom domains before public launch:
+Optional future API aliases:
 
 ```text
-app.slabplan.com -> Vercel frontend
 api.slabplan.com -> Railway production API
 staging.slabplan.com -> Vercel preview/staging frontend
 staging-api.slabplan.com -> Railway staging API

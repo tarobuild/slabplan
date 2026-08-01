@@ -184,6 +184,69 @@ test(
   },
 );
 
+test(
+  "0038 renames persisted application metadata keys without changing payloads",
+  async () => {
+    await withScratchSchema(async (scratchPool) => {
+      const client = await scratchPool.connect();
+      try {
+        const previousScheduleKey = ["__", "stone", "TrackScheduleMeta"].join("");
+        const previousWeatherKey = ["__", "stone", "TrackMeta"].join("");
+        await client.query("create table schedule_items (notes text)");
+        await client.query("create table daily_logs (weather_data json)");
+        await client.query(
+          "insert into schedule_items (notes) values ($1)",
+          [
+            JSON.stringify({
+              [previousScheduleKey]: true,
+              notes: "Keep this note",
+              tags: ["Fabrication"],
+            }),
+          ],
+        );
+        await client.query(
+          "insert into daily_logs (weather_data) values ($1::json)",
+          [
+            JSON.stringify({
+              condition: "Sunny",
+              [previousWeatherKey]: {
+                notifyUserIds: ["11111111-1111-4111-8111-111111111111"],
+              },
+            }),
+          ],
+        );
+
+        const migrationSql = readFileSync(
+          new URL("0038_slabplan_metadata_keys.sql", migrationsDir),
+          "utf8",
+        );
+        await client.query(migrationSql);
+
+        const { rows: scheduleRows } = await client.query<{ notes: string }>(
+          "select notes from schedule_items",
+        );
+        assert.deepEqual(JSON.parse(scheduleRows[0].notes), {
+          __slabPlanScheduleMeta: true,
+          notes: "Keep this note",
+          tags: ["Fabrication"],
+        });
+
+        const { rows: weatherRows } = await client.query<{
+          weather_data: Record<string, unknown>;
+        }>("select weather_data from daily_logs");
+        assert.deepEqual(weatherRows[0].weather_data, {
+          condition: "Sunny",
+          __slabPlanMeta: {
+            notifyUserIds: ["11111111-1111-4111-8111-111111111111"],
+          },
+        });
+      } finally {
+        client.release();
+      }
+    });
+  },
+);
+
 async function withScratchDatabase<T>(
   fn: (scratchPool: pg.Pool) => Promise<T>,
 ): Promise<T> {
@@ -234,7 +297,7 @@ test(
   "applyMigrations against a pre-pushed schema baselines 0000 and applies the rest cleanly",
   async () => {
     await withScratchDatabase(async (scratchPool) => {
-      // Stand up the original pushed baseline. Later Stone Track tenant
+      // Stand up the original pushed baseline. Later SlabPlan tenant
       // migrations touch most business tables, so a hand-written subset is
       // no longer representative of a real pre-migration database.
       const setupClient = await scratchPool.connect();

@@ -4,7 +4,7 @@ import test from "node:test";
 import type { AuthContext } from "../src/lib/authorization.ts";
 import { reconcileRealtimeRooms } from "../src/lib/realtime.ts";
 
-const ADMIN_ROOM = "__stone_track_admins__";
+const ADMIN_ROOM = "__slabplan_admins__";
 
 class FakeSocket {
   id = "socket-1";

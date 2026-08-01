@@ -390,14 +390,14 @@ describe("Supabase storage provider", () => {
 
       const storedKeys = Array.from(objects.keys()).sort();
       assert.deepEqual(storedKeys, [
-        "stone-track/uploads/job-a/document/Loxone-Stone-Package.zip",
-        "stone-track/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000000",
-        "stone-track/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000001",
-        "stone-track/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000002",
-        "stone-track/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000003",
+        "slabplan/uploads/job-a/document/Loxone-Stone-Package.zip",
+        "slabplan/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000000",
+        "slabplan/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000001",
+        "slabplan/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000002",
+        "slabplan/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000003",
       ]);
       const manifest = JSON.parse(
-        objects.get("stone-track/uploads/job-a/document/Loxone-Stone-Package.zip")!.body.toString("utf8"),
+        objects.get("slabplan/uploads/job-a/document/Loxone-Stone-Package.zip")!.body.toString("utf8"),
       ) as {
         totalBytes: number;
         contentType: string;
@@ -453,7 +453,7 @@ describe("Supabase storage provider", () => {
       const url = new URL(String(input));
       if (url.pathname.startsWith(objectPrefix) && init?.method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        if (key === "stone-track/uploads/lead-a/document/OneDrive_2026-06-10.zip") {
+        if (key === "slabplan/uploads/lead-a/document/OneDrive_2026-06-10.zip") {
           return new Response(manifestBody, {
             status: 200,
             headers: {
@@ -462,7 +462,7 @@ describe("Supabase storage provider", () => {
             },
           });
         }
-        if (key === "stone-track/uploads/lead-a/document/OneDrive_2026-06-10.zip.parts/000000") {
+        if (key === "slabplan/uploads/lead-a/document/OneDrive_2026-06-10.zip.parts/000000") {
           return new Response(Buffer.from("one-"), {
             status: 200,
             headers: {
@@ -471,7 +471,7 @@ describe("Supabase storage provider", () => {
             },
           });
         }
-        if (key === "stone-track/uploads/lead-a/document/OneDrive_2026-06-10.zip.parts/000001") {
+        if (key === "slabplan/uploads/lead-a/document/OneDrive_2026-06-10.zip.parts/000001") {
           return new Response(Buffer.from("piece"), {
             status: 200,
             headers: {
@@ -537,7 +537,7 @@ describe("Supabase storage provider", () => {
       }
       if (url.pathname.startsWith(objectPrefix) && method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        if (key === "stone-track/uploads/job-a/document/Masa-design-booklet.pdf") {
+        if (key === "slabplan/uploads/job-a/document/Masa-design-booklet.pdf") {
           return new Response(JSON.stringify(manifest), {
             status: 200,
             headers: {
@@ -548,7 +548,7 @@ describe("Supabase storage provider", () => {
         }
         if (
           key ===
-          "stone-track/uploads/job-a/document/Masa-design-booklet.pdf.parts/000000"
+          "slabplan/uploads/job-a/document/Masa-design-booklet.pdf.parts/000000"
         ) {
           return new Response(first, {
             status: 200,
@@ -560,7 +560,7 @@ describe("Supabase storage provider", () => {
         }
         if (
           key ===
-          "stone-track/uploads/job-a/document/Masa-design-booklet.pdf.parts/000001"
+          "slabplan/uploads/job-a/document/Masa-design-booklet.pdf.parts/000001"
         ) {
           return new Response(second, {
             status: 200,
@@ -638,7 +638,7 @@ describe("Supabase storage provider", () => {
       const url = new URL(String(input));
       if (url.pathname.startsWith(objectPrefix) && init?.method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        if (key === "stone-track/uploads/job-a/document/direct-large.pdf") {
+        if (key === "slabplan/uploads/job-a/document/direct-large.pdf") {
           const range = new Headers(init.headers).get("range");
           rangeHeaders.push(range);
           if (range) {
@@ -882,7 +882,7 @@ describe("Supabase storage provider", () => {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
         if (
           method === "GET" &&
-          key === "stone-track/uploads/lead-fiske/document/legacy-Fiske.zip"
+          key === "slabplan/uploads/lead-fiske/document/legacy-Fiske.zip"
         ) {
           return new Response(JSON.stringify(manifest), {
             status: 200,
@@ -895,7 +895,7 @@ describe("Supabase storage provider", () => {
         if (
           method === "GET" &&
           key ===
-            "stone-track/uploads/lead-fiske/document/legacy-Fiske.zip.parts/000000"
+            "slabplan/uploads/lead-fiske/document/legacy-Fiske.zip.parts/000000"
         ) {
           return new Response(firstPart, {
             status: 200,
@@ -905,7 +905,7 @@ describe("Supabase storage provider", () => {
         if (
           method === "GET" &&
           key ===
-            "stone-track/uploads/lead-fiske/document/legacy-Fiske.zip.parts/000001"
+            "slabplan/uploads/lead-fiske/document/legacy-Fiske.zip.parts/000001"
         ) {
           return new Response(secondPart, {
             status: 200,
@@ -915,7 +915,7 @@ describe("Supabase storage provider", () => {
         if (
           method === "GET" &&
           key ===
-            "stone-track/uploads/lead-fiske/document/legacy-Fiske.zip.cadstone-native"
+            "slabplan/uploads/lead-fiske/document/legacy-Fiske.zip.cadstone-native"
         ) {
           if (!materializedComplete) {
             if (range === "bytes=0-0" && nativeProbeFailures < 3) {
@@ -977,7 +977,7 @@ describe("Supabase storage provider", () => {
         );
         assert.equal(
           metadata.objectName,
-          "stone-track/uploads/lead-fiske/document/legacy-Fiske.zip.cadstone-native",
+          "slabplan/uploads/lead-fiske/document/legacy-Fiske.zip.cadstone-native",
           "materialization must target the derived native object",
         );
         return new Response(null, {
@@ -1367,7 +1367,7 @@ describe("Supabase storage provider", () => {
       );
       if (
         method === "GET" &&
-        key === "stone-track/uploads/lead/document/probe-degrades.zip"
+        key === "slabplan/uploads/lead/document/probe-degrades.zip"
       ) {
         sourceReads += 1;
         if (sourceReads <= 3) {
@@ -1383,7 +1383,7 @@ describe("Supabase storage provider", () => {
       }
       if (
         method === "GET" &&
-        key === "stone-track/uploads/lead/document/probe-degrades.zip.parts/000000"
+        key === "slabplan/uploads/lead/document/probe-degrades.zip.parts/000000"
       ) {
         return new Response(payload, {
           status: 200,
@@ -1453,7 +1453,7 @@ describe("Supabase storage provider", () => {
       const objectPrefix = "/storage/v1/object/cadstone-files/";
       if (url.pathname.startsWith(objectPrefix) && method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        if (key === "stone-track/uploads/lead/document/background-retry.zip") {
+        if (key === "slabplan/uploads/lead/document/background-retry.zip") {
           return new Response(JSON.stringify(manifest), {
             status: 200,
             headers: {
@@ -1606,7 +1606,7 @@ describe("Supabase storage provider", () => {
       requests.push(`${init?.method ?? "GET"} ${url.pathname}`);
       if (url.pathname.startsWith(objectPrefix) && init?.method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        if (key === "stone-track/uploads/lead-a/document/small.zip") {
+        if (key === "slabplan/uploads/lead-a/document/small.zip") {
           return new Response(payload, {
             status: 200,
             headers: {
@@ -1712,7 +1712,7 @@ describe("Supabase storage provider", () => {
       const url = new URL(String(input));
       if (url.pathname.startsWith(objectPrefix) && init?.method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        assert.equal(key, "stone-track/uploads/job-a/document/retry-me.pdf");
+        assert.equal(key, "slabplan/uploads/job-a/document/retry-me.pdf");
         attempts += 1;
         if (attempts < 3) {
           return new Response("temporary storage issue", { status: 500 });
@@ -1746,7 +1746,7 @@ describe("Supabase storage provider", () => {
       const url = new URL(String(input));
       if (url.pathname.startsWith(objectPrefix) && init?.method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        assert.equal(key, "stone-track/uploads/job-a/document/retry-stream.pdf");
+        assert.equal(key, "slabplan/uploads/job-a/document/retry-stream.pdf");
         attempts += 1;
         if (attempts < 3) {
           return new Response("temporary storage issue", { status: 500 });
@@ -1794,7 +1794,7 @@ describe("Supabase storage provider", () => {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
         assert.equal(
           key,
-          "stone-track/uploads/job-a/document/fails-at-object-open.pdf",
+          "slabplan/uploads/job-a/document/fails-at-object-open.pdf",
         );
         attempts += 1;
         return new Response("storage down", { status: 500 });
@@ -1856,7 +1856,7 @@ describe("Supabase storage provider", () => {
       const url = new URL(String(input));
       if (url.pathname.startsWith(objectPrefix) && init?.method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        if (key === "stone-track/uploads/job-a/document/retry-parts.pdf") {
+        if (key === "slabplan/uploads/job-a/document/retry-parts.pdf") {
           return new Response(JSON.stringify(manifest), {
             status: 200,
             headers: {
@@ -1864,7 +1864,7 @@ describe("Supabase storage provider", () => {
             },
           });
         }
-        if (key === "stone-track/uploads/job-a/document/retry-parts.pdf.parts/000000") {
+        if (key === "slabplan/uploads/job-a/document/retry-parts.pdf.parts/000000") {
           partAttempts += 1;
           if (partAttempts < 2) {
             return new Response("temporary storage issue", { status: 503 });
@@ -1910,7 +1910,7 @@ describe("Supabase storage provider", () => {
       const url = new URL(String(input));
       if (url.pathname.startsWith(objectPrefix) && init?.method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        if (key === "stone-track/uploads/job-a/document/fails-before-first-byte.pdf") {
+        if (key === "slabplan/uploads/job-a/document/fails-before-first-byte.pdf") {
           return new Response(JSON.stringify(manifest), {
             status: 200,
             headers: {
@@ -1918,7 +1918,7 @@ describe("Supabase storage provider", () => {
             },
           });
         }
-        if (key === "stone-track/uploads/job-a/document/fails-before-first-byte.pdf.parts/000000") {
+        if (key === "slabplan/uploads/job-a/document/fails-before-first-byte.pdf.parts/000000") {
           return new Response("storage down", { status: 500 });
         }
       }
@@ -1969,7 +1969,7 @@ describe("Supabase storage provider", () => {
       const url = new URL(String(input));
       if (url.pathname.startsWith(objectPrefix) && init?.method === "GET") {
         const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-        if (key === "stone-track/uploads/job-a/document/Loxone-Stone-Package.zip") {
+        if (key === "slabplan/uploads/job-a/document/Loxone-Stone-Package.zip") {
           return new Response(JSON.stringify(manifest), {
             status: 200,
             headers: {
@@ -1977,7 +1977,7 @@ describe("Supabase storage provider", () => {
             },
           });
         }
-        if (key === "stone-track/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000000") {
+        if (key === "slabplan/uploads/job-a/document/Loxone-Stone-Package.zip.parts/000000") {
           return new Response(Buffer.from("abc"), {
             status: 200,
             headers: {
@@ -2015,7 +2015,7 @@ describe("Supabase storage provider", () => {
           { status: 200 },
         );
       }
-      return new Response(JSON.stringify({ Key: "stone-track/uploads/job-a/document/file.pdf" }), {
+      return new Response(JSON.stringify({ Key: "slabplan/uploads/job-a/document/file.pdf" }), {
         status: 200,
       });
     });
@@ -2030,7 +2030,7 @@ describe("Supabase storage provider", () => {
     assert.equal(requests.length, 2);
     assert.equal(
       requests[1].url,
-      "https://example.supabase.co/storage/v1/object/cadstone-files/stone-track/uploads/job-a/document/file.pdf",
+      "https://example.supabase.co/storage/v1/object/cadstone-files/slabplan/uploads/job-a/document/file.pdf",
     );
     assert.equal(requests[1].init?.method, "POST");
     const headers = new Headers(requests[1].init?.headers);
@@ -2072,7 +2072,7 @@ describe("Supabase storage provider", () => {
 
     assert.equal(requests.length, 2);
     assert.ok(
-      requests[1].url.includes(`/stone-track/uploads/job-a/document/${storedFileName}`),
+      requests[1].url.includes(`/slabplan/uploads/job-a/document/${storedFileName}`),
       requests[1].url,
     );
   });
@@ -2110,7 +2110,7 @@ describe("Supabase storage provider", () => {
       requests.map((request) => request.method),
       ["HEAD", "GET", "DELETE", "DELETE"],
     );
-    assert.ok(requests.every((request) => request.url.includes("/stone-track/uploads/")));
+    assert.ok(requests.every((request) => request.url.includes("/slabplan/uploads/")));
     assert.match(requests.at(-1)?.url ?? "", /missing\.jpg\.cadstone-native$/);
   });
 

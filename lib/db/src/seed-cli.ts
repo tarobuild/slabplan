@@ -8,11 +8,11 @@ async function main() {
     `Seeded ${result.users.length} users, ${result.jobs.length} jobs, ${result.leads.length} leads.`,
   );
 
-  if (process.env.STONE_TRACK_PRINT_SEED_PASSWORD === "true") {
+  if (process.env.SLABPLAN_PRINT_SEED_PASSWORD === "true") {
     console.log(`Seed user password: ${result.password}`);
   } else {
     console.log(
-      "Seed user password hidden. Set STONE_TRACK_PRINT_SEED_PASSWORD=true for local-only display.",
+      "Seed user password hidden. Set SLABPLAN_PRINT_SEED_PASSWORD=true for local-only display.",
     );
   }
 }

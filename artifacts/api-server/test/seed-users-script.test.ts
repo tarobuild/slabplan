@@ -86,7 +86,7 @@ test("validatePassword: rejects weak/blocked patterns", async () => {
     "Test1!Test1!Test1!",
     "MyAdminPassw0rd!!",
     "passwordIsLongNow1!",
-    "StoneTrackRulesForever!",
+    "SlabPlanRulesForever!",
     "ChangemePleaseNow1!",
   ]) {
     assert.throws(
@@ -124,8 +124,8 @@ test("resolveSeedUsers: returns identities with passwords when both env vars are
   });
 
   assert.equal(users.length, 2);
-  const primary = users.find((u) => u.email === "admin-primary@stone-track.test");
-  const secondary = users.find((u) => u.email === "admin-secondary@stone-track.test");
+  const primary = users.find((u) => u.email === "admin-primary@slabplan.test");
+  const secondary = users.find((u) => u.email === "admin-secondary@slabplan.test");
   assert.ok(primary);
   assert.ok(secondary);
   assert.equal(primary.role, "admin");

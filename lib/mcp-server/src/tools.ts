@@ -1251,7 +1251,7 @@ export const TOOL_DEFINITIONS: McpToolDefinition[] = [
     name: "request",
     title: "Raw API request (escape hatch)",
     description:
-      "Send an arbitrary request to the Stone Track REST API documented in /openapi.json. Use this when no tool covers the field you need. The server applies the same auth, validation, and activity logging as any other route.",
+      "Send an arbitrary request to the SlabPlan REST API documented in /openapi.json. Use this when no tool covers the field you need. The server applies the same auth, validation, and activity logging as any other route.",
     inputSchema: z.object({
       method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
       path: z.string().min(1).describe("Path under /api, e.g. /jobs or /jobs/:id"),

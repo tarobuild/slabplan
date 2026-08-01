@@ -1,6 +1,6 @@
 # AGENTS.md - Rules for AI Coding Agents
 
-This is the **Stone Track** local conversion workspace. It started as a duplicate of the CAD Stone Networks platform, but it is being converted into a new white-label SaaS product.
+This is the **SlabPlan** local conversion workspace. It started as a duplicate of the CAD Stone Networks platform, but it is being converted into a new white-label SaaS product.
 
 The original production CAD Stone repo lives outside this folder. Do not read from it, edit it, push from it, copy secrets from it, or reconnect this duplicate to it unless the owner explicitly asks.
 
@@ -22,8 +22,8 @@ The original production CAD Stone repo lives outside this folder. Do not read fr
 Work in this duplicate only:
 
 ```bash
-pwd
-# /Users/cruz/Documents/stone track
+git rev-parse --show-toplevel
+# Run all commands from the repository root returned above.
 ```
 
 Before major changes, inspect the current branch and dirty state:
@@ -32,7 +32,7 @@ Before major changes, inspect the current branch and dirty state:
 git status --short --branch
 ```
 
-Do not run `git pull`, `git push`, or remote-management commands unless the owner explicitly asks. This workspace is intentionally local-only until a new Stone Track repository is approved.
+Do not run `git pull`, `git push`, or remote-management commands unless the owner explicitly asks. This workspace is intentionally local-only until a new SlabPlan repository is approved.
 
 ## Required Checks
 
@@ -66,7 +66,7 @@ pnpm --filter @workspace/api-spec run codegen
 - **API contract:** OpenAPI spec in `lib/api-spec/openapi.yaml`; generated files must not be hand-edited.
 - **Migrations:** Hand-written SQL migrations in `lib/db/migrations`; do not use `drizzle-kit push --force` without explicit owner approval.
 
-## Stone Track SaaS Direction
+## SlabPlan SaaS Direction
 
 The target product is a multi-tenant SaaS platform. Treat tenant isolation as a security boundary:
 
@@ -76,7 +76,7 @@ The target product is a multi-tenant SaaS platform. Treat tenant isolation as a 
 - Files and signed links must be tenant-isolated.
 - Billing and AI usage must be tenant-metered before broad production use.
 
-See `docs/stone-track-saas-migration-plan.md` for the detailed migration plan.
+See `docs/slabplan-saas-migration-plan.md` for the detailed migration plan.
 
 ## Rejection Criteria
 

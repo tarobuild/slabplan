@@ -25,26 +25,26 @@ import {
   users,
 } from "./schema";
 
-export const DEFAULT_SEED_PASSWORD = "StoneTrackDemo123!";
+export const DEFAULT_SEED_PASSWORD = "SlabPlanDemo123!";
 const SEED_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
-const SEED_ORGANIZATION_NAME = "Stone Track Demo";
-const SEED_ORGANIZATION_SLUG = "stone-track-demo";
+const SEED_ORGANIZATION_NAME = "SlabPlan Demo";
+const SEED_ORGANIZATION_SLUG = "slabplan-demo";
 
 export const SEED_USERS = [
   {
-    email: "cruz.martinez@stone-track.test",
+    email: "cruz.martinez@slabplan.test",
     fullName: "Cruz Martinez",
     role: "admin",
     phone: "(303) 555-0101",
   },
   {
-    email: "maria.garcia@stone-track.test",
+    email: "maria.garcia@slabplan.test",
     fullName: "Maria Garcia",
     role: "project_manager",
     phone: "(303) 555-0113",
   },
   {
-    email: "jake.thompson@stone-track.test",
+    email: "jake.thompson@slabplan.test",
     fullName: "Jake Thompson",
     role: "crew_member",
     phone: "(303) 555-0148",
@@ -134,7 +134,7 @@ const seedClients: SeedClientRecord[] = [
       phone: "(720) 555-0182",
       cellPhone: "(720) 555-0183",
     },
-    createdByEmail: "maria.garcia@stone-track.test",
+    createdByEmail: "maria.garcia@slabplan.test",
   },
   {
     companyName: "Johnson Residence",
@@ -153,7 +153,7 @@ const seedClients: SeedClientRecord[] = [
       phone: "(303) 555-0194",
       cellPhone: "(303) 555-0195",
     },
-    createdByEmail: "maria.garcia@stone-track.test",
+    createdByEmail: "maria.garcia@slabplan.test",
   },
   {
     companyName: "Park Place Hospitality Group",
@@ -172,7 +172,7 @@ const seedClients: SeedClientRecord[] = [
       phone: "(303) 555-0166",
       cellPhone: "(303) 555-0167",
     },
-    createdByEmail: "cruz.martinez@stone-track.test",
+    createdByEmail: "cruz.martinez@slabplan.test",
   },
   {
     companyName: "Riverside Condos HOA",
@@ -191,7 +191,7 @@ const seedClients: SeedClientRecord[] = [
       phone: "(720) 555-0142",
       cellPhone: "(720) 555-0143",
     },
-    createdByEmail: "maria.garcia@stone-track.test",
+    createdByEmail: "maria.garcia@slabplan.test",
   },
   {
     companyName: "Chen Residence",
@@ -210,7 +210,7 @@ const seedClients: SeedClientRecord[] = [
       phone: "(303) 555-0158",
       cellPhone: "(303) 555-0159",
     },
-    createdByEmail: "cruz.martinez@stone-track.test",
+    createdByEmail: "cruz.martinez@slabplan.test",
   },
 ];
 
@@ -228,7 +228,7 @@ const seedJobs: SeedJobRecord[] = [
     projectedStart: "2026-04-12",
     projectedCompletion: "2026-04-24",
     workDays: ["mon", "tue", "wed", "thu", "fri"],
-    createdByEmail: "maria.garcia@stone-track.test",
+    createdByEmail: "maria.garcia@slabplan.test",
   },
   {
     title: "Johnson Master Bath",
@@ -243,7 +243,7 @@ const seedJobs: SeedJobRecord[] = [
     projectedStart: "2026-04-15",
     projectedCompletion: "2026-04-28",
     workDays: ["mon", "tue", "wed", "thu", "fri"],
-    createdByEmail: "maria.garcia@stone-track.test",
+    createdByEmail: "maria.garcia@slabplan.test",
   },
   {
     title: "Park Place Lobby",
@@ -258,7 +258,7 @@ const seedJobs: SeedJobRecord[] = [
     projectedStart: "2026-04-20",
     projectedCompletion: "2026-05-18",
     workDays: ["mon", "tue", "wed", "thu", "fri", "sat"],
-    createdByEmail: "cruz.martinez@stone-track.test",
+    createdByEmail: "cruz.martinez@slabplan.test",
   },
   {
     title: "Riverside Condos Unit 4B",
@@ -273,7 +273,7 @@ const seedJobs: SeedJobRecord[] = [
     projectedStart: "2026-03-08",
     projectedCompletion: "2026-03-18",
     workDays: ["mon", "tue", "wed", "thu", "fri"],
-    createdByEmail: "maria.garcia@stone-track.test",
+    createdByEmail: "maria.garcia@slabplan.test",
   },
   {
     title: "Chen Outdoor Kitchen",
@@ -288,7 +288,7 @@ const seedJobs: SeedJobRecord[] = [
     projectedStart: "2026-02-02",
     projectedCompletion: "2026-02-21",
     workDays: ["mon", "tue", "wed", "thu", "fri"],
-    createdByEmail: "cruz.martinez@stone-track.test",
+    createdByEmail: "cruz.martinez@slabplan.test",
   },
 ];
 
@@ -308,7 +308,7 @@ const seedLeads: SeedLeadRecord[] = [
     notes:
       "Client wants a limestone surround with a slim hearth. Waiting on final stone selection and template approval.",
     leadSource: "Referral",
-    createdByEmail: "cruz.martinez@stone-track.test",
+    createdByEmail: "cruz.martinez@slabplan.test",
   },
   {
     title: "Davis Full Home Renovation",
@@ -325,7 +325,7 @@ const seedLeads: SeedLeadRecord[] = [
     notes:
       "Multi-room scope covering kitchen, bar, and two bath vanities. Contractor requested phased install pricing.",
     leadSource: "Google Ads",
-    createdByEmail: "maria.garcia@stone-track.test",
+    createdByEmail: "maria.garcia@slabplan.test",
   },
   {
     title: "Brown Office Reception",
@@ -342,7 +342,7 @@ const seedLeads: SeedLeadRecord[] = [
     notes:
       "Reception desk cladding approved. Pending job conversion after final site measure package is signed.",
     leadSource: "Architect Referral",
-    createdByEmail: "cruz.martinez@stone-track.test",
+    createdByEmail: "cruz.martinez@slabplan.test",
   },
 ];
 
@@ -357,7 +357,7 @@ function isLocalDatabaseUrl(rawUrl: string | undefined): boolean {
 }
 
 function assertDemoSeedAllowed(): void {
-  const explicitOverride = process.env.STONE_TRACK_ALLOW_DEMO_SEED === "true";
+  const explicitOverride = process.env.SLABPLAN_ALLOW_DEMO_SEED === "true";
   const productionLike = ["production", "prod"].includes(
     (process.env.NODE_ENV ?? process.env.APP_ENV ?? "").toLowerCase(),
   );
@@ -370,7 +370,7 @@ function assertDemoSeedAllowed(): void {
 
   if (productionLike || !isLocalDatabaseUrl(databaseUrl)) {
     throw new Error(
-      "Refusing to seed demo users/data outside a local database without STONE_TRACK_ALLOW_DEMO_SEED=true.",
+      "Refusing to seed demo users/data outside a local database without SLABPLAN_ALLOW_DEMO_SEED=true.",
     );
   }
 }
@@ -1021,7 +1021,7 @@ export async function seedDatabase() {
     fileUrl: "/uploads/smith-kitchen-template.pdf",
     mimeType: "application/pdf",
     fileSize: 842113,
-    uploadedBy: userMap["maria.garcia@stone-track.test"].id,
+    uploadedBy: userMap["maria.garcia@slabplan.test"].id,
   });
   const smithChangeOrderFile = await upsertFile({
     folderId: smithChangeOrders.id,
@@ -1030,7 +1030,7 @@ export async function seedDatabase() {
     fileUrl: "/uploads/smith-change-order-01.pdf",
     mimeType: "application/pdf",
     fileSize: 401553,
-    uploadedBy: userMap["cruz.martinez@stone-track.test"].id,
+    uploadedBy: userMap["cruz.martinez@slabplan.test"].id,
   });
   const smithPhotoFile = await upsertFile({
     folderId: smithPhotos.id,
@@ -1039,7 +1039,7 @@ export async function seedDatabase() {
     fileUrl: "/uploads/smith-demo-day-1.jpg",
     mimeType: "image/jpeg",
     fileSize: 1502384,
-    uploadedBy: userMap["jake.thompson@stone-track.test"].id,
+    uploadedBy: userMap["jake.thompson@slabplan.test"].id,
   });
   const johnsonPhotoFile = await upsertFile({
     folderId: johnsonPhotos.id,
@@ -1048,7 +1048,7 @@ export async function seedDatabase() {
     fileUrl: "/uploads/johnson-bath-layout.jpg",
     mimeType: "image/jpeg",
     fileSize: 1118740,
-    uploadedBy: userMap["maria.garcia@stone-track.test"].id,
+    uploadedBy: userMap["maria.garcia@slabplan.test"].id,
   });
   await upsertFile({
     folderId: smithVideos.id,
@@ -1057,7 +1057,7 @@ export async function seedDatabase() {
     fileUrl: "/uploads/smith-delivery-walkthrough.mp4",
     mimeType: "video/mp4",
     fileSize: 12420884,
-    uploadedBy: userMap["jake.thompson@stone-track.test"].id,
+    uploadedBy: userMap["jake.thompson@slabplan.test"].id,
   });
   const brownProposalOriginalName = "Brown Office Reception Proposal.pdf";
   const brownProposalFile = await upsertFile({
@@ -1067,7 +1067,7 @@ export async function seedDatabase() {
     fileUrl: "/uploads/brown-office-reception-proposal.pdf",
     mimeType: "application/pdf",
     fileSize: 968240,
-    uploadedBy: userMap["cruz.martinez@stone-track.test"].id,
+    uploadedBy: userMap["cruz.martinez@slabplan.test"].id,
   });
 
   const leadContactsSeed = [
@@ -1143,17 +1143,17 @@ export async function seedDatabase() {
       {
         organizationId: SEED_ORGANIZATION_ID,
         leadId: leadsByTitle["Williams Fireplace Surround"].id,
-        userId: userMap["cruz.martinez@stone-track.test"].id,
+        userId: userMap["cruz.martinez@slabplan.test"].id,
       },
       {
         organizationId: SEED_ORGANIZATION_ID,
         leadId: leadsByTitle["Davis Full Home Renovation"].id,
-        userId: userMap["maria.garcia@stone-track.test"].id,
+        userId: userMap["maria.garcia@slabplan.test"].id,
       },
       {
         organizationId: SEED_ORGANIZATION_ID,
         leadId: leadsByTitle["Brown Office Reception"].id,
-        userId: userMap["cruz.martinez@stone-track.test"].id,
+        userId: userMap["cruz.martinez@slabplan.test"].id,
       },
     ])
     .onConflictDoNothing();
@@ -1235,11 +1235,11 @@ export async function seedDatabase() {
     endDate: "2026-04-14",
     workDays: 3,
     progress: 35,
-    createdBy: userMap["maria.garcia@stone-track.test"].id,
+    createdBy: userMap["maria.garcia@slabplan.test"].id,
     notes: "Confirm seam placement with homeowner before CNC cut.",
     assignees: [
-      userMap["maria.garcia@stone-track.test"].id,
-      userMap["jake.thompson@stone-track.test"].id,
+      userMap["maria.garcia@slabplan.test"].id,
+      userMap["jake.thompson@slabplan.test"].id,
     ],
   });
   await upsertScheduleItem({
@@ -1250,9 +1250,9 @@ export async function seedDatabase() {
     endDate: "2026-04-19",
     workDays: 2,
     progress: 10,
-    createdBy: userMap["maria.garcia@stone-track.test"].id,
+    createdBy: userMap["maria.garcia@slabplan.test"].id,
     notes: "Coordinate with plumbing rough-in completion before arrival.",
-    assignees: [userMap["jake.thompson@stone-track.test"].id],
+    assignees: [userMap["jake.thompson@slabplan.test"].id],
   });
 
   const smithDailyLog = await upsertDailyLog({
@@ -1261,7 +1261,7 @@ export async function seedDatabase() {
     title: "Cabinet prep and site walk",
     notes:
       "Completed field verification, confirmed cabinet level, and reviewed seam locations with the homeowner. No blocking issues for fabrication.",
-    createdBy: userMap["maria.garcia@stone-track.test"].id,
+    createdBy: userMap["maria.garcia@slabplan.test"].id,
     publishedAt: new Date("2026-04-05T17:30:00Z"),
     weatherData: {
       condition: "Sunny",
@@ -1280,7 +1280,7 @@ export async function seedDatabase() {
     title: "Existing top removal complete",
     notes:
       "Crew removed the existing cultured marble top and protected adjacent finishes. Vanity base is ready for install after minor wall patch cure.",
-    createdBy: userMap["jake.thompson@stone-track.test"].id,
+    createdBy: userMap["jake.thompson@slabplan.test"].id,
     publishedAt: new Date("2026-04-04T22:10:00Z"),
     weatherData: {
       condition: "Cloudy",
@@ -1305,7 +1305,7 @@ export async function seedDatabase() {
         entityType: "file",
         entityId: smithChangeOrderFile.id,
         action: "uploaded",
-        userId: userMap["cruz.martinez@stone-track.test"].id,
+        userId: userMap["cruz.martinez@slabplan.test"].id,
         metadata: {
           description: "Uploaded Smith Change Order 01.pdf",
           jobTitle: "Smith Kitchen Remodel",
@@ -1315,7 +1315,7 @@ export async function seedDatabase() {
         entityType: "daily_log",
         entityId: johnsonDailyLog.id,
         action: "published",
-        userId: userMap["jake.thompson@stone-track.test"].id,
+        userId: userMap["jake.thompson@slabplan.test"].id,
         metadata: {
           description: "Published daily log: Existing top removal complete",
           jobTitle: "Johnson Master Bath",
@@ -1325,7 +1325,7 @@ export async function seedDatabase() {
         entityType: "daily_log",
         entityId: smithDailyLog.id,
         action: "created",
-        userId: userMap["maria.garcia@stone-track.test"].id,
+        userId: userMap["maria.garcia@slabplan.test"].id,
         metadata: {
           description: "Created daily log: Cabinet prep and site walk",
           jobTitle: "Smith Kitchen Remodel",
@@ -1335,7 +1335,7 @@ export async function seedDatabase() {
         entityType: "lead",
         entityId: leadsByTitle["Davis Full Home Renovation"].id,
         action: "updated",
-        userId: userMap["maria.garcia@stone-track.test"].id,
+        userId: userMap["maria.garcia@slabplan.test"].id,
         metadata: {
           description: "Updated projected sales date and revenue range",
         },

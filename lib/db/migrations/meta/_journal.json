@@ -289,6 +289,14 @@
       "tag": "0037_in_app_notifications",
       "breakpoints": true,
       "checksum": "4e8802af3ce257a2f08e7f3f27d9231b18eb0bf09e7d94d286156b545c17bd18"
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785603632740,
+      "tag": "0038_slabplan_metadata_keys",
+      "breakpoints": true,
+      "checksum": "1d1729915dfd09a7e44221d69a89acfcf41aeceae520a1bae42568420293854a"
     }
   ]
 }

@@ -2,8 +2,8 @@
 /**
  * Supabase Storage restore drill.
  *
- * Lists the first N objects under the Stone Track uploads prefix, downloads the
- * smallest one, re-uploads it under stone-track/restore-drill/ to prove the
+ * Lists the first N objects under the SlabPlan uploads prefix, downloads the
+ * smallest one, re-uploads it under slabplan/restore-drill/ to prove the
  * round-trip works, verifies bytes match, then deletes the round-trip object
  * so no test cruft is left in the live bucket.
  *
@@ -21,18 +21,18 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const drillPrefix = "stone-track/restore-drill";
+export const drillPrefix = "slabplan/restore-drill";
 
 export function makeRestoreDrillTargetName(now = new Date()) {
   const ts = now.toISOString().replace(/[-:.]/g, "").slice(0, 15) + "Z";
   return `${drillPrefix}/roundtrip-${ts}.bin`;
 }
 
-export async function listSome(storage, stoneTrackUploadsPrefix, log = console.log) {
+export async function listSome(storage, slabPlanUploadsPrefix, log = console.log) {
   log(
-    `[list] bucket=${storage.bucketName} prefix=${stoneTrackUploadsPrefix}`,
+    `[list] bucket=${storage.bucketName} prefix=${slabPlanUploadsPrefix}`,
   );
-  const files = await storage.listAllObjects(stoneTrackUploadsPrefix, {
+  const files = await storage.listAllObjects(slabPlanUploadsPrefix, {
     maxObjects: 25,
   });
   log(`[list] returned=${files.length}`);
@@ -100,7 +100,7 @@ export async function runRestoreDrill({
   error = console.error,
   now = new Date(),
 } = {}) {
-  const stoneTrackUploadsPrefix = uploadsObjectPrefix();
+  const slabPlanUploadsPrefix = uploadsObjectPrefix();
   let targetName = null;
   let uploadSucceeded = false;
   let cleanedUp = false;
@@ -109,7 +109,7 @@ export async function runRestoreDrill({
   let cleanupError = null;
 
   try {
-    const files = await listSome(storage, stoneTrackUploadsPrefix, log);
+    const files = await listSome(storage, slabPlanUploadsPrefix, log);
     if (files.length === 0) {
       log("[drill] no files in uploads prefix; nothing to round-trip");
       return null;

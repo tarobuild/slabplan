@@ -183,7 +183,7 @@ test.describe("jobs inline editors — worker (read-only)", () => {
     if (!id) {
       throw new Error(
         `Worker fixture user (${WORKER_EMAIL}) is missing. Re-seed the local ` +
-          `DB with seed-users.mjs --db=local (it provisions worker@stone-track.test).`,
+          `DB with seed-users.mjs --db=local (it provisions worker@slabplan.test).`,
       )
     }
     workerId = id

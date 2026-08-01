@@ -128,7 +128,7 @@ export default function TopNav() {
   useEffect(() => {
     function handleFocusSearch() {
       const desktopInput = document.querySelector<HTMLInputElement>(
-        '#stone-track-topbar-search input[type="search"]',
+        '#slabplan-topbar-search input[type="search"]',
       )
       if (desktopInput && desktopInput.offsetParent !== null) {
         desktopInput.focus()
@@ -182,7 +182,7 @@ export default function TopNav() {
         <div className="flex-1" />
 
         {/* Global search — desktop only */}
-        <div id="stone-track-topbar-search" className="mr-1 hidden w-64 xl:block 2xl:w-72">
+        <div id="slabplan-topbar-search" className="mr-1 hidden w-64 xl:block 2xl:w-72">
           <GlobalSearch />
         </div>
 

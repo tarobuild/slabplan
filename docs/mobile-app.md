@@ -39,13 +39,13 @@ work—remains web-first until separately designed and QA-tested.
 Launch the app with an explicit API base URL:
 
 ```bash
-EXPO_PUBLIC_STONE_TRACK_API_BASE_URL=https://slabplan-api-production.up.railway.app pnpm --filter @workspace/cadstone-mobile start
+EXPO_PUBLIC_SLABPLAN_API_BASE_URL=https://slabplan-api-production.up.railway.app pnpm --filter @workspace/cadstone-mobile start
 ```
 
 For local testing, use the local API origin reachable from the simulator or
 device. Do not hard-code production URLs in app code. The inherited
 `EXPO_PUBLIC_CADSTONE_API_BASE_URL` name is accepted only as a compatibility
-fallback while deployments migrate to the Stone Track variable.
+fallback while deployments migrate to the SlabPlan variable.
 
 The `start:replit` script starts the Expo preview proxy on port `22477` and
 runs Metro behind it. `start:tunnel` is available when direct preview routing

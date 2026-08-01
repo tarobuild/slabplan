@@ -86,7 +86,7 @@ jobs:
       DATABASE_URL: postgres://cadstone:cadstone@postgres:5432/cadstone_test
       # The hostname is a job-local GitHub Actions service container. Keep the
       # destructive reset guard explicit while allowing this throwaway test DB.
-      STONE_TRACK_ALLOW_REMOTE_TEST_DATABASE_RESET: "true"
+      SLABPLAN_ALLOW_REMOTE_TEST_DATABASE_RESET: "true"
       # E2E uploads belong to this disposable runner; Supabase credentials are
       # intentionally absent from CI.
       CADSTONE_STORAGE_BACKEND: local

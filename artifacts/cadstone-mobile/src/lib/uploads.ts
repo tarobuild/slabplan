@@ -18,7 +18,7 @@ type UploadResponse<T> = {
 
 function fallbackName(kind: PendingUpload["kind"], mimeType?: string | null) {
   const ext = mimeType?.includes("/") ? mimeType.split("/")[1] : kind === "file" ? "dat" : "jpg";
-  return `stone-track-${kind}-${Date.now()}.${ext || "dat"}`;
+  return `slabplan-${kind}-${Date.now()}.${ext || "dat"}`;
 }
 
 function fromImageAsset(asset: ImagePicker.ImagePickerAsset): PendingUpload {

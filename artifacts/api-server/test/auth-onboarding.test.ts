@@ -13,8 +13,8 @@ let baseUrl: string;
 
 const runId = crypto.randomUUID();
 const email = `owner-${runId}@onboarding.local`;
-const organizationName = `Stone Track Onboarding ${runId}`;
-const duplicateOrganizationName = `Stone Track Duplicate ${runId}`;
+const organizationName = `SlabPlan Onboarding ${runId}`;
+const duplicateOrganizationName = `SlabPlan Duplicate ${runId}`;
 
 before(async () => {
   process.env.NODE_ENV = "test";
@@ -113,7 +113,7 @@ test("public signup creates an organization, owner membership, and signed-in adm
     .where(eq(organizations.id, body.user.defaultOrganizationId!))
     .limit(1);
   assert.equal(organization?.name, organizationName);
-  assert.match(organization?.slug ?? "", /^stone-track-onboarding-/);
+  assert.match(organization?.slug ?? "", /^slabplan-onboarding-/);
   assert.equal(organization?.status, "trialing");
 
   const [user] = await db

@@ -5328,7 +5328,7 @@ evidence:
 - lib/db/scripts/wipe-and-seed-admins.mjs:10 (PUBLIC_HOST)
 - lib/db/scripts/wipe-and-seed-admins.mjs:104-105
 
-When APP_PUBLIC_URL is omitted, the script prints admin invite URLs on the old CAD Stone production domain. In this Stone Track workspace that can send operators to the wrong product and can leak valid invite tokens to the legacy domain via request logs or analytics if someone follows the printed link. A white-label workspace should fail loudly when its public host is not configured instead of falling back to the legacy production URL.
+When APP_PUBLIC_URL is omitted, the script prints admin invite URLs on the old CAD Stone production domain. In this SlabPlan workspace that can send operators to the wrong product and can leak valid invite tokens to the legacy domain via request logs or analytics if someone follows the printed link. A white-label workspace should fail loudly when its public host is not configured instead of falling back to the legacy production URL.
 
 recommendation:
 Remove the cadstonesystems.com default and require APP_PUBLIC_URL to be set explicitly, or default only to a local development URL when the database target has already been validated as local/disposable.

@@ -1,6 +1,6 @@
-# Stone Track Tenant Isolation Design
+# SlabPlan Tenant Isolation Design
 
-Stone Track is not production-ready as a SaaS until tenant isolation is enforced at the database, auth, storage, and API layers. This document is the implementation checklist for the next phases after the initial branding conversion.
+SlabPlan is not production-ready as a SaaS until tenant isolation is enforced at the database, auth, storage, and API layers. This document is the implementation checklist for the next phases after the initial branding conversion.
 
 ## Current Status
 
@@ -136,7 +136,7 @@ High-risk routes:
 Object storage paths should become:
 
 ```text
-stone-track/organizations/{organizationId}/uploads/{relativePath}
+slabplan/organizations/{organizationId}/uploads/{relativePath}
 ```
 
 The database should store a stable logical file URL, but object-name conversion must include tenant context. The API must never infer tenant access from path shape alone; it must check the file row and its `organization_id`.
@@ -158,7 +158,7 @@ Entitlements should be enforced through a small server-side service before addin
 
 ## Readiness Gates
 
-Stone Track is not production-ready until these are true:
+SlabPlan is not production-ready until these are true:
 
 - Auth tokens include active organization context.
 - All tenant-owned rows have non-null `organization_id`.

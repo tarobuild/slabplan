@@ -26,12 +26,12 @@ export type ToolAuditHook = (event: {
 
 const SERVER_INFO = {
   name: "cadstone-mcp",
-  title: "Stone Track",
+  title: "SlabPlan",
   version: "0.1.0",
 } as const;
 
 const SERVER_INSTRUCTIONS = `
-You are connected to Stone Track, a construction-management workspace.
+You are connected to SlabPlan, a construction-management workspace.
 Authenticate with a Personal Access Token (cs_pat_…). Tool calls map directly
 onto the documented REST API at /openapi.json — read it for the exact request
 shapes you can send via the \`request\` escape-hatch tool. Every tool call is
@@ -111,7 +111,7 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
         };
       },
     }),
-    { description: "Browse Stone Track jobs, leads, clients, files, and folders." },
+    { description: "Browse SlabPlan jobs, leads, clients, files, and folders." },
     async (uri) => {
       const startedAt = new Date();
       const parsed = parseResourceUri(uri.href);
@@ -120,7 +120,7 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
         : "resources/read:unknown";
       try {
         if (!parsed) {
-          throw new Error(`Unsupported Stone Track URI: ${uri.href}`);
+          throw new Error(`Unsupported SlabPlan URI: ${uri.href}`);
         }
         const content = await readResource(client, uri.href);
         void runAuditHook(auditHook, {

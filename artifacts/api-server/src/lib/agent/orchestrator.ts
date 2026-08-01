@@ -131,7 +131,7 @@ export async function runAgentTurn(
   const apiClient = new ApiClient({
     baseUrl: opts.baseUrl,
     token: opts.bearerToken,
-    userAgent: "stone-track-in-app-agent/0.1",
+    userAgent: "slabplan-in-app-agent/0.1",
     signal,
   });
 

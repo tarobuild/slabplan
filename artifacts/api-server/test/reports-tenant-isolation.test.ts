@@ -368,7 +368,13 @@ test("report aggregations are scoped to the active organization", async () => {
   );
   assert.ok(revenueMonth);
   assert.equal(revenueMonth.billedCents, 60_000);
-  assert.equal(revenueMonth.collectedCents, 10_000);
+  assert.equal(
+    revenueBody.months.reduce(
+      (total, month) => total + month.collectedCents,
+      0,
+    ),
+    10_000,
+  );
   assert.equal(revenueMonth.topJobs.some((job) => job.jobId === orgBJobId), false);
 
   const daysResponse = await fetch(`${baseUrl}/reports/days-to-payment`, {

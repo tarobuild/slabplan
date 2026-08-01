@@ -235,7 +235,7 @@ test("Supabase signed and unsigned downloads use first-party native streaming", 
     assert.equal(method, "GET");
     assert.match(
       decodeURIComponent(url.pathname),
-      new RegExp(`/storage/v1/object/cadstone-files/stone-track${fileUrl}$`),
+      new RegExp(`/storage/v1/object/cadstone-files/slabplan${fileUrl}$`),
     );
     return new Response(filePayload, {
       status: 200,
@@ -417,7 +417,7 @@ test("signed first click streams an unmaterialized manifest while native copy bu
     const objectPrefix = "/storage/v1/object/cadstone-files/";
     if (method === "GET" && url.pathname.startsWith(objectPrefix)) {
       const key = decodeURIComponent(url.pathname.slice(objectPrefix.length));
-      const sourceKey = `stone-track${fileUrl}`;
+      const sourceKey = `slabplan${fileUrl}`;
       if (key === sourceKey) {
         return new Response(JSON.stringify(manifest), {
           status: 200,

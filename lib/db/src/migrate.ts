@@ -8,7 +8,7 @@ import { pool as defaultPool } from "./index";
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultMigrationsDir = path.resolve(currentDir, "../migrations");
 const migrationsTableName = "workspace_schema_migrations";
-const migrationLockNamespace = "stone-track";
+const migrationLockNamespace = "slabplan";
 const migrationLockName = "schema-migrations";
 
 export type ApplyMigrationsOptions = {

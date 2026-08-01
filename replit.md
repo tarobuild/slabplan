@@ -1,8 +1,8 @@
-# Stone Track
+# SlabPlan
 
-Stone Track is a local white-label SaaS conversion of the former single-company construction-management platform. The target product is a multi-tenant operations platform for job tracking, lead management, scheduling, daily logs, file management, AI assistance, and financial workflows.
+SlabPlan is a local white-label SaaS conversion of the former single-company construction-management platform. The target product is a multi-tenant operations platform for job tracking, lead management, scheduling, daily logs, file management, AI assistance, and financial workflows.
 
-This workspace is local-only until the owner approves a new Stone Track repository. Do not connect it to the original CAD Stone production repo.
+This workspace is local-only until the owner approves a new SlabPlan repository. Do not connect it to the original CAD Stone production repo.
 
 ## Run & Operate
 
@@ -45,11 +45,11 @@ This workspace is local-only until the owner approves a new Stone Track reposito
 - **Sentry Init (server):** `artifacts/api-server/src/lib/sentry.ts`
 - **Sentry Init (web):** `artifacts/cadstone/src/lib/sentry.ts`
 - **E2E Playwright Tests:** `artifacts/cadstone/tests/e2e/`
-- **Migration Plan:** `docs/stone-track-saas-migration-plan.md`
+- **Migration Plan:** `docs/slabplan-saas-migration-plan.md`
 
 ## Environment Variables
 
-Canonical production env vars will be finalized as Stone Track moves toward staging. Existing inherited env names remain until the related subsystem is migrated.
+Canonical production env vars will be finalized as SlabPlan moves toward staging. Existing inherited env names remain until the related subsystem is migrated.
 
 Expected categories:
 
@@ -62,7 +62,7 @@ Expected categories:
 - **Monitoring:** existing Sentry env vars are grandfathered; do not add new Sentry instrumentation without owner approval
 - **Rate limits:** existing login, AI parse, upload, and API rate-limit tunables
 
-Do not copy env values from the original production project. Stone Track needs fresh Supabase, storage, auth, billing, and monitoring secrets before production.
+Do not copy env values from the original production project. SlabPlan needs fresh Supabase, storage, auth, billing, and monitoring secrets before production.
 
 ## Architecture Decisions
 
@@ -70,7 +70,7 @@ Do not copy env values from the original production project. Stone Track needs f
 - **Migrations Are Source of Truth:** hand-written SQL migrations in `lib/db/migrations` are applied by the custom runner. Avoid `drizzle-kit push --force` unless explicitly approved.
 - **No Silent Fallbacks:** missing required services and env vars should throw instead of pretending work succeeded.
 - **Tenant Isolation Is A Security Boundary:** do not ship tenant code unless schema, auth context, route predicates, storage paths, and tests agree.
-- **Provider Adapters:** billing and AI providers should sit behind internal app abstractions so Stone Track is not locked to one hosting or connector platform.
+- **Provider Adapters:** billing and AI providers should sit behind internal app abstractions so SlabPlan is not locked to one hosting or connector platform.
 
 ## SaaS Target
 
@@ -84,7 +84,7 @@ The intended production architecture is:
 - Subscription and entitlement tables, with Stripe Billing as the likely first provider for web-first B2B SaaS.
 - Tenant-level AI metering, budgets, and audit logs.
 
-Detailed phases are documented in `docs/stone-track-saas-migration-plan.md`.
+Detailed phases are documented in `docs/slabplan-saas-migration-plan.md`.
 
 ## Product Modules
 

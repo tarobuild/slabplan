@@ -1,7 +1,7 @@
 import Constants from "expo-constants";
 
 const apiBaseUrl =
-  process.env.EXPO_PUBLIC_STONE_TRACK_API_BASE_URL ??
+  process.env.EXPO_PUBLIC_SLABPLAN_API_BASE_URL ??
   process.env.EXPO_PUBLIC_CADSTONE_API_BASE_URL ??
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ??
   "";
@@ -11,12 +11,12 @@ export function getApiBaseUrl(): string {
 
   if (!trimmed) {
     throw new Error(
-      "SlabPlan mobile needs EXPO_PUBLIC_STONE_TRACK_API_BASE_URL, for example https://slabplan-api-production.up.railway.app.",
+      "SlabPlan mobile needs EXPO_PUBLIC_SLABPLAN_API_BASE_URL, for example https://slabplan-api-production.up.railway.app.",
     );
   }
 
   if (!/^https?:\/\//i.test(trimmed)) {
-    throw new Error("EXPO_PUBLIC_STONE_TRACK_API_BASE_URL must be an absolute URL.");
+    throw new Error("EXPO_PUBLIC_SLABPLAN_API_BASE_URL must be an absolute URL.");
   }
 
   return trimmed;

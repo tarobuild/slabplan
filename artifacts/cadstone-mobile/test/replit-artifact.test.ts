@@ -22,7 +22,7 @@ test("Replit mobile artifact owns the Expo preview root", () => {
   );
   assert.match(
     artifact,
-    /EXPO_PUBLIC_STONE_TRACK_API_BASE_URL = "https:\/\/slabplan-api-production\.up\.railway\.app"/,
+    /EXPO_PUBLIC_SLABPLAN_API_BASE_URL = "https:\/\/slabplan-api-production\.up\.railway\.app"/,
   );
 });
 

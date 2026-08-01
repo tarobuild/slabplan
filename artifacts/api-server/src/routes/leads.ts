@@ -185,7 +185,7 @@ const leadListQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).optional().default(10),
   search: z.string().trim().optional(),
   status: z.enum(leadStatuses).optional(),
-  // Comma-separated list of statuses to exclude. Used by the Stone Track
+  // Comma-separated list of statuses to exclude. Used by the SlabPlan
   // Leads list to default-hide converted (`won`) leads while still
   // allowing them to be revealed via the "Show converted" toggle. When
   // a `status` is also provided, that wins (no implicit exclusion).
@@ -205,14 +205,14 @@ const leadListQuerySchema = z.object({
       return valid.length > 0 ? valid : undefined;
     }),
   // Exclude leads that have a live converted_to_job activity. The
-  // Stone Track Leads list passes `excludeConverted=true` by default and
+  // SlabPlan Leads list passes `excludeConverted=true` by default and
   // flips it off when the "Show converted" toggle is checked.
   excludeConverted: z
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
   // When true, the result is restricted to leads that have been converted
-  // to a job. Used by the Stone Track Leads list when the user picks the
+  // to a job. Used by the SlabPlan Leads list when the user picks the
   // "Converted" entry in the status filter dropdown. Takes precedence over
   // `excludeConverted` if both are sent.
   onlyConverted: z

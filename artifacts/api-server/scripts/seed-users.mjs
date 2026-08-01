@@ -1,5 +1,5 @@
 /**
- * seed-users.mjs - upsert Stone Track admin fixtures into a database, plus
+ * seed-users.mjs - upsert SlabPlan admin fixtures into a database, plus
  * a synthetic crew_member fixture and a baseline E2E client + open job
  * for the Playwright e2e suite when seeding the local database.
  *
@@ -23,11 +23,11 @@
  *                     and ALSO requires --i-know-what-im-doing.
  *
  * Required env vars (admins, both targets):
- *   SEED_ADMIN_PRIMARY_PASSWORD     password for admin-primary@stone-track.test
- *   SEED_ADMIN_SECONDARY_PASSWORD   password for admin-secondary@stone-track.test
+ *   SEED_ADMIN_PRIMARY_PASSWORD     password for admin-primary@slabplan.test
+ *   SEED_ADMIN_SECONDARY_PASSWORD   password for admin-secondary@slabplan.test
  *
  * Required env vars (local only — worker fixture):
- *   SEED_WORKER_FIXTURE_PASSWORD  password for worker@stone-track.test
+ *   SEED_WORKER_FIXTURE_PASSWORD  password for worker@slabplan.test
  *                                 (the synthetic crew_member account used
  *                                 by the Playwright suite). The Playwright
  *                                 helpers in artifacts/cadstone/tests/e2e/
@@ -80,13 +80,13 @@ const PRODUCTION_PAUSE_MS = 3000;
 export const SEED_USER_IDENTITIES = [
   {
     fullName: "Primary Admin",
-    email: "admin-primary@stone-track.test",
+    email: "admin-primary@slabplan.test",
     role: "admin",
     passwordEnvVar: "SEED_ADMIN_PRIMARY_PASSWORD",
   },
   {
     fullName: "Secondary Admin",
-    email: "admin-secondary@stone-track.test",
+    email: "admin-secondary@slabplan.test",
     role: "admin",
     passwordEnvVar: "SEED_ADMIN_SECONDARY_PASSWORD",
   },
@@ -100,7 +100,7 @@ export const SEED_USER_IDENTITIES = [
 // validated through validatePassword, no fallback.
 export const WORKER_FIXTURE_IDENTITY = {
   fullName: "Worker Fixture",
-  email: "worker@stone-track.test",
+  email: "worker@slabplan.test",
   role: "crew_member",
   passwordEnvVar: "SEED_WORKER_FIXTURE_PASSWORD",
 };
@@ -114,7 +114,7 @@ export const WORKER_FIXTURE_IDENTITY = {
 // `seedsLocalFixtures` flag below.
 export const LOCAL_FIXTURE_CLIENT = {
   companyName: "E2E Fixture Client",
-  email: "fixture-client@stone-track.test",
+  email: "fixture-client@slabplan.test",
 };
 
 export const LOCAL_FIXTURE_JOB = {
@@ -154,8 +154,8 @@ const WEAK_PASSWORD_PATTERNS = [
   "letmein",
   "welcome",
   "qwerty",
-  "stone track",
-  "stonetrack",
+  "slabplan",
+  "slabplan",
   "changeme",
   "default",
 ];

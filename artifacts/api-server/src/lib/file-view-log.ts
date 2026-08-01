@@ -112,7 +112,7 @@ class FileViewClientAbortError extends Error {
  * failure that originates inside the wrapped function does not get
  * double-logged by the catch-all error middleware below.
  */
-const FILE_VIEW_LOGGED = Symbol.for("stoneTrack.fileViewLogged");
+const FILE_VIEW_LOGGED = Symbol.for("slabPlan.fileViewLogged");
 
 type RequestWithViewFlag = Request & { [FILE_VIEW_LOGGED]?: boolean };
 

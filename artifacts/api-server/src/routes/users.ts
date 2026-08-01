@@ -15,7 +15,7 @@ import {
   type User,
 } from "@workspace/db/schema";
 import { sendAuthResponse, toPublicUser } from "../lib/auth";
-import { CANONICAL_HOST } from "../lib/canonical-host";
+import { APP_PUBLIC_ORIGIN } from "../lib/brand";
 import { sendInvite, sendPasswordReset, truncateEmailError } from "../lib/email";
 import { writeActivity } from "../lib/file-manager";
 import { HttpError, asyncHandler } from "../lib/http";
@@ -100,8 +100,8 @@ function buildInviteUrl(token: string): string {
   if (explicit && (process.env.NODE_ENV !== "production" || !isReplitOrigin(explicit))) {
     return `${explicit}${path}`;
   }
-  if (process.env.NODE_ENV === "production" && CANONICAL_HOST) {
-    return `https://${CANONICAL_HOST}${path}`;
+  if (process.env.NODE_ENV === "production") {
+    return `${APP_PUBLIC_ORIGIN}${path}`;
   }
   const replit = process.env.REPLIT_DEV_DOMAIN?.trim();
   if (replit) {

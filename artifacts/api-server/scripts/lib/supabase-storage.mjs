@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 
-export const STONE_TRACK_UPLOADS_PREFIX = "stone-track/uploads";
+export const SLABPLAN_UPLOADS_PREFIX = "slabplan/uploads";
 export const SUPABASE_OBJECT_MISSING_STATUSES = new Set([400, 404]);
 
 export function getRequiredEnv(key, env = process.env) {
@@ -21,7 +21,7 @@ export function getSupabaseStorageConfig(env = process.env) {
 }
 
 export function uploadsObjectPrefix() {
-  return `${STONE_TRACK_UPLOADS_PREFIX}/`;
+  return `${SLABPLAN_UPLOADS_PREFIX}/`;
 }
 
 function encodeStoragePath(value) {

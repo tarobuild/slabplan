@@ -21,4 +21,4 @@ run = "pnpm --filter @workspace/cadstone-mobile run start:replit"
 [services.env]
 PORT = "22477"
 BASE_PATH = "/slabplan-mobile/"
-EXPO_PUBLIC_STONE_TRACK_API_BASE_URL = "https://slabplan-api-production.up.railway.app"
+EXPO_PUBLIC_SLABPLAN_API_BASE_URL = "https://slabplan-api-production.up.railway.app"

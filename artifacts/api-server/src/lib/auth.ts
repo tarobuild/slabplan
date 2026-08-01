@@ -58,7 +58,7 @@ function readJwtSecret(envName: JwtSecretEnvName) {
   }
 
   // JWT_UPLOAD_SECRET is now advisory — it only protects the legacy
-  // `stone_track_upload_token` cookie used as a fallback for unauthenticated
+  // `slabplan_upload_token` cookie used as a fallback for unauthenticated
   // `<img>`/`<iframe>` access to /uploads/*. Standard upload routes use
   // the access-token Bearer auth like every other API endpoint, so a
   // missing upload secret no longer blocks uploads or views.
@@ -90,8 +90,8 @@ const accessSecret = readJwtSecret("JWT_ACCESS_SECRET");
 const refreshSecret = readJwtSecret("JWT_REFRESH_SECRET");
 const uploadSecret = readUploadSecret(accessSecret);
 
-export const refreshCookieName = "stone_track_refresh_token";
-export const uploadCookieName = "stone_track_upload_token";
+export const refreshCookieName = "slabplan_refresh_token";
+export const uploadCookieName = "slabplan_upload_token";
 
 const secureCookies = process.env.NODE_ENV === "production";
 

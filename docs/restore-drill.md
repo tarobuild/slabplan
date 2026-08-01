@@ -316,8 +316,8 @@ Row-level spot-check (SQL):
 
 ```
 SOURCE                                                       RESTORED
-<redacted-admin-id-1> admin-primary@stone-track.test    ✓ identical
-<redacted-admin-id-2> admin-secondary@stone-track.test  ✓ identical
+<redacted-admin-id-1> admin-primary@slabplan.test    ✓ identical
+<redacted-admin-id-2> admin-secondary@slabplan.test  ✓ identical
 ```
 
 Both founding admin accounts present in the restored DB with matching
@@ -326,10 +326,10 @@ Both founding admin accounts present in the restored DB with matching
 App-tier smoke: booted `artifacts/api-server` (the production
 `dist/index.mjs` bundle) on port 7799 with `SUPABASE_DATABASE_URL` and
 `DATABASE_URL` overridden to point at the restored throwaway DB
-(`stone_track_smoke_20260506185313`). Boot log:
+(`slabplan_smoke_20260506185313`). Boot log:
 
 ```
-[db] connecting via SUPABASE_DATABASE_URL host=127.0.0.1 db=stone_track_smoke_…
+[db] connecting via SUPABASE_DATABASE_URL host=127.0.0.1 db=slabplan_smoke_…
 [boot] LISTENING { host: '0.0.0.0', port: 7799 }
 ```
 

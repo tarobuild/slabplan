@@ -103,7 +103,7 @@ before(async () => {
       isComplete: false,
       reminder: "1_hour_before",
       notes: JSON.stringify({
-        __stoneTrackScheduleMeta: true,
+        __slabPlanScheduleMeta: true,
         notes: null,
         tags: ["safety", "priority"],
         predecessors: [],

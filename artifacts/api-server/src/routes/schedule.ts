@@ -542,7 +542,7 @@ type ScheduleMeta = {
   manualEndDate: boolean;
 };
 
-const scheduleMetaMarker = "__stoneTrackScheduleMeta";
+const scheduleMetaMarker = "__slabPlanScheduleMeta";
 
 function getParam(value: string | string[] | undefined, label: string) {
   const normalized = Array.isArray(value) ? value[0] : value;

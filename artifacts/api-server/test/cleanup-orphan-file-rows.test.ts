@@ -17,7 +17,7 @@ test("fileUrlToObjectName allows benign consecutive dots inside a filename", asy
 
   assert.equal(
     mod.fileUrlToObjectName({ fileUrl: "/uploads/job-1/contract..final.pdf" }),
-    "stone-track/uploads/job-1/contract..final.pdf",
+    "slabplan/uploads/job-1/contract..final.pdf",
   );
 });
 
@@ -57,7 +57,7 @@ test("cleanup classification probes benign consecutive-dot filenames", async () 
     },
   });
 
-  assert.deepEqual(probed, ["stone-track/uploads/job-1/contract..final.pdf"]);
+  assert.deepEqual(probed, ["slabplan/uploads/job-1/contract..final.pdf"]);
   assert.equal(result.orphans.length, 0);
   assert.equal(result.present.length, 1);
   assert.equal(result.indeterminate.length, 0);

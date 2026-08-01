@@ -209,7 +209,7 @@ const weatherQuerySchema = z
     { message: "Provide either `address` or both `lat` and `lng`." },
   );
 
-const weatherMetaKey = "__stoneTrackMeta";
+const weatherMetaKey = "__slabPlanMeta";
 
 function getParam(value: string | string[] | undefined, label: string) {
   const normalized = Array.isArray(value) ? value[0] : value;

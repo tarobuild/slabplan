@@ -25,8 +25,8 @@ type AuthState = {
   hydrate: () => Promise<void>;
 };
 
-const REFRESH_TOKEN_KEY = "stone-track.mobile.refreshToken";
-const USER_KEY = "stone-track.mobile.user";
+const REFRESH_TOKEN_KEY = "slabplan.mobile.refreshToken";
+const USER_KEY = "slabplan.mobile.user";
 
 export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,

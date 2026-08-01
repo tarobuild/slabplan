@@ -1,12 +1,12 @@
-# Stone Track Production Readiness Plan
+# SlabPlan Production Readiness Plan
 
-This is the master execution plan for making Stone Track a production-ready multi-tenant SaaS application. It assumes this local workspace is now the Stone Track project and that the original CAD Stone production project remains off limits.
+This is the master execution plan for making SlabPlan a production-ready multi-tenant SaaS application. It assumes this local workspace is now the SlabPlan project and that the original CAD Stone production project remains off limits.
 
-Stone Track is not ready for paid production use until the hard gates in this document are complete. The current app can run locally as a rebranded single-tenant product, but it does not yet provide the isolation, onboarding, billing, storage partitioning, and operational controls required for SaaS.
+SlabPlan is not ready for paid production use until the hard gates in this document are complete. The current app can run locally as a rebranded single-tenant product, but it does not yet provide the isolation, onboarding, billing, storage partitioning, and operational controls required for SaaS.
 
 ## Non-Negotiable Rules
 
-- Work only in `/Users/cruz/Documents/stone track`.
+- Work only in the current SlabPlan repository root.
 - Do not touch `/Users/cruz/Documents/New project 3`.
 - Do not add a Git remote or push without explicit owner approval.
 - Do not copy production secrets, customer data, `.env` values, or object storage data.
@@ -20,9 +20,9 @@ Stone Track is not ready for paid production use until the hard gates in this do
 
 Completed foundation work:
 
-- Stone Track brand constants exist on frontend and backend.
+- SlabPlan brand constants exist on frontend and backend.
 - Visible auth, nav, settings, assistant, email, metadata, cookie, and storage prefix surfaces have been rebranded.
-- `AGENTS.md` and `replit.md` now describe the Stone Track local conversion workspace.
+- `AGENTS.md` and `replit.md` now describe the SlabPlan local conversion workspace.
 - `organizations`, `organization_memberships`, and `users.default_organization_id` exist in schema and migration form.
 - A deterministic legacy organization backfill exists for databases that already contain users.
 - Tenant-owned business tables now have nullable `organization_id` columns and indexes in schema and migration form.
@@ -33,7 +33,7 @@ Completed foundation work:
 - `/reports` and the top-level `/dashboard/stats`, `/dashboard/agenda`, and `/dashboard/schedule` endpoints now apply active-organization filters to summary and calendar aggregates.
 - Job system folders, lead attachment folders, schedule attachment folders, uploaded file rows, and job/lead-backed activity rows now inherit organization context.
 - Shared admin authorization helpers now check active-organization ownership for job, lead, and client access instead of treating admin as database-wide access.
-- Tenant isolation design exists in `docs/stone-track-tenant-isolation-design.md`.
+- Tenant isolation design exists in `docs/slabplan-tenant-isolation-design.md`.
 
 Known gaps:
 
@@ -45,7 +45,7 @@ Known gaps:
 - AI usage is user-scoped, not organization-metered.
 - Billing and entitlements are not implemented.
 - Supabase Auth is not integrated.
-- Production deployment, secrets, domains, and backup/restore are not configured for Stone Track.
+- Production deployment, secrets, domains, and backup/restore are not configured for SlabPlan.
 
 ## Architecture Decisions
 
@@ -55,23 +55,23 @@ Use Replit for the first production deployment only after tenant isolation and b
 
 ### Database
 
-Use a fresh Stone Track Supabase Postgres project. Do not reuse or connect to the original production database.
+Use a fresh SlabPlan Supabase Postgres project. Do not reuse or connect to the original production database.
 
 ### Storage
 
 Use a fresh Supabase-compatible private bucket. Object names must include organization context before production:
 
 ```text
-stone-track/organizations/{organizationId}/uploads/{relativePath}
+slabplan/organizations/{organizationId}/uploads/{relativePath}
 ```
 
 ### Auth
 
-Keep current JWT auth while tenant isolation is being built. Evaluate Supabase Auth after the application has explicit organization and membership semantics. Supabase Auth can handle identity, but Stone Track still needs first-class tenant authorization tables.
+Keep current JWT auth while tenant isolation is being built. Evaluate Supabase Auth after the application has explicit organization and membership semantics. Supabase Auth can handle identity, but SlabPlan still needs first-class tenant authorization tables.
 
 ### Billing
 
-Use Stripe Billing first for web-first B2B subscriptions. Keep Stone Track billing state provider-neutral where practical, with Stripe IDs stored as provider fields.
+Use Stripe Billing first for web-first B2B subscriptions. Keep SlabPlan billing state provider-neutral where practical, with Stripe IDs stored as provider fields.
 
 ### AI
 
@@ -79,7 +79,7 @@ Keep the existing AI provider adapter initially, but add organization-level mete
 
 ## Production Readiness Gates
 
-Stone Track is production-ready only when all gates below pass.
+SlabPlan is production-ready only when all gates below pass.
 
 ### Gate 1: Tenant Data Model
 
@@ -247,7 +247,7 @@ Gate checks:
 
 - Switching organizations clears stale query data.
 - Local storage keys cannot carry tenant-specific filters across tenants.
-- All user-facing organization labels are generic Stone Track labels.
+- All user-facing organization labels are generic SlabPlan labels.
 
 ### Gate 6: Onboarding And Team Management
 
@@ -294,7 +294,7 @@ Gate checks:
 - Webhook replay is safe.
 - Cancelled, past-due, trialing, active, and suspended states are explicit.
 - Non-owner members cannot manage billing.
-- No card data is stored in Stone Track.
+- No card data is stored in SlabPlan.
 
 ### Gate 8: AI Metering And Safety
 
@@ -317,11 +317,11 @@ Gate checks:
 
 ### Gate 9: Supabase And Deployment
 
-Goal: Stone Track has fresh infrastructure and repeatable deployment.
+Goal: SlabPlan has fresh infrastructure and repeatable deployment.
 
 Required work:
 
-- Create new Stone Track Supabase project.
+- Create new SlabPlan Supabase project.
 - Create new database, storage bucket, and service role secrets.
 - Configure backups and restore drill.
 - Configure Replit deployment with fresh secrets.
@@ -334,7 +334,7 @@ Gate checks:
 - No secrets are copied from the old project.
 - Health and liveness endpoints pass.
 - DB migrations run once and are idempotent.
-- File upload/view works against Stone Track storage.
+- File upload/view works against SlabPlan storage.
 - Backup restore drill is documented and tested.
 
 ### Gate 10: Security And Compliance
@@ -363,7 +363,7 @@ Goal: launch can be operated and rolled back safely.
 
 Required work:
 
-- New runbook for Stone Track production.
+- New runbook for SlabPlan production.
 - Incident checklist.
 - Backup and restore checklist.
 - Deployment checklist.
@@ -449,7 +449,7 @@ For each implementation slice:
 1. Run focused tests for changed code.
 2. Run `pnpm typecheck`.
 3. Run `pnpm check-api-codegen` if API spec or generated contracts changed.
-4. Run `DATABASE_URL=postgres://stone_track:stone_track@127.0.0.1:5432/stone_track_test pnpm knip`.
+4. Run `DATABASE_URL=postgres://slabplan:slabplan@127.0.0.1:5432/slabplan_test pnpm knip`.
 5. Run `pnpm --filter @workspace/cadstone run check-eager-bundle` for frontend-affecting changes.
 6. Run `git diff --check`.
 7. Review remaining legacy brand scans and classify each match as historical, generated, compatibility, or a bug.
@@ -474,7 +474,7 @@ Before calling any readiness slice complete:
 
 ## Definition Of Ready
 
-Stone Track is ready to sell only when:
+SlabPlan is ready to sell only when:
 
 - A new customer can subscribe, create an organization, invite users, upload files, manage work, and pay.
 - Another customer cannot access any data, file, report, search result, AI citation, token, or cache entry from the first customer.

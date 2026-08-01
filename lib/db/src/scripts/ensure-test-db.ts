@@ -5,7 +5,7 @@ import pg from "pg";
 
 const DEFAULT_TEST_DATABASE_URL =
   "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test";
-const ALLOW_REMOTE_TEST_RESET_ENV = "STONE_TRACK_ALLOW_REMOTE_TEST_DATABASE_RESET";
+const ALLOW_REMOTE_TEST_RESET_ENV = "SLABPLAN_ALLOW_REMOTE_TEST_DATABASE_RESET";
 
 // A handful of tables the test suites rely on. If any are missing we treat
 // the DB as un-provisioned and trigger setup-test-db. We deliberately keep

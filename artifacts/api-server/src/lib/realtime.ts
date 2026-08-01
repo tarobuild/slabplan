@@ -13,7 +13,7 @@ import { corsOrigin } from "./cors";
 import { logger } from "./logger";
 
 let io: Server | null = null;
-const adminRoom = "__stone_track_admins__";
+const adminRoom = "__slabplan_admins__";
 const REALTIME_TOKEN_REVALIDATION_INTERVAL_MS = ACCESS_TOKEN_TTL_SECONDS * 1000;
 
 async function listRealtimeScopeIds(auth: NonNullable<Express.Request["auth"]>) {

@@ -30,9 +30,9 @@ const chromiumExecutable = process.env.CHROMIUM_PATH
  *     node artifacts/api-server/scripts/seed-users.mjs --db=local
  *
  * That single seed-users.mjs invocation upserts:
- *   admin-primary@stone-track.test    (admin)
- *   admin-secondary@stone-track.test  (admin)
- *   worker@stone-track.test           (crew_member) — synthetic fixture
+ *   admin-primary@slabplan.test    (admin)
+ *   admin-secondary@slabplan.test  (admin)
+ *   worker@slabplan.test           (crew_member) — synthetic fixture
  *                                     used to prove worker-level role
  *                                     gates actually fire. Local only —
  *                                     production never seeds it. The
@@ -56,14 +56,14 @@ const chromiumExecutable = process.env.CHROMIUM_PATH
  * of clicking through the login form — otherwise the auth rate limiter
  * (5/email/10min) would trip before the suite finishes.
  *
- * The fourth fixture — `pm.json` — backs `fixture-pm@stone-track.test`,
+ * The fourth fixture — `pm.json` — backs `fixture-pm@slabplan.test`,
  * a synthetic project_manager used to drive PM-positive flows in
  * `golden-path-pm.spec.ts` (PM-of-job CAN edit own job, manage
  * schedule, view financials). Unlike the other three users, the PM
  * is NOT seeded by seed-users.mjs because production has no PMs by
  * default. Instead `auth.setup.ts` provisions it on demand: it logs
  * in as the primary admin, calls `ensureProjectManagerFixture` to invite
- * `fixture-pm@stone-track.test` if missing, reissues a fresh invite
+ * `fixture-pm@slabplan.test` if missing, reissues a fresh invite
  * token, and consumes it via /auth/accept-invite to (re)set the
  * password to SEED_PM_FIXTURE_PASSWORD. That env var is REQUIRED by
  * the suite — pick any password that satisfies the API policy

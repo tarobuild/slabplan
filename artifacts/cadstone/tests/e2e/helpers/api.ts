@@ -181,7 +181,7 @@ export async function findUserIdByEmail(
 }
 
 /**
- * Ensure the synthetic fixture PM (`fixture-pm@stone-track.test`) exists
+ * Ensure the synthetic fixture PM (`fixture-pm@slabplan.test`) exists
  * in the local DB so:
  *   1. The inline PM picker on /jobs has a real option to choose.
  *   2. `auth.setup.ts` can deterministically reissue an invite token
@@ -191,7 +191,7 @@ export async function findUserIdByEmail(
  * Idempotent: if the fixture user already exists (active), reuses it.
  * Otherwise invites it. Crucially, the lookup keys on email — not
  * "any active project_manager" — so an environment that already has
- * other PMs still ends up with `fixture-pm@stone-track.test` provisioned.
+ * other PMs still ends up with `fixture-pm@slabplan.test` provisioned.
  * That keeps the e2e suite working on non-clean DBs (e.g. a developer
  * box where someone manually invited a real PM).
  */
@@ -199,7 +199,7 @@ export async function ensureProjectManagerFixture(
   request: APIRequestContext,
   token: string,
 ): Promise<{ id: string; fullName: string }> {
-  const fixtureEmail = "fixture-pm@stone-track.test"
+  const fixtureEmail = "fixture-pm@slabplan.test"
   const res = await request.get("/api/users?roles=project_manager&limit=200", {
     headers: authHeaders(token),
   })

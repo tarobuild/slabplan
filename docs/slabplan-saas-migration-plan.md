@@ -1,6 +1,6 @@
-# Stone Track SaaS Migration Plan
+# SlabPlan SaaS Migration Plan
 
-This repo is the local Stone Track conversion of the former single-company construction-management platform. The goal is a production-grade, multi-tenant SaaS product with tenant-isolated data, subscriptions, private file storage, and a generic white-label brand.
+This repo is the local SlabPlan conversion of the former single-company construction-management platform. The goal is a production-grade, multi-tenant SaaS product with tenant-isolated data, subscriptions, private file storage, and a generic white-label brand.
 
 This plan is intentionally phased. Tenant isolation is a security boundary; it should not be half-implemented across schema, auth, API, storage, and tests.
 
@@ -26,14 +26,14 @@ Keep the app portable. Core business logic should not depend on Replit-only conn
 
 ### Supabase
 
-Use a new Stone Track Supabase project for production. Supabase remains a strong fit for:
+Use a new SlabPlan Supabase project for production. Supabase remains a strong fit for:
 
 - Postgres as the source of truth.
 - Private object storage for uploaded files.
 - Backups and operational visibility.
 - Optional Supabase Auth once tenant isolation is structurally complete.
 
-Supabase Auth is identity infrastructure, not the whole tenant authorization model. Stone Track still needs first-class tables for tenants, memberships, roles, invitations, subscriptions, entitlements, and usage.
+Supabase Auth is identity infrastructure, not the whole tenant authorization model. SlabPlan still needs first-class tables for tenants, memberships, roles, invitations, subscriptions, entitlements, and usage.
 
 ### Billing
 
@@ -52,7 +52,7 @@ Provider-specific IDs belong on the billing tables, not scattered through busine
 
 ### AI
 
-AI calls should go through an internal provider adapter and tenant usage meter. Whether the upstream provider is Anthropic, OpenAI, Replit AI, or another gateway, Stone Track must track:
+AI calls should go through an internal provider adapter and tenant usage meter. Whether the upstream provider is Anthropic, OpenAI, Replit AI, or another gateway, SlabPlan must track:
 
 - tenant-level AI budget
 - user-level limits
@@ -62,15 +62,15 @@ AI calls should go through an internal provider adapter and tenant usage meter. 
 
 ## Phase 0: White-Label Foundation
 
-Goal: remove CAD Stone production references and make Stone Track the explicit product identity without changing tenant behavior yet.
+Goal: remove CAD Stone production references and make SlabPlan the explicit product identity without changing tenant behavior yet.
 
 Tasks:
 
 - Rebrand visible UI: document title, login, invite acceptance, top nav, assistant copy, settings copy.
 - Rebrand transactional email copy.
-- Replace app-internal event/storage keys from `cadstone:*` to `stone-track:*` where safe.
-- Rename cookie names from CAD-specific names to Stone Track names with a compatibility plan if needed.
-- Change object storage prefix from `cadstone/uploads` to a generic Stone Track prefix for new local/dev data.
+- Replace app-internal event/storage keys from `cadstone:*` to `slabplan:*` where safe.
+- Rename cookie names from CAD-specific names to SlabPlan names with a compatibility plan if needed.
+- Change object storage prefix from `cadstone/uploads` to a generic SlabPlan prefix for new local/dev data.
 - Update `AGENTS.md` and `replit.md` so future agents do not pull from or push to the original CAD Stone repo.
 - Keep folder/package renames deferred unless build tooling and workspace references are updated in the same change.
 
@@ -109,7 +109,7 @@ Add:
 
 Backfill:
 
-- Create one local default tenant named `Stone Track Local`.
+- Create one local default tenant named `SlabPlan Local`.
 - Attach all existing users to it.
 - Add nullable `tenant_id` to business tables, backfill, then make required where appropriate.
 
@@ -223,7 +223,7 @@ Tasks:
 - Add tenant switcher only if multi-membership is supported at launch.
 - Update onboarding and invite flows.
 - Scope browser storage keys by tenant when persisted filters are tenant-specific.
-- Add generic Stone Track assets and metadata.
+- Add generic SlabPlan assets and metadata.
 
 Exit criteria:
 
@@ -248,7 +248,7 @@ Exit criteria:
 - Tenant access reflects subscription status.
 - Failed payment and cancellation states are handled explicitly.
 - Webhook replay is safe.
-- No card data is stored in Stone Track.
+- No card data is stored in SlabPlan.
 
 ## Phase 7: Production Readiness
 
@@ -259,7 +259,7 @@ Tasks:
 - New secrets, no copied CAD Stone values.
 - Staging smoke suite.
 - Cross-tenant isolation suite.
-- Backup and restore drill for Stone Track.
+- Backup and restore drill for SlabPlan.
 - Launch checklist updated for generic SaaS.
 
 Exit criteria:

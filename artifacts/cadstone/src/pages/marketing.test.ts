@@ -22,7 +22,18 @@ test("marketing page demonstrates the complete connected product workflow", () =
 test("marketing preview data is explicitly identified as illustrative", () => {
   assert.match(source, /The details below are illustrative; the workflows are/)
   assert.match(source, /Sample workspace/)
+  assert.match(source, /Illustrative sample/)
   assert.doesNotMatch(source, /customer testimonial/i)
+})
+
+test("field execution preview uses representative installation media", () => {
+  for (const imagePath of [
+    "/marketing/field-install-overview.jpg",
+    "/marketing/field-seam-detail.jpg",
+    "/marketing/field-edge-inspection.jpg",
+  ]) {
+    assert.match(source, new RegExp(imagePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+  }
 })
 
 test("public document metadata describes SlabPlan and provides social sharing cards", () => {

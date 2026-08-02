@@ -26,7 +26,7 @@ export const billingPlans: Record<BillingPlanKey, BillingPlan> = {
       "Up to 25 team members",
       "Private project files and field media",
       "AI-assisted document and operations workflows",
-      "Priority onboarding and support",
+      "Role-aware team access",
     ],
   },
 };

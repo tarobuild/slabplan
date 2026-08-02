@@ -84,7 +84,7 @@ const tourItems: Array<{
     eyebrow: "Capture the day",
     title: "Make daily progress visible while it is still actionable.",
     description:
-      "Crews and project teams can document labor, weather, progress, issues, comments, photos, and videos from a focused field workflow.",
+      "Crews and project teams can capture weather, job notes, visibility, comments, photos, videos, and supporting files from a focused daily-log workflow.",
     bullets: [
       "Role-aware My Day views",
       "Daily logs with media and comments",
@@ -112,11 +112,11 @@ const tourItems: Array<{
     eyebrow: "Find the answer faster",
     title: "Ask operational questions with the project context intact.",
     description:
-      "The in-app assistant works alongside SlabPlan data and documents, with visible tool activity, citations, saved conversations, and tenant-level usage controls.",
+      "The in-app assistant works alongside SlabPlan data and documents, with visible tool activity, citations, saved conversations, and per-user usage tracking.",
     bullets: [
       "Auditable tool calls and citations",
       "Saved, pinnable conversations",
-      "Company-level usage visibility",
+      "Visible monthly usage and limits",
     ],
     icon: Bot,
   },
@@ -128,7 +128,7 @@ const includedFeatures = [
   "Private project storage",
   "Office and field views",
   "AI-assisted document workflows",
-  "Priority onboarding and support",
+  "Role-aware team access",
 ]
 
 const trustItems = [
@@ -541,7 +541,7 @@ export default function MarketingPage() {
                   {
                     icon: Search,
                     title: "Global search",
-                    copy: "Find the job, client, lead, file, or next action without hunting through tools.",
+                    copy: "Find the job, client, lead, file, or schedule item without hunting through tools.",
                   },
                   {
                     icon: BarChart3,
@@ -1278,9 +1278,9 @@ function FieldPreview() {
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2">
             {[
-              ["Crew", "4 people"],
-              ["Hours", "18 total"],
-              ["Progress", "Install 68%"],
+              ["Status", "Published"],
+              ["Shared with", "Internal"],
+              ["Attachments", "3 photos"],
             ].map(([label, value]) => (
               <div key={label} className="rounded-lg bg-slate-50 p-2.5">
                 <p className="text-[9px] uppercase text-slate-500">{label}</p>
@@ -1294,30 +1294,53 @@ function FieldPreview() {
               Island set and leveled. Final seam work begins after lunch.
               Edge inspection completed with project manager.
             </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {["Installation", "Quality check"].map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full bg-orange-50 px-2 py-1 text-[8px] font-medium text-orange-700"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
           </div>
+        </div>
+        <div className="flex items-center justify-between text-[9px] font-medium uppercase tracking-[0.12em] text-slate-500">
+          <span>Attached media · 3</span>
+          <span>Illustrative sample</span>
         </div>
         <div className="grid grid-cols-3 gap-2">
           {[
-            ["Install overview", "bg-gradient-to-br from-slate-200 to-slate-400"],
-            ["Island seam", "bg-gradient-to-br from-stone-100 to-stone-300"],
-            ["Edge detail", "bg-gradient-to-br from-orange-100 to-stone-300"],
-          ].map(([label, background], index) => (
+            {
+              label: "Install overview",
+              src: "/marketing/field-install-overview.jpg",
+              alt: "Illustrative field photo of an installation crew setting a stone island",
+            },
+            {
+              label: "Island seam",
+              src: "/marketing/field-seam-detail.jpg",
+              alt: "Illustrative field photo of a craftsperson finishing a stone island seam",
+            },
+            {
+              label: "Edge inspection",
+              src: "/marketing/field-edge-inspection.jpg",
+              alt: "Illustrative field photo of a mitered stone edge being inspected",
+            },
+          ].map(({ label, src, alt }) => (
             <div
               key={label}
-              className={cn(
-                "relative aspect-[4/3] overflow-hidden rounded-lg",
-                background,
-              )}
+              className="relative aspect-[4/3] overflow-hidden rounded-lg bg-slate-200"
             >
-              <div className="absolute inset-0 opacity-50 [background-image:linear-gradient(118deg,transparent_35%,rgba(255,255,255,.8)_36%,transparent_38%),linear-gradient(28deg,transparent_55%,rgba(15,23,42,.14)_57%,transparent_59%)]" />
+              <img
+                src={src}
+                alt={alt}
+                loading="lazy"
+                className="absolute inset-0 size-full object-cover"
+              />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/70 to-transparent p-2 pt-6">
                 <p className="text-[8px] font-medium text-white">{label}</p>
               </div>
-              {index === 0 ? (
-                <span className="absolute right-2 top-2 rounded-full bg-white/90 px-1.5 py-0.5 text-[7px] font-semibold text-slate-700">
-                  3 photos
-                </span>
-              ) : null}
             </div>
           ))}
         </div>

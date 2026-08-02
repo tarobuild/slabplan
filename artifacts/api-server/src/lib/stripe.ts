@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import Stripe from "stripe";
 import { HttpError } from "./http";
 
@@ -66,6 +67,125 @@ export function getConfiguredBillingPlans() {
       configured: Boolean(process.env[plan.priceEnv]?.trim()),
     };
   });
+}
+
+function getHttpsUrlFromEnv(name: string, allowedHostname: string): URL | null {
+  const value = process.env[name]?.trim();
+  if (!value) return null;
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new HttpError(
+      503,
+      `${name} must be a valid HTTPS URL.`,
+      undefined,
+      "service-unavailable",
+    );
+  }
+
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== allowedHostname ||
+    url.username ||
+    url.password
+  ) {
+    throw new HttpError(
+      503,
+      `${name} must be a valid https://${allowedHostname} URL.`,
+      undefined,
+      "service-unavailable",
+    );
+  }
+
+  return url;
+}
+
+function getClientReferenceSecret(): string {
+  const secret =
+    process.env.STRIPE_CLIENT_REFERENCE_SECRET?.trim() ||
+    process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  if (!secret) {
+    throw new HttpError(
+      503,
+      "STRIPE_CLIENT_REFERENCE_SECRET or STRIPE_WEBHOOK_SECRET is required for payment-link checkout.",
+      undefined,
+      "service-unavailable",
+    );
+  }
+  return secret;
+}
+
+export function createStripeClientReferenceId(organizationId: string): string {
+  const signature = createHmac("sha256", getClientReferenceSecret())
+    .update(organizationId)
+    .digest("base64url");
+  return `${organizationId}.${signature}`;
+}
+
+export function getOrganizationIdFromStripeClientReference(
+  clientReferenceId: string | null,
+): string | null {
+  if (!clientReferenceId) return null;
+
+  const separatorIndex = clientReferenceId.lastIndexOf(".");
+  if (separatorIndex <= 0) return null;
+
+  const organizationId = clientReferenceId.slice(0, separatorIndex);
+  const suppliedSignature = clientReferenceId.slice(separatorIndex + 1);
+  const expectedSignature = createHmac("sha256", getClientReferenceSecret())
+    .update(organizationId)
+    .digest("base64url");
+  const suppliedBuffer = Buffer.from(suppliedSignature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+
+  if (
+    suppliedBuffer.length !== expectedBuffer.length ||
+    !timingSafeEqual(suppliedBuffer, expectedBuffer)
+  ) {
+    return null;
+  }
+
+  return organizationId;
+}
+
+export function getStripePaymentLinkUrl(params: {
+  organizationId: string;
+  userEmail: string;
+}): string | null {
+  const url = getHttpsUrlFromEnv("STRIPE_PAYMENT_LINK_URL", "buy.stripe.com");
+  if (!url) return null;
+
+  url.searchParams.set(
+    "client_reference_id",
+    createStripeClientReferenceId(params.organizationId),
+  );
+  url.searchParams.set("prefilled_email", params.userEmail);
+  return url.toString();
+}
+
+export function getStripeCustomerPortalUrl(): string | null {
+  return (
+    getHttpsUrlFromEnv("STRIPE_CUSTOMER_PORTAL_URL", "billing.stripe.com")
+      ?.toString() ?? null
+  );
+}
+
+export function getCheckoutSubscriptionStatus(
+  paymentStatus: Stripe.Checkout.Session["payment_status"] | null,
+): string | null {
+  if (paymentStatus === "paid" || paymentStatus === "no_payment_required") {
+    return "active";
+  }
+  return paymentStatus;
+}
+
+export function isStripeCheckoutConfigured(): boolean {
+  return Boolean(
+    process.env.STRIPE_PAYMENT_LINK_URL?.trim() ||
+      process.env.STRIPE_SECRET_KEY?.trim(),
+  );
 }
 
 export function getStripePriceId(planKey: BillingPlanKey): string {

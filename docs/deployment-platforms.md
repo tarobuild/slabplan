@@ -66,6 +66,9 @@ SENTRY_DSN_API=
 SENTRY_ENVIRONMENT=production
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
+STRIPE_CLIENT_REFERENCE_SECRET=
+STRIPE_PAYMENT_LINK_URL=
+STRIPE_CUSTOMER_PORTAL_URL=
 STRIPE_PRICE_PRO=
 ```
 
@@ -130,9 +133,16 @@ The server reads the price identifier from:
 
 ```text
 STRIPE_PRICE_PRO=
+STRIPE_PAYMENT_LINK_URL=
+STRIPE_CUSTOMER_PORTAL_URL=
 ```
 
-Checkout, customer portal, and signed webhook endpoints exist in the API.
+Checkout, customer portal, and signed webhook endpoints exist in the API. A
+Stripe Payment Link and no-code customer portal URL can be used when dashboard
+security prevents provisioning a live secret key; authenticated checkout URLs
+carry a signed active-organization reference for webhook reconciliation.
+`STRIPE_CLIENT_REFERENCE_SECRET` is optional when `STRIPE_WEBHOOK_SECRET` is
+configured because the webhook secret is used as the signing fallback.
 New workspaces require an `active` or `trialing` Stripe subscription (or an
 explicit unexpired internal trial) before accessing paid API routes. Billing
 routes remain available so customers can start a subscription or repair a

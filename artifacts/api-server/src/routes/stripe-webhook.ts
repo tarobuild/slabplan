@@ -4,7 +4,12 @@ import { db } from "@workspace/db";
 import { billingEvents, organizations } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { HttpError, asyncHandler } from "../lib/http";
-import { getStripeClient, isBillingPlanKey } from "../lib/stripe";
+import {
+  getCheckoutSubscriptionStatus,
+  getOrganizationIdFromStripeClientReference,
+  getStripeClient,
+  isBillingPlanKey,
+} from "../lib/stripe";
 import { updateOrganizationFromStripeSubscription } from "./billing";
 
 const router: IRouter = Router();
@@ -34,7 +39,11 @@ function getPlanKeyFromSubscription(subscription: Stripe.Subscription) {
 }
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session, database: StripeWebhookDbClient) {
-  const organizationId = asString(session.metadata?.organizationId);
+  const organizationId =
+    asString(session.metadata?.organizationId) ??
+    getOrganizationIdFromStripeClientReference(
+      asString(session.client_reference_id),
+    );
   if (!organizationId) return;
 
   const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
@@ -43,14 +52,17 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, databas
       ? session.subscription
       : session.subscription?.id ?? null;
   const planKey = asString(session.metadata?.planKey);
+  const billingEmail = asString(session.customer_details?.email);
 
   await database
     .update(organizations)
     .set({
       stripeCustomerId: customerId ?? undefined,
       stripeSubscriptionId: subscriptionId ?? undefined,
-      subscriptionStatus: subscriptionId ? "active" : session.payment_status ?? undefined,
+      subscriptionStatus:
+        getCheckoutSubscriptionStatus(session.payment_status) ?? undefined,
       planKey: planKey && isBillingPlanKey(planKey) ? planKey : undefined,
+      billingEmail: billingEmail ?? undefined,
       updatedAt: new Date(),
     })
     .where(eq(organizations.id, organizationId));

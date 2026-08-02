@@ -9,7 +9,10 @@ import {
   getAppPublicUrl,
   getConfiguredBillingPlans,
   getStripeClient,
+  getStripeCustomerPortalUrl,
+  getStripePaymentLinkUrl,
   getStripePriceId,
+  isStripeCheckoutConfigured,
   isBillingPlanKey,
 } from "../lib/stripe";
 import { getActiveOrganizationId } from "../lib/tenant-scope";
@@ -112,7 +115,7 @@ router.get(
         accessGranted: hasBillingAccess(organization),
       },
       plans: getConfiguredBillingPlans(),
-      billingConfigured: Boolean(process.env.STRIPE_SECRET_KEY?.trim()),
+      billingConfigured: isStripeCheckoutConfigured(),
     });
   }),
 );
@@ -133,8 +136,17 @@ router.post(
     }
 
     const organization = await loadActiveOrganization(req);
-    const stripe = getStripeClient();
     const plan = billingPlans[parsed.data.planKey];
+    const paymentLinkUrl = getStripePaymentLinkUrl({
+      organizationId: organization.id,
+      userEmail: req.auth!.email,
+    });
+    if (paymentLinkUrl) {
+      res.status(201).json({ url: paymentLinkUrl });
+      return;
+    }
+
+    const stripe = getStripeClient();
     const customerId = await ensureStripeCustomer({
       organization,
       userEmail: req.auth!.email,
@@ -182,6 +194,12 @@ router.post(
         undefined,
         "billing-not-started",
       );
+    }
+
+    const portalUrl = getStripeCustomerPortalUrl();
+    if (portalUrl) {
+      res.status(201).json({ url: portalUrl });
+      return;
     }
 
     const stripe = getStripeClient();

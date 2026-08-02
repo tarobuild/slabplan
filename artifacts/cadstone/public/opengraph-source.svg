@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="background" x1="80" y1="40" x2="1110" y2="610" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0C1C31"/>
+      <stop offset="1" stop-color="#050B13"/>
+    </linearGradient>
+    <radialGradient id="orangeGlow" cx="0" cy="0" r="1" gradientTransform="translate(1030 70) rotate(135) scale(460 410)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF6B0B" stop-opacity=".42"/>
+      <stop offset="1" stop-color="#FF6B0B" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#000814" flood-opacity=".42"/>
+    </filter>
+    <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse">
+      <path d="M52 0H0V52" fill="none" stroke="#FFFFFF" stroke-opacity=".055"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#background)"/>
+  <rect width="1200" height="630" fill="url(#orangeGlow)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+
+  <g transform="translate(72 58)">
+    <rect width="210" height="56" rx="11" fill="#111827"/>
+    <path d="M18 39 33 17h31L49 39H18Z" fill="#FF6B0B"/>
+    <path d="M49 39 64 17h31L80 39H49Z" fill="#98A4B3"/>
+    <path d="M80 39 95 17h19L99 39H80Z" fill="#CBD3DE"/>
+    <text x="123" y="36" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700">SlabPlan</text>
+  </g>
+
+  <text x="72" y="190" fill="#FF9B5B" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="3">BUILT FOR THE STONE TRADE</text>
+  <text x="72" y="250" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="700" letter-spacing="-2">
+    <tspan x="72" dy="0">Keep every stone job</tspan>
+    <tspan x="72" dy="60">moving.</tspan>
+  </text>
+  <text x="72" y="399" fill="#AEBBCD" font-family="Arial, Helvetica, sans-serif" font-size="20">
+    <tspan x="72" dy="0">Leads, jobs, schedules, field logs, files,</tspan>
+    <tspan x="72" dy="31">financials, and reporting—connected.</tspan>
+  </text>
+  <g transform="translate(72 492)">
+    <rect width="226" height="54" rx="27" fill="#FF6B0B"/>
+    <text x="28" y="34" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700">Start with SlabPlan  →</text>
+  </g>
+
+  <g transform="translate(610 122)" filter="url(#shadow)">
+    <rect width="520" height="420" rx="18" fill="#F5F6F8"/>
+    <rect width="520" height="48" rx="18" fill="#FFFFFF"/>
+    <rect y="30" width="520" height="18" fill="#FFFFFF"/>
+    <circle cx="24" cy="24" r="4" fill="#CBD5E1"/>
+    <circle cx="38" cy="24" r="4" fill="#CBD5E1"/>
+    <circle cx="52" cy="24" r="4" fill="#CBD5E1"/>
+    <text x="76" y="29" fill="#334155" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700">SlabPlan · Business Pulse</text>
+    <rect x="410" y="14" width="92" height="20" rx="10" fill="#FFF1E8"/>
+    <text x="427" y="27" fill="#C2410C" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700" letter-spacing=".7">SAMPLE WORKSPACE</text>
+
+    <rect x="18" y="66" width="113" height="82" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="142" y="66" width="113" height="82" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="266" y="66" width="113" height="82" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="390" y="66" width="112" height="82" rx="10" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <text x="30" y="87" fill="#64748B" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700">A/R OUTSTANDING</text>
+    <text x="30" y="117" fill="#0F172A" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">$84,260</text>
+    <text x="154" y="87" fill="#64748B" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700">NEW CONTRACTS</text>
+    <text x="154" y="117" fill="#0F172A" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">$192k</text>
+    <text x="278" y="87" fill="#64748B" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700">ACTIVE JOBS</text>
+    <text x="278" y="117" fill="#0F172A" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">24</text>
+    <text x="402" y="87" fill="#64748B" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700">OPEN LEADS</text>
+    <text x="402" y="117" fill="#0F172A" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">13</text>
+
+    <rect x="18" y="164" width="307" height="235" rx="12" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <text x="36" y="194" fill="#0F172A" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700">Jobs by stage</text>
+    <g font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#475569">
+      <text x="36" y="232">Measure</text>
+      <text x="36" y="274">Drafting</text>
+      <text x="36" y="316">Fabrication</text>
+      <text x="36" y="358">Install</text>
+    </g>
+    <g>
+      <rect x="36" y="242" width="250" height="7" rx="3.5" fill="#F1F5F9"/>
+      <rect x="36" y="242" width="220" height="7" rx="3.5" fill="#FF6B0B"/>
+      <rect x="36" y="284" width="250" height="7" rx="3.5" fill="#F1F5F9"/>
+      <rect x="36" y="284" width="184" height="7" rx="3.5" fill="#FF6B0B"/>
+      <rect x="36" y="326" width="250" height="7" rx="3.5" fill="#F1F5F9"/>
+      <rect x="36" y="326" width="152" height="7" rx="3.5" fill="#FF6B0B"/>
+      <rect x="36" y="368" width="250" height="7" rx="3.5" fill="#F1F5F9"/>
+      <rect x="36" y="368" width="112" height="7" rx="3.5" fill="#FF6B0B"/>
+    </g>
+
+    <rect x="340" y="164" width="162" height="235" rx="12" fill="#0F172A"/>
+    <text x="358" y="194" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700">Next up</text>
+    <g font-family="Arial, Helvetica, sans-serif">
+      <text x="358" y="231" fill="#FF9B5B" font-size="9" font-weight="700">8:00</text>
+      <text x="396" y="231" fill="#FFFFFF" font-size="10" font-weight="700">Templating</text>
+      <text x="396" y="245" fill="#64748B" font-size="8">Canyon View</text>
+      <text x="358" y="285" fill="#FF9B5B" font-size="9" font-weight="700">10:30</text>
+      <text x="396" y="285" fill="#FFFFFF" font-size="10" font-weight="700">Shop review</text>
+      <text x="396" y="299" fill="#64748B" font-size="8">Palm Ridge</text>
+      <text x="358" y="339" fill="#FF9B5B" font-size="9" font-weight="700">1:00</text>
+      <text x="396" y="339" fill="#FFFFFF" font-size="10" font-weight="700">Install</text>
+      <text x="396" y="353" fill="#64748B" font-size="8">Mesa Modern</text>
+    </g>
+  </g>
+</svg>

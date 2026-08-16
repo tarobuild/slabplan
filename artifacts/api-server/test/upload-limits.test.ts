@@ -103,7 +103,7 @@ test("backend and shared upload limits stay in sync", () => {
 });
 
 test("formatUploadSize renders bytes / KB / MB / GB without rounding to 0 MB", () => {
-  assert.equal(formatUploadSize(MAX_UPLOAD_FILE_BYTES), "2 GB");
+  assert.equal(formatUploadSize(MAX_UPLOAD_FILE_BYTES), "50 GB");
   assert.equal(formatUploadSize(1536 * 1024 * 1024), "1.5 GB");
   assert.equal(formatUploadSize(2048), "2 KB");
   assert.equal(formatUploadSize(100), "100 B");

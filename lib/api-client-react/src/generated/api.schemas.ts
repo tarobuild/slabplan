@@ -685,6 +685,72 @@ export interface FilesChunkedUploadStartSchema {
   videoDurationSeconds?: number;
 }
 
+export type DirectUploadStartDuplicateAction =
+  (typeof DirectUploadStartDuplicateAction)[keyof typeof DirectUploadStartDuplicateAction];
+
+export const DirectUploadStartDuplicateAction = {
+  keep_both: "keep_both",
+} as const;
+
+export interface DirectUploadStart {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  originalName: string;
+  /** @maxLength 100 */
+  mimeType?: string;
+  /**
+   * @minimum 1
+   * @maximum 53687091200
+   */
+  totalSize: number;
+  /** @pattern ^[a-fA-F0-9]{64}$ */
+  contentHash?: string;
+  note?: string | null;
+  duplicateAction?: DirectUploadStartDuplicateAction;
+  /** @minimum 0 */
+  videoDurationSeconds?: number;
+  /**
+   * Optional previously issued intent used to re-sign the same unique object path after a refresh or browser restart.
+   * @minLength 1
+   */
+  resumeIntentToken?: string;
+}
+
+export interface DirectUploadComplete {
+  /** @minLength 1 */
+  intentToken: string;
+}
+
+export type DirectUploadPreparationStatus =
+  (typeof DirectUploadPreparationStatus)[keyof typeof DirectUploadPreparationStatus];
+
+export const DirectUploadPreparationStatus = {
+  ready: "ready",
+} as const;
+
+export type DirectUploadPreparationStorage = {
+  endpoint: string;
+  bucketName: string;
+  objectName: string;
+  /** Short-lived, object-scoped upload signature. Never a service-role key. */
+  signature: string;
+  /** @minimum 1 */
+  chunkSizeBytes: number;
+  /** @minimum 1 */
+  signatureExpiresInSeconds: number;
+  /** @minimum 1 */
+  uploadUrlExpiresInSeconds: number;
+};
+
+export interface DirectUploadPreparation {
+  status: DirectUploadPreparationStatus;
+  intentToken: string;
+  duplicate: AnyValue;
+  storage: DirectUploadPreparationStorage;
+}
+
 /**
  * Request schema for starting a chunked lead attachment upload. Use for large lead ZIP/project packages that should avoid proxy multipart limits.
  */
@@ -1884,12 +1950,32 @@ export type LeadAttachmentUploadPolicyResponseChunked = {
   startBody: LeadAttachmentUploadPolicyResponseChunkedStartBody;
 };
 
+export type LeadAttachmentUploadPolicyResponseDirectEndpoints = {
+  start: string;
+  complete: string;
+};
+
+export type LeadAttachmentUploadPolicyResponseDirect = {
+  supported: boolean;
+  /**
+   * @minimum 1
+   * @maximum 53687091200
+   */
+  maxTotalBytes: number;
+  /** @minimum 1 */
+  tusChunkBytes: number;
+  /** @minimum 1 */
+  uploadUrlTtlSeconds: number;
+  endpoints: LeadAttachmentUploadPolicyResponseDirectEndpoints;
+  guidance: string;
+};
+
 export type LeadAttachmentUploadPolicyResponseFile = {
   originalName: string | null;
   mimeType: string | null;
   /** @minimum 1 */
   size: number | null;
-  recommendedUploadMode: "multipart" | "chunked";
+  recommendedUploadMode: "multipart" | "chunked" | "direct";
   reason: string;
 } | null;
 
@@ -1897,6 +1983,7 @@ export interface LeadAttachmentUploadPolicyResponse {
   leadId: string;
   multipart: LeadAttachmentUploadPolicyResponseMultipart;
   chunked: LeadAttachmentUploadPolicyResponseChunked;
+  direct: LeadAttachmentUploadPolicyResponseDirect;
   file: LeadAttachmentUploadPolicyResponseFile;
 }
 

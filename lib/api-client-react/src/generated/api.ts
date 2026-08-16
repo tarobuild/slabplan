@@ -56,6 +56,9 @@ import type {
   DailyLogsTodoTogglePayloadSchema,
   DashboardGetDashboardScheduleParams,
   DaysToPaymentResponse,
+  DirectUploadComplete,
+  DirectUploadPreparation,
+  DirectUploadStart,
   FilesBatchFilesDestinationSchema,
   FilesBatchFilesSchema,
   FilesChunkedUploadStartSchema,
@@ -4494,7 +4497,7 @@ export const useLeadsDeleteLeadsIdContactsContactId = <
 };
 
 /**
- * Small-file-only direct multipart upload for lead attachments via multipart form field `files`. Replit production runs on Cloud Run, whose HTTP/1 request body cap is 32 MiB; callers must use `/leads/{id}/attachments/upload-policy?fileSize=<bytes>` before sending bytes and must use `/leads/{id}/attachments/chunked` when a PDF/ZIP/project package is above the policy's `multipart.maxRecommendedBytes`. Direct multipart requests above that recommendation can be rejected by Google Frontend with HTML 413 before the API can format JSON.
+ * Small-file-only multipart upload for lead attachments via form field `files`. Callers must use `/leads/{id}/attachments/upload-policy?fileSize=<bytes>` before sending bytes and use `/leads/{id}/attachments/direct` above the policy's `multipart.maxRecommendedBytes`. The signed direct path bypasses Replit's request body and disk limits.
  * @summary POST /leads/{id}/attachments
  */
 export const getLeadsPostLeadsIdAttachmentsUrl = (id: string) => {
@@ -4590,7 +4593,7 @@ export const useLeadsPostLeadsIdAttachments = <
 };
 
 /**
- * Returns the correct upload route for a lead attachment before bytes are sent. API agents should call this with `fileSize` for every PDF, ZIP, and project package; files above `multipart.maxRecommendedBytes` must use the chunked endpoint to avoid upstream Google Frontend HTML 413 responses.
+ * Returns the correct upload route before bytes are sent. Files above `multipart.maxRecommendedBytes` should use the signed direct TUS endpoint so the browser uploads straight to Supabase and can resume interrupted transfers.
  * @summary Get lead attachment upload policy
  */
 export const getLeadsGetLeadsIdAttachmentsUploadPolicyUrl = (
@@ -4714,6 +4717,196 @@ export function useLeadsGetLeadsIdAttachmentsUploadPolicy<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Authorizes one non-overwriting object path and returns a short-lived Supabase signature for browser-to-storage TUS upload. The API receives metadata only; file bytes bypass Replit. Call the completion endpoint after TUS reports success.
+ * @summary Prepare a direct resumable lead attachment upload
+ */
+export const getLeadsPostLeadsIdAttachmentsDirectUrl = (id: string) => {
+  return `/api/leads/${id}/attachments/direct`;
+};
+
+export const leadsPostLeadsIdAttachmentsDirect = async (
+  id: string,
+  directUploadStart: DirectUploadStart,
+  options?: RequestInit,
+): Promise<DirectUploadPreparation> => {
+  return customFetch<DirectUploadPreparation>(
+    getLeadsPostLeadsIdAttachmentsDirectUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: jsonContentTypeHeaders(options?.headers),
+      body: JSON.stringify(directUploadStart),
+    },
+  );
+};
+
+export const getLeadsPostLeadsIdAttachmentsDirectMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirect>>,
+    TError,
+    { id: string; data: BodyType<DirectUploadStart> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirect>>,
+  TError,
+  { id: string; data: BodyType<DirectUploadStart> },
+  TContext
+> => {
+  const mutationKey = ["leadsPostLeadsIdAttachmentsDirect"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirect>>,
+    { id: string; data: BodyType<DirectUploadStart> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return leadsPostLeadsIdAttachmentsDirect(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPostLeadsIdAttachmentsDirectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirect>>
+>;
+export type LeadsPostLeadsIdAttachmentsDirectMutationBody =
+  BodyType<DirectUploadStart>;
+export type LeadsPostLeadsIdAttachmentsDirectMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Prepare a direct resumable lead attachment upload
+ */
+export const useLeadsPostLeadsIdAttachmentsDirect = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirect>>,
+    TError,
+    { id: string; data: BodyType<DirectUploadStart> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirect>>,
+  TError,
+  { id: string; data: BodyType<DirectUploadStart> },
+  TContext
+> => {
+  return useMutation(
+    getLeadsPostLeadsIdAttachmentsDirectMutationOptions(options),
+  );
+};
+
+/**
+ * Rechecks lead permissions, verifies the exact object byte count and bounded file signatures, then atomically creates the file and lead-attachment records. This operation is idempotent and never overwrites or deletes a storage object.
+ * @summary Verify and finalize a direct resumable lead attachment upload
+ */
+export const getLeadsPostLeadsIdAttachmentsDirectCompleteUrl = (id: string) => {
+  return `/api/leads/${id}/attachments/direct/complete`;
+};
+
+export const leadsPostLeadsIdAttachmentsDirectComplete = async (
+  id: string,
+  directUploadComplete: DirectUploadComplete,
+  options?: RequestInit,
+): Promise<LeadAttachmentsCreatedResponse> => {
+  return customFetch<LeadAttachmentsCreatedResponse>(
+    getLeadsPostLeadsIdAttachmentsDirectCompleteUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: jsonContentTypeHeaders(options?.headers),
+      body: JSON.stringify(directUploadComplete),
+    },
+  );
+};
+
+export const getLeadsPostLeadsIdAttachmentsDirectCompleteMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirectComplete>>,
+    TError,
+    { id: string; data: BodyType<DirectUploadComplete> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirectComplete>>,
+  TError,
+  { id: string; data: BodyType<DirectUploadComplete> },
+  TContext
+> => {
+  const mutationKey = ["leadsPostLeadsIdAttachmentsDirectComplete"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirectComplete>>,
+    { id: string; data: BodyType<DirectUploadComplete> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return leadsPostLeadsIdAttachmentsDirectComplete(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LeadsPostLeadsIdAttachmentsDirectCompleteMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirectComplete>>
+  >;
+export type LeadsPostLeadsIdAttachmentsDirectCompleteMutationBody =
+  BodyType<DirectUploadComplete>;
+export type LeadsPostLeadsIdAttachmentsDirectCompleteMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Verify and finalize a direct resumable lead attachment upload
+ */
+export const useLeadsPostLeadsIdAttachmentsDirectComplete = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirectComplete>>,
+    TError,
+    { id: string; data: BodyType<DirectUploadComplete> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof leadsPostLeadsIdAttachmentsDirectComplete>>,
+  TError,
+  { id: string; data: BodyType<DirectUploadComplete> },
+  TContext
+> => {
+  return useMutation(
+    getLeadsPostLeadsIdAttachmentsDirectCompleteMutationOptions(options),
+  );
+};
 
 /**
  * Creates a resumable upload session for one large lead attachment. Use this path for large ZIP/project packages that may exceed proxy multipart request limits; upload chunks with PUT, then call complete to assemble, validate, and persist the attachment. Chunk PUT accepts raw application/octet-stream bytes or base64-encoded text/plain/application/base64 bytes for the same chunk when a client needs to avoid pre-app binary upload rejection.
@@ -7201,6 +7394,193 @@ export const useFilesPostJobsJobIdFilesByPath = <
   TContext
 > => {
   return useMutation(getFilesPostJobsJobIdFilesByPathMutationOptions(options));
+};
+
+/**
+ * Authorizes one non-overwriting object path and returns a short-lived Supabase signature for browser-to-storage TUS upload. The API receives metadata only; file bytes bypass Replit. Supports job and resource folders.
+ * @summary Prepare a direct resumable folder upload
+ */
+export const getFilesPostFoldersIdFilesDirectUrl = (id: string) => {
+  return `/api/folders/${id}/files/direct`;
+};
+
+export const filesPostFoldersIdFilesDirect = async (
+  id: string,
+  directUploadStart: DirectUploadStart,
+  options?: RequestInit,
+): Promise<DirectUploadPreparation> => {
+  return customFetch<DirectUploadPreparation>(
+    getFilesPostFoldersIdFilesDirectUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: jsonContentTypeHeaders(options?.headers),
+      body: JSON.stringify(directUploadStart),
+    },
+  );
+};
+
+export const getFilesPostFoldersIdFilesDirectMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesDirect>>,
+    TError,
+    { id: string; data: BodyType<DirectUploadStart> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesDirect>>,
+  TError,
+  { id: string; data: BodyType<DirectUploadStart> },
+  TContext
+> => {
+  const mutationKey = ["filesPostFoldersIdFilesDirect"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesDirect>>,
+    { id: string; data: BodyType<DirectUploadStart> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return filesPostFoldersIdFilesDirect(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostFoldersIdFilesDirectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesDirect>>
+>;
+export type FilesPostFoldersIdFilesDirectMutationBody =
+  BodyType<DirectUploadStart>;
+export type FilesPostFoldersIdFilesDirectMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Prepare a direct resumable folder upload
+ */
+export const useFilesPostFoldersIdFilesDirect = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesDirect>>,
+    TError,
+    { id: string; data: BodyType<DirectUploadStart> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesDirect>>,
+  TError,
+  { id: string; data: BodyType<DirectUploadStart> },
+  TContext
+> => {
+  return useMutation(getFilesPostFoldersIdFilesDirectMutationOptions(options));
+};
+
+/**
+ * Rechecks folder permissions, verifies the exact object byte count and bounded file signatures, then atomically creates the file record. This operation is idempotent and never overwrites or deletes a storage object.
+ * @summary Verify and finalize a direct resumable folder upload
+ */
+export const getFilesPostFoldersIdFilesDirectCompleteUrl = (id: string) => {
+  return `/api/folders/${id}/files/direct/complete`;
+};
+
+export const filesPostFoldersIdFilesDirectComplete = async (
+  id: string,
+  directUploadComplete: DirectUploadComplete,
+  options?: RequestInit,
+): Promise<AnyValue> => {
+  return customFetch<AnyValue>(
+    getFilesPostFoldersIdFilesDirectCompleteUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: jsonContentTypeHeaders(options?.headers),
+      body: JSON.stringify(directUploadComplete),
+    },
+  );
+};
+
+export const getFilesPostFoldersIdFilesDirectCompleteMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesDirectComplete>>,
+    TError,
+    { id: string; data: BodyType<DirectUploadComplete> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesDirectComplete>>,
+  TError,
+  { id: string; data: BodyType<DirectUploadComplete> },
+  TContext
+> => {
+  const mutationKey = ["filesPostFoldersIdFilesDirectComplete"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesDirectComplete>>,
+    { id: string; data: BodyType<DirectUploadComplete> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return filesPostFoldersIdFilesDirectComplete(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FilesPostFoldersIdFilesDirectCompleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesDirectComplete>>
+>;
+export type FilesPostFoldersIdFilesDirectCompleteMutationBody =
+  BodyType<DirectUploadComplete>;
+export type FilesPostFoldersIdFilesDirectCompleteMutationError =
+  ErrorType<Problem>;
+
+/**
+ * @summary Verify and finalize a direct resumable folder upload
+ */
+export const useFilesPostFoldersIdFilesDirectComplete = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof filesPostFoldersIdFilesDirectComplete>>,
+    TError,
+    { id: string; data: BodyType<DirectUploadComplete> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof filesPostFoldersIdFilesDirectComplete>>,
+  TError,
+  { id: string; data: BodyType<DirectUploadComplete> },
+  TContext
+> => {
+  return useMutation(
+    getFilesPostFoldersIdFilesDirectCompleteMutationOptions(options),
+  );
 };
 
 /**

@@ -3522,7 +3522,7 @@ export const LeadsDeleteLeadsIdContactsContactIdResponse = zod
   );
 
 /**
- * Small-file-only direct multipart upload for lead attachments via multipart form field `files`. Replit production runs on Cloud Run, whose HTTP/1 request body cap is 32 MiB; callers must use `/leads/{id}/attachments/upload-policy?fileSize=<bytes>` before sending bytes and must use `/leads/{id}/attachments/chunked` when a PDF/ZIP/project package is above the policy's `multipart.maxRecommendedBytes`. Direct multipart requests above that recommendation can be rejected by Google Frontend with HTML 413 before the API can format JSON.
+ * Small-file-only multipart upload for lead attachments via form field `files`. Callers must use `/leads/{id}/attachments/upload-policy?fileSize=<bytes>` before sending bytes and use `/leads/{id}/attachments/direct` above the policy's `multipart.maxRecommendedBytes`. The signed direct path bypasses Replit's request body and disk limits.
  * @summary POST /leads/{id}/attachments
  */
 export const leadsPostLeadsIdAttachmentsPathIdRegExp = new RegExp(
@@ -3556,7 +3556,7 @@ export const LeadsPostLeadsIdAttachmentsBody = zod.object({
 });
 
 /**
- * Returns the correct upload route for a lead attachment before bytes are sent. API agents should call this with `fileSize` for every PDF, ZIP, and project package; files above `multipart.maxRecommendedBytes` must use the chunked endpoint to avoid upstream Google Frontend HTML 413 responses.
+ * Returns the correct upload route before bytes are sent. Files above `multipart.maxRecommendedBytes` should use the signed direct TUS endpoint so the browser uploads straight to Supabase and can resume interrupted transfers.
  * @summary Get lead attachment upload policy
  */
 export const leadsGetLeadsIdAttachmentsUploadPolicyPathIdRegExp = new RegExp(
@@ -3598,6 +3598,8 @@ export const LeadsGetLeadsIdAttachmentsUploadPolicyQueryParams = zod.object({
       "Candidate MIME type, used only to echo a concrete chunked start payload.",
     ),
 });
+
+export const leadsGetLeadsIdAttachmentsUploadPolicyResponseDirectMaxTotalBytesMax = 53687091200;
 
 export const LeadsGetLeadsIdAttachmentsUploadPolicyResponse = zod.object({
   leadId: zod.string().uuid(),
@@ -3648,16 +3650,125 @@ export const LeadsGetLeadsIdAttachmentsUploadPolicyResponse = zod.object({
         "Example JSON body for `chunked.endpoints.start`. Replace `contentHash` with a SHA-256 hex digest or omit it.",
       ),
   }),
+  direct: zod.object({
+    supported: zod.boolean(),
+    maxTotalBytes: zod
+      .number()
+      .min(1)
+      .max(
+        leadsGetLeadsIdAttachmentsUploadPolicyResponseDirectMaxTotalBytesMax,
+      ),
+    tusChunkBytes: zod.number().min(1),
+    uploadUrlTtlSeconds: zod.number().min(1),
+    endpoints: zod.object({
+      start: zod.string(),
+      complete: zod.string(),
+    }),
+    guidance: zod.string(),
+  }),
   file: zod.union([
     zod.object({
       originalName: zod.string().nullable(),
       mimeType: zod.string().nullable(),
       size: zod.number().min(1).nullable(),
-      recommendedUploadMode: zod.enum(["multipart", "chunked"]),
+      recommendedUploadMode: zod.enum(["multipart", "chunked", "direct"]),
       reason: zod.string(),
     }),
     zod.null(),
   ]),
+});
+
+/**
+ * Authorizes one non-overwriting object path and returns a short-lived Supabase signature for browser-to-storage TUS upload. The API receives metadata only; file bytes bypass Replit. Call the completion endpoint after TUS reports success.
+ * @summary Prepare a direct resumable lead attachment upload
+ */
+export const LeadsPostLeadsIdAttachmentsDirectParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const leadsPostLeadsIdAttachmentsDirectHeaderIdempotencyKeyMin = 8;
+export const leadsPostLeadsIdAttachmentsDirectHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPostLeadsIdAttachmentsDirectHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPostLeadsIdAttachmentsDirectHeaderIdempotencyKeyMin)
+    .max(leadsPostLeadsIdAttachmentsDirectHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const leadsPostLeadsIdAttachmentsDirectBodyOriginalNameMax = 255;
+
+export const leadsPostLeadsIdAttachmentsDirectBodyMimeTypeMax = 100;
+
+export const leadsPostLeadsIdAttachmentsDirectBodyTotalSizeMax = 53687091200;
+
+export const leadsPostLeadsIdAttachmentsDirectBodyContentHashRegExp =
+  new RegExp("^[a-fA-F0-9]{64}$");
+export const leadsPostLeadsIdAttachmentsDirectBodyDuplicateActionDefault = `keep_both`;
+export const leadsPostLeadsIdAttachmentsDirectBodyVideoDurationSecondsMin = 0;
+
+export const LeadsPostLeadsIdAttachmentsDirectBody = zod.object({
+  originalName: zod
+    .string()
+    .min(1)
+    .max(leadsPostLeadsIdAttachmentsDirectBodyOriginalNameMax),
+  mimeType: zod
+    .string()
+    .max(leadsPostLeadsIdAttachmentsDirectBodyMimeTypeMax)
+    .optional(),
+  totalSize: zod
+    .number()
+    .min(1)
+    .max(leadsPostLeadsIdAttachmentsDirectBodyTotalSizeMax),
+  contentHash: zod
+    .string()
+    .regex(leadsPostLeadsIdAttachmentsDirectBodyContentHashRegExp)
+    .optional(),
+  note: zod.string().nullish(),
+  duplicateAction: zod
+    .enum(["keep_both"])
+    .default(leadsPostLeadsIdAttachmentsDirectBodyDuplicateActionDefault),
+  videoDurationSeconds: zod
+    .number()
+    .min(leadsPostLeadsIdAttachmentsDirectBodyVideoDurationSecondsMin)
+    .optional(),
+  resumeIntentToken: zod
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Optional previously issued intent used to re-sign the same unique object path after a refresh or browser restart.",
+    ),
+});
+
+/**
+ * Rechecks lead permissions, verifies the exact object byte count and bounded file signatures, then atomically creates the file and lead-attachment records. This operation is idempotent and never overwrites or deletes a storage object.
+ * @summary Verify and finalize a direct resumable lead attachment upload
+ */
+export const LeadsPostLeadsIdAttachmentsDirectCompleteParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const leadsPostLeadsIdAttachmentsDirectCompleteHeaderIdempotencyKeyMin = 8;
+export const leadsPostLeadsIdAttachmentsDirectCompleteHeaderIdempotencyKeyMax = 255;
+
+export const LeadsPostLeadsIdAttachmentsDirectCompleteHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(leadsPostLeadsIdAttachmentsDirectCompleteHeaderIdempotencyKeyMin)
+    .max(leadsPostLeadsIdAttachmentsDirectCompleteHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const LeadsPostLeadsIdAttachmentsDirectCompleteBody = zod.object({
+  intentToken: zod.string().min(1),
 });
 
 /**
@@ -4584,6 +4695,100 @@ export const FilesPostJobsJobIdFilesByPathBody = zod
   .describe(
     "Multipart request schema for uploading files to a job folder by path.",
   );
+
+/**
+ * Authorizes one non-overwriting object path and returns a short-lived Supabase signature for browser-to-storage TUS upload. The API receives metadata only; file bytes bypass Replit. Supports job and resource folders.
+ * @summary Prepare a direct resumable folder upload
+ */
+export const FilesPostFoldersIdFilesDirectParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const filesPostFoldersIdFilesDirectHeaderIdempotencyKeyMin = 8;
+export const filesPostFoldersIdFilesDirectHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostFoldersIdFilesDirectHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostFoldersIdFilesDirectHeaderIdempotencyKeyMin)
+    .max(filesPostFoldersIdFilesDirectHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const filesPostFoldersIdFilesDirectBodyOriginalNameMax = 255;
+
+export const filesPostFoldersIdFilesDirectBodyMimeTypeMax = 100;
+
+export const filesPostFoldersIdFilesDirectBodyTotalSizeMax = 53687091200;
+
+export const filesPostFoldersIdFilesDirectBodyContentHashRegExp = new RegExp(
+  "^[a-fA-F0-9]{64}$",
+);
+export const filesPostFoldersIdFilesDirectBodyDuplicateActionDefault = `keep_both`;
+export const filesPostFoldersIdFilesDirectBodyVideoDurationSecondsMin = 0;
+
+export const FilesPostFoldersIdFilesDirectBody = zod.object({
+  originalName: zod
+    .string()
+    .min(1)
+    .max(filesPostFoldersIdFilesDirectBodyOriginalNameMax),
+  mimeType: zod
+    .string()
+    .max(filesPostFoldersIdFilesDirectBodyMimeTypeMax)
+    .optional(),
+  totalSize: zod
+    .number()
+    .min(1)
+    .max(filesPostFoldersIdFilesDirectBodyTotalSizeMax),
+  contentHash: zod
+    .string()
+    .regex(filesPostFoldersIdFilesDirectBodyContentHashRegExp)
+    .optional(),
+  note: zod.string().nullish(),
+  duplicateAction: zod
+    .enum(["keep_both"])
+    .default(filesPostFoldersIdFilesDirectBodyDuplicateActionDefault),
+  videoDurationSeconds: zod
+    .number()
+    .min(filesPostFoldersIdFilesDirectBodyVideoDurationSecondsMin)
+    .optional(),
+  resumeIntentToken: zod
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Optional previously issued intent used to re-sign the same unique object path after a refresh or browser restart.",
+    ),
+});
+
+/**
+ * Rechecks folder permissions, verifies the exact object byte count and bounded file signatures, then atomically creates the file record. This operation is idempotent and never overwrites or deletes a storage object.
+ * @summary Verify and finalize a direct resumable folder upload
+ */
+export const FilesPostFoldersIdFilesDirectCompleteParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const filesPostFoldersIdFilesDirectCompleteHeaderIdempotencyKeyMin = 8;
+export const filesPostFoldersIdFilesDirectCompleteHeaderIdempotencyKeyMax = 255;
+
+export const FilesPostFoldersIdFilesDirectCompleteHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(filesPostFoldersIdFilesDirectCompleteHeaderIdempotencyKeyMin)
+    .max(filesPostFoldersIdFilesDirectCompleteHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const FilesPostFoldersIdFilesDirectCompleteBody = zod.object({
+  intentToken: zod.string().min(1),
+});
 
 /**
  * Creates a resumable upload session for one large file. Upload chunks with PUT, then call complete to assemble, validate, and persist the file. Chunk PUT accepts raw application/octet-stream bytes or base64-encoded text/plain/application/base64 bytes for the same chunk; retry a raw chunk as base64 when a client receives a non-JSON/plain 403 before the app can format a problem response.

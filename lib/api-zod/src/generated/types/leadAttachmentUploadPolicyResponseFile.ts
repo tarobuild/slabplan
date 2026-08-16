@@ -11,6 +11,6 @@ export type LeadAttachmentUploadPolicyResponseFile = {
   mimeType: string | null;
   /** @minimum 1 */
   size: number | null;
-  recommendedUploadMode: "multipart" | "chunked";
+  recommendedUploadMode: "multipart" | "chunked" | "direct";
   reason: string;
 } | null;

@@ -3897,10 +3897,10 @@ paths:
       tags:
         - leads
       summary: POST /leads/{id}/attachments
-      description: Small-file-only direct multipart upload for lead attachments via multipart form field `files`. Replit production runs on Cloud Run, whose HTTP/1 request body cap is 32 MiB; callers must use `/leads/{id}/attachments/upload-policy?fileSize=<bytes>` before sending bytes and must use `/leads/{id}/attachments/chunked` when a PDF/ZIP/project package is above the policy's `multipart.maxRecommendedBytes`. Direct multipart requests above that recommendation can be rejected by Google Frontend with HTML 413 before the API can format JSON.
+      description: Small-file-only multipart upload for lead attachments via form field `files`. Callers must use `/leads/{id}/attachments/upload-policy?fileSize=<bytes>` before sending bytes and use `/leads/{id}/attachments/direct` above the policy's `multipart.maxRecommendedBytes`. The signed direct path bypasses Replit's request body and disk limits.
       requestBody:
         required: true
-        description: multipart/form-data with one or more small lead attachment files in the `files` field. The field name is `files`, not `file` or `attachments`. Do not use this request body for large PDFs/ZIPs/project packages; use the chunked lead attachment endpoints instead.
+        description: multipart/form-data with one or more small lead attachment files in the `files` field. The field name is `files`, not `file` or `attachments`. Use signed direct resumable upload for large PDFs, ZIPs, videos, and project packages.
         content:
           multipart/form-data:
             schema:
@@ -3981,7 +3981,7 @@ paths:
             X-RateLimit-Reset:
               $ref: "#/components/headers/X-RateLimit-Reset"
         "413":
-          description: File too large for the direct multipart path when the request reaches the application. If Google Frontend rejects the request first, clients will see HTML 413; avoid that by using `/leads/{id}/attachments/upload-policy` and the chunked upload endpoints for large lead project packages.
+          description: File too large for multipart when the request reaches the application. Avoid edge HTML 413 responses by using `/leads/{id}/attachments/upload-policy` and its signed direct upload endpoints.
           content:
             application/problem+json:
               schema:
@@ -4004,7 +4004,7 @@ paths:
       tags:
         - leads
       summary: Get lead attachment upload policy
-      description: Returns the correct upload route for a lead attachment before bytes are sent. API agents should call this with `fileSize` for every PDF, ZIP, and project package; files above `multipart.maxRecommendedBytes` must use the chunked endpoint to avoid upstream Google Frontend HTML 413 responses.
+      description: Returns the correct upload route before bytes are sent. Files above `multipart.maxRecommendedBytes` should use the signed direct TUS endpoint so the browser uploads straight to Supabase and can resume interrupted transfers.
       responses:
         "200":
           description: Upload policy and route recommendation.
@@ -4069,6 +4069,134 @@ paths:
             maxLength: 100
       security:
         - bearerAuth: []
+  /leads/{id}/attachments/direct:
+    post:
+      operationId: leads_post_leads_id_attachments_direct
+      tags:
+        - leads
+      summary: Prepare a direct resumable lead attachment upload
+      description: Authorizes one non-overwriting object path and returns a short-lived Supabase signature for browser-to-storage TUS upload. The API receives metadata only; file bytes bypass Replit. Call the completion endpoint after TUS reports success.
+      responses:
+        "201":
+          description: Direct upload prepared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DirectUploadPreparation"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: File exceeds the 50 GiB hosted resumable-upload limit
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Dangerous file type
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/leads.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DirectUploadStart"
+  /leads/{id}/attachments/direct/complete:
+    post:
+      operationId: leads_post_leads_id_attachments_direct_complete
+      tags:
+        - leads
+      summary: Verify and finalize a direct resumable lead attachment upload
+      description: Rechecks lead permissions, verifies the exact object byte count and bounded file signatures, then atomically creates the file and lead-attachment records. This operation is idempotent and never overwrites or deletes a storage object.
+      responses:
+        "201":
+          description: Attachment finalized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadAttachmentsCreatedResponse"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized or expired intent
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Lead or uploaded object not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Upload incomplete or byte count mismatch
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: File signature does not match its claimed type
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/leads.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DirectUploadComplete"
   /leads/{id}/attachments/chunked:
     post:
       operationId: leads_post_leads_id_attachments_chunked
@@ -6073,6 +6201,134 @@ paths:
           multipart/form-data:
             schema:
               $ref: "#/components/schemas/files_uploadFilesByPathSchema"
+  /folders/{id}/files/direct:
+    post:
+      operationId: files_post_folders_id_files_direct
+      tags:
+        - files
+      summary: Prepare a direct resumable folder upload
+      description: Authorizes one non-overwriting object path and returns a short-lived Supabase signature for browser-to-storage TUS upload. The API receives metadata only; file bytes bypass Replit. Supports job and resource folders.
+      responses:
+        "201":
+          description: Direct upload prepared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DirectUploadPreparation"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: File exceeds the 50 GiB hosted resumable-upload limit
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Dangerous file type
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DirectUploadStart"
+  /folders/{id}/files/direct/complete:
+    post:
+      operationId: files_post_folders_id_files_direct_complete
+      tags:
+        - files
+      summary: Verify and finalize a direct resumable folder upload
+      description: Rechecks folder permissions, verifies the exact object byte count and bounded file signatures, then atomically creates the file record. This operation is idempotent and never overwrites or deletes a storage object.
+      responses:
+        "201":
+          description: File finalized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnyValue"
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized or expired intent
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Folder or uploaded object not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Upload incomplete or byte count mismatch
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: File signature does not match its claimed type
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/files.ts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DirectUploadComplete"
   /folders/{id}/files/chunked:
     post:
       operationId: files_post_folders_id_files_chunked
@@ -14291,6 +14547,100 @@ components:
         - originalName
         - totalSize
         - totalChunks
+    DirectUploadStart:
+      type: object
+      additionalProperties: false
+      properties:
+        originalName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        mimeType:
+          type: string
+          maxLength: 100
+        totalSize:
+          type: integer
+          minimum: 1
+          maximum: 53687091200
+        contentHash:
+          type: string
+          pattern: ^[a-fA-F0-9]{64}$
+        note:
+          type: string
+          nullable: true
+        duplicateAction:
+          type: string
+          enum:
+            - keep_both
+          default: keep_both
+        videoDurationSeconds:
+          type: number
+          minimum: 0
+        resumeIntentToken:
+          type: string
+          minLength: 1
+          description: Optional previously issued intent used to re-sign the same unique object path after a refresh or browser restart.
+      required:
+        - originalName
+        - totalSize
+    DirectUploadComplete:
+      type: object
+      additionalProperties: false
+      properties:
+        intentToken:
+          type: string
+          minLength: 1
+      required:
+        - intentToken
+    DirectUploadPreparation:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+        intentToken:
+          type: string
+        duplicate:
+          $ref: "#/components/schemas/AnyValue"
+        storage:
+          type: object
+          properties:
+            endpoint:
+              type: string
+              format: uri
+            bucketName:
+              type: string
+            objectName:
+              type: string
+            signature:
+              type: string
+              description: Short-lived, object-scoped upload signature. Never a service-role key.
+            chunkSizeBytes:
+              type: integer
+              minimum: 1
+              example: 6291456
+            signatureExpiresInSeconds:
+              type: integer
+              minimum: 1
+              example: 7200
+            uploadUrlExpiresInSeconds:
+              type: integer
+              minimum: 1
+              example: 86400
+          required:
+            - endpoint
+            - bucketName
+            - objectName
+            - signature
+            - chunkSizeBytes
+            - signatureExpiresInSeconds
+            - uploadUrlExpiresInSeconds
+      required:
+        - status
+        - intentToken
+        - duplicate
+        - storage
     leads_leadAttachmentChunkedUploadStartSchema:
       type: object
       description: Request schema for starting a chunked lead attachment upload. Use for large lead ZIP/project packages that should avoid proxy multipart limits.
@@ -16295,6 +16645,42 @@ components:
             - base64ChunkContentTypes
             - endpoints
             - startBody
+        direct:
+          type: object
+          properties:
+            supported:
+              type: boolean
+            maxTotalBytes:
+              type: integer
+              minimum: 1
+              maximum: 53687091200
+            tusChunkBytes:
+              type: integer
+              minimum: 1
+              example: 6291456
+            uploadUrlTtlSeconds:
+              type: integer
+              minimum: 1
+              example: 86400
+            endpoints:
+              type: object
+              properties:
+                start:
+                  type: string
+                complete:
+                  type: string
+              required:
+                - start
+                - complete
+            guidance:
+              type: string
+          required:
+            - supported
+            - maxTotalBytes
+            - tusChunkBytes
+            - uploadUrlTtlSeconds
+            - endpoints
+            - guidance
         file:
           oneOf:
             - type: object
@@ -16314,6 +16700,7 @@ components:
                   enum:
                     - multipart
                     - chunked
+                    - direct
                 reason:
                   type: string
               required:
@@ -16327,6 +16714,7 @@ components:
         - leadId
         - multipart
         - chunked
+        - direct
         - file
     LeadConvertToJobBody:
       type: object

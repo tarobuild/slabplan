@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
@@ -173,6 +173,128 @@ test("folder tree seeds migration folders and resolves numeric path aliases", as
   assert.equal(created.folder.title, "Batch 01");
   assert.equal(created.folder.path, "Agent Migration/Batch 01");
   assert.equal(created.createdFolders.length, 2);
+});
+
+test("direct-upload completion is exact, idempotent, and never deletes the uploaded object", async () => {
+  const resolveResponse = await fetch(`${baseUrl}/api/jobs/${jobId}/folders/resolve`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      mediaType: "document",
+      path: "Direct Upload Verification",
+      createIfMissing: true,
+    }),
+  });
+  assert.equal(resolveResponse.status, 200);
+  const resolved = (await resolveResponse.json()) as { folder: { id: string } };
+  const folderId = resolved.folder.id;
+
+  const invalidResumeResponse = await fetch(
+    `${baseUrl}/api/folders/${folderId}/files/direct`,
+    {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        originalName: "Massive Plans.pdf",
+        mimeType: "application/pdf",
+        totalSize: PDF_BYTES.length,
+        resumeIntentToken: "not-a-valid-signed-intent",
+      }),
+    },
+  );
+  assert.equal(
+    invalidResumeResponse.status,
+    401,
+    "the direct route must retain and validate restart tokens before storage signing",
+  );
+
+  const { signDirectUploadIntent } = await import("../src/lib/auth.ts");
+  const { db } = await import("@workspace/db");
+  const { files } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+
+  const storedName = `${crypto.randomUUID()}-direct.pdf`;
+  const relative = path.posix.join(jobId, "document", storedName);
+  const fileUrl = `/uploads/${relative}`;
+  const diskPath = path.join(localStorageRoot, ...relative.split("/"));
+  await mkdir(path.dirname(diskPath), { recursive: true });
+  await writeFile(diskPath, PDF_BYTES);
+  const intentToken = signDirectUploadIntent({
+    version: 1,
+    targetType: "folder",
+    targetId: folderId,
+    folderId,
+    userId: adminUserId,
+    fileUrl,
+    storedName,
+    originalName: "Massive Plans.pdf",
+    mimeType: "application/pdf",
+    totalSize: PDF_BYTES.length,
+    contentHash: null,
+    note: "direct upload verification",
+    duplicateAction: "keep_both",
+    videoDurationSeconds: null,
+  });
+
+  const complete = async (token: string) =>
+    fetch(`${baseUrl}/api/folders/${folderId}/files/direct/complete`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ intentToken: token }),
+    });
+
+  const [firstResponse, concurrentReplayResponse] = await Promise.all([
+    complete(intentToken),
+    complete(intentToken),
+  ]);
+  assert.equal(firstResponse.status, 201);
+  assert.equal(concurrentReplayResponse.status, 201);
+  const first = (await firstResponse.json()) as { files: Array<{ id: string; fileSize: number }> };
+  const concurrentReplay = (await concurrentReplayResponse.json()) as {
+    files: Array<{ id: string }>;
+  };
+  assert.equal(first.files.length, 1);
+  assert.equal(first.files[0]?.fileSize, PDF_BYTES.length);
+  assert.equal(concurrentReplay.files[0]?.id, first.files[0]?.id);
+  await stat(diskPath);
+
+  const replayResponse = await complete(intentToken);
+  assert.equal(replayResponse.status, 201);
+  const replay = (await replayResponse.json()) as { files: Array<{ id: string }> };
+  assert.equal(replay.files[0]?.id, first.files[0]?.id);
+  const rows = await db.select({ id: files.id }).from(files).where(eq(files.fileUrl, fileUrl));
+  assert.equal(rows.length, 1, "concurrent/replayed completion must not duplicate the DB row");
+  await stat(diskPath);
+
+  const mismatchStoredName = `${crypto.randomUUID()}-mismatch.pdf`;
+  const mismatchRelative = path.posix.join(jobId, "document", mismatchStoredName);
+  const mismatchFileUrl = `/uploads/${mismatchRelative}`;
+  const mismatchDiskPath = path.join(localStorageRoot, ...mismatchRelative.split("/"));
+  await writeFile(mismatchDiskPath, PDF_BYTES);
+  const mismatchToken = signDirectUploadIntent({
+    version: 1,
+    targetType: "folder",
+    targetId: folderId,
+    folderId,
+    userId: adminUserId,
+    fileUrl: mismatchFileUrl,
+    storedName: mismatchStoredName,
+    originalName: "Incomplete Plans.pdf",
+    mimeType: "application/pdf",
+    totalSize: PDF_BYTES.length + 1,
+    contentHash: null,
+    note: null,
+    duplicateAction: "keep_both",
+    videoDurationSeconds: null,
+  });
+  const mismatchResponse = await complete(mismatchToken);
+  await assertProblemCode(mismatchResponse, 409, "DIRECT_UPLOAD_SIZE_MISMATCH");
+  await stat(mismatchDiskPath);
+  const mismatchRows = await db
+    .select({ id: files.id })
+    .from(files)
+    .where(eq(files.fileUrl, mismatchFileUrl));
+  assert.equal(mismatchRows.length, 0);
 });
 
 test("photo and video folder resolver creates nested media folders and accepts uploads", async () => {

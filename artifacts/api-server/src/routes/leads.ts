@@ -58,6 +58,8 @@ import {
 import {
   buildStoredFileName,
   buildUploadPath,
+  DIRECT_UPLOAD_TUS_CHUNK_BYTES,
+  DIRECT_UPLOAD_URL_TTL_SECONDS,
   deletePhysicalFile,
   probeStorageStatuses,
   writeUploadedBuffer,
@@ -83,6 +85,10 @@ import {
 } from "../lib/chunked-upload";
 import { validateMagicBytesForFiles } from "../lib/upload-magic-bytes";
 import { validateVideoDurationsForFiles } from "../lib/upload-video-duration";
+import {
+  finalizeDirectLeadUpload,
+  prepareDirectUpload,
+} from "../lib/direct-upload";
 
 const uploadRateLimit = createUploadPerUserRateLimit();
 
@@ -320,6 +326,19 @@ const leadAttachmentChunkedUploadStartSchema = z.object({
   contentHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).optional(),
 });
 
+const leadAttachmentDirectUploadStartSchema = z.object({
+  originalName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().max(100).optional(),
+  totalSize: z.coerce.number().int().positive(),
+  contentHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).optional(),
+  videoDurationSeconds: z.coerce.number().positive().optional(),
+  resumeIntentToken: z.string().min(1).optional(),
+});
+
+const leadAttachmentDirectUploadCompleteSchema = z.object({
+  intentToken: z.string().min(1),
+});
+
 const leadAttachmentUploadPolicyQuerySchema = z.object({
   fileSize: z.coerce.number().int().positive().optional(),
   originalName: z.string().trim().min(1).max(255).optional(),
@@ -330,6 +349,8 @@ function leadAttachmentEndpoints(leadId: string) {
   return {
     multipart: `/api/leads/${leadId}/attachments`,
     uploadPolicy: `/api/leads/${leadId}/attachments/upload-policy`,
+    directStart: `/api/leads/${leadId}/attachments/direct`,
+    directComplete: `/api/leads/${leadId}/attachments/direct/complete`,
     chunkedStart: `/api/leads/${leadId}/attachments/chunked`,
     chunkedStatus: `/api/leads/${leadId}/attachments/chunked/{uploadId}`,
     chunkedChunk: `/api/leads/${leadId}/attachments/chunked/{uploadId}/chunks/{chunkIndex}`,
@@ -360,7 +381,19 @@ function buildLeadAttachmentUploadPolicy(
       maxRecommendedBytes: DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
       maxRecommendedDisplay: formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES),
       guidance:
-        "Use this multipart path only for normal-sized lead attachments. Replit production sits behind Cloud Run's HTTP/1 request-size cap, so use chunked upload for files above maxRecommendedBytes to avoid upstream HTML 413s.",
+        "Use this multipart path only for normal-sized lead attachments. Use signed direct resumable upload above maxRecommendedBytes so bytes bypass Replit's request-size cap.",
+    },
+    direct: {
+      supported: true,
+      maxTotalBytes: MAX_UPLOAD_FILE_BYTES,
+      tusChunkBytes: DIRECT_UPLOAD_TUS_CHUNK_BYTES,
+      uploadUrlTtlSeconds: DIRECT_UPLOAD_URL_TTL_SECONDS,
+      endpoints: {
+        start: endpoints.directStart,
+        complete: endpoints.directComplete,
+      },
+      guidance:
+        "Use signed direct TUS upload for files above maxRecommendedBytes so bytes travel from the browser to Supabase instead of through Replit.",
     },
     chunked: {
       supported: true,
@@ -391,9 +424,9 @@ function buildLeadAttachmentUploadPolicy(
           originalName: file.originalName ?? null,
           mimeType: file.mimeType ?? null,
           size: fileSize,
-          recommendedUploadMode: shouldUseChunked ? "chunked" : "multipart",
+          recommendedUploadMode: shouldUseChunked ? "direct" : "multipart",
           reason: shouldUseChunked
-            ? `This file is above the ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)} direct multipart threshold; use the lead attachment chunked endpoints.`
+            ? `This file is above the ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)} direct multipart threshold; use signed direct resumable upload.`
             : `This file is within the ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)} direct multipart threshold.`,
         }
       : null,
@@ -417,15 +450,17 @@ function rejectOversizedLeadAttachmentMultipart(req: Request, _res: Response, ne
   next(
     new HttpError(
       413,
-      `Lead attachment multipart requests above ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)} must use the chunked upload path.`,
+      `Lead attachment multipart requests above ${formatUploadSize(DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)} must use the signed direct resumable upload path.`,
       {
-        code: "LEAD_ATTACHMENT_USE_CHUNKED_UPLOAD",
+        code: "LEAD_ATTACHMENT_USE_DIRECT_UPLOAD",
         contentLength,
         edgeRequestLimitBytes: DIRECT_UPLOAD_EDGE_LIMIT_BYTES,
         maxRecommendedBytes: DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
         multipartFieldName: "files",
         chunkedUploadSupported: true,
         uploadPolicyEndpoint: endpoints.uploadPolicy,
+        directStartEndpoint: endpoints.directStart,
+        directCompleteEndpoint: endpoints.directComplete,
         chunkedStartEndpoint: endpoints.chunkedStart,
       },
       "payload-too-large",
@@ -553,41 +588,50 @@ async function ensureLeadAttachmentFolder(
   const title = `${lead.title} Attachments`;
   const organizationId = getActiveOrganizationId(auth);
 
-  const [existing] = await db
-    .select()
-    .from(folders)
-    .where(
-      and(
-        isNull(folders.jobId),
-        eq(folders.scope, "lead"),
-        eq(folders.leadId, leadId),
-        eq(folders.title, title),
-        eq(folders.mediaType, "document"),
-        organizationScopeCondition(auth, folders.organizationId),
-        isNull(folders.deletedAt),
-      ),
-    )
-    .limit(1);
+  return db.transaction(async (tx) => {
+    // A new lead can receive multiple attachment requests at once. Serialize
+    // first-folder creation so each resumable intent remains bound to the same
+    // stable destination across prepare, restart, and completion.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`lead-attachment-folder:${organizationId}:${leadId}`}, 0))`,
+    );
 
-  if (existing) {
-    return existing;
-  }
+    const [existing] = await tx
+      .select()
+      .from(folders)
+      .where(
+        and(
+          isNull(folders.jobId),
+          eq(folders.scope, "lead"),
+          eq(folders.leadId, leadId),
+          eq(folders.title, title),
+          eq(folders.mediaType, "document"),
+          organizationScopeCondition(auth, folders.organizationId),
+          isNull(folders.deletedAt),
+        ),
+      )
+      .limit(1);
 
-  const [created] = await db
-    .insert(folders)
-    .values({
-      organizationId,
-      jobId: sql<string>`null`,
-      scope: "lead",
-      leadId,
-      title,
-      mediaType: "document",
-      viewingPermissions: { internal: true },
-      uploadingPermissions: { admin: true, project_manager: true },
-    })
-    .returning();
+    if (existing) {
+      return existing;
+    }
 
-  return created;
+    const [created] = await tx
+      .insert(folders)
+      .values({
+        organizationId,
+        jobId: sql<string>`null`,
+        scope: "lead",
+        leadId,
+        title,
+        mediaType: "document",
+        viewingPermissions: { internal: true },
+        uploadingPermissions: { admin: true, project_manager: true },
+      })
+      .returning();
+
+    return created;
+  });
 }
 
 async function storeLeadAttachment(params: {
@@ -1833,6 +1877,51 @@ router.get(
     }
 
     res.json(buildLeadAttachmentUploadPolicy(leadId, query.data));
+  }),
+);
+
+router.post(
+  "/:id/attachments/direct",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth!, leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const body = leadAttachmentDirectUploadStartSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      throw new HttpError(400, "Invalid lead attachment direct upload payload.", body.error.flatten());
+    }
+    const folder = await ensureLeadAttachmentFolder(leadId, req.auth!);
+    const prepared = await prepareDirectUpload({
+      targetType: "lead",
+      targetId: leadId,
+      folder,
+      userId: req.auth!.userId,
+      input: body.data,
+    });
+    res.status(201).json(prepared);
+  }),
+);
+
+router.post(
+  "/:id/attachments/direct/complete",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const leadId = getParam(req.params.id, "lead id");
+    await assertCanManageLead(req.auth!, leadId);
+    await getLeadOrThrow(leadId, false, req.auth!);
+    const body = leadAttachmentDirectUploadCompleteSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      throw new HttpError(400, "Invalid lead attachment direct upload completion payload.", body.error.flatten());
+    }
+    const folder = await ensureLeadAttachmentFolder(leadId, req.auth!);
+    const result = await finalizeDirectLeadUpload({
+      intentToken: body.data.intentToken,
+      leadId,
+      folder,
+      userId: req.auth!.userId,
+    });
+    res.status(201).json(result);
   }),
 );
 

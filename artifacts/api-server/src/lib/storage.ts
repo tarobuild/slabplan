@@ -24,6 +24,9 @@ const STORAGE_BUCKET_LIMIT_VERIFY_TIMEOUT_ENV =
 const SUPABASE_RESUMABLE_UPLOAD_MIN_BYTES = 6 * 1024 * 1024;
 const SUPABASE_RESUMABLE_UPLOAD_CHUNK_BYTES = 6 * 1024 * 1024;
 const SUPABASE_TUS_VERSION = "1.0.0";
+export const DIRECT_UPLOAD_TUS_CHUNK_BYTES = 6 * 1024 * 1024;
+export const DIRECT_UPLOAD_SIGNATURE_TTL_SECONDS = 2 * 60 * 60;
+export const DIRECT_UPLOAD_URL_TTL_SECONDS = 24 * 60 * 60;
 const SUPABASE_MULTIPART_UPLOAD_MIN_BYTES = 24 * 1024 * 1024;
 const SUPABASE_MULTIPART_PART_BYTES = 8 * 1024 * 1024;
 const SUPABASE_MULTIPART_MANIFEST_CONTENT_TYPE =
@@ -416,6 +419,70 @@ function supabaseResumableUploadBaseUrl(): string {
   }
 
   return url;
+}
+
+export type SignedDirectUpload = {
+  endpoint: string;
+  bucketName: string;
+  objectName: string;
+  signature: string;
+  chunkSizeBytes: number;
+  signatureExpiresInSeconds: number;
+  uploadUrlExpiresInSeconds: number;
+};
+
+/**
+ * Mint a narrowly scoped Supabase upload signature for one brand-new object.
+ * The service-role key never leaves the API. We intentionally omit x-upsert:
+ * every customer upload gets a unique object path and can never overwrite an
+ * existing object, even if a request is retried or replayed.
+ */
+export async function createSignedDirectUpload(
+  fileUrl: string,
+): Promise<SignedDirectUpload> {
+  if (storageBackend() !== "supabase") {
+    throw new HttpError(
+      409,
+      "Direct resumable uploads require the Supabase storage backend.",
+      { code: "DIRECT_UPLOAD_UNAVAILABLE" },
+      "conflict",
+    );
+  }
+
+  await ensureSupabaseBucketUploadLimitBestEffort("direct-upload-sign");
+  const { bucketName, objectName, encodedPath } = supabaseObjectPath(fileUrl);
+  const response = await supabaseStorageRequest(
+    `/object/upload/sign/${encodedPath}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(SUPABASE_WRITE_REQUEST_TIMEOUT_MS),
+    },
+    new Set([200]),
+  );
+  const payload = (await response.json()) as { url?: unknown };
+  if (typeof payload.url !== "string") {
+    throw new Error("Supabase signed upload response did not include a URL.");
+  }
+  const signedUrl = new URL(
+    payload.url,
+    `${getSupabaseConfig().url}/storage/v1/`,
+  );
+  const signature = signedUrl.searchParams.get("token");
+  if (!signature) {
+    throw new Error("Supabase signed upload response did not include a token.");
+  }
+
+  return {
+    endpoint: `${supabaseResumableUploadBaseUrl()}/storage/v1/upload/resumable`,
+    bucketName,
+    objectName,
+    signature,
+    chunkSizeBytes: DIRECT_UPLOAD_TUS_CHUNK_BYTES,
+    signatureExpiresInSeconds: DIRECT_UPLOAD_SIGNATURE_TTL_SECONDS,
+    uploadUrlExpiresInSeconds: DIRECT_UPLOAD_URL_TTL_SECONDS,
+  };
 }
 
 function encodeTusMetadataValue(value: string): string {
@@ -1840,6 +1907,128 @@ export async function storedFileExists(
     );
     return false;
   }
+}
+
+function storedObjectSizeFromRangeResponse(
+  response: globalThis.Response,
+): number | null {
+  const contentRange = response.headers.get("content-range")?.trim() ?? "";
+  const rangeMatch = /^bytes \d+-\d+\/(\d+)$/.exec(contentRange);
+  if (rangeMatch) {
+    const parsed = Number.parseInt(rangeMatch[1], 10);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  }
+  if (response.status === 200) {
+    return readContentLength(response.headers.get("content-length"));
+  }
+  return null;
+}
+
+/** Return the provider-confirmed size without downloading the object body. */
+export async function getExactStoredFileSize(fileUrl: string): Promise<number> {
+  if (storageBackend() === "local") {
+    const info = await stat(localFilePath(fileUrl));
+    if (!info.isFile()) throw new HttpError(404, "Stored file missing.");
+    return info.size;
+  }
+
+  const { encodedPath } = supabaseObjectPath(fileUrl);
+  const response = await supabaseStorageReadRequest(
+    `/object/${encodedPath}`,
+    { method: "GET", headers: { Range: "bytes=0-0" } },
+    new Set([200, 206, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+  );
+  if (SUPABASE_OBJECT_MISSING_STATUSES.has(response.status)) {
+    throw new HttpError(404, "Uploaded object was not found.");
+  }
+  const size = storedObjectSizeFromRangeResponse(response);
+  if (response.body) {
+    try {
+      await response.body.cancel();
+    } catch {
+      // Headers already provide the answer; cancellation is best-effort.
+    }
+  }
+  if (size === null) {
+    throw new Error("Supabase Storage did not return an exact object size.");
+  }
+  return size;
+}
+
+/**
+ * Bounded random-access read used by direct-upload finalization. The caller
+ * supplies the already verified total size, and every provider response must
+ * agree with the exact requested range before any bytes are accepted.
+ */
+export async function readStoredFileRange(params: {
+  fileUrl: string;
+  totalSize: number;
+  position: number;
+  byteCount: number;
+}): Promise<Buffer> {
+  const { fileUrl, totalSize, position } = params;
+  if (
+    !Number.isSafeInteger(totalSize) ||
+    !Number.isSafeInteger(position) ||
+    !Number.isSafeInteger(params.byteCount) ||
+    totalSize < 0 ||
+    position < 0 ||
+    params.byteCount < 0 ||
+    position > totalSize
+  ) {
+    throw new Error("Invalid stored-file byte range.");
+  }
+  const byteCount = Math.min(params.byteCount, totalSize - position);
+  if (byteCount === 0) return Buffer.alloc(0);
+
+  if (storageBackend() === "local") {
+    const handle = await openFile(localFilePath(fileUrl), "r");
+    try {
+      const buffer = Buffer.alloc(byteCount);
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        byteCount,
+        position,
+      );
+      return buffer.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+  }
+
+  const range = {
+    start: position,
+    end: position + byteCount - 1,
+    size: totalSize,
+  };
+  const { encodedPath } = supabaseObjectPath(fileUrl);
+  const response = await supabaseStorageReadRequest(
+    `/object/${encodedPath}`,
+    {
+      method: "GET",
+      headers: { Range: `bytes=${range.start}-${range.end}` },
+    },
+    new Set([200, 206, ...SUPABASE_OBJECT_MISSING_STATUSES]),
+  );
+  if (SUPABASE_OBJECT_MISSING_STATUSES.has(response.status)) {
+    throw new HttpError(404, "Uploaded object was not found.");
+  }
+
+  if (response.status === 206) {
+    await assertSupabaseRangeResponse(response, range);
+  } else {
+    const contentLength = readContentLength(response.headers.get("content-length"));
+    if (position !== 0 || byteCount !== totalSize || contentLength !== totalSize) {
+      if (response.body) await response.body.cancel().catch(() => undefined);
+      throw new Error("Supabase Storage ignored a bounded byte-range request.");
+    }
+  }
+  const body = await readResponseBody(response.body);
+  if (body.length !== byteCount) {
+    throw new Error("Supabase Storage returned an incomplete byte range.");
+  }
+  return body;
 }
 
 export type StorageStatus = "ok" | "missing";

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { LeadAttachmentUploadPolicyResponseChunked } from "./leadAttachmentUploadPolicyResponseChunked";
+import type { LeadAttachmentUploadPolicyResponseDirect } from "./leadAttachmentUploadPolicyResponseDirect";
 import type { LeadAttachmentUploadPolicyResponseFile } from "./leadAttachmentUploadPolicyResponseFile";
 import type { LeadAttachmentUploadPolicyResponseMultipart } from "./leadAttachmentUploadPolicyResponseMultipart";
 
@@ -13,5 +14,6 @@ export interface LeadAttachmentUploadPolicyResponse {
   leadId: string;
   multipart: LeadAttachmentUploadPolicyResponseMultipart;
   chunked: LeadAttachmentUploadPolicyResponseChunked;
+  direct: LeadAttachmentUploadPolicyResponseDirect;
   file: LeadAttachmentUploadPolicyResponseFile;
 }

@@ -37,6 +37,45 @@ test("upload tokens use the dedicated upload secret when configured", async () =
   }
 });
 
+test("direct-upload intents are scoped, tamper-evident, and survive browser restarts", async () => {
+  const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
+  const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
+  process.env.JWT_ACCESS_SECRET = "direct-upload-access-secret-for-tests";
+  process.env.JWT_REFRESH_SECRET = "direct-upload-refresh-secret-for-tests";
+
+  try {
+    const authModule = await import(`../src/lib/auth.ts?test=direct-${Date.now()}`);
+    const intent = {
+      version: 1 as const,
+      targetType: "folder" as const,
+      targetId: "a2c084cf-3307-4472-9911-d8c25e92969a",
+      folderId: "a2c084cf-3307-4472-9911-d8c25e92969a",
+      userId: fixtureUser.id,
+      fileUrl: "/uploads/job-a/document/unique-file.pdf",
+      storedName: "unique-file.pdf",
+      originalName: "Massive Plans.pdf",
+      mimeType: "application/pdf",
+      totalSize: 50 * 1024 * 1024 * 1024,
+      contentHash: null,
+      note: null,
+      duplicateAction: "keep_both" as const,
+      videoDurationSeconds: null,
+    };
+    const token = authModule.signDirectUploadIntent(intent);
+    assert.deepEqual(authModule.verifyDirectUploadIntent(token), intent);
+    const decoded = jwt.decode(token) as { iat: number; exp: number };
+    assert.equal(
+      decoded.exp - decoded.iat,
+      authModule.DIRECT_UPLOAD_INTENT_TTL_SECONDS,
+    );
+    const tampered = `${token.slice(0, -1)}${token.endsWith("a") ? "b" : "a"}`;
+    assert.throws(() => authModule.verifyDirectUploadIntent(tampered));
+  } finally {
+    restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);
+    restoreEnv("JWT_REFRESH_SECRET", originalRefreshSecret);
+  }
+});
+
 test("production no longer throws on missing JWT_UPLOAD_SECRET (advisory only)", async () => {
   // The upload secret is now advisory: file uploads use Bearer auth and
   // signed file-view tokens have their own TTL guard, so a missing

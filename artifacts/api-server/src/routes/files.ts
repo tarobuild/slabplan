@@ -65,6 +65,10 @@ import {
 } from "../lib/chunked-upload";
 import { validateMagicBytesForFiles } from "../lib/upload-magic-bytes";
 import { validateVideoDurationsForFiles } from "../lib/upload-video-duration";
+import {
+  finalizeDirectFolderUpload,
+  prepareDirectUpload,
+} from "../lib/direct-upload";
 
 const uploadRateLimit = createUploadPerUserRateLimit();
 
@@ -208,6 +212,21 @@ const chunkedUploadStartSchema = z.object({
   note: uploadFilesSchema.shape.note.optional(),
   duplicateAction: duplicateActionSchema,
   videoDurationSeconds: z.coerce.number().positive().optional(),
+});
+
+const directUploadStartSchema = z.object({
+  originalName: z.string().trim().min(1).max(255),
+  mimeType: z.string().trim().max(100).optional(),
+  totalSize: z.coerce.number().int().positive(),
+  contentHash: z.string().trim().regex(/^[a-fA-F0-9]{64}$/).optional(),
+  note: uploadFilesSchema.shape.note.optional(),
+  duplicateAction: z.literal("keep_both").optional().default("keep_both"),
+  videoDurationSeconds: z.coerce.number().positive().optional(),
+  resumeIntentToken: z.string().min(1).optional(),
+});
+
+const directUploadCompleteSchema = z.object({
+  intentToken: z.string().min(1),
 });
 
 function getParam(value: string | string[] | undefined, label: string) {
@@ -397,6 +416,58 @@ router.post(
       ...result,
       resolvedFolder: resolved,
     });
+  }),
+);
+
+router.post(
+  "/folders/:id/files/direct",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    const folder = await assertCanUploadToFolderForUploadRoute(
+      req.auth!,
+      folderId,
+      "POST /api/folders/{folderId}/files/direct",
+    );
+    const body = directUploadStartSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      throw new HttpError(400, "Invalid direct upload payload.", body.error.flatten());
+    }
+    if (folder.mediaType === "photo" && req.auth!.role === "crew_member" && !body.data.note) {
+      throw new HttpError(400, "A note is required when crew members upload photos.");
+    }
+
+    const prepared = await prepareDirectUpload({
+      targetType: "folder",
+      targetId: folderId,
+      folder,
+      userId: req.auth!.userId,
+      input: body.data,
+    });
+    res.status(201).json(prepared);
+  }),
+);
+
+router.post(
+  "/folders/:id/files/direct/complete",
+  uploadRateLimit,
+  asyncHandler(async (req, res) => {
+    const folderId = getParam(req.params.id, "folder id");
+    const folder = await assertCanUploadToFolderForUploadRoute(
+      req.auth!,
+      folderId,
+      "POST /api/folders/{folderId}/files/direct/complete",
+    );
+    const body = directUploadCompleteSchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      throw new HttpError(400, "Invalid direct upload completion payload.", body.error.flatten());
+    }
+    const result = await finalizeDirectFolderUpload({
+      intentToken: body.data.intentToken,
+      folder,
+      userId: req.auth!.userId,
+    });
+    res.status(201).json(result);
   }),
 );
 

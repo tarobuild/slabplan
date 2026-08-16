@@ -164,6 +164,96 @@ describe("Supabase storage provider", () => {
     );
   });
 
+  test("direct uploads expose only an object-scoped signature and use the direct storage hostname", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    mockFetch((input, init) => {
+      requests.push({ url: String(input), init });
+      const url = new URL(String(input));
+      if (url.pathname === "/storage/v1/bucket/cadstone-files") {
+        return new Response(
+          JSON.stringify({
+            id: "cadstone-files",
+            name: "cadstone-files",
+            public: false,
+            file_size_limit: MAX_UPLOAD_FILE_BYTES,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.pathname.startsWith("/storage/v1/object/upload/sign/cadstone-files/")) {
+        return new Response(
+          JSON.stringify({
+            url: `${url.pathname}?token=object-scoped-test-signature`,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      throw new Error(`Unexpected Supabase request: ${init?.method} ${url.href}`);
+    });
+
+    const { createSignedDirectUpload } = await import("../src/lib/storage.ts");
+    const prepared = await createSignedDirectUpload(
+      "/uploads/job-a/document/new-unique-object.pdf",
+    );
+
+    assert.equal(
+      prepared.endpoint,
+      "https://example.storage.supabase.co/storage/v1/upload/resumable",
+    );
+    assert.equal(prepared.bucketName, "cadstone-files");
+    assert.equal(
+      prepared.objectName,
+      "cadstone/uploads/job-a/document/new-unique-object.pdf",
+    );
+    assert.equal(prepared.signature, "object-scoped-test-signature");
+    assert.equal(prepared.chunkSizeBytes, 6 * 1024 * 1024);
+    assert.deepEqual(
+      requests.map((request) => request.init?.method),
+      ["GET", "POST"],
+    );
+    const signHeaders = new Headers(requests[1]?.init?.headers);
+    assert.equal(signHeaders.get("x-upsert"), null);
+    assert.equal(signHeaders.get("authorization"), "Bearer test-service-role-key");
+    assert.notEqual(prepared.signature, "test-service-role-key");
+  });
+
+  test("direct-upload finalization can verify size and bounded ranges without a full GET", async () => {
+    const payload = Buffer.from("0123456789", "utf8");
+    const requestedRanges: string[] = [];
+    mockFetch((input, init) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/storage\/v1\/object\/cadstone-files\//);
+      const range = new Headers(init?.headers).get("range") ?? "";
+      requestedRanges.push(range);
+      const match = /^bytes=(\d+)-(\d+)$/.exec(range);
+      assert.ok(match);
+      const start = Number(match[1]);
+      const end = Number(match[2]);
+      const body = payload.subarray(start, end + 1);
+      return new Response(body, {
+        status: 206,
+        headers: {
+          "content-range": `bytes ${start}-${end}/${payload.length}`,
+          "content-length": String(body.length),
+        },
+      });
+    });
+
+    const { getExactStoredFileSize, readStoredFileRange } = await import(
+      "../src/lib/storage.ts"
+    );
+    const fileUrl = "/uploads/job-a/document/range.bin";
+    assert.equal(await getExactStoredFileSize(fileUrl), payload.length);
+    const slice = await readStoredFileRange({
+      fileUrl,
+      totalSize: payload.length,
+      position: 2,
+      byteCount: 4,
+    });
+    assert.equal(slice.toString("utf8"), "2345");
+    assert.deepEqual(requestedRanges, ["bytes=0-0", "bytes=2-5"]);
+  });
+
   test("startup does not fail when Supabase bucket limit verification is unavailable", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     mockFetch((input, init) => {

@@ -5,9 +5,18 @@ import {
   DANGEROUS_UPLOAD_EXTENSIONS,
   DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES,
   DIRECT_UPLOAD_EDGE_LIMIT_BYTES,
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_VIDEO_DURATION_SECONDS,
   WIDE_UPLOAD_ACCEPT_EXTENSIONS,
   isDangerousUploadFileName,
+  videoDurationLimitLabel,
 } from "../src/uploads.ts";
+
+test("hosted resumable uploads allow 50 GiB files and unlimited video length", () => {
+  assert.equal(MAX_UPLOAD_FILE_BYTES, 50 * 1024 * 1024 * 1024);
+  assert.equal(Number.isFinite(MAX_VIDEO_DURATION_SECONDS), false);
+  assert.equal(videoDurationLimitLabel(), "unlimited");
+});
 
 test("svg uploads are blocked as executable web content", () => {
   assert.equal(isDangerousUploadFileName("payload.svg"), true);

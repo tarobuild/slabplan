@@ -1122,12 +1122,11 @@ export default function FileBrowser({
     totalBytes: number
   }) {
     if (!currentFolderId) return
-    const shouldUseChunkedJobUpload =
-      !isResourceScope &&
-      (mediaType !== "document" ||
-        params.files.some((file) => file.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES))
+    const shouldUseResumableUpload =
+      mediaType !== "document" ||
+      params.files.some((file) => file.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES)
 
-    if (!shouldUseChunkedJobUpload) {
+    if (!shouldUseResumableUpload) {
       const formData = new FormData()
       params.files.forEach((file) => formData.append("files", file))
       if (params.note?.trim()) {

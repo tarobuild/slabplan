@@ -8,7 +8,12 @@
  * Out of scope here: changing the actual ceiling. If the limit needs to
  * grow, change the value once below.
  */
-export const MAX_UPLOAD_FILE_BYTES = 1024 * 1024 * 1024 * 2;
+/**
+ * Supabase's hosted resumable-upload ceiling is 50 GiB. Large browser uploads
+ * use the provider's TUS endpoint directly, so this limit does not imply a
+ * 50-GiB request body or temporary file on the API server.
+ */
+export const MAX_UPLOAD_FILE_BYTES = 50 * 1024 * 1024 * 1024;
 
 /** Maximum number of files allowed in a single multipart request. */
 export const MAX_UPLOAD_FILE_COUNT = 20;
@@ -17,19 +22,17 @@ export const MAX_UPLOAD_FILE_COUNT = 20;
  * Cloud Run rejects HTTP/1 request bodies above 32 MiB before Node/Express can
  * return problem+json. Replit production deploys through Cloud Run, so direct
  * multipart uploads need a conservative ceiling below that edge cap. The app
- * still accepts much larger files through chunked upload sessions.
+ * still accepts much larger files through signed direct resumable upload.
  */
 export const DIRECT_UPLOAD_EDGE_LIMIT_BYTES = 32 * 1024 * 1024;
 export const DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES = 24 * 1024 * 1024;
 
 /**
- * Maximum allowed duration of an uploaded video, in seconds. Both the
- * browser-side picker AND the API server enforce this — the client check
- * gives users instant feedback before a multi-hundred-MB upload starts,
- * and the server check (ffprobe on the saved temp file) closes the gap
- * for non-browser clients or anyone who bypasses the picker.
+ * Video length is intentionally unlimited. We still probe duration when the
+ * browser can do so, because the Files UI uses it as display metadata, but a
+ * long recording is no longer rejected merely because it exceeds two minutes.
  */
-export const MAX_VIDEO_DURATION_SECONDS = 120;
+export const MAX_VIDEO_DURATION_SECONDS = Number.POSITIVE_INFINITY;
 
 /**
  * File extensions we treat as video for the duration check. Keep this in
@@ -72,6 +75,7 @@ export function formatVideoDuration(seconds: number): string {
 
 /** Friendly "2 minutes" / "30 seconds" label for the duration cap. */
 export function videoDurationLimitLabel(maxSeconds: number = MAX_VIDEO_DURATION_SECONDS): string {
+  if (!Number.isFinite(maxSeconds)) return "unlimited";
   if (maxSeconds % 60 === 0) {
     const minutes = maxSeconds / 60;
     return `${minutes} minute${minutes === 1 ? "" : "s"}`;

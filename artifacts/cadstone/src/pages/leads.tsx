@@ -606,7 +606,7 @@ export default function LeadsPage() {
     }
 
     if (
-      policy.file?.recommendedUploadMode === "chunked" ||
+      policy.file?.recommendedUploadMode === "direct" ||
       file.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES ||
       file.size > policy.multipart.maxRecommendedBytes
     ) {

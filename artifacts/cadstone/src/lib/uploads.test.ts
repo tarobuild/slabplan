@@ -77,7 +77,7 @@ describe("validateSelectedFiles", () => {
       size: 600 * 1024 * 1024,
     } as File
 
-    assert.equal(UPLOAD_MAX_FILE_SIZE_BYTES, 2 * 1024 * 1024 * 1024)
+    assert.equal(UPLOAD_MAX_FILE_SIZE_BYTES, 50 * 1024 * 1024 * 1024)
     assert.equal(validateSelectedFiles([largePdf], "document"), null)
   })
 
@@ -119,18 +119,19 @@ describe("validateVideoDurations", () => {
     assert.equal(error, null)
   })
 
-  test("accepts a clip exactly at the 2-minute limit", async () => {
+  test("has no default video-duration ceiling", async () => {
+    assert.equal(Number.isFinite(MAX_VIDEO_DURATION_SECONDS), false)
     const error = await validateVideoDurations(
       [makeFile("limit.mp4", "video/mp4")],
-      { probe: () => Promise.resolve(MAX_VIDEO_DURATION_SECONDS) },
+      { probe: () => Promise.resolve(12 * 60 * 60) },
     )
     assert.equal(error, null)
   })
 
-  test("rejects a 3-minute clip with a message naming the file and length", async () => {
+  test("can still enforce an explicit per-call duration policy", async () => {
     const error = await validateVideoDurations(
       [makeFile("walkthrough.mov", "video/quicktime")],
-      { probe: () => Promise.resolve(180) },
+      { probe: () => Promise.resolve(180), maxDurationSeconds: 120 },
     )
     assert.ok(error, "expected a duration error")
     assert.match(error!, /walkthrough\.mov/)
@@ -188,15 +189,13 @@ describe("validateSelectedFilesAsync (video)", () => {
     assert.equal(error, null)
   })
 
-  test("rejects a .mp4 longer than 2 minutes before the upload starts", async () => {
+  test("accepts long videos by default", async () => {
     const error = await validateSelectedFilesAsync(
       [makeFile("long.mp4", "video/mp4")],
       "video",
       { probeDuration: () => Promise.resolve(180) },
     )
-    assert.ok(error)
-    assert.match(error!, /long\.mp4/)
-    assert.match(error!, /3m/)
+    assert.equal(error, null)
   })
 
   test("falls back to the synchronous error first (e.g. dangerous extension)", async () => {
@@ -351,6 +350,18 @@ describe("uploadWithProgress", () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       fetchCalls.push({ url, init })
+      if (url.endsWith("/api/folders/folder-1/files/direct")) {
+        return new Response(
+          JSON.stringify({
+            detail: "Direct uploads unavailable in local storage mode.",
+            errors: { code: "DIRECT_UPLOAD_UNAVAILABLE" },
+          }),
+          {
+            status: 409,
+            headers: { "content-type": "application/problem+json" },
+          },
+        )
+      }
       if (url.endsWith("/api/folders/folder-1/files/chunked")) {
         return new Response(JSON.stringify({ session: { uploadId: "upload-1" } }), {
           status: 201,
@@ -375,12 +386,26 @@ describe("uploadWithProgress", () => {
       })
 
       assert.equal(result.status, "uploaded")
-      assert.equal(fetchCalls.length, 2)
+      assert.equal(fetchCalls.length, 3)
       assert.equal(xhrSends.length, 2)
       assert.equal(xhrSends[0]?.headers["content-type"], "application/octet-stream")
       assert.ok(xhrSends[0]?.body instanceof Blob)
       assert.equal(xhrSends[1]?.headers["content-type"], "text/plain")
       assert.equal(xhrSends[1]?.body, "AQIDBAU=")
+
+      fetchCalls.length = 0
+      xhrSends.length = 0
+      await uploadFileWithChunks({
+        folderId: "folder-1",
+        file,
+        duplicateAction: "skip_exact",
+        chunkSizeBytes: 1024,
+      })
+      assert.match(fetchCalls[0]?.url ?? "", /\/files\/chunked$/)
+      assert.ok(
+        fetchCalls.every(({ url }) => !url.endsWith("/files/direct")),
+        "explicit duplicate modes must preserve legacy skip/conflict semantics",
+      )
     } finally {
       globalThis.fetch = previousFetch
       globalThis.XMLHttpRequest = previousXMLHttpRequest
@@ -444,10 +469,9 @@ describe("uploadWithProgress", () => {
 
 // Component-level coverage: verify the actual upload-picker call sites
 // (Files > Videos via FileBrowser, daily-logs attachment dropzone)
-// route their selections through the shared async validator. The unit
-// tests above prove the validator rejects long videos with a message
-// that names the file and length; this test prevents the wiring from
-// silently regressing.
+// route their selections through the shared async validator. The unit tests
+// above prove the validator preserves safety checks without reintroducing the
+// old two-minute duration cap.
 import * as nodeFs from "node:fs/promises"
 import * as nodePath from "node:path"
 import { fileURLToPath } from "node:url"
@@ -481,7 +505,7 @@ describe("upload pickers wire the async video-duration check", () => {
     )
   })
 
-  test("the video upload hint mentions the 2-minute limit", async () => {
+  test("the video upload hint explains resumable large-video support", async () => {
     const source = await nodeFs.readFile(
       nodePath.join(here, "..", "components", "FileBrowser.tsx"),
       "utf8",
@@ -489,16 +513,16 @@ describe("upload pickers wire the async video-duration check", () => {
     assert.match(source, /videoUploadHint\s*\(\s*\)/, "FileBrowser should render the shared video upload hint")
   })
 
-  test("FileBrowser chunks proxy-sized uploads before the hard app limit", async () => {
+  test("FileBrowser routes proxy-sized uploads into the resumable path", async () => {
     const source = await nodeFs.readFile(
       nodePath.join(here, "..", "components", "FileBrowser.tsx"),
       "utf8",
     )
     assert.match(source, /DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES/, "FileBrowser must import the direct-upload chunking threshold")
-    assert.match(source, /file\.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES/, "FileBrowser must route proxy-sized files through chunked upload")
+    assert.match(source, /file\.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES/, "FileBrowser must route proxy-sized files through resumable upload")
   })
 
-  test("FileBrowser routes job photo and video uploads through chunked upload by default", async () => {
+  test("FileBrowser routes photo and video uploads through resumable upload by default", async () => {
     const source = await nodeFs.readFile(
       nodePath.join(here, "..", "components", "FileBrowser.tsx"),
       "utf8",
@@ -506,11 +530,11 @@ describe("upload pickers wire the async video-duration check", () => {
     assert.match(
       source,
       /mediaType !== "document"/,
-      "FileBrowser must route job Photos/Videos through chunked upload even when individual files are below the proxy-sized threshold",
+      "FileBrowser must route Photos/Videos through resumable upload even when individual files are below the proxy-sized threshold",
     )
   })
 
-  test("lead attachment uploads route large files through the lead chunked endpoint", async () => {
+  test("lead attachment uploads route large files through the resumable helper", async () => {
     const source = await nodeFs.readFile(
       nodePath.join(here, "..", "pages", "leads.tsx"),
       "utf8",
@@ -518,8 +542,27 @@ describe("upload pickers wire the async video-duration check", () => {
     assert.match(source, /uploadLeadAttachmentWithChunks/, "Leads page must import the lead chunked upload helper")
     assert.match(source, /leadsGetLeadsIdAttachmentsUploadPolicy/, "Lead attachments must ask the API for the live upload policy")
     assert.match(source, /policy\.multipart\.maxAppFileSizeBytes/, "Lead attachments must enforce the policy app max instead of a stale bundled cap")
-    assert.match(source, /file\.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES/, "Lead attachments must chunk large files before multipart upload")
+    assert.match(source, /file\.size > DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES/, "Lead attachments must route large files around multipart upload")
     assert.match(source, /maxFileSizeBytes:\s*Number\.MAX_SAFE_INTEGER/, "Lead attachment pickers must not block policy-sized files before policy lookup")
+  })
+
+  test("the resumable helper uses signed direct TUS without exposing a service key", async () => {
+    const source = await nodeFs.readFile(
+      nodePath.join(here, "uploads.ts"),
+      "utf8",
+    )
+    assert.match(source, /import\("tus-js-client"\)/)
+    assert.match(source, /"x-signature": current\.storage\.signature/)
+    assert.match(source, /bucketName: current\.storage\.bucketName/)
+    assert.match(source, /objectName: current\.storage\.objectName/)
+    assert.match(source, /removeFingerprintOnSuccess: true/)
+    assert.match(source, /window\.localStorage\.setItem/)
+    assert.match(source, /resumeIntentToken/)
+    assert.match(source, /findPreviousUploads\(\)/)
+    assert.match(source, /MAX_DIRECT_UPLOAD_SESSION_REFRESHES/)
+    assert.match(source, /prepared = await prepare\(prepared\.intentToken\)/)
+    assert.match(source, /currentProgressBytes <= progressAtLastSessionRefresh/)
+    assert.doesNotMatch(source, /serviceRole/i)
   })
 
   test("lead attachment rows download directly instead of opening the file preview", async () => {

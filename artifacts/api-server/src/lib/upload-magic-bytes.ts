@@ -2,7 +2,7 @@ import path from "node:path";
 import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import { StringDecoder } from "node:string_decoder";
-import { fileTypeFromFile } from "file-type";
+import { fileTypeFromBuffer } from "file-type";
 import { inflateSync, strFromU8 } from "fflate";
 import { HttpError } from "./http";
 import { logger } from "./logger";
@@ -34,6 +34,17 @@ interface SniffableCategory {
   claimedExtensions: ReadonlySet<string>;
   sniffedMimes: ReadonlySet<string>;
 }
+
+export interface UploadByteSource {
+  size: number;
+  label: string;
+  read(position: number, byteCount: number): Promise<Buffer>;
+}
+
+type UploadFileMetadata = Pick<
+  Express.Multer.File,
+  "originalname" | "mimetype"
+>;
 
 const PDF_CATEGORY: SniffableCategory = {
   category: "PDF",
@@ -312,11 +323,11 @@ function looksLikeBinary(buf: Buffer): boolean {
 }
 
 async function validateTextLike(
-  file: Express.Multer.File,
+  source: UploadByteSource,
   claimedMime: string,
   extension: string,
 ): Promise<void> {
-  const head = await readBytes(file.path, TEXT_SCAN_BYTES, 0);
+  const head = await source.read(0, TEXT_SCAN_BYTES);
   if (looksLikeBinary(head)) {
     throw new HttpError(
       415,
@@ -401,7 +412,7 @@ interface PdfInspection {
   encrypted: boolean;
 }
 
-async function readBytes(
+async function readLocalBytes(
   filePath: string,
   byteCount: number,
   position = 0,
@@ -416,30 +427,27 @@ async function readBytes(
   }
 }
 
-async function inspectPdf(filePath: string): Promise<PdfInspection | null> {
-  const head = await readBytes(
-    filePath,
-    PDF_HEADER_SCAN_BYTES + PDF_HEADER.length,
+async function inspectPdf(source: UploadByteSource): Promise<PdfInspection | null> {
+  const head = await source.read(
     0,
+    PDF_HEADER_SCAN_BYTES + PDF_HEADER.length,
   );
   const headerOffset = head.indexOf(PDF_HEADER);
   if (headerOffset < 0) return null;
 
   let encrypted = false;
-  const headEncryptScan = await readBytes(filePath, PDF_ENCRYPT_HEAD_BYTES, 0);
+  const headEncryptScan = await source.read(0, PDF_ENCRYPT_HEAD_BYTES);
   if (headEncryptScan.indexOf(PDF_ENCRYPT_TOKEN) >= 0) {
     encrypted = true;
   } else {
-    const stat = await fs.stat(filePath);
-    if (stat.size > PDF_ENCRYPT_HEAD_BYTES) {
+    if (source.size > PDF_ENCRYPT_HEAD_BYTES) {
       const tailStart = Math.max(
         PDF_ENCRYPT_HEAD_BYTES,
-        stat.size - PDF_ENCRYPT_TAIL_BYTES,
+        source.size - PDF_ENCRYPT_TAIL_BYTES,
       );
-      const tail = await readBytes(
-        filePath,
-        Math.min(PDF_ENCRYPT_TAIL_BYTES, stat.size - tailStart),
+      const tail = await source.read(
         tailStart,
+        Math.min(PDF_ENCRYPT_TAIL_BYTES, source.size - tailStart),
       );
       if (tail.indexOf(PDF_ENCRYPT_TOKEN) >= 0) {
         encrypted = true;
@@ -451,16 +459,17 @@ async function inspectPdf(filePath: string): Promise<PdfInspection | null> {
 }
 
 async function validatePdf(
-  file: Express.Multer.File,
+  file: UploadFileMetadata,
+  source: UploadByteSource,
   claimedMime: string,
   extension: string,
 ): Promise<void> {
   let inspection: PdfInspection | null;
   try {
-    inspection = await inspectPdf(file.path);
+    inspection = await inspectPdf(source);
   } catch (err) {
     logger.warn(
-      { err, path: file.path, originalName: file.originalname },
+      { err, path: source.label, originalName: file.originalname },
       "PDF magic-byte read failed; rejecting upload",
     );
     throw new HttpError(
@@ -625,12 +634,12 @@ function findEocd(buf: Buffer): number {
 }
 
 async function readCentralDirectory(
-  filePath: string,
-  fileSize: number,
+  source: UploadByteSource,
 ): Promise<CentralDirectoryEntry[] | null> {
+  const fileSize = source.size;
   const tailLen = Math.min(ZIP_EOCD_MAX_SCAN, fileSize);
   const tailStart = fileSize - tailLen;
-  const tail = await readBytes(filePath, tailLen, tailStart);
+  const tail = await source.read(tailStart, tailLen);
   const eocdRel = findEocd(tail);
   if (eocdRel < 0) return null;
 
@@ -645,7 +654,7 @@ async function readCentralDirectory(
   if (cdSize > MAX_CENTRAL_DIRECTORY_BYTES) return null;
   if (cdOffset + cdSize > fileSize) return null;
 
-  const cd = await readBytes(filePath, cdSize, cdOffset);
+  const cd = await source.read(cdOffset, cdSize);
   const entries: CentralDirectoryEntry[] = [];
   let p = 0;
   while (p + 46 <= cd.length && entries.length < totalEntries) {
@@ -671,15 +680,15 @@ async function readCentralDirectory(
 }
 
 async function readZipEntryBytes(
-  filePath: string,
-  fileSize: number,
+  source: UploadByteSource,
   entry: CentralDirectoryEntry,
 ): Promise<Uint8Array | null> {
+  const fileSize = source.size;
   if (entry.uncompressedSize > MAX_INSPECTED_ENTRY_BYTES) return null;
   if (entry.compressedSize > MAX_INSPECTED_ENTRY_BYTES) return null;
   if (entry.localHeaderOffset + 30 > fileSize) return null;
 
-  const lfh = await readBytes(filePath, 30, entry.localHeaderOffset);
+  const lfh = await source.read(entry.localHeaderOffset, 30);
   if (lfh.readUInt32LE(0) !== ZIP_LFH_SIG) return null;
   const lfhNameLen = lfh.readUInt16LE(26);
   const lfhExtraLen = lfh.readUInt16LE(28);
@@ -687,7 +696,7 @@ async function readZipEntryBytes(
     entry.localHeaderOffset + 30 + lfhNameLen + lfhExtraLen;
   if (dataStart + entry.compressedSize > fileSize) return null;
 
-  const compressed = await readBytes(filePath, entry.compressedSize, dataStart);
+  const compressed = await source.read(dataStart, entry.compressedSize);
   if (entry.method === 0) {
     return compressed;
   }
@@ -700,7 +709,7 @@ async function readZipEntryBytes(
       if (inflated.length > MAX_INSPECTED_ENTRY_BYTES) return null;
       return inflated;
     } catch (err) {
-      logger.warn({ err, path: filePath, entry: entry.name }, "deflate failed");
+      logger.warn({ err, path: source.label, entry: entry.name }, "deflate failed");
       return null;
     }
   }
@@ -709,24 +718,24 @@ async function readZipEntryBytes(
 }
 
 async function readNamedZipEntry(
-  filePath: string,
+  source: UploadByteSource,
   name: string,
 ): Promise<{ found: boolean; bytes: Uint8Array | null }> {
-  const stat = await fs.stat(filePath);
-  const cd = await readCentralDirectory(filePath, stat.size);
+  const cd = await readCentralDirectory(source);
   if (!cd) return { found: false, bytes: null };
   const entry = cd.find((e) => e.name === name);
   if (!entry) return { found: false, bytes: null };
-  const bytes = await readZipEntryBytes(filePath, stat.size, entry);
+  const bytes = await readZipEntryBytes(source, entry);
   return { found: true, bytes };
 }
 
 async function validateOoxml(
-  file: Express.Multer.File,
+  file: UploadFileMetadata,
+  source: UploadByteSource,
   claimedMime: string,
   extension: string,
 ): Promise<void> {
-  const head = await readBytes(file.path, 4, 0);
+  const head = await source.read(0, 4);
   if (head.compare(ZIP_LOCAL_FILE_HEADER) !== 0) {
     throw makeMismatchError(OOXML_CATEGORY, claimedMime, extension, null, {
       detail:
@@ -735,9 +744,9 @@ async function validateOoxml(
   }
   let result;
   try {
-    result = await readNamedZipEntry(file.path, "[Content_Types].xml");
+    result = await readNamedZipEntry(source, "[Content_Types].xml");
   } catch (err) {
-    logger.warn({ err, path: file.path }, "OOXML zip inspection failed");
+    logger.warn({ err, path: source.label }, "OOXML zip inspection failed");
     throw makeMismatchError(OOXML_CATEGORY, claimedMime, extension, "application/zip", {
       detail:
         "Could not inspect the uploaded Office document. Try re-saving from Word/Excel/PowerPoint and uploading again.",
@@ -782,11 +791,12 @@ async function validateOoxml(
 }
 
 async function validateOdf(
-  file: Express.Multer.File,
+  file: UploadFileMetadata,
+  source: UploadByteSource,
   claimedMime: string,
   extension: string,
 ): Promise<void> {
-  const head = await readBytes(file.path, 4, 0);
+  const head = await source.read(0, 4);
   if (head.compare(ZIP_LOCAL_FILE_HEADER) !== 0) {
     throw makeMismatchError(ODF_CATEGORY, claimedMime, extension, null, {
       detail:
@@ -795,9 +805,9 @@ async function validateOdf(
   }
   let result;
   try {
-    result = await readNamedZipEntry(file.path, "mimetype");
+    result = await readNamedZipEntry(source, "mimetype");
   } catch (err) {
-    logger.warn({ err, path: file.path }, "ODF zip inspection failed");
+    logger.warn({ err, path: source.label }, "ODF zip inspection failed");
     throw makeMismatchError(ODF_CATEGORY, claimedMime, extension, "application/zip", {
       detail:
         "Could not inspect the uploaded OpenDocument file. Try re-saving and uploading again.",
@@ -833,11 +843,11 @@ const OLE2_MAGIC = Buffer.from([
   0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1,
 ]);
 async function validateOle2(
-  file: Express.Multer.File,
+  source: UploadByteSource,
   claimedMime: string,
   extension: string,
 ): Promise<void> {
-  const head = await readBytes(file.path, OLE2_MAGIC.length, 0);
+  const head = await source.read(0, OLE2_MAGIC.length);
   if (head.indexOf(OLE2_MAGIC) !== 0) {
     throw makeMismatchError(OLE2_CATEGORY, claimedMime, extension, null, {
       detail:
@@ -846,70 +856,67 @@ async function validateOle2(
   }
 }
 
-/**
- * Sniff the magic bytes of a multer-saved file and verify that they
- * match the client-claimed MIME / extension. Throws HttpError(415) on
- * mismatch. Files outside the watched categories pass through
- * untouched, so csv / txt / md / json / rtf / tsv uploads are
- * unaffected.
- */
-export async function validateMagicBytesForFile(
-  file: Express.Multer.File,
+const FILE_TYPE_SCAN_BYTES = 64 * 1024;
+
+async function validateMagicBytesFromSource(
+  file: UploadFileMetadata,
+  source: UploadByteSource,
+  localFile?: Express.Multer.File,
 ): Promise<void> {
   const claimedMime = (file.mimetype ?? "").toLowerCase();
   const extension = path.extname(file.originalname ?? "").toLowerCase();
 
   const expected = findSniffableCategory(claimedMime, extension);
   if (!expected) {
-    if (TEXT_DATA_EXTENSIONS.has(extension) && file.path) {
-      await validateTextLike(file, claimedMime, extension);
+    if (TEXT_DATA_EXTENSIONS.has(extension)) {
+      await validateTextLike(source, claimedMime, extension);
     }
     return;
   }
 
-  if (!file.path) {
-    // Upload didn't end up on disk (in-memory storage / streamed). The
-    // sniffer needs a path; surface this as a server bug rather than a
-    // client error so it isn't silently bypassed.
-    throw new HttpError(
-      500,
-      "Upload pipeline misconfigured: cannot sniff in-memory uploads.",
-      { code: "MAGIC_BYTE_NO_PATH" },
-      "internal-server-error",
-    );
-  }
-
   if (expected === PDF_CATEGORY) {
-    await validatePdf(file, claimedMime, extension);
+    await validatePdf(file, source, claimedMime, extension);
     return;
   }
 
   if (expected === SVG_CATEGORY) {
-    await validateSvg(file, claimedMime, extension);
+    if (!localFile) {
+      throw new HttpError(
+        415,
+        "SVG uploads are not allowed.",
+        { code: "UPLOAD_TYPE_BLOCKED", extension: extension || null },
+        "unsupported-media-type",
+      );
+    }
+    await validateSvg(localFile, claimedMime, extension);
     return;
   }
 
   if (expected === OOXML_CATEGORY) {
-    await validateOoxml(file, claimedMime, extension);
+    await validateOoxml(file, source, claimedMime, extension);
     return;
   }
 
   if (expected === ODF_CATEGORY) {
-    await validateOdf(file, claimedMime, extension);
+    await validateOdf(file, source, claimedMime, extension);
     return;
   }
 
   if (expected === OLE2_CATEGORY) {
-    await validateOle2(file, claimedMime, extension);
+    await validateOle2(source, claimedMime, extension);
     return;
   }
 
   let sniffed;
   try {
-    sniffed = await fileTypeFromFile(file.path);
+    const head = await source.read(
+      0,
+      Math.min(FILE_TYPE_SCAN_BYTES, source.size),
+    );
+    sniffed = await fileTypeFromBuffer(head);
   } catch (err) {
     logger.warn(
-      { err, path: file.path, originalName: file.originalname },
+      { err, path: source.label, originalName: file.originalname },
       "Magic-byte sniff failed; rejecting upload",
     );
     throw new HttpError(
@@ -928,6 +935,52 @@ export async function validateMagicBytesForFile(
       sniffed?.mime ?? null,
     );
   }
+}
+
+/**
+ * Sniff the magic bytes of a multer-saved file and verify that they match the
+ * client-claimed MIME / extension. Validation uses bounded random-access
+ * reads, which is also what lets the direct-upload finalizer inspect a 50-GiB
+ * object without copying it back through the API server.
+ */
+export async function validateMagicBytesForFile(
+  file: Express.Multer.File,
+): Promise<void> {
+  if (!file.path) {
+    throw new HttpError(
+      500,
+      "Upload pipeline misconfigured: cannot sniff in-memory uploads.",
+      { code: "MAGIC_BYTE_NO_PATH" },
+      "internal-server-error",
+    );
+  }
+
+  const stat = await fs.stat(file.path);
+  const source: UploadByteSource = {
+    size: stat.size,
+    label: file.path,
+    read: (position, byteCount) =>
+      readLocalBytes(
+        file.path,
+        Math.min(byteCount, Math.max(0, stat.size - position)),
+        position,
+      ),
+  };
+  await validateMagicBytesFromSource(file, source, file);
+}
+
+export async function validateMagicBytesForStoredFile(params: {
+  originalName: string;
+  mimeType?: string | null;
+  source: UploadByteSource;
+}): Promise<void> {
+  await validateMagicBytesFromSource(
+    {
+      originalname: params.originalName,
+      mimetype: params.mimeType?.trim() || "application/octet-stream",
+    },
+    params.source,
+  );
 }
 
 /**

@@ -1103,6 +1103,12 @@ test("lead attachment upload policy tells API agents to chunk Anwar's large PDFs
           totalChunks: number;
         };
       };
+      direct: {
+        supported: boolean;
+        maxTotalBytes: number;
+        tusChunkBytes: number;
+        endpoints: { start: string; complete: string };
+      };
       file: {
         originalName: string;
         mimeType: string;
@@ -1126,7 +1132,7 @@ test("lead attachment upload policy tells API agents to chunk Anwar's large PDFs
     );
     assert.ok(
       fileSize < policy.multipart.maxAppFileSizeBytes,
-      "The app can accept this file size through chunked upload even though direct multipart is not proxy-safe",
+      "The app can accept this file size through direct resumable upload even though multipart is not proxy-safe",
     );
     assert.equal(policy.chunked.supported, true);
     assert.equal(policy.chunked.endpoints.start, `/api/leads/${assignedLeadId}/attachments/chunked`);
@@ -1142,8 +1148,16 @@ test("lead attachment upload policy tells API agents to chunk Anwar's large PDFs
     assert.equal(policy.chunked.startBody.mimeType, "application/pdf");
     assert.equal(policy.chunked.startBody.totalSize, fileSize);
     assert.equal(policy.chunked.startBody.totalChunks, Math.ceil(fileSize / policy.chunked.maxChunkBytes));
-    assert.equal(policy.file.recommendedUploadMode, "chunked");
-    assert.match(policy.file.reason, /chunked endpoints/i);
+    assert.equal(policy.direct.supported, true);
+    assert.equal(policy.direct.maxTotalBytes, MAX_UPLOAD_FILE_BYTES);
+    assert.equal(policy.direct.tusChunkBytes, 6 * 1024 * 1024);
+    assert.equal(policy.direct.endpoints.start, `/api/leads/${assignedLeadId}/attachments/direct`);
+    assert.equal(
+      policy.direct.endpoints.complete,
+      `/api/leads/${assignedLeadId}/attachments/direct/complete`,
+    );
+    assert.equal(policy.file.recommendedUploadMode, "direct");
+    assert.match(policy.file.reason, /signed direct resumable/i);
   }
 });
 
@@ -1177,7 +1191,7 @@ test("lead chunked upload accepts files above the former 500 MB cap under the cu
   assert.equal(policy.chunked.supported, true);
   assert.ok(fileSize > 500 * 1024 * 1024);
   assert.ok(fileSize < policy.chunked.maxTotalBytes);
-  assert.equal(policy.file.recommendedUploadMode, "chunked");
+  assert.equal(policy.file.recommendedUploadMode, "direct");
 
   const totalChunks = Math.ceil(fileSize / policy.chunked.maxChunkBytes);
   const startResponse = await fetch(`${baseUrl}/api/leads/${assignedLeadId}/attachments/chunked`, {
@@ -1249,7 +1263,7 @@ test("lead chunked upload rejects files above the current app cap with structure
   assert.equal(body.errors?.limit, MAX_UPLOAD_FILE_BYTES);
 });
 
-test("oversized direct lead attachment multipart requests return structured chunked guidance when they reach the app", async () => {
+test("oversized lead multipart requests return structured direct-upload guidance when they reach the app", async () => {
   const target = new URL(`${baseUrl}/api/leads/${assignedLeadId}/attachments`);
   const contentLength = 81_721_383;
 
@@ -1310,11 +1324,13 @@ test("oversized direct lead attachment multipart requests return structured chun
       multipartFieldName?: string;
       chunkedUploadSupported?: boolean;
       uploadPolicyEndpoint?: string;
+      directStartEndpoint?: string;
+      directCompleteEndpoint?: string;
       chunkedStartEndpoint?: string;
     };
   };
   assert.equal(body.status, 413);
-  assert.equal(body.errors?.code, "LEAD_ATTACHMENT_USE_CHUNKED_UPLOAD");
+  assert.equal(body.errors?.code, "LEAD_ATTACHMENT_USE_DIRECT_UPLOAD");
   assert.equal(body.errors?.contentLength, contentLength);
   assert.equal(body.errors?.edgeRequestLimitBytes, DIRECT_UPLOAD_EDGE_LIMIT_BYTES);
   assert.equal(body.errors?.multipartFieldName, "files");
@@ -1322,6 +1338,14 @@ test("oversized direct lead attachment multipart requests return structured chun
   assert.equal(
     body.errors?.uploadPolicyEndpoint,
     `/api/leads/${assignedLeadId}/attachments/upload-policy`,
+  );
+  assert.equal(
+    body.errors?.directStartEndpoint,
+    `/api/leads/${assignedLeadId}/attachments/direct`,
+  );
+  assert.equal(
+    body.errors?.directCompleteEndpoint,
+    `/api/leads/${assignedLeadId}/attachments/direct/complete`,
   );
   assert.equal(
     body.errors?.chunkedStartEndpoint,

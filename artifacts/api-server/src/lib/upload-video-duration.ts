@@ -17,8 +17,8 @@ import { logger } from "./logger";
  * non-browser client (curl, MCP tool, scripted upload) can still POST a
  * long video and bypass it. We probe the saved temp file with ffprobe
  * after multer + magic-byte validation, before the route handler
- * commits the row, and reject anything over `MAX_VIDEO_DURATION_SECONDS`
- * with a clean 4xx.
+ * commits the row. A finite override can still enforce a route-specific cap
+ * with a clean 4xx; the shared production default is intentionally unlimited.
  *
  * Like the client, we treat probe failures as "unknown duration" and
  * fall through — the shared size cap remains the long-term

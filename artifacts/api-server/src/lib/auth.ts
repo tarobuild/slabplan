@@ -5,7 +5,7 @@ import type { User } from "@workspace/db/schema";
 import { HttpError } from "./http";
 import { logger } from "./logger";
 
-type TokenType = "access" | "refresh" | "upload" | "file_view";
+type TokenType = "access" | "refresh" | "upload" | "file_view" | "direct_upload";
 
 type TokenClaims = {
   type: TokenType;
@@ -24,6 +24,23 @@ type VerifiedToken<TType extends TokenType = TokenType> = TokenClaims & {
   authTime?: number;
 };
 
+export type DirectUploadIntent = {
+  version: 1;
+  targetType: "folder" | "lead";
+  targetId: string;
+  folderId: string;
+  userId: string;
+  fileUrl: string;
+  storedName: string;
+  originalName: string;
+  mimeType: string;
+  totalSize: number;
+  contentHash: string | null;
+  note: string | null;
+  duplicateAction: "keep_both";
+  videoDurationSeconds: number | null;
+};
+
 type PublicUser = Pick<
   User,
   "id" | "email" | "fullName" | "role" | "avatarUrl" | "phone" | "createdAt" | "updatedAt"
@@ -34,6 +51,7 @@ type PublicUser = Pick<
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const UPLOAD_TOKEN_TTL_SECONDS = 24 * 60 * 60;
+export const DIRECT_UPLOAD_INTENT_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const FILE_VIEW_TOKEN_TTL_SECONDS = 5 * 60;
 const JWT_ALGORITHMS = ["HS256"] as const;
 
@@ -245,6 +263,70 @@ export function verifyRefreshToken(token: string): VerifiedToken<"refresh"> {
 
 export function verifyUploadToken(token: string): VerifiedToken<"upload"> {
   return decodeVerifiedToken(token, uploadSecret, "upload");
+}
+
+export function signDirectUploadIntent(intent: DirectUploadIntent): string {
+  return jwt.sign(
+    {
+      type: "direct_upload",
+      intent,
+    },
+    accessSecret,
+    {
+      subject: intent.userId,
+      expiresIn: DIRECT_UPLOAD_INTENT_TTL_SECONDS,
+      jwtid: crypto.randomBytes(16).toString("hex"),
+    },
+  );
+}
+
+export function verifyDirectUploadIntent(token: string): DirectUploadIntent {
+  let payload: JwtPayload | string;
+  try {
+    payload = jwt.verify(token, accessSecret, {
+      algorithms: [...JWT_ALGORITHMS],
+    });
+  } catch {
+    throw new HttpError(401, "Invalid or expired direct-upload intent.");
+  }
+  if (
+    typeof payload === "string" ||
+    payload.type !== "direct_upload" ||
+    typeof payload.sub !== "string" ||
+    !payload.intent ||
+    typeof payload.intent !== "object"
+  ) {
+    throw new HttpError(401, "Invalid direct-upload intent.");
+  }
+
+  const value = payload.intent as Partial<DirectUploadIntent>;
+  const valid =
+    value.version === 1 &&
+    (value.targetType === "folder" || value.targetType === "lead") &&
+    typeof value.targetId === "string" &&
+    typeof value.folderId === "string" &&
+    typeof value.userId === "string" &&
+    value.userId === payload.sub &&
+    typeof value.fileUrl === "string" &&
+    /^\/uploads\/[A-Za-z0-9._/-]+$/.test(value.fileUrl) &&
+    typeof value.storedName === "string" &&
+    typeof value.originalName === "string" &&
+    typeof value.mimeType === "string" &&
+    typeof value.totalSize === "number" &&
+    Number.isSafeInteger(value.totalSize) &&
+    value.totalSize > 0 &&
+    (value.contentHash === null || typeof value.contentHash === "string") &&
+    (value.note === null || typeof value.note === "string") &&
+    value.duplicateAction === "keep_both" &&
+    (value.videoDurationSeconds === null ||
+      (typeof value.videoDurationSeconds === "number" &&
+        Number.isFinite(value.videoDurationSeconds) &&
+        value.videoDurationSeconds > 0));
+
+  if (!valid) {
+    throw new HttpError(401, "Invalid direct-upload intent.");
+  }
+  return value as DirectUploadIntent;
 }
 
 export function setRefreshTokenCookie(res: Response, token: string): void {

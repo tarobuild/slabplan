@@ -17,7 +17,10 @@ import {
   sendProblem,
   sendUnknownErrorProblem,
 } from "../src/lib/problem-json.ts";
-import { validateMagicBytesForFile } from "../src/lib/upload-magic-bytes.ts";
+import {
+  validateMagicBytesForFile,
+  validateMagicBytesForStoredFile,
+} from "../src/lib/upload-magic-bytes.ts";
 
 let server: Server;
 let baseUrl: string;
@@ -778,5 +781,47 @@ test("validateMagicBytesForFile flags missing path as a server bug (unit)", asyn
         }),
       ),
     (err: unknown) => err instanceof HttpError && err.statusCode === 500,
+  );
+});
+
+test("stored-file validation inspects a virtual 50 GiB PDF with bounded reads", async () => {
+  const totalSize = 50 * 1024 * 1024 * 1024;
+  const reads: Array<{ position: number; byteCount: number }> = [];
+  await validateMagicBytesForStoredFile({
+    originalName: "massive-plans.pdf",
+    mimeType: "application/pdf",
+    source: {
+      size: totalSize,
+      label: "/uploads/massive-plans.pdf",
+      async read(position, byteCount) {
+        reads.push({ position, byteCount });
+        if (position === 0) {
+          const buffer = Buffer.alloc(byteCount, 0x20);
+          PDF_BYTES.copy(buffer, 0, 0, Math.min(PDF_BYTES.length, buffer.length));
+          return buffer;
+        }
+        return Buffer.alloc(byteCount, 0x20);
+      },
+    },
+  });
+  assert.ok(reads.length <= 3);
+  assert.ok(reads.every((read) => read.byteCount <= 64 * 1024));
+  assert.ok(reads.some((read) => read.position > totalSize - 20 * 1024));
+});
+
+test("stored-file validation rejects a renamed remote payload", async () => {
+  await assert.rejects(
+    () =>
+      validateMagicBytesForStoredFile({
+        originalName: "not-a-photo.png",
+        mimeType: "image/png",
+        source: {
+          size: HTML_BYTES.length,
+          label: "/uploads/not-a-photo.png",
+          read: async (position, byteCount) =>
+            HTML_BYTES.subarray(position, position + byteCount),
+        },
+      }),
+    (error: unknown) => error instanceof HttpError && error.statusCode === 415,
   );
 });

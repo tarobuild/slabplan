@@ -20,10 +20,9 @@ export type UploadMediaType = "document" | "photo" | "video" | "any"
 export const UPLOAD_MAX_FILE_SIZE_BYTES = MAX_UPLOAD_FILE_BYTES
 export const UPLOAD_MAX_FILES = MAX_UPLOAD_FILE_COUNT
 
-// Max length of an uploaded video. Source of truth lives in
-// @workspace/api-zod so the server-side ffprobe check and this client
-// pre-flight cannot drift apart. Re-exported under the legacy name so
-// existing call sites don't churn.
+// Shared video-duration policy. Production is unlimited; a caller can still
+// supply a finite route-specific override. Re-exported under the legacy name
+// so existing call sites don't churn.
 export const MAX_VIDEO_DURATION_SECONDS = SHARED_MAX_VIDEO_DURATION_SECONDS
 
 // Used by `isVideoFile` below to decide which selected files need a
@@ -65,7 +64,7 @@ export function uploadAcceptForMediaType(_mediaType: UploadMediaType) {
 
 /** Hint surfaced near video upload pickers so users learn the cap before they pick. */
 export function videoUploadHint() {
-  return `Videos must be ${MAX_VIDEO_DURATION_SECONDS / 60} minutes or shorter.`
+  return "Large videos are supported. Uploads resume automatically if the connection drops."
 }
 
 // Re-export the shared formatter so existing call sites keep working
@@ -119,9 +118,9 @@ export function validateSelectedFiles(
 //
 // Run this AFTER the synchronous `validateSelectedFiles` check passes —
 // it short-circuits non-video selections and otherwise reads each
-// video's duration via an off-DOM `<video>` element so we can reject
-// clips longer than `MAX_VIDEO_DURATION_SECONDS` before the upload
-// starts. If the browser cannot decode the metadata (corrupt header,
+// video's duration via an off-DOM `<video>` element for display metadata and
+// for any caller that supplies a finite route-specific policy. If the browser
+// cannot decode the metadata (corrupt header,
 // exotic codec) we treat the duration as unknown and let the file
 // through — the server's existing size + magic-byte checks remain the
 // safety net.
@@ -245,8 +244,8 @@ export async function probeVideoDurations(
  *
  * The duration check fires regardless of `mediaType` so any picker —
  * the Files > Videos browser, the daily-logs attachment dropzone (now
- * mediaType `"any"`), or a future combined picker — gets the 2-minute
- * cap enforced for free the moment a video file is selected.
+ * mediaType `"any"`), or a future combined picker — gets the same shared
+ * policy the moment a video file is selected.
  */
 export async function validateSelectedFilesAsync(
   files: File[],
@@ -1039,6 +1038,314 @@ async function uploadFileWithChunksToBaseUrl<T = unknown>(options: {
   )
 }
 
+type DirectUploadPreparation = {
+  status: "ready"
+  intentToken: string
+  storage: {
+    endpoint: string
+    bucketName: string
+    objectName: string
+    signature: string
+    chunkSizeBytes: number
+    signatureExpiresInSeconds: number
+    uploadUrlExpiresInSeconds: number
+  }
+}
+
+type CachedDirectUpload = {
+  intentToken: string
+  cachedAt: number
+}
+
+const DIRECT_UPLOAD_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+// A signed provider authorization lasts about two hours while the durable
+// intent lasts seven days. Keep enough refresh budget for the entire intent
+// window (including clock/network jitter); the progress gate below still
+// prevents a no-progress authorization loop.
+const MAX_DIRECT_UPLOAD_SESSION_REFRESHES = 96
+
+function directUploadResumeKey(baseUrl: string, file: File) {
+  return [
+    "cadstone-direct-upload-v1",
+    baseUrl,
+    file.name,
+    file.size,
+    file.type,
+    file.lastModified,
+  ].join("::")
+}
+
+function readCachedDirectUpload(key: string): CachedDirectUpload | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<CachedDirectUpload>
+    if (
+      typeof parsed.intentToken !== "string" ||
+      typeof parsed.cachedAt !== "number" ||
+      Date.now() - parsed.cachedAt >= DIRECT_UPLOAD_CACHE_TTL_MS
+    ) {
+      window.localStorage.removeItem(key)
+      return null
+    }
+    return { intentToken: parsed.intentToken, cachedAt: parsed.cachedAt }
+  } catch {
+    return null
+  }
+}
+
+function writeCachedDirectUpload(key: string, intentToken: string) {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({ intentToken, cachedAt: Date.now() } satisfies CachedDirectUpload),
+    )
+  } catch {
+    // Storage-disabled browsers still retain in-tab TUS retries.
+  }
+}
+
+function clearCachedDirectUpload(key: string) {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    // Best-effort cache cleanup only.
+  }
+}
+
+function directUploadError(error: unknown): UploadError {
+  if (error && typeof error === "object" && "originalResponse" in error) {
+    const response = (
+      error as {
+        originalResponse?: {
+          getStatus?: () => number
+          getBody?: () => string
+        }
+      }
+    ).originalResponse
+    const status = response?.getStatus?.()
+    const body = response?.getBody?.()
+    const message =
+      "message" in error && typeof error.message === "string"
+        ? error.message
+        : "Resumable upload failed."
+    return makeUploadError(
+      body || message,
+      status,
+      status ? deriveDefaultCode(status) : "UPLOAD_NETWORK_ERROR",
+      error,
+    )
+  }
+  return makeUploadError(
+    error instanceof Error ? error.message : "Resumable upload failed.",
+    undefined,
+    "UPLOAD_NETWORK_ERROR",
+    error,
+  )
+}
+
+async function uploadFileDirectToStorage<T = unknown>(options: {
+  baseUrl: string
+  file: File
+  startBody?: Record<string, unknown>
+  signal?: AbortSignal
+  onProgress?: (progress: UploadProgress) => void
+  onRetry?: (attempt: number, reason: string) => void
+}): Promise<T> {
+  const resumeKey = directUploadResumeKey(options.baseUrl, options.file)
+  let cached = readCachedDirectUpload(resumeKey)
+  const complete = (intentToken: string) =>
+    authedJsonRequest<T>(
+      `${options.baseUrl}/complete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ intentToken }),
+      },
+      options.signal,
+    )
+
+  if (cached) {
+    try {
+      const completed = await complete(cached.intentToken)
+      clearCachedDirectUpload(resumeKey)
+      return completed
+    } catch (error) {
+      const uploadError = error as UploadError
+      if (
+        uploadError.status === 401 ||
+        uploadError.status === 403 ||
+        uploadError.code === "DIRECT_UPLOAD_SCOPE_MISMATCH" ||
+        uploadError.code === "DIRECT_UPLOAD_RESUME_MISMATCH"
+      ) {
+        clearCachedDirectUpload(resumeKey)
+        cached = null
+      } else if (
+        uploadError.status !== 404 &&
+        uploadError.code !== "DIRECT_UPLOAD_SIZE_MISMATCH"
+      ) {
+        if (uploadError.status === 415) clearCachedDirectUpload(resumeKey)
+        throw error
+      }
+    }
+  }
+
+  const prepare = (resumeIntentToken?: string) =>
+    authedJsonRequest<DirectUploadPreparation>(
+      options.baseUrl,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          originalName: options.file.name,
+          mimeType: options.file.type || "application/octet-stream",
+          totalSize: options.file.size,
+          ...(options.startBody ?? {}),
+          ...(resumeIntentToken ? { resumeIntentToken } : {}),
+        }),
+      },
+      options.signal,
+    )
+
+  let prepared: DirectUploadPreparation
+  try {
+    prepared = await prepare(cached?.intentToken)
+  } catch (error) {
+    const uploadError = error as UploadError
+    if (
+      !cached ||
+      (uploadError.status !== 401 &&
+        uploadError.status !== 403 &&
+        uploadError.code !== "DIRECT_UPLOAD_SCOPE_MISMATCH" &&
+        uploadError.code !== "DIRECT_UPLOAD_RESUME_MISMATCH")
+    ) {
+      throw error
+    }
+    clearCachedDirectUpload(resumeKey)
+    cached = null
+    prepared = await prepare()
+  }
+  writeCachedDirectUpload(resumeKey, prepared.intentToken)
+
+  const tus = await import("tus-js-client")
+  let currentProgressBytes = 0
+  let progressAtLastSessionRefresh = -1
+  let sessionRefreshes = 0
+
+  const runPreparedUpload = (current: DirectUploadPreparation) =>
+    new Promise<void>((resolve, reject) => {
+      let settled = false
+      let upload: InstanceType<typeof tus.Upload> | null = null
+      const finish = (callback: () => void) => {
+        if (settled) return
+        settled = true
+        options.signal?.removeEventListener("abort", onAbort)
+        callback()
+      }
+      const onAbort = () => {
+        void upload?.abort(false)
+        finish(() => reject(makeUploadError("Upload aborted", undefined, "UPLOAD_ABORTED")))
+      }
+
+      upload = new tus.Upload(options.file, {
+        endpoint: current.storage.endpoint,
+        headers: { "x-signature": current.storage.signature },
+        chunkSize: current.storage.chunkSizeBytes,
+        retryDelays: [0, 1_000, 3_000, 5_000, 10_000, 20_000, 30_000],
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        metadata: {
+          bucketName: current.storage.bucketName,
+          objectName: current.storage.objectName,
+          contentType: options.file.type || "application/octet-stream",
+          cacheControl: "3600",
+        },
+        fingerprint: async () =>
+          [
+            "cadstone-direct-v1",
+            current.storage.bucketName,
+            current.storage.objectName,
+            options.file.name,
+            options.file.size,
+            options.file.lastModified,
+          ].join("::"),
+        onShouldRetry: (error, retryAttempt) => {
+          options.onRetry?.(retryAttempt + 1, error.message)
+          const status = error.originalResponse?.getStatus()
+          return (
+            status === undefined ||
+            status === 408 ||
+            status === 409 ||
+            status === 425 ||
+            status === 429 ||
+            status >= 500
+          )
+        },
+        onProgress: (bytesUploaded, bytesTotal) => {
+          currentProgressBytes = bytesUploaded
+          const total = bytesTotal || options.file.size
+          options.onProgress?.({
+            loaded: bytesUploaded,
+            total,
+            percent: total > 0 ? Math.round((bytesUploaded / total) * 100) : 100,
+          })
+        },
+        onError: (error) => finish(() => reject(directUploadError(error))),
+        onSuccess: () => finish(resolve),
+      })
+
+      if (options.signal?.aborted) {
+        onAbort()
+        return
+      }
+      options.signal?.addEventListener("abort", onAbort, { once: true })
+      void upload
+        .findPreviousUploads()
+        .then((previous) => {
+          if (settled) return
+          if (previous.length > 0) upload?.resumeFromPreviousUpload(previous[0])
+          upload?.start()
+        })
+        .catch((error) => finish(() => reject(directUploadError(error))))
+    })
+
+  for (;;) {
+    try {
+      await runPreparedUpload(prepared)
+      break
+    } catch (error) {
+      const uploadError = error as UploadError
+      const sessionCanBeRefreshed =
+        uploadError.status === 401 ||
+        uploadError.status === 403 ||
+        uploadError.status === 404 ||
+        uploadError.status === 410
+      if (
+        !sessionCanBeRefreshed ||
+        options.signal?.aborted ||
+        sessionRefreshes >= MAX_DIRECT_UPLOAD_SESSION_REFRESHES ||
+        currentProgressBytes <= progressAtLastSessionRefresh
+      ) {
+        throw error
+      }
+
+      progressAtLastSessionRefresh = currentProgressBytes
+      sessionRefreshes += 1
+      options.onRetry?.(
+        sessionRefreshes,
+        "Refreshing secure resumable-upload authorization.",
+      )
+      prepared = await prepare(prepared.intentToken)
+      writeCachedDirectUpload(resumeKey, prepared.intentToken)
+    }
+  }
+
+  const completed = await complete(prepared.intentToken)
+  clearCachedDirectUpload(resumeKey)
+  return completed
+}
+
 export async function uploadFileWithChunks<T = unknown>(options: {
   folderId: string
   file: File
@@ -1051,15 +1358,38 @@ export async function uploadFileWithChunks<T = unknown>(options: {
   onProgress?: (progress: UploadProgress) => void
   onRetry?: (attempt: number, reason: string) => void
 }): Promise<T> {
-  return uploadFileWithChunksToBaseUrl({
-    ...options,
-    baseUrl: `/folders/${options.folderId}/files/chunked`,
-    startBody: {
-      note: options.note?.trim() || undefined,
-      duplicateAction: options.duplicateAction ?? "keep_both",
-      videoDurationSeconds: options.videoDurationSeconds ?? undefined,
-    },
-  })
+  const duplicateAction = options.duplicateAction ?? "keep_both"
+  const startBody = {
+    note: options.note?.trim() || undefined,
+    duplicateAction,
+    videoDurationSeconds: options.videoDurationSeconds ?? undefined,
+  }
+  // The direct route deliberately uses unique object keys and therefore only
+  // implements keep-both semantics. Preserve the existing conflict/skip API
+  // contract by keeping those uncommon explicit modes on the legacy route.
+  if (duplicateAction !== "keep_both") {
+    return uploadFileWithChunksToBaseUrl({
+      ...options,
+      baseUrl: `/folders/${options.folderId}/files/chunked`,
+      startBody,
+    })
+  }
+  try {
+    return await uploadFileDirectToStorage({
+      ...options,
+      baseUrl: `/folders/${options.folderId}/files/direct`,
+      startBody,
+    })
+  } catch (error) {
+    if ((error as UploadError | null)?.code !== "DIRECT_UPLOAD_UNAVAILABLE") {
+      throw error
+    }
+    return uploadFileWithChunksToBaseUrl({
+      ...options,
+      baseUrl: `/folders/${options.folderId}/files/chunked`,
+      startBody,
+    })
+  }
 }
 
 export async function uploadLeadAttachmentWithChunks<T = unknown>(options: {
@@ -1071,8 +1401,18 @@ export async function uploadLeadAttachmentWithChunks<T = unknown>(options: {
   onProgress?: (progress: UploadProgress) => void
   onRetry?: (attempt: number, reason: string) => void
 }): Promise<T> {
-  return uploadFileWithChunksToBaseUrl({
-    ...options,
-    baseUrl: `/leads/${options.leadId}/attachments/chunked`,
-  })
+  try {
+    return await uploadFileDirectToStorage({
+      ...options,
+      baseUrl: `/leads/${options.leadId}/attachments/direct`,
+    })
+  } catch (error) {
+    if ((error as UploadError | null)?.code !== "DIRECT_UPLOAD_UNAVAILABLE") {
+      throw error
+    }
+    return uploadFileWithChunksToBaseUrl({
+      ...options,
+      baseUrl: `/leads/${options.leadId}/attachments/chunked`,
+    })
+  }
 }

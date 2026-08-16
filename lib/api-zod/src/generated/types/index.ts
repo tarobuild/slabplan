@@ -203,6 +203,8 @@ export * from "./leadsGetLeadsExcludeConverted";
 export * from "./leadsGetLeadsIdAttachmentsUploadPolicyParams";
 export * from "./leadsGetLeadsOnlyConverted";
 export * from "./leadsGetLeadsParams";
+export * from "./leadsGetLeadsSortBy";
+export * from "./leadsGetLeadsSortDir";
 export * from "./leadsLeadAttachmentChunkedUploadStartSchema";
 export * from "./leadsLeadPayloadSchema";
 export * from "./leadsLeadPayloadSchemaStatus";

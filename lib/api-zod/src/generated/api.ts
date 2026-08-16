@@ -2555,6 +2555,18 @@ export const LeadsGetLeadsQueryParams = zod.object({
     .describe(
       'When `true`, only leads that have been converted to a job are returned. Used by the SlabPlan Leads list when the user picks the \"Converted\" status filter.',
     ),
+  sortBy: zod
+    .enum(["createdAt", "projectedSalesDate"])
+    .optional()
+    .describe(
+      "Sort field for page-based pagination. `createdAt` is the default. `projectedSalesDate` sorts by the lead due date and always places missing dates last. Custom sorting with cursor pagination returns 400.",
+    ),
+  sortDir: zod
+    .enum(["asc", "desc"])
+    .optional()
+    .describe(
+      "Sort direction for page-based pagination. Defaults to `desc` for `createdAt` and `asc` for `projectedSalesDate`. Custom sorting with cursor pagination returns 400.",
+    ),
   cursor: zod.coerce
     .string()
     .optional()

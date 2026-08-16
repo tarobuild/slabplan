@@ -3261,6 +3261,20 @@ paths:
           schema:
             type: string
             enum: ["true", "false"]
+        - name: sortBy
+          in: query
+          required: false
+          description: Sort field for page-based pagination. `createdAt` is the default. `projectedSalesDate` sorts by the lead due date and always places missing dates last. Custom sorting with cursor pagination returns 400.
+          schema:
+            type: string
+            enum: [createdAt, projectedSalesDate]
+        - name: sortDir
+          in: query
+          required: false
+          description: Sort direction for page-based pagination. Defaults to `desc` for `createdAt` and `asc` for `projectedSalesDate`. Custom sorting with cursor pagination returns 400.
+          schema:
+            type: string
+            enum: [asc, desc]
         - $ref: "#/components/parameters/CursorParam"
         - $ref: "#/components/parameters/CursorLimitParam"
       security:

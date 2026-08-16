@@ -232,6 +232,7 @@ before(async () => {
       id: pmOwnedLeadId,
       title: "ZZZ Pagination PM Owned Lead",
       createdBy: pmUserId,
+      projectedSalesDate: "2026-09-15",
     },
     {
       id: pmAssignedLeadId,
@@ -242,6 +243,8 @@ before(async () => {
       id,
       title: `ZZZ Pagination Admin Only Lead ${i}`,
       createdBy: otherAdminId,
+      projectedSalesDate:
+        i === 0 ? "2026-08-20" : i === 1 ? "2026-10-01" : null,
     })),
   ]);
 
@@ -1253,6 +1256,58 @@ test("GET /leads paginates without duplicates across pages", async () => {
       false,
       "subsequent pages must not repeat earlier rows",
     );
+  }
+});
+
+test("GET /leads sorts due dates across page boundaries with missing dates last", async () => {
+  const fetchAllPages = async (sortDir: "asc" | "desc") => {
+    const ids: string[] = [];
+    for (let page = 1; page <= Math.ceil(allLeadIds.length / 2); page += 1) {
+      const response = await fetch(
+        `${baseUrl}/api/leads?pageSize=2&page=${page}&search=ZZZ%20Pagination&sortBy=projectedSalesDate&sortDir=${sortDir}`,
+        { headers: { authorization: `Bearer ${adminToken}` } },
+      );
+      assert.equal(response.status, 200);
+      const body = (await response.json()) as {
+        leads: Array<{ id: string }>;
+      };
+      ids.push(...body.leads.map((lead) => lead.id));
+    }
+    return ids;
+  };
+
+  const ascending = await fetchAllPages("asc");
+  assert.deepEqual(ascending.slice(0, 3), [
+    otherAdminLeadIds[0],
+    pmOwnedLeadId,
+    otherAdminLeadIds[1],
+  ]);
+  assert.deepEqual(
+    new Set(ascending.slice(3)),
+    new Set([pmAssignedLeadId, otherAdminLeadIds[2]]),
+  );
+
+  const descending = await fetchAllPages("desc");
+  assert.deepEqual(descending.slice(0, 3), [
+    otherAdminLeadIds[1],
+    pmOwnedLeadId,
+    otherAdminLeadIds[0],
+  ]);
+  assert.deepEqual(
+    new Set(descending.slice(3)),
+    new Set([pmAssignedLeadId, otherAdminLeadIds[2]]),
+  );
+});
+
+test("GET /leads rejects custom sorting with cursor pagination", async () => {
+  for (const query of [
+    "cursor=&sortBy=projectedSalesDate",
+    "cursor=&sortBy=createdAt&sortDir=asc",
+  ]) {
+    const response = await fetch(`${baseUrl}/api/leads?${query}`, {
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(response.status, 400);
   }
 });
 

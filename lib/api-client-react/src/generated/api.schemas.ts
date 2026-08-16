@@ -3312,6 +3312,14 @@ export type LeadsGetLeadsParams = {
    */
   onlyConverted?: LeadsGetLeadsOnlyConverted;
   /**
+   * Sort field for page-based pagination. `createdAt` is the default. `projectedSalesDate` sorts by the lead due date and always places missing dates last. Custom sorting with cursor pagination returns 400.
+   */
+  sortBy?: LeadsGetLeadsSortBy;
+  /**
+   * Sort direction for page-based pagination. Defaults to `desc` for `createdAt` and `asc` for `projectedSalesDate`. Custom sorting with cursor pagination returns 400.
+   */
+  sortDir?: LeadsGetLeadsSortDir;
+  /**
  * Opaque cursor for stable cursor-based pagination. To bootstrap the
 first cursor page, send `?cursor=&limit=N` (cursor present with no
 value). The server returns the first page in the cursor envelope
@@ -3344,6 +3352,22 @@ export type LeadsGetLeadsOnlyConverted =
 export const LeadsGetLeadsOnlyConverted = {
   true: "true",
   false: "false",
+} as const;
+
+export type LeadsGetLeadsSortBy =
+  (typeof LeadsGetLeadsSortBy)[keyof typeof LeadsGetLeadsSortBy];
+
+export const LeadsGetLeadsSortBy = {
+  createdAt: "createdAt",
+  projectedSalesDate: "projectedSalesDate",
+} as const;
+
+export type LeadsGetLeadsSortDir =
+  (typeof LeadsGetLeadsSortDir)[keyof typeof LeadsGetLeadsSortDir];
+
+export const LeadsGetLeadsSortDir = {
+  asc: "asc",
+  desc: "desc",
 } as const;
 
 export type LeadsPostLeadsIdAttachmentsBody = {

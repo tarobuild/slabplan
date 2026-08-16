@@ -219,6 +219,11 @@ const leadListQuerySchema = z.object({
     .union([z.literal("true"), z.literal("false")])
     .optional()
     .transform((v) => v === "true"),
+  sortBy: z
+    .enum(["createdAt", "projectedSalesDate"])
+    .optional()
+    .default("createdAt"),
+  sortDir: z.enum(["asc", "desc"]).optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
 });
@@ -1166,6 +1171,36 @@ router.get(
     const isCursorMode = isCursorModeRequested(req.query as Record<string, unknown>);
     const cursorPayload = query.data.cursor ? decodeCursor(query.data.cursor) : null;
     const effectiveLimit = isCursorMode ? (query.data.limit ?? 25) : pageSize;
+    const sortBy = query.data.sortBy;
+    const sortDir =
+      query.data.sortDir ?? (sortBy === "projectedSalesDate" ? "asc" : "desc");
+
+    // Cursor tokens key on (createdAt, id) in descending order. Custom
+    // ordering is intentionally page-only so a cursor can never skip or
+    // duplicate a lead because its ordering no longer matches the token.
+    if (isCursorMode && (sortBy !== "createdAt" || sortDir !== "desc")) {
+      throw new HttpError(
+        400,
+        "Custom lead sorting is not supported with cursor pagination.",
+        undefined,
+        "validation",
+      );
+    }
+
+    // Missing due dates stay last in both directions. createdAt and id make
+    // ties deterministic so page boundaries remain stable.
+    const orderClauses =
+      sortBy === "projectedSalesDate"
+        ? [
+            sortDir === "asc"
+              ? sql`${leads.projectedSalesDate} asc nulls last`
+              : sql`${leads.projectedSalesDate} desc nulls last`,
+            desc(leads.createdAt),
+            desc(leads.id),
+          ]
+        : sortDir === "asc"
+          ? [asc(leads.createdAt), asc(leads.id)]
+          : [desc(leads.createdAt), desc(leads.id)];
 
     if (accessibleLeadIds && accessibleLeadIds.length === 0) {
       if (isCursorMode) {
@@ -1322,7 +1357,7 @@ router.get(
       .from(leads)
       .leftJoin(users, eq(leads.createdBy, users.id))
       .where(whereClause)
-      .orderBy(desc(leads.createdAt), desc(leads.id))
+      .orderBy(...orderClauses)
       .limit(fetchLimit)
       .offset(offset);
 

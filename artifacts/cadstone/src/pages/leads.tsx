@@ -255,7 +255,10 @@ function convertDisabledReason(status: string): string {
 }
 
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", {
+  // PostgreSQL date columns arrive as YYYY-MM-DD. Parsing that form directly
+  // uses UTC and can display the previous day in US time zones.
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T00:00:00`) : new Date(d)
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -437,6 +440,9 @@ export default function LeadsPage() {
   // Converted leads (status="won" + a convertedJob) are hidden by default.
   // The toggle flips off the excludeStatuses param so the user can see them.
   const [showConverted, setShowConverted] = useState(false)
+  const [sort, setSort] = useState<"newest" | "dueSoonest" | "dueLatest">(
+    "newest",
+  )
   const [convertLead, setConvertLead] = useState<Lead | LeadDetail | null>(null)
   const authUser = useAuthStore((s) => s.user)
   const isAdmin = authUser?.role === "admin"
@@ -507,8 +513,15 @@ export default function LeadsPage() {
         params.excludeConverted = "true"
       }
     }
+    if (sort === "dueSoonest") {
+      params.sortBy = "projectedSalesDate"
+      params.sortDir = "asc"
+    } else if (sort === "dueLatest") {
+      params.sortBy = "projectedSalesDate"
+      params.sortDir = "desc"
+    }
     return params
-  }, [page, pageSize, debouncedSearch, status, showConverted])
+  }, [page, pageSize, debouncedSearch, status, showConverted, sort])
 
   useEffect(() => {
     if (!canAssignLeadUsers) {
@@ -1131,8 +1144,8 @@ export default function LeadsPage() {
         ) : null}
       </div>
 
-      <div className="flex gap-2">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-wrap gap-2">
+        <div className="relative min-w-56 flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
           <Input
             value={search}
@@ -1154,6 +1167,22 @@ export default function LeadsPage() {
             <SelectItem value="converted">Converted</SelectItem>
             <SelectItem value="lost">Lost</SelectItem>
             <SelectItem value="archived">Archived</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={sort}
+          onValueChange={(value) => {
+            setSort(value as "newest" | "dueSoonest" | "dueLatest")
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-48 h-9" data-testid="leads-sort-select">
+            <SelectValue placeholder="Sort" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="newest">Newest first</SelectItem>
+            <SelectItem value="dueSoonest">Due date (soonest)</SelectItem>
+            <SelectItem value="dueLatest">Due date (latest)</SelectItem>
           </SelectContent>
         </Select>
         {/* The toggle stays visible for every status filter (including
@@ -1187,7 +1216,7 @@ export default function LeadsPage() {
               <TableHead className="font-semibold text-slate-600">Title</TableHead>
               <TableHead className="font-semibold text-slate-600">Status</TableHead>
               <TableHead className="font-semibold text-slate-600">Location</TableHead>
-              <TableHead className="font-semibold text-slate-600">Type</TableHead>
+              <TableHead className="font-semibold text-slate-600">Due date</TableHead>
               <TableHead className="font-semibold text-slate-600">Contact</TableHead>
               <TableHead className="font-semibold text-slate-600 text-right">Revenue Est.</TableHead>
               <TableHead className="font-semibold text-slate-600">Created</TableHead>
@@ -1244,8 +1273,10 @@ export default function LeadsPage() {
                   <TableCell className="text-sm text-slate-500">
                     {[lead.city, lead.state].filter(Boolean).join(", ") || "—"}
                   </TableCell>
-                  <TableCell className="text-sm text-slate-500 capitalize">
-                    {lead.projectType || "—"}
+                  <TableCell className="text-sm text-slate-500">
+                    {lead.projectedSalesDate
+                      ? fmtDate(lead.projectedSalesDate)
+                      : "—"}
                   </TableCell>
                   <TableCell className="text-sm text-slate-500">
                     {lead.clientContact?.displayName || "—"}
@@ -1339,7 +1370,9 @@ export default function LeadsPage() {
                     <Badge variant="outline" className={`text-xs capitalize ${getDisplayStatus(lead.status, lead.convertedJob).color}`}>
                       {getDisplayStatus(lead.status, lead.convertedJob).label}
                     </Badge>
-                    {lead.projectType && <span className="text-xs capitalize text-slate-500">{lead.projectType}</span>}
+                    <span className="text-xs text-slate-500">
+                      Due {lead.projectedSalesDate ? fmtDate(lead.projectedSalesDate) : "—"}
+                    </span>
                   </div>
                   <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
                     {(lead.city || lead.state) && (

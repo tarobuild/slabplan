@@ -543,7 +543,10 @@ Parse the attached estimate PDF and return ONLY valid JSON, no prose, in this ex
     }
   ]
 }
-Use cents (integers). Do not invent numbers. If a value is unknown, use 0 or null appropriately.`;
+Use cents (integers). Do not invent numbers. If a value is unknown, use 0 or null appropriately.
+Discounts, credits, allowances, and deductions are real line items. Preserve each one as its own
+line item with negative rateCents and scheduledValueCents. Never omit or fold an adjustment into
+another line: the sum of all scheduledValueCents must equal the estimate grand total exactly.`;
 
 function extractJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -562,6 +565,15 @@ function extractJson(text: string): unknown {
   }
 }
 
+// Estimates legitimately contain negative discount and credit lines. Keep the
+// values bounded so malformed AI output cannot insert implausible magnitudes.
+const MAX_ABS_SOV_CENTS = 10_000_000_000;
+const sovMoneyCents = z.coerce
+  .number()
+  .int()
+  .min(-MAX_ABS_SOV_CENTS)
+  .max(MAX_ABS_SOV_CENTS);
+
 const estimateAiSchema = z.object({
   projectName: z.string().nullable().optional(),
   contractDate: z.string().nullable().optional(),
@@ -574,13 +586,9 @@ const estimateAiSchema = z.object({
           .array(
             z.object({
               description: z.string().min(1),
-              qty: z.coerce.number().default(1),
-              rateCents: z.coerce.number().int().nonnegative().default(0),
-              scheduledValueCents: z.coerce
-                .number()
-                .int()
-                .nonnegative()
-                .default(0),
+              qty: z.coerce.number().finite().default(1),
+              rateCents: sovMoneyCents.default(0),
+              scheduledValueCents: sovMoneyCents.default(0),
             }),
           )
           .default([]),
@@ -890,7 +898,8 @@ router.post(
                 qty: String(li.qty ?? 1),
                 rateCents: li.rateCents ?? 0,
                 scheduledValueCents:
-                  li.scheduledValueCents || (li.qty ?? 1) * (li.rateCents ?? 0),
+                  li.scheduledValueCents ??
+                  Math.round((li.qty ?? 1) * (li.rateCents ?? 0)),
                 sortOrder: liSort++,
               })),
             )
@@ -1250,13 +1259,8 @@ const lineItemCreateSchema = z.object({
   areaId: z.string().uuid(),
   description: z.string().trim().min(1),
   qty: z.coerce.number().finite().nonnegative().optional().default(1),
-  rateCents: z.coerce.number().int().nonnegative().optional().default(0),
-  scheduledValueCents: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .optional()
-    .default(0),
+  rateCents: sovMoneyCents.optional().default(0),
+  scheduledValueCents: sovMoneyCents.optional().default(0),
   isChangeOrder: z.boolean().optional().default(false),
   sortOrder: z.coerce.number().int().optional().default(0),
 });
@@ -1273,7 +1277,7 @@ router.post(
     await assertAreaInJob(body.data.areaId, jobId);
     const tracker = await getOrCreateTracker(jobId, req.auth!.userId, req.auth!);
     const scheduled =
-      body.data.scheduledValueCents ||
+      body.data.scheduledValueCents ??
       Math.round((body.data.qty ?? 1) * (body.data.rateCents ?? 0));
     const [item] = await db
       .insert(sovLineItems)
@@ -1295,8 +1299,8 @@ router.post(
 const lineItemPatchSchema = z.object({
   description: z.string().trim().min(1).optional(),
   qty: z.coerce.number().finite().nonnegative().optional(),
-  rateCents: z.coerce.number().int().nonnegative().optional(),
-  scheduledValueCents: z.coerce.number().int().nonnegative().optional(),
+  rateCents: sovMoneyCents.optional(),
+  scheduledValueCents: sovMoneyCents.optional(),
   percentComplete: z.coerce.number().min(0).max(100).optional(),
   isRemoved: z.boolean().optional(),
   sortOrder: z.coerce.number().int().optional(),
@@ -1364,11 +1368,16 @@ router.patch(
 
     if (scheduledChanged) updates.scheduledValueCents = nextScheduled;
 
+    // Discounts and credits reduce contract value but cannot themselves be
+    // billed. Treat their billing capacity as zero so percent/billed values
+    // remain valid when a negative scheduled amount is edited manually.
+    const billingCapacity = Math.max(0, nextScheduled);
+
     if (pctChanged) {
       // Explicit pct edit: derive billed from scheduled * pct, capped.
-      let nextBilled = Math.round((nextScheduled * nextPct) / 100);
-      if (nextBilled > nextScheduled) nextBilled = nextScheduled;
-      nextPct = nextScheduled > 0 ? (nextBilled / nextScheduled) * 100 : 0;
+      let nextBilled = Math.round((billingCapacity * nextPct) / 100);
+      if (nextBilled > billingCapacity) nextBilled = billingCapacity;
+      nextPct = billingCapacity > 0 ? (nextBilled / billingCapacity) * 100 : 0;
       updates.billedCents = nextBilled;
       updates.percentComplete = nextPct.toFixed(2);
     } else if (scheduledChanged) {
@@ -1377,9 +1386,9 @@ router.patch(
       // exceed 100%. Then recompute pct from billed/scheduled. Never
       // inflate billed when scheduled grows.
       const currentBilled = Number(current.billedCents ?? 0);
-      const nextBilled = Math.min(currentBilled, nextScheduled);
+      const nextBilled = Math.min(currentBilled, billingCapacity);
       const recomputedPct =
-        nextScheduled > 0 ? (nextBilled / nextScheduled) * 100 : 0;
+        billingCapacity > 0 ? (nextBilled / billingCapacity) * 100 : 0;
       updates.billedCents = nextBilled;
       updates.percentComplete = recomputedPct.toFixed(2);
     }

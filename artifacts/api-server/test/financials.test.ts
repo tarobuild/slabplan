@@ -721,3 +721,85 @@ test("PATCH line-item scheduledValueCents preserves billed (caps only)", async (
   );
   assert.equal(Number(after2.lineItem.scheduledValueCents), cap);
 });
+
+test("149 Hart-style estimate preserves discounts, zero-value lines, and exact total", async () => {
+  nextEstimateJson = {
+    projectName: "149 HART",
+    contractDate: "2026-05-01",
+    areas: [
+      {
+        name: "Base scope",
+        floor: null,
+        lineItems: [
+          {
+            description: "Stone fabrication and installation",
+            qty: 1,
+            rateCents: 7_115_700,
+            scheduledValueCents: 7_115_700,
+          },
+          {
+            description: "Included at no additional charge",
+            qty: 1,
+            rateCents: 12_345,
+            scheduledValueCents: 0,
+          },
+        ],
+      },
+      {
+        name: "Adjustments",
+        floor: null,
+        lineItems: [
+          {
+            description: "Discount Per Cesar Exclusive to Project",
+            qty: 1,
+            rateCents: -265_700,
+            scheduledValueCents: -265_700,
+          },
+        ],
+      },
+    ],
+  };
+
+  const multipart = pdfMultipart("149-hart.pdf");
+  const response = await fetch(
+    `${baseUrl}/api/jobs/${jobId}/financials/estimate`,
+    {
+      method: "POST",
+      headers: authedHeaders(multipart.headers),
+      body: multipart.body,
+    },
+  );
+  const raw = await response.text();
+  assert.equal(response.status, 201, raw);
+
+  const body = JSON.parse(raw) as {
+    totals: { scheduledValueCents: number };
+    areas: Array<{
+      lineItems: Array<{
+        description: string;
+        rateCents: number;
+        scheduledValueCents: number;
+        billedCents: number;
+        percentComplete: number | string;
+      }>;
+    }>;
+  };
+  const lines = body.areas.flatMap((area) => area.lineItems);
+  const discount = lines.find((line) =>
+    line.description.startsWith("Discount Per Cesar"),
+  );
+  const noCharge = lines.find((line) =>
+    line.description.startsWith("Included at no additional charge"),
+  );
+
+  assert.equal(body.totals.scheduledValueCents, 6_850_000);
+  assert.equal(discount?.rateCents, -265_700);
+  assert.equal(discount?.scheduledValueCents, -265_700);
+  assert.equal(discount?.billedCents, 0);
+  assert.equal(Number(discount?.percentComplete), 0);
+  assert.equal(
+    noCharge?.scheduledValueCents,
+    0,
+    "an explicit zero must not fall back to qty × rate",
+  );
+});

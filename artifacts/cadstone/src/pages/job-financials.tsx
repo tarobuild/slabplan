@@ -385,7 +385,10 @@ const SovLineItemRow = memo(function SovLineItemRow({
               // Lowering scheduled below the current billed will cap
               // billed down to the new scheduled → confirm.
               const currentBilled = Number(li.billedCents)
-              const projectedBilled = Math.min(currentBilled, cents)
+              const projectedBilled = Math.min(
+                currentBilled,
+                Math.max(0, cents),
+              )
               if (projectedBilled < currentBilled) {
                 const ok = window.confirm(
                   `Lowering scheduled value will reduce billed from ${formatCurrency(currentBilled)} to ${formatCurrency(projectedBilled)}. Continue?`,

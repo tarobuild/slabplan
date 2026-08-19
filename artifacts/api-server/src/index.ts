@@ -1,16 +1,5 @@
-// Sentry MUST initialize before any module that registers route handlers
-// is imported, otherwise async errors raised during module evaluation
-// (and Sentry's auto-instrumentation hooks) miss the window. Static
-// `import` statements are hoisted and evaluated eagerly, so route
-// modules are pulled in via dynamic `await import()` below — after
-// initSentry() has run. See the architectural note in
-// .local/tasks/task-348.md.
-import { initSentry } from "./lib/sentry";
-initSentry();
-
-const { createServer } = await import("node:http");
-type Server = import("node:http").Server;
-type RequestListener = import("node:http").RequestListener;
+import { createServer } from "node:http";
+import type { RequestListener, Server } from "node:http";
 type ScheduleAutoCompleteSweeperHandle = ReturnType<
   (typeof import("./routes/schedule"))["startScheduleAutoCompleteSweeper"]
 >;
@@ -40,7 +29,10 @@ const SHUTDOWN_DRAIN_MS = 10_000;
 // real Express handler replaces it atomically once bootstrap completes.
 let requestHandler: RequestListener = (req, res) => {
   const pathname = req.url?.split("?", 1)[0] ?? "/";
-  const isStartupProbe = pathname === "/" || pathname === "/api/livez";
+  const isStartupProbe =
+    pathname === "/" ||
+    pathname === "/api/livez" ||
+    pathname === "/api/healthz";
 
   res.statusCode = isStartupProbe ? 200 : 503;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -64,6 +56,12 @@ await new Promise<void>((resolve) => {
   server.listen(port, host, resolve);
 });
 console.log(`[boot] Startup listener active on ${host}:${port}`);
+
+// Sentry must initialize before route modules are imported, but loading it
+// must not delay Replit's startup probe. All route imports remain dynamic and
+// occur in bootstrap() after this initialization completes.
+const { initSentry } = await import("./lib/sentry");
+initSentry();
 
 async function bootstrap() {
   const path = await import("node:path");

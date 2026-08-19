@@ -2,15 +2,15 @@
 
 ## Source And Build
 
-- [ ] GitHub `tarobuild/slabplan` `main` contains the approved release commit.
-- [ ] Replit `@tarobuild/slabplan` is synced to that exact commit.
-- [ ] Typecheck, API codegen drift, unused-code, frontend bundle, and targeted upload tests pass.
-- [ ] No Railway or Vercel runtime configuration remains.
+- [x] GitHub `tarobuild/slabplan` `main` contains the approved release commit.
+- [x] Replit `@tarobuild/slabplan` is synced to that exact commit.
+- [x] Typecheck, API codegen drift, unused-code, frontend bundle, and targeted upload tests pass.
+- [x] No Railway or Vercel runtime configuration remains.
 
 ## Replit
 
 - [ ] Reserved VM is selected and paid.
-- [ ] Build and run commands match `.replit`.
+- [x] Build and run commands match `.replit`.
 - [ ] All production secrets are attached to the published app.
 - [ ] The deployment is live and `/api/livez` and `/api/healthz` return success.
 - [ ] WebSocket, login, invite email, AI, and billing smoke tests pass.
@@ -28,12 +28,12 @@
 
 ## Large Uploads
 
-- [ ] A signed direct upload is organization-scoped.
-- [ ] TUS uses the storage-specific Supabase hostname.
+- [x] A signed direct upload is organization-scoped.
+- [x] TUS uses the storage-specific Supabase hostname.
 - [ ] Uploads resume after interruption or browser restart.
-- [ ] Finalization verifies exact byte size and bounded magic bytes.
-- [ ] A file larger than 50 GB is accepted by policy without proxying through Replit.
-- [ ] Cross-tenant upload intent reuse is rejected.
+- [x] Finalization verifies exact byte size and bounded magic bytes.
+- [x] A file larger than 50 GB is accepted by policy without proxying through Replit.
+- [x] Cross-tenant upload intent reuse is rejected.
 
 ## Release Evidence
 

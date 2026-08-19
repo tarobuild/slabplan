@@ -24,8 +24,6 @@ export function getRelease(): string | undefined {
     typeof __API_RELEASE_SHA__ === "string" ? __API_RELEASE_SHA__ : "";
   const sha =
     bakedReleaseSha ||
-    process.env.RAILWAY_GIT_COMMIT_SHA ||
-    process.env.VERCEL_GIT_COMMIT_SHA ||
     process.env.REPLIT_GIT_COMMIT_SHA ||
     process.env.GIT_COMMIT ||
     process.env.RELEASE_SHA;
@@ -59,7 +57,6 @@ export function initSentry(): void {
     environment,
     release: getRelease(),
     serverName:
-      process.env.RAILWAY_SERVICE_NAME ||
       process.env.REPL_SLUG ||
       process.env.HOSTNAME ||
       `${APP_MCP_NAME}-api`,

@@ -26,6 +26,7 @@ type VerifiedToken<TType extends TokenType = TokenType> = TokenClaims & {
 
 export type DirectUploadIntent = {
   version: 1;
+  organizationId: string;
   targetType: "folder" | "lead";
   targetId: string;
   folderId: string;
@@ -302,6 +303,7 @@ export function verifyDirectUploadIntent(token: string): DirectUploadIntent {
   const value = payload.intent as Partial<DirectUploadIntent>;
   const valid =
     value.version === 1 &&
+    typeof value.organizationId === "string" &&
     (value.targetType === "folder" || value.targetType === "lead") &&
     typeof value.targetId === "string" &&
     typeof value.folderId === "string" &&

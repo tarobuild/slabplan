@@ -1,108 +1,52 @@
 # SlabPlan Launch Status
 
-Last updated: 2026-08-01
+Last updated: 2026-08-18
 
-## Completed
+## Target Architecture
 
-- GitHub repo is connected: `tarobuild/slabplan`.
-- Vercel production frontend is live at `https://slabplan.vercel.app` while
-  `slabplan.com` completes registrar checkout and DNS validation.
-- Railway production API is live: `https://slabplan-api-production.up.railway.app`.
-- Railway staging API is live: `https://slabplan-api-staging.up.railway.app`.
-- Supabase staging project exists: `slabplan-staging`.
-- Supabase production project exists: `slabplan-production`.
-- Both Supabase projects have the private `slabplan-files` bucket.
-- Production database migrations are applied.
-- Staging database migrations are applied.
-- Vercel production builds point at Railway production API.
-- Vercel preview builds point at Railway staging API.
-- Production and staging API health checks return `db:true` and `storage:true`.
-- Sentry projects exist in the Tarobuild org: `slabplan-web` and
-  `slabplan-api`.
-- Sentry env vars are configured for Vercel web and Railway API.
-- Sentry API events are verified from Railway production and staging.
-- Sentry web project ingestion is verified, and the live Vercel bundle contains
-  the `slabplan-web` DSN.
-- Browser-origin Sentry delivery is verified from the production web app using
-  the Diagnostics settings page.
-- Stripe billing uses the Tarobuild account.
-- Stripe checkout, customer portal, and signed webhook API endpoints exist.
-- Stripe test keys, price env vars, webhook endpoints, and webhook secrets are
-  configured in Railway production/staging.
-- SlabPlan offers one Full Access plan at `$250/company/month` for up to 25
-  team members.
-- New email signups are routed directly into Stripe-hosted subscription
-  checkout, and unpaid new workspaces are denied access server-side.
-- Existing workspaces are grandfathered by the paid-access migration.
-- A public product and pricing site is served at `/`.
-- Production browser smoke test passes for workspace creation, sign-in,
-  dashboard load, billing, diagnostics, and 390px mobile login layout.
-- Production sign-out smoke test passes through the account menu and returns to
-  `/login`.
-- Staging API smoke test passes for workspace, client, job, private file,
-  schedule item, daily log, lead conversion, invite acceptance, and non-admin
-  billing checkout protection.
-- Vercel CSP allows only the SlabPlan API hosts and Sentry ingestion in
-  addition to same-origin connections.
-- Generated React API hooks use the configured API origin instead of relative
-  Vercel `/api` paths.
-- Production auth/upload cookies use secure cross-site settings while the
-  temporary Vercel and Railway hosts are on different sites.
-- GitHub Daily DB backup workflow repository secrets are now present. The
-  failure emails seen earlier were from runs before those secrets were set; the
-  latest manual backup workflow run completed successfully.
-- GitHub DB restore drill workflow exists and restores the latest backup into a
-  temporary PostgreSQL 17 database for repeatable recovery checks.
-- The 2026-05-17 manual DB restore drill run passed after refreshing the daily
-  backup object.
-- No mocked production-path data was found after removing an unused scaffold
-  component and keeping development seed data off the main DB package export.
-- Sentry is optional at boot, so missing Sentry config cannot take the API down.
-- Anthropic API key is installed in Railway production and staging. The first
-  generated key was rotated after setup, and the active key is deployed.
-- Staging AI smoke test passes against Anthropic and records organization token
-  usage.
-- Anthropic config remains isolated from API boot, so a provider or billing
-  issue cannot take the rest of the API down.
-- Supabase org `slabplan` is upgraded to Pro. `slabplan-production` shows a
-  scheduled physical backup dated 2026-05-17.
+- Source of truth: `tarobuild/slabplan` on GitHub.
+- Application hosting: one Replit Reserved VM serving the React app, Express
+  API, Socket.IO connections, and background sweepers.
+- PostgreSQL: Supabase.
+- Private object storage: Supabase Storage.
+- Large uploads: browser-to-Supabase signed TUS uploads. File contents do not
+  pass through Replit.
+- Replit Database and Replit App Storage are not production data stores.
 
-## Not Launch-Ready Yet
+## Verified Locally
 
-These require owner/vendor setup before SlabPlan is ready for paying users:
+- The latest approved CAD Stone fixes were copied into this SlabPlan workspace
+  without modifying or reconnecting the CAD Stone repository.
+- Estimate discounts persist, sales lists support due-date sorting, and direct
+  resumable uploads are included.
+- Direct-upload intents, database rows, activity records, and object paths are
+  organization-scoped.
+- The application and OpenAPI policy allow individual files up to 500 GB.
+- Production builds include both the frontend and API in one deployable output.
+- Typecheck, upload integration tests, frontend upload tests, and the eager
+  bundle check pass.
 
-- Complete registrar checkout and connect `slabplan.com`.
-- Create the `$250/month` Stripe live price and install live production
-  credentials after account verification.
-- Configure transactional email and sender domain.
-- Run email invite/password-reset smoke tests after email is configured.
+## Deployment Checklist
 
-## Current Health Probes
+- [ ] Merge the validated migration commit into GitHub `main`.
+- [ ] Pull that exact `main` commit into the TaroBuild Replit app.
+- [ ] Configure production-only Replit secrets from the SlabPlan services.
+- [ ] Select Reserved VM deployment and publish.
+- [ ] Verify `/api/livez`, `/api/healthz`, login, Socket.IO, billing, email, AI,
+  and organization-isolated file upload/download workflows.
+- [ ] Confirm the Supabase organization is on a paid plan.
+- [ ] Set the project-wide and `slabplan-files` bucket file-size limits to
+  500 GB.
+- [ ] Confirm Supabase backups and perform the documented restore drill.
+- [ ] Record the live Replit URL and deployed GitHub commit below.
 
-```bash
-curl -sS https://slabplan-api-production.up.railway.app/api/healthz
-curl -sS https://slabplan-api-staging.up.railway.app/api/healthz
-curl -I https://www.slabplan.com/login
-```
+## Production Record
 
-Expected API shape:
+- Replit URL: pending publish
+- GitHub commit: pending merge
+- Supabase project: `slabplan-production` (access and settings must be
+  re-verified before publish)
+- Storage bucket: `slabplan-files` (private; limit must be re-verified)
 
-```json
-{"status":"ok","db":true,"storage":true,"errors":[]}
-```
-
-## Environment Ownership
-
-Production:
-
-- Supabase project: `slabplan-production`
-- Railway environment: `production`
-- Vercel environment: `Production`
-
-Staging:
-
-- Supabase project: `slabplan-staging`
-- Railway environment: `staging`
-- Vercel environment: `Preview`
-
-Never copy production Supabase secrets into staging or preview environments.
+Never place production secrets in this repository or copy credentials from the
+CAD Stone project.

@@ -2,7 +2,8 @@
 
 SlabPlan is a local white-label SaaS conversion of the former single-company construction-management platform. The target product is a multi-tenant operations platform for job tracking, lead management, scheduling, daily logs, file management, AI assistance, and financial workflows.
 
-This workspace is local-only until the owner approves a new SlabPlan repository. Do not connect it to the original CAD Stone production repo.
+The dedicated source repository is `tarobuild/slabplan`. Do not connect this
+workspace to the original CAD Stone production repo.
 
 ## Run & Operate
 
@@ -27,6 +28,16 @@ This workspace is local-only until the owner approves a new SlabPlan repository.
 - **Storage:** Supabase-compatible private object storage
 - **Validation:** Zod
 - **AI Model:** Anthropic Claude through the existing integration package
+
+## Production Topology
+
+- **Application hosting:** Replit Reserved VM
+- **Database:** Supabase PostgreSQL
+- **Private files:** Supabase Storage
+- **Large uploads:** signed browser-to-Supabase TUS uploads
+- **Source of truth:** GitHub `tarobuild/slabplan` `main`
+
+Do not use Replit Database or Replit App Storage for production SlabPlan data.
 
 ## Where Things Live
 

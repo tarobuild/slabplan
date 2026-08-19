@@ -646,6 +646,7 @@ async function storeLeadAttachment(params: {
 
   const storedName = buildStoredFileName(uploadedFile.originalname);
   const { fileUrl } = buildUploadPath({
+    organizationId,
     jobId: `lead-${leadId}`,
     mediaType: "document",
     storedFileName: storedName,

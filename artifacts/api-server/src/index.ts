@@ -59,7 +59,7 @@ async function bootstrap() {
 
   // Apply any pending schema migrations BEFORE the HTTP server binds.
   // This is the only thing that runs migrations against production —
-  // Cloud Run's deploy step does not. The runner is idempotent and uses
+  // Replit's build step does not. The runner is idempotent and uses
   // the same connection pool (same DATABASE_URL / SUPABASE_DATABASE_URL)
   // as the rest of the server, so it always targets the right database.
   // See "schema migrations run on deploy" in `replit.md` and Task #385.

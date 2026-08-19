@@ -9,20 +9,19 @@
  * grow, change the value once below.
  */
 /**
- * Supabase's hosted resumable-upload ceiling is 50 GiB. Large browser uploads
+ * Supabase paid plans support files up to 500 GiB. Large browser uploads
  * use the provider's TUS endpoint directly, so this limit does not imply a
- * 50-GiB request body or temporary file on the API server.
+ * 500-GiB request body or temporary file on the API server.
  */
-export const MAX_UPLOAD_FILE_BYTES = 50 * 1024 * 1024 * 1024;
+export const MAX_UPLOAD_FILE_BYTES = 500 * 1024 * 1024 * 1024;
 
 /** Maximum number of files allowed in a single multipart request. */
 export const MAX_UPLOAD_FILE_COUNT = 20;
 
 /**
- * Cloud Run rejects HTTP/1 request bodies above 32 MiB before Node/Express can
- * return problem+json. Replit production deploys through Cloud Run, so direct
- * multipart uploads need a conservative ceiling below that edge cap. The app
- * still accepts much larger files through signed direct resumable upload.
+ * Keep direct multipart uploads below the application host's request proxy
+ * ceiling so Node/Express can still return structured errors. The app accepts
+ * much larger files through signed direct resumable upload to Supabase.
  */
 export const DIRECT_UPLOAD_EDGE_LIMIT_BYTES = 32 * 1024 * 1024;
 export const DIRECT_UPLOAD_CHUNKING_THRESHOLD_BYTES = 24 * 1024 * 1024;

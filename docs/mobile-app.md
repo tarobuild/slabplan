@@ -39,7 +39,7 @@ work—remains web-first until separately designed and QA-tested.
 Launch the app with an explicit API base URL:
 
 ```bash
-EXPO_PUBLIC_SLABPLAN_API_BASE_URL=https://slabplan-api-production.up.railway.app pnpm --filter @workspace/cadstone-mobile start
+EXPO_PUBLIC_SLABPLAN_API_BASE_URL=https://slabplan.replit.app pnpm --filter @workspace/cadstone-mobile start
 ```
 
 For local testing, use the local API origin reachable from the simulator or

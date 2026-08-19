@@ -1,5 +1,4 @@
-export const DEFAULT_CANONICAL_HOST =
-  "slabplan-api-production.up.railway.app";
+export const DEFAULT_CANONICAL_HOST = "slabplan.replit.app";
 export const CANONICAL_HOST =
   process.env.CANONICAL_HOST?.trim().toLowerCase() || DEFAULT_CANONICAL_HOST;
 
@@ -13,8 +12,6 @@ const CONFIGURED_HOST_ENV_KEYS = [
   "PUBLIC_APP_ORIGIN",
   "CUSTOM_DOMAIN_ORIGIN",
   "REPLIT_DOMAINS",
-  "RAILWAY_PUBLIC_DOMAIN",
-  "RAILWAY_STATIC_URL",
 ];
 
 export function normalizeHostHeader(hostHeader: string | undefined): string {

@@ -940,7 +940,7 @@ async function validateMagicBytesFromSource(
 /**
  * Sniff the magic bytes of a multer-saved file and verify that they match the
  * client-claimed MIME / extension. Validation uses bounded random-access
- * reads, which is also what lets the direct-upload finalizer inspect a 50-GiB
+ * reads, which is also what lets the direct-upload finalizer inspect a 500-GiB
  * object without copying it back through the API server.
  */
 export async function validateMagicBytesForFile(

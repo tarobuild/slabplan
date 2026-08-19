@@ -12,8 +12,8 @@ import {
   videoDurationLimitLabel,
 } from "../src/uploads.ts";
 
-test("hosted resumable uploads allow 50 GiB files and unlimited video length", () => {
-  assert.equal(MAX_UPLOAD_FILE_BYTES, 50 * 1024 * 1024 * 1024);
+test("hosted resumable uploads allow 500 GiB files and unlimited video length", () => {
+  assert.equal(MAX_UPLOAD_FILE_BYTES, 500 * 1024 * 1024 * 1024);
   assert.equal(Number.isFinite(MAX_VIDEO_DURATION_SECONDS), false);
   assert.equal(videoDurationLimitLabel(), "unlimited");
 });

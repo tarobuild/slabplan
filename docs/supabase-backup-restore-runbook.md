@@ -97,8 +97,8 @@ database when the job finishes.
    network restrictions, and edge functions if any are added later.
 5. Recreate/migrate storage bucket objects. Database backup metadata alone is
    not enough to restore private file contents.
-6. Apply SlabPlan environment variables to a temporary Railway staging
-   environment pointed at the restored project.
+6. Apply SlabPlan environment variables to a temporary Replit Reserved VM
+   deployment pointed at the restored project.
 7. Run the smoke test checklist against the restored environment.
 8. Tear down the restored project after the drill unless it is being promoted
    to a long-lived environment.

@@ -1,0 +1,16 @@
+entrypoint = "artifacts/api-server/src/index.ts"
+run = "corepack pnpm --filter @workspace/api-server run dev"
+
+[gitHubImport]
+requiredFiles = [".replit", "replit.nix", "package.json", "pnpm-lock.yaml"]
+
+[deployment]
+build = "corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --frozen-lockfile && pnpm run build:web && pnpm run build:api"
+run = "corepack pnpm run start:api"
+
+[env]
+HOST = "0.0.0.0"
+
+[[ports]]
+localPort = 8080
+externalPort = 80

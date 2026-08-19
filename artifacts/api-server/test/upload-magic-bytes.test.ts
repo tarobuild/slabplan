@@ -784,8 +784,8 @@ test("validateMagicBytesForFile flags missing path as a server bug (unit)", asyn
   );
 });
 
-test("stored-file validation inspects a virtual 50 GiB PDF with bounded reads", async () => {
-  const totalSize = 50 * 1024 * 1024 * 1024;
+test("stored-file validation inspects a virtual 500 GiB PDF with bounded reads", async () => {
+  const totalSize = 500 * 1024 * 1024 * 1024;
   const reads: Array<{ position: number; byteCount: number }> = [];
   await validateMagicBytesForStoredFile({
     originalName: "massive-plans.pdf",

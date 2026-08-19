@@ -1,99 +1,40 @@
-# SlabPlan Launch Checklist
+# SlabPlan Client-Ready Launch Checklist
 
-SlabPlan is deployed, but it is not approved for public paid launch until every
-section below is complete.
+## Source And Build
 
-## 1. Automated Gates
+- [ ] GitHub `tarobuild/slabplan` `main` contains the approved release commit.
+- [ ] Replit `@tarobuild/slabplan` is synced to that exact commit.
+- [ ] Typecheck, API codegen drift, unused-code, frontend bundle, and targeted upload tests pass.
+- [ ] No Railway or Vercel runtime configuration remains.
 
-Run from the repository root:
+## Replit
 
-```bash
-pnpm typecheck
-pnpm check-api-codegen
-pnpm knip
-pnpm --filter @workspace/cadstone run check-eager-bundle
-```
+- [ ] Reserved VM is selected and paid.
+- [ ] Build and run commands match `.replit`.
+- [ ] All production secrets are attached to the published app.
+- [ ] The deployment is live and `/api/livez` and `/api/healthz` return success.
+- [ ] WebSocket, login, invite email, AI, and billing smoke tests pass.
+- [ ] Daily backup and backup-check Scheduled Deployments are enabled.
 
-If API spec files changed, regenerate first:
+## Supabase
 
-```bash
-pnpm --filter @workspace/api-spec run codegen
-```
+- [ ] Supabase remains the only production PostgreSQL provider.
+- [ ] Supabase remains the only production private object store.
+- [ ] The organization is on a paid plan.
+- [ ] The project global file-size limit is 500 GB.
+- [ ] The private SlabPlan bucket file-size limit is 500 GB.
+- [ ] The bucket is private and service-role access is available only to the API.
+- [ ] Database backups, PITR policy, and restore drill are verified.
 
-## 2. Deployment Probes
+## Large Uploads
 
-Production:
+- [ ] A signed direct upload is organization-scoped.
+- [ ] TUS uses the storage-specific Supabase hostname.
+- [ ] Uploads resume after interruption or browser restart.
+- [ ] Finalization verifies exact byte size and bounded magic bytes.
+- [ ] A file larger than 50 GB is accepted by policy without proxying through Replit.
+- [ ] Cross-tenant upload intent reuse is rejected.
 
-```bash
-curl -i https://slabplan-api-production.up.railway.app/api/livez
-curl -i https://slabplan-api-production.up.railway.app/api/healthz
-curl -I https://www.slabplan.com/login
-```
+## Release Evidence
 
-Staging:
-
-```bash
-curl -i https://slabplan-api-staging.up.railway.app/api/healthz
-```
-
-Required API readiness:
-
-```json
-{"status":"ok","db":true,"storage":true,"errors":[]}
-```
-
-## 3. Owner Setup
-
-- [ ] Connect custom domains. `slabplan.com` is not registered yet, so DNS
-      cannot be connected.
-- [x] Add Anthropic API key to Railway production and staging.
-- [x] Add Anthropic credits and verify AI requests complete.
-- [ ] Configure transactional email provider and verified sender domain.
-- [x] Create Stripe test-mode SlabPlan products and prices.
-- [x] Add Stripe checkout, customer portal, signed webhook, and billing state API foundation.
-- [x] Configure Stripe test keys, price env vars, webhook endpoint, and webhook secret in Railway.
-- [x] Add billing UI entry points after account/workspace smoke testing.
-- [x] Create Sentry SlabPlan web/API projects and configure deployment env vars.
-- [x] Verify Sentry API event capture from Railway production and staging.
-- [x] Verify Sentry web project ingestion and deployed web DSN.
-- [x] Verify a real browser-origin Sentry event from the production web app.
-- [x] Confirm Supabase production backups and retention. The `slabplan` org is
-      on Supabase Pro and `slabplan-production` shows a scheduled physical
-      backup dated 2026-05-17.
-- [x] Perform restore drill against a non-production database.
-
-## 4. App Smoke Test
-
-- [x] Create a workspace.
-- [x] Sign in.
-- [x] Create a client.
-- [x] Create a job.
-- [x] Upload and list a private file.
-- [x] Create a schedule item.
-- [x] Create a daily log.
-- [x] Create and convert a lead.
-- [x] Verify admin-only billing management is blocked from non-admin users.
-- [x] Verify mobile layout at 390px width.
-- [x] Sign out.
-- [x] Test AI assistant after Anthropic credits are available.
-- [ ] Test invite/password-reset email after email is installed.
-
-## 5. Security Gate
-
-- [x] Tenant scoping reviewed for clients, jobs, leads, schedule, daily logs,
-      files, reports, search, users, and AI tools.
-- [x] File object paths and signed links are tenant-isolated.
-- [x] Tenant admin permissions cannot read or mutate another tenant.
-- [x] AI usage is tenant-metered before broad customer usage.
-- [x] No production secrets are committed.
-- [x] No mocked data exists in production paths.
-
-## 6. Go / No-Go
-
-Do not launch publicly unless:
-
-- All automated gates pass on the launch commit.
-- Both API environments are healthy.
-- Owner setup is complete.
-- The manual smoke test passes.
-- Security gate has no unresolved high-risk findings.
+- [ ] Record the GitHub commit, Replit deployment URL, deployment ID, smoke-test date, and Supabase limit settings in `docs/slabplan-launch-status.md`.

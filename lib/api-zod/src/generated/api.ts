@@ -3599,7 +3599,7 @@ export const LeadsGetLeadsIdAttachmentsUploadPolicyQueryParams = zod.object({
     ),
 });
 
-export const leadsGetLeadsIdAttachmentsUploadPolicyResponseDirectMaxTotalBytesMax = 53687091200;
+export const leadsGetLeadsIdAttachmentsUploadPolicyResponseDirectMaxTotalBytesMax = 536870912000;
 
 export const LeadsGetLeadsIdAttachmentsUploadPolicyResponse = zod.object({
   leadId: zod.string().uuid(),
@@ -3704,7 +3704,7 @@ export const leadsPostLeadsIdAttachmentsDirectBodyOriginalNameMax = 255;
 
 export const leadsPostLeadsIdAttachmentsDirectBodyMimeTypeMax = 100;
 
-export const leadsPostLeadsIdAttachmentsDirectBodyTotalSizeMax = 53687091200;
+export const leadsPostLeadsIdAttachmentsDirectBodyTotalSizeMax = 536870912000;
 
 export const leadsPostLeadsIdAttachmentsDirectBodyContentHashRegExp =
   new RegExp("^[a-fA-F0-9]{64}$");
@@ -4722,7 +4722,7 @@ export const filesPostFoldersIdFilesDirectBodyOriginalNameMax = 255;
 
 export const filesPostFoldersIdFilesDirectBodyMimeTypeMax = 100;
 
-export const filesPostFoldersIdFilesDirectBodyTotalSizeMax = 53687091200;
+export const filesPostFoldersIdFilesDirectBodyTotalSizeMax = 536870912000;
 
 export const filesPostFoldersIdFilesDirectBodyContentHashRegExp = new RegExp(
   "^[a-fA-F0-9]{64}$",

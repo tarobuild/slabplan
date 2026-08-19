@@ -4102,7 +4102,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "413":
-          description: File exceeds the 50 GiB hosted resumable-upload limit
+          description: File exceeds the 500 GiB hosted resumable-upload limit
           content:
             application/problem+json:
               schema:
@@ -6234,7 +6234,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "413":
-          description: File exceeds the 50 GiB hosted resumable-upload limit
+          description: File exceeds the 500 GiB hosted resumable-upload limit
           content:
             application/problem+json:
               schema:
@@ -14561,7 +14561,7 @@ components:
         totalSize:
           type: integer
           minimum: 1
-          maximum: 53687091200
+          maximum: 536870912000
         contentHash:
           type: string
           pattern: ^[a-fA-F0-9]{64}$
@@ -16653,7 +16653,7 @@ components:
             maxTotalBytes:
               type: integer
               minimum: 1
-              maximum: 53687091200
+              maximum: 536870912000
             tusChunkBytes:
               type: integer
               minimum: 1

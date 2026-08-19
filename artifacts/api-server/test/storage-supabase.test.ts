@@ -203,7 +203,7 @@ describe("Supabase storage provider", () => {
     assert.equal(prepared.bucketName, "cadstone-files");
     assert.equal(
       prepared.objectName,
-      "cadstone/uploads/job-a/document/new-unique-object.pdf",
+      "slabplan/uploads/job-a/document/new-unique-object.pdf",
     );
     assert.equal(prepared.signature, "object-scoped-test-signature");
     assert.equal(prepared.chunkSizeBytes, 6 * 1024 * 1024);

@@ -47,6 +47,7 @@ test("direct-upload intents are scoped, tamper-evident, and survive browser rest
     const authModule = await import(`../src/lib/auth.ts?test=direct-${Date.now()}`);
     const intent = {
       version: 1 as const,
+      organizationId: "9a2af24a-3f7a-47cf-a1e0-16d23ed2db70",
       targetType: "folder" as const,
       targetId: "a2c084cf-3307-4472-9911-d8c25e92969a",
       folderId: "a2c084cf-3307-4472-9911-d8c25e92969a",

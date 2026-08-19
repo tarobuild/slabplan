@@ -1,141 +1,51 @@
 # SlabPlan Operations Runbook
 
-This is the quick operator guide for the live SlabPlan deployment.
+## Live Service
 
-## Current URLs
+SlabPlan is a single-origin Replit Reserved VM deployment backed by Supabase PostgreSQL and private Supabase Storage.
 
-| Item | URL |
-|---|---|
-| Production app | `https://www.slabplan.com` |
-| Production API | `https://slabplan-api-production.up.railway.app` |
-| Production health | `https://slabplan-api-production.up.railway.app/api/healthz` |
-| Staging API | `https://slabplan-api-staging.up.railway.app` |
-| Staging health | `https://slabplan-api-staging.up.railway.app/api/healthz` |
-
-The production health endpoint should return:
-
-```json
-{"status":"ok","db":true,"storage":true,"errors":[]}
-```
-
-`durationMs` is expected to vary.
-
-## Smoke Checks
-
-Run these after every deploy:
+Health checks:
 
 ```bash
-curl -i https://slabplan-api-production.up.railway.app/api/livez
-curl -i https://slabplan-api-production.up.railway.app/api/healthz
-curl -I https://www.slabplan.com/login
+curl -i https://slabplan.replit.app/api/livez
+curl -i https://slabplan.replit.app/api/healthz
 ```
 
-Expected:
+`/api/livez` confirms the process is running. `/api/healthz` confirms the database, storage bucket, and required runtime dependencies are reachable.
 
-- `/api/livez` returns HTTP 200 and `{"status":"ok"}`.
-- `/api/healthz` returns HTTP 200 with `db:true` and `storage:true`.
-- `/login` returns HTTP 200 from Vercel.
+## Release
 
-Staging API smoke:
+1. Validate the intended SlabPlan commit locally.
+2. Push the SlabPlan branch and merge it into `tarobuild/slabplan` `main`.
+3. In the `@tarobuild/slabplan` Replit app, pull GitHub `main` and confirm the commit SHA.
+4. Publish the Reserved VM again.
+5. Wait for a successful deployment and run the health and authenticated smoke tests.
 
-```bash
-curl -i https://slabplan-api-staging.up.railway.app/api/healthz
-```
+Never pull from or push to CAD Stone during a SlabPlan release.
 
-## Where Things Live
+## Required Runtime State
 
-- GitHub repo: `tarobuild/slabplan`
-- Vercel project: `slabplan`
-- Railway project: `slabplan-api`
-- Railway environments: `production`, `staging`
-- Supabase production: `slabplan-production`
-- Supabase staging: `slabplan-staging`
-- Private storage bucket in both Supabase projects: `slabplan-files`
+- Replit deployment type is Reserved VM.
+- Production secrets are attached to the published app, not only the development workspace.
+- `SUPABASE_DATABASE_URL` points to the production Supabase project.
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` point to the same project.
+- The Supabase project and private bucket allow files up to 500 GB.
+- The browser upload path uses signed direct TUS uploads; large bytes do not pass through Replit.
 
-## Deploy Flow
+## Failure Triage
 
-Production deploys from GitHub `main`.
+For failed startup, inspect Replit Publishing logs for the first missing configuration or migration error. Do not bypass startup guards.
 
-1. Push code to `main`.
-2. Railway production API builds automatically.
-3. Vercel production frontend builds automatically.
-4. Run the smoke checks above.
+For failed uploads, check in this order:
 
-Railway staging is a separate environment in the same Railway project. It should
-use the staging Supabase project only.
+1. Supabase plan and global file-size limit.
+2. Private bucket file-size limit.
+3. Replit API logs for signing or finalization errors.
+4. Browser network logs for TUS `POST`, `HEAD`, or `PATCH` failures.
+5. The object path and file row organization IDs.
 
-## Common Failure Modes
+For database incidents, stop writes if necessary, verify the latest backup, and follow `docs/supabase-backup-restore-runbook.md`.
 
-### API is down
+## Rollback
 
-Check Railway service logs first.
-
-Likely causes:
-
-- Missing environment variable.
-- Supabase password/connection string issue.
-- Missing Supabase storage bucket.
-- Migration failure at boot.
-
-Immediate checks:
-
-```bash
-curl -i https://slabplan-api-production.up.railway.app/api/livez
-curl -i https://slabplan-api-production.up.railway.app/api/healthz
-```
-
-### Database is down or misconfigured
-
-Open Supabase production project `slabplan-production`.
-
-Check:
-
-- Project is not paused.
-- Database status is healthy.
-- Railway `SUPABASE_DATABASE_URL` points to production, not staging.
-- Migrations are applied.
-
-### Storage is down or misconfigured
-
-Open Supabase Storage in the matching environment.
-
-Check:
-
-- Bucket `slabplan-files` exists.
-- Bucket is private.
-- Railway `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` match the same Supabase project as the database.
-
-### AI features fail
-
-The rest of the app should stay online. AI features require:
-
-```text
-AI_INTEGRATIONS_ANTHROPIC_API_KEY
-AI_INTEGRATIONS_ANTHROPIC_BASE_URL=https://api.anthropic.com
-```
-
-The API intentionally boots without the key so non-AI workflows are not blocked.
-
-### Email does not send
-
-Transactional email is still pending. Before invites/password resets are used
-for real users, configure an email provider and set:
-
-```text
-EMAIL_FROM
-EMAIL_REPLY_TO
-provider API key
-APP_PUBLIC_URL
-```
-
-## Before Public Launch
-
-Do not treat SlabPlan as launch-ready until these are done:
-
-- Custom domains are connected.
-- Transactional email works.
-- Anthropic API key is installed and AI usage is verified.
-- Stripe billing and webhooks are configured.
-- Monitoring/alerting is configured.
-- Tenant isolation and file access have a focused security review.
-- Backups/restore drill are verified for the Supabase production project.
+Revert or restore the last known-good SlabPlan commit on GitHub `main`, pull that exact commit into Replit, and republish the Reserved VM. Database migrations are forward-only; review migration compatibility before rolling application code backward.

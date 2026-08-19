@@ -21,6 +21,7 @@ let adminAccessJwt: string;
 let localStorageRoot: string;
 
 const adminUserId = crypto.randomUUID();
+const organizationId = crypto.randomUUID();
 const jobId = crypto.randomUUID();
 const adminEmail = `admin-${adminUserId}@upload-migration-api.local`;
 
@@ -67,19 +68,38 @@ before(async () => {
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
   const { db } = await import("@workspace/db");
-  const { jobs, users } = await import("@workspace/db/schema");
+  const {
+    jobs,
+    organizationMemberships,
+    organizations,
+    users,
+  } = await import("@workspace/db/schema");
 
   await prepareApp();
 
+  await db.insert(organizations).values({
+    id: organizationId,
+    name: "ZZZ Upload Migration Organization",
+    slug: `upload-migration-${organizationId}`,
+    status: "active",
+  });
   await db.insert(users).values({
     id: adminUserId,
     email: adminEmail,
     passwordHash: "test-not-a-real-hash",
     fullName: "ZZZ Upload Migration Admin",
     role: "admin",
+    defaultOrganizationId: organizationId,
+  });
+  await db.insert(organizationMemberships).values({
+    organizationId,
+    userId: adminUserId,
+    role: "admin",
+    isDefault: true,
   });
   await db.insert(jobs).values({
     id: jobId,
+    organizationId,
     title: "ZZZ Upload Migration Job",
     createdBy: adminUserId,
     projectManagerId: adminUserId,
@@ -93,6 +113,7 @@ before(async () => {
     role: "admin",
     avatarUrl: null,
     phone: null,
+    defaultOrganizationId: organizationId,
     createdAt: stamp,
     updatedAt: stamp,
   });
@@ -107,13 +128,23 @@ before(async () => {
 
 after(async () => {
   const { db, pool } = await import("@workspace/db");
-  const { activityLog, jobs, users } = await import("@workspace/db/schema");
+  const {
+    activityLog,
+    jobs,
+    organizationMemberships,
+    organizations,
+    users,
+  } = await import("@workspace/db/schema");
   const { eq, inArray } = await import("drizzle-orm");
 
   try {
     await db.delete(activityLog).where(eq(activityLog.userId, adminUserId));
     await db.delete(jobs).where(eq(jobs.id, jobId));
+    await db
+      .delete(organizationMemberships)
+      .where(eq(organizationMemberships.organizationId, organizationId));
     await db.delete(users).where(inArray(users.id, [adminUserId]));
+    await db.delete(organizations).where(eq(organizations.id, organizationId));
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => {
@@ -214,13 +245,20 @@ test("direct-upload completion is exact, idempotent, and never deletes the uploa
   const { eq } = await import("drizzle-orm");
 
   const storedName = `${crypto.randomUUID()}-direct.pdf`;
-  const relative = path.posix.join(jobId, "document", storedName);
+  const relative = path.posix.join(
+    "organizations",
+    organizationId,
+    jobId,
+    "document",
+    storedName,
+  );
   const fileUrl = `/uploads/${relative}`;
   const diskPath = path.join(localStorageRoot, ...relative.split("/"));
   await mkdir(path.dirname(diskPath), { recursive: true });
   await writeFile(diskPath, PDF_BYTES);
   const intentToken = signDirectUploadIntent({
     version: 1,
+    organizationId,
     targetType: "folder",
     targetId: folderId,
     folderId,
@@ -242,6 +280,30 @@ test("direct-upload completion is exact, idempotent, and never deletes the uploa
       headers: jsonHeaders(),
       body: JSON.stringify({ intentToken: token }),
     });
+
+  const crossOrganizationToken = signDirectUploadIntent({
+    version: 1,
+    organizationId: crypto.randomUUID(),
+    targetType: "folder",
+    targetId: folderId,
+    folderId,
+    userId: adminUserId,
+    fileUrl,
+    storedName,
+    originalName: "Massive Plans.pdf",
+    mimeType: "application/pdf",
+    totalSize: PDF_BYTES.length,
+    contentHash: null,
+    note: null,
+    duplicateAction: "keep_both",
+    videoDurationSeconds: null,
+  });
+  const crossOrganizationResponse = await complete(crossOrganizationToken);
+  await assertProblemCode(
+    crossOrganizationResponse,
+    403,
+    "DIRECT_UPLOAD_SCOPE_MISMATCH",
+  );
 
   const [firstResponse, concurrentReplayResponse] = await Promise.all([
     complete(intentToken),
@@ -267,12 +329,19 @@ test("direct-upload completion is exact, idempotent, and never deletes the uploa
   await stat(diskPath);
 
   const mismatchStoredName = `${crypto.randomUUID()}-mismatch.pdf`;
-  const mismatchRelative = path.posix.join(jobId, "document", mismatchStoredName);
+  const mismatchRelative = path.posix.join(
+    "organizations",
+    organizationId,
+    jobId,
+    "document",
+    mismatchStoredName,
+  );
   const mismatchFileUrl = `/uploads/${mismatchRelative}`;
   const mismatchDiskPath = path.join(localStorageRoot, ...mismatchRelative.split("/"));
   await writeFile(mismatchDiskPath, PDF_BYTES);
   const mismatchToken = signDirectUploadIntent({
     version: 1,
+    organizationId,
     targetType: "folder",
     targetId: folderId,
     folderId,

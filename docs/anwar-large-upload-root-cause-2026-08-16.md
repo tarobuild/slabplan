@@ -47,7 +47,7 @@ Supabase's hosted TUS resumable endpoint directly from the browser:
 4. Upsert is deliberately disabled. No retry can overwrite an existing object.
 5. After TUS succeeds, the CAD Stone API rechecks the user's permission,
    verifies the provider-reported byte count exactly, and validates file
-   signatures through bounded range reads. A 50 GiB PDF is inspected through
+   signatures through bounded range reads. A 500 GiB PDF is inspected through
    small head/tail reads instead of being copied back through Replit.
 6. Only then is the file/attachment database row inserted. Finalization is
    idempotent across retries and production instances via a Postgres advisory
@@ -78,8 +78,8 @@ paths that remove customer files.
 
 ## Supported ceiling and provider configuration
 
-- App per-file ceiling: 50 GiB (`53,687,091,200` bytes).
-- Supabase hosted resumable-upload ceiling: 50 GiB on the current plan.
+- App per-file ceiling: 500 GiB (`536,870,912,000` bytes).
+- Supabase hosted resumable-upload ceiling: 500 GB on paid plans.
 - TUS chunk size: 6 MiB.
 - Supabase signed-upload token: 2 hours (used to create the TUS upload).
 - CAD Stone resumable-upload intent: 7 days.
@@ -88,13 +88,13 @@ paths that remove customer files.
   as display metadata.
 
 Production release requires both Supabase's global Storage upload limit and
-the private `cadstone-files` bucket limit to be 50 GiB. The API also verifies
+the private upload bucket limit to be 500 GiB. The API also verifies
 and raises the bucket limit to the app ceiling on startup once the project-wide
 limit permits it.
 
 ## Verification requirements
 
-- Unit coverage for 50 GiB policy constants and unlimited video duration.
+- Unit coverage for 500 GiB policy constants and unlimited video duration.
 - Storage-provider coverage proving only an object-scoped signature leaves the
   API and `x-upsert` is absent.
 - Range-read coverage proving size and signature checks do not issue a full

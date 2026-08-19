@@ -702,7 +702,7 @@ export interface DirectUploadStart {
   mimeType?: string;
   /**
    * @minimum 1
-   * @maximum 53687091200
+   * @maximum 536870912000
    */
   totalSize: number;
   /** @pattern ^[a-fA-F0-9]{64}$ */
@@ -1959,7 +1959,7 @@ export type LeadAttachmentUploadPolicyResponseDirect = {
   supported: boolean;
   /**
    * @minimum 1
-   * @maximum 53687091200
+   * @maximum 536870912000
    */
   maxTotalBytes: number;
   /** @minimum 1 */

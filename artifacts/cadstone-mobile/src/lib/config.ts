@@ -11,7 +11,7 @@ export function getApiBaseUrl(): string {
 
   if (!trimmed) {
     throw new Error(
-      "SlabPlan mobile needs EXPO_PUBLIC_SLABPLAN_API_BASE_URL, for example https://slabplan-api-production.up.railway.app.",
+      "SlabPlan mobile needs EXPO_PUBLIC_SLABPLAN_API_BASE_URL, for example https://slabplan.replit.app.",
     );
   }
 

@@ -77,7 +77,7 @@ describe("validateSelectedFiles", () => {
       size: 600 * 1024 * 1024,
     } as File
 
-    assert.equal(UPLOAD_MAX_FILE_SIZE_BYTES, 50 * 1024 * 1024 * 1024)
+    assert.equal(UPLOAD_MAX_FILE_SIZE_BYTES, 500 * 1024 * 1024 * 1024)
     assert.equal(validateSelectedFiles([largePdf], "document"), null)
   })
 

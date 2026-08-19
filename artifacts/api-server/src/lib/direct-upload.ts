@@ -42,6 +42,7 @@ type DirectUploadInput = {
 type DirectUploadFolder = Pick<
   Folder,
   | "id"
+  | "organizationId"
   | "scope"
   | "jobId"
   | "leadId"
@@ -72,6 +73,14 @@ export async function prepareDirectUpload(params: {
   input: DirectUploadInput;
 }) {
   const { input, folder } = params;
+  if (!folder.organizationId) {
+    throw new HttpError(
+      409,
+      "Direct uploads require an organization-scoped destination.",
+      { code: "DIRECT_UPLOAD_ORGANIZATION_REQUIRED" },
+      "conflict",
+    );
+  }
   if (
     !Number.isSafeInteger(input.totalSize) ||
     input.totalSize <= 0 ||
@@ -109,6 +118,7 @@ export async function prepareDirectUpload(params: {
       targetType: params.targetType,
       targetId: params.targetId,
       folderId: folder.id,
+      organizationId: folder.organizationId,
       userId: params.userId,
     });
     if (
@@ -149,11 +159,13 @@ export async function prepareDirectUpload(params: {
       params.targetType === "lead"
         ? `lead-${params.targetId}`
         : folder.jobId ?? "resources",
+    organizationId: folder.organizationId,
     mediaType: folder.mediaType,
     storedFileName: storedName,
   });
   const intent: DirectUploadIntent = {
     version: 1,
+    organizationId: folder.organizationId,
     targetType: params.targetType,
     targetId: params.targetId,
     folderId: folder.id,
@@ -198,6 +210,7 @@ function assertIntentScope(params: {
   targetType: "folder" | "lead";
   targetId: string;
   folderId: string;
+  organizationId: string;
   userId: string;
 }) {
   const { intent } = params;
@@ -205,6 +218,7 @@ function assertIntentScope(params: {
     intent.targetType !== params.targetType ||
     intent.targetId !== params.targetId ||
     intent.folderId !== params.folderId ||
+    intent.organizationId !== params.organizationId ||
     intent.userId !== params.userId
   ) {
     throw new HttpError(
@@ -260,11 +274,17 @@ async function lockDirectUploadPath(
 async function findExistingByFileUrl(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   fileUrl: string,
+  organizationId: string,
 ) {
   const [existing] = await tx
     .select()
     .from(files)
-    .where(eq(files.fileUrl, fileUrl))
+    .where(
+      and(
+        eq(files.fileUrl, fileUrl),
+        eq(files.organizationId, organizationId),
+      ),
+    )
     .limit(1);
   return existing ?? null;
 }
@@ -273,6 +293,7 @@ function assertExistingIsReplay(existing: File, intent: DirectUploadIntent) {
   if (
     existing.deletedAt ||
     existing.folderId !== intent.folderId ||
+    existing.organizationId !== intent.organizationId ||
     existing.uploadedBy !== intent.userId ||
     existing.originalName !== intent.originalName ||
     existing.fileSize !== intent.totalSize
@@ -302,6 +323,7 @@ async function recordFolderUploadActivity(params: {
       folderId: params.folder.id,
       fileId: params.file.id,
       description: `Uploaded ${params.file.originalName}`,
+      organizationId: params.folder.organizationId,
     });
   } catch (error) {
     logger.error(
@@ -316,12 +338,21 @@ export async function finalizeDirectFolderUpload(params: {
   folder: DirectUploadFolder;
   userId: string;
 }) {
+  if (!params.folder.organizationId) {
+    throw new HttpError(
+      409,
+      "Direct uploads require an organization-scoped destination.",
+      { code: "DIRECT_UPLOAD_ORGANIZATION_REQUIRED" },
+      "conflict",
+    );
+  }
   const intent = verifyDirectUploadIntent(params.intentToken);
   assertIntentScope({
     intent,
     targetType: "folder",
     targetId: params.folder.id,
     folderId: params.folder.id,
+    organizationId: params.folder.organizationId,
     userId: params.userId,
   });
   validateUploadForMediaType(params.folder.mediaType, {
@@ -332,7 +363,11 @@ export async function finalizeDirectFolderUpload(params: {
 
   const result = await db.transaction(async (tx) => {
     await lockDirectUploadPath(tx, intent.fileUrl);
-    const existing = await findExistingByFileUrl(tx, intent.fileUrl);
+    const existing = await findExistingByFileUrl(
+      tx,
+      intent.fileUrl,
+      intent.organizationId,
+    );
     if (existing) {
       assertExistingIsReplay(existing, intent);
       return { file: existing, created: false };
@@ -341,6 +376,7 @@ export async function finalizeDirectFolderUpload(params: {
     const [file] = await tx
       .insert(files)
       .values({
+        organizationId: intent.organizationId,
         folderId: intent.folderId,
         filename: intent.storedName,
         originalName: intent.originalName,
@@ -412,12 +448,21 @@ export async function finalizeDirectLeadUpload(params: {
   folder: DirectUploadFolder;
   userId: string;
 }) {
+  if (!params.folder.organizationId) {
+    throw new HttpError(
+      409,
+      "Direct uploads require an organization-scoped destination.",
+      { code: "DIRECT_UPLOAD_ORGANIZATION_REQUIRED" },
+      "conflict",
+    );
+  }
   const intent = verifyDirectUploadIntent(params.intentToken);
   assertIntentScope({
     intent,
     targetType: "lead",
     targetId: params.leadId,
     folderId: params.folder.id,
+    organizationId: params.folder.organizationId,
     userId: params.userId,
   });
   validateUploadForMediaType(params.folder.mediaType, {
@@ -428,7 +473,11 @@ export async function finalizeDirectLeadUpload(params: {
 
   const result = await db.transaction(async (tx) => {
     await lockDirectUploadPath(tx, intent.fileUrl);
-    let file = await findExistingByFileUrl(tx, intent.fileUrl);
+    let file = await findExistingByFileUrl(
+      tx,
+      intent.fileUrl,
+      intent.organizationId,
+    );
     let created = false;
     if (file) {
       assertExistingIsReplay(file, intent);
@@ -436,6 +485,7 @@ export async function finalizeDirectLeadUpload(params: {
       [file] = await tx
         .insert(files)
         .values({
+          organizationId: intent.organizationId,
           folderId: intent.folderId,
           filename: intent.storedName,
           originalName: intent.originalName,
@@ -455,6 +505,7 @@ export async function finalizeDirectLeadUpload(params: {
       .from(leadAttachments)
       .where(
         and(
+          eq(leadAttachments.organizationId, intent.organizationId),
           eq(leadAttachments.leadId, params.leadId),
           eq(leadAttachments.fileId, file.id),
         ),
@@ -463,7 +514,11 @@ export async function finalizeDirectLeadUpload(params: {
     if (!attachment) {
       [attachment] = await tx
         .insert(leadAttachments)
-        .values({ leadId: params.leadId, fileId: file.id })
+        .values({
+          organizationId: intent.organizationId,
+          leadId: params.leadId,
+          fileId: file.id,
+        })
         .returning();
     }
     return { file, attachment, created };
@@ -479,6 +534,7 @@ export async function finalizeDirectLeadUpload(params: {
         jobId: null,
         leadId: params.leadId,
         description: `Uploaded attachment ${result.file.originalName}`,
+        organizationId: intent.organizationId,
         extra: {
           fileId: result.file.id,
           attachmentId: result.attachment.id,

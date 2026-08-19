@@ -1,234 +1,86 @@
-# SlabPlan Deployment Platform Notes
+# SlabPlan Production Architecture
 
-SlabPlan is deployed with a split-hosting setup:
+## Source Of Truth
 
-- GitHub: `tarobuild/slabplan`
-- Vercel: React/Vite frontend
-- Railway: Express API server
-- Supabase: Postgres and private object storage
-- Stripe: Tarobuild account, SlabPlan Full Access billing
-- Anthropic: pending API key, for AI features
-- Sentry: Tarobuild org, SlabPlan web/API projects created
+- GitHub repository: `tarobuild/slabplan`
+- Release branch: `main`
+- Replit app: `@tarobuild/slabplan`
+- Replit must publish the exact commit currently on GitHub `main`.
+- CAD Stone is an upstream reference only. SlabPlan never pushes to or deploys from the CAD Stone repository.
 
-## Live Environments
+## Hosting Boundary
 
-| Environment | Frontend | API | Supabase |
-|---|---|---|---|
-| Production | `https://www.slabplan.com` | `https://slabplan-api-production.up.railway.app` | `slabplan-production` / `ifwxnudtubuvntsyfvor` |
-| Staging | Vercel preview builds | `https://slabplan-api-staging.up.railway.app` | `slabplan-staging` / `grpjbugdrnqbtglyujqg` |
+SlabPlan uses Replit for the application runtime and Supabase for persistent data:
 
-Production and staging use separate Supabase databases and separate Railway
-environments. Keep it that way; do not point staging services at production
-Supabase secrets.
+| Responsibility | Provider |
+| --- | --- |
+| React web app | Replit Reserved VM |
+| Express API and Socket.IO | Replit Reserved VM |
+| In-process sweepers and realtime fanout | Replit Reserved VM |
+| Scheduled backups and storage audits | Replit Scheduled Deployments |
+| PostgreSQL | Supabase |
+| Private object storage | Supabase Storage |
+| Large resumable uploads | Browser directly to Supabase TUS |
 
-## Railway API
+Do not configure Replit Database or Replit App Storage for production SlabPlan data. Do not configure Railway or Vercel deployments.
 
-Railway deploys from the repository root using `railway.json`.
+## Replit Deployment
 
-Build command:
-
-```bash
-corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --frozen-lockfile && pnpm run build:api
-```
-
-Start command:
-
-```bash
-NODE_ENV=production node --enable-source-maps artifacts/api-server/dist/index.mjs
-```
-
-Healthcheck:
-
-```text
-/api/livez
-```
-
-Required Railway variables:
-
-```text
-NODE_ENV=production
-LOG_LEVEL=info
-SUPABASE_DATABASE_URL=
-SUPABASE_URL=
-SUPABASE_STORAGE_BUCKET=slabplan-files
-SUPABASE_SERVICE_ROLE_KEY=
-JWT_ACCESS_SECRET=
-JWT_REFRESH_SECRET=
-JWT_UPLOAD_SECRET=
-JWT_RESET_SECRET=
-SESSION_SECRET=
-APP_PUBLIC_URL=
-CORS_ALLOWED_ORIGINS=
-AI_INTEGRATIONS_ANTHROPIC_BASE_URL=https://api.anthropic.com
-AI_INTEGRATIONS_ANTHROPIC_API_KEY=
-AGENT_MODEL=claude-sonnet-4-6
-SENTRY_DSN_API=
-SENTRY_ENVIRONMENT=production
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-STRIPE_CLIENT_REFERENCE_SECRET=
-STRIPE_PAYMENT_LINK_URL=
-STRIPE_CUSTOMER_PORTAL_URL=
-STRIPE_PRICE_PRO=
-```
-
-`AI_INTEGRATIONS_ANTHROPIC_API_KEY` is installed in Railway production and
-staging. The API still boots without it by design, but live AI completion also
-requires Anthropic account credits.
-
-Railway production uses `SENTRY_ENVIRONMENT=production`; Railway staging uses
-`SENTRY_ENVIRONMENT=staging`.
-
-## Vercel Web
-
-Vercel deploys the frontend from the repository root using `vercel.json`.
+Use a Reserved VM because the API maintains Socket.IO connections, in-memory concurrency guards, rate-limit state, and background sweepers. Autoscale is not a safe target until those responsibilities move to shared infrastructure.
 
 Build command:
 
 ```bash
-corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm run build:web
+corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --frozen-lockfile && pnpm run build:web && pnpm run build:api
 ```
 
-Output directory:
-
-```text
-artifacts/cadstone/dist/public
-```
-
-Current Vercel variable split:
-
-| Variable | Scope | Value |
-|---|---|---|
-| `VITE_API_ORIGIN` | Production | `https://slabplan-api-production.up.railway.app` |
-| `VITE_API_ORIGIN` | Preview | `https://slabplan-api-staging.up.railway.app` |
-| `SENTRY_DSN_WEB` | Production + Preview | SlabPlan web project DSN |
-| `SENTRY_ENVIRONMENT` | Production | `production` |
-| `SENTRY_ENVIRONMENT` | Preview | `staging` |
-
-Vercel needs a new deployment after Sentry env changes because the web DSN is
-compiled into the Vite build.
-
-## Monitoring
-
-Sentry is configured in the Tarobuild Sentry organization:
-
-| Project | Runtime | Env var |
-|---|---|---|
-| `slabplan-web` | Vercel React/Vite frontend | `SENTRY_DSN_WEB` |
-| `slabplan-api` | Railway Express API | `SENTRY_DSN_API` |
-
-Default Sentry email issue alerts are enabled through project setup. Source map
-upload is still optional and requires a future `SENTRY_AUTH_TOKEN`,
-`SENTRY_ORG`, and `SENTRY_PROJECT_WEB` build-time setup.
-
-## Stripe Billing
-
-SlabPlan uses one self-serve subscription:
-
-| Plan | Monthly price | Included |
-|---|---:|---|
-| Full Access | `$250/company` | Full platform, up to 25 users, private storage, AI-assisted workflows, and priority onboarding/support |
-
-The server reads the price identifier from:
-
-```text
-STRIPE_PRICE_PRO=
-STRIPE_PAYMENT_LINK_URL=
-STRIPE_CUSTOMER_PORTAL_URL=
-```
-
-Checkout, customer portal, and signed webhook endpoints exist in the API. A
-Stripe Payment Link and no-code customer portal URL can be used when dashboard
-security prevents provisioning a live secret key; authenticated checkout URLs
-carry a signed active-organization reference for webhook reconciliation.
-`STRIPE_CLIENT_REFERENCE_SECRET` is optional when `STRIPE_WEBHOOK_SECRET` is
-configured because the webhook secret is used as the signing fallback.
-New workspaces require an `active` or `trialing` Stripe subscription (or an
-explicit unexpired internal trial) before accessing paid API routes. Billing
-routes remain available so customers can start a subscription or repair a
-failed payment. Existing workspaces were grandfathered when migration `0039`
-was applied.
-
-Test-mode Stripe webhook endpoints:
-
-| Environment | Endpoint ID | URL |
-|---|---|---|
-| Production | `we_1TY8DOGReLNurDCdWveX0DpN` | `https://slabplan-api-production.up.railway.app/api/billing/stripe/webhook` |
-| Staging | `we_1TY8DOGReLNurDCdys8AAMlb` | `https://slabplan-api-staging.up.railway.app/api/billing/stripe/webhook` |
-
-## Email
-
-Use the existing Tarobuild Resend account, but verify a SlabPlan sender domain
-after the domain is purchased. Preferred sender shape:
-
-```text
-SlabPlan <noreply@slabplan.com>
-support@slabplan.com
-billing@slabplan.com
-```
-
-Email can wait until domain setup. Until then, invites, password resets, and
-billing emails are not production-like.
-
-## Supabase
-
-Production project:
-
-```text
-Name: slabplan-production
-Ref: ifwxnudtubuvntsyfvor
-URL: https://ifwxnudtubuvntsyfvor.supabase.co
-Region: us-east-2
-Storage bucket: slabplan-files
-```
-
-Staging project:
-
-```text
-Name: slabplan-staging
-Ref: grpjbugdrnqbtglyujqg
-URL: https://grpjbugdrnqbtglyujqg.supabase.co
-Region: us-west-1
-Storage bucket: slabplan-files
-```
-
-Both projects use hand-written SQL migrations from `lib/db/migrations`.
-
-Apply migrations intentionally:
+Run command:
 
 ```bash
-set -a
-. ./.env.supabase-production
-set +a
-NODE_ENV=production pnpm --filter @workspace/db run migrate
+pnpm run start:api
 ```
 
-Use the matching `.env.supabase` file for staging. Local env files are ignored
-by Git and must not be committed.
+The API listens on `0.0.0.0` and `PORT`, serves `/api/*`, Socket.IO, private file routes, and the compiled React application from the same origin.
 
-## Domain Shape
+## Production Configuration
 
-Current platform domains:
+Required Replit published-app secrets:
 
-```text
-slabplan.com -> redirects to www.slabplan.com
-www.slabplan.com -> Vercel production frontend
-slabplan.vercel.app -> Vercel fallback frontend
-slabplan-api-production.up.railway.app
-slabplan-api-staging.up.railway.app
-```
+- `SUPABASE_DATABASE_URL`
+- `SUPABASE_URL`
+- `SUPABASE_STORAGE_BUCKET`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `JWT_ACCESS_SECRET`
+- `JWT_REFRESH_SECRET`
+- `JWT_UPLOAD_SECRET`
+- `AI_INTEGRATIONS_ANTHROPIC_API_KEY`
+- `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`
+- `RESEND_API_KEY`
+- `EMAIL_FROM`
+- `APP_PUBLIC_URL`
 
-Optional future API aliases:
+Required non-secret production settings:
 
-```text
-api.slabplan.com -> Railway production API
-staging.slabplan.com -> Vercel preview/staging frontend
-staging-api.slabplan.com -> Railway staging API
-```
+- `NODE_ENV=production`
+- `STORAGE_PROVIDER=supabase`
+- `CANONICAL_HOST=<published host>`
+- `CORS_ALLOWED_ORIGINS=https://<published host>`
+- `EMAIL_REPLY_TO=<support inbox>`
 
-When custom domains are added, update:
+Stripe and Sentry variables remain required only when those product integrations are enabled. Store every credential in Replit Secrets; never commit values.
 
-- Railway `APP_PUBLIC_URL`
-- Railway `CORS_ALLOWED_ORIGINS`
-- Vercel `VITE_API_ORIGIN`
-- Email link generation settings
+## Supabase Large Files
+
+The private bucket and project global upload limit must both be set to `500 GB` on a paid Supabase plan. Files above the small multipart threshold use a signed TUS upload directly from the browser to the storage-specific Supabase hostname. The Replit server receives metadata and finalizes the database record, but never proxies the file body.
+
+Every object path is prefixed by `organizations/<organization-id>/`. Signed upload intents, file rows, attachment rows, authorization checks, and activity records all retain the active organization.
+
+## Scheduled Operations
+
+Create Replit Scheduled Deployments for:
+
+- Daily database backup: `pnpm --filter @workspace/api-server run backup:db`
+- Daily backup verification: `pnpm --filter @workspace/api-server run backup:check`
+- Weekly storage drift audit using the existing audit script
+
+Scheduled jobs use the same Supabase production secrets as the Reserved VM. Backup artifacts remain in private Supabase Storage.

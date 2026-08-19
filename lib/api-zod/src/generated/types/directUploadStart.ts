@@ -17,7 +17,7 @@ export interface DirectUploadStart {
   mimeType?: string;
   /**
    * @minimum 1
-   * @maximum 53687091200
+   * @maximum 536870912000
    */
   totalSize: number;
   /** @pattern ^[a-fA-F0-9]{64}$ */

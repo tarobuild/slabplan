@@ -275,7 +275,7 @@ test("invite endpoint prefers the configured public app origin over a Replit dev
   trackInvitedEmail(inviteeEmail);
 
   try {
-    process.env.APP_PUBLIC_URL = "slabplan.vercel.app/";
+    process.env.APP_PUBLIC_URL = "slabplan.replit.app/";
     process.env.REPLIT_DEV_DOMAIN = "broken-dev-link.replit.dev";
 
     const ok = await fetch(`${baseUrl}/api/users`, {
@@ -290,8 +290,8 @@ test("invite endpoint prefers the configured public app origin over a Replit dev
     assert.equal(ok.status, 201);
     const body = (await ok.json()) as { inviteUrl: string };
 
-    assert.match(body.inviteUrl, /^https:\/\/slabplan\.vercel\.app\/accept-invite\?token=/);
-    assert.doesNotMatch(body.inviteUrl, /replit/i);
+    assert.match(body.inviteUrl, /^https:\/\/slabplan\.replit\.app\/accept-invite\?token=/);
+    assert.doesNotMatch(body.inviteUrl, /broken-dev-link\.replit\.dev/i);
   } finally {
     restoreEnv(snapshot);
   }

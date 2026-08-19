@@ -11,7 +11,7 @@ export type LeadAttachmentUploadPolicyResponseDirect = {
   supported: boolean;
   /**
    * @minimum 1
-   * @maximum 53687091200
+   * @maximum 536870912000
    */
   maxTotalBytes: number;
   /** @minimum 1 */

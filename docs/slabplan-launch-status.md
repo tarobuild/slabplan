@@ -1,6 +1,6 @@
 # SlabPlan Launch Status
 
-Last updated: 2026-08-18
+Last updated: 2026-08-19
 
 ## Target Architecture
 
@@ -28,6 +28,8 @@ Last updated: 2026-08-18
   749 API tests pass.
 - Production web/API dependencies have no known high or critical advisories;
   remaining high advisories are isolated to the unused mobile build toolchain.
+- The GitHub Playwright release workflow passes all 73 end-to-end tests for
+  the release commit.
 
 ## Deployment Checklist
 
@@ -48,7 +50,9 @@ Last updated: 2026-08-18
 ## Production Record
 
 - Replit URL: pending publish
-- GitHub commit: `969153f5a7df115add4211a4d62bc2a4d6581698`
+- GitHub commit: `b3668b31043aa510b1793f3072621ec354bc9f52`
+- Replit source verification: clean at the GitHub commit above, 0 commits ahead
+  and 0 behind `origin/main`; configured production build passed.
 - Supabase project: `slabplan-production` (access and settings must be
   re-verified before publish)
 - Storage bucket: `slabplan-files` (private; limit must be re-verified)

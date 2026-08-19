@@ -5,6 +5,7 @@
 - [x] GitHub `tarobuild/slabplan` `main` contains the approved release commit.
 - [x] Replit `@tarobuild/slabplan` is synced to that exact commit.
 - [x] Typecheck, API codegen drift, unused-code, frontend bundle, and targeted upload tests pass.
+- [x] The GitHub Playwright release workflow passes all 73 end-to-end tests.
 - [x] No Railway or Vercel runtime configuration remains.
 
 ## Replit

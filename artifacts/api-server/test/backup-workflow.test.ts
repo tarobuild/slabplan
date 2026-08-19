@@ -23,3 +23,9 @@ test("containerized pg_dump receives the Supabase connection environment", async
   }
   assert.match(wrapper, /postgres:17 pg_dump "\$@"/);
 });
+
+test("production backup verification is limited to explicit tags", async () => {
+  const workflow = await readFile(path.join(repoRoot, ".github/workflows/db-backup.yml"), "utf8");
+
+  assert.match(workflow, /push:\s*\n\s*tags:\s*\n\s*- "backup-verify-\*"/);
+});

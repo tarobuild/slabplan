@@ -22,6 +22,11 @@ on:
     # hours to minimise lock contention against Supabase.
     - cron: "0 9 * * *"
   workflow_dispatch: {}
+  # A release operator can push a one-time backup-verify-* tag to exercise the
+  # production backup path without enabling backups on ordinary code pushes.
+  push:
+    tags:
+      - "backup-verify-*"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"

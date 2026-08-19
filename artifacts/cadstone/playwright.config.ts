@@ -24,8 +24,8 @@ const chromiumExecutable = process.env.CHROMIUM_PATH
  *
  * Seeding the local DB:
  *   pnpm setup-test-db   # recreate schema (drops + recreates the DB)
- *   SEED_ADMIN_CESAR_PASSWORD=... \
- *     SEED_ADMIN_ANWAR_PASSWORD=... \
+ *   SEED_ADMIN_PRIMARY_PASSWORD=... \
+ *     SEED_ADMIN_SECONDARY_PASSWORD=... \
  *     SEED_WORKER_FIXTURE_PASSWORD=... \
  *     node artifacts/api-server/scripts/seed-users.mjs --db=local
  *

@@ -210,8 +210,8 @@ function buildRouter(basename: string | undefined) {
           <Route element={<AppLayout />}>
             {/*
               Home is role-aware (Task #321): crew gets "My Day", PM gets
-              "This Week", admin gets "Business Pulse". Both `/` and
-              `/dashboard` render it.
+              "This Week", and admin gets "Business Pulse" at `/dashboard`.
+              The public `/` route remains the marketing page.
             */}
             <Route path="/dashboard" element={<HomePage />} />
             <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />

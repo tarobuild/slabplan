@@ -8,13 +8,14 @@ import { CESAR_STATE, PM_STATE, WORKER_STATE } from "./helpers/storage"
  * dashboard with three distinct layouts (Crew "My Day", PM "This
  * Week", Admin "Business Pulse"). Unit tests cover the at-risk
  * classifiers, but nothing proves end-to-end that each role actually
- * lands on its correct layout when they navigate to `/` or
- * `/dashboard`. A regression in routing, role detection, or the
- * discriminated-union API response could silently flip a crew user
- * into the admin layout (or vice versa). This spec catches that.
+ * lands on its correct layout when they navigate to `/dashboard`, while `/`
+ * remains the public marketing page. A regression in routing, role detection,
+ * or the discriminated-union API response could silently flip a crew user into
+ * the admin layout (or vice versa). This spec catches that.
  *
  * One test per role. Each test:
- *   - visits `/` and `/dashboard`
+ *   - verifies `/` remains the public marketing page
+ *   - visits `/dashboard`
  *   - asserts the role's top-level testid renders
  *     (`home-my-day` | `home-pm` | `home-admin`)
  *   - asserts at least one role-specific child element is present so
@@ -59,44 +60,57 @@ async function assertAdminHome(page: Page) {
   })
 }
 
-test.describe("home routing — crew sees My Day at / and /dashboard", () => {
+async function assertPublicHome(page: Page) {
+  await expect(
+    page.getByRole("heading", {
+      level: 1,
+      name: /from first measure to final payment/i,
+    }),
+  ).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId("home-my-day")).toHaveCount(0)
+  await expect(page.getByTestId("home-pm")).toHaveCount(0)
+  await expect(page.getByTestId("home-admin")).toHaveCount(0)
+}
+
+test.describe("home routing — crew sees My Day in the app", () => {
   test.use({ storageState: WORKER_STATE })
 
-  test("crew lands on the My Day layout on both entry points", async ({
+  test("crew sees the public homepage and lands on My Day in the app", async ({
     page,
   }) => {
     await page.goto("/")
-    await assertCrewHome(page)
+    await assertPublicHome(page)
 
     await page.goto("/dashboard")
     await assertCrewHome(page)
   })
 })
 
-test.describe("home routing — PM sees This Week at / and /dashboard", () => {
+test.describe("home routing — PM sees This Week in the app", () => {
   test.use({ storageState: PM_STATE })
 
-  test("PM lands on the PM home layout on both entry points", async ({
+  test("PM sees the public homepage and lands on This Week in the app", async ({
     page,
   }) => {
     await page.goto("/")
-    await assertPmHome(page)
+    await assertPublicHome(page)
 
     await page.goto("/dashboard")
     await assertPmHome(page)
   })
 })
 
-test.describe("home routing — admin sees Business Pulse at / and /dashboard", () => {
+test.describe("home routing — admin sees Business Pulse in the app", () => {
   test.use({ storageState: CESAR_STATE })
 
-  test("admin lands on the admin home layout on both entry points", async ({
-    page,
-  }) => {
-    await page.goto("/")
-    await assertAdminHome(page)
+  test(
+    "admin sees the public homepage and lands on Business Pulse in the app",
+    async ({ page }) => {
+      await page.goto("/")
+      await assertPublicHome(page)
 
-    await page.goto("/dashboard")
-    await assertAdminHome(page)
-  })
+      await page.goto("/dashboard")
+      await assertAdminHome(page)
+    },
+  )
 })

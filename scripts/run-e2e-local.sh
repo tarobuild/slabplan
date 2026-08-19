@@ -18,8 +18,8 @@
 #       the ports.
 #
 # Usage:
-#   SEED_ADMIN_CESAR_PASSWORD=...   \
-#   SEED_ADMIN_ANWAR_PASSWORD=...   \
+#   SEED_ADMIN_PRIMARY_PASSWORD=... \
+#   SEED_ADMIN_SECONDARY_PASSWORD=... \
 #   SEED_WORKER_FIXTURE_PASSWORD=...\
 #   SEED_PM_FIXTURE_PASSWORD=...    \
 #   JWT_SECRET=$(openssl rand -hex 32) \
@@ -46,8 +46,8 @@ require_env() {
   fi
 }
 
-require_env SEED_ADMIN_CESAR_PASSWORD
-require_env SEED_ADMIN_ANWAR_PASSWORD
+require_env SEED_ADMIN_PRIMARY_PASSWORD
+require_env SEED_ADMIN_SECONDARY_PASSWORD
 require_env SEED_WORKER_FIXTURE_PASSWORD
 require_env SEED_PM_FIXTURE_PASSWORD
 require_env JWT_SECRET

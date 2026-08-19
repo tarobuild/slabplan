@@ -20,7 +20,8 @@
 
 - [ ] Supabase remains the only production PostgreSQL provider.
 - [ ] Supabase remains the only production private object store.
-- [ ] The organization is on a paid plan.
+- [ ] The organization is on a paid plan with a 500 GB storage limit available
+  (for Pro, the spend cap must be disabled).
 - [ ] The project global file-size limit is 500 GB.
 - [ ] The private SlabPlan bucket file-size limit is 500 GB.
 - [ ] The bucket is private and service-role access is available only to the API.

@@ -38,7 +38,8 @@ Last updated: 2026-08-18
 - [ ] Select Reserved VM deployment and publish.
 - [ ] Verify `/api/livez`, `/api/healthz`, login, Socket.IO, billing, email, AI,
   and organization-isolated file upload/download workflows.
-- [ ] Confirm the Supabase organization is on a paid plan.
+- [ ] Confirm the Supabase organization is on a paid plan with a 500 GB storage
+  limit available (for Pro, the spend cap must be disabled).
 - [ ] Set the project-wide and `slabplan-files` bucket file-size limits to
   500 GB.
 - [ ] Confirm Supabase backups and perform the documented restore drill.

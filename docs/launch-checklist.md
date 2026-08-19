@@ -3,7 +3,7 @@
 ## Source And Build
 
 - [x] GitHub `tarobuild/slabplan` `main` contains the approved release commit.
-- [x] Replit `@tarobuild/slabplan` is synced to that exact release commit.
+- [x] Replit `@tarobuild/slabplan` has a clean worktree synced to GitHub `main`.
 - [x] Typecheck, API codegen drift, unused-code, frontend bundle, and targeted upload tests pass.
 - [x] The local Playwright release gate passes all 73 end-to-end tests.
 - [ ] The GitHub Playwright release workflow passes all 73 end-to-end tests for

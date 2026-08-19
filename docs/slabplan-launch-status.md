@@ -62,8 +62,10 @@ Last updated: 2026-08-19
 - Replit deployment ID: `2571f0d9-776f-489e-94b0-ef838f1e5a0f`
 - Replit build ID: `0f78cd9a-b3b5-4712-b955-81e599ffb96c`
 - GitHub commit: `8d6211bb703dda9ebf968cecbaeebad39439a6be`
-- Replit source verification: clean at the GitHub commit above, 0 commits ahead
-  and 0 behind `origin/main`; configured production build passed.
+- Deployed source verification: the configured production build passed at the
+  GitHub release commit above. The Replit workspace was subsequently synced
+  cleanly to current `origin/main`, 0 commits ahead and 0 behind, without
+  republishing the documentation-only updates.
 - Production smoke date: 2026-08-19.
 - `/api/livez`: HTTP 200, process healthy.
 - `/api/healthz`: HTTP 200 with database and storage healthy and release SHA

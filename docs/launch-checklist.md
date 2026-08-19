@@ -2,8 +2,8 @@
 
 ## Source And Build
 
-- [ ] GitHub `tarobuild/slabplan` `main` contains the approved release commit.
-- [ ] Replit `@tarobuild/slabplan` is synced to that exact commit.
+- [x] GitHub `tarobuild/slabplan` `main` contains the approved release commit.
+- [x] Replit `@tarobuild/slabplan` is synced to that exact release commit.
 - [x] Typecheck, API codegen drift, unused-code, frontend bundle, and targeted upload tests pass.
 - [x] The local Playwright release gate passes all 73 end-to-end tests.
 - [ ] The GitHub Playwright release workflow passes all 73 end-to-end tests for
@@ -14,12 +14,12 @@
 
 - [x] Autoscale is selected at 2 vCPU / 4 GiB with a one-machine launch cap.
 - [x] Build and run commands match `.replit`.
-- [ ] All production secrets are attached to the published app.
-- [ ] The new deployment is live and `/api/livez` and `/api/healthz` return success.
+- [x] All required production secrets are attached to the published app.
+- [x] The new deployment is live and `/api/livez` and `/api/healthz` return success.
 - [ ] WebSocket, login, invite email, AI, and billing smoke tests pass.
 - [ ] Forgot-password email delivery and reset completion pass through the
   production Google Workspace SMTP account.
-- [ ] Public Terms and Privacy pages load, and registration records versioned
+- [x] Public Terms and Privacy pages load, and registration records versioned
   consent.
 - [x] Daily backup and verification remain enabled in GitHub Actions and write
   only to the retained Supabase data plane.

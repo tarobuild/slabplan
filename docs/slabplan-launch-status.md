@@ -38,12 +38,12 @@ Last updated: 2026-08-19
 
 ## Deployment Checklist
 
-- [ ] Merge the validated migration commit into GitHub `main`.
-- [ ] Pull that exact `main` commit into the TaroBuild Replit app and complete
+- [x] Merge the validated migration commit into GitHub `main`.
+- [x] Pull that exact `main` commit into the TaroBuild Replit app and complete
   the configured Replit production build.
-- [ ] Configure production-only Replit secrets from the SlabPlan services.
-- [ ] Select Autoscale deployment and publish.
-- [ ] Verify `/api/livez` and `/api/healthz` against the published app.
+- [x] Configure production-only Replit secrets from the SlabPlan services.
+- [x] Select Autoscale deployment and publish.
+- [x] Verify `/api/livez` and `/api/healthz` against the published app.
 - [ ] Verify login, Socket.IO, billing, email, AI,
   and organization-isolated file upload/download workflows.
 - [x] Confirm the Supabase organization is on a paid plan with a 500 GB storage
@@ -52,20 +52,30 @@ Last updated: 2026-08-19
   `slabplan-files` bucket inherits that limit.
 - [x] Confirm the scheduled Supabase backup and perform the documented restore
   drill.
-- [ ] Record the new Replit deployment ID and deployed GitHub commit below.
+- [x] Record the new Replit deployment ID and deployed GitHub commit below.
 - [x] Connect `slabplan.com` and `www.slabplan.com` to Replit and verify HTTPS.
 
 ## Production Record
 
+- Production URL: `https://slabplan.com`
 - Replit URL: `https://slabplan.replit.app`
 - Replit deployment ID: `2571f0d9-776f-489e-94b0-ef838f1e5a0f`
-- GitHub commit: `9997987bae67bfcde1eaf3f06764b15e3e94c6e2`
+- Replit build ID: `0f78cd9a-b3b5-4712-b955-81e599ffb96c`
+- GitHub commit: `8d6211bb703dda9ebf968cecbaeebad39439a6be`
 - Replit source verification: clean at the GitHub commit above, 0 commits ahead
   and 0 behind `origin/main`; configured production build passed.
 - Production smoke date: 2026-08-19.
 - `/api/livez`: HTTP 200, process healthy.
 - `/api/healthz`: HTTP 200 with database and storage healthy and release SHA
-  `9997987bae67`.
+  `8d6211bb703d`.
+- Startup evidence: the API binds its health listener before optional service
+  initialization; the production bundle returned `/api/healthz` in 1.293
+  seconds locally, and the Replit deployment started without restarts.
+- Database migration `0040_legal_acceptance.sql` applied successfully during
+  production startup.
+- Google Workspace SMTP: the Replit production deployment has all nine SMTP
+  bindings configured with a dedicated `SlabPlan Replit SMTP` app password.
+  End-to-end forgot-password delivery still requires a production account test.
 - Custom domains: `slabplan.com` and `www.slabplan.com` resolve to the Replit
   deployment at `34.111.179.208` with valid HTTPS. The apex redirects to `www`;
   both `/api/livez` endpoints return HTTP 200.
@@ -75,13 +85,15 @@ Last updated: 2026-08-19
   disabled.
 - Storage bucket: `slabplan-files`, private, inheriting the 500 GB global
   object-size limit.
-- Railway: Hobby subscription canceled, service retirement in progress, final
-  amount due $0.00. The canceled term ends 2026-09-16.
-- Vercel: no paid hosting plan and no custom domain remains connected to the
-  Vercel project. Retained only as the `slabplan.com` registrar and
-  authoritative DNS host; its A and verification TXT records route the live
-  application to Replit. Domain auto-renewal remains enabled through
-  2027-08-01.
+- Railway: the `slabplan-api` project was permanently deleted after the Hobby
+  subscription was canceled. Railway is no longer a SlabPlan runtime or deploy
+  target.
+- Vercel: the `slabplan` project, deployments, environment variables, and Git
+  integration were permanently deleted on 2026-08-19. The former
+  `slabplan.vercel.app` hostname returns `404: DEPLOYMENT_NOT_FOUND`. Vercel is
+  retained only as the `slabplan.com` registrar and authoritative DNS host; its
+  DNS records route the live application to Replit. Domain auto-renewal remains
+  enabled through 2027-08-01.
 
 Never place production secrets in this repository or copy credentials from the
 CAD Stone project.

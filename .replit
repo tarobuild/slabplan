@@ -1,3 +1,4 @@
+modules = ["nodejs-24"]
 entrypoint = "artifacts/api-server/src/index.ts"
 run = "corepack pnpm --filter @workspace/api-server run dev"
 

@@ -2674,6 +2674,7 @@ function DailyLogDialog({
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const weatherRequestSeqRef = useRef(0)
   const weatherRequestKeyRef = useRef<string | null>(null)
+  const initializationSessionRef = useRef<string | null>(null)
   const [initialSnapshot, setInitialSnapshot] = useState("")
   const [confirmDeleteLogOpen, setConfirmDeleteLogOpen] = useState(false)
   const [pendingRemoveAttachment, setPendingRemoveAttachment] = useState<
@@ -2715,7 +2716,14 @@ function DailyLogDialog({
   }
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      initializationSessionRef.current = null
+      return
+    }
+
+    const sessionKey = `${logId ?? "new"}:${jobId}`
+    if (initializationSessionRef.current === sessionKey) return
+    initializationSessionRef.current = sessionKey
 
     if (!logId) {
       const nextValues = buildDefaultForm(jobId, settings, users)

@@ -25,4 +25,19 @@ describe("daily log save validation", () => {
       "create mutation must only receive the validated payload",
     )
   })
+
+  test("background settings refreshes cannot reset an open daily log draft", async () => {
+    const source = await fs.readFile(sourcePath, "utf8")
+
+    assert.match(
+      source,
+      /const initializationSessionRef = useRef<string \| null>\(null\)/,
+      "the dialog must track which open session it initialized",
+    )
+    assert.match(
+      source,
+      /if \(!open\) \{\s*initializationSessionRef\.current = null\s*return\s*\}[\s\S]{0,180}const sessionKey = `\$\{logId \?\? "new"\}:\$\{jobId\}`[\s\S]{0,180}if \(initializationSessionRef\.current === sessionKey\) return[\s\S]{0,100}initializationSessionRef\.current = sessionKey/,
+      "the dialog must initialize once per open log/job session",
+    )
+  })
 })

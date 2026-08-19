@@ -22,8 +22,9 @@ on:
     # hours to minimise lock contention against Supabase.
     - cron: "0 9 * * *"
   workflow_dispatch: {}
-  # A release operator can push a one-time backup-verify-* tag to exercise the
-  # production backup path without enabling backups on ordinary code pushes.
+  # Verify the production path when its workflow or scripts change on main.
+  # A release operator can also push a one-time backup-verify-* tag, without
+  # enabling backups on ordinary application pushes.
   push:
     branches:
       - main

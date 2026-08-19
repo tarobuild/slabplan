@@ -5,8 +5,9 @@ Last updated: 2026-08-19
 ## Target Architecture
 
 - Source of truth: `tarobuild/slabplan` on GitHub.
-- Application hosting: one Replit Reserved VM serving the React app, Express
-  API, Socket.IO connections, and background sweepers.
+- Application hosting: one Replit Autoscale deployment serving the React app,
+  Express API, Socket.IO connections, and background sweepers. Launch capacity
+  is 2 vCPU / 4 GiB RAM with a maximum of one machine.
 - PostgreSQL: Supabase.
 - Private object storage: Supabase Storage.
 - Large uploads: browser-to-Supabase signed TUS uploads. File contents do not
@@ -36,26 +37,38 @@ Last updated: 2026-08-19
 - [x] Merge the validated migration commit into GitHub `main`.
 - [x] Pull that exact `main` commit into the TaroBuild Replit app and complete
   the configured Replit production build.
-- [ ] Configure production-only Replit secrets from the SlabPlan services.
-- [ ] Select Reserved VM deployment and publish.
-- [ ] Verify `/api/livez`, `/api/healthz`, login, Socket.IO, billing, email, AI,
+- [x] Configure production-only Replit secrets from the SlabPlan services.
+- [x] Select Autoscale deployment and publish.
+- [x] Verify `/api/livez` and `/api/healthz` against the published app.
+- [ ] Verify login, Socket.IO, billing, email, AI,
   and organization-isolated file upload/download workflows.
-- [ ] Confirm the Supabase organization is on a paid plan with a 500 GB storage
+- [x] Confirm the Supabase organization is on a paid plan with a 500 GB storage
   limit available (for Pro, the spend cap must be disabled).
-- [ ] Set the project-wide and `slabplan-files` bucket file-size limits to
-  500 GB.
+- [x] Set the project-wide file-size limit to 500 GB and confirm the private
+  `slabplan-files` bucket inherits that limit.
 - [ ] Confirm Supabase backups and perform the documented restore drill.
-- [ ] Record the live Replit URL and deployed GitHub commit below.
+- [x] Record the live Replit URL and deployed GitHub commit below.
+- [ ] Connect `slabplan.com` and `www.slabplan.com` to Replit and verify HTTPS.
 
 ## Production Record
 
-- Replit URL: pending publish
-- GitHub commit: `b3668b31043aa510b1793f3072621ec354bc9f52`
+- Replit URL: `https://slabplan.replit.app`
+- Replit deployment ID: `2571f0d9-776f-489e-94b0-ef838f1e5a0f`
+- GitHub commit: `4962e49a52bdc1ca1b85a0a12a52f56944d82227`
 - Replit source verification: clean at the GitHub commit above, 0 commits ahead
   and 0 behind `origin/main`; configured production build passed.
-- Supabase project: `slabplan-production` (access and settings must be
-  re-verified before publish)
-- Storage bucket: `slabplan-files` (private; limit must be re-verified)
+- Production smoke date: 2026-08-19.
+- `/api/livez`: HTTP 200, process healthy.
+- `/api/healthz`: HTTP 200 with database and storage healthy and release SHA
+  `4962e49a52bd`.
+- Supabase project: `slabplan-production`, organization plan Pro, spend cap
+  disabled.
+- Storage bucket: `slabplan-files`, private, inheriting the 500 GB global
+  object-size limit.
+- Railway: Hobby subscription canceled, service retirement in progress, final
+  amount due $0.00. The canceled term ends 2026-09-16.
+- Vercel: no paid hosting plan. Retained only as the `slabplan.com` registrar
+  and DNS host; domain auto-renewal remains enabled through 2027-08-01.
 
 Never place production secrets in this repository or copy credentials from the
 CAD Stone project.

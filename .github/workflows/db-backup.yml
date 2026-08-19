@@ -2,8 +2,9 @@
 #
 # This workflow runs once per day at 09:00 UTC and performs the actual
 # `pg_dump | gzip | upload` work inside GitHub Actions. The backup is not
-# delegated to the Railway api-server because that runtime does not include
-# the Postgres client tooling needed for pg_dump.
+# delegated to the Replit Autoscale web deployment because the backup needs a
+# scheduled worker with PostgreSQL client tooling and must run even when the
+# web deployment has scaled to zero.
 #
 # Required GitHub Action repository secrets:
 #   - SUPABASE_DATABASE_URL

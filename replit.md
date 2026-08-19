@@ -31,7 +31,7 @@ workspace to the original CAD Stone production repo.
 
 ## Production Topology
 
-- **Application hosting:** Replit Reserved VM
+- **Application hosting:** Replit Autoscale (2 vCPU / 4 GiB RAM, maximum 1 machine at launch)
 - **Database:** Supabase PostgreSQL
 - **Private files:** Supabase Storage
 - **Large uploads:** signed browser-to-Supabase TUS uploads
@@ -112,7 +112,9 @@ Detailed phases are documented in `docs/slabplan-saas-migration-plan.md`.
 
 - Use iterative development.
 - Prefer detailed explanations.
-- Ask before irreversible or broad architectural changes.
+- Honor the owner's standing approval for routine migration, deployment,
+  configuration, testing, billing-selection, and release work. Interrupt only
+  when a system or tool enforces a separate action-time confirmation.
 - Do not modify `artifacts/mockup-sandbox`.
 - Do not modify files related to `mcp.test.ts`.
 

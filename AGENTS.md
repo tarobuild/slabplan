@@ -16,6 +16,7 @@ The original production CAD Stone repo lives outside this folder. Do not read fr
 8. **No Resend or new Sentry additions.** Existing plumbing is grandfathered, but do not extend it casually.
 9. **Do not change `artifacts/mockup-sandbox`.**
 10. **Do not change files related to `mcp.test.ts`.**
+11. **Honor the owner's standing approval.** Do not repeatedly ask for approval for routine migration, deployment, configuration, testing, billing-selection, or release work that the owner has already authorized. Interrupt only when a system or tool enforces a separate action-time confirmation that cannot be bypassed.
 
 ## Local Workflow
 

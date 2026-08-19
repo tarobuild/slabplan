@@ -14,19 +14,26 @@ SlabPlan uses Replit for the application runtime and Supabase for persistent dat
 
 | Responsibility | Provider |
 | --- | --- |
-| React web app | Replit Reserved VM |
-| Express API and Socket.IO | Replit Reserved VM |
-| In-process sweepers and realtime fanout | Replit Reserved VM |
-| Scheduled backups and storage audits | Replit Scheduled Deployments |
+| React web app | Replit Autoscale |
+| Express API and Socket.IO | Replit Autoscale |
+| In-process sweepers and realtime fanout | Replit Autoscale, maximum 1 machine at launch |
+| Scheduled database backup and restore checks | GitHub Actions against Supabase |
 | PostgreSQL | Supabase |
 | Private object storage | Supabase Storage |
 | Large resumable uploads | Browser directly to Supabase TUS |
 
-Do not configure Replit Database or Replit App Storage for production SlabPlan data. Do not configure Railway or Vercel deployments.
+Do not configure Replit Database or Replit App Storage for production SlabPlan
+data. Do not configure Railway or Vercel application deployments. Vercel is
+retained only as the `slabplan.com` registrar and DNS host.
 
 ## Replit Deployment
 
-Use a Reserved VM because the API maintains Socket.IO connections, in-memory concurrency guards, rate-limit state, and background sweepers. Autoscale is not a safe target until those responsibilities move to shared infrastructure.
+The launch deployment uses Autoscale at 2 vCPU / 4 GiB RAM with a maximum of
+one machine. This is the cost-appropriate configuration for the initial 1-2
+users while keeping in-memory concurrency guards, rate-limit state, Socket.IO
+connections, and sweepers on one process. Move to a Reserved VM, or externalize
+that state, before enabling multiple Autoscale machines or when production
+usage requires an always-on process.
 
 Build command:
 
@@ -59,9 +66,9 @@ Required non-secret production settings:
 
 - `NODE_ENV=production`
 - `CADSTONE_STORAGE_BACKEND=supabase`
-- `APP_PUBLIC_URL=https://slabplan.replit.app`
-- `CANONICAL_HOST=slabplan.replit.app`
-- `CORS_ALLOWED_ORIGINS=https://slabplan.replit.app`
+- `APP_PUBLIC_URL=https://www.slabplan.com`
+- `CANONICAL_HOST=www.slabplan.com`
+- `CORS_ALLOWED_ORIGINS=https://www.slabplan.com,https://slabplan.com`
 - `AI_INTEGRATIONS_ANTHROPIC_BASE_URL=https://api.anthropic.com`
 - `AGENT_MODEL=claude-sonnet-4-6`
 
@@ -87,13 +94,17 @@ Every object path is prefixed by `organizations/<organization-id>/`. Signed uplo
 
 ## Scheduled Operations
 
-Create Replit Scheduled Deployments for:
+GitHub Actions remains the production scheduler for database operations. This
+keeps the backup independent of an Autoscale web process that may be at zero
+machines and avoids maintaining a second Replit deployment with duplicate
+production credentials.
 
 - Daily database backup at 09:00 UTC:
   `corepack pnpm --filter @workspace/api-server run backup:db`
-- Daily backup verification at 12:00 UTC:
-  `corepack pnpm --filter @workspace/api-server run backup:check`
-- Weekly read-only storage drift audit:
-  `node artifacts/api-server/scripts/audit-storage-drift.mjs --db=production`
+- Backup verification runs immediately after the daily backup in the same
+  `.github/workflows/db-backup.yml` job.
+- The manual restore drill is defined in
+  `.github/workflows/db-restore-drill.yml`.
 
-Scheduled jobs use the same Supabase production secrets as the Reserved VM. Backup artifacts remain in private Supabase Storage.
+These jobs use repository-scoped Supabase secrets. Backup artifacts remain in
+private Supabase Storage. No Railway runtime participates in backups.

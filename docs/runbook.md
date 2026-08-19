@@ -2,7 +2,9 @@
 
 ## Live Service
 
-SlabPlan is a single-origin Replit Reserved VM deployment backed by Supabase PostgreSQL and private Supabase Storage.
+SlabPlan is a single-origin Replit Autoscale deployment backed by Supabase
+PostgreSQL and private Supabase Storage. Launch capacity is 2 vCPU / 4 GiB RAM
+with a maximum of one machine.
 
 Health checks:
 
@@ -18,14 +20,14 @@ curl -i https://slabplan.replit.app/api/healthz
 1. Validate the intended SlabPlan commit locally.
 2. Push the SlabPlan branch and merge it into `tarobuild/slabplan` `main`.
 3. In the `@tarobuild/slabplan` Replit app, pull GitHub `main` and confirm the commit SHA.
-4. Publish the Reserved VM again.
+4. Republish the Autoscale deployment.
 5. Wait for a successful deployment and run the health and authenticated smoke tests.
 
 Never pull from or push to CAD Stone during a SlabPlan release.
 
 ## Required Runtime State
 
-- Replit deployment type is Reserved VM.
+- Replit deployment type is Autoscale, 2 vCPU / 4 GiB, maximum 1 machine.
 - Production secrets are attached to the published app, not only the development workspace.
 - `SUPABASE_DATABASE_URL` points to the production Supabase project.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` point to the same project.
@@ -48,4 +50,7 @@ For database incidents, stop writes if necessary, verify the latest backup, and 
 
 ## Rollback
 
-Revert or restore the last known-good SlabPlan commit on GitHub `main`, pull that exact commit into Replit, and republish the Reserved VM. Database migrations are forward-only; review migration compatibility before rolling application code backward.
+Revert or restore the last known-good SlabPlan commit on GitHub `main`, pull
+that exact commit into Replit, and republish the Autoscale deployment. Database
+migrations are forward-only; review migration compatibility before rolling
+application code backward.

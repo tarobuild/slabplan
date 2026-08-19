@@ -10,22 +10,24 @@
 
 ## Replit
 
-- [ ] Reserved VM is selected and paid.
+- [x] Autoscale is selected at 2 vCPU / 4 GiB with a one-machine launch cap.
 - [x] Build and run commands match `.replit`.
-- [ ] All production secrets are attached to the published app.
-- [ ] The deployment is live and `/api/livez` and `/api/healthz` return success.
+- [x] All production secrets are attached to the published app.
+- [x] The deployment is live and `/api/livez` and `/api/healthz` return success.
 - [ ] WebSocket, login, invite email, AI, and billing smoke tests pass.
-- [ ] Daily backup and backup-check Scheduled Deployments are enabled.
+- [x] Daily backup and verification remain enabled in GitHub Actions and write
+  only to the retained Supabase data plane.
+- [ ] `slabplan.com` and `www.slabplan.com` resolve to Replit with valid HTTPS.
 
 ## Supabase
 
-- [ ] Supabase remains the only production PostgreSQL provider.
-- [ ] Supabase remains the only production private object store.
-- [ ] The organization is on a paid plan with a 500 GB storage limit available
+- [x] Supabase remains the only production PostgreSQL provider.
+- [x] Supabase remains the only production private object store.
+- [x] The organization is on a paid plan with a 500 GB storage limit available
   (for Pro, the spend cap must be disabled).
-- [ ] The project global file-size limit is 500 GB.
-- [ ] The private SlabPlan bucket file-size limit is 500 GB.
-- [ ] The bucket is private and service-role access is available only to the API.
+- [x] The project global file-size limit is 500 GB.
+- [x] The private SlabPlan bucket inherits the 500 GB global limit.
+- [x] The bucket is private and service-role access is available only to the API.
 - [ ] Database backups, PITR policy, and restore drill are verified.
 
 ## Large Uploads
@@ -39,4 +41,4 @@
 
 ## Release Evidence
 
-- [ ] Record the GitHub commit, Replit deployment URL, deployment ID, smoke-test date, and Supabase limit settings in `docs/slabplan-launch-status.md`.
+- [x] Record the GitHub commit, Replit deployment URL, deployment ID, smoke-test date, and Supabase limit settings in `docs/slabplan-launch-status.md`.

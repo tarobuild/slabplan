@@ -10,21 +10,13 @@ initSentry();
 
 const { createServer } = await import("node:http");
 type Server = import("node:http").Server;
-const path = await import("node:path");
-const { fileURLToPath } = await import("node:url");
-const { pool } = await import("@workspace/db");
-const { applyMigrations } = await import("@workspace/db/migrate");
-const { default: app, prepareApp } = await import("./app");
-const { logger } = await import("./lib/logger");
-const { assertProductionEmailConfiguration } = await import("./lib/email");
-const { resolveSupabaseUrl } = await import("./lib/supabase-url");
-const { initRealtime } = await import("./lib/realtime");
-const { startScheduleAutoCompleteSweeper } = await import("./routes/schedule");
+type RequestListener = import("node:http").RequestListener;
 type ScheduleAutoCompleteSweeperHandle = ReturnType<
-  typeof startScheduleAutoCompleteSweeper
+  (typeof import("./routes/schedule"))["startScheduleAutoCompleteSweeper"]
 >;
-const { startTempUploadSweeper } = await import("./lib/uploads");
-type TempUploadSweeperHandle = ReturnType<typeof startTempUploadSweeper>;
+type TempUploadSweeperHandle = ReturnType<
+  (typeof import("./lib/uploads"))["startTempUploadSweeper"]
+>;
 
 const rawPort = process.env["PORT"] ?? "8080";
 
@@ -42,7 +34,55 @@ if (
 
 const SHUTDOWN_DRAIN_MS = 10_000;
 
+// Replit Autoscale requires the declared port to open within its readiness
+// window. The production bundle is intentionally large, so bind a minimal
+// startup listener before loading route modules and applying migrations. The
+// real Express handler replaces it atomically once bootstrap completes.
+let requestHandler: RequestListener = (req, res) => {
+  const pathname = req.url?.split("?", 1)[0] ?? "/";
+  const isStartupProbe = pathname === "/" || pathname === "/api/livez";
+
+  res.statusCode = isStartupProbe ? 200 : 503;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  if (!isStartupProbe) res.setHeader("Retry-After", "5");
+  res.end(JSON.stringify({ status: "starting" }));
+};
+
+const server = createServer((req, res) => requestHandler(req, res));
+
+let logStartupFailure = (error: unknown) => {
+  console.error("Server startup failed", error);
+};
+
+server.on("error", (error) => {
+  logStartupFailure(error);
+  process.exit(1);
+});
+
+await new Promise<void>((resolve) => {
+  server.listen(port, host, resolve);
+});
+console.log(`[boot] Startup listener active on ${host}:${port}`);
+
 async function bootstrap() {
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const { pool } = await import("@workspace/db");
+  const { applyMigrations } = await import("@workspace/db/migrate");
+  const { default: app, prepareApp } = await import("./app");
+  const { logger } = await import("./lib/logger");
+  const { assertProductionEmailConfiguration } = await import("./lib/email");
+  const { resolveSupabaseUrl } = await import("./lib/supabase-url");
+  const { initRealtime } = await import("./lib/realtime");
+  const { startScheduleAutoCompleteSweeper } =
+    await import("./routes/schedule");
+  const { startTempUploadSweeper } = await import("./lib/uploads");
+
+  logStartupFailure = (error) => {
+    logger.error({ err: error }, "Server startup failed");
+  };
+
   assertProductionEmailConfiguration();
   // Boot diagnostic: env presence (no values, just booleans) so a missing
   // secret in production shows up before anything else evaluates. Replaces
@@ -64,7 +104,8 @@ async function bootstrap() {
     "boot",
   );
 
-  // Apply any pending schema migrations BEFORE the HTTP server binds.
+  // Apply pending schema migrations before the full application accepts
+  // traffic. Only the minimal startup probe is available while this runs.
   // This is the only thing that runs migrations against production —
   // Replit's build step does not. The runner is idempotent and uses
   // the same connection pool (same DATABASE_URL / SUPABASE_DATABASE_URL)
@@ -87,8 +128,7 @@ async function bootstrap() {
 
   await prepareApp();
 
-  const server = createServer(app);
-
+  requestHandler = app;
   initRealtime(server);
 
   // Periodically prune orphaned temp upload files left behind by crashed
@@ -99,19 +139,14 @@ async function bootstrap() {
   // the schedule GET endpoint is read-only.
   const scheduleAutoCompleteSweeper = startScheduleAutoCompleteSweeper();
 
-  server.on("error", (err) => {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  });
-
-  server.listen(port, host, () => {
-    logger.info({ host, port }, "Server listening");
-  });
+  logger.info({ host, port }, "Application ready");
 
   registerShutdownHandlers(
     server,
     tempUploadSweeper,
     scheduleAutoCompleteSweeper,
+    logger,
+    pool,
   );
 }
 
@@ -119,6 +154,8 @@ function registerShutdownHandlers(
   server: Server,
   tempUploadSweeper: TempUploadSweeperHandle,
   scheduleAutoCompleteSweeper: ScheduleAutoCompleteSweeperHandle,
+  logger: (typeof import("./lib/logger"))["logger"],
+  pool: import("pg").Pool,
 ) {
   let shuttingDown = false;
 
@@ -170,6 +207,7 @@ function registerShutdownHandlers(
 }
 
 void bootstrap().catch((err) => {
-  logger.error({ err }, "Server startup failed");
+  logStartupFailure(err);
+  server.close();
   process.exit(1);
 });

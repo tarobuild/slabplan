@@ -32,7 +32,14 @@ type SupabaseAdminUserResponse = {
 
 type LocalUser = Pick<
   User,
-  "id" | "email" | "fullName" | "role" | "avatarUrl" | "phone" | "createdAt" | "updatedAt"
+  | "id"
+  | "email"
+  | "fullName"
+  | "role"
+  | "avatarUrl"
+  | "phone"
+  | "createdAt"
+  | "updatedAt"
 >;
 
 export function isSupabasePasswordLoginEnabled(
@@ -100,7 +107,10 @@ function serviceRoleHeaders(env: NodeJS.ProcessEnv) {
   };
 }
 
-function tokenEndpoint(env: NodeJS.ProcessEnv, grantType: "password" | "refresh_token") {
+function tokenEndpoint(
+  env: NodeJS.ProcessEnv,
+  grantType: "password" | "refresh_token",
+) {
   return `${readSupabaseUrl(env)}/auth/v1/token?grant_type=${grantType}`;
 }
 
@@ -132,9 +142,15 @@ function assertSupabaseSession(body: SupabaseSessionResponse): {
   };
 }
 
-async function readSupabaseError(response: globalThis.Response): Promise<string> {
+async function readSupabaseError(
+  response: globalThis.Response,
+): Promise<string> {
   try {
-    const body = (await response.json()) as { msg?: unknown; message?: unknown; error_description?: unknown };
+    const body = (await response.json()) as {
+      msg?: unknown;
+      message?: unknown;
+      error_description?: unknown;
+    };
     const message = body.msg || body.message || body.error_description;
     return typeof message === "string" && message.trim()
       ? message
@@ -162,7 +178,9 @@ async function requestSupabaseSession(
     throw new Error(await readSupabaseError(response));
   }
 
-  return assertSupabaseSession((await response.json()) as SupabaseSessionResponse);
+  return assertSupabaseSession(
+    (await response.json()) as SupabaseSessionResponse,
+  );
 }
 
 async function findLinkedUser(supabaseUserId: string) {
@@ -207,19 +225,30 @@ async function resolveLocalUserForSupabaseSession(session: {
     return linked;
   }
 
-  const linkedByEmail = await linkLocalUserByEmail(session.email, session.supabaseUserId);
+  const linkedByEmail = await linkLocalUserByEmail(
+    session.email,
+    session.supabaseUserId,
+  );
   if (linkedByEmail) {
     return linkedByEmail;
   }
 
-  throw new HttpError(401, "Supabase Auth user is not linked to an active SlabPlan user.");
+  throw new HttpError(
+    401,
+    "Supabase Auth user is not linked to an active SlabPlan user.",
+  );
 }
 
 export async function signInWithSupabasePassword(
   email: string,
   password: string,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<{ accessToken: string; expiresIn: number; refreshToken: string; user: LocalUser }> {
+): Promise<{
+  accessToken: string;
+  expiresIn: number;
+  refreshToken: string;
+  user: LocalUser;
+}> {
   const session = await requestSupabaseSession(
     tokenEndpoint(env, "password"),
     { email, password },
@@ -232,7 +261,12 @@ export async function signInWithSupabasePassword(
 export async function refreshSupabaseSession(
   refreshToken: string,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<{ accessToken: string; expiresIn: number; refreshToken: string; user: LocalUser }> {
+): Promise<{
+  accessToken: string;
+  expiresIn: number;
+  refreshToken: string;
+  user: LocalUser;
+}> {
   const session = await requestSupabaseSession(
     tokenEndpoint(env, "refresh_token"),
     { refresh_token: refreshToken },
@@ -316,9 +350,31 @@ export async function createSupabaseAuthUser(
   };
 }
 
+export async function deleteSupabaseAuthUser(
+  supabaseAuthUserId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  const response = await fetch(
+    `${readSupabaseUrl(env)}/auth/v1/admin/users/${encodeURIComponent(supabaseAuthUserId)}`,
+    {
+      method: "DELETE",
+      headers: serviceRoleHeaders(env),
+    },
+  );
+
+  if (!response.ok && response.status !== 404) {
+    throw new Error(await readSupabaseError(response));
+  }
+}
+
 export function sendSupabaseAuthResponse(
   res: ExpressResponse,
-  session: { accessToken: string; expiresIn: number; refreshToken: string; user: LocalUser },
+  session: {
+    accessToken: string;
+    expiresIn: number;
+    refreshToken: string;
+    user: LocalUser;
+  },
   options: { includeRefreshToken?: boolean } = {},
 ): void {
   const publicUser = toPublicUser(session.user);
@@ -328,7 +384,9 @@ export function sendSupabaseAuthResponse(
   res.json({
     accessToken: session.accessToken,
     expiresIn: session.expiresIn,
-    ...(options.includeRefreshToken ? { refreshToken: session.refreshToken } : {}),
+    ...(options.includeRefreshToken
+      ? { refreshToken: session.refreshToken }
+      : {}),
     user: publicUser,
   });
 }

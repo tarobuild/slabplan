@@ -40,8 +40,12 @@ after(async () => {
   }
 
   const { db, pool } = await import("@workspace/db");
-  const { organizationMemberships, organizations, personalAccessTokens, users } =
-    await import("@workspace/db/schema");
+  const {
+    organizationMemberships,
+    organizations,
+    personalAccessTokens,
+    users,
+  } = await import("@workspace/db/schema");
   const { eq, inArray } = await import("drizzle-orm");
 
   try {
@@ -51,15 +55,24 @@ after(async () => {
       .where(eq(users.email, email));
     const userIds = userRows.map((row) => row.id);
     if (userIds.length > 0) {
-      await db.delete(personalAccessTokens).where(inArray(personalAccessTokens.userId, userIds));
-      await db.delete(organizationMemberships).where(inArray(organizationMemberships.userId, userIds));
+      await db
+        .delete(personalAccessTokens)
+        .where(inArray(personalAccessTokens.userId, userIds));
+      await db
+        .delete(organizationMemberships)
+        .where(inArray(organizationMemberships.userId, userIds));
       await db.delete(users).where(inArray(users.id, userIds));
     }
 
     const orgRows = await db
       .select({ id: organizations.id })
       .from(organizations)
-      .where(inArray(organizations.name, [organizationName, duplicateOrganizationName]));
+      .where(
+        inArray(organizations.name, [
+          organizationName,
+          duplicateOrganizationName,
+        ]),
+      );
     const orgIds = orgRows.map((row) => row.id);
     if (orgIds.length > 0) {
       await db.delete(organizations).where(inArray(organizations.id, orgIds));
@@ -75,6 +88,8 @@ function signupPayload(name = organizationName) {
     full_name: "Onboarding Owner",
     email,
     password: "OnboardingPass#123",
+    accepted_terms_version: "2026-08-19",
+    accepted_privacy_version: "2026-08-19",
   };
 }
 
@@ -104,11 +119,17 @@ test("public signup creates an organization, owner membership, and signed-in adm
   assert.ok(body.user.defaultOrganizationId);
 
   const { db } = await import("@workspace/db");
-  const { organizationMemberships, organizations, users } = await import("@workspace/db/schema");
+  const { organizationMemberships, organizations, users } =
+    await import("@workspace/db/schema");
   const { and, eq, isNull } = await import("drizzle-orm");
 
   const [organization] = await db
-    .select({ id: organizations.id, name: organizations.name, slug: organizations.slug, status: organizations.status })
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      slug: organizations.slug,
+      status: organizations.status,
+    })
     .from(organizations)
     .where(eq(organizations.id, body.user.defaultOrganizationId!))
     .limit(1);
@@ -117,11 +138,21 @@ test("public signup creates an organization, owner membership, and signed-in adm
   assert.equal(organization?.status, "trialing");
 
   const [user] = await db
-    .select({ defaultOrganizationId: users.defaultOrganizationId })
+    .select({
+      defaultOrganizationId: users.defaultOrganizationId,
+      termsAcceptedAt: users.termsAcceptedAt,
+      termsVersion: users.termsVersion,
+      privacyAcceptedAt: users.privacyAcceptedAt,
+      privacyVersion: users.privacyVersion,
+    })
     .from(users)
     .where(eq(users.id, body.user.id))
     .limit(1);
   assert.equal(user?.defaultOrganizationId, organization?.id);
+  assert.ok(user?.termsAcceptedAt);
+  assert.equal(user?.termsVersion, "2026-08-19");
+  assert.ok(user?.privacyAcceptedAt);
+  assert.equal(user?.privacyVersion, "2026-08-19");
 
   const [membership] = await db
     .select({
@@ -168,6 +199,22 @@ test("public signup creates an organization, owner membership, and signed-in adm
   };
   assert.equal(dashboardProblem.status, 402);
   assert.match(dashboardProblem.type ?? "", /subscription-required/);
+});
+
+test("public signup rejects stale or missing legal acceptance", async () => {
+  const payload = signupPayload(`Missing Legal ${runId}`);
+  delete (payload as Partial<typeof payload>).accepted_terms_version;
+
+  const response = await fetch(`${baseUrl}/auth/register`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  assert.equal(response.status, 400);
 });
 
 test("duplicate signup email does not leave an orphan organization", async () => {

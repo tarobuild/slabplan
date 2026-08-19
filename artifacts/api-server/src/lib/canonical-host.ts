@@ -36,10 +36,12 @@ export function isCanonicalHostBypassPath(pathname: string): boolean {
 }
 
 function splitCandidates(value: string | undefined) {
-  return value
-    ?.split(",")
-    .map((item) => item.trim())
-    .filter(Boolean) ?? [];
+  return (
+    value
+      ?.split(",")
+      .map((item) => item.trim())
+      .filter(Boolean) ?? []
+  );
 }
 
 function normalizeOriginHost(value: string): string | null {
@@ -76,14 +78,7 @@ export function isAllowedProductionHost(
   const canonicalHost =
     env.CANONICAL_HOST?.trim().toLowerCase() || DEFAULT_CANONICAL_HOST;
 
-  if (
-    host === canonicalHost ||
-    host === `www.${canonicalHost}`
-  ) {
-    return true;
-  }
-
-  if (collectConfiguredProductionHosts(env).includes(host) && !LOOPBACK_HOSTS.has(host)) {
+  if (host === canonicalHost || host === `www.${canonicalHost}`) {
     return true;
   }
 

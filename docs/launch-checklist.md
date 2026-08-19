@@ -2,22 +2,28 @@
 
 ## Source And Build
 
-- [x] GitHub `tarobuild/slabplan` `main` contains the approved release commit.
-- [x] Replit `@tarobuild/slabplan` is synced to that exact commit.
+- [ ] GitHub `tarobuild/slabplan` `main` contains the approved release commit.
+- [ ] Replit `@tarobuild/slabplan` is synced to that exact commit.
 - [x] Typecheck, API codegen drift, unused-code, frontend bundle, and targeted upload tests pass.
-- [x] The GitHub Playwright release workflow passes all 73 end-to-end tests.
+- [x] The local Playwright release gate passes all 73 end-to-end tests.
+- [ ] The GitHub Playwright release workflow passes all 73 end-to-end tests for
+  the new release commit.
 - [x] No Railway or Vercel runtime configuration remains.
 
 ## Replit
 
 - [x] Autoscale is selected at 2 vCPU / 4 GiB with a one-machine launch cap.
 - [x] Build and run commands match `.replit`.
-- [x] All production secrets are attached to the published app.
-- [x] The deployment is live and `/api/livez` and `/api/healthz` return success.
+- [ ] All production secrets are attached to the published app.
+- [ ] The new deployment is live and `/api/livez` and `/api/healthz` return success.
 - [ ] WebSocket, login, invite email, AI, and billing smoke tests pass.
+- [ ] Forgot-password email delivery and reset completion pass through the
+  production Google Workspace SMTP account.
+- [ ] Public Terms and Privacy pages load, and registration records versioned
+  consent.
 - [x] Daily backup and verification remain enabled in GitHub Actions and write
   only to the retained Supabase data plane.
-- [ ] `slabplan.com` and `www.slabplan.com` resolve to Replit with valid HTTPS.
+- [x] `slabplan.com` and `www.slabplan.com` resolve to Replit with valid HTTPS.
 
 ## Supabase
 
@@ -28,7 +34,9 @@
 - [x] The project global file-size limit is 500 GB.
 - [x] The private SlabPlan bucket inherits the 500 GB global limit.
 - [x] The bucket is private and service-role access is available only to the API.
-- [ ] Database backups, PITR policy, and restore drill are verified.
+- [x] The scheduled database backup and its verification job pass.
+- [x] The manual database restore drill passes.
+- [ ] Confirm the Supabase PITR retention policy before broad production use.
 
 ## Large Uploads
 

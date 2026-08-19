@@ -5,6 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AuthAcceptInviteSchemaAcceptedPrivacyVersion } from "./authAcceptInviteSchemaAcceptedPrivacyVersion";
+import type { AuthAcceptInviteSchemaAcceptedTermsVersion } from "./authAcceptInviteSchemaAcceptedTermsVersion";
 
 /**
  * Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link, confirms the invited email address, and sends the password they want to use. On success the user is logged in (refresh cookie + access token in response).
@@ -19,4 +21,6 @@ export interface AuthAcceptInviteSchema {
   email: string;
   /** @minLength 8 */
   password: string;
+  accepted_terms_version: AuthAcceptInviteSchemaAcceptedTermsVersion;
+  accepted_privacy_version: AuthAcceptInviteSchemaAcceptedPrivacyVersion;
 }

@@ -13,9 +13,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { apiErrorMessage, toastApiError } from "@/lib/api-errors"
 import { APP_NAME } from "@/lib/brand"
+import { PRIVACY_VERSION, TERMS_VERSION } from "@/lib/legal"
 import { validatePayload } from "@/lib/validate-payload"
 import { useAuthStore } from "@/store/auth"
 import type { AuthUser } from "@/store/auth"
@@ -25,13 +27,10 @@ type AcceptInviteResponse = {
   user: AuthUser
 }
 
-export default function AcceptInvitePage() {
-  useDocumentTitle("Set your password")
+export default function AcceptInvitePage({ mode = "invite" }: { mode?: "invite" | "reset" }) {
+  useDocumentTitle(mode === "reset" ? "Reset your password" : "Set your password")
   const [searchParams] = useSearchParams()
-  const token = useMemo(
-    () => searchParams.get("token")?.trim() ?? "",
-    [searchParams],
-  )
+  const token = useMemo(() => searchParams.get("token")?.trim() ?? "", [searchParams])
   const navigate = useNavigate()
   const setAuth = useAuthStore((state) => state.setAuth)
   const currentUser = useAuthStore((state) => state.user)
@@ -43,6 +42,7 @@ export default function AcceptInvitePage() {
   const [inviteLoading, setInviteLoading] = useState(() => Boolean(token))
   const [inviteError, setInviteError] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [acceptedLegal, setAcceptedLegal] = useState(false)
   const submittingRef = useRef(false)
 
   // If somebody is already logged in and follows an invite link in the same
@@ -51,9 +51,7 @@ export default function AcceptInvitePage() {
   // first if they really meant to accept the invite as someone else.
   useEffect(() => {
     if (currentUser && token) {
-      toast.info(
-        "You're already signed in. Sign out first if you want to accept this invite.",
-      )
+      toast.info("You're already signed in. Sign out first if you want to accept this invite.")
     }
   }, [currentUser, token])
 
@@ -72,9 +70,7 @@ export default function AcceptInvitePage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        setInviteError(
-          apiErrorMessage(err, "This setup link is invalid or has expired."),
-        )
+        setInviteError(apiErrorMessage(err, "This setup link is invalid or has expired."))
       })
       .finally(() => {
         if (!cancelled) setInviteLoading(false)
@@ -92,9 +88,7 @@ export default function AcceptInvitePage() {
   if (!token) {
     return (
       <CenteredCard>
-        <h1 className="text-lg font-semibold text-slate-900">
-          This setup link is incomplete
-        </h1>
+        <h1 className="text-lg font-semibold text-slate-900">This setup link is incomplete</h1>
         <p className="text-sm text-slate-600">
           Ask your administrator for a fresh invite link, then open it again.
         </p>
@@ -116,9 +110,7 @@ export default function AcceptInvitePage() {
           <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Loader2 className="size-5 animate-spin" />
           </div>
-          <h1 className="text-lg font-semibold text-slate-900">
-            Checking setup link
-          </h1>
+          <h1 className="text-lg font-semibold text-slate-900">Checking setup link</h1>
           <p className="text-sm text-slate-600">
             We are confirming this invite before you create a password.
           </p>
@@ -134,12 +126,9 @@ export default function AcceptInvitePage() {
           <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-red-100 text-red-600">
             <AlertCircle className="size-5" />
           </div>
-          <h1 className="text-lg font-semibold text-slate-900">
-            This setup link cannot be used
-          </h1>
+          <h1 className="text-lg font-semibold text-slate-900">This setup link cannot be used</h1>
           <p className="text-sm text-slate-600">
-            {inviteError ||
-              "Ask your administrator for a fresh invite link, then open it again."}
+            {inviteError || "Ask your administrator for a fresh invite link, then open it again."}
           </p>
           <Button
             type="button"
@@ -180,6 +169,8 @@ export default function AcceptInvitePage() {
       token,
       email: normalizedEmail,
       password,
+      accepted_terms_version: TERMS_VERSION,
+      accepted_privacy_version: PRIVACY_VERSION,
     }
     const validated = validatePayload(AuthPostAuthAcceptInviteBody, payload)
     if (!validated) return
@@ -187,11 +178,13 @@ export default function AcceptInvitePage() {
     submittingRef.current = true
     setSubmitting(true)
     try {
-      const response = (await authPostAuthAcceptInvite(
-        validated,
-      )) as AcceptInviteResponse
+      const response = (await authPostAuthAcceptInvite(validated)) as AcceptInviteResponse
       setAuth(response.user, response.accessToken)
-      toast.success(`Welcome to ${APP_NAME}, ${response.user.fullName}.`)
+      if (mode === "reset") {
+        toast.success("Password updated.")
+      } else {
+        toast.success(`Welcome to ${APP_NAME}, ${response.user.fullName}.`)
+      }
       navigate("/dashboard", { replace: true })
     } catch (err: unknown) {
       toastApiError(err, "Could not accept invite")
@@ -208,11 +201,10 @@ export default function AcceptInvitePage() {
           <Lock className="size-5" />
         </div>
         <h1 className="text-lg font-semibold text-slate-900">
-          Set your password
+          {mode === "reset" ? "Reset your password" : "Set your password"}
         </h1>
         <p className="text-sm text-slate-600">
-          Confirm your work email, then choose a password to activate your{" "}
-          {APP_NAME} account.
+          Confirm your work email, then choose a new password for your {APP_NAME} account.
         </p>
       </div>
       <div className="space-y-2 border-y border-slate-200 py-3 text-sm">
@@ -226,15 +218,11 @@ export default function AcceptInvitePage() {
         <div className="grid grid-cols-2 gap-3 text-xs text-slate-500">
           <div>
             <span className="block uppercase">Role</span>
-            <span className="text-sm font-medium text-slate-800">
-              {roleLabel(invite.role)}
-            </span>
+            <span className="text-sm font-medium text-slate-800">{roleLabel(invite.role)}</span>
           </div>
           <div>
             <span className="block uppercase">Link Expires</span>
-            <span className="text-sm font-medium text-slate-800">
-              {expiryLabel}
-            </span>
+            <span className="text-sm font-medium text-slate-800">{expiryLabel}</span>
           </div>
         </div>
       </div>
@@ -255,9 +243,7 @@ export default function AcceptInvitePage() {
             />
           </div>
           {showEmailMismatch ? (
-            <p className="text-xs text-red-600">
-              Email must match the invited account.
-            </p>
+            <p className="text-xs text-red-600">Email must match the invited account.</p>
           ) : null}
         </div>
         <div className="space-y-1.5">
@@ -289,13 +275,45 @@ export default function AcceptInvitePage() {
         {confirm && password !== confirm ? (
           <p className="text-xs text-red-600">Passwords do not match.</p>
         ) : null}
-        <Button type="submit" className="w-full" disabled={submitting}>
+        <div className="flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-3">
+          <Checkbox
+            id="invite-legal-acceptance"
+            checked={acceptedLegal}
+            onCheckedChange={(value) => setAcceptedLegal(value === true)}
+            className="mt-0.5"
+          />
+          <Label
+            htmlFor="invite-legal-acceptance"
+            className="text-xs font-normal leading-5 text-slate-600"
+          >
+            I agree to the{" "}
+            <a
+              href="/terms"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-primary hover:underline"
+            >
+              Terms of Service
+            </a>{" "}
+            and acknowledge the{" "}
+            <a
+              href="/privacy"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-primary hover:underline"
+            >
+              Privacy Policy
+            </a>
+            .
+          </Label>
+        </div>
+        <Button type="submit" className="w-full" disabled={submitting || !acceptedLegal}>
           {submitting ? (
             <Loader2 className="mr-2 size-3.5 animate-spin" />
           ) : (
             <Lock className="mr-2 size-3.5" />
           )}
-          Activate account
+          {mode === "reset" ? "Update password" : "Activate account"}
         </Button>
       </form>
     </CenteredCard>

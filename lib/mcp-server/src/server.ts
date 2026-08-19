@@ -74,7 +74,7 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
         try {
           const data = await def.handler(client, args ?? {});
           const result = toToolResult(data);
-          void runAuditHook(auditHook, {
+          await runAuditHook(auditHook, {
             toolName: def.name,
             startedAt,
             durationMs: Date.now() - startedAt.getTime(),
@@ -84,7 +84,7 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
         } catch (err) {
           const status = err instanceof ApiError ? err.status : 500;
           const message = err instanceof Error ? err.message : String(err);
-          void runAuditHook(auditHook, {
+          await runAuditHook(auditHook, {
             toolName: def.name,
             startedAt,
             durationMs: Date.now() - startedAt.getTime(),
@@ -123,7 +123,7 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
           throw new Error(`Unsupported SlabPlan URI: ${uri.href}`);
         }
         const content = await readResource(client, uri.href);
-        void runAuditHook(auditHook, {
+        await runAuditHook(auditHook, {
           toolName: auditName,
           startedAt,
           durationMs: Date.now() - startedAt.getTime(),
@@ -141,7 +141,7 @@ export function createCadstoneMcpServer(opts: CreateCadstoneMcpServerOptions): M
       } catch (err) {
         const status = err instanceof ApiError ? err.status : 500;
         const message = err instanceof Error ? err.message : String(err);
-        void runAuditHook(auditHook, {
+        await runAuditHook(auditHook, {
           toolName: auditName,
           startedAt,
           durationMs: Date.now() - startedAt.getTime(),

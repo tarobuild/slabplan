@@ -74,7 +74,8 @@ paths:
                       billingEmail: { type: string, nullable: true }
                       hasStripeCustomer: { type: boolean }
                       hasStripeSubscription: { type: boolean }
-                      trialEndsAt: { type: string, format: date-time, nullable: true }
+                      trialEndsAt:
+                        { type: string, format: date-time, nullable: true }
                       requiresSubscription: { type: boolean }
                       accessGranted: { type: boolean }
                     required:
@@ -103,7 +104,8 @@ paths:
                           type: array
                           items: { type: string }
                         configured: { type: boolean }
-                      required: [key, name, monthlyUsd, maxUsers, features, configured]
+                      required:
+                        [key, name, monthlyUsd, maxUsers, features, configured]
                   billingConfigured: { type: boolean }
                 required: [organization, plans, billingConfigured]
         "401":
@@ -432,7 +434,49 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/GenericObject"
+              $ref: "#/components/schemas/auth_registerSchema"
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+  /auth/forgot-password:
+    post:
+      operationId: auth_post_auth_forgot_password
+      tags:
+        - auth
+      summary: Request a password reset email
+      description: Public, rate-limited endpoint. Always returns the same accepted response for a syntactically valid email so callers cannot enumerate active accounts.
+      responses:
+        "202":
+          description: The request was accepted whether or not an active account exists.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+        "400":
+          description: Bad request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: Too many requests
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      x-source-file: artifacts/api-server/src/routes/auth.ts
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/auth_forgotPasswordSchema"
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
   /auth/login:
@@ -9219,11 +9263,13 @@ paths:
         - in: query
           name: from
           required: false
-          schema: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$", nullable: true }
+          schema:
+            { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$", nullable: true }
         - in: query
           name: to
           required: false
-          schema: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$", nullable: true }
+          schema:
+            { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$", nullable: true }
         - in: query
           name: hasAttachments
           required: false
@@ -13365,9 +13411,33 @@ paths:
             text/csv:
               schema:
                 type: string
-        "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "400":
+          {
+            description: Bad request,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "403":
+          {
+            description: Forbidden,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/reports.ts
       security:
         - bearerAuth: []
@@ -13393,9 +13463,33 @@ paths:
             text/csv:
               schema:
                 type: string
-        "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "400":
+          {
+            description: Bad request,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "403":
+          {
+            description: Forbidden,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/reports.ts
       security:
         - bearerAuth: []
@@ -13421,9 +13515,33 @@ paths:
             text/csv:
               schema:
                 type: string
-        "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "400":
+          {
+            description: Bad request,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "403":
+          {
+            description: Forbidden,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/reports.ts
       security:
         - bearerAuth: []
@@ -13449,9 +13567,33 @@ paths:
             text/csv:
               schema:
                 type: string
-        "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "400":
+          {
+            description: Bad request,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "403":
+          {
+            description: Forbidden,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/reports.ts
       security:
         - bearerAuth: []
@@ -13477,9 +13619,33 @@ paths:
             text/csv:
               schema:
                 type: string
-        "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "403": { description: Forbidden, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "400":
+          {
+            description: Bad request,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "403":
+          {
+            description: Forbidden,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/reports.ts
       security:
         - bearerAuth: []
@@ -13497,7 +13663,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationPrefsResponse"
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/users.ts
       security:
         - bearerAuth: []
@@ -13520,8 +13694,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationPrefsResponse"
-        "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "400":
+          {
+            description: Bad request,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/users.ts
       security:
         - bearerAuth: []
@@ -13554,8 +13744,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationsListResponse"
-        "400": { description: Bad request, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "400":
+          {
+            description: Bad request,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/notifications.ts
       security:
         - bearerAuth: []
@@ -13580,8 +13786,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationReadResponse"
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
-        "404": { description: Not found, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
+        "404":
+          {
+            description: Not found,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/notifications.ts
       security:
         - bearerAuth: []
@@ -13599,7 +13821,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationsReadAllResponse"
-        "401": { description: Unauthorized, content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } } }
+        "401":
+          {
+            description: Unauthorized,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/Problem" } },
+              },
+          }
       x-source-file: artifacts/api-server/src/routes/notifications.ts
       security:
         - bearerAuth: []
@@ -13833,10 +14063,65 @@ components:
         password:
           type: string
           minLength: 8
+        accepted_terms_version:
+          type: string
+          enum:
+            - "2026-08-19"
+        accepted_privacy_version:
+          type: string
+          enum:
+            - "2026-08-19"
       required:
         - token
         - email
         - password
+        - accepted_terms_version
+        - accepted_privacy_version
+    auth_registerSchema:
+      type: object
+      additionalProperties: false
+      description: Creates a company workspace and its owner account after accepting the current legal documents.
+      properties:
+        organization_name:
+          type: string
+          minLength: 2
+          maxLength: 255
+        full_name:
+          type: string
+          minLength: 2
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          minLength: 8
+        accepted_terms_version:
+          type: string
+          enum:
+            - "2026-08-19"
+        accepted_privacy_version:
+          type: string
+          enum:
+            - "2026-08-19"
+      required:
+        - organization_name
+        - full_name
+        - email
+        - password
+        - accepted_terms_version
+        - accepted_privacy_version
+    auth_forgotPasswordSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+      required:
+        - email
     auth_invitePreview:
       type: object
       description: Response body for `GET /auth/invite`. Shows the invited account details tied to a valid setup token without consuming it.
@@ -18727,7 +19012,20 @@ components:
           format: date-time
         actor:
           $ref: "#/components/schemas/NotificationActor"
-      required: [id, entityType, entityId, action, title, body, url, metadata, readAt, createdAt, actor]
+      required:
+        [
+          id,
+          entityType,
+          entityId,
+          action,
+          title,
+          body,
+          url,
+          metadata,
+          readAt,
+          createdAt,
+          actor,
+        ]
     NotificationsListResponse:
       type: object
       properties:

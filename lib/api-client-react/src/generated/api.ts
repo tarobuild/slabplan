@@ -21,8 +21,11 @@ import type {
   AnyValue,
   ArAgingResponse,
   AuthAcceptInviteSchema,
+  AuthForgotPasswordSchema,
   AuthGetAuthInviteParams,
   AuthInvitePreview,
+  AuthPostAuthForgotPassword202,
+  AuthRegisterSchema,
   AuthResponse,
   BillingGetStatus200,
   BillingPostCheckoutSessions201,
@@ -654,14 +657,14 @@ export const getAuthPostAuthRegisterUrl = () => {
 };
 
 export const authPostAuthRegister = async (
-  genericObject: GenericObject,
+  authRegisterSchema: AuthRegisterSchema,
   options?: RequestInit,
 ): Promise<AnyValue> => {
   return customFetch<AnyValue>(getAuthPostAuthRegisterUrl(), {
     ...options,
     method: "POST",
     headers: jsonContentTypeHeaders(options?.headers),
-    body: JSON.stringify(genericObject),
+    body: JSON.stringify(authRegisterSchema),
   });
 };
 
@@ -672,14 +675,14 @@ export const getAuthPostAuthRegisterMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof authPostAuthRegister>>,
     TError,
-    { data: BodyType<GenericObject> },
+    { data: BodyType<AuthRegisterSchema> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof authPostAuthRegister>>,
   TError,
-  { data: BodyType<GenericObject> },
+  { data: BodyType<AuthRegisterSchema> },
   TContext
 > => {
   const mutationKey = ["authPostAuthRegister"];
@@ -693,7 +696,7 @@ export const getAuthPostAuthRegisterMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof authPostAuthRegister>>,
-    { data: BodyType<GenericObject> }
+    { data: BodyType<AuthRegisterSchema> }
   > = (props) => {
     const { data } = props ?? {};
 
@@ -706,7 +709,7 @@ export const getAuthPostAuthRegisterMutationOptions = <
 export type AuthPostAuthRegisterMutationResult = NonNullable<
   Awaited<ReturnType<typeof authPostAuthRegister>>
 >;
-export type AuthPostAuthRegisterMutationBody = BodyType<GenericObject>;
+export type AuthPostAuthRegisterMutationBody = BodyType<AuthRegisterSchema>;
 export type AuthPostAuthRegisterMutationError = ErrorType<Problem>;
 
 /**
@@ -719,17 +722,108 @@ export const useAuthPostAuthRegister = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof authPostAuthRegister>>,
     TError,
-    { data: BodyType<GenericObject> },
+    { data: BodyType<AuthRegisterSchema> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof authPostAuthRegister>>,
   TError,
-  { data: BodyType<GenericObject> },
+  { data: BodyType<AuthRegisterSchema> },
   TContext
 > => {
   return useMutation(getAuthPostAuthRegisterMutationOptions(options));
+};
+
+/**
+ * Public, rate-limited endpoint. Always returns the same accepted response for a syntactically valid email so callers cannot enumerate active accounts.
+ * @summary Request a password reset email
+ */
+export const getAuthPostAuthForgotPasswordUrl = () => {
+  return `/api/auth/forgot-password`;
+};
+
+export const authPostAuthForgotPassword = async (
+  authForgotPasswordSchema: AuthForgotPasswordSchema,
+  options?: RequestInit,
+): Promise<AuthPostAuthForgotPassword202> => {
+  return customFetch<AuthPostAuthForgotPassword202>(
+    getAuthPostAuthForgotPasswordUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: jsonContentTypeHeaders(options?.headers),
+      body: JSON.stringify(authForgotPasswordSchema),
+    },
+  );
+};
+
+export const getAuthPostAuthForgotPasswordMutationOptions = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthForgotPassword>>,
+    TError,
+    { data: BodyType<AuthForgotPasswordSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof authPostAuthForgotPassword>>,
+  TError,
+  { data: BodyType<AuthForgotPasswordSchema> },
+  TContext
+> => {
+  const mutationKey = ["authPostAuthForgotPassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof authPostAuthForgotPassword>>,
+    { data: BodyType<AuthForgotPasswordSchema> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return authPostAuthForgotPassword(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AuthPostAuthForgotPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof authPostAuthForgotPassword>>
+>;
+export type AuthPostAuthForgotPasswordMutationBody =
+  BodyType<AuthForgotPasswordSchema>;
+export type AuthPostAuthForgotPasswordMutationError = ErrorType<Problem>;
+
+/**
+ * @summary Request a password reset email
+ */
+export const useAuthPostAuthForgotPassword = <
+  TError = ErrorType<Problem>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof authPostAuthForgotPassword>>,
+    TError,
+    { data: BodyType<AuthForgotPasswordSchema> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof authPostAuthForgotPassword>>,
+  TError,
+  { data: BodyType<AuthForgotPasswordSchema> },
+  TContext
+> => {
+  return useMutation(getAuthPostAuthForgotPasswordMutationOptions(options));
 };
 
 /**

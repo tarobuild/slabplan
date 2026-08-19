@@ -1,12 +1,4 @@
-import {
-  createContext,
-  lazy,
-  Suspense,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react"
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useState } from "react"
 import {
   createBrowserRouter,
   createRoutesFromElements,
@@ -26,11 +18,7 @@ import { ROLE_GATES } from "@/lib/role-access"
 import { FilePreviewProvider } from "@/components/files/file-preview-context"
 import { Card, CardContent } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
-import {
-  bootstrapAuthSession,
-  FORBIDDEN_EVENT,
-  SUBSCRIPTION_REQUIRED_EVENT,
-} from "@/lib/api"
+import { bootstrapAuthSession, FORBIDDEN_EVENT, SUBSCRIPTION_REQUIRED_EVENT } from "@/lib/api"
 import { AppUpdateNotice } from "@/lib/app-release"
 import { configureApiClient, getQueryClient } from "@/lib/query-client"
 import { useAuthStore } from "@/store/auth"
@@ -46,9 +34,7 @@ const ClientsPage = lazy(() => import("@/pages/clients"))
 const ClientDetailPage = lazy(() => import("@/pages/client-detail"))
 const HomePage = lazy(() => import("@/pages/home"))
 const MissingLogsAtRiskPage = lazy(() => import("@/pages/at-risk/MissingLogsPage"))
-const PendingChangeOrdersAtRiskPage = lazy(
-  () => import("@/pages/at-risk/PendingChangeOrdersPage"),
-)
+const PendingChangeOrdersAtRiskPage = lazy(() => import("@/pages/at-risk/PendingChangeOrdersPage"))
 const ForbiddenPage = lazy(() => import("@/pages/forbidden"))
 const JobDailyLogsPage = lazy(() => import("@/pages/job-daily-logs"))
 const JobDetailPage = lazy(() => import("@/pages/job-detail"))
@@ -86,6 +72,9 @@ const IntegrationsSection = lazy(() => import("@/pages/settings/IntegrationsSect
 const DiagnosticsSection = lazy(() => import("@/pages/settings/DiagnosticsSection"))
 const UsersPage = lazy(() => import("@/pages/users"))
 const AcceptInvitePage = lazy(() => import("@/pages/accept-invite"))
+const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"))
+const TermsPage = lazy(() => import("@/pages/terms"))
+const PrivacyPage = lazy(() => import("@/pages/privacy"))
 
 function RouteLoadingScreen() {
   return (
@@ -151,15 +140,9 @@ function SubscriptionRequiredListener() {
       navigate("/subscribe", { replace: true })
     }
 
-    window.addEventListener(
-      SUBSCRIPTION_REQUIRED_EVENT,
-      handleSubscriptionRequired,
-    )
+    window.addEventListener(SUBSCRIPTION_REQUIRED_EVENT, handleSubscriptionRequired)
     return () => {
-      window.removeEventListener(
-        SUBSCRIPTION_REQUIRED_EVENT,
-        handleSubscriptionRequired,
-      )
+      window.removeEventListener(SUBSCRIPTION_REQUIRED_EVENT, handleSubscriptionRequired)
     }
   }, [navigate])
 
@@ -199,10 +182,14 @@ function buildRouter(basename: string | undefined) {
     createRoutesFromElements(
       <Route element={<RootShell />}>
         <Route path="/" element={<MarketingPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route element={<PublicOnlyRoute />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
+          <Route path="/reset-password" element={<AcceptInvitePage mode="reset" />} />
         </Route>
 
         <Route element={<ProtectedRoute />}>
@@ -217,10 +204,7 @@ function buildRouter(basename: string | undefined) {
             <Route path="/daily-logs/mine" element={<MyDailyLogsPage />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route element={<RoleGate allow={ROLE_GATES.atRisk} redirectTo="/403" />}>
-              <Route
-                path="/at-risk/missing-logs"
-                element={<MissingLogsAtRiskPage />}
-              />
+              <Route path="/at-risk/missing-logs" element={<MissingLogsAtRiskPage />} />
               <Route
                 path="/at-risk/pending-change-orders"
                 element={<PendingChangeOrdersAtRiskPage />}
@@ -292,10 +276,7 @@ function buildRouter(basename: string | undefined) {
                 route was moved into the new Settings shell as
                 /settings/team. Keep the old URL working for bookmarks
                 and any external links that still point at it. */}
-            <Route
-              path="/settings/users"
-              element={<Navigate to="/settings/team" replace />}
-            />
+            <Route path="/settings/users" element={<Navigate to="/settings/team" replace />} />
             <Route path="/403" element={<ForbiddenPage />} />
           </Route>
         </Route>

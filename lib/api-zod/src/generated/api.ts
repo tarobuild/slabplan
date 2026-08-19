@@ -134,7 +134,58 @@ export const AuthPostAuthRegisterHeader = zod.object({
     ),
 });
 
-export const AuthPostAuthRegisterBody = zod.record(zod.string(), zod.unknown());
+export const authPostAuthRegisterBodyOrganizationNameMin = 2;
+export const authPostAuthRegisterBodyOrganizationNameMax = 255;
+
+export const authPostAuthRegisterBodyFullNameMin = 2;
+export const authPostAuthRegisterBodyFullNameMax = 255;
+
+export const authPostAuthRegisterBodyEmailMax = 255;
+
+export const authPostAuthRegisterBodyPasswordMin = 8;
+
+export const AuthPostAuthRegisterBody = zod
+  .object({
+    organization_name: zod
+      .string()
+      .min(authPostAuthRegisterBodyOrganizationNameMin)
+      .max(authPostAuthRegisterBodyOrganizationNameMax),
+    full_name: zod
+      .string()
+      .min(authPostAuthRegisterBodyFullNameMin)
+      .max(authPostAuthRegisterBodyFullNameMax),
+    email: zod.string().email().max(authPostAuthRegisterBodyEmailMax),
+    password: zod.string().min(authPostAuthRegisterBodyPasswordMin),
+    accepted_terms_version: zod.enum(["2026-08-19"]),
+    accepted_privacy_version: zod.enum(["2026-08-19"]),
+  })
+  .describe(
+    "Creates a company workspace and its owner account after accepting the current legal documents.",
+  );
+
+/**
+ * Public, rate-limited endpoint. Always returns the same accepted response for a syntactically valid email so callers cannot enumerate active accounts.
+ * @summary Request a password reset email
+ */
+export const authPostAuthForgotPasswordHeaderIdempotencyKeyMin = 8;
+export const authPostAuthForgotPasswordHeaderIdempotencyKeyMax = 255;
+
+export const AuthPostAuthForgotPasswordHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(authPostAuthForgotPasswordHeaderIdempotencyKeyMin)
+    .max(authPostAuthForgotPasswordHeaderIdempotencyKeyMax)
+    .optional()
+    .describe(
+      "Optional client-supplied unique key. When present on a write request (POST\/PUT\/PATCH\/DELETE), the server replays the exact stored response for any subsequent identical request within 24h. A different request body with the same key returns 409.",
+    ),
+});
+
+export const authPostAuthForgotPasswordBodyEmailMax = 255;
+
+export const AuthPostAuthForgotPasswordBody = zod.object({
+  email: zod.string().email().max(authPostAuthForgotPasswordBodyEmailMax),
+});
 
 /**
  * Route defined in artifacts/api-server/src/routes/auth.ts.
@@ -307,6 +358,8 @@ export const AuthPostAuthAcceptInviteBody = zod
       .min(authPostAuthAcceptInviteBodyEmailMin)
       .max(authPostAuthAcceptInviteBodyEmailMax),
     password: zod.string().min(authPostAuthAcceptInviteBodyPasswordMin),
+    accepted_terms_version: zod.enum(["2026-08-19"]),
+    accepted_privacy_version: zod.enum(["2026-08-19"]),
   })
   .describe(
     "Request body for `POST \/auth\/accept-invite`. The invitee posts the raw token from their setup link, confirms the invited email address, and sends the password they want to use. On success the user is logged in (refresh cookie + access token in response).",

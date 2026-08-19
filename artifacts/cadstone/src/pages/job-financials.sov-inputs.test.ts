@@ -16,3 +16,8 @@ test("SOV uncontrolled edit inputs remount when persisted values change", () => 
     assert.match(source, new RegExp(`key=\\{\\\`${escapeRegex(key)}\\\`\\}`))
   }
 })
+
+test("retention ledger tolerates a partially loaded financial summary", () => {
+  assert.match(source, /data\?\.totals\?\.retention\?\.enabled/)
+  assert.doesNotMatch(source, /data\?\.totals\.retention/)
+})

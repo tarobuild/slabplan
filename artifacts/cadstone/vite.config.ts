@@ -23,13 +23,13 @@ function buildChunkName(id: string) {
   }
 
   if (
-    normalized.includes("/react/")
-    || normalized.includes("/react-dom/")
-    || normalized.includes("/react-router/")
-    || normalized.includes("/react-router-dom/")
-    || normalized.includes("/scheduler/")
-    || normalized.includes("/@remix-run/router/")
-    || normalized.includes("/use-sync-external-store/")
+    normalized.includes("/react/") ||
+    normalized.includes("/react-dom/") ||
+    normalized.includes("/react-router/") ||
+    normalized.includes("/react-router-dom/") ||
+    normalized.includes("/scheduler/") ||
+    normalized.includes("/@remix-run/router/") ||
+    normalized.includes("/use-sync-external-store/")
   ) {
     return "react-vendor"
   }
@@ -38,10 +38,7 @@ function buildChunkName(id: string) {
     return "radix-vendor"
   }
 
-  if (
-    normalized.includes("/date-fns/")
-    || normalized.includes("/react-day-picker/")
-  ) {
+  if (normalized.includes("/date-fns/") || normalized.includes("/react-day-picker/")) {
     return "date-vendor"
   }
 
@@ -50,24 +47,20 @@ function buildChunkName(id: string) {
   }
 
   if (
-    normalized.includes("/cmdk/")
-    || normalized.includes("/detect-node-es/")
-    || normalized.includes("/embla-carousel-react/")
-    || normalized.includes("/react-resizable-panels/")
-    || normalized.includes("/vaul/")
+    normalized.includes("/cmdk/") ||
+    normalized.includes("/detect-node-es/") ||
+    normalized.includes("/embla-carousel-react/") ||
+    normalized.includes("/react-resizable-panels/") ||
+    normalized.includes("/vaul/")
   ) {
     return "ui-vendor"
   }
 
   const packagePath = normalized.split("/node_modules/").at(-1) ?? ""
   const segments = packagePath.split("/")
-  const packageName = segments[0]?.startsWith("@")
-    ? `${segments[0]}/${segments[1]}`
-    : segments[0]
+  const packageName = segments[0]?.startsWith("@") ? `${segments[0]}/${segments[1]}` : segments[0]
 
-  return packageName
-    ? `vendor-${packageName.replace(/^@/, "").replace(/[/.]/g, "-")}`
-    : "vendor"
+  return packageName ? `vendor-${packageName.replace(/^@/, "").replace(/[/.]/g, "-")}` : "vendor"
 }
 
 // Build-time guard for Task #302 / #315: assert that pdfjs-dist and react-pdf
@@ -105,8 +98,14 @@ function deleteSourceMapsAfterUpload(): Plugin {
 
 function assertNoEagerPdfBundles(): Plugin {
   const FORBIDDEN_PATTERNS = [
-    { label: "pdfjs-dist", regex: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?pdfjs-dist[\\/]/ },
-    { label: "react-pdf", regex: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?react-pdf[\\/]/ },
+    {
+      label: "pdfjs-dist",
+      regex: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?pdfjs-dist[\\/]/,
+    },
+    {
+      label: "react-pdf",
+      regex: /[\\/]node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?react-pdf[\\/]/,
+    },
   ]
 
   return {
@@ -143,7 +142,9 @@ function assertNoEagerPdfBundles(): Plugin {
         for (const moduleId of chunk.modules) {
           for (const { label, regex } of FORBIDDEN_PATTERNS) {
             if (regex.test(moduleId)) {
-              violations.push(`  - ${label} module "${moduleId}" landed in eager chunk "${fileName}"`)
+              violations.push(
+                `  - ${label} module "${moduleId}" landed in eager chunk "${fileName}"`,
+              )
             }
           }
         }
@@ -167,176 +168,174 @@ function assertNoEagerPdfBundles(): Plugin {
 }
 
 export default defineConfig(async ({ mode }) => {
-const willUploadSourceMaps =
-  mode === "production"
-  && Boolean(process.env.SENTRY_AUTH_TOKEN)
-  && Boolean(process.env.SENTRY_ORG)
-  && Boolean(process.env.SENTRY_PROJECT_WEB)
+  const willUploadSourceMaps =
+    mode === "production" &&
+    Boolean(process.env.SENTRY_AUTH_TOKEN) &&
+    Boolean(process.env.SENTRY_ORG) &&
+    Boolean(process.env.SENTRY_PROJECT_WEB)
 
-// Task #348 — single source of truth for the release tag, shared
-// between (a) the runtime web Sentry SDK init, (b) the
-// sentryVitePlugin source-map upload, and (c) the API server (which
-// derives the same 12-char short SHA from REPLIT_GIT_COMMIT_SHA in
-// artifacts/api-server/src/lib/sentry.ts). Keeping the value
-// identical end-to-end is what makes "errors filed against this
-// release" queries in Sentry actually correlate web events, server
-// events, and uploaded source maps.
-const fullReleaseSha =
-  process.env.VITE_RELEASE_SHA
-  ?? process.env.REPLIT_GIT_COMMIT_SHA
-  ?? process.env.GIT_COMMIT
-  ?? process.env.RELEASE_SHA
-  ?? ""
-const releaseSha = fullReleaseSha ? fullReleaseSha.slice(0, 12) : ""
+  // Task #348 — single source of truth for the release tag, shared
+  // between (a) the runtime web Sentry SDK init, (b) the
+  // sentryVitePlugin source-map upload, and (c) the API server (which
+  // derives the same 12-char short SHA from REPLIT_GIT_COMMIT_SHA in
+  // artifacts/api-server/src/lib/sentry.ts). Keeping the value
+  // identical end-to-end is what makes "errors filed against this
+  // release" queries in Sentry actually correlate web events, server
+  // events, and uploaded source maps.
+  const fullReleaseSha =
+    process.env.VITE_RELEASE_SHA ??
+    process.env.REPLIT_GIT_COMMIT_SHA ??
+    process.env.GIT_COMMIT ??
+    process.env.RELEASE_SHA ??
+    ""
+  const releaseSha = fullReleaseSha ? fullReleaseSha.slice(0, 12) : ""
 
-return ({
-  base: basePath,
-  // IMPORTANT (Task #348 — security): do NOT add `SENTRY_` to
-  // envPrefix. That would expose every SENTRY_* process env var
-  // (including SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT_WEB
-  // used by the source-map upload below) to `import.meta.env` in
-  // the client bundle. We instead inject the two values the
-  // browser is actually allowed to see — the public DSN and the
-  // release tag — via `define` and read them as
-  // `__SENTRY_DSN_WEB__` / `__SENTRY_RELEASE__` from
-  // src/lib/sentry.ts.
-  define: {
-    __SENTRY_DSN_WEB__: JSON.stringify(
-      process.env.SENTRY_DSN_WEB ?? process.env.VITE_SENTRY_DSN ?? "",
-    ),
-    __SENTRY_RELEASE__: JSON.stringify(releaseSha),
-    __APP_RELEASE_SHA__: JSON.stringify(releaseSha),
-    __SENTRY_ENVIRONMENT__: JSON.stringify(
-      process.env.SENTRY_ENVIRONMENT
-      ?? process.env.VITE_SENTRY_ENVIRONMENT
-      ?? "",
-    ),
-  },
-  plugins: [
-    react(),
-    tailwindcss(),
-    assertNoEagerPdfBundles(),
-    // Source-map upload runs only in production builds when both an
-    // auth token and an org/project pair are present. In all other
-    // builds the plugin is a no-op so dev / typecheck / CI without
-    // Sentry credentials remain unaffected. Maps are deleted from the
-    // dist after upload by `deleteSourceMapsAfterUpload()` below so
-    // end users can't fetch them.
-    ...(willUploadSourceMaps
-      ? [
-          sentryVitePlugin({
-            org: process.env.SENTRY_ORG,
-            project: process.env.SENTRY_PROJECT_WEB,
-            authToken: process.env.SENTRY_AUTH_TOKEN,
-            release: {
-              // Same shared 12-char SHA the runtime SDK reads from
-              // __SENTRY_RELEASE__ — keeps web events / server
-              // events / uploaded source maps on a single release.
-              name: releaseSha || undefined,
-            },
-            sourcemaps: {
-              filesToDeleteAfterUpload: ["dist/public/assets/*.map"],
-            },
-            telemetry: false,
-          }),
-          deleteSourceMapsAfterUpload(),
-        ]
-      : []),
-    ...(mode === "development" ? [runtimeErrorOverlay()] : []),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
+  return {
+    base: basePath,
+    // IMPORTANT (Task #348 — security): do NOT add `SENTRY_` to
+    // envPrefix. That would expose every SENTRY_* process env var
+    // (including SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT_WEB
+    // used by the source-map upload below) to `import.meta.env` in
+    // the client bundle. We instead inject the two values the
+    // browser is actually allowed to see — the public DSN and the
+    // release tag — via `define` and read them as
+    // `__SENTRY_DSN_WEB__` / `__SENTRY_RELEASE__` from
+    // src/lib/sentry.ts.
+    define: {
+      __SENTRY_DSN_WEB__: JSON.stringify(
+        process.env.SENTRY_DSN_WEB ??
+          process.env.VITE_SENTRY_DSN ??
+          process.env.SENTRY_DSN_API ??
+          "",
+      ),
+      __SENTRY_RELEASE__: JSON.stringify(releaseSha),
+      __APP_RELEASE_SHA__: JSON.stringify(releaseSha),
+      __SENTRY_ENVIRONMENT__: JSON.stringify(
+        process.env.SENTRY_ENVIRONMENT ?? process.env.VITE_SENTRY_ENVIRONMENT ?? "",
+      ),
+    },
+    plugins: [
+      react(),
+      tailwindcss(),
+      assertNoEagerPdfBundles(),
+      // Source-map upload runs only in production builds when both an
+      // auth token and an org/project pair are present. In all other
+      // builds the plugin is a no-op so dev / typecheck / CI without
+      // Sentry credentials remain unaffected. Maps are deleted from the
+      // dist after upload by `deleteSourceMapsAfterUpload()` below so
+      // end users can't fetch them.
+      ...(willUploadSourceMaps
+        ? [
+            sentryVitePlugin({
+              org: process.env.SENTRY_ORG,
+              project: process.env.SENTRY_PROJECT_WEB,
+              authToken: process.env.SENTRY_AUTH_TOKEN,
+              release: {
+                // Same shared 12-char SHA the runtime SDK reads from
+                // __SENTRY_RELEASE__ — keeps web events / server
+                // events / uploaded source maps on a single release.
+                name: releaseSha || undefined,
+              },
+              sourcemaps: {
+                filesToDeleteAfterUpload: ["dist/public/assets/*.map"],
+              },
+              telemetry: false,
             }),
-          ),
-          await import("@replit/vite-plugin-dev-banner").then((m) =>
-            m.devBanner(),
-          ),
-        ]
-      : []),
-  ],
-  resolve: {
-    alias: {
-      "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+            deleteSourceMapsAfterUpload(),
+          ]
+        : []),
+      ...(mode === "development" ? [runtimeErrorOverlay()] : []),
+      ...(process.env.NODE_ENV !== "production" && process.env.REPL_ID !== undefined
+        ? [
+            await import("@replit/vite-plugin-cartographer").then((m) =>
+              m.cartographer({
+                root: path.resolve(import.meta.dirname, ".."),
+              }),
+            ),
+            await import("@replit/vite-plugin-dev-banner").then((m) => m.devBanner()),
+          ]
+        : []),
+    ],
+    resolve: {
+      alias: {
+        "@": path.resolve(import.meta.dirname, "src"),
+        "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      },
+      dedupe: ["react", "react-dom", "@tanstack/react-query"],
+      conditions: ["workspace"],
     },
-    dedupe: ["react", "react-dom", "@tanstack/react-query"],
-    conditions: ["workspace"],
-  },
-  root: path.resolve(import.meta.dirname),
-  build: {
-    // Initial-payload baseline (Task #302):
-    //   pdfjs-dist + react-pdf (~500 KB) are now lazy-loaded behind
-    //   `React.lazy(() => import("./PdfViewer"))` in
-    //   src/components/files/FilePreview.tsx, so they no longer ship
-    //   in the eager bundle. The PDF chunk is fetched on demand the
-    //   first time a user previews a PDF. If you re-introduce a static
-    //   import of `react-pdf` or `pdfjs-dist` from any module in the
-    //   eager graph, the dashboard's first paint will regress by the
-    //   same ~500 KB — keep PDF code behind dynamic `import()`.
-    //
-    //   This invariant is enforced automatically by the
-    //   `assertNoEagerPdfBundles()` plugin above, which fails the build
-    //   (and the `check-eager-bundle` validation workflow) the moment a
-    //   regression lands. See Task #315.
-    //
-    // Initial-payload baseline (Task #313 / #316):
-    //   recharts, frappe-gantt, react-big-calendar, and @tiptap/* were
-    //   confirmed in Task #313 to have no callers in
-    //   artifacts/cadstone/src and were fully removed from
-    //   package.json's dependencies in Task #316 (along with the
-    //   unreferenced src/components/ui/chart.tsx shadcn wrapper around
-    //   recharts). The corresponding "visualization-vendor" and
-    //   "tiptap-vendor" manualChunks entries were dropped at the same
-    //   time since the libs themselves are gone. If you need a chart,
-    //   gantt, calendar, or rich-text editor in the dashboard, prefer
-    //   re-introducing them behind a `React.lazy(() => import(...))`
-    //   + <Suspense> boundary the same way PdfViewer is wrapped in
-    //   src/components/files/FilePreview.tsx, so the dashboard's first
-    //   paint stays small.
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
-    emptyOutDir: true,
-    chunkSizeWarningLimit: 500,
-    // Source maps are emitted ONLY when the Sentry upload pipeline is
-    // configured (auth token + org + project all set). They're then
-    // uploaded to Sentry and deleted from the dist by both the Sentry
-    // plugin itself (`sourcemaps.filesToDeleteAfterUpload`) and the
-    // belt-and-braces `deleteSourceMapsAfterUpload()` plugin above, so
-    // they never ship to end users in the published bundle. When the
-    // upload pipeline isn't configured we leave sourcemaps off entirely
-    // — never ship raw maps to production users.
-    sourcemap: willUploadSourceMaps,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          return buildChunkName(id)
+    root: path.resolve(import.meta.dirname),
+    build: {
+      // Initial-payload baseline (Task #302):
+      //   pdfjs-dist + react-pdf (~500 KB) are now lazy-loaded behind
+      //   `React.lazy(() => import("./PdfViewer"))` in
+      //   src/components/files/FilePreview.tsx, so they no longer ship
+      //   in the eager bundle. The PDF chunk is fetched on demand the
+      //   first time a user previews a PDF. If you re-introduce a static
+      //   import of `react-pdf` or `pdfjs-dist` from any module in the
+      //   eager graph, the dashboard's first paint will regress by the
+      //   same ~500 KB — keep PDF code behind dynamic `import()`.
+      //
+      //   This invariant is enforced automatically by the
+      //   `assertNoEagerPdfBundles()` plugin above, which fails the build
+      //   (and the `check-eager-bundle` validation workflow) the moment a
+      //   regression lands. See Task #315.
+      //
+      // Initial-payload baseline (Task #313 / #316):
+      //   recharts, frappe-gantt, react-big-calendar, and @tiptap/* were
+      //   confirmed in Task #313 to have no callers in
+      //   artifacts/cadstone/src and were fully removed from
+      //   package.json's dependencies in Task #316 (along with the
+      //   unreferenced src/components/ui/chart.tsx shadcn wrapper around
+      //   recharts). The corresponding "visualization-vendor" and
+      //   "tiptap-vendor" manualChunks entries were dropped at the same
+      //   time since the libs themselves are gone. If you need a chart,
+      //   gantt, calendar, or rich-text editor in the dashboard, prefer
+      //   re-introducing them behind a `React.lazy(() => import(...))`
+      //   + <Suspense> boundary the same way PdfViewer is wrapped in
+      //   src/components/files/FilePreview.tsx, so the dashboard's first
+      //   paint stays small.
+      outDir: path.resolve(import.meta.dirname, "dist/public"),
+      emptyOutDir: true,
+      chunkSizeWarningLimit: 500,
+      // Source maps are emitted ONLY when the Sentry upload pipeline is
+      // configured (auth token + org + project all set). They're then
+      // uploaded to Sentry and deleted from the dist by both the Sentry
+      // plugin itself (`sourcemaps.filesToDeleteAfterUpload`) and the
+      // belt-and-braces `deleteSourceMapsAfterUpload()` plugin above, so
+      // they never ship to end users in the published bundle. When the
+      // upload pipeline isn't configured we leave sourcemaps off entirely
+      // — never ship raw maps to production users.
+      sourcemap: willUploadSourceMaps,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            return buildChunkName(id)
+          },
+          chunkFileNames: "assets/[hash].js",
+          assetFileNames: "assets/[hash][extname]",
         },
-        chunkFileNames: "assets/[hash].js",
-        assetFileNames: "assets/[hash][extname]",
       },
     },
-  },
-  server: {
-    port,
-    host: "0.0.0.0",
-    allowedHosts: true,
-    proxy: {
-      "/api": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
+    server: {
+      port,
+      host: "0.0.0.0",
+      allowedHosts: true,
+      proxy: {
+        "/api": {
+          target: "http://localhost:8080",
+          changeOrigin: true,
+        },
+      },
+      fs: {
+        strict: true,
+        deny: ["**/.*"],
       },
     },
-    fs: {
-      strict: true,
-      deny: ["**/.*"],
+    preview: {
+      port,
+      host: "0.0.0.0",
+      allowedHosts: true,
     },
-  },
-  preview: {
-    port,
-    host: "0.0.0.0",
-    allowedHosts: true,
-  },
-})
+  }
 })

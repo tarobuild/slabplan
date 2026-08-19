@@ -60,20 +60,24 @@ Do not use Replit Database or Replit App Storage for production SlabPlan data.
 
 ## Environment Variables
 
-Canonical production env vars will be finalized as SlabPlan moves toward staging. Existing inherited env names remain until the related subsystem is migrated.
+Production configuration is stored in Replit published-app secrets. Existing
+inherited env names remain until the related subsystem is migrated.
 
 Expected categories:
 
 - **DB:** `SUPABASE_DATABASE_URL` or `DATABASE_URL`
 - **Auth:** `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_UPLOAD_SECRET`; add `SUPABASE_ANON_KEY` only when Supabase Auth login is enabled
-- **Email:** no production provider is currently approved or wired; invite/reset flows surface manual links and fail loudly on attempted delivery
+- **Email:** `EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`,
+  `SMTP_REQUIRE_TLS`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, and
+  `SMTP_FROM_NAME`. Production startup fails when this configuration is missing.
 - **CORS / origins:** `CORS_ALLOWED_ORIGINS` or `APP_ORIGIN`
 - **AI:** `AI_INTEGRATIONS_ANTHROPIC_API_KEY`, `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`, optional `AGENT_MODEL`
 - **Upload storage:** `SUPABASE_URL`, `SUPABASE_STORAGE_BUCKET`, `SUPABASE_SERVICE_ROLE_KEY`
 - **Monitoring:** existing Sentry env vars are grandfathered; do not add new Sentry instrumentation without owner approval
 - **Rate limits:** existing login, AI parse, upload, and API rate-limit tunables
 
-Do not copy env values from the original production project. SlabPlan needs fresh Supabase, storage, auth, billing, and monitoring secrets before production.
+Do not copy env values from the original production project. SlabPlan uses
+dedicated Supabase, storage, auth, billing, email, and monitoring secrets.
 
 ## Architecture Decisions
 

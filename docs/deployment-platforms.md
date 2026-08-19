@@ -24,7 +24,8 @@ SlabPlan uses Replit for the application runtime and Supabase for persistent dat
 
 Do not configure Replit Database or Replit App Storage for production SlabPlan
 data. Do not configure Railway or Vercel application deployments. Vercel is
-retained only as the `slabplan.com` registrar and DNS host.
+retained only as the `slabplan.com` registrar and authoritative DNS host; the
+application DNS records point to Replit.
 
 ## Replit Deployment
 
@@ -61,6 +62,7 @@ Required Replit published-app secrets:
 - `JWT_REFRESH_SECRET`
 - `JWT_UPLOAD_SECRET`
 - `AI_INTEGRATIONS_ANTHROPIC_API_KEY`
+- `SMTP_PASSWORD`
 
 Required non-secret production settings:
 
@@ -71,12 +73,21 @@ Required non-secret production settings:
 - `CORS_ALLOWED_ORIGINS=https://www.slabplan.com,https://slabplan.com`
 - `AI_INTEGRATIONS_ANTHROPIC_BASE_URL=https://api.anthropic.com`
 - `AGENT_MODEL=claude-sonnet-4-6`
+- `EMAIL_PROVIDER=smtp`
+- `SMTP_HOST=smtp.gmail.com`
+- `SMTP_PORT=465`
+- `SMTP_SECURE=true`
+- `SMTP_REQUIRE_TLS=false`
+- `SMTP_USER=sales@tarobuild.com`
+- `SMTP_FROM_EMAIL=sales@tarobuild.com`
+- `SMTP_FROM_NAME=SlabPlan`
 
 `SUPABASE_ANON_KEY` is required only when Supabase Auth login is enabled.
-Stripe variables are required when paid plans are enabled. Sentry variables are
-optional. Transactional email currently fails loudly and returns the manual
-invite/reset link because no provider is approved and wired; do not add Resend
-under the repository policy.
+Stripe variables are required when paid plans are enabled. The existing API
+Sentry DSN also enables browser reporting unless `SENTRY_DSN_WEB` is set
+separately. Transactional email uses Google Workspace SMTP and production
+startup fails loudly if its configuration is missing. Do not add Resend under
+the repository policy.
 
 Store every credential in Replit Secrets; never commit values.
 

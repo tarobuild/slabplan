@@ -36,11 +36,7 @@ export default function LoginPage() {
     <div className="app-surface flex min-h-screen items-center justify-center bg-background px-6 py-12">
       <div className="w-full max-w-md">
         <div className="mb-10 flex justify-center">
-          <img
-            src={APP_LOGO_PATH}
-            alt={APP_NAME}
-            className="h-[4.5rem] w-auto sm:h-20"
-          />
+          <img src={APP_LOGO_PATH} alt={APP_NAME} className="h-[4.5rem] w-auto sm:h-20" />
         </div>
 
         <div className="mb-6">
@@ -50,48 +46,52 @@ export default function LoginPage() {
           </p>
         </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="username"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
-                className="h-12 text-base"
-                required
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your email"
+              className="h-12 text-base"
+              required
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="h-12 text-base"
-                required
-              />
+              <Link
+                to="/forgot-password"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Forgot password?
+              </Link>
             </div>
-            <Button
-              type="submit"
-              className="h-12 w-full text-base"
-              disabled={loading}
-            >
-              {loading ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
-          <p className="mt-5 text-center text-sm text-slate-500">
-            New to {APP_NAME}?{" "}
-            <Link to="/register" className="font-medium text-primary hover:underline">
-              Create a workspace
-            </Link>
-          </p>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="h-12 text-base"
+              required
+            />
+          </div>
+          <Button type="submit" className="h-12 w-full text-base" disabled={loading}>
+            {loading ? "Signing in…" : "Sign in"}
+          </Button>
+        </form>
+        <p className="mt-5 text-center text-sm text-slate-500">
+          New to {APP_NAME}?{" "}
+          <Link to="/register" className="font-medium text-primary hover:underline">
+            Create a workspace
+          </Link>
+        </p>
       </div>
     </div>
   )

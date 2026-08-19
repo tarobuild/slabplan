@@ -4,7 +4,8 @@ import { after, before, test } from "node:test";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
-const testDatabaseUrl = "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test";
+const testDatabaseUrl =
+  "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test";
 
 let server: Server;
 let baseUrl: string;
@@ -16,6 +17,10 @@ const adminUserId = crypto.randomUUID();
 const crewUserId = crypto.randomUUID();
 const adminEmail = `admin-${adminUserId}@user-invites-test.local`;
 const crewEmail = `crew-${crewUserId}@user-invites-test.local`;
+const LEGAL_ACCEPTANCE = {
+  accepted_terms_version: "2026-08-19",
+  accepted_privacy_version: "2026-08-19",
+} as const;
 
 // Track every email we touch so the `after` hook can scrub the shared
 // test database back to a clean state regardless of which path each
@@ -135,7 +140,8 @@ after(async () => {
   const emailModule = await import("../src/lib/email.ts");
   emailModule.__setEmailSenderForTests(null);
   const { db, pool } = await import("@workspace/db");
-  const { users, idempotencyKeys, rateLimitBuckets } = await import("@workspace/db/schema");
+  const { users, idempotencyKeys, rateLimitBuckets } =
+    await import("@workspace/db/schema");
   const { inArray, like } = await import("drizzle-orm");
 
   try {
@@ -226,16 +232,33 @@ test("invite endpoint sends a transactional email with the setup link and report
   });
   assert.equal(ok.status, 201);
   const body = (await ok.json()) as {
-    user: { lastInviteEmailSentAt: string | null; lastInviteEmailError: string | null };
+    user: {
+      lastInviteEmailSentAt: string | null;
+      lastInviteEmailError: string | null;
+    };
     inviteToken: string;
     inviteUrl: string;
-    emailDelivery: { emailed: boolean; emailError: string | null; lastInviteEmailSentAt: string | null };
+    emailDelivery: {
+      emailed: boolean;
+      emailError: string | null;
+      lastInviteEmailSentAt: string | null;
+    };
   };
 
-  assert.equal(body.emailDelivery.emailed, true, "stub sender must report success");
+  assert.equal(
+    body.emailDelivery.emailed,
+    true,
+    "stub sender must report success",
+  );
   assert.equal(body.emailDelivery.emailError, null);
-  assert.ok(body.emailDelivery.lastInviteEmailSentAt, "lastInviteEmailSentAt is set");
-  assert.ok(body.user.lastInviteEmailSentAt, "user payload mirrors lastInviteEmailSentAt");
+  assert.ok(
+    body.emailDelivery.lastInviteEmailSentAt,
+    "lastInviteEmailSentAt is set",
+  );
+  assert.ok(
+    body.user.lastInviteEmailSentAt,
+    "user payload mirrors lastInviteEmailSentAt",
+  );
   assert.equal(body.user.lastInviteEmailError, null);
   assert.match(
     body.inviteUrl,
@@ -261,12 +284,22 @@ test("invite endpoint sends a transactional email with the setup link and report
   const { users } = await import("@workspace/db/schema");
   const { eq } = await import("drizzle-orm");
   const [stored] = await db
-    .select({ inviteToken: users.inviteToken, inviteTokenHash: users.inviteTokenHash })
+    .select({
+      inviteToken: users.inviteToken,
+      inviteTokenHash: users.inviteTokenHash,
+    })
     .from(users)
     .where(eq(users.email, inviteeEmail.toLowerCase()))
     .limit(1);
-  assert.equal(stored?.inviteToken, null, "raw invite tokens must never be stored");
-  assert.ok(stored?.inviteTokenHash, "hashed invite token must be stored for acceptance");
+  assert.equal(
+    stored?.inviteToken,
+    null,
+    "raw invite tokens must never be stored",
+  );
+  assert.ok(
+    stored?.inviteTokenHash,
+    "hashed invite token must be stored for acceptance",
+  );
 });
 
 test("invite endpoint prefers the configured public app origin over a Replit dev host", async () => {
@@ -290,7 +323,10 @@ test("invite endpoint prefers the configured public app origin over a Replit dev
     assert.equal(ok.status, 201);
     const body = (await ok.json()) as { inviteUrl: string };
 
-    assert.match(body.inviteUrl, /^https:\/\/slabplan\.replit\.app\/accept-invite\?token=/);
+    assert.match(
+      body.inviteUrl,
+      /^https:\/\/slabplan\.replit\.app\/accept-invite\?token=/,
+    );
     assert.doesNotMatch(body.inviteUrl, /broken-dev-link\.replit\.dev/i);
   } finally {
     restoreEnv(snapshot);
@@ -323,7 +359,10 @@ test("production invite endpoint falls back to the canonical SlabPlan host inste
     assert.equal(ok.status, 201);
     const body = (await ok.json()) as { inviteUrl: string };
 
-    assert.match(body.inviteUrl, /^https:\/\/www\.slabplan\.com\/accept-invite\?token=/);
+    assert.match(
+      body.inviteUrl,
+      /^https:\/\/www\.slabplan\.com\/accept-invite\?token=/,
+    );
     assert.doesNotMatch(body.inviteUrl, /replit/i);
   } finally {
     restoreEnv(snapshot);
@@ -356,7 +395,10 @@ test("production invite endpoint ignores configured Replit origins", async () =>
     assert.equal(ok.status, 201);
     const body = (await ok.json()) as { inviteUrl: string };
 
-    assert.match(body.inviteUrl, /^https:\/\/www\.slabplan\.com\/accept-invite\?token=/);
+    assert.match(
+      body.inviteUrl,
+      /^https:\/\/www\.slabplan\.com\/accept-invite\?token=/,
+    );
     assert.doesNotMatch(body.inviteUrl, /replit/i);
   } finally {
     restoreEnv(snapshot);
@@ -377,9 +419,16 @@ test("invite endpoint surfaces email failure but still creates the user and retu
       role: "crew_member",
     }),
   });
-  assert.equal(ok.status, 201, "user creation must succeed even if email fails");
+  assert.equal(
+    ok.status,
+    201,
+    "user creation must succeed even if email fails",
+  );
   const body = (await ok.json()) as {
-    user: { lastInviteEmailSentAt: string | null; lastInviteEmailError: string | null };
+    user: {
+      lastInviteEmailSentAt: string | null;
+      lastInviteEmailError: string | null;
+    };
     inviteToken: string;
     inviteUrl: string;
     emailDelivery: { emailed: boolean; emailError: string | null };
@@ -388,7 +437,10 @@ test("invite endpoint surfaces email failure but still creates the user and retu
   assert.match(body.emailDelivery.emailError ?? "", /Simulated SMTP timeout/);
   assert.match(body.user.lastInviteEmailError ?? "", /Simulated SMTP timeout/);
   assert.equal(body.user.lastInviteEmailSentAt, null);
-  assert.ok(body.inviteToken.length > 20, "raw token still returned for fallback copy/paste");
+  assert.ok(
+    body.inviteToken.length > 20,
+    "raw token still returned for fallback copy/paste",
+  );
 });
 
 test("reissue for a user who already set their password sends a password-reset email (not a fresh invite)", async () => {
@@ -415,12 +467,17 @@ test("reissue for a user who already set their password sends a password-reset e
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: inviteToken,
       email: inviteeEmail,
       password: "OnboardedPass#1",
     }),
   });
-  assert.equal(accepted.status, 200, "user must complete onboarding before reset path triggers");
+  assert.equal(
+    accepted.status,
+    200,
+    "user must complete onboarding before reset path triggers",
+  );
   const onboardedSession = (await accepted.json()) as { accessToken: string };
 
   const pats = await import("../src/lib/personal-access-tokens.ts");
@@ -454,33 +511,52 @@ test("reissue for a user who already set their password sends a password-reset e
   };
   assert.equal(body.emailDelivery.emailed, true);
   assert.equal(body.emailDelivery.emailError, null);
+  assert.match(body.inviteUrl, /\/reset-password\?token=/);
 
   assert.equal(capturedEmails.length, before + 1);
   const sent = capturedEmails[capturedEmails.length - 1]!;
-  assert.equal(sent.tag, "password-reset", "should route through sendPasswordReset, not sendInvite");
+  assert.equal(
+    sent.tag,
+    "password-reset",
+    "should route through sendPasswordReset, not sendInvite",
+  );
   assert.match(sent.subject, /reset your .* password/i);
-  assert.ok(sent.text.includes(body.inviteUrl), "reset email body must include the absolute reset link");
+  assert.ok(
+    sent.text.includes(body.inviteUrl),
+    "reset email body must include the absolute reset link",
+  );
 
   const oldSession = await fetch(`${baseUrl}/api/users/me`, {
     headers: {
       authorization: `Bearer ${onboardedSession.accessToken}`,
     },
   });
-  assert.equal(oldSession.status, 401, "admin password reset must invalidate existing sessions");
+  assert.equal(
+    oldSession.status,
+    401,
+    "admin password reset must invalidate existing sessions",
+  );
 
   const oldPasswordLogin = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({ email: inviteeEmail, password: "OnboardedPass#1" }),
   });
-  assert.equal(oldPasswordLogin.status, 401, "admin password reset must invalidate the old password immediately");
+  assert.equal(
+    oldPasswordLogin.status,
+    401,
+    "admin password reset must invalidate the old password immediately",
+  );
 
   const [revokedPat] = await db
     .select({ revokedAt: personalAccessTokens.revokedAt })
     .from(personalAccessTokens)
     .where(eq(personalAccessTokens.id, patRow!.id))
     .limit(1);
-  assert.ok(revokedPat?.revokedAt, "admin password reset must revoke live PATs");
+  assert.ok(
+    revokedPat?.revokedAt,
+    "admin password reset must revoke live PATs",
+  );
 });
 
 test("only admins can invite users; crew members get 403", async () => {
@@ -509,7 +585,12 @@ test("only admins can invite users; crew members get 403", async () => {
   });
   assert.equal(ok.status, 201, "admin must be able to invite");
   const body = (await ok.json()) as {
-    user: { id: string; email: string; isActive: boolean; passwordSetAt: string | null };
+    user: {
+      id: string;
+      email: string;
+      isActive: boolean;
+      passwordSetAt: string | null;
+    };
     inviteToken: string;
     invitePath: string;
     inviteTokenExpiresAt: string;
@@ -517,7 +598,10 @@ test("only admins can invite users; crew members get 403", async () => {
   assert.equal(body.user.email, inviteeEmail.toLowerCase());
   assert.equal(body.user.isActive, true, "invitee should start active");
   assert.equal(body.user.passwordSetAt, null, "invitee has no password yet");
-  assert.ok(body.inviteToken.length > 20, "raw token must be returned exactly once");
+  assert.ok(
+    body.inviteToken.length > 20,
+    "raw token must be returned exactly once",
+  );
   assert.match(body.invitePath, /^\/accept-invite\?token=/);
 });
 
@@ -593,6 +677,7 @@ test("accept-invite consumes the token exactly once and refuses replays", async 
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: inviteToken,
       email: `wrong-${inviteeEmail}`,
       password: "WrongEmail#1234",
@@ -609,6 +694,7 @@ test("accept-invite consumes the token exactly once and refuses replays", async 
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: inviteToken,
       email: inviteeEmail,
       password: "FirstPass#1234",
@@ -628,12 +714,17 @@ test("accept-invite consumes the token exactly once and refuses replays", async 
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: inviteToken,
       email: inviteeEmail,
       password: "SecondPass#1234",
     }),
   });
-  assert.equal(accept2.status, 401, "second use of same token must be rejected");
+  assert.equal(
+    accept2.status,
+    401,
+    "second use of same token must be rejected",
+  );
 
   // The new password actually works at /api/auth/login, proving the
   // accept-invite handler did wire it up correctly.
@@ -643,6 +734,86 @@ test("accept-invite consumes the token exactly once and refuses replays", async 
     body: JSON.stringify({ email: inviteeEmail, password: "FirstPass#1234" }),
   });
   assert.equal(login.status, 200, "set-by-invite password must work for login");
+});
+
+test("public forgot-password sends a one-time reset link without account enumeration", async () => {
+  const inviteeEmail = `forgot-${crypto.randomUUID()}@user-invites-test.local`;
+  trackInvitedEmail(inviteeEmail);
+
+  const inviteRes = await fetch(`${baseUrl}/api/users`, {
+    method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      email: inviteeEmail,
+      fullName: "Password Recovery User",
+      role: "crew_member",
+    }),
+  });
+  const { inviteToken } = (await inviteRes.json()) as { inviteToken: string };
+
+  const activate = await fetch(`${baseUrl}/api/auth/accept-invite`, {
+    method: "POST",
+    headers: PUBLIC_HEADERS,
+    body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
+      token: inviteToken,
+      email: inviteeEmail,
+      password: "OriginalPass#1234",
+    }),
+  });
+  assert.equal(activate.status, 200);
+
+  const before = capturedEmails.length;
+  const unknown = await fetch(`${baseUrl}/api/auth/forgot-password`, {
+    method: "POST",
+    headers: PUBLIC_HEADERS,
+    body: JSON.stringify({
+      email: `unknown-${crypto.randomUUID()}@example.com`,
+    }),
+  });
+  const requested = await fetch(`${baseUrl}/api/auth/forgot-password`, {
+    method: "POST",
+    headers: PUBLIC_HEADERS,
+    body: JSON.stringify({ email: inviteeEmail }),
+  });
+
+  assert.equal(unknown.status, 202);
+  assert.equal(requested.status, 202);
+  assert.equal(
+    capturedEmails.length,
+    before + 1,
+    "only an active account receives email",
+  );
+  const sent = capturedEmails[capturedEmails.length - 1]!;
+  assert.equal(sent.tag, "password-reset");
+  const resetUrlMatch = sent.text.match(
+    /https?:\/\/\S+\/reset-password\?token=[A-Za-z0-9_-]+/,
+  );
+  assert.ok(resetUrlMatch, "email must contain the public reset route");
+  const resetToken = new URL(resetUrlMatch[0]).searchParams.get("token");
+  assert.ok(resetToken);
+
+  const reset = await fetch(`${baseUrl}/api/auth/accept-invite`, {
+    method: "POST",
+    headers: PUBLIC_HEADERS,
+    body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
+      token: resetToken,
+      email: inviteeEmail,
+      password: "RecoveredPass#1234",
+    }),
+  });
+  assert.equal(reset.status, 200);
+
+  const login = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: PUBLIC_HEADERS,
+    body: JSON.stringify({
+      email: inviteeEmail,
+      password: "RecoveredPass#1234",
+    }),
+  });
+  assert.equal(login.status, 200);
 });
 
 test("resend refuses hash-only pending invites without invalidating the current token", async () => {
@@ -668,12 +839,17 @@ test("resend refuses hash-only pending invites without invalidating the current 
     method: "POST",
     headers: adminHeaders(),
   });
-  assert.equal(resend.status, 400, "hash-only invites cannot resend the original link");
+  assert.equal(
+    resend.status,
+    400,
+    "hash-only invites cannot resend the original link",
+  );
 
   const accept = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: inviteToken,
       email: inviteeEmail,
       password: "StillValid#1234",
@@ -717,6 +893,7 @@ test("expired and bogus tokens are rejected", async () => {
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: inviteToken,
       email: inviteeEmail,
       password: "AnyPass#1234",
@@ -728,6 +905,7 @@ test("expired and bogus tokens are rejected", async () => {
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: "totally-fake-token",
       email: inviteeEmail,
       password: "AnyPass#1234",
@@ -759,6 +937,7 @@ test("deactivated users cannot log in even with the right password", async () =>
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: inviteToken,
       email: inviteeEmail,
       password: "Worker#Pass1234",
@@ -806,7 +985,10 @@ test("deactivated users cannot log in even with the right password", async () =>
     .from(personalAccessTokens)
     .where(eq(personalAccessTokens.id, patRow!.id))
     .limit(1);
-  assert.ok(revokedPat?.revokedAt, "deactivation must synchronously revoke live PATs");
+  assert.ok(
+    revokedPat?.revokedAt,
+    "deactivation must synchronously revoke live PATs",
+  );
 
   // The password is still correct, but the account is disabled — login
   // must fail with 401 and a message that mentions deactivation.
@@ -815,7 +997,11 @@ test("deactivated users cannot log in even with the right password", async () =>
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({ email: inviteeEmail, password: "Worker#Pass1234" }),
   });
-  assert.equal(blocked.status, 401, "deactivated account must not be able to log in");
+  assert.equal(
+    blocked.status,
+    401,
+    "deactivated account must not be able to log in",
+  );
   const problem = (await blocked.json()) as { detail?: string; title?: string };
   assert.match(
     `${problem.title ?? ""} ${problem.detail ?? ""}`.toLowerCase(),
@@ -917,7 +1103,8 @@ test("admin can demote another active admin when an active admin remains", async
   trackInvitedEmail(otherAdminEmail);
 
   const { db } = await import("@workspace/db");
-  const { organizationMemberships, users } = await import("@workspace/db/schema");
+  const { organizationMemberships, users } =
+    await import("@workspace/db/schema");
 
   await db.insert(users).values({
     id: otherAdminId,
@@ -981,7 +1168,11 @@ test("admin cannot deactivate their own account through PATCH /users/:id", async
     .select({ isActive: users.isActive })
     .from(users)
     .where(eq(users.id, adminUserId));
-  assert.equal(row?.isActive, true, "admin row must remain active after the failed self-patch");
+  assert.equal(
+    row?.isActive,
+    true,
+    "admin row must remain active after the failed self-patch",
+  );
 });
 
 test("admin can promote / demote and reissue invite tokens", async () => {
@@ -1006,7 +1197,10 @@ test("admin can promote / demote and reissue invite tokens", async () => {
   const promote = await fetch(`${baseUrl}/api/users/${user.id}`, {
     method: "PATCH",
     headers: adminHeaders(),
-    body: JSON.stringify({ role: "project_manager", fullName: "Promoted Worker" }),
+    body: JSON.stringify({
+      role: "project_manager",
+      fullName: "Promoted Worker",
+    }),
   });
   assert.equal(promote.status, 200);
   const promoted = (await promote.json()) as {
@@ -1023,23 +1217,33 @@ test("admin can promote / demote and reissue invite tokens", async () => {
   });
   assert.equal(reissue.status, 200);
   const reissued = (await reissue.json()) as { inviteToken: string };
-  assert.notEqual(reissued.inviteToken, originalToken, "reissue must mint a fresh token");
+  assert.notEqual(
+    reissued.inviteToken,
+    originalToken,
+    "reissue must mint a fresh token",
+  );
 
   const oldFails = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: originalToken,
       email: inviteeEmail,
       password: "Anything#1234",
     }),
   });
-  assert.equal(oldFails.status, 401, "stale token must be rejected after reissue");
+  assert.equal(
+    oldFails.status,
+    401,
+    "stale token must be rejected after reissue",
+  );
 
   const newWorks = await fetch(`${baseUrl}/api/auth/accept-invite`, {
     method: "POST",
     headers: PUBLIC_HEADERS,
     body: JSON.stringify({
+      ...LEGAL_ACCEPTANCE,
       token: reissued.inviteToken,
       email: inviteeEmail,
       password: "FreshPass#1234",

@@ -10,7 +10,7 @@ test("invite acceptance has a synchronous duplicate-submit guard", () => {
   assert.match(source, /if \(submittingRef\.current\) return/)
   assert.match(source, /submittingRef\.current = true/)
   assert.match(source, /submittingRef\.current = false/)
-  assert.match(source, /disabled=\{submitting\}/)
+  assert.match(source, /disabled=\{submitting \|\| !acceptedLegal\}/)
 })
 
 test("invite acceptance covers missing token and password validation branches", () => {
@@ -27,11 +27,17 @@ test("invite acceptance covers missing token and password validation branches", 
 })
 
 test("invite acceptance submits a validated payload, authenticates, and navigates", () => {
-  assert.match(source, /const payload: AuthAcceptInviteSchema = \{[\s\S]*token,[\s\S]*email: normalizedEmail,[\s\S]*password,[\s\S]*\}/)
+  assert.match(
+    source,
+    /const payload: AuthAcceptInviteSchema = \{[\s\S]*token,[\s\S]*email: normalizedEmail,[\s\S]*password,[\s\S]*accepted_terms_version: TERMS_VERSION,[\s\S]*accepted_privacy_version: PRIVACY_VERSION,[\s\S]*\}/,
+  )
   assert.match(source, /validatePayload\(AuthPostAuthAcceptInviteBody, payload\)/)
-  assert.match(source, /authPostAuthAcceptInvite\(\s*validated,\s*\)/)
+  assert.match(source, /authPostAuthAcceptInvite\(\s*validated,?\s*\)/)
   assert.match(source, /setAuth\(response\.user, response\.accessToken\)/)
-  assert.match(source, /toast\.success\(`Welcome to \$\{APP_NAME\}, \$\{response\.user\.fullName\}\.`\)/)
+  assert.match(
+    source,
+    /toast\.success\(`Welcome to \$\{APP_NAME\}, \$\{response\.user\.fullName\}\.`\)/,
+  )
   assert.match(source, /navigate\("\/dashboard", \{ replace: true \}\)/)
 })
 

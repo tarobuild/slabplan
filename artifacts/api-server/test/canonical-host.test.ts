@@ -8,30 +8,28 @@ import {
 } from "../src/lib/canonical-host.ts";
 
 test("normalizeHostHeader strips ports from host headers", () => {
-  assert.equal(normalizeHostHeader("slabplan.replit.app:443"), "slabplan.replit.app");
+  assert.equal(
+    normalizeHostHeader("slabplan.replit.app:443"),
+    "slabplan.replit.app",
+  );
   assert.equal(normalizeHostHeader("127.0.0.1:8080"), "127.0.0.1");
   assert.equal(normalizeHostHeader("[::1]:8080"), "::1");
 });
 
 test("production canonical host guard allows public canonical hosts", () => {
   assert.equal(
-    isAllowedProductionHost(
-      "slabplan.replit.app",
-      "203.0.113.10",
-    ),
+    isAllowedProductionHost("slabplan.replit.app", "203.0.113.10"),
     true,
   );
   assert.equal(
-    isAllowedProductionHost(
-      "www.slabplan.replit.app",
-      "203.0.113.10",
-    ),
+    isAllowedProductionHost("www.slabplan.replit.app", "203.0.113.10"),
     true,
   );
 });
 
-test("production canonical host guard allows configured deployment hosts", () => {
+test("production canonical host guard collects deployment hosts but redirects non-canonical ones", () => {
   const env = {
+    CANONICAL_HOST: "www.slabplan.com",
     APP_ORIGIN: "https://slabplan.replit.app",
     REPLIT_DOMAINS: "preview.example.replit.app, other.example.replit.app",
   };
@@ -40,26 +38,40 @@ test("production canonical host guard allows configured deployment hosts", () =>
     "other.example.replit.app",
     "preview.example.replit.app",
     "slabplan.replit.app",
+    "www.slabplan.com",
   ]);
   assert.equal(
-    isAllowedProductionHost(
-      "slabplan.replit.app",
-      "203.0.113.10",
-      env,
-    ),
+    isAllowedProductionHost("slabplan.replit.app", "203.0.113.10", env),
+    false,
+  );
+  assert.equal(
+    isAllowedProductionHost("www.slabplan.com", "203.0.113.10", env),
     true,
+  );
+  assert.equal(
+    isAllowedProductionHost("slabplan.com", "203.0.113.10", env),
+    false,
   );
 });
 
 test("production canonical host guard allows loopback hosts only from loopback sockets", () => {
-  assert.equal(isAllowedProductionHost("127.0.0.1:8080", "::ffff:127.0.0.1"), true);
+  assert.equal(
+    isAllowedProductionHost("127.0.0.1:8080", "::ffff:127.0.0.1"),
+    true,
+  );
   assert.equal(isAllowedProductionHost("localhost:8080", "::1"), true);
   assert.equal(isAllowedProductionHost("[::1]:8080", "::1"), true);
-  assert.equal(isAllowedProductionHost("127.0.0.1:8080", "203.0.113.10"), false);
+  assert.equal(
+    isAllowedProductionHost("127.0.0.1:8080", "203.0.113.10"),
+    false,
+  );
 });
 
 test("production canonical host guard rejects non-canonical public hosts", () => {
-  assert.equal(isAllowedProductionHost("cadstone.example.com", "203.0.113.10"), false);
+  assert.equal(
+    isAllowedProductionHost("cadstone.example.com", "203.0.113.10"),
+    false,
+  );
 });
 
 test("production canonical host guard bypasses deployment health probes", () => {

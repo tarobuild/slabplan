@@ -158,6 +158,20 @@ type UsersUpdateUserSchemaFields = {
 
 export type UsersUpdateUserSchema = AtLeastOne<UsersUpdateUserSchemaFields>;
 
+export type AuthAcceptInviteSchemaAcceptedTermsVersion =
+  (typeof AuthAcceptInviteSchemaAcceptedTermsVersion)[keyof typeof AuthAcceptInviteSchemaAcceptedTermsVersion];
+
+export const AuthAcceptInviteSchemaAcceptedTermsVersion = {
+  "2026-08-19": "2026-08-19",
+} as const;
+
+export type AuthAcceptInviteSchemaAcceptedPrivacyVersion =
+  (typeof AuthAcceptInviteSchemaAcceptedPrivacyVersion)[keyof typeof AuthAcceptInviteSchemaAcceptedPrivacyVersion];
+
+export const AuthAcceptInviteSchemaAcceptedPrivacyVersion = {
+  "2026-08-19": "2026-08-19",
+} as const;
+
 /**
  * Request body for `POST /auth/accept-invite`. The invitee posts the raw token from their setup link, confirms the invited email address, and sends the password they want to use. On success the user is logged in (refresh cookie + access token in response).
  */
@@ -171,6 +185,49 @@ export interface AuthAcceptInviteSchema {
   email: string;
   /** @minLength 8 */
   password: string;
+  accepted_terms_version: AuthAcceptInviteSchemaAcceptedTermsVersion;
+  accepted_privacy_version: AuthAcceptInviteSchemaAcceptedPrivacyVersion;
+}
+
+export type AuthRegisterSchemaAcceptedTermsVersion =
+  (typeof AuthRegisterSchemaAcceptedTermsVersion)[keyof typeof AuthRegisterSchemaAcceptedTermsVersion];
+
+export const AuthRegisterSchemaAcceptedTermsVersion = {
+  "2026-08-19": "2026-08-19",
+} as const;
+
+export type AuthRegisterSchemaAcceptedPrivacyVersion =
+  (typeof AuthRegisterSchemaAcceptedPrivacyVersion)[keyof typeof AuthRegisterSchemaAcceptedPrivacyVersion];
+
+export const AuthRegisterSchemaAcceptedPrivacyVersion = {
+  "2026-08-19": "2026-08-19",
+} as const;
+
+/**
+ * Creates a company workspace and its owner account after accepting the current legal documents.
+ */
+export interface AuthRegisterSchema {
+  /**
+   * @minLength 2
+   * @maxLength 255
+   */
+  organization_name: string;
+  /**
+   * @minLength 2
+   * @maxLength 255
+   */
+  full_name: string;
+  /** @maxLength 255 */
+  email: string;
+  /** @minLength 8 */
+  password: string;
+  accepted_terms_version: AuthRegisterSchemaAcceptedTermsVersion;
+  accepted_privacy_version: AuthRegisterSchemaAcceptedPrivacyVersion;
+}
+
+export interface AuthForgotPasswordSchema {
+  /** @maxLength 255 */
+  email: string;
 }
 
 export type AuthInvitePreviewRole =
@@ -3232,6 +3289,10 @@ export type FinancialsPostJobsJobidFinancialsChangeOrdersParse200 = {
   description: string | null;
   amountCents: number;
   fileId: string | null;
+};
+
+export type AuthPostAuthForgotPassword202 = {
+  message: string;
 };
 
 export type AuthGetAuthInviteParams = {

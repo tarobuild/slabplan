@@ -36,7 +36,10 @@ async function loadSpec(): Promise<unknown> {
         return parsed;
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-          logger.warn({ err, candidate }, "failed to load openapi spec candidate");
+          logger.warn(
+            { err, candidate },
+            "failed to load openapi spec candidate",
+          );
         }
       }
     }
@@ -52,7 +55,8 @@ async function loadSpec(): Promise<unknown> {
 }
 
 function origin(req: Request): string {
-  const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? req.protocol;
+  const proto =
+    (req.headers["x-forwarded-proto"] as string | undefined) ?? req.protocol;
   const host = req.get("host") ?? "localhost";
   return `${proto}://${host}`;
 }
@@ -81,10 +85,8 @@ router.get("/.well-known/ai-plugin.json", (req, res) => {
     schema_version: "v1",
     name_for_human: APP_NAME,
     name_for_model: APP_MCP_NAME,
-    description_for_human:
-      `Manage clients, jobs, leads, schedule, daily logs, and files for ${APP_NAME}.`,
-    description_for_model:
-      `Programmatic access to the ${APP_NAME} platform for AI agents. Authenticate using a personal access token (Bearer cs_pat_...). Tokens are issued from the user settings page. All endpoints accept and return JSON. Errors follow RFC 7807 (application/problem+json). Long lists support both page-based (page,pageSize) and cursor-based (cursor,limit) pagination. Supply Idempotency-Key on POST/PUT/PATCH/DELETE to safely retry. Rate limits are signaled via X-RateLimit-* response headers and Retry-After on 429.`,
+    description_for_human: `Manage clients, jobs, leads, schedule, daily logs, and files for ${APP_NAME}.`,
+    description_for_model: `Programmatic access to the ${APP_NAME} platform for AI agents. Authenticate using a personal access token (Bearer cs_pat_...). Tokens are issued from the user settings page. All endpoints accept and return JSON. Errors follow RFC 7807 (application/problem+json). Long lists support both page-based (page,pageSize) and cursor-based (cursor,limit) pagination. Supply Idempotency-Key on POST/PUT/PATCH/DELETE to safely retry. Rate limits are signaled via X-RateLimit-* response headers and Retry-After on 429.`,
     auth: {
       type: "user_http",
       authorization_type: "bearer",
@@ -104,8 +106,9 @@ router.get("/.well-known/ai-plugin.json", (req, res) => {
     // replit.md → "MCP server (Task #108)" for client examples.
     mcp_server_url: `${base}/api/mcp`,
     logo_url: `${base}/favicon.ico`,
-    contact_email: "support@slabplan.com",
-    legal_info_url: `${base}/`,
+    contact_email: "sales@tarobuild.com",
+    legal_info_url: `${base}/terms`,
+    privacy_policy_url: `${base}/privacy`,
   });
 });
 

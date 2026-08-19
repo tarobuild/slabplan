@@ -138,7 +138,7 @@ test("auth responses include refresh tokens only when explicitly requested", asy
   }
 });
 
-test("auth router does not expose forgot-password or reset-password endpoints", async () => {
+test("auth router exposes email-based forgot-password while password exchange stays on accept-invite", async () => {
   const originalAccessSecret = process.env.JWT_ACCESS_SECRET;
   const originalRefreshSecret = process.env.JWT_REFRESH_SECRET;
   const originalUploadSecret = process.env.JWT_UPLOAD_SECRET;
@@ -154,13 +154,10 @@ test("auth router does not expose forgot-password or reset-password endpoints", 
       .filter((layer: { route?: { path?: string } }) => Boolean(layer.route?.path))
       .map((layer: { route: { path: string } }) => layer.route.path);
 
-    assert.ok(
-      !paths.includes("/forgot-password"),
-      "auth router must not expose /forgot-password (admin manages passwords directly)",
-    );
+    assert.ok(paths.includes("/forgot-password"));
     assert.ok(
       !paths.includes("/reset-password"),
-      "auth router must not expose /reset-password (admin manages passwords directly)",
+      "the browser reset page exchanges its token through /accept-invite",
     );
   } finally {
     restoreEnv("JWT_ACCESS_SECRET", originalAccessSecret);

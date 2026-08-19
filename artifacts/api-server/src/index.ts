@@ -16,15 +16,14 @@ const { pool } = await import("@workspace/db");
 const { applyMigrations } = await import("@workspace/db/migrate");
 const { default: app, prepareApp } = await import("./app");
 const { logger } = await import("./lib/logger");
+const { assertProductionEmailConfiguration } = await import("./lib/email");
 const { resolveSupabaseUrl } = await import("./lib/supabase-url");
 const { initRealtime } = await import("./lib/realtime");
-const {
-  startScheduleAutoCompleteSweeper,
-} = await import("./routes/schedule");
-type ScheduleAutoCompleteSweeperHandle = ReturnType<typeof startScheduleAutoCompleteSweeper>;
-const {
-  startTempUploadSweeper,
-} = await import("./lib/uploads");
+const { startScheduleAutoCompleteSweeper } = await import("./routes/schedule");
+type ScheduleAutoCompleteSweeperHandle = ReturnType<
+  typeof startScheduleAutoCompleteSweeper
+>;
+const { startTempUploadSweeper } = await import("./lib/uploads");
 type TempUploadSweeperHandle = ReturnType<typeof startTempUploadSweeper>;
 
 const rawPort = process.env["PORT"] ?? "8080";
@@ -32,13 +31,19 @@ const rawPort = process.env["PORT"] ?? "8080";
 const port = Number(rawPort);
 const host = process.env["HOST"] || "0.0.0.0";
 
-if (Number.isNaN(port) || !Number.isInteger(port) || port <= 0 || port > 65535) {
+if (
+  Number.isNaN(port) ||
+  !Number.isInteger(port) ||
+  port <= 0 ||
+  port > 65535
+) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
 const SHUTDOWN_DRAIN_MS = 10_000;
 
 async function bootstrap() {
+  assertProductionEmailConfiguration();
   // Boot diagnostic: env presence (no values, just booleans) so a missing
   // secret in production shows up before anything else evaluates. Replaces
   // the older boot-diagnostic.ts shim that wrote raw stderr lines.
@@ -52,7 +57,9 @@ async function bootstrap() {
       hasJwtUpload: Boolean(process.env["JWT_UPLOAD_SECRET"]),
       hasSupabaseUrl: Boolean(resolveSupabaseUrl()),
       hasSupabaseStorageBucket: Boolean(process.env["SUPABASE_STORAGE_BUCKET"]),
-      hasSupabaseServiceRoleKey: Boolean(process.env["SUPABASE_SERVICE_ROLE_KEY"]),
+      hasSupabaseServiceRoleKey: Boolean(
+        process.env["SUPABASE_SERVICE_ROLE_KEY"],
+      ),
     },
     "boot",
   );
@@ -101,7 +108,11 @@ async function bootstrap() {
     logger.info({ host, port }, "Server listening");
   });
 
-  registerShutdownHandlers(server, tempUploadSweeper, scheduleAutoCompleteSweeper);
+  registerShutdownHandlers(
+    server,
+    tempUploadSweeper,
+    scheduleAutoCompleteSweeper,
+  );
 }
 
 function registerShutdownHandlers(

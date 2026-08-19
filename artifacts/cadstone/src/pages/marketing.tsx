@@ -183,8 +183,7 @@ export default function MarketingPage() {
   const [activeTour, setActiveTour] = useState<TourKey>("jobs")
   const appHref = user ? "/dashboard" : "/register"
   const appLabel = user ? "Open SlabPlan" : "Start with SlabPlan"
-  const activeTourItem =
-    tourItems.find((item) => item.id === activeTour) ?? tourItems[1]
+  const activeTourItem = tourItems.find((item) => item.id === activeTour) ?? tourItems[1]
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#f5f6f8] text-slate-950">
@@ -238,9 +237,9 @@ export default function MarketingPage() {
                 From first measure to final payment, keep every stone job moving.
               </h1>
               <p className="mx-auto mt-6 max-w-3xl text-balance text-lg leading-8 text-slate-300 sm:text-xl">
-                SlabPlan connects sales, projects, schedules, crews, field
-                updates, files, financials, and reporting in one workspace built
-                around the way stone companies actually operate.
+                SlabPlan connects sales, projects, schedules, crews, field updates, files,
+                financials, and reporting in one workspace built around the way stone companies
+                actually operate.
               </p>
               <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <Button
@@ -287,10 +286,7 @@ export default function MarketingPage() {
           </div>
         </section>
 
-        <section
-          id="workflow"
-          className="scroll-mt-24 border-b border-slate-200 bg-white"
-        >
+        <section id="workflow" className="scroll-mt-24 border-b border-slate-200 bg-white">
           <div className="mx-auto max-w-[1440px] px-5 py-18 lg:px-10 lg:py-24">
             <div className="grid gap-12 lg:grid-cols-[.72fr_1.28fr] lg:items-end">
               <div>
@@ -300,10 +296,9 @@ export default function MarketingPage() {
                 </h2>
               </div>
               <p className="max-w-2xl text-lg leading-8 text-slate-600 lg:justify-self-end">
-                A lead does not become a disconnected spreadsheet row when it is
-                won. SlabPlan carries the customer, scope, files, schedule,
-                field activity, and financial history through one shared job
-                record.
+                A lead does not become a disconnected spreadsheet row when it is won. SlabPlan
+                carries the customer, scope, files, schedule, field activity, and financial history
+                through one shared job record.
               </p>
             </div>
 
@@ -353,10 +348,7 @@ export default function MarketingPage() {
           </div>
         </section>
 
-        <section
-          id="product-tour"
-          className="scroll-mt-24 bg-[#f5f6f8]"
-        >
+        <section id="product-tour" className="scroll-mt-24 bg-[#f5f6f8]">
           <div className="mx-auto max-w-[1440px] px-5 py-20 lg:px-10 lg:py-28">
             <div className="max-w-3xl">
               <Eyebrow>Explore by workflow</Eyebrow>
@@ -364,9 +356,7 @@ export default function MarketingPage() {
                 See the product, not a list of promises.
               </h2>
               <p className="mt-5 text-lg leading-8 text-slate-600">
-                Move through a sample workspace modeled on SlabPlan’s actual
-                modules. The details below are illustrative; the workflows are
-                the real product.
+                Move through a sample workspace modeled on SlabPlan’s actual modules. The details below are illustrative; the workflows are the real product.
               </p>
             </div>
 
@@ -397,9 +387,7 @@ export default function MarketingPage() {
                       <span
                         className={cn(
                           "flex size-10 shrink-0 items-center justify-center rounded-lg",
-                          isActive
-                            ? "bg-orange-500 text-white"
-                            : "bg-orange-50 text-orange-600",
+                          isActive ? "bg-orange-500 text-white" : "bg-orange-50 text-orange-600",
                         )}
                       >
                         <Icon className="size-5" />
@@ -454,10 +442,7 @@ export default function MarketingPage() {
           </div>
         </section>
 
-        <section
-          id="teams"
-          className="scroll-mt-24 border-y border-slate-200 bg-white"
-        >
+        <section id="teams" className="scroll-mt-24 border-y border-slate-200 bg-white">
           <div className="mx-auto max-w-[1440px] px-5 py-20 lg:px-10 lg:py-28">
             <div className="grid gap-14 lg:grid-cols-[.9fr_1.1fr] lg:items-center">
               <div>
@@ -466,8 +451,8 @@ export default function MarketingPage() {
                   Each role gets focus. The company keeps the whole picture.
                 </h2>
                 <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
-                  SlabPlan changes the starting view based on the work someone
-                  owns—without fragmenting the project record underneath.
+                  SlabPlan changes the starting view based on the work someone owns—without
+                  fragmenting the project record underneath.
                 </p>
                 <div className="mt-8 grid gap-4 sm:grid-cols-2">
                   {[
@@ -498,9 +483,7 @@ export default function MarketingPage() {
                       </span>
                       <div>
                         <h3 className="font-semibold">{title}</h3>
-                        <p className="mt-1 text-sm leading-6 text-slate-600">
-                          {copy}
-                        </p>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">{copy}</p>
                       </div>
                     </div>
                   ))}
@@ -522,8 +505,8 @@ export default function MarketingPage() {
                   The useful details are already connected.
                 </h2>
                 <p className="mt-5 max-w-xl text-lg leading-8 text-slate-300">
-                  SlabPlan is not a single dashboard with shallow add-ons. The
-                  supporting workflows go all the way down to the project.
+                  SlabPlan is not a single dashboard with shallow add-ons. The supporting workflows
+                  go all the way down to the project.
                 </p>
               </div>
               <div className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-2">
@@ -578,8 +561,8 @@ export default function MarketingPage() {
                 Your workspace is your workspace.
               </h2>
               <p className="mt-5 text-lg leading-8 text-slate-600">
-                SlabPlan treats company isolation and role access as operating
-                requirements—not upgrade-line extras.
+                SlabPlan treats company isolation and role access as operating requirements—not
+                upgrade-line extras.
               </p>
             </div>
             <div className="mt-12 grid gap-4 md:grid-cols-3">
@@ -599,10 +582,7 @@ export default function MarketingPage() {
           </div>
         </section>
 
-        <section
-          id="pricing"
-          className="scroll-mt-24 bg-white"
-        >
+        <section id="pricing" className="scroll-mt-24 bg-white">
           <div className="mx-auto max-w-[1440px] px-5 py-20 lg:px-10 lg:py-28">
             <div className="overflow-hidden rounded-[28px] bg-[#07111f] text-white shadow-[0_30px_90px_rgba(15,23,42,.18)]">
               <div className="grid lg:grid-cols-[1.08fr_.92fr]">
@@ -616,15 +596,12 @@ export default function MarketingPage() {
                       One company plan. No essential workflow left behind.
                     </h2>
                     <p className="mt-5 max-w-xl text-lg leading-8 text-slate-300">
-                      Bring the office and field into one operating system
-                      without building a stack of disconnected subscriptions.
+                      Bring the office and field into one operating system without building a stack
+                      of disconnected subscriptions.
                     </p>
                     <div className="mt-9 grid gap-3 sm:grid-cols-2">
                       {includedFeatures.map((feature) => (
-                        <div
-                          key={feature}
-                          className="flex gap-2 text-sm text-slate-200"
-                        >
+                        <div key={feature} className="flex gap-2 text-sm text-slate-200">
                           <Check className="mt-0.5 size-4 shrink-0 text-orange-400" />
                           <span>{feature}</span>
                         </div>
@@ -633,26 +610,18 @@ export default function MarketingPage() {
                   </div>
                 </div>
                 <div className="flex flex-col justify-center border-t border-white/10 bg-white/[0.055] p-8 sm:p-12 lg:border-l lg:border-t-0 lg:p-16">
-                  <p className="text-sm font-medium text-slate-300">
-                    SlabPlan Full Access
-                  </p>
+                  <p className="text-sm font-medium text-slate-300">SlabPlan Full Access</p>
                   <div className="mt-4 flex flex-wrap items-end gap-x-3 gap-y-1">
                     <span className="text-5xl font-semibold tracking-[-0.04em] sm:text-6xl">
                       $250
                     </span>
-                    <span className="pb-1.5 text-slate-300">
-                      per company / month
-                    </span>
+                    <span className="pb-1.5 text-slate-300">per company / month</span>
                   </div>
                   <p className="mt-4 max-w-md text-sm leading-6 text-slate-400">
-                    Create your workspace, then complete secure card checkout
-                    and manage billing through Stripe.
+                    Create your workspace, then complete secure card checkout and manage billing
+                    through Stripe.
                   </p>
-                  <Button
-                    asChild
-                    size="lg"
-                    className="mt-8 h-13 rounded-full text-base"
-                  >
+                  <Button asChild size="lg" className="mt-8 h-13 rounded-full text-base">
                     <Link to={appHref}>
                       {appLabel}
                       <ArrowRight className="size-4" />
@@ -685,9 +654,7 @@ export default function MarketingPage() {
                       +
                     </span>
                   </summary>
-                  <p className="max-w-2xl pr-10 pt-3 text-sm leading-7 text-slate-600">
-                    {answer}
-                  </p>
+                  <p className="max-w-2xl pr-10 pt-3 text-sm leading-7 text-slate-600">{answer}</p>
                 </details>
               ))}
             </div>
@@ -723,8 +690,8 @@ export default function MarketingPage() {
           <div>
             <img src={APP_LOGO_PATH} alt={APP_NAME} className="h-9 w-auto" />
             <p className="mt-4 max-w-md text-sm leading-6">
-              One operating system for the people who sell, plan, fabricate,
-              install, and close stone work.
+              One operating system for the people who sell, plan, fabricate, install, and close
+              stone work.
             </p>
           </div>
           <div className="flex flex-col gap-3 text-sm sm:items-end">
@@ -738,6 +705,12 @@ export default function MarketingPage() {
               <a href="#pricing" className="transition hover:text-white">
                 Pricing
               </a>
+              <Link to="/terms" className="transition hover:text-white">
+                Terms
+              </Link>
+              <Link to="/privacy" className="transition hover:text-white">
+                Privacy
+              </Link>
             </div>
             <p>© {new Date().getFullYear()} SlabPlan. Built for the stone trade.</p>
           </div>
@@ -749,19 +722,11 @@ export default function MarketingPage() {
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-orange-600">
-      {children}
-    </p>
+    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-orange-600">{children}</p>
   )
 }
 
-function PreviewTopBar({
-  title,
-  compact = false,
-}: {
-  title: string
-  compact?: boolean
-}) {
+function PreviewTopBar({ title, compact = false }: { title: string; compact?: boolean }) {
   return (
     <div
       className={cn(
@@ -828,12 +793,8 @@ function HeroProductPreview() {
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                 Active company
               </p>
-              <p className="mt-1 text-xs font-semibold text-white">
-                Summit Stoneworks
-              </p>
-              <p className="mt-1 text-[10px] text-slate-500">
-                Sample data
-              </p>
+              <p className="mt-1 text-xs font-semibold text-white">Summit Stoneworks</p>
+              <p className="mt-1 text-[10px] text-slate-500">Sample data</p>
             </div>
           </aside>
 
@@ -843,9 +804,7 @@ function HeroProductPreview() {
                 <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
                   Monday, August 3
                 </p>
-                <h3 className="mt-1 text-xl font-semibold sm:text-2xl">
-                  Business Pulse
-                </h3>
+                <h3 className="mt-1 text-xl font-semibold sm:text-2xl">Business Pulse</h3>
               </div>
               <div className="flex items-center gap-2">
                 <div className="hidden h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-400 sm:flex">
@@ -880,9 +839,7 @@ function HeroProductPreview() {
                     <p className="mt-2 text-lg font-semibold tabular-nums sm:text-xl">
                       {value as string}
                     </p>
-                    <p className="mt-0.5 text-[10px] text-slate-500">
-                      {detail as string}
-                    </p>
+                    <p className="mt-0.5 text-[10px] text-slate-500">{detail as string}</p>
                   </div>
                 )
               })}
@@ -893,24 +850,16 @@ function HeroProductPreview() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-semibold">Jobs by stage</p>
-                    <p className="mt-0.5 text-[10px] text-slate-500">
-                      Live operating mix
-                    </p>
+                    <p className="mt-0.5 text-[10px] text-slate-500">Live operating mix</p>
                   </div>
-                  <span className="text-[10px] font-medium text-orange-700">
-                    View jobs
-                  </span>
+                  <span className="text-[10px] font-medium text-orange-700">View jobs</span>
                 </div>
                 <div className="mt-5 space-y-3">
                   {stages.map(([label, count], index) => (
                     <div key={label as string}>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">
-                          {label as string}
-                        </span>
-                        <span className="tabular-nums text-slate-500">
-                          {count as number}
-                        </span>
+                        <span className="font-medium text-slate-600">{label as string}</span>
+                        <span className="tabular-nums text-slate-500">{count as number}</span>
                       </div>
                       <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
                         <div
@@ -943,12 +892,8 @@ function HeroProductPreview() {
                         {time}
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-[11px] font-semibold">
-                          {action}
-                        </p>
-                        <p className="truncate text-[10px] text-slate-500">
-                          {job}
-                        </p>
+                        <p className="truncate text-[11px] font-semibold">{action}</p>
+                        <p className="truncate text-[10px] text-slate-500">{job}</p>
                       </div>
                     </div>
                   ))}
@@ -1048,9 +993,7 @@ function PipelinePreview() {
               {status}
             </span>
             <span className="text-sm font-medium">{value}</span>
-            <span className="text-sm font-semibold text-orange-700">
-              {confidence}
-            </span>
+            <span className="text-sm font-semibold text-orange-700">{confidence}</span>
           </div>
         ))}
       </div>
@@ -1060,9 +1003,7 @@ function PipelinePreview() {
             <BriefcaseBusiness className="size-4" />
           </span>
           <div>
-            <p className="text-sm font-semibold text-violet-950">
-              Palm Ridge is ready to convert
-            </p>
+            <p className="text-sm font-semibold text-violet-950">Palm Ridge is ready to convert</p>
             <p className="mt-0.5 text-xs text-violet-700">
               Carry the scope, contacts, address, files, and salesperson into a new job.
             </p>
@@ -1138,9 +1079,7 @@ function JobPreview() {
                 ["Contract", "$108k", "42% billed"],
               ].map(([label, value, detail]) => (
                 <div key={label} className="rounded-lg bg-slate-50 p-3">
-                  <p className="text-[9px] uppercase tracking-wide text-slate-500">
-                    {label}
-                  </p>
+                  <p className="text-[9px] uppercase tracking-wide text-slate-500">{label}</p>
                   <p className="mt-1 text-sm font-semibold">{value}</p>
                   <p className="mt-0.5 text-[9px] text-slate-500">{detail}</p>
                 </div>
@@ -1188,19 +1127,13 @@ function JobPreview() {
                 <span
                   className={cn(
                     "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-                    index === 0
-                      ? "border-orange-400 bg-orange-400/15"
-                      : "border-white/20",
+                    index === 0 ? "border-orange-400 bg-orange-400/15" : "border-white/20",
                   )}
                 >
-                  {index === 0 ? (
-                    <span className="size-1.5 rounded-full bg-orange-400" />
-                  ) : null}
+                  {index === 0 ? <span className="size-1.5 rounded-full bg-orange-400" /> : null}
                 </span>
                 <div>
-                  <p className="text-[11px] font-medium text-slate-100">
-                    {action}
-                  </p>
+                  <p className="text-[11px] font-medium text-slate-100">{action}</p>
                   <p className="mt-0.5 text-[9px] text-slate-500">{date}</p>
                 </div>
               </div>
@@ -1246,10 +1179,7 @@ function FieldPreview() {
                 className="flex items-center gap-2 rounded-lg border border-slate-200 p-2.5"
               >
                 <CheckCircle2
-                  className={cn(
-                    "size-3.5",
-                    done ? "text-emerald-500" : "text-slate-300",
-                  )}
+                  className={cn("size-3.5", done ? "text-emerald-500" : "text-slate-300")}
                 />
                 <div>
                   <p className="text-[10px] font-semibold">{label as string}</p>
@@ -1291,8 +1221,8 @@ function FieldPreview() {
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
             <p className="text-[10px] font-semibold">Progress note</p>
             <p className="mt-1 text-[10px] leading-5 text-slate-600">
-              Island set and leveled. Final seam work begins after lunch.
-              Edge inspection completed with project manager.
+              Island set and leveled. Final seam work begins after lunch. Edge inspection completed
+              with project manager.
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {["Installation", "Quality check"].map((tag) => (
@@ -1359,13 +1289,8 @@ function FinancialPreview() {
           ["Outstanding", "$31,200"],
           ["Retention held", "$7,460"],
         ].map(([label, value], index) => (
-          <div
-            key={label}
-            className="rounded-xl border border-slate-200 bg-white p-3"
-          >
-            <p className="text-[9px] uppercase tracking-wide text-slate-500">
-              {label}
-            </p>
+          <div key={label} className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-[9px] uppercase tracking-wide text-slate-500">{label}</p>
             <p
               className={cn(
                 "mt-1.5 text-base font-semibold tabular-nums",
@@ -1382,9 +1307,7 @@ function FinancialPreview() {
         <div className="flex items-center justify-between border-b border-slate-200 p-4">
           <div>
             <p className="text-sm font-semibold">Schedule of values</p>
-            <p className="text-[10px] text-slate-500">
-              Palm Ridge Residence · 10% retention
-            </p>
+            <p className="text-[10px] text-slate-500">Palm Ridge Residence · 10% retention</p>
           </div>
           <span className="flex items-center gap-1 rounded-lg bg-orange-50 px-2.5 py-1.5 text-[10px] font-semibold text-orange-700">
             <Sparkles className="size-3" />
@@ -1425,9 +1348,7 @@ function FinancialPreview() {
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-          <p className="text-[10px] font-semibold uppercase text-slate-500">
-            Latest invoice
-          </p>
+          <p className="text-[10px] font-semibold uppercase text-slate-500">Latest invoice</p>
           <div className="mt-1 flex items-center justify-between">
             <span className="text-xs font-semibold">INV-1048 · Aug 1</span>
             <span className="text-xs font-semibold tabular-nums">$28,100</span>
@@ -1478,21 +1399,19 @@ function AssistantPreview() {
               })}
             </div>
             <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-700">
-              <p className="font-semibold text-slate-950">
-                Three jobs need attention:
-              </p>
+              <p className="font-semibold text-slate-950">Three jobs need attention:</p>
               <ol className="mt-2 space-y-2">
                 <li>
-                  <span className="font-semibold">1. Palm Ridge</span> — approve
-                  the sink cutout revision before fabrication resumes.
+                  <span className="font-semibold">1. Palm Ridge</span> — approve the sink cutout
+                  revision before fabrication resumes.
                 </li>
                 <li>
-                  <span className="font-semibold">2. Mesa Modern</span> — two
-                  field logs are still open from this week.
+                  <span className="font-semibold">2. Mesa Modern</span> — two field logs are still
+                  open from this week.
                 </li>
                 <li>
-                  <span className="font-semibold">3. Canyon View</span> — CO-006
-                  is pending and the install milestone is Friday.
+                  <span className="font-semibold">3. Canyon View</span> — CO-006 is pending and the
+                  install milestone is Friday.
                 </li>
               </ol>
             </div>
@@ -1540,9 +1459,7 @@ function FieldOfficePreview() {
           <div className="flex items-end justify-between gap-3">
             <div>
               <p className="text-lg font-semibold">This Week</p>
-              <p className="text-[10px] text-slate-500">
-                12 milestones across 7 jobs
-              </p>
+              <p className="text-[10px] text-slate-500">12 milestones across 7 jobs</p>
             </div>
             <span className="rounded-lg bg-orange-600 px-3 py-2 text-[10px] font-semibold text-white">
               + Schedule item
@@ -1564,16 +1481,12 @@ function FieldOfficePreview() {
                 <span
                   className={cn(
                     "w-fit rounded-full px-2 py-0.5 font-medium",
-                    index === 0
-                      ? "bg-orange-50 text-orange-700"
-                      : "bg-slate-100 text-slate-600",
+                    index === 0 ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-600",
                   )}
                 >
                   {status}
                 </span>
-                <span className="text-right font-semibold text-slate-500">
-                  {progress}
-                </span>
+                <span className="text-right font-semibold text-slate-500">{progress}</span>
               </div>
             ))}
           </div>
@@ -1583,14 +1496,9 @@ function FieldOfficePreview() {
               ["Pending COs", "3", "text-violet-700"],
               ["On-time jobs", "92%", "text-emerald-700"],
             ].map(([label, value, color]) => (
-              <div
-                key={label}
-                className="rounded-lg border border-slate-200 bg-white p-3"
-              >
+              <div key={label} className="rounded-lg border border-slate-200 bg-white p-3">
                 <p className="text-[9px] text-slate-500">{label}</p>
-                <p className={cn("mt-1 text-base font-semibold", color)}>
-                  {value}
-                </p>
+                <p className={cn("mt-1 text-base font-semibold", color)}>{value}</p>
               </div>
             ))}
           </div>

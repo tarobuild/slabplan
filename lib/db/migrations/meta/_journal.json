@@ -305,6 +305,14 @@
       "tag": "0039_paid_access_requirement",
       "breakpoints": true,
       "checksum": "d339eb22eb2d0517fd9d1ee2b044b6e386024de9f9bd35adec5959ebd9a77a04"
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1787157814502,
+      "tag": "0040_legal_acceptance",
+      "breakpoints": true,
+      "checksum": "bd0e88e7de764a17163d2f231460161c51401f1fa0be60eb5e921301e595f463"
     }
   ]
 }

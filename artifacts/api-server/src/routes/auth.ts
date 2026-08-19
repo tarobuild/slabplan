@@ -9,6 +9,7 @@ import {
   personalAccessTokens,
   safeUserColumns,
   users,
+  type User,
 } from "@workspace/db/schema";
 import { assertActiveAuthUser } from "../lib/active-user";
 import {
@@ -19,10 +20,18 @@ import {
   sendAuthResponse,
   verifyRefreshToken,
 } from "../lib/auth";
+import { APP_PUBLIC_ORIGIN } from "../lib/brand";
+import { sendPasswordReset, truncateEmailError } from "../lib/email";
 import { HttpError, asyncHandler } from "../lib/http";
+import {
+  PRIVACY_VERSION,
+  TERMS_VERSION,
+  readLegalAcceptance,
+} from "../lib/legal";
 import { clearRateLimitBucket, createRateLimit } from "../lib/rate-limit";
 import {
   createSupabaseAuthUser,
+  deleteSupabaseAuthUser,
   isSupabasePasswordLoginEnabled,
   refreshSupabaseSession,
   revokeSupabaseSession,
@@ -32,14 +41,13 @@ import {
 } from "../lib/supabase-auth-session";
 import { requireAdmin, requireAuth } from "../middleware/require-auth";
 
-// NOTE: There is no public `/forgot-password` or `/reset-password` route by design.
-// Admins force a password reset by reissuing the invite token via
-// `POST /api/users/:id/invite`, which attempts transactional delivery through
-// `src/lib/email.ts` when an approved provider is configured.
+// Password setup and reset use the same short-lived, single-use token column.
+// Public reset requests are deliberately non-enumerating and rate-limited.
 
 const router: IRouter = Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MOBILE_CLIENT_HEADER = "x-cadstone-client";
+const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 
 function isMobileClientRequest(req: Request) {
   return req.get(MOBILE_CLIENT_HEADER) === "mobile";
@@ -57,7 +65,9 @@ function readRefreshToken(req: Request) {
   }
 
   const bodyToken = req.body?.refreshToken;
-  return typeof bodyToken === "string" && bodyToken.length > 0 ? bodyToken : null;
+  return typeof bodyToken === "string" && bodyToken.length > 0
+    ? bodyToken
+    : null;
 }
 
 // Pre-computed bcrypt hash of a dummy password used to ensure the "user not
@@ -111,6 +121,22 @@ const loginRateLimitByEmail = createRateLimit({
   max: LOGIN_EMAIL_MAX,
   windowMs: LOGIN_EMAIL_WINDOW_MS,
   message: "Too many login attempts. Try again later.",
+  resolveKey: (req) => normalizeEmailForRateLimit(req.body?.email),
+});
+
+const passwordResetRateLimitByIp = createRateLimit({
+  keyPrefix: "auth:password-reset:ip",
+  max: Number(process.env.PASSWORD_RESET_IP_MAX ?? 5),
+  windowMs: Number(process.env.PASSWORD_RESET_WINDOW_MS ?? 15 * 60 * 1000),
+  message: "Too many password reset requests. Try again later.",
+  resolveKey: (req) => req.ip || null,
+});
+
+const passwordResetRateLimitByEmail = createRateLimit({
+  keyPrefix: "auth:password-reset:email",
+  max: Number(process.env.PASSWORD_RESET_EMAIL_MAX ?? 3),
+  windowMs: Number(process.env.PASSWORD_RESET_WINDOW_MS ?? 15 * 60 * 1000),
+  message: "Too many password reset requests. Try again later.",
   resolveKey: (req) => normalizeEmailForRateLimit(req.body?.email),
 });
 
@@ -189,11 +215,17 @@ function normalizeOrganizationName(value: unknown): string {
   const trimmed = value.trim().replace(/\s+/g, " ");
 
   if (trimmed.length < 2) {
-    throw new HttpError(400, "Organization name must be at least 2 characters.");
+    throw new HttpError(
+      400,
+      "Organization name must be at least 2 characters.",
+    );
   }
 
   if (trimmed.length > 255) {
-    throw new HttpError(400, "Organization name must be 255 characters or fewer.");
+    throw new HttpError(
+      400,
+      "Organization name must be 255 characters or fewer.",
+    );
   }
 
   return trimmed;
@@ -244,7 +276,9 @@ async function findActiveUserById(id: string) {
   const [user] = await db
     .select(safeUserColumns)
     .from(users)
-    .where(and(eq(users.id, id), eq(users.isActive, true), isNull(users.deletedAt)))
+    .where(
+      and(eq(users.id, id), eq(users.isActive, true), isNull(users.deletedAt)),
+    )
     .limit(1);
 
   return user ?? null;
@@ -283,7 +317,10 @@ async function signInWithSupabaseOrClaimLegacyPassword(
   }
 
   if (!user.supabaseAuthUserId) {
-    throw new HttpError(409, "This account is not linked to Supabase Auth yet.");
+    throw new HttpError(
+      409,
+      "This account is not linked to Supabase Auth yet.",
+    );
   }
 
   await updateSupabaseAuthUser(user.supabaseAuthUserId, {
@@ -306,60 +343,177 @@ router.post(
     const email = normalizeEmail(req.body.email);
     const password = normalizePassword(req.body.password);
     const fullName = normalizeFullName(req.body.full_name);
-    const organizationName = normalizeOrganizationName(req.body.organization_name);
+    const organizationName = normalizeOrganizationName(
+      req.body.organization_name,
+    );
+    const legal = readLegalAcceptance(req.body);
 
     const passwordHash = await bcrypt.hash(password, 10);
     const now = new Date();
     const slug = await buildUniqueOrganizationSlug(organizationName);
+    const organizationId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    let supabaseAuthUserId: string | null = null;
 
-    const user = await db.transaction(async (tx) => {
-      const [organization] = await tx
-        .insert(organizations)
-        .values({
-          id: crypto.randomUUID(),
-          name: organizationName,
-          slug,
-          status: "trialing",
-          requiresSubscription: true,
-        })
-        .returning();
-
-      if (!organization) {
-        throw new HttpError(500, "Failed to create organization.");
-      }
-
-      const [createdUser] = await tx
-        .insert(users)
-        .values({
-          email,
-          passwordHash,
-          fullName,
-          role: "admin",
-          defaultOrganizationId: organization.id,
-          passwordSetAt: now,
-        })
-        .onConflictDoNothing({
-          target: users.email,
-          where: sql`${users.deletedAt} IS NULL`,
-        })
-        .returning();
-
-      if (!createdUser) {
-        throw new HttpError(409, "An account with that email already exists.");
-      }
-
-      await tx.insert(organizationMemberships).values({
-        organizationId: organization.id,
-        userId: createdUser.id,
-        role: "owner",
-        isDefault: true,
+    if (isSupabasePasswordLoginEnabled()) {
+      const created = await createSupabaseAuthUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName },
+        app_metadata: {
+          cadstone_user_id: userId,
+          cadstone_role: "admin",
+        },
       });
+      supabaseAuthUserId = created.id;
+    }
 
-      return createdUser;
-    });
+    let user: User;
+    try {
+      user = await db.transaction(async (tx) => {
+        const [organization] = await tx
+          .insert(organizations)
+          .values({
+            id: organizationId,
+            name: organizationName,
+            slug,
+            status: "trialing",
+            requiresSubscription: true,
+          })
+          .returning();
+
+        if (!organization) {
+          throw new HttpError(500, "Failed to create organization.");
+        }
+
+        const [createdUser] = await tx
+          .insert(users)
+          .values({
+            id: userId,
+            supabaseAuthUserId,
+            email,
+            passwordHash,
+            fullName,
+            role: "admin",
+            defaultOrganizationId: organization.id,
+            passwordSetAt: now,
+            termsAcceptedAt: now,
+            termsVersion: legal.termsVersion,
+            privacyAcceptedAt: now,
+            privacyVersion: legal.privacyVersion,
+          })
+          .onConflictDoNothing({
+            target: users.email,
+            where: sql`${users.deletedAt} IS NULL`,
+          })
+          .returning();
+
+        if (!createdUser) {
+          throw new HttpError(
+            409,
+            "An account with that email already exists.",
+          );
+        }
+
+        await tx.insert(organizationMemberships).values({
+          organizationId: organization.id,
+          userId: createdUser.id,
+          role: "owner",
+          isDefault: true,
+        });
+
+        return createdUser;
+      });
+    } catch (error) {
+      if (supabaseAuthUserId) {
+        await deleteSupabaseAuthUser(supabaseAuthUserId).catch(() => {});
+      }
+      throw error;
+    }
+
+    if (isSupabasePasswordLoginEnabled()) {
+      const session = await signInWithSupabasePassword(email, password);
+      res.status(201);
+      sendSupabaseAuthResponse(res, session, {
+        includeRefreshToken: isMobileClientRequest(req),
+      });
+      return;
+    }
 
     res.status(201);
     sendAuthResponse(res, user);
+  }),
+);
+
+router.post(
+  "/forgot-password",
+  passwordResetRateLimitByIp,
+  passwordResetRateLimitByEmail,
+  asyncHandler(async (req, res) => {
+    const startedAt = Date.now();
+    const email = normalizeEmail(req.body?.email);
+    const user = await findActiveUserByEmailWithPasswordHash(email);
+
+    if (user?.isActive) {
+      const token = crypto.randomBytes(32).toString("base64url");
+      const tokenHash = hashInviteToken(token);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + PASSWORD_RESET_TOKEN_TTL_MS);
+      const resetUrl = `${APP_PUBLIC_ORIGIN}/reset-password?token=${encodeURIComponent(token)}`;
+
+      await db
+        .update(users)
+        .set({
+          inviteTokenHash: tokenHash,
+          inviteToken: null,
+          inviteTokenExpiresAt: expiresAt,
+          lastInviteEmailSentAt: null,
+          lastInviteEmailError: null,
+          updatedAt: now,
+        })
+        .where(eq(users.id, user.id));
+
+      try {
+        await sendPasswordReset({ to: user.email, resetLink: resetUrl });
+        await db
+          .update(users)
+          .set({
+            lastInviteEmailSentAt: new Date(),
+            lastInviteEmailError: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, user.id));
+      } catch (error) {
+        const message = truncateEmailError(
+          (error as Error)?.message ?? "Unknown email error.",
+        );
+        req.log.error(
+          { err: error, userId: user.id },
+          "password reset email failed",
+        );
+        await db
+          .update(users)
+          .set({
+            lastInviteEmailSentAt: null,
+            lastInviteEmailError: message,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, user.id))
+          .catch(() => {});
+      }
+    }
+
+    const minimumResponseMs = 300;
+    const remaining = minimumResponseMs - (Date.now() - startedAt);
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, remaining));
+    }
+
+    res.status(202).json({
+      message:
+        "If an active account exists for that email, a reset link has been sent.",
+    });
   }),
 );
 
@@ -372,7 +526,10 @@ router.post(
     const password = normalizeLoginPassword(req.body.password);
 
     if (isSupabasePasswordLoginEnabled()) {
-      const session = await signInWithSupabaseOrClaimLegacyPassword(email, password);
+      const session = await signInWithSupabaseOrClaimLegacyPassword(
+        email,
+        password,
+      );
       await clearLoginRateLimitForRequest(req);
       sendSupabaseAuthResponse(res, session, {
         includeRefreshToken: isMobileClientRequest(req),
@@ -412,7 +569,9 @@ router.post(
     // successful sign-in.
     await clearLoginRateLimitForRequest(req);
 
-    sendAuthResponse(res, user, { includeRefreshToken: isMobileClientRequest(req) });
+    sendAuthResponse(res, user, {
+      includeRefreshToken: isMobileClientRequest(req),
+    });
   }),
 );
 
@@ -478,6 +637,7 @@ router.post(
     const rawToken = normalizeInviteToken(req.body?.token);
     const confirmedEmail = normalizeEmail(req.body?.email);
     const newPassword = req.body?.password;
+    const legal = readLegalAcceptance(req.body);
 
     if (typeof newPassword !== "string") {
       throw new HttpError(400, "Password is required.");
@@ -531,18 +691,17 @@ router.post(
         .set({
           passwordHash,
           passwordSetAt: now,
+          termsAcceptedAt: now,
+          termsVersion: legal.termsVersion,
+          privacyAcceptedAt: now,
+          privacyVersion: legal.privacyVersion,
           supabaseAuthUserId,
           inviteTokenHash: null,
           inviteToken: null,
           inviteTokenExpiresAt: null,
           updatedAt: now,
         })
-        .where(
-          and(
-            eq(users.id, user.id),
-            eq(users.inviteTokenHash, tokenHash),
-          ),
-        )
+        .where(and(eq(users.id, user.id), eq(users.inviteTokenHash, tokenHash)))
         .returning();
 
       if (rows.length > 0) {
@@ -578,17 +737,22 @@ router.post(
   }),
 );
 
-router.post("/logout", asyncHandler(async (req, res) => {
-  if (isSupabasePasswordLoginEnabled()) {
-    const authHeader = req.get("authorization");
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : null;
-    await revokeSupabaseSession(token);
-  }
+router.post(
+  "/logout",
+  asyncHandler(async (req, res) => {
+    if (isSupabasePasswordLoginEnabled()) {
+      const authHeader = req.get("authorization");
+      const token = authHeader?.startsWith("Bearer ")
+        ? authHeader.slice("Bearer ".length).trim()
+        : null;
+      await revokeSupabaseSession(token);
+    }
 
-  clearRefreshTokenCookie(res);
-  clearUploadTokenCookie(res);
-  res.json({ success: true });
-}));
+    clearRefreshTokenCookie(res);
+    clearUploadTokenCookie(res);
+    res.json({ success: true });
+  }),
+);
 
 router.post(
   "/refresh",
@@ -630,7 +794,9 @@ router.post(
       throw new HttpError(401, "Refresh token invalid.");
     }
 
-    sendAuthResponse(res, user, { includeRefreshToken: isMobileClientRequest(req) });
+    sendAuthResponse(res, user, {
+      includeRefreshToken: isMobileClientRequest(req),
+    });
   }),
 );
 

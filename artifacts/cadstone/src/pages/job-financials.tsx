@@ -1422,7 +1422,7 @@ export default function JobFinancialsPage() {
   }, [totals, data?.invoices.length, data?.tracker.contractDate])
 
   const retentionLedger = useMemo(() => {
-    if (!data?.totals.retention?.enabled) return []
+    if (!data?.totals?.retention?.enabled) return []
     let gross = 0
     let held = 0
     let net = 0
@@ -1441,7 +1441,7 @@ export default function JobFinancialsPage() {
         )
         return { invoice: inv, gross, held, net }
       })
-  }, [data?.invoices, data?.totals.retention.enabled])
+  }, [data?.invoices, data?.totals?.retention.enabled])
 
   if (loading) {
     return (

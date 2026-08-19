@@ -34,10 +34,7 @@ test.describe("daily logs CRUD (UI)", () => {
     }
   })
 
-  test("create, edit, and delete a daily log through the UI", async ({
-    page,
-    request,
-  }) => {
+  test("create, edit, and delete a daily log through the UI", async ({ page }) => {
     await page.goto(`/jobs/${jobId}/daily-logs`)
 
     // CREATE — open the dialog, fill notes, click Publish.
@@ -48,25 +45,24 @@ test.describe("daily logs CRUD (UI)", () => {
     await page
       .getByPlaceholder("Describe what happened on site today.")
       .fill(initialNotes)
+    const createResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === `/api/jobs/${jobId}/daily-logs` &&
+        response.status() === 201,
+    )
     await page.getByRole("button", { name: /^publish$/i }).click()
+    const createBody = (await (await createResponsePromise).json()) as {
+      log?: { id?: string }
+    }
+    createdLogId = createBody.log?.id ?? null
+    expect(createdLogId).toBeTruthy()
 
     // The feed should reflect the new entry without manual reload thanks to
     // the generated hook's onSuccess invalidation.
     await expect(page.getByText(initialNotes).first()).toBeVisible({
       timeout: 15_000,
     })
-
-    // Capture the id via the API so cleanup remains deterministic.
-    const listRes = await request.get(
-      `/api/jobs/${jobId}/daily-logs?limit=20`,
-      { headers: authHeaders(token) },
-    )
-    const listBody = await listRes.json()
-    const matched = (listBody.logs ?? []).find((l: { notes?: string }) =>
-      (l.notes ?? "").includes(initialNotes),
-    )
-    createdLogId = matched?.id ?? null
-    expect(createdLogId).toBeTruthy()
 
     // EDIT — open detail view, click the pencil, edit notes, save.
     await page.getByText(initialNotes).first().click()

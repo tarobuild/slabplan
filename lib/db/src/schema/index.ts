@@ -126,7 +126,9 @@ export const organizations = pgTable(
     stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
     stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
     trialEndsAt: timestampTz("trial_ends_at"),
-    requiresSubscription: boolean("requires_subscription").notNull().default(false),
+    requiresSubscription: boolean("requires_subscription")
+      .notNull()
+      .default(false),
     ...baseTimestamps,
     ...softDeleteTimestamp,
   },
@@ -165,6 +167,10 @@ export const users = pgTable(
     inviteToken: varchar("invite_token", { length: 128 }),
     inviteTokenExpiresAt: timestampTz("invite_token_expires_at"),
     passwordSetAt: timestampTz("password_set_at"),
+    termsAcceptedAt: timestampTz("terms_accepted_at"),
+    termsVersion: varchar("terms_version", { length: 50 }),
+    privacyAcceptedAt: timestampTz("privacy_accepted_at"),
+    privacyVersion: varchar("privacy_version", { length: 50 }),
     lastInviteEmailSentAt: timestampTz("last_invite_email_sent_at"),
     lastInviteEmailError: varchar("last_invite_email_error", { length: 500 }),
     // Per-event email notification preferences. See migration

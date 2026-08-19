@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 import {
   CESAR,
   WORKER_EMAIL,
@@ -43,6 +43,16 @@ async function waitForJobPut(
   )
   await action()
   await responsePromise
+}
+
+async function openDatePopover(page: Page, trigger: Locator): Promise<Locator> {
+  await trigger.click()
+  const contentId = await trigger.getAttribute("aria-controls")
+  expect(contentId).toBeTruthy()
+
+  const popover = page.locator(`[id=${JSON.stringify(contentId)}]`)
+  await expect(popover).toBeVisible()
+  return popover
 }
 
 test.describe("jobs inline editors — admin", () => {
@@ -119,22 +129,22 @@ test.describe("jobs inline editors — admin", () => {
     })
     await expect(startTrigger).toContainText("—")
 
-    await startTrigger.click()
-    await page
-      .locator('input[type="date"]:visible')
-      .fill("2026-06-15")
+    let datePopover = await openDatePopover(page, startTrigger)
+    await datePopover.locator('input[type="date"]').fill("2026-06-15")
     await waitForJobPut(page, jobId, async () => {
-      await page.getByRole("button", { name: /^Save$/ }).click()
+      await datePopover.getByRole("button", { name: /^Save$/ }).click()
     })
+    await expect(datePopover).toBeHidden()
     await expect(startTrigger).toContainText("Jun 15, 2026")
 
     detail = await fetchJobDetail(request, token, jobId)
     expect(detail.projectedStart).toBe("2026-06-15")
 
-    await startTrigger.click()
+    datePopover = await openDatePopover(page, startTrigger)
     await waitForJobPut(page, jobId, async () => {
-      await page.getByRole("button", { name: /^Clear$/ }).click()
+      await datePopover.getByRole("button", { name: /^Clear$/ }).click()
     })
+    await expect(datePopover).toBeHidden()
     await expect(startTrigger).toContainText("—")
 
     detail = await fetchJobDetail(request, token, jobId)
@@ -146,22 +156,22 @@ test.describe("jobs inline editors — admin", () => {
     })
     await expect(endTrigger).toContainText("—")
 
-    await endTrigger.click()
-    await page
-      .locator('input[type="date"]:visible')
-      .fill("2026-08-30")
+    datePopover = await openDatePopover(page, endTrigger)
+    await datePopover.locator('input[type="date"]').fill("2026-08-30")
     await waitForJobPut(page, jobId, async () => {
-      await page.getByRole("button", { name: /^Save$/ }).click()
+      await datePopover.getByRole("button", { name: /^Save$/ }).click()
     })
+    await expect(datePopover).toBeHidden()
     await expect(endTrigger).toContainText("Aug 30, 2026")
 
     detail = await fetchJobDetail(request, token, jobId)
     expect(detail.projectedCompletion).toBe("2026-08-30")
 
-    await endTrigger.click()
+    datePopover = await openDatePopover(page, endTrigger)
     await waitForJobPut(page, jobId, async () => {
-      await page.getByRole("button", { name: /^Clear$/ }).click()
+      await datePopover.getByRole("button", { name: /^Clear$/ }).click()
     })
+    await expect(datePopover).toBeHidden()
     await expect(endTrigger).toContainText("—")
 
     detail = await fetchJobDetail(request, token, jobId)

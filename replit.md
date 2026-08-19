@@ -65,8 +65,8 @@ Canonical production env vars will be finalized as SlabPlan moves toward staging
 Expected categories:
 
 - **DB:** `SUPABASE_DATABASE_URL` or `DATABASE_URL`
-- **Auth:** `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_UPLOAD_SECRET`, `JWT_RESET_SECRET`, `SESSION_SECRET`
-- **Email:** provider API key, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `APP_PUBLIC_URL`
+- **Auth:** `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_UPLOAD_SECRET`; add `SUPABASE_ANON_KEY` only when Supabase Auth login is enabled
+- **Email:** no production provider is currently approved or wired; invite/reset flows surface manual links and fail loudly on attempted delivery
 - **CORS / origins:** `CORS_ALLOWED_ORIGINS` or `APP_ORIGIN`
 - **AI:** `AI_INTEGRATIONS_ANTHROPIC_API_KEY`, `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`, optional `AGENT_MODEL`
 - **Upload storage:** `SUPABASE_URL`, `SUPABASE_STORAGE_BUCKET`, `SUPABASE_SERVICE_ROLE_KEY`

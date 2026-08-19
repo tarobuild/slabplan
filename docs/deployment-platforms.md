@@ -31,13 +31,13 @@ Use a Reserved VM because the API maintains Socket.IO connections, in-memory con
 Build command:
 
 ```bash
-corepack enable && corepack prepare pnpm@10.33.0 --activate && pnpm install --frozen-lockfile && pnpm run build:web && pnpm run build:api
+corepack pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/ && corepack pnpm run build:web && corepack pnpm run build:api
 ```
 
 Run command:
 
 ```bash
-pnpm run start:api
+corepack pnpm run start:api
 ```
 
 The API listens on `0.0.0.0` and `PORT`, serves `/api/*`, Socket.IO, private file routes, and the compiled React application from the same origin.
@@ -54,24 +54,34 @@ Required Replit published-app secrets:
 - `JWT_REFRESH_SECRET`
 - `JWT_UPLOAD_SECRET`
 - `AI_INTEGRATIONS_ANTHROPIC_API_KEY`
-- `AI_INTEGRATIONS_ANTHROPIC_BASE_URL`
-- `RESEND_API_KEY`
-- `EMAIL_FROM`
-- `APP_PUBLIC_URL`
 
 Required non-secret production settings:
 
 - `NODE_ENV=production`
-- `STORAGE_PROVIDER=supabase`
-- `CANONICAL_HOST=<published host>`
-- `CORS_ALLOWED_ORIGINS=https://<published host>`
-- `EMAIL_REPLY_TO=<support inbox>`
+- `CADSTONE_STORAGE_BACKEND=supabase`
+- `APP_PUBLIC_URL=https://slabplan.replit.app`
+- `CANONICAL_HOST=slabplan.replit.app`
+- `CORS_ALLOWED_ORIGINS=https://slabplan.replit.app`
+- `AI_INTEGRATIONS_ANTHROPIC_BASE_URL=https://api.anthropic.com`
+- `AGENT_MODEL=claude-sonnet-4-6`
 
-Stripe and Sentry variables remain required only when those product integrations are enabled. Store every credential in Replit Secrets; never commit values.
+`SUPABASE_ANON_KEY` is required only when Supabase Auth login is enabled.
+Stripe variables are required when paid plans are enabled. Sentry variables are
+optional. Transactional email currently fails loudly and returns the manual
+invite/reset link because no provider is approved and wired; do not add Resend
+under the repository policy.
+
+Store every credential in Replit Secrets; never commit values.
 
 ## Supabase Large Files
 
-The private bucket and project global upload limit must both be set to `500 GB` on a paid Supabase plan. Files above the small multipart threshold use a signed TUS upload directly from the browser to the storage-specific Supabase hostname. The Replit server receives metadata and finalizes the database record, but never proxies the file body.
+The private bucket and project global upload limit must both be set to `500 GB`
+on a paid Supabase plan. Supabase represents this as `500 * 1024^3` bytes,
+which matches the application limit. Pro projects must have the spend cap
+disabled for the 500 GB limit to be available. Files above the small multipart
+threshold use a signed TUS upload directly from the browser to the
+storage-specific Supabase hostname. The Replit server receives metadata and
+finalizes the database record, but never proxies the file body.
 
 Every object path is prefixed by `organizations/<organization-id>/`. Signed upload intents, file rows, attachment rows, authorization checks, and activity records all retain the active organization.
 
@@ -79,8 +89,11 @@ Every object path is prefixed by `organizations/<organization-id>/`. Signed uplo
 
 Create Replit Scheduled Deployments for:
 
-- Daily database backup: `pnpm --filter @workspace/api-server run backup:db`
-- Daily backup verification: `pnpm --filter @workspace/api-server run backup:check`
-- Weekly storage drift audit using the existing audit script
+- Daily database backup at 09:00 UTC:
+  `corepack pnpm --filter @workspace/api-server run backup:db`
+- Daily backup verification at 12:00 UTC:
+  `corepack pnpm --filter @workspace/api-server run backup:check`
+- Weekly read-only storage drift audit:
+  `node artifacts/api-server/scripts/audit-storage-drift.mjs --db=production`
 
 Scheduled jobs use the same Supabase production secrets as the Reserved VM. Backup artifacts remain in private Supabase Storage.

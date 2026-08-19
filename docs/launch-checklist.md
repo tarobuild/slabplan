@@ -6,7 +6,7 @@
 - [x] Replit `@tarobuild/slabplan` has a clean worktree synced to GitHub `main`.
 - [x] Typecheck, API codegen drift, unused-code, frontend bundle, and targeted upload tests pass.
 - [x] The local Playwright release gate passes all 73 end-to-end tests.
-- [ ] The GitHub Playwright release workflow passes all 73 end-to-end tests for
+- [x] The GitHub Playwright release workflow passes all 73 end-to-end tests for
   the new release commit.
 - [x] No Railway or Vercel runtime configuration remains.
 

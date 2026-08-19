@@ -33,8 +33,8 @@ Last updated: 2026-08-19
   configured Google Workspace SMTP account.
 - Production web/API dependencies have no known high or critical advisories;
   remaining high advisories are isolated to the unused mobile build toolchain.
-- The local Playwright release gate passes all 73 end-to-end tests. The GitHub
-  release workflow must pass again for the new release commit.
+- The local Playwright release gate and GitHub Actions run `32300000680` pass
+  all 73 end-to-end tests.
 
 ## Deployment Checklist
 
@@ -83,6 +83,8 @@ Last updated: 2026-08-19
   both `/api/livez` endpoints return HTTP 200.
 - Backup evidence: GitHub Actions daily backup run `32272998126` and manual
   restore drill run `32273134749` passed on 2026-08-19.
+- Release gate evidence: GitHub Actions Playwright run `32300000680` passed all
+  73 end-to-end tests on 2026-08-19.
 - Supabase project: `slabplan-production`, organization plan Pro, spend cap
   disabled.
 - Storage bucket: `slabplan-files`, private, inheriting the 500 GB global

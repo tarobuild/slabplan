@@ -25,6 +25,13 @@ on:
   # A release operator can push a one-time backup-verify-* tag to exercise the
   # production backup path without enabling backups on ordinary code pushes.
   push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/db-backup.yml"
+      - "artifacts/api-server/scripts/db-backup.mjs"
+      - "artifacts/api-server/scripts/db-backup-check.mjs"
+      - "artifacts/api-server/scripts/lib/backup-alerts.mjs"
     tags:
       - "backup-verify-*"
 

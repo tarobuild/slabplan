@@ -54,7 +54,14 @@ jobs:
           cat > "$GITHUB_WORKSPACE/.github/bin/pg_dump17" <<'EOF'
           #!/usr/bin/env bash
           set -euo pipefail
-          docker run --rm postgres:17 pg_dump "$@"
+          docker run --rm \
+            -e PGHOST \
+            -e PGPORT \
+            -e PGDATABASE \
+            -e PGUSER \
+            -e PGPASSWORD \
+            -e PGSSLMODE \
+            postgres:17 pg_dump "$@"
           EOF
           chmod +x "$GITHUB_WORKSPACE/.github/bin/pg_dump17"
 

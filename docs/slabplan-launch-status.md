@@ -23,13 +23,17 @@ Last updated: 2026-08-18
   organization-scoped.
 - The application and OpenAPI policy allow individual files up to 500 GB.
 - Production builds include both the frontend and API in one deployable output.
-- Typecheck, upload integration tests, frontend upload tests, and the eager
-  bundle check pass.
+- Typecheck, API codegen verification, dependency analysis, eager-bundle
+  verification, frontend build, API build, all 299 frontend tests, and all
+  749 API tests pass.
+- Production web/API dependencies have no known high or critical advisories;
+  remaining high advisories are isolated to the unused mobile build toolchain.
 
 ## Deployment Checklist
 
-- [ ] Merge the validated migration commit into GitHub `main`.
-- [ ] Pull that exact `main` commit into the TaroBuild Replit app.
+- [x] Merge the validated migration commit into GitHub `main`.
+- [x] Pull that exact `main` commit into the TaroBuild Replit app and complete
+  the configured Replit production build.
 - [ ] Configure production-only Replit secrets from the SlabPlan services.
 - [ ] Select Reserved VM deployment and publish.
 - [ ] Verify `/api/livez`, `/api/healthz`, login, Socket.IO, billing, email, AI,
@@ -43,7 +47,7 @@ Last updated: 2026-08-18
 ## Production Record
 
 - Replit URL: pending publish
-- GitHub commit: pending merge
+- GitHub commit: `969153f5a7df115add4211a4d62bc2a4d6581698`
 - Supabase project: `slabplan-production` (access and settings must be
   re-verified before publish)
 - Storage bucket: `slabplan-files` (private; limit must be re-verified)

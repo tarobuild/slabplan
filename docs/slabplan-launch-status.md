@@ -78,6 +78,11 @@ Last updated: 2026-08-19
 - Google Workspace SMTP: the Replit production deployment has all nine SMTP
   bindings configured with a dedicated `SlabPlan Replit SMTP` app password.
   End-to-end forgot-password delivery still requires a production account test.
+- Production integration bindings: Anthropic AI, Stripe billing, Supabase,
+  authentication, Sentry, and SMTP secret names are attached to the published
+  app. Values were not copied into this repository or release record.
+- Socket.IO: the live polling handshake returned an active session and
+  advertised `websocket` as an available upgrade.
 - Custom domains: `slabplan.com` and `www.slabplan.com` resolve to the Replit
   deployment at `34.111.179.208` with valid HTTPS. The apex redirects to `www`;
   both `/api/livez` endpoints return HTTP 200.
@@ -89,6 +94,10 @@ Last updated: 2026-08-19
   disabled.
 - Storage bucket: `slabplan-files`, private, inheriting the 500 GB global
   object-size limit.
+- Supabase backups: eight daily physical restore points were visible on
+  2026-08-19. Point-in-Time Recovery is currently disabled and offered as a
+  separate paid add-on; the daily backup and tested restore workflow remain
+  active.
 - Railway: the `slabplan-api` project was permanently deleted after the Hobby
   subscription was canceled. Railway is no longer a SlabPlan runtime or deploy
   target.

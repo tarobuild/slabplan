@@ -16,7 +16,10 @@
 - [x] Build and run commands match `.replit`.
 - [x] All required production secrets are attached to the published app.
 - [x] The new deployment is live and `/api/livez` and `/api/healthz` return success.
-- [ ] WebSocket, login, invite email, AI, and billing smoke tests pass.
+- [x] The live Socket.IO transport handshake succeeds and advertises a
+  WebSocket upgrade.
+- [ ] Login, invite email, AI, and billing authenticated production smoke tests
+  pass.
 - [ ] Forgot-password email delivery and reset completion pass through the
   production Google Workspace SMTP account.
 - [x] Public Terms and Privacy pages load, and registration records versioned
@@ -36,7 +39,8 @@
 - [x] The bucket is private and service-role access is available only to the API.
 - [x] The scheduled database backup and its verification job pass.
 - [x] The manual database restore drill passes.
-- [ ] Confirm the Supabase PITR retention policy before broad production use.
+- [x] Confirm the Supabase backup policy: eight daily physical restore points
+  are visible; PITR is disabled and available as a separate paid add-on.
 
 ## Large Uploads
 

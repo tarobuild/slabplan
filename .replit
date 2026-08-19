@@ -6,6 +6,7 @@ run = "corepack pnpm --filter @workspace/api-server run dev"
 requiredFiles = [".replit", "replit.nix", "package.json", "pnpm-lock.yaml"]
 
 [deployment]
+deploymentTarget = "cloudrun"
 build = "corepack pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/ && corepack pnpm run build:web && corepack pnpm run build:api"
 run = "corepack pnpm run start:api"
 

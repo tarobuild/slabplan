@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useParams, useNavigate } from "react-router-dom"
 import {
+  Archive,
   ArrowLeft,
   Building2,
   ClipboardList,
@@ -16,6 +17,16 @@ import { useAuthStore } from "@/store/auth"
 import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -343,6 +354,8 @@ export default function ClientDetailPage() {
   const [tab, setTab] = useState<Tab>("jobs")
   const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([])
   const [createJobOpen, setCreateJobOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === "admin"
 
@@ -482,6 +495,20 @@ export default function ClientDetailPage() {
     return saveJobFields(jobId, { [field]: Math.round(nextDollars * 100) })
   }
 
+  async function archiveClient() {
+    if (!clientId) return
+    setArchiving(true)
+    try {
+      await api.delete(`/clients/${clientId}`)
+      toast.success("Client archived")
+      navigate("/clients")
+    } catch (err) {
+      toastApiError(err, "Failed to archive client")
+    } finally {
+      setArchiving(false)
+    }
+  }
+
   const sortedJobs = useMemo(
     () =>
       (client?.jobs ?? []).slice().sort((a, b) => {
@@ -515,7 +542,7 @@ export default function ClientDetailPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Button variant="ghost" size="icon" className="size-8" onClick={() => navigate("/clients")} aria-label="Back to clients">
             <ArrowLeft className="size-4" />
@@ -535,6 +562,17 @@ export default function ClientDetailPage() {
             </p>
           </div>
         </div>
+        {isAdmin && !client.archived ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setArchiveOpen(true)}
+          >
+            <Archive className="mr-1.5 size-3.5" />
+            Archive Client
+          </Button>
+        ) : null}
       </div>
 
       {/* AR rollup cards */}
@@ -1066,6 +1104,23 @@ export default function ClientDetailPage() {
         defaultClientName={client.companyName}
         lockClient
       />
+
+      <AlertDialog open={archiveOpen} onOpenChange={setArchiveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive client?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The client will move out of the active list. Linked jobs and contacts will stay attached and remain available from the Archived view.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={archiveClient} disabled={archiving}>
+              {archiving ? "Archiving…" : "Archive"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

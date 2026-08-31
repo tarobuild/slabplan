@@ -1290,8 +1290,8 @@ export const ClientsPutClientsIdResponse = zod
   );
 
 /**
- * Route defined in artifacts/api-server/src/routes/clients.ts.
- * @summary DELETE /clients/{id}
+ * Soft-archives the client while preserving all linked jobs and contacts. Admin-only.
+ * @summary Archive a client
  */
 export const clientsDeleteClientsIdPathIdRegExp = new RegExp(
   "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",

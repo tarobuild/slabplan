@@ -38,16 +38,12 @@ const router: IRouter = Router();
 router.use(requireManagerOrAbove);
 
 // Deterministic UUIDv5 sentinel for the "Unknown client" placeholder created
-// by migration 0010. Jobs without a real client (legacy NULL rows or
-// rows orphaned by a client deletion) are assigned to this client so
-// the clients-first navigation always has somewhere to land. Must stay
-// identical across every environment so migration 0010 and the runtime
-// reference the same row. SAST scanners flag the high-entropy hex
-// string as a "Generic API Key"; it is a row id, not a credential.
+// by migration 0010. This client is infrastructure and cannot be archived.
+// SAST scanners flag the high-entropy hex string as a "Generic API Key";
+// it is a row id, not a credential.
 // hounddog-ignore: hardcoded-secret
 // nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
 const UNKNOWN_CLIENT_ID = "8bdd2d52-7563-5843-95f8-aea786f0b386"; // nosemgrep: vendored-rules.generic.secrets.gitleaks.generic-api-key
-const UNKNOWN_CLIENT_NAME = "Unknown client";
 
 const optionalString = z
   .union([z.string(), z.null(), z.undefined()])
@@ -136,7 +132,7 @@ router.get(
     const { page, pageSize, search, status } = query.data;
     const offset = (page - 1) * pageSize;
     const [accessibleClientIds, accessibleJobIds] = await Promise.all([
-      listAccessibleClientIds(req.auth!),
+      listAccessibleClientIds(req.auth!, { includeArchived: status !== "active" }),
       listAccessibleJobIds(req.auth!),
     ]);
 
@@ -395,7 +391,7 @@ router.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const clientId = getParam(req.params.id, "client id");
-    await assertCanAccessClient(req.auth!, clientId);
+    await assertCanAccessClient(req.auth!, clientId, { includeArchived: true });
     const client = await getClientForDetail(clientId, req.auth);
     const accessibleJobIds = await listAccessibleJobIds(req.auth!);
 
@@ -551,83 +547,25 @@ router.delete(
     await assertCanAccessClient(req.auth!, clientId);
     await getClientOrThrow(clientId, req.auth);
 
-    const now = new Date();
-
     if (clientId === UNKNOWN_CLIENT_ID) {
       throw new HttpError(
         400,
-        "The Unknown client placeholder cannot be deleted.",
+        "The Unknown client placeholder cannot be archived.",
       );
     }
 
-    await db.transaction(async (tx) => {
-      // Reassign live jobs to the Unknown client placeholder so they
-      // remain reachable through the clients-first navigation instead
-      // of being orphaned with a NULL client_id.
-      const organizationId = getActiveOrganizationId(req.auth!);
-      let reassignmentClientId = UNKNOWN_CLIENT_ID;
+    const now = new Date();
+    await db
+      .update(clients)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(clients.id, clientId),
+          organizationScopeCondition(req.auth!, clients.organizationId),
+        ),
+      );
 
-      if (organizationId) {
-        const [existingUnknownClient] = await tx
-          .select({ id: clients.id })
-          .from(clients)
-          .where(
-            and(
-              eq(clients.organizationId, organizationId),
-              eq(clients.companyName, UNKNOWN_CLIENT_NAME),
-              isNull(clients.deletedAt),
-            ),
-          )
-          .limit(1);
-
-        if (existingUnknownClient) {
-          reassignmentClientId = existingUnknownClient.id;
-        } else {
-          const [createdUnknownClient] = await tx
-            .insert(clients)
-            .values({
-              organizationId,
-              companyName: UNKNOWN_CLIENT_NAME,
-            })
-            .returning({ id: clients.id });
-          reassignmentClientId = createdUnknownClient.id;
-        }
-      }
-
-      await tx
-        .update(jobs)
-        .set({ clientId: reassignmentClientId, updatedAt: now })
-        .where(
-          and(
-            eq(jobs.clientId, clientId),
-            isNull(jobs.deletedAt),
-            organizationScopeCondition(req.auth!, jobs.organizationId),
-          ),
-        );
-
-      await tx
-        .update(clientContacts)
-        .set({ deletedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(clientContacts.clientId, clientId),
-            isNull(clientContacts.deletedAt),
-            organizationScopeCondition(req.auth!, clientContacts.organizationId),
-          ),
-        );
-
-      await tx
-        .update(clients)
-        .set({ deletedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(clients.id, clientId),
-            organizationScopeCondition(req.auth!, clients.organizationId),
-          ),
-        );
-    });
-
-    res.json({ success: true });
+    res.json({ success: true, archived: true });
   }),
 );
 

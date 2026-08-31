@@ -21,6 +21,7 @@ const orgAClientId = crypto.randomUUID();
 const orgBClientId = crypto.randomUUID();
 const orgADeleteClientId = crypto.randomUUID();
 const orgADeleteJobId = crypto.randomUUID();
+const orgADeleteContactId = crypto.randomUUID();
 const createdClientIds: string[] = [];
 const createdContactIds: string[] = [];
 
@@ -45,6 +46,7 @@ before(async () => {
   const auth = await import("../src/lib/auth.ts");
   const { db } = await import("@workspace/db");
   const {
+    clientContacts,
     clients,
     jobs,
     organizationMemberships,
@@ -131,6 +133,15 @@ before(async () => {
     clientId: orgADeleteClientId,
     createdBy: orgAAdminId,
   });
+
+  await db.insert(clientContacts).values({
+    id: orgADeleteContactId,
+    organizationId: orgAId,
+    clientId: orgADeleteClientId,
+    firstName: "Archive",
+    lastName: "Contact",
+  });
+  createdContactIds.push(orgADeleteContactId);
 
   orgAAdminToken = auth.signAccessToken({
     id: orgAAdminId,
@@ -248,7 +259,7 @@ test("client and contact creates stamp the active organization", async () => {
   assert.equal(contactBody.contact.organizationId, orgAId);
 });
 
-test("tenant-scoped client deletion reassigns live jobs to a tenant Unknown client", async () => {
+test("tenant-scoped client archiving preserves linked jobs and contacts", async () => {
   const deleteResponse = await fetch(`${baseUrl}/clients/${orgADeleteClientId}`, {
     method: "DELETE",
     headers: jsonHeaders(orgAAdminToken),
@@ -256,26 +267,41 @@ test("tenant-scoped client deletion reassigns live jobs to a tenant Unknown clie
   assert.equal(deleteResponse.status, 200);
 
   const { db } = await import("@workspace/db");
-  const { clients, jobs } = await import("@workspace/db/schema");
+  const { clientContacts, clients, jobs } = await import("@workspace/db/schema");
   const { eq } = await import("drizzle-orm");
+  const [client] = await db
+    .select({ deletedAt: clients.deletedAt })
+    .from(clients)
+    .where(eq(clients.id, orgADeleteClientId))
+    .limit(1);
   const [job] = await db
     .select({ clientId: jobs.clientId })
     .from(jobs)
     .where(eq(jobs.id, orgADeleteJobId))
     .limit(1);
-
-  assert.ok(job?.clientId);
-
-  const [unknownClient] = await db
-    .select({
-      id: clients.id,
-      organizationId: clients.organizationId,
-      companyName: clients.companyName,
-    })
-    .from(clients)
-    .where(eq(clients.id, job.clientId))
+  const [contact] = await db
+    .select({ deletedAt: clientContacts.deletedAt })
+    .from(clientContacts)
+    .where(eq(clientContacts.id, orgADeleteContactId))
     .limit(1);
 
-  assert.equal(unknownClient?.organizationId, orgAId);
-  assert.equal(unknownClient?.companyName, "Unknown client");
+  assert.ok(client?.deletedAt);
+  assert.equal(job?.clientId, orgADeleteClientId);
+  assert.equal(contact?.deletedAt, null);
+
+  const archivedDetail = await fetch(`${baseUrl}/clients/${orgADeleteClientId}`, {
+    headers: { authorization: `Bearer ${orgAAdminToken}` },
+  });
+  assert.equal(archivedDetail.status, 200);
+  const archivedBody = (await archivedDetail.json()) as {
+    client: {
+      archived: boolean;
+      contacts: Array<{ id: string }>;
+      jobs: Array<{ id: string; clientId?: string }>;
+    };
+  };
+
+  assert.equal(archivedBody.client.archived, true);
+  assert.ok(archivedBody.client.contacts.some((row) => row.id === orgADeleteContactId));
+  assert.ok(archivedBody.client.jobs.some((row) => row.id === orgADeleteJobId));
 });

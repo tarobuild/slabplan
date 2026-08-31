@@ -10,7 +10,15 @@ const ALLOW_REMOTE_TEST_RESET_ENV = "SLABPLAN_ALLOW_REMOTE_TEST_DATABASE_RESET";
 // A handful of tables the test suites rely on. If any are missing we treat
 // the DB as un-provisioned and trigger setup-test-db. We deliberately keep
 // this list short — it just needs to detect "empty database / missing schema".
-const SENTINEL_TABLES = ["users", "jobs", "files", "personal_access_tokens"];
+const SENTINEL_TABLES = [
+  "organizations",
+  "organization_memberships",
+  "users",
+  "clients",
+  "jobs",
+  "files",
+  "personal_access_tokens",
+];
 
 function resolveTestDatabaseUrl(): string {
   return (

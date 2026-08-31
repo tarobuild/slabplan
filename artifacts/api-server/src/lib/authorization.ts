@@ -308,7 +308,10 @@ export async function listAccessibleLeadIds(auth: AuthContext): Promise<string[]
   ]);
 }
 
-export async function listAccessibleClientIds(auth: AuthContext): Promise<string[] | null> {
+export async function listAccessibleClientIds(
+  auth: AuthContext,
+  options: { includeArchived?: boolean } = {},
+): Promise<string[] | null> {
   if (isAdmin(auth)) {
     return null;
   }
@@ -323,7 +326,7 @@ export async function listAccessibleClientIds(auth: AuthContext): Promise<string
     .from(clients)
     .where(
       and(
-        isNull(clients.deletedAt),
+        options.includeArchived ? undefined : isNull(clients.deletedAt),
         organizationScopeCondition(auth, clients.organizationId),
         eq(clients.createdBy, auth.userId),
       ),
@@ -536,7 +539,11 @@ export async function assertCanManageLead(auth: AuthContext, leadId: string) {
   throw new HttpError(403, "You do not have permission to modify that lead.");
 }
 
-export async function assertCanAccessClient(auth: AuthContext, clientId: string) {
+export async function assertCanAccessClient(
+  auth: AuthContext,
+  clientId: string,
+  options: { includeArchived?: boolean } = {},
+) {
   if (isAdmin(auth)) {
     const [row] = await db
       .select({ id: clients.id })
@@ -545,7 +552,7 @@ export async function assertCanAccessClient(auth: AuthContext, clientId: string)
         and(
           eq(clients.id, clientId),
           organizationScopeCondition(auth, clients.organizationId),
-          isNull(clients.deletedAt),
+          options.includeArchived ? undefined : isNull(clients.deletedAt),
         ),
       )
       .limit(1);
@@ -555,7 +562,7 @@ export async function assertCanAccessClient(auth: AuthContext, clientId: string)
     return;
   }
 
-  const clientIds = await listAccessibleClientIds(auth);
+  const clientIds = await listAccessibleClientIds(auth, options);
 
   if (!clientIds?.includes(clientId)) {
     throw new HttpError(403, "You do not have access to that client.");

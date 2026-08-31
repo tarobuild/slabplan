@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import {
+  Archive,
   Building2,
   Loader2,
   Mail,
@@ -79,6 +80,7 @@ import { formatShortUsDate } from "@/lib/date-format"
 import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
 import { cn } from "@/lib/utils"
+import { useAuthStore } from "@/store/auth"
 
 type Contact = {
   id: string
@@ -102,6 +104,7 @@ type ClientDetail = {
   state: string | null
   zipCode: string | null
   notes: string | null
+  archived: boolean
   contacts: Contact[]
   jobs: JobRow[]
 }
@@ -191,6 +194,7 @@ export default function ClientsPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const location = useLocation()
+  const isAdmin = useAuthStore((state) => state.user?.role === "admin")
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [statusFilter, setStatusFilter] = useState<ClientStatus>("active")
@@ -217,7 +221,7 @@ export default function ClientsPage() {
   const [contactForm, setContactForm] = useState<ContactForm>(emptyContactForm)
   const [contactSaving, setContactSaving] = useState(false)
 
-  const [deleteClientId, setDeleteClientId] = useState<string | null>(null)
+  const [archiveClientId, setArchiveClientId] = useState<string | null>(null)
   const [deleteContactId, setDeleteContactId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -429,20 +433,20 @@ export default function ClientsPage() {
     }
   }
 
-  const handleDeleteClient = async () => {
-    if (!deleteClientId) return
+  const handleArchiveClient = async () => {
+    if (!archiveClientId) return
     setDeleting(true)
     try {
-      await deleteClientMutation.mutateAsync({ id: deleteClientId })
-      toast.success("Client deleted")
-      const deletedId = deleteClientId
-      setDeleteClientId(null)
-      if (selected?.id === deletedId) setSelected(null)
+      await deleteClientMutation.mutateAsync({ id: archiveClientId })
+      toast.success("Client archived")
+      const archivedId = archiveClientId
+      setArchiveClientId(null)
+      if (selected?.id === archivedId) setSelected(null)
       invalidateClientsList()
-      invalidateClientDetail(deletedId)
+      invalidateClientDetail(archivedId)
       invalidateAppData(["clients", "navigation"])
     } catch (err: unknown) {
-      toastApiError(err, "Failed to delete client")
+      toastApiError(err, "Failed to archive client")
     } finally {
       setDeleting(false)
     }
@@ -675,12 +679,17 @@ export default function ClientsPage() {
                     {fmtMoneyCents(outstanding)}
                   </TableCell>
                   <TableCell onClick={e => e.stopPropagation()}>
-                    <button
-                      onClick={() => setDeleteClientId(client.id)}
-                      className="text-slate-400 hover:text-red-500 transition-colors p-1"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                    {isAdmin && !archived ? (
+                      <button
+                        type="button"
+                        onClick={() => setArchiveClientId(client.id)}
+                        className="p-1 text-slate-400 transition-colors hover:text-primary"
+                        aria-label={`Archive ${client.companyName}`}
+                        title="Archive client"
+                      >
+                        <Archive className="size-3.5" />
+                      </button>
+                    ) : null}
                   </TableCell>
                 </TableRow>
                 )
@@ -749,12 +758,17 @@ export default function ClientsPage() {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={e => { e.stopPropagation(); setDeleteClientId(client.id) }}
-                  className="shrink-0 p-1 text-slate-400 transition-colors hover:text-red-500"
-                >
-                  <Trash2 className="size-4" />
-                </button>
+                {isAdmin && !client.archived ? (
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setArchiveClientId(client.id) }}
+                    className="shrink-0 p-1 text-slate-400 transition-colors hover:text-primary"
+                    aria-label={`Archive ${client.companyName}`}
+                    title="Archive client"
+                  >
+                    <Archive className="size-4" />
+                  </button>
+                ) : null}
               </div>
             </div>
           ))
@@ -799,9 +813,18 @@ export default function ClientsPage() {
                     <Button variant="ghost" size="icon" className="size-8" onClick={startEditClient} title="Edit client">
                       <Pencil className="size-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="size-8 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => setDeleteClientId(selected.id)} title="Delete client">
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                    {isAdmin && !selected.archived ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-slate-500 hover:bg-primary/10 hover:text-primary"
+                        onClick={() => setArchiveClientId(selected.id)}
+                        title="Archive client"
+                        aria-label="Archive client"
+                      >
+                        <Archive className="size-3.5" />
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex gap-1 mt-3">
@@ -1118,17 +1141,19 @@ export default function ClientsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Client Confirm */}
-      <AlertDialog open={!!deleteClientId} onOpenChange={open => !open && setDeleteClientId(null)}>
+      {/* Archive Client Confirm */}
+      <AlertDialog open={!!archiveClientId} onOpenChange={open => !open && setArchiveClientId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Client?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently delete the client and all their contacts. Any linked jobs will be unlinked and the client association removed.</AlertDialogDescription>
+            <AlertDialogTitle>Archive client?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The client will move out of the active list. Linked jobs and contacts will stay attached and remain available from the Archived view.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteClient} disabled={deleting} className="bg-red-600 hover:bg-red-700">
-              {deleting ? "Deleting…" : "Delete"}
+            <AlertDialogAction onClick={handleArchiveClient} disabled={deleting}>
+              {deleting ? "Archiving…" : "Archive"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

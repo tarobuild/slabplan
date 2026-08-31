@@ -2335,8 +2335,8 @@ export const useClientsPutClientsId = <
 };
 
 /**
- * Route defined in artifacts/api-server/src/routes/clients.ts.
- * @summary DELETE /clients/{id}
+ * Soft-archives the client while preserving all linked jobs and contacts. Admin-only.
+ * @summary Archive a client
  */
 export const getClientsDeleteClientsIdUrl = (id: string) => {
   return `/api/clients/${id}`;
@@ -2397,7 +2397,7 @@ export type ClientsDeleteClientsIdMutationResult = NonNullable<
 export type ClientsDeleteClientsIdMutationError = ErrorType<Problem>;
 
 /**
- * @summary DELETE /clients/{id}
+ * @summary Archive a client
  */
 export const useClientsDeleteClientsId = <
   TError = ErrorType<Problem>,

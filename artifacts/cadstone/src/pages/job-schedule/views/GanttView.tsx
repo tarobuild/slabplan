@@ -21,6 +21,12 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 import { EmptyState } from "../components"
 import { GANTT_SCALES } from "../constants"
@@ -146,6 +152,7 @@ export function GanttView(props: GanttViewProps) {
   } = props
 
   return (
+    <TooltipProvider delayDuration={150}>
     <div
       className={cn(
         "rounded-xl border border-[#E5E7EB] bg-white shadow-sm",
@@ -180,14 +187,21 @@ export function GanttView(props: GanttViewProps) {
             <span>Critical Path</span>
             <Switch checked={ganttCriticalPath} onCheckedChange={setGanttCriticalPath} />
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10 border-[#E5E7EB] bg-white"
-            onClick={() => setGanttFullscreen((current) => !current)}
-          >
-            {ganttFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 border-[#E5E7EB] bg-white"
+                onClick={() => setGanttFullscreen((current) => !current)}
+                aria-label={ganttFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                title={ganttFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              >
+                {ganttFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{ganttFullscreen ? "Exit fullscreen" : "Enter fullscreen"}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -222,7 +236,7 @@ export function GanttView(props: GanttViewProps) {
         ) : (
           <div className={cn("overflow-hidden rounded-xl border border-[#E5E7EB]", ganttFullscreen && "h-full")}>
             <div className={cn("flex", ganttFullscreen && "h-full flex-col")}>
-              <div className={cn("flex", ganttFullscreen && "min-h-0 flex-1")}>
+              <div className={cn("flex min-w-0 w-full", ganttFullscreen && "min-h-0 flex-1")}>
                 <div className="w-[340px] shrink-0 border-r border-[#E5E7EB]">
                   <div className="grid grid-cols-[minmax(0,1fr)_108px_88px_72px_72px] border-b border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <div>Title</div>
@@ -261,36 +275,57 @@ export function GanttView(props: GanttViewProps) {
                                 className="size-2.5 shrink-0 rounded-full"
                                 style={{ backgroundColor: (ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor || DEFAULT_SCHEDULE_COLOR }}
                               />
-                              <span className="truncate font-medium text-slate-900">{row.item.title}</span>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="truncate font-medium text-slate-900" title={row.item.title}>{row.item.title}</span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs bg-slate-900 text-white">
+                                  {row.item.title}
+                                </TooltipContent>
+                              </Tooltip>
                             </div>
                           </div>
                           <div className="text-sm text-slate-500">{fmtDate(row.item.startDate)}</div>
                           <div className="text-sm text-slate-500">{row.item.workDays}</div>
                           {canWrite ? (
-                            <button
-                              type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                openExistingItem(row.item.id)
-                              }}
-                            >
-                              <Edit3 className="size-4" />
-                            </button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    openExistingItem(row.item.id)
+                                  }}
+                                  aria-label={`Edit ${row.item.title}`}
+                                  title="Edit schedule item"
+                                >
+                                  <Edit3 className="size-4" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>Edit schedule item</TooltipContent>
+                            </Tooltip>
                           ) : (
                             <div />
                           )}
                           {canCreateScheduleItems ? (
-                            <button
-                              type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                openNewItem()
-                              }}
-                            >
-                              <Plus className="size-4" />
-                            </button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    openNewItem()
+                                  }}
+                                  aria-label="Add schedule item"
+                                  title="Add schedule item"
+                                >
+                                  <Plus className="size-4" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>Add schedule item</TooltipContent>
+                            </Tooltip>
                           ) : null}
                         </div>
                       ),
@@ -298,7 +333,11 @@ export function GanttView(props: GanttViewProps) {
                   </div>
                 </div>
 
-                <div ref={ganttTimelineRef} className="min-w-0 flex-1 overflow-auto">
+                <div
+                  ref={ganttTimelineRef}
+                  data-testid="gantt-timeline-scroller"
+                  className="min-w-0 flex-1 overflow-auto"
+                >
                   <div style={{ width: `${timelineWidth}px` }}>
                     <div className="sticky top-0 z-10 bg-white">
                       <div className="flex border-b border-[#E5E7EB] bg-[#F8FAFC]">
@@ -414,42 +453,51 @@ export function GanttView(props: GanttViewProps) {
                               />
                             ))}
 
-                            <div
-                              className={cn(
-                                "absolute top-[12px] overflow-hidden rounded-full border shadow-sm",
-                                ganttCriticalPath && criticalPathIds.has(row.item.id)
-                                  ? "border-amber-500 ring-2 ring-amber-200"
-                                  : "border-transparent",
-                                activeConflictIds.has(row.item.id) && "border-rose-500 ring-2 ring-rose-200",
-                                draggable && "cursor-grab active:cursor-grabbing",
-                                isDragged && "z-20 cursor-grabbing ring-2 ring-primary/40",
-                              )}
-                              style={{
-                                left: `${diffInDays(ganttRange.start, parseDate(barStartDate)) * dayWidth}px`,
-                                width: `${(diffInDays(parseDate(barStartDate), parseDate(barEndDate)) + 1) * dayWidth}px`,
-                                height: "28px",
-                                backgroundColor: colorWithAlpha((ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor, 0.18),
-                              }}
-                              onPointerDown={draggable ? (event) => handleGanttBarPointerDown(event, row.item, "move") : undefined}
-                            >
-                              <div
-                                className="h-full"
-                                style={{
-                                  width: `${Math.max(0, Math.min(100, row.item.progress ?? 0))}%`,
-                                  backgroundColor: (ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor || DEFAULT_SCHEDULE_COLOR,
-                                }}
-                              />
-                              <div className="pointer-events-none absolute inset-0 flex items-center px-3 text-xs font-medium text-slate-900">
-                                <span className="truncate">{row.item.title}</span>
-                              </div>
-                              {draggable ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
                                 <div
-                                  role="presentation"
-                                  className="pointer-events-auto absolute inset-y-0 right-0 w-2 cursor-ew-resize"
-                                  onPointerDown={(event) => handleGanttBarPointerDown(event, row.item, "resize-end")}
-                                />
-                              ) : null}
-                            </div>
+                                  className={cn(
+                                    "absolute top-[12px] overflow-hidden rounded-full border shadow-sm",
+                                    ganttCriticalPath && criticalPathIds.has(row.item.id)
+                                      ? "border-amber-500 ring-2 ring-amber-200"
+                                      : "border-transparent",
+                                    activeConflictIds.has(row.item.id) && "border-rose-500 ring-2 ring-rose-200",
+                                    draggable && "cursor-grab active:cursor-grabbing",
+                                    isDragged && "z-20 cursor-grabbing ring-2 ring-primary/40",
+                                  )}
+                                  style={{
+                                    left: `${diffInDays(ganttRange.start, parseDate(barStartDate)) * dayWidth}px`,
+                                    width: `${(diffInDays(parseDate(barStartDate), parseDate(barEndDate)) + 1) * dayWidth}px`,
+                                    height: "28px",
+                                    backgroundColor: colorWithAlpha((ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor, 0.18),
+                                  }}
+                                  onPointerDown={draggable ? (event) => handleGanttBarPointerDown(event, row.item, "move") : undefined}
+                                  data-testid={`gantt-task-${row.item.id}`}
+                                  title={row.item.title}
+                                >
+                                  <div
+                                    className="h-full"
+                                    style={{
+                                      width: `${Math.max(0, Math.min(100, row.item.progress ?? 0))}%`,
+                                      backgroundColor: (ganttShowPhases ? row.item.phaseColor : null) || row.item.displayColor || DEFAULT_SCHEDULE_COLOR,
+                                    }}
+                                  />
+                                  <div className="pointer-events-none absolute inset-0 flex items-center px-3 text-xs font-medium text-slate-900">
+                                    <span className="truncate">{row.item.title}</span>
+                                  </div>
+                                  {draggable ? (
+                                    <div
+                                      role="presentation"
+                                      className="pointer-events-auto absolute inset-y-0 right-0 w-2 cursor-ew-resize"
+                                      onPointerDown={(event) => handleGanttBarPointerDown(event, row.item, "resize-end")}
+                                    />
+                                  ) : null}
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-xs bg-slate-900 text-white">
+                                {row.item.title}
+                              </TooltipContent>
+                            </Tooltip>
                           </button>
                         )
                       })}
@@ -478,5 +526,6 @@ export function GanttView(props: GanttViewProps) {
         )}
       </div>
     </div>
+    </TooltipProvider>
   )
 }

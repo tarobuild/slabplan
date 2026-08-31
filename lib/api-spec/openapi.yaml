@@ -1798,8 +1798,8 @@ paths:
       operationId: clients_delete_clients_id
       tags:
         - clients
-      summary: DELETE /clients/{id}
-      description: Route defined in artifacts/api-server/src/routes/clients.ts.
+      summary: Archive a client
+      description: Soft-archives the client while preserving all linked jobs and contacts. Admin-only.
       responses:
         "200":
           description: Successful response

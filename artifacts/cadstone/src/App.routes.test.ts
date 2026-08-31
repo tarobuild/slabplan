@@ -53,6 +53,7 @@ test("/register is wired under the public-only route guard", () => {
   )
   assert.match(source, /<Route path="\/terms" element=\{<TermsPage \/>\} \/>/)
   assert.match(source, /<Route path="\/privacy" element=\{<PrivacyPage \/>\} \/>/)
+  assert.match(source, /<Route path="\/security" element=\{<SecurityPage \/>\} \/>/)
 })
 
 test("/jobs/:jobId/files/videos is mapped to the videos files page", () => {

@@ -41,3 +41,7 @@ test("public document metadata describes SlabPlan and provides social sharing ca
   assert.match(html, /property="og:image" content="https:\/\/www\.slabplan\.com\/opengraph\.jpg"/)
   assert.match(html, /name="twitter:card" content="summary_large_image"/)
 })
+
+test("marketing navigation links to the public security page", () => {
+  assert.match(source, /<Link to="\/security"/)
+})

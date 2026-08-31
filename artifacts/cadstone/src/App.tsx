@@ -75,6 +75,7 @@ const AcceptInvitePage = lazy(() => import("@/pages/accept-invite"))
 const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"))
 const TermsPage = lazy(() => import("@/pages/terms"))
 const PrivacyPage = lazy(() => import("@/pages/privacy"))
+const SecurityPage = lazy(() => import("@/pages/security"))
 
 function RouteLoadingScreen() {
   return (
@@ -184,6 +185,7 @@ function buildRouter(basename: string | undefined) {
         <Route path="/" element={<MarketingPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/security" element={<SecurityPage />} />
         <Route element={<PublicOnlyRoute />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />

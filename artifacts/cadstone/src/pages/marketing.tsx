@@ -205,6 +205,9 @@ export default function MarketingPage() {
             <a href="#pricing" className="transition hover:text-slate-950">
               Pricing
             </a>
+            <Link to="/security" className="transition hover:text-slate-950">
+              Security
+            </Link>
           </nav>
           <div className="flex items-center gap-2">
             {!user ? (
@@ -695,7 +698,7 @@ export default function MarketingPage() {
             </p>
           </div>
           <div className="flex flex-col gap-3 text-sm sm:items-end">
-            <div className="flex gap-5">
+            <div className="flex flex-wrap gap-x-5 gap-y-2 sm:justify-end">
               <Link to="/login" className="transition hover:text-white">
                 Sign in
               </Link>
@@ -710,6 +713,9 @@ export default function MarketingPage() {
               </Link>
               <Link to="/privacy" className="transition hover:text-white">
                 Privacy
+              </Link>
+              <Link to="/security" className="transition hover:text-white">
+                Security
               </Link>
             </div>
             <p>© {new Date().getFullYear()} SlabPlan. Built for the stone trade.</p>

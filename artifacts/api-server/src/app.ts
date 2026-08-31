@@ -203,7 +203,12 @@ app.use(
 );
 app.use(
   helmet({
-    hsts: false,
+    hsts: isProd
+      ? {
+          maxAge: 31_536_000,
+          includeSubDomains: false,
+        }
+      : false,
     crossOriginResourcePolicy: false,
     contentSecurityPolicy: {
       directives: {

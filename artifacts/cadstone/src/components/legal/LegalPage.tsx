@@ -63,7 +63,10 @@ export function LegalPage({
       <footer className="border-t border-slate-200 bg-slate-50">
         <div className="mx-auto flex max-w-3xl flex-col gap-3 px-5 py-8 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-8">
           <span>Questions: {LEGAL_CONTACT_EMAIL}</span>
-          <div className="flex gap-5">
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            <Link to="/security" className="font-medium hover:text-slate-950">
+              Security
+            </Link>
             <Link to="/terms" className="font-medium hover:text-slate-950">
               Terms
             </Link>

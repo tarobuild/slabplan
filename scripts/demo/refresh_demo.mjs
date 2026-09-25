@@ -1126,7 +1126,113 @@ async function importInvoice() {
     throw error;
   }
 }
+async function enrichHandoffs() {
+  const handoffs = [
+    {
+      job: "greystone",
+      task: "Delivery and installation",
+      role: "crewMember",
+      file: "TEST-Greystone-Installation-Packet.pdf",
+      note: "TEST - Island set and seam QC complete. Wet-bar splash and sealing remain. PM has confirmed Monday's punch walk.",
+      todos: [
+        "TEST - Photograph seam and edge quality",
+        "TEST - Measure pantry outlet offset",
+        "TEST - Prepare care kit for Monday handover",
+      ],
+    },
+    {
+      job: "blue-heron",
+      task: "Book-match layout set",
+      role: "drafter",
+      file: "TEST-Blue-Heron-Bookmatch-RevA.pdf",
+      note: "TEST - Revision A is ready for designer markup. RFI-07 sconce centers must be confirmed before electrical cutouts are released.",
+      todos: [
+        "TEST - Confirm RFI-07 sconce centerlines",
+        "TEST - Issue approved book-match revision B",
+      ],
+    },
+    {
+      job: "greystone",
+      task: "Record as-built seam plan",
+      role: "drafter",
+      file: "TEST-Greystone-CAD-G101-Rev03.pdf",
+      note: "TEST - Use revision 03 and the installer's field measurements to issue the final as-built seam record.",
+      todos: ["TEST - Add pantry outlet offset to as-built drawing"],
+    },
+  ];
+  for (const handoff of handoffs) {
+    const id = state.scheduleItems[handoff.job]?.[handoff.task];
+    if (!id) throw new Error(`Refresh schedules before adding ${handoff.task}`);
+    const { item } = await request(`/api/schedule-items/${id}`, {
+      role: handoff.role,
+    });
+    if (
+      item.jobId !== state.jobs[handoff.job] ||
+      !item.title.startsWith(prefix)
+    )
+      throw new Error("TEST task ownership mismatch");
+    for (const title of handoff.todos) {
+      if (!item.relatedTodos.some((todo) => todo.title === title)) {
+        await request(`/api/schedule-items/${id}/todos`, {
+          role: handoff.role,
+          method: "POST",
+          expected: 201,
+          body: { title },
+        });
+      }
+    }
+    if (!item.notesStream.some((note) => note.note === handoff.note)) {
+      await request(`/api/schedule-items/${id}/notes`, {
+        role: handoff.role,
+        method: "POST",
+        expected: 201,
+        body: { note: handoff.note },
+      });
+    }
+    if (!item.attachments.some((file) => file.originalName === handoff.file)) {
+      const form = new FormData();
+      form.append(
+        "files",
+        new Blob(
+          [
+            readFileSync(
+              resolve(root, "output/demo-september/documents", handoff.file),
+            ),
+          ],
+          { type: "application/pdf" },
+        ),
+        handoff.file,
+      );
+      await request(`/api/schedule-items/${id}/attachments`, {
+        role: handoff.role,
+        method: "POST",
+        expected: 201,
+        form,
+      });
+    }
+    console.log(`Task handoff ready: ${handoff.task}`);
+  }
+  const financials = await request(
+    `/api/jobs/${state.jobs.greystone}/financials`,
+  );
+  const pending = financials.changeOrders.find(
+    (co) => co.number === "SR-CO-24037-01",
+  );
+  if (pending)
+    await request(
+      `/api/jobs/${state.jobs.greystone}/financials/change-orders/${pending.id}`,
+      {
+        method: "PATCH",
+        body: {
+          description:
+            "TEST - Add a second island waterfall leg and revise seam geometry after cabinet change. Pending approval; excluded from fabrication release.",
+        },
+      },
+    );
+}
+
 async function verify() {
+  result.checks = [];
   for (const [role, session] of Object.entries(sessions)) {
     const jobs = (await request("/api/jobs?pageSize=100", { role })).jobs;
     if (jobs.length < 4) throw new Error(`${role} has too few demo jobs`);
@@ -1136,7 +1242,7 @@ async function verify() {
     await request(`/api/jobs/${state.jobs.greystone}/daily-logs?pageSize=100`, {
       role,
     });
-    const tree = await request(
+    await request(
       `/api/jobs/${state.jobs.greystone}/folder-tree?mediaType=all`,
       { role },
     );
@@ -1194,5 +1300,6 @@ if (command === "--refresh") {
   save();
 } else if (command === "--upload") await uploadAssets();
 else if (command === "--invoice") await importInvoice();
+else if (command === "--handoffs") await enrichHandoffs();
 else if (command === "--verify") await verify();
 else throw new Error("Use --refresh --execute or --verify");

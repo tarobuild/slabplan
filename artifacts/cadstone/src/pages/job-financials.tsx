@@ -1819,7 +1819,7 @@ export default function JobFinancialsPage() {
 
       {/* SOV section */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <CardTitle className="flex items-center gap-2 text-lg">
             <DollarSign className="h-5 w-5" /> Schedule of Values
           </CardTitle>
@@ -1857,85 +1857,20 @@ export default function JobFinancialsPage() {
             ))
           )}
 
-          {/* Change-order group rendered inline within the SOV */}
-          {data.changeOrders.length > 0 ? (
-            <div className="rounded-lg border border-violet-300 bg-violet-50/30">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-200 bg-violet-100/60 px-4 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="text-sm font-semibold">Change Orders</div>
-                  <Badge className="border-violet-300 bg-violet-100 text-violet-800 hover:bg-violet-100">
-                    {
-                      data.changeOrders.filter((co) => co.status === "approved")
-                        .length
-                    }{" "}
-                    approved
-                  </Badge>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {formatCurrency(totals?.changeOrderApprovedCents ?? 0)}
-                  </span>
-                </div>
-                {canManage ? (
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={coUploading}
-                      onClick={() => coInputRef.current?.click()}
-                    >
-                      {coUploading ? (
-                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Sparkles className="mr-1 h-4 w-4" />
-                      )}
-                      Upload CO
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void addChangeOrder()}
-                    >
-                      <Plus className="mr-1 h-4 w-4" /> Add CO
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-xs text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 text-left">#</th>
-                      <th className="px-3 py-2 text-left">Description</th>
-                      <th className="px-3 py-2 text-left">Status</th>
-                      <th className="px-3 py-2 text-right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.changeOrders.map((co) => (
-                      <tr key={co.id} className="border-t border-violet-100">
-                        <td className="px-3 py-2">{co.number ?? "—"}</td>
-                        <td className="px-3 py-2">{co.description ?? "—"}</td>
-                        <td className="px-3 py-2">
-                          <Badge variant="outline" className="capitalize">
-                            {co.status}
-                          </Badge>
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {formatCurrency(co.amountCents)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 
       {/* Change orders */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Change Orders</CardTitle>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-lg">Change Orders</CardTitle>
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {data.changeOrders.filter((co) => co.status === "approved").length} approved
+              {" / "}{formatCurrency(totals?.changeOrderApprovedCents ?? 0)}
+              {" / "}{data.changeOrders.filter((co) => co.status === "pending").length} pending
+            </p>
+          </div>
           {canManage ? (
             <div className="flex gap-2">
               <input
@@ -2013,20 +1948,20 @@ export default function JobFinancialsPage() {
             </div>
           </div>
         ) : null}
-        <CardContent>
+        <CardContent className="overflow-x-auto">
           {data.changeOrders.length === 0 ? (
             <div className="text-sm text-muted-foreground">
               No change orders.
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <table aria-label="Change orders" className="w-full min-w-[680px] text-sm">
               <thead className="text-xs text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-left">#</th>
                   <th className="px-3 py-2 text-left">Description</th>
                   <th className="px-3 py-2 text-right">Amount</th>
                   <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2"></th>
+                  <th className="px-3 py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -2039,6 +1974,7 @@ export default function JobFinancialsPage() {
                     </td>
                     <td className="px-3 py-2">
                       <Badge
+                        className="capitalize"
                         variant={
                           co.status === "approved"
                             ? "default"
@@ -2088,7 +2024,7 @@ export default function JobFinancialsPage() {
 
       {/* Invoices */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Receipt className="h-5 w-5" /> Invoices
           </CardTitle>

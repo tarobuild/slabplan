@@ -1534,11 +1534,11 @@ export default function JobFinancialsPage() {
 
       {/* Estimate / project metadata */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <CardTitle className="flex items-center gap-2 text-lg">
             <FileText className="h-5 w-5" /> Estimate
           </CardTitle>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -1818,7 +1818,7 @@ export default function JobFinancialsPage() {
           <CardTitle className="flex items-center gap-2 text-lg">
             <DollarSign className="h-5 w-5" /> Schedule of Values
           </CardTitle>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={exportCsv}>
               <Download className="mr-1 h-4 w-4" /> Export CSV
             </Button>
@@ -1867,7 +1867,7 @@ export default function JobFinancialsPage() {
             </p>
           </div>
           {canManage ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <input
                 ref={coInputRef}
                 type="file"

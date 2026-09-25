@@ -18,6 +18,7 @@ test("change orders have one authoritative list with summary and approval action
 
 test("financial controls wrap and wide change-order rows scroll within their section", () => {
   assert.match(changes, /CardHeader className="[^"]*flex-wrap[^"]*gap-3/)
+  assert.match(changes, /<div className="flex flex-wrap gap-2">/)
   assert.match(changes, /CardContent className="overflow-x-auto"/)
   assert.match(changes, /table aria-label="Change orders" className="[^"]*min-w-\[680px\]/)
   assert.match(changes, /sr-only">Actions/)
@@ -31,4 +32,10 @@ test("financial summary reserves room for monetary values without narrow desktop
   assert.match(summary, /<dt /)
   assert.match(summary, /<dd className="mt-1 break-words text-lg font-semibold tabular-nums"/)
   assert.doesNotMatch(summary, /<Card|xl:text-xl|xl:grid-cols-8/)
+})
+
+test("estimate heading and actions wrap independently on small screens", () => {
+  const estimate = source.slice(source.indexOf("{/* Estimate / project metadata */}"), source.indexOf("{/* SOV section */}"))
+  assert.match(estimate, /CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0"/)
+  assert.match(estimate, /<div className="flex flex-wrap gap-2">/)
 })

@@ -974,12 +974,15 @@ async function buildDrafterHome(auth: NonNullable<Express.Request["auth"]>) {
   const today = todayIso();
   const scheduleEnd = isoDaysFromNow(14);
   const scheduleVisibilityFilter = buildScheduleListVisibilityFilter(auth);
+  const leadScope = organizationScopeCondition(auth, leads.organizationId);
+  const scheduleScope = organizationScopeCondition(auth, scheduleItems.organizationId);
+  const jobScope = organizationScopeCondition(auth, jobs.organizationId);
 
   const summaryPromise = Promise.all([
     db
       .select({ total: count() })
       .from(leads)
-      .where(and(isNull(leads.deletedAt), eq(leads.status, "open"))),
+      .where(and(leadScope, isNull(leads.deletedAt), eq(leads.status, "open"))),
     db
       .select({ total: count() })
       .from(scheduleItems)
@@ -990,6 +993,8 @@ async function buildDrafterHome(auth: NonNullable<Express.Request["auth"]>) {
           isNull(jobs.deletedAt),
           or(isNull(scheduleItems.isComplete), eq(scheduleItems.isComplete, false)),
           scheduleVisibilityFilter,
+          scheduleScope,
+          jobScope,
         ),
       ),
   ]);
@@ -1005,7 +1010,7 @@ async function buildDrafterHome(auth: NonNullable<Express.Request["auth"]>) {
       createdAt: leads.createdAt,
     })
     .from(leads)
-    .where(isNull(leads.deletedAt))
+    .where(and(leadScope, isNull(leads.deletedAt)))
     .orderBy(desc(leads.createdAt))
     .limit(DRAFTER_RECENT_LEADS_LIMIT);
 
@@ -1030,6 +1035,8 @@ async function buildDrafterHome(auth: NonNullable<Express.Request["auth"]>) {
         lte(scheduleItems.startDate, scheduleEnd),
         gte(scheduleItems.endDate, today),
         scheduleVisibilityFilter,
+        scheduleScope,
+        jobScope,
       ),
     )
     .orderBy(scheduleItems.startDate)

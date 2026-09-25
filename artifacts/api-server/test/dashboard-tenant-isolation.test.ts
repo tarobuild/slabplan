@@ -11,12 +11,14 @@ const testDatabaseUrl =
 let server: Server;
 let baseUrl: string;
 let orgAAdminToken: string;
+let drafterToken: string;
 
 const runId = crypto.randomUUID();
 const orgAId = crypto.randomUUID();
 const orgBId = crypto.randomUUID();
 const orgAAdminId = crypto.randomUUID();
 const orgBAdminId = crypto.randomUUID();
+const drafterId = crypto.randomUUID();
 const orgAJobId = crypto.randomUUID();
 const orgBJobId = crypto.randomUUID();
 const orgALeadId = crypto.randomUUID();
@@ -67,6 +69,14 @@ before(async () => {
 
   await db.insert(users).values([
     {
+      id: drafterId,
+      email: `dashboard-drafter-${runId}@tenant.local`,
+      passwordHash: "test-not-a-real-hash",
+      fullName: "Dashboard Multi-Tenant Drafter",
+      role: "drafter",
+      defaultOrganizationId: orgAId,
+    },
+    {
       id: orgAAdminId,
       email: `dashboard-admin-a-${runId}@tenant.local`,
       passwordHash: "test-not-a-real-hash",
@@ -85,6 +95,8 @@ before(async () => {
   ]);
 
   await db.insert(organizationMemberships).values([
+    { organizationId: orgAId, userId: drafterId, role: "drafter", isDefault: true },
+    { organizationId: orgBId, userId: drafterId, role: "drafter", isDefault: false },
     {
       organizationId: orgAId,
       userId: orgAAdminId,
@@ -149,7 +161,7 @@ before(async () => {
       startDate: today,
       endDate: tomorrow,
       workDays: 2,
-      createdBy: orgAAdminId,
+      createdBy: drafterId,
     },
     {
       id: orgBScheduleItemId,
@@ -159,7 +171,7 @@ before(async () => {
       startDate: today,
       endDate: tomorrow,
       workDays: 2,
-      createdBy: orgBAdminId,
+      createdBy: drafterId,
     },
   ]);
 
@@ -191,6 +203,18 @@ before(async () => {
     email: `dashboard-admin-a-${runId}@tenant.local`,
     fullName: "Dashboard Tenant A Admin",
     role: "admin",
+    avatarUrl: null,
+    phone: null,
+    defaultOrganizationId: orgAId,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  drafterToken = auth.signAccessToken({
+    id: drafterId,
+    email: `dashboard-drafter-${runId}@tenant.local`,
+    fullName: "Dashboard Multi-Tenant Drafter",
+    role: "drafter",
     avatarUrl: null,
     phone: null,
     defaultOrganizationId: orgAId,
@@ -233,7 +257,7 @@ after(async () => {
     await db
       .delete(organizationMemberships)
       .where(inArray(organizationMemberships.organizationId, [orgAId, orgBId]));
-    await db.delete(users).where(inArray(users.id, [orgAAdminId, orgBAdminId]));
+    await db.delete(users).where(inArray(users.id, [orgAAdminId, orgBAdminId, drafterId]));
     await db.delete(organizations).where(inArray(organizations.id, [orgAId, orgBId]));
   } finally {
     await pool.end();
@@ -291,4 +315,21 @@ test("dashboard summary, agenda, and schedule are scoped to the active organizat
   assert.equal(scheduleBody.items.some((item) => item.id === orgBScheduleItemId), false);
   assert.ok(scheduleBody.items.some((item) => item.id === `job:${orgAJobId}`));
   assert.equal(scheduleBody.items.some((item) => item.id === `job:${orgBJobId}`), false);
+});
+
+test("drafter home scopes leads and authored schedule items to the active company", async () => {
+  const response = await fetch(`${baseUrl}/dashboard/home`, {
+    headers: { authorization: `Bearer ${drafterToken}` },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    role: string;
+    summary: { openLeads: number; openScheduleItems: number };
+    recentLeads: Array<{ id: string }>;
+    schedule: { items: Array<{ id: string }> };
+  };
+  assert.equal(body.role, "drafter");
+  assert.deepEqual(body.summary, { openLeads: 1, openScheduleItems: 1 });
+  assert.deepEqual(body.recentLeads.map(lead => lead.id), [orgALeadId]);
+  assert.deepEqual(body.schedule.items.map(item => item.id), [orgAScheduleItemId]);
 });

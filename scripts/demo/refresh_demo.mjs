@@ -1236,6 +1236,22 @@ async function verify() {
   for (const [role, session] of Object.entries(sessions)) {
     const jobs = (await request("/api/jobs?pageSize=100", { role })).jobs;
     if (jobs.length < 4) throw new Error(`${role} has too few demo jobs`);
+    const home = await request("/api/dashboard/home", { role });
+    if (
+      role === "drafter" &&
+      home.recentLeads.some((lead) => !lead.title.startsWith(prefix))
+    ) {
+      throw new Error(
+        "Drafter home includes a lead outside the guarded TEST dataset",
+      );
+    }
+    if (
+      role === "crewMember" &&
+      home.today === demoDate &&
+      home.schedule.items.length === 0
+    ) {
+      throw new Error("Installer home is missing the current demo assignment");
+    }
     await request(`/api/jobs/${state.jobs.greystone}/schedule?limit=100`, {
       role,
     });
@@ -1256,6 +1272,8 @@ async function verify() {
       role,
       email: session.user.email,
       jobCount: jobs.length,
+      homeRole: home.role,
+      homeScheduleCount: home.schedule?.items.length ?? home.week?.items.length,
       passed: true,
     });
   }

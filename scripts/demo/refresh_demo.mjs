@@ -519,6 +519,7 @@ async function refreshSchedules() {
         title: prefix + title,
         startDate: day(offset),
         workDays,
+        endDate: null,
         progress,
         isComplete: progress === 100,
         phaseId: phases.find((p) => p.name === phase).id,
@@ -553,6 +554,10 @@ async function refreshSchedules() {
       state.scheduleItems[key][title] = predecessor;
       save();
     }
+    const refreshed = (await request(`/api/jobs/${id}/schedule?limit=100`))
+      .data;
+    if (refreshed.some((item) => item.endDate < item.startDate))
+      throw new Error(`Invalid refreshed schedule date range for ${key}`);
     console.log(`Schedule ready: ${key}`);
   }
 }
@@ -1245,6 +1250,14 @@ async function verify() {
         "Drafter home includes a lead outside the guarded TEST dataset",
       );
     }
+    if (
+      role === "drafter" &&
+      home.today === demoDate &&
+      !home.schedule.items.some(
+        (item) => item.title === prefix + "Book-match layout set",
+      )
+    )
+      throw new Error("Drafter home is missing the active book-match review");
     if (
       role === "crewMember" &&
       home.today === demoDate &&

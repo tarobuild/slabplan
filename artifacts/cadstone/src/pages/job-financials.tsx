@@ -1464,22 +1464,17 @@ export default function JobFinancialsPage() {
       ) : null}
       {/* Header strip — contract date, main contract, change orders,
           contract w/ COs, billed, balance, applications, % billed */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+      <dl
+        aria-label="Financial summary"
+        className="grid grid-cols-1 gap-x-6 gap-y-4 border-y py-4 min-[360px]:grid-cols-2 lg:grid-cols-4 min-[1800px]:grid-cols-8"
+      >
         {totalsStrip?.map((t) => (
-          <Card key={t.label}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium text-muted-foreground">
-                {t.label}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-lg font-semibold tabular-nums xl:text-xl">
-                {t.value}
-              </div>
-            </CardContent>
-          </Card>
+          <div key={t.label} className="min-w-0">
+            <dt className="text-xs font-medium text-muted-foreground">{t.label}</dt>
+            <dd className="mt-1 break-words text-lg font-semibold tabular-nums">{t.value}</dd>
+          </div>
         ))}
-      </div>
+      </dl>
 
       {/* Overall % billed bar */}
       {totals ? (

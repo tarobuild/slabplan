@@ -22,7 +22,7 @@ const ACCOUNTS = {
   },
   projectManager: {
     fullName: "TEST - Elena Ruiz (Project Manager)",
-    email: "testpm@tarobuild.com",
+    email: "testspm@tarobuild.com",
     role: "project_manager",
   },
   crewMember: {
@@ -1059,7 +1059,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error.stack || error.message || error);
-  process.exitCode = 1;
-});
+export { JOBS, LEADS, SCHEDULES, readCredentials, readState, saveState };
+
+if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
+  main().catch((error) => {
+    console.error(error.stack || error.message || error);
+    process.exitCode = 1;
+  });
+}

@@ -1149,10 +1149,17 @@ async function assertPhaseBelongsToJob(
     return;
   }
 
+  const organizationId = await getJobOrganizationId(jobId, executor);
   const [phase] = await executor
     .select({ id: schedulePhases.id })
     .from(schedulePhases)
-    .where(and(eq(schedulePhases.id, phaseId), eq(schedulePhases.jobId, jobId)))
+    .where(and(
+      eq(schedulePhases.id, phaseId),
+      eq(schedulePhases.jobId, jobId),
+      organizationId
+        ? eq(schedulePhases.organizationId, organizationId)
+        : isNull(schedulePhases.organizationId),
+    ))
     .limit(1);
 
   if (!phase) {
@@ -3123,6 +3130,7 @@ router.post(
     const [phase] = await db
       .insert(schedulePhases)
       .values({
+        organizationId: job.organizationId,
         jobId,
         name: body.data.name,
         color: body.data.color ?? "#e76f8a",
@@ -3215,6 +3223,7 @@ router.post(
     const [phase] = await db
       .insert(schedulePhases)
       .values({
+        organizationId: job.organizationId,
         jobId,
         name: body.data.name,
         color: body.data.color ?? "#e76f8a",

@@ -313,6 +313,14 @@
       "tag": "0040_legal_acceptance",
       "breakpoints": true,
       "checksum": "bd0e88e7de764a17163d2f231460161c51401f1fa0be60eb5e921301e595f463"
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790365513536,
+      "tag": "0041_schedule_phase_organization",
+      "breakpoints": true,
+      "checksum": "9fb8381f1a0869b361c9467ae7bb9734658922519d6b105f23292c572d63e102"
     }
   ]
 }

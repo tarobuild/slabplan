@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -41,9 +42,8 @@ before(async () => {
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
   const { db } = await import("@workspace/db");
-  const { jobs, organizationMemberships, organizations, users } = await import(
-    "@workspace/db/schema"
-  );
+  const { jobs, organizationMemberships, organizations, users } =
+    await import("@workspace/db/schema");
 
   await prepareApp();
 
@@ -154,24 +154,43 @@ after(async () => {
 
   try {
     if (createdScheduleItemIds.length > 0) {
-      await db.delete(activityLog).where(inArray(activityLog.entityId, createdScheduleItemIds));
+      await db
+        .delete(activityLog)
+        .where(inArray(activityLog.entityId, createdScheduleItemIds));
       await db
         .delete(scheduleItemPredecessors)
-        .where(inArray(scheduleItemPredecessors.scheduleItemId, createdScheduleItemIds));
+        .where(
+          inArray(
+            scheduleItemPredecessors.scheduleItemId,
+            createdScheduleItemIds,
+          ),
+        );
       await db
         .delete(scheduleItemAssignees)
-        .where(inArray(scheduleItemAssignees.scheduleItemId, createdScheduleItemIds));
-      await db.delete(scheduleItems).where(inArray(scheduleItems.id, createdScheduleItemIds));
+        .where(
+          inArray(scheduleItemAssignees.scheduleItemId, createdScheduleItemIds),
+        );
+      await db
+        .delete(scheduleItems)
+        .where(inArray(scheduleItems.id, createdScheduleItemIds));
     }
-    await db.delete(scheduleTagSettings).where(inArray(scheduleTagSettings.jobId, [orgAJobId, orgBJobId]));
-    await db.delete(scheduleSettings).where(inArray(scheduleSettings.jobId, [orgAJobId, orgBJobId]));
-    await db.delete(schedulePhases).where(inArray(schedulePhases.jobId, [orgAJobId, orgBJobId]));
+    await db
+      .delete(scheduleTagSettings)
+      .where(inArray(scheduleTagSettings.jobId, [orgAJobId, orgBJobId]));
+    await db
+      .delete(scheduleSettings)
+      .where(inArray(scheduleSettings.jobId, [orgAJobId, orgBJobId]));
+    await db
+      .delete(schedulePhases)
+      .where(inArray(schedulePhases.jobId, [orgAJobId, orgBJobId]));
     await db.delete(jobs).where(inArray(jobs.id, [orgAJobId, orgBJobId]));
     await db
       .delete(organizationMemberships)
       .where(inArray(organizationMemberships.organizationId, [orgAId, orgBId]));
     await db.delete(users).where(inArray(users.id, [orgAAdminId, orgBAdminId]));
-    await db.delete(organizations).where(inArray(organizations.id, [orgAId, orgBId]));
+    await db
+      .delete(organizations)
+      .where(inArray(organizations.id, [orgAId, orgBId]));
   } finally {
     await pool.end();
   }
@@ -245,4 +264,88 @@ test("schedule access and create-side child rows are scoped to the active organi
     .where(eq(scheduleTagSettings.jobId, orgAJobId))
     .limit(1);
   assert.equal(tag?.organizationId, orgAId);
+});
+
+test("both custom phase creation routes preserve the tenant and support task assignment", async () => {
+  const { db } = await import("@workspace/db");
+  const { schedulePhases } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+
+  for (const path of ["schedule/phases", "schedule/settings/phases"]) {
+    const foreignResponse = await fetch(
+      `${baseUrl}/jobs/${orgBJobId}/${path}`,
+      {
+        method: "POST",
+        headers: jsonHeaders(orgAAdminToken),
+        body: JSON.stringify({ name: `Forbidden ${path}` }),
+      },
+    );
+    assert.equal(foreignResponse.status, 404);
+
+    const response = await fetch(`${baseUrl}/jobs/${orgAJobId}/${path}`, {
+      method: "POST",
+      headers: jsonHeaders(orgAAdminToken),
+      body: JSON.stringify({ name: `Custom ${path}`, color: "#0f766e" }),
+    });
+    assert.equal(response.status, 201);
+    const { phase } = (await response.json()) as { phase: { id: string } };
+    const [stored] = await db
+      .select()
+      .from(schedulePhases)
+      .where(eq(schedulePhases.id, phase.id));
+    assert.equal(stored.organizationId, orgAId);
+
+    const patch = await fetch(
+      `${baseUrl}/schedule-items/${createdScheduleItemIds[0]}`,
+      {
+        method: "PATCH",
+        headers: jsonHeaders(orgAAdminToken),
+        body: JSON.stringify({ phaseId: phase.id, progress: 60 }),
+      },
+    );
+    assert.equal(patch.status, 200, await patch.text());
+  }
+});
+
+test("legacy phases reject cleanly until the idempotent tenant repair is applied", async () => {
+  const { db } = await import("@workspace/db");
+  const { schedulePhases } = await import("@workspace/db/schema");
+  const [phase] = await db
+    .insert(schedulePhases)
+    .values({
+      organizationId: null,
+      jobId: orgAJobId,
+      name: `Legacy unscoped ${runId}`,
+      color: "#0f766e",
+    })
+    .returning();
+  const response = await fetch(
+    `${baseUrl}/schedule-items/${createdScheduleItemIds[0]}`,
+    {
+      method: "PATCH",
+      headers: jsonHeaders(orgAAdminToken),
+      body: JSON.stringify({ phaseId: phase.id }),
+    },
+  );
+  assert.equal(response.status, 400);
+
+  const { sql } = await import("drizzle-orm");
+  const migration = readFileSync(
+    new URL(
+      "../../../lib/db/migrations/0041_schedule_phase_organization.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  await db.execute(sql.raw(migration));
+  await db.execute(sql.raw(migration));
+  const repaired = await fetch(
+    `${baseUrl}/schedule-items/${createdScheduleItemIds[0]}`,
+    {
+      method: "PATCH",
+      headers: jsonHeaders(orgAAdminToken),
+      body: JSON.stringify({ phaseId: phase.id }),
+    },
+  );
+  assert.equal(repaired.status, 200, await repaired.text());
 });

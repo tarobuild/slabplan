@@ -81,7 +81,8 @@ async function waitForHealth(url: string, timeoutMs: number) {
   while (Date.now() < deadline) {
     try {
       const r = await fetch(`${url}/api/healthz`);
-      if (r.status === 200) return;
+      // The early Replit boot listener returns 200 while the app is starting.
+      if (r.status === 200 && (await r.json()).status === "ok") return;
     } catch (err) {
       lastErr = err;
     }

@@ -8,7 +8,7 @@ test.use({ storageState: CESAR_STATE })
 /**
  * UI-driven CRUD coverage for the clients page after the migration to
  * generated `useMutation` hooks (Task #300). Exercising create + edit +
- * delete entirely through the UI verifies the central cache-invalidation
+ * archive entirely through the UI verifies the central cache-invalidation
  * helpers fire correctly (lists update without a manual reload) and the
  * shared `toastApiError` path stays wired.
  */
@@ -32,7 +32,7 @@ test.describe("clients CRUD (UI)", () => {
     }
   })
 
-  test("create, edit, and delete a client through the UI", async ({
+  test("create, edit, and archive a client through the UI", async ({
     page,
     request,
   }) => {
@@ -82,21 +82,32 @@ test.describe("clients CRUD (UI)", () => {
       timeout: 10_000,
     })
 
-    // DELETE — open sheet again, click trash, confirm in the AlertDialog.
+    // Archive the client without deleting its retained project history.
     await page.goto(`/clients?client=${createdClientId}`)
-    await page.locator('button[title="Delete client"]').first().click()
+    await page.getByRole("button", { name: "Archive client", exact: true }).click()
     await expect(
-      page.getByRole("alertdialog").getByText(/delete client\?/i),
+      page.getByRole("alertdialog").getByText(/archive client\?/i),
     ).toBeVisible()
     await page
       .getByRole("alertdialog")
-      .getByRole("button", { name: /^delete$/i })
+      .getByRole("button", { name: /^archive$/i })
       .click()
 
     // Once the AlertDialog closes the list should no longer contain the row.
     await expect(page.getByText(renamedCompany)).toHaveCount(0, {
       timeout: 10_000,
     })
+    const archivedResponse = await request.get(
+      `/api/clients?status=archived&search=${encodeURIComponent(renamedCompany)}`,
+      { headers: authHeaders(token) },
+    )
+    expect(archivedResponse.ok()).toBeTruthy()
+    const archivedBody = await archivedResponse.json()
+    expect(archivedBody.clients).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: createdClientId, archived: true }),
+      ]),
+    )
     createdClientId = null
   })
 })

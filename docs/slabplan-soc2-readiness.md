@@ -1,25 +1,37 @@
 # SlabPlan SOC 2 Readiness
 
-Status: **Not independently attested**  
-Last reviewed: **August 19, 2026**  
-Initial scope: **Security Trust Services Criterion**
+Status: **Not independently attested**
+
+Last reviewed: **September 26, 2026**
+
+Proposed initial scope: **Security Trust Services Criteria**
+
+This is a readiness plan, not an audit report or evidence that every control
+below is operating. Management approval, a qualified independent CPA firm,
+and verified operating evidence are still required. Detailed findings and
+access inventories belong in restricted evidence storage, not this public
+source repository.
 
 ## Current position
 
 Replit and Supabase maintain SOC 2 Type II attestations for services within
 their respective compliance boundaries. SlabPlan can use those reports as
 vendor evidence, but provider compliance does not make Taro Build or SlabPlan
-SOC 2 attested. SlabPlan must operate its own controls, collect evidence over an
-observation period, and complete an examination by an independent CPA firm.
+SOC 2 attested. SlabPlan must establish and operate its own controls and
+complete an examination by an independent CPA firm. Type I examines control
+design at a specified date; Type II also examines operating effectiveness
+over an agreed period. A Type I report is not a prerequisite for Type II.
 
-Approved public wording:
+Customer-facing wording that reflects the current status:
 
 > SlabPlan runs on infrastructure providers that maintain SOC 2 Type II
 > attestations. SlabPlan does not currently claim its own independent SOC 2
 > report.
 
 Do not use "SOC 2 certified", "SOC 2 compliant", or "SOC 2 verified" to
-describe SlabPlan until an auditor has issued the applicable report.
+describe SlabPlan. After an examination, describe the actual report type,
+scope, period, and any qualifications accurately. SOC 2 is an attestation,
+not a product certification or a guarantee against security incidents.
 
 ## System boundary
 
@@ -63,12 +75,15 @@ access, contract owner, and assurance evidence.
 
 ## Evidence cadence
 
+These are proposed operating targets, not universal SOC 2 requirements or
+claims of completed reviews. Agree them with management and the auditor.
+
 | Evidence                                 | Minimum cadence                   |
 | ---------------------------------------- | --------------------------------- |
 | Privileged-access and user-access review | Quarterly                         |
 | Vendor assurance and subprocessor review | Annually and on material change   |
 | Vulnerability and dependency review      | Continuous, with a monthly record |
-| Backup restore test                      | At least annually                 |
+| Backup restore test                      | Quarterly and material changes    |
 | Incident-response tabletop               | At least annually                 |
 | Business-continuity test                 | At least annually                 |
 | Policy review and approval               | Annually                          |
@@ -76,7 +91,8 @@ access, contract owner, and assurance evidence.
 
 ## Audit entry gates
 
-Do not schedule an examination period until all of the following are true:
+Engage the auditor early to agree on scope. Do not represent the system as
+audit-ready until the following are evidenced:
 
 - The system description and control matrix have named owners.
 - Required policies are approved and operating.
@@ -89,13 +105,33 @@ Do not schedule an examination period until all of the following are true:
 
 ## Open findings
 
-- On August 19, 2026, `pnpm audit --prod --audit-level high` reported 11
-  high-severity transitive advisories. Every high-severity path was confined to
-  `artifacts/cadstone-mobile` dependencies from Expo or React Native and is not
-  included in the current Replit web/API deployment. Upgrade and re-audit the
-  mobile dependency tree before any mobile production release. The complete
-  audit also reported 15 moderate and 4 low advisories requiring routine
-  triage.
+- The August dependency snapshot is historical, not a current assurance.
+  The September 26 review identified additional runtime advisories and
+  applies compatible patches. Retain the complete before/after audit output;
+  distinguish deployed dependency paths from mobile and sandbox dependencies.
+- Remaining React Router advisories require a separately tested major-version
+  migration or documented applicability analysis. Mobile dependencies must
+  be reviewed and remediated before a mobile release.
+- Technical tests and a successful database restore do not establish
+  personnel controls, provider MFA, independent review, private-file recovery,
+  log retention, or incident-response readiness. Maintain explicit evidence
+  and unresolved findings for each, with owners and due dates.
+- Shared demonstration accounts must contain synthetic data only. Do not use
+  demo credentials for customer tenants or privileged provider access.
+
+## Auditor Handoff
+
+Management must supply the legal entity operating SlabPlan, authorized
+signatory, service commitments, customer scope, and personnel/vendor roster.
+Ask an independent CPA firm to confirm its license, independence, peer review,
+proposed criteria, system boundary, evidence expectations, report restrictions,
+and a written fee quote. Do not treat a readiness platform purchase as an
+audit engagement. No auditor engagement or audit period is confirmed here.
+
+Keep policies explicitly marked draft until management adopts them. Never
+backdate approvals, access reviews, tests, or observation-period evidence.
+Store signed policies, provider reports, inventories, questionnaires, and
+audit findings outside the public GitHub repository with named-user access.
 
 ## Primary references
 

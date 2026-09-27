@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { continueAuthentication } from "@/lib/security-flow"
 import { Loader2, Save, User } from "lucide-react"
 import {
   usersGetUsersMe,
@@ -26,6 +28,7 @@ type AuthUser = {
 }
 
 export default function ProfileSection() {
+  const navigate = useNavigate()
   useDocumentTitle("Profile · Settings")
   const { user: authUser, accessToken, setAuth } = useAuthStore()
 
@@ -81,7 +84,11 @@ export default function ProfileSection() {
       }
       const validated = validatePayload(UsersPutUsersMeBody, payload)
       if (!validated) return
-      const data = (await usersPutUsersMe(validated)) as { user: AuthUser }
+      const data = (await usersPutUsersMe(validated)) as { user: AuthUser; verificationRequired?: boolean; emailSent?: boolean }
+      if (data.verificationRequired) {
+        navigate(continueAuthentication({ ...data, email: data.user.email }), { replace: true })
+        return
+      }
       if (accessToken) {
         setAuth(data.user, accessToken)
       }

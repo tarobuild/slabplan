@@ -200,6 +200,25 @@ test("interactive token resolver keeps legacy JWT support during migration", asy
   assert.equal(auth.authProvider, "legacy");
 });
 
+test("provider tokens cannot bypass required MFA, enrolled MFA, or account revocation", async () => {
+  const { db } = await import("@workspace/db");
+  const { users } = await import("@workspace/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const { resolveInteractiveAccessToken } = await import("../src/lib/access-token.ts");
+  const token = signSupabaseToken(linkedSupabaseUserId);
+  try {
+    await db.update(users).set({ mfaRequired: true }).where(eq(users.id, linkedUserId));
+    await assert.rejects(() => resolveInteractiveAccessToken(token), /Two-step verification/);
+    await db.update(users).set({ mfaRequired: false, mfaEnabledAt: new Date() }).where(eq(users.id, linkedUserId));
+    await assert.rejects(() => resolveInteractiveAccessToken(token), /Two-step verification/);
+    await db.update(users).set({ mfaEnabledAt: null, sessionsRevokedAt: new Date() }).where(eq(users.id, linkedUserId));
+    await assert.rejects(() => resolveInteractiveAccessToken(token), /Sign in again/);
+    await assert.rejects(() => resolveInteractiveAccessToken(signSupabaseToken(linkedSupabaseUserId)), /Sign in again/);
+  } finally {
+    await db.update(users).set({ mfaRequired: false, mfaEnabledAt: null, sessionsRevokedAt: null }).where(eq(users.id, linkedUserId));
+  }
+});
+
 test("Supabase password login links a matching SlabPlan user by email", async () => {
   process.env.SUPABASE_AUTH_LOGIN_ENABLED = "true";
   process.env.SUPABASE_URL = "https://example.supabase.co";

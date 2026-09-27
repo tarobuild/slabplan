@@ -26,19 +26,16 @@ test("invite acceptance covers missing token and password validation branches", 
   assert.match(source, /confirm && password !== confirm/)
 })
 
-test("invite acceptance submits a validated payload, authenticates, and navigates", () => {
+test("invite acceptance submits a validated payload and honors required security steps", () => {
   assert.match(
     source,
     /const payload: AuthAcceptInviteSchema = \{[\s\S]*token,[\s\S]*email: normalizedEmail,[\s\S]*password,[\s\S]*accepted_terms_version: TERMS_VERSION,[\s\S]*accepted_privacy_version: PRIVACY_VERSION,[\s\S]*\}/,
   )
   assert.match(source, /validatePayload\(AuthPostAuthAcceptInviteBody, payload\)/)
   assert.match(source, /authPostAuthAcceptInvite\(\s*validated,?\s*\)/)
-  assert.match(source, /setAuth\(response\.user, response\.accessToken\)/)
-  assert.match(
-    source,
-    /toast\.success\(`Welcome to \$\{APP_NAME\}, \$\{response\.user\.fullName\}\.`\)/,
-  )
-  assert.match(source, /navigate\("\/dashboard", \{ replace: true \}\)/)
+  assert.match(source, /continueAuthentication\(response\)/)
+  assert.doesNotMatch(source, /setAuth\(response\.user, response\.accessToken\)/)
+  assert.match(source, /navigate\(destination, \{ replace: true \}\)/)
 })
 
 test("invite acceptance routes API failures through the shared toast helper", () => {

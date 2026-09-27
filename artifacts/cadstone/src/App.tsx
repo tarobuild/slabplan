@@ -64,6 +64,9 @@ const ReportsJobsByStage = lazy(() => import("@/pages/reports/jobs-by-stage"))
 const SettingsLayout = lazy(() => import("@/pages/settings/SettingsLayout"))
 const ProfileSection = lazy(() => import("@/pages/settings/ProfileSection"))
 const PasswordSection = lazy(() => import("@/pages/settings/PasswordSection"))
+const AccountSecuritySection = lazy(() => import("@/pages/settings/AccountSecuritySection"))
+const VerifyEmailPage = lazy(() => import("@/pages/verify-email"))
+const AccountVerificationPage = lazy(() => import("@/pages/account-verification"))
 const TokensSection = lazy(() => import("@/pages/settings/TokensSection"))
 const NotificationsSection = lazy(() => import("@/pages/settings/NotificationsSection"))
 const CompanySection = lazy(() => import("@/pages/settings/CompanySection"))
@@ -186,6 +189,8 @@ function buildRouter(basename: string | undefined) {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/security" element={<SecurityPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/account-verification" element={<AccountVerificationPage />} />
         <Route element={<PublicOnlyRoute />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -262,6 +267,7 @@ function buildRouter(basename: string | undefined) {
               <Route index element={<Navigate to="/settings/profile" replace />} />
               <Route path="profile" element={<ProfileSection />} />
               <Route path="password" element={<PasswordSection />} />
+              <Route path="security" element={<AccountSecuritySection />} />
               <Route path="notifications" element={<NotificationsSection />} />
               <Route path="tokens" element={<TokensSection />} />
               <Route element={<AdminRoute />}>

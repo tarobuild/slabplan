@@ -37,7 +37,7 @@ const controls = [
     icon: KeyRound,
     title: "Authentication and sessions",
     description:
-      "Passwords are never stored in plain text. Production sessions use secure, HTTP-only cookies and protected token flows for browser and upload access.",
+      "New workspace owners verify their email and enroll an authenticator before checkout. Account security settings include two-step verification, single-use recovery codes, and account-wide session and API-token revocation.",
   },
   {
     icon: ShieldCheck,
@@ -63,6 +63,7 @@ const customerPractices = [
   "Use a unique account for every team member and remove access promptly when roles change.",
   "Assign the least-privileged role needed for each person's work.",
   "Keep passwords private and review company access regularly.",
+  "Enable an authenticator and store recovery codes in a secure password manager.",
   "Upload only information your company is authorized to process.",
 ]
 

@@ -11,6 +11,7 @@ declare namespace Express {
       organizationStatus?: string;
       iat?: number;
       authTime?: number;
+      mfaVerifiedAt?: number;
       authProvider?: "legacy" | "supabase" | "pat";
       supabaseAuthUserId?: string;
       patId?: string;

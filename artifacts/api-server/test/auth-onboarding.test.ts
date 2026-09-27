@@ -10,6 +10,7 @@ const testDatabaseUrl =
 
 let server: Server;
 let baseUrl: string;
+let verificationToken = "";
 
 const runId = crypto.randomUUID();
 const email = `owner-${runId}@onboarding.local`;
@@ -22,6 +23,16 @@ before(async () => {
   delete process.env.SUPABASE_DATABASE_URL;
   process.env.DATABASE_URL = testDatabaseUrl;
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
+  process.env.ACCOUNT_SECURITY_ENCRYPTION_KEY = "a".repeat(64);
+  process.env.REGISTER_IP_MAX = "100";
+  const { pool } = await import("@workspace/db");
+  await pool.query("DELETE FROM rate_limit_buckets WHERE bucket_key LIKE 'auth:security:%'");
+  await pool.query("DELETE FROM rate_limit_buckets WHERE bucket_key LIKE 'auth:login:ip:%'");
+  const { __setEmailSenderForTests } = await import("../src/lib/email.ts");
+  __setEmailSenderForTests({ send: async ({ text }) => {
+    verificationToken = /#token=([a-f0-9]{64})/.exec(text)?.[1] ?? "";
+    return { id: "test-verification" };
+  } });
 
   const { default: app, prepareApp } = await import("../src/app.ts");
   await prepareApp();
@@ -93,7 +104,7 @@ function signupPayload(name = organizationName) {
   };
 }
 
-test("public signup creates an organization, owner membership, and signed-in admin", async () => {
+test("public signup requires email verification and MFA before subscription checkout", async () => {
   const response = await fetch(`${baseUrl}/auth/register`, {
     method: "POST",
     headers: {
@@ -104,19 +115,40 @@ test("public signup creates an organization, owner membership, and signed-in adm
   });
 
   assert.equal(response.status, 201);
-  const body = (await response.json()) as {
-    accessToken?: string;
-    user: {
-      id: string;
-      email: string;
-      role: string;
-      defaultOrganizationId?: string | null;
-    };
-  };
+  const pending = await response.json();
+  assert.equal(pending.verificationRequired, true);
+  assert.equal(pending.emailSent, true);
+  assert.equal(pending.email, email);
+  assert.equal(pending.accessToken, undefined);
+  assert.ok(verificationToken);
+  assert.ok(response.headers.get("set-cookie")?.includes("Expires="));
+
+  async function post(path: string, payload: unknown) {
+    return fetch(`${baseUrl}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-requested-with": "XMLHttpRequest" }, body: JSON.stringify(payload) });
+  }
+  const unverified = await post("/auth/login", { email, password: signupPayload().password });
+  const unverifiedBody = await unverified.json();
+  assert.equal(unverifiedBody.verificationRequired, true);
+  assert.equal(unverifiedBody.accessToken, undefined);
+  assert.equal((await post("/auth/verify-email", { token: verificationToken })).status, 200);
+  assert.equal((await post("/auth/verify-email", { token: verificationToken })).status, 400, "email links cannot be replayed");
+  const login = await post("/auth/login", { email, password: signupPayload().password });
+  const challenge = await login.json();
+  assert.equal(challenge.setupRequired, true);
+  assert.equal(challenge.accessToken, undefined);
+  assert.equal((await fetch(`${baseUrl}/billing/status`, { headers: { authorization: `Bearer ${challenge.challengeToken}` } })).status, 401);
+  const enrollment = await (await post("/auth/security/enroll", challenge)).json();
+  assert.match(enrollment.uri, /^otpauth:\/\/totp\//);
+  const { generate } = await import("otplib");
+  const code = await generate({ secret: enrollment.secret });
+  const activated = await post("/auth/security/confirm", { challengeToken: challenge.challengeToken, code });
+  assert.equal(activated.status, 200);
+  const body = await activated.json();
   assert.ok(body.accessToken);
   assert.equal(body.user.email, email);
   assert.equal(body.user.role, "admin");
-  assert.ok(body.user.defaultOrganizationId);
+  assert.equal(body.recoveryCodes.length, 10);
+  assert.equal((await post("/auth/security/confirm", { challengeToken: challenge.challengeToken, code })).status, 401);
 
   const { db } = await import("@workspace/db");
   const { organizationMemberships, organizations, users } =

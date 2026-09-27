@@ -1,4 +1,6 @@
-import React, { Fragment, useState, type ReactNode } from "react"
+import React, { useState } from "react"
+import Markdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import {
   AlertCircle,
   CheckCircle2,
@@ -32,244 +34,44 @@ function formatInput(input: unknown): string {
   }
 }
 
-function parseInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
-  const parts: ReactNode[] = []
-  const matcher = /(\*\*([^*]+)\*\*|`([^`]+)`)/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-
-  while ((match = matcher.exec(text)) != null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index))
-    }
-
-    if (match[2] != null) {
-      parts.push(
-        <strong
-          key={`${keyPrefix}-b-${match.index}`}
-          className="font-semibold text-slate-900"
-        >
-          {match[2]}
-        </strong>,
-      )
-    } else if (match[3] != null) {
-      parts.push(
-        <code
-          key={`${keyPrefix}-c-${match.index}`}
-          className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.85em] text-slate-700"
-        >
-          {match[3]}
-        </code>,
-      )
-    }
-
-    lastIndex = matcher.lastIndex
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex))
-  }
-
-  return parts.length > 0 ? parts : [text]
-}
-
-function stripDecorativeHeadingPrefix(text: string): string {
-  return text
-    .replace(/^[\s\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]+/u, "")
-    .trim()
-}
-
-function tableCells(line: string): string[] | null {
-  const trimmed = line.trim()
-  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return null
-  return trimmed
-    .slice(1, -1)
-    .split("|")
-    .map((cell) => cell.trim())
-}
-
-function isTableDivider(line: string): boolean {
-  const cells = tableCells(line)
+function MarkdownMessageContent({ content }: { content: string }) {
   return (
-    cells != null &&
-    cells.length > 0 &&
-    cells.every((cell) => /^:?-{3,}:?$/.test(cell))
-  )
-}
-
-function MarkdownDataRows({
-  headers,
-  rows,
-  blockKey,
-}: {
-  headers: string[]
-  rows: string[][]
-  blockKey: string
-}) {
-  return (
-    <div className="space-y-1.5" data-message-table="true">
-      {rows.map((row, rowIndex) => {
-        const title = row[0]?.trim()
-        const details = headers
-          .map((header, index) => ({
-            header: header.trim(),
-            value: row[index]?.trim() ?? "",
-          }))
-          .filter((item, index) => index !== 0 && item.header && item.value)
-
-        return (
-          <div
-            key={`${blockKey}-row-${rowIndex}`}
-            className="rounded-md border border-slate-200 bg-slate-50/80 p-2"
-          >
-            {title ? (
-              <div className="text-sm font-semibold leading-snug text-slate-900">
-                {parseInlineMarkdown(
-                  title,
-                  `${blockKey}-row-${rowIndex}-title`,
-                )}
-              </div>
-            ) : null}
-            {details.length > 0 ? (
-              <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs leading-snug">
-                {details.map((item, detailIndex) => (
-                  <Fragment key={`${blockKey}-row-${rowIndex}-${detailIndex}`}>
-                    <dt className="font-medium text-slate-500">
-                      {item.header}
-                    </dt>
-                    <dd className="min-w-0 break-words text-slate-800">
-                      {parseInlineMarkdown(
-                        item.value,
-                        `${blockKey}-row-${rowIndex}-${detailIndex}-value`,
-                      )}
-                    </dd>
-                  </Fragment>
-                ))}
-              </dl>
-            ) : null}
-          </div>
-        )
-      })}
+    <div className="assistant-markdown min-w-0 space-y-3 text-sm leading-7 [overflow-wrap:anywhere]">
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        skipHtml
+        components={{
+          h1: ({ children }) => <h3 className="mt-5 text-base font-semibold first:mt-0">{children}</h3>,
+          h2: ({ children }) => <h3 className="mt-5 text-base font-semibold first:mt-0">{children}</h3>,
+          h3: ({ children }) => <h3 className="mt-4 text-sm font-semibold first:mt-0">{children}</h3>,
+          h4: ({ children }) => <h4 className="mt-4 text-sm font-semibold">{children}</h4>,
+          h5: ({ children }) => <h4 className="mt-4 text-sm font-semibold">{children}</h4>,
+          h6: ({ children }) => <h4 className="mt-4 text-sm font-semibold">{children}</h4>,
+          p: ({ children }) => <p className="whitespace-pre-line">{children}</p>,
+          ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
+          ol: ({ children, start }) => <ol start={start} className="list-decimal space-y-1 pl-5">{children}</ol>,
+          li: ({ children }) => <li className="[&>ul]:mt-1 [&>ol]:mt-1">{children}</li>,
+          blockquote: ({ children }) => <blockquote className="border-l-2 border-primary/40 pl-3 text-muted-foreground">{children}</blockquote>,
+          hr: () => <hr className="border-border" />,
+          pre: ({ children }) => <pre className="max-w-full overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs leading-6 [&>code]:bg-transparent [&>code]:p-0">{children}</pre>,
+          code: ({ children }) => <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">{children}</code>,
+          table: ({ children }) => (
+            <div data-message-table="true" role="region" aria-label="Response table" tabIndex={0} className="max-w-full overflow-x-auto rounded-md border border-border focus-visible:outline-2 focus-visible:outline-primary">
+              <table className="w-full min-w-max border-collapse text-left text-sm leading-6">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-muted/70">{children}</thead>,
+          th: ({ children, style }) => <th scope="col" style={style} className="max-w-72 border-b border-border px-3 py-2 font-semibold whitespace-normal">{children}</th>,
+          td: ({ children, style }) => <td style={style} className="max-w-72 border-b border-border px-3 py-2 align-top whitespace-normal">{children}</td>,
+          a: ({ children, href }) => href ? <a href={href} target="_blank" rel="noopener noreferrer" className="font-medium text-primary underline underline-offset-2">{children}</a> : <span>{children}</span>,
+          // Model output must not load tracking pixels or external image URLs.
+          img: ({ alt }) => <span className="text-muted-foreground">{alt || "Image"}</span>,
+        }}
+      >
+        {content}
+      </Markdown>
     </div>
   )
-}
-
-function MarkdownMessageContent({ content }: { content: string }) {
-  const lines = content.replace(/\r\n/g, "\n").split("\n")
-  const blocks: ReactNode[] = []
-  let index = 0
-
-  const pushParagraph = (paragraphLines: string[], blockIndex: number) => {
-    const text = paragraphLines.join("\n").trim()
-    if (!text) return
-    blocks.push(
-      <p
-        key={`p-${blockIndex}`}
-        className="whitespace-pre-line leading-relaxed"
-      >
-        {parseInlineMarkdown(text, `p-${blockIndex}`)}
-      </p>,
-    )
-  }
-
-  while (index < lines.length) {
-    const line = lines[index] ?? ""
-    const trimmed = line.trim()
-
-    if (!trimmed) {
-      index += 1
-      continue
-    }
-
-    const headingMatch = /^(#{1,4})\s+(.+)$/.exec(trimmed)
-    if (headingMatch) {
-      const heading = stripDecorativeHeadingPrefix(headingMatch[2] ?? "")
-      blocks.push(
-        <h3
-          key={`h-${index}`}
-          className="pt-1 text-[13px] font-semibold leading-snug text-slate-950 first:pt-0"
-        >
-          {parseInlineMarkdown(heading, `h-${index}`)}
-        </h3>,
-      )
-      index += 1
-      continue
-    }
-
-    if (/^-{3,}$/.test(trimmed)) {
-      blocks.push(<div key={`hr-${index}`} className="h-px bg-slate-200" />)
-      index += 1
-      continue
-    }
-
-    const headerCells = tableCells(trimmed)
-    if (headerCells && isTableDivider(lines[index + 1] ?? "")) {
-      const rows: string[][] = []
-      index += 2
-      while (index < lines.length) {
-        const cells = tableCells(lines[index] ?? "")
-        if (!cells || isTableDivider(lines[index] ?? "")) break
-        rows.push(cells)
-        index += 1
-      }
-
-      if (rows.length > 0) {
-        blocks.push(
-          <MarkdownDataRows
-            key={`table-${index}`}
-            headers={headerCells}
-            rows={rows}
-            blockKey={`table-${index}`}
-          />,
-        )
-      }
-      continue
-    }
-
-    const bulletMatch = /^[-*]\s+(.+)$/.exec(trimmed)
-    if (bulletMatch) {
-      const items: string[] = []
-      while (index < lines.length) {
-        const itemMatch = /^[-*]\s+(.+)$/.exec((lines[index] ?? "").trim())
-        if (!itemMatch) break
-        items.push(itemMatch[1] ?? "")
-        index += 1
-      }
-
-      blocks.push(
-        <ul
-          key={`ul-${index}`}
-          className="list-disc space-y-1 pl-4 leading-relaxed"
-        >
-          {items.map((item, itemIndex) => (
-            <li key={`ul-${index}-${itemIndex}`}>
-              {parseInlineMarkdown(item, `ul-${index}-${itemIndex}`)}
-            </li>
-          ))}
-        </ul>,
-      )
-      continue
-    }
-
-    const paragraphLines: string[] = []
-    while (index < lines.length) {
-      const next = lines[index] ?? ""
-      const nextTrimmed = next.trim()
-      if (
-        !nextTrimmed ||
-        /^(#{1,4})\s+/.test(nextTrimmed) ||
-        /^-{3,}$/.test(nextTrimmed) ||
-        /^[-*]\s+/.test(nextTrimmed)
-      ) {
-        break
-      }
-      paragraphLines.push(next)
-      index += 1
-    }
-    pushParagraph(paragraphLines, index)
-  }
-
-  return <div className="space-y-2">{blocks}</div>
 }
 
 function ToolCallRow({
@@ -385,7 +187,7 @@ function ActionsSection({
   const isOpen = pendingCount > 0 ? true : open
 
   return (
-    <div className="w-full overflow-hidden rounded-md border border-slate-200 bg-white">
+    <div className="w-full min-w-0 border-t border-border pt-1">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -416,7 +218,7 @@ function ActionsSection({
         />
       </button>
       {isOpen ? (
-        <div className="space-y-1 border-t border-slate-200 bg-slate-50/50 p-1.5">
+        <div className="space-y-1 py-1.5">
           {calls.map((call) => (
             <ToolCallRow
               key={call.id}
@@ -438,13 +240,13 @@ export default function ChatMessage({
   const isAssistant = message.role === "assistant"
 
   return (
-    <div className={cn("flex w-full flex-col gap-2", isUser && "items-end")}>
+    <div className={cn("flex w-full min-w-0 flex-col gap-3", isUser && "items-end")}>
       <div
         className={cn(
-          "max-w-[92%] rounded-lg px-3 py-2 text-sm break-words",
+          "min-w-0 text-sm [overflow-wrap:anywhere]",
           isUser
-            ? "whitespace-pre-wrap bg-[#1D1D1D] text-white"
-            : "bg-white text-slate-800 border border-slate-200",
+            ? "max-w-[85%] whitespace-pre-wrap rounded-lg bg-primary px-4 py-3 text-primary-foreground"
+            : "w-full py-1 text-foreground",
         )}
       >
         {message.content ? (
@@ -482,8 +284,8 @@ export default function ChatMessage({
       {isAssistant &&
       message.stoppedReason &&
       message.stoppedReason !== "end_turn" ? (
-        <div className="text-[10px] uppercase tracking-wide text-slate-400">
-          stopped: {message.stoppedReason}
+        <div className="text-xs text-muted-foreground">
+          Response stopped: {message.stoppedReason.replaceAll("_", " ")}
         </div>
       ) : null}
     </div>

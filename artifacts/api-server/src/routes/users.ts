@@ -15,6 +15,7 @@ import {
   type User,
 } from "@workspace/db/schema";
 import { sendAuthResponse, toPublicUser } from "../lib/auth";
+import { issueEmailVerification } from "../lib/account-security";
 import { APP_PUBLIC_ORIGIN } from "../lib/brand";
 import {
   sendInvite,
@@ -663,7 +664,7 @@ router.put(
 
         await updateSupabaseAuthUser(user.supabaseAuthUserId, {
           email,
-          email_confirm: true,
+          email_confirm: false,
           ...supabaseUserMetadata({
             id: user.id,
             fullName: body.data.fullName ?? user.fullName,
@@ -673,21 +674,57 @@ router.put(
       }
     }
 
-    const [updated] = await db
-      .update(users)
-      .set({
-        fullName: body.data.fullName ?? user.fullName,
-        email,
-        phone: body.data.phone !== undefined ? body.data.phone : user.phone,
-        avatarUrl:
-          body.data.avatarUrl !== undefined
-            ? body.data.avatarUrl
-            : user.avatarUrl,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, user.id))
-      .returning();
+    const updated = await db.transaction(async (tx) => {
+      const now = new Date();
+      const [saved] = await tx
+        .update(users)
+        .set({
+          fullName: body.data.fullName ?? user.fullName,
+          email,
+          ...(email !== user.email
+            ? {
+                emailVerifiedAt: null,
+                emailVerificationRequired: true,
+                emailVerificationHash: null,
+                emailVerificationExpiresAt: null,
+                sessionsRevokedAt: now,
+                securityChallengeHash: null,
+                mfaPendingSecretEncrypted: null,
+              }
+            : {}),
+          phone: body.data.phone !== undefined ? body.data.phone : user.phone,
+          avatarUrl:
+            body.data.avatarUrl !== undefined
+              ? body.data.avatarUrl
+              : user.avatarUrl,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, user.id))
+        .returning();
 
+      if (email !== user.email) {
+        await tx
+          .update(personalAccessTokens)
+          .set({ revokedAt: now })
+          .where(
+            and(
+              eq(personalAccessTokens.userId, user.id),
+              isNull(personalAccessTokens.revokedAt),
+            ),
+          );
+      }
+      return saved;
+    });
+
+    if (email !== user.email) {
+      const emailSent = await issueEmailVerification(updated);
+      res.json({
+        user: toPublicUser(updated),
+        verificationRequired: true,
+        emailSent,
+      });
+      return;
+    }
     res.json({ user: toPublicUser(updated) });
   }),
 );
@@ -808,11 +845,13 @@ router.post(
         user.email,
         body.data.newPassword,
       );
-      sendSupabaseAuthResponse(res, session);
+      sendSupabaseAuthResponse(res, session, {
+        mfaVerifiedAt: req.auth!.mfaVerifiedAt,
+      });
       return;
     }
 
-    sendAuthResponse(res, updated!);
+    sendAuthResponse(res, updated!, { mfaVerifiedAt: req.auth!.mfaVerifiedAt });
   }),
 );
 

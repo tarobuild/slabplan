@@ -40,11 +40,14 @@ import {
   updateSupabaseAuthUser,
 } from "../lib/supabase-auth-session";
 import { requireAdmin, requireAuth } from "../middleware/require-auth";
+import accountSecurityRouter from "./account-security";
+import { assertInteractiveSecurity, assertSecurityEnrollmentConfigured, issueEmailVerification, readSecurityUser, sendSecuritySignInStep } from "../lib/account-security";
 
 // Password setup and reset use the same short-lived, single-use token column.
 // Public reset requests are deliberately non-enumerating and rate-limited.
 
 const router: IRouter = Router();
+router.use(accountSecurityRouter);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MOBILE_CLIENT_HEADER = "x-cadstone-client";
 const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -138,6 +141,12 @@ const passwordResetRateLimitByEmail = createRateLimit({
   windowMs: Number(process.env.PASSWORD_RESET_WINDOW_MS ?? 15 * 60 * 1000),
   message: "Too many password reset requests. Try again later.",
   resolveKey: (req) => normalizeEmailForRateLimit(req.body?.email),
+});
+
+const registrationRateLimitByIp = createRateLimit({
+  keyPrefix: "auth:register:ip", max: Number(process.env.REGISTER_IP_MAX ?? 5),
+  windowMs: 60 * 60 * 1000, message: "Too many account creation attempts. Try again later.",
+  resolveKey: (req) => req.ip || null,
 });
 
 async function clearLoginRateLimitForRequest(req: {
@@ -339,6 +348,7 @@ async function signInWithSupabaseOrClaimLegacyPassword(
 
 router.post(
   "/register",
+  registrationRateLimitByIp,
   asyncHandler(async (req, res) => {
     const email = normalizeEmail(req.body.email);
     const password = normalizePassword(req.body.password);
@@ -347,6 +357,7 @@ router.post(
       req.body.organization_name,
     );
     const legal = readLegalAcceptance(req.body);
+    assertSecurityEnrollmentConfigured();
 
     const passwordHash = await bcrypt.hash(password, 10);
     const now = new Date();
@@ -359,7 +370,7 @@ router.post(
       const created = await createSupabaseAuthUser({
         email,
         password,
-        email_confirm: true,
+        email_confirm: false,
         user_metadata: { full_name: fullName },
         app_metadata: {
           cadstone_user_id: userId,
@@ -398,6 +409,8 @@ router.post(
             role: "admin",
             defaultOrganizationId: organization.id,
             passwordSetAt: now,
+            emailVerificationRequired: true,
+            mfaRequired: true,
             termsAcceptedAt: now,
             termsVersion: legal.termsVersion,
             privacyAcceptedAt: now,
@@ -432,17 +445,11 @@ router.post(
       throw error;
     }
 
-    if (isSupabasePasswordLoginEnabled()) {
-      const session = await signInWithSupabasePassword(email, password);
-      res.status(201);
-      sendSupabaseAuthResponse(res, session, {
-        includeRefreshToken: isMobileClientRequest(req),
-      });
-      return;
-    }
-
-    res.status(201);
-    sendAuthResponse(res, user);
+    const emailSent = await issueEmailVerification(user);
+    clearRefreshTokenCookie(res);
+    clearUploadTokenCookie(res);
+    res.setHeader("Cache-Control", "no-store");
+    res.status(201).json({ verificationRequired: true, email: user.email, emailSent });
   }),
 );
 
@@ -530,6 +537,7 @@ router.post(
         email,
         password,
       );
+      if (await sendSecuritySignInStep(res, session.user.id)) return;
       await clearLoginRateLimitForRequest(req);
       sendSupabaseAuthResponse(res, session, {
         includeRefreshToken: isMobileClientRequest(req),
@@ -567,6 +575,7 @@ router.post(
     // Reset both login limiter buckets for this IP and this email so the
     // 5-attempt budget is refreshed for legitimate users on every
     // successful sign-in.
+    if (await sendSecuritySignInStep(res, user.id)) return;
     await clearLoginRateLimitForRequest(req);
 
     sendAuthResponse(res, user, {
@@ -691,6 +700,9 @@ router.post(
         .set({
           passwordHash,
           passwordSetAt: now,
+          emailVerifiedAt: now,
+          emailVerificationHash: null,
+          emailVerificationExpiresAt: null,
           termsAcceptedAt: now,
           termsVersion: legal.termsVersion,
           privacyAcceptedAt: now,
@@ -725,12 +737,14 @@ router.post(
 
     if (isSupabasePasswordLoginEnabled()) {
       const session = await signInWithSupabasePassword(user.email, password);
+      if (await sendSecuritySignInStep(res, session.user.id)) return;
       sendSupabaseAuthResponse(res, session, {
         includeRefreshToken: isMobileClientRequest(req),
       });
       return;
     }
 
+    if (await sendSecuritySignInStep(res, user.id)) return;
     sendAuthResponse(res, updated[0]!, {
       includeRefreshToken: isMobileClientRequest(req),
     });
@@ -763,9 +777,14 @@ router.post(
       throw new HttpError(401, "Refresh token missing.");
     }
 
-    if (isSupabasePasswordLoginEnabled()) {
+    let claims: ReturnType<typeof verifyRefreshToken> | null = null;
+    try { claims = verifyRefreshToken(refreshToken); } catch { /* Older Supabase sessions use an opaque refresh token. */ }
+    if (!claims && isSupabasePasswordLoginEnabled()) {
       try {
         const session = await refreshSupabaseSession(refreshToken);
+        if ((await readSecurityUser(session.user.id)).sessionsRevokedAt) throw new HttpError(401, "Sign in again to continue.");
+        await assertActiveAuthUser({ userId: session.user.id, authTime: Date.now() });
+        await assertInteractiveSecurity({ userId: session.user.id });
         sendSupabaseAuthResponse(res, session, {
           includeRefreshToken: isMobileClientRequest(req),
         });
@@ -777,9 +796,10 @@ router.post(
       }
     }
 
-    const claims = verifyRefreshToken(refreshToken);
+    if (!claims) throw new HttpError(401, "Refresh token invalid.");
     try {
       await assertActiveAuthUser(claims);
+      await assertInteractiveSecurity(claims);
     } catch (error) {
       clearRefreshTokenCookie(res);
       clearUploadTokenCookie(res);
@@ -796,6 +816,8 @@ router.post(
 
     sendAuthResponse(res, user, {
       includeRefreshToken: isMobileClientRequest(req),
+      authTime: claims.authTime ?? (claims.iat ? claims.iat * 1000 : undefined),
+      mfaVerifiedAt: claims.mfaVerifiedAt,
     });
   }),
 );

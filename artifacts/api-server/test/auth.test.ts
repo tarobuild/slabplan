@@ -178,6 +178,11 @@ function restoreEnv(name: string, value: string | undefined) {
 function createResponseRecorder() {
   return {
     body: undefined as Record<string, unknown> | undefined,
+    headers: new Map<string, string>(),
+    setHeader(name: string, value: string) {
+      this.headers.set(name.toLowerCase(), value);
+      return this;
+    },
     cookie() {
       return this;
     },

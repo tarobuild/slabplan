@@ -2,7 +2,7 @@
 
 Status: **Not independently attested**
 
-Last reviewed: **September 26, 2026**
+Last reviewed: **September 27, 2026**
 
 Proposed initial scope: **Security Trust Services Criteria**
 
@@ -105,15 +105,24 @@ audit-ready until the following are evidenced:
 
 ## Open findings
 
-- The August dependency snapshot is historical, not a current assurance.
-  The September 26 review identified additional runtime advisories and
-  applies compatible patches. Retain the complete before/after audit output;
-  distinguish deployed dependency paths from mobile and sandbox dependencies.
-- Remaining React Router advisories require a separately tested major-version
-  migration or documented applicability analysis. Mobile dependencies must
-  be reviewed and remediated before a mobile release.
+- The September 27 candidate upgrades the deployed web router and API
+  generator and adds email verification, authenticator enrollment, recovery
+  codes, session revocation, and backup-failure alerting. These controls are
+  not production evidence until the exact revision is published and tested.
+  See [account-security-operations.md](account-security-operations.md) for
+  enforcement scope, secret custody, recovery, and release gates.
+- Retain complete dependency audit output in restricted evidence storage.
+  Remaining findings must distinguish production runtime dependencies from
+  development, mobile, and sandbox paths. A passing application test suite is
+  not evidence that all dependency advisories are resolved.
+- The September 27 database backup was restored successfully into an isolated
+  database. Its size-growth verification alert still requires a documented
+  baseline review; do not disable that check merely to make the workflow pass.
+- A private TEST document passed a byte-for-byte temporary-copy recovery drill
+  with cleanup. This does not establish an independent private-file backup or
+  recovery from loss of the primary storage service.
 - Technical tests and a successful database restore do not establish
-  personnel controls, provider MFA, independent review, private-file recovery,
+  personnel controls, provider MFA, independent review, independent file backup,
   log retention, or incident-response readiness. Maintain explicit evidence
   and unresolved findings for each, with owners and due dates.
 - Shared demonstration accounts must contain synthetic data only. Do not use

@@ -13,6 +13,7 @@ type TokenClaims = {
   role: string;
   organizationId?: string;
   authTime?: number;
+  mfaVerifiedAt?: number;
   fileId?: string;
 };
 
@@ -48,6 +49,8 @@ type PublicUser = Pick<
 > & {
   defaultOrganizationId?: User["defaultOrganizationId"];
 };
+
+export type SessionProof = { authTime?: number; mfaVerifiedAt?: number };
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -133,14 +136,15 @@ const uploadCookieOptions: CookieOptions = {
 function buildTokenPayload(
   user: PublicUser,
   type: TokenType,
-  extra: { fileId?: string } = {},
+  extra: { fileId?: string } & SessionProof = {},
 ): TokenClaims {
   const basePayload: TokenClaims = {
     type,
     email: user.email,
     role: user.role,
     organizationId: user.defaultOrganizationId ?? undefined,
-    authTime: Date.now(),
+    authTime: extra.authTime ?? Date.now(),
+    mfaVerifiedAt: extra.mfaVerifiedAt,
   };
 
   if (extra.fileId) {
@@ -155,7 +159,7 @@ function signToken(
   type: TokenType,
   secret: string,
   expiresIn: number,
-  extra: { fileId?: string; jti?: string } = {},
+  extra: { fileId?: string; jti?: string } & SessionProof = {},
 ): string {
   const options: jwt.SignOptions = {
     subject: user.id,
@@ -204,6 +208,7 @@ function decodeVerifiedToken<TType extends TokenType>(
     jti: typeof payload.jti === "string" ? payload.jti : undefined,
     iat: typeof payload.iat === "number" ? payload.iat : undefined,
     authTime: typeof payload.authTime === "number" ? payload.authTime : undefined,
+    mfaVerifiedAt: typeof payload.mfaVerifiedAt === "number" ? payload.mfaVerifiedAt : undefined,
   };
 }
 
@@ -233,12 +238,12 @@ export function toPublicUser(user: PublicUser | User): PublicUser {
   };
 }
 
-export function signAccessToken(user: PublicUser): string {
-  return signToken(user, "access", accessSecret, ACCESS_TOKEN_TTL_SECONDS);
+export function signAccessToken(user: PublicUser, proof: SessionProof = {}): string {
+  return signToken(user, "access", accessSecret, ACCESS_TOKEN_TTL_SECONDS, proof);
 }
 
-export function signRefreshToken(user: PublicUser): string {
-  return signToken(user, "refresh", refreshSecret, REFRESH_TOKEN_TTL_SECONDS);
+export function signRefreshToken(user: PublicUser, proof: SessionProof = {}): string {
+  return signToken(user, "refresh", refreshSecret, REFRESH_TOKEN_TTL_SECONDS, proof);
 }
 
 export function signUploadToken(user: PublicUser): string {
@@ -350,20 +355,23 @@ export function clearUploadTokenCookie(res: Response): void {
 export function sendAuthResponse(
   res: Response,
   user: PublicUser | User,
-  options: { includeRefreshToken?: boolean } = {},
+  options: { includeRefreshToken?: boolean; recoveryCodes?: string[] } & SessionProof = {},
 ): void {
   const publicUser = toPublicUser(user);
-  const accessToken = signAccessToken(publicUser);
-  const refreshToken = signRefreshToken(publicUser);
+  const proof = { authTime: options.authTime ?? Date.now(), mfaVerifiedAt: options.mfaVerifiedAt };
+  const accessToken = signAccessToken(publicUser, proof);
+  const refreshToken = signRefreshToken(publicUser, proof);
   const uploadToken = signUploadToken(publicUser);
 
   setRefreshTokenCookie(res, refreshToken);
   setUploadTokenCookie(res, uploadToken);
 
+  res.setHeader("Cache-Control", "no-store");
   res.json({
     accessToken,
     expiresIn: ACCESS_TOKEN_TTL_SECONDS,
     ...(options.includeRefreshToken ? { refreshToken } : {}),
     user: publicUser,
+    ...(options.recoveryCodes ? { recoveryCodes: options.recoveryCodes } : {}),
   });
 }

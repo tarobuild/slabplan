@@ -35,7 +35,10 @@ An operator can read `/api/internal/billing-readiness` using the existing
 `x-backup-secret` operational credential. It makes read-only Stripe API calls
 using the deployment's own key and returns only readiness booleans. It checks
 live mode, charges enabled, the expected active monthly price, the exact
-canonical application webhook URL, and subscribed events. Missing credentials
+canonical application webhook URL, and subscribed events. When a saved payment
+link is configured, it must also be active in that account, live, sell exactly
+one unit of the configured price without adjustable quantities or optional
+items, and not carry a conflicting fixed workspace identity. Missing credentials
 or failed checks return 503; incorrect operational authentication returns 401.
 Responses are not cacheable. This is configuration evidence only: it does not
 prove that the stored signing secret matches Stripe or that payment succeeds.

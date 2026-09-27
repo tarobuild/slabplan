@@ -5,12 +5,17 @@ process.env.STRIPE_SECRET_KEY = "sk_live_local_fixture_not_a_real_key";
 process.env.STRIPE_WEBHOOK_SECRET = "whsec_local_fixture_not_a_real_key";
 process.env.STRIPE_PRICE_PRO = "price_local_fixture";
 process.env.APP_PUBLIC_URL = "https://app.example.test";
+delete process.env.STRIPE_PAYMENT_LINK_URL;
 const { getStripeClient } = await import("../src/lib/stripe.ts");
 const { inspectBillingReadiness, assertBillingReadyForCheckout } = await import("../src/lib/billing-readiness.ts");
 const stripe = getStripeClient();
 let providerFails = false;
 let priceMatches = true;
 let endpointMatches = true;
+let linkActive = true;
+let linkPriceMatches = true;
+let adjustableQuantity = false;
+let linkOrganizationId: string | undefined;
 
 before(() => {
   mock.method(stripe.accounts, "retrieve", async () => {
@@ -23,6 +28,12 @@ before(() => {
       yield { url: endpointMatches ? "https://app.example.test/api/billing/stripe/webhook" : "https://different.example.test/webhook", status: "enabled", livemode: true, enabled_events: ["*"] };
     },
   }));
+  mock.method(stripe.paymentLinks, "list", () => ({
+    async *[Symbol.asyncIterator]() {
+      yield { id: "plink_local_fixture", url: "https://buy.stripe.com/local-fixture", active: linkActive, livemode: true, metadata: { organizationId: linkOrganizationId } };
+    },
+  }));
+  mock.method(stripe.paymentLinks, "listLineItems", async () => ({ has_more: false, data: [{ price: { id: linkPriceMatches ? "price_local_fixture" : "price_wrong" }, quantity: 1, adjustable_quantity: { enabled: adjustableQuantity } }] }));
 });
 after(() => mock.restoreAll());
 
@@ -48,6 +59,33 @@ test("provider failure fails closed without leaking the provider response", asyn
   assert.equal(result.checks.providerReachable, false);
   assert.ok(!JSON.stringify(result).includes("sensitive-provider-response"));
   providerFails = false;
+});
+
+test("a configured payment link must be live, active, fixed quantity, and scoped to the configured plan", async () => {
+  process.env.STRIPE_PAYMENT_LINK_URL = "https://buy.stripe.com/local-fixture";
+  try {
+    assert.equal((await inspectBillingReadiness()).ready, true);
+    linkActive = false;
+    assert.equal((await inspectBillingReadiness()).ready, false);
+    linkActive = true;
+    linkPriceMatches = false;
+    assert.equal((await inspectBillingReadiness()).ready, false);
+    linkPriceMatches = true;
+    adjustableQuantity = true;
+    assert.equal((await inspectBillingReadiness()).ready, false);
+    adjustableQuantity = false;
+    linkOrganizationId = "another-workspace";
+    assert.equal((await inspectBillingReadiness()).ready, false);
+    linkOrganizationId = undefined;
+    process.env.STRIPE_PAYMENT_LINK_URL = "https://buy.stripe.com/missing";
+    assert.equal((await inspectBillingReadiness()).ready, false);
+  } finally {
+    delete process.env.STRIPE_PAYMENT_LINK_URL;
+    linkActive = true;
+    linkPriceMatches = true;
+    adjustableQuantity = false;
+    linkOrganizationId = undefined;
+  }
 });
 
 test("production checkout fails closed before a customer is sent to an unverified payment setup", async () => {

@@ -17,6 +17,7 @@ export async function inspectBillingReadiness() {
     priceMatchesPlan: false,
     webhookEnabled: false,
     webhookEventsConfigured: false,
+    paymentLinkMatchesPlan: !process.env.STRIPE_PAYMENT_LINK_URL?.trim(),
   };
   try {
     const stripe = getStripeClient();
@@ -27,6 +28,22 @@ export async function inspectBillingReadiness() {
     checks.priceActive = price.active && price.livemode;
     checks.priceMatchesPlan = price.currency === "usd" && price.unit_amount === billingPlans.pro.monthlyUsd * 100 &&
       price.type === "recurring" && price.recurring?.interval === "month" && price.recurring.interval_count === 1;
+    const configuredPaymentLink = process.env.STRIPE_PAYMENT_LINK_URL?.trim();
+    if (configuredPaymentLink) {
+      const url = new URL(configuredPaymentLink);
+      if (url.protocol !== "https:" || url.hostname !== "buy.stripe.com" || url.username || url.password) throw new Error("Invalid payment link");
+      for await (const link of stripe.paymentLinks.list({ limit: 100 })) {
+        const providerUrl = new URL(link.url);
+        if (providerUrl.origin !== url.origin || providerUrl.pathname !== url.pathname) continue;
+        const items = await stripe.paymentLinks.listLineItems(link.id, { limit: 100 });
+        checks.paymentLinkMatchesPlan = link.active && link.livemode &&
+          !link.metadata.organizationId && !link.subscription_data?.metadata.organizationId &&
+          !link.optional_items?.length && !items.has_more && items.data.length === 1 &&
+          items.data[0]?.price?.id === getStripePriceId("pro") && items.data[0].quantity === 1 &&
+          !items.data[0].adjustable_quantity?.enabled;
+        break;
+      }
+    }
     const expectedUrl = new URL("/api/billing/stripe/webhook", getAppPublicUrl()).toString();
     const required = ["checkout.session.completed", "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"];
     for await (const endpoint of stripe.webhookEndpoints.list({ limit: 100 })) {

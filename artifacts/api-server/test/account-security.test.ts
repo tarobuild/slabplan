@@ -13,9 +13,10 @@ process.env.ACCOUNT_SECURITY_ENCRYPTION_KEY = "c".repeat(64);
 process.env.JWT_ACCESS_SECRET = "security-test-access-secret-not-production";
 process.env.JWT_REFRESH_SECRET = "security-test-refresh-secret-not-production";
 process.env.JWT_UPLOAD_SECRET = "security-test-upload-secret-not-production";
+process.env.APP_PUBLIC_URL = "https://app.example.test";
 
 const { db, pool } = await import("@workspace/db");
-const { users, organizations, organizationMemberships, personalAccessTokens, securityEvents } = await import("@workspace/db/schema");
+const { users, organizations, organizationMemberships, personalAccessTokens, securityEvents, activityLog } = await import("@workspace/db/schema");
 const { eq, inArray } = await import("drizzle-orm");
 const security = await import("../src/lib/account-security.ts");
 const auth = await import("../src/lib/auth.ts");
@@ -40,6 +41,7 @@ before(async () => {
 after(async () => {
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   if (ids.length) {
+    await db.delete(activityLog).where(inArray(activityLog.entityId, ids));
     await db.delete(personalAccessTokens).where(inArray(personalAccessTokens.userId, ids));
     await db.delete(organizationMemberships).where(inArray(organizationMemberships.userId, ids));
     await db.delete(users).where(inArray(users.id, ids));
@@ -70,6 +72,45 @@ async function activate(userId: string) {
   const result = await security.completeSecurityChallenge(token, code, "setup");
   return { ...result, secret: enrollment.secret, code };
 }
+
+async function inviteSecurityFixture(owner: Awaited<ReturnType<typeof fixture>>, role: string) {
+  const response = await post("/users", { email: `test-invite-${crypto.randomUUID()}@example.test`, fullName: "TEST Invited User", role }, auth.signAccessToken(owner));
+  const body = await response.json();
+  assert.equal(response.status, 201, JSON.stringify(body));
+  ids.push(body.user.id);
+  return body;
+}
+
+test("new admin invitations require factor enrollment before issuing an application session", async () => {
+  const owner = await fixture();
+  const invitation = await inviteSecurityFixture(owner, "admin");
+  assert.equal((await security.readSecurityUser(invitation.user.id)).mfaRequired, true);
+  const accepted = await post("/auth/accept-invite", { token: invitation.inviteToken, email: invitation.user.email, password, accepted_terms_version: "2026-08-19", accepted_privacy_version: "2026-08-19" });
+  const body = await accepted.json();
+  assert.equal(accepted.status, 200, JSON.stringify(body));
+  assert.equal(body.setupRequired, true);
+  assert.equal(body.accessToken, undefined);
+  const enrollment = await security.beginSecurityEnrollment(body.challengeToken);
+  assert.ok(enrollment.secret);
+});
+
+test("promotion to admin requires MFA and revokes the previously valid session", async () => {
+  const owner = await fixture();
+  const invitation = await inviteSecurityFixture(owner, "crew_member");
+  const accepted = await post("/auth/accept-invite", { token: invitation.inviteToken, email: invitation.user.email, password, accepted_terms_version: "2026-08-19", accepted_privacy_version: "2026-08-19" });
+  const oldSession = await accepted.json();
+  assert.equal(accepted.status, 200, JSON.stringify(oldSession));
+  assert.ok(oldSession.accessToken);
+  const [personalToken] = await db.insert(personalAccessTokens).values({ userId: invitation.user.id, organizationId: owner.defaultOrganizationId, name: "TEST promotion token", tokenHash: crypto.randomBytes(32).toString("hex"), tokenPrefix: "test", lastFour: "test" }).returning();
+  const changed = await fetch(`${baseUrl}/users/${invitation.user.id}`, { method: "PATCH", headers: { "content-type": "application/json", "x-requested-with": "XMLHttpRequest", authorization: `Bearer ${auth.signAccessToken(owner)}` }, body: JSON.stringify({ role: "admin" }) });
+  assert.equal(changed.status, 200);
+  assert.equal((await security.readSecurityUser(invitation.user.id)).mfaRequired, true);
+  const [revokedToken] = await db.select().from(personalAccessTokens).where(eq(personalAccessTokens.id, personalToken!.id));
+  assert.ok(revokedToken!.revokedAt);
+  assert.equal((await fetch(`${baseUrl}/users/me`, { headers: { authorization: `Bearer ${oldSession.accessToken}` } })).status, 401);
+  const nextLogin = await post("/auth/login", { email: invitation.user.email, password });
+  assert.equal((await nextLogin.json()).setupRequired, true);
+});
 
 test("security history rejects rewriting and early deletion, while allowing expired retention cleanup", async () => {
   // Exercise the real migration in a rolled-back transaction, including on a

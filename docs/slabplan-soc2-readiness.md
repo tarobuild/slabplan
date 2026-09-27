@@ -118,7 +118,8 @@ audit-ready until the following are evidenced:
 - The September 27 database backup was restored successfully into an isolated
   database. A reviewed-restore size baseline supports legitimate growth while
   retaining missing-object and upward/downward anomaly detection. The updated
-  scheduled workflow still needs a successful production run after release.
+  workflow and a fresh restore drill both passed against production backup
+  storage on September 27. Repeat after production schema changes.
 - A private TEST document passed a byte-for-byte temporary-copy recovery drill
   with cleanup. This does not establish an independent private-file backup or
   recovery from loss of the primary storage service.

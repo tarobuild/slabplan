@@ -58,12 +58,12 @@ before(async () => {
   const bcryptModule = (await import("bcrypt")).default;
   const { db } = await import("@workspace/db");
   const { rateLimitBuckets, users } = await import("@workspace/db/schema");
-  const { like } = await import("drizzle-orm");
+  const { like, or } = await import("drizzle-orm");
 
   await prepareApp();
   await db
     .delete(rateLimitBuckets)
-    .where(like(rateLimitBuckets.bucketKey, "auth:login:%"));
+    .where(or(like(rateLimitBuckets.bucketKey, "auth:login:%"), like(rateLimitBuckets.bucketKey, "auth:password-reset:%")));
 
   // Stub the transactional email sender so the invite route never tries
   // to reach a provider during tests. The stub captures every payload for
@@ -142,7 +142,7 @@ after(async () => {
   const { db, pool } = await import("@workspace/db");
   const { users, idempotencyKeys, rateLimitBuckets } =
     await import("@workspace/db/schema");
-  const { inArray, like } = await import("drizzle-orm");
+  const { inArray, like, or } = await import("drizzle-orm");
 
   try {
     const allEmails = Array.from(emailsToCleanup);
@@ -154,7 +154,7 @@ after(async () => {
     }
     await db
       .delete(rateLimitBuckets)
-      .where(like(rateLimitBuckets.bucketKey, "auth:login:%"));
+      .where(or(like(rateLimitBuckets.bucketKey, "auth:login:%"), like(rateLimitBuckets.bucketKey, "auth:password-reset:%")));
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => {

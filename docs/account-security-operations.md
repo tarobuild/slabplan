@@ -26,7 +26,10 @@ before subscription checkout. Existing accounts are not silently marked verified
 or forced into an unannounced lockout. They can verify email and enroll under
 Settings > Account security. Invitations prove mailbox access when their
 single-use password setup link is consumed; invited users are not automatically
-subject to an organization-wide MFA policy.
+subject to an organization-wide MFA policy. New admin invitations and users
+newly promoted to admin require MFA. Promotion revokes the user's existing
+sessions and API tokens so privilege elevation requires a fresh sign-in and
+factor enrollment. Existing demo accounts are not silently opted in.
 
 Every enrolled user's application session must carry factor verification.
 Provider password authentication is exchanged for an application session; raw

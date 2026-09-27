@@ -917,6 +917,7 @@ router.post(
             email,
             fullName,
             role,
+            mfaRequired: role === "admin",
             defaultOrganizationId: organizationId,
             passwordHash: placeholderHash,
             isActive: true,
@@ -1327,12 +1328,14 @@ router.patch(
       }
 
       const now = new Date();
+      const promotedToAdmin = nextRole === "admin" && target.role !== "admin";
       const updatedRows = await tx
         .update(users)
         .set({
           fullName: parsed.data.fullName ?? target.fullName,
           role: nextRole,
           isActive: nextIsActive,
+          ...(promotedToAdmin ? { mfaRequired: true, sessionsRevokedAt: now, securityChallengeHash: null } : {}),
           updatedAt: now,
         })
         .where(eq(users.id, target.id))
@@ -1354,7 +1357,7 @@ router.patch(
           );
       }
 
-      if (target.isActive && nextIsActive === false) {
+      if (promotedToAdmin || (target.isActive && nextIsActive === false)) {
         await tx
           .update(personalAccessTokens)
           .set({ revokedAt: now })

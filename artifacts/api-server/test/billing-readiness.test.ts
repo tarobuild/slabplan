@@ -6,7 +6,7 @@ process.env.STRIPE_WEBHOOK_SECRET = "whsec_local_fixture_not_a_real_key";
 process.env.STRIPE_PRICE_PRO = "price_local_fixture";
 process.env.APP_PUBLIC_URL = "https://app.example.test";
 const { getStripeClient } = await import("../src/lib/stripe.ts");
-const { inspectBillingReadiness } = await import("../src/lib/billing-readiness.ts");
+const { inspectBillingReadiness, assertBillingReadyForCheckout } = await import("../src/lib/billing-readiness.ts");
 const stripe = getStripeClient();
 let providerFails = false;
 let priceMatches = true;
@@ -48,4 +48,18 @@ test("provider failure fails closed without leaking the provider response", asyn
   assert.equal(result.checks.providerReachable, false);
   assert.ok(!JSON.stringify(result).includes("sensitive-provider-response"));
   providerFails = false;
+});
+
+test("production checkout fails closed before a customer is sent to an unverified payment setup", async () => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
+    await assertBillingReadyForCheckout();
+    endpointMatches = false;
+    await assert.rejects(assertBillingReadyForCheckout(), /checkout is temporarily unavailable/);
+  } finally {
+    endpointMatches = true;
+    if (previous === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous;
+  }
 });

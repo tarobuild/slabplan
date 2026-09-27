@@ -39,6 +39,9 @@ canonical application webhook URL, and subscribed events. Missing credentials
 or failed checks return 503; incorrect operational authentication returns 401.
 Responses are not cacheable. This is configuration evidence only: it does not
 prove that the stored signing secret matches Stripe or that payment succeeds.
+Production checkout checks this configuration before returning a payment URL;
+if the deployment cannot verify it, the customer receives a temporary
+unavailability error instead of being sent to pay through an unverified setup.
 
 ## End-To-End Evidence
 

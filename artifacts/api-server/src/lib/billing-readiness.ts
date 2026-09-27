@@ -1,4 +1,11 @@
 import { billingPlans, getAppPublicUrl, getStripeClient, getStripePriceId } from "./stripe";
+import { HttpError } from "./http";
+
+export async function assertBillingReadyForCheckout() {
+  if (process.env.NODE_ENV !== "production") return;
+  const result = await inspectBillingReadiness();
+  if (!result.ready) throw new HttpError(503, "Subscription checkout is temporarily unavailable. Please contact support before making a payment.", undefined, "billing-unavailable");
+}
 
 export async function inspectBillingReadiness() {
   const checks: Record<string, boolean> = {

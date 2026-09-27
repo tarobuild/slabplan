@@ -17,6 +17,7 @@ import {
 } from "../lib/stripe";
 import { getActiveOrganizationId } from "../lib/tenant-scope";
 import { hasBillingAccess } from "../lib/billing-access";
+import { assertBillingReadyForCheckout } from "../lib/billing-readiness";
 
 const router: IRouter = Router();
 type BillingDbClient = Pick<typeof db, "select" | "update">;
@@ -175,6 +176,7 @@ router.post(
       );
     }
     const plan = billingPlans[parsed.data.planKey];
+    await assertBillingReadyForCheckout();
     const paymentLinkUrl = getStripePaymentLinkUrl({
       organizationId: organization.id,
       userEmail: req.auth!.email,

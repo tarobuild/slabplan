@@ -41,21 +41,18 @@ async function sendWebhookAlert({ subject, message, context, log }) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
       log("warn", "alert_webhook_failed", {
         status: res.status,
-        body: body.slice(0, 500),
       });
       return { attempted: true, ok: false, reason: `http_${res.status}` };
     }
     log("info", "alert_webhook_sent", { status: res.status });
     return { attempted: true, ok: true };
-  } catch (err) {
-    log("warn", "alert_webhook_failed", {
-      err: err?.message ?? String(err),
-    });
+  } catch {
+    log("warn", "alert_webhook_failed", { reason: "transport_error" });
     return { attempted: true, ok: false, reason: "exception" };
   }
 }

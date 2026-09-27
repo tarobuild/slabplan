@@ -54,7 +54,7 @@ afterEach(async () => {
 })
 
 describe("ChatMessage", () => {
-  test("renders assistant markdown tables as readable data rows", async () => {
+  test("renders assistant markdown tables with accessible headers and cells", async () => {
     await act(async () => {
       root.render(
         createElement(
@@ -81,11 +81,39 @@ describe("ChatMessage", () => {
 
     const renderedText = container.textContent ?? ""
     assert.ok(container.querySelector('[data-message-table="true"]'))
+    assert.equal(container.querySelectorAll("thead th[scope=col]").length, 4)
+    assert.equal(container.querySelectorAll("tbody td").length, 4)
+    assert.equal(container.querySelector('[role="region"]')?.getAttribute("tabindex"), "0")
     assert.ok(renderedText.includes("Open Jobs (1)"))
     assert.ok(renderedText.includes("Codex Readiness Countertops"))
     assert.ok(renderedText.includes("Type"))
     assert.ok(renderedText.includes("Kitchen Countertops"))
     assert.ok(!renderedText.includes("|---|---|---|---|"))
     assert.ok(!renderedText.includes("###"))
+  })
+
+  test("renders lists, escaped table pipes, code blocks, and safe links without loading model images", async () => {
+    await act(async () => {
+      root.render(createElement(MemoryRouter, null, createElement(ChatMessage, {
+        message: {
+          id: "formatted", conversationId: "conversation-1", role: "assistant",
+          content: "## Next steps\n\n1. Review **scope**\n2. Confirm _dates_\n\n| Material | Amount |\n|:---|---:|\n| Stone \\| Quartz | $1,200 |\n\n```text\n<private> remains text\n```\n\n[Reference](https://example.com/project)\n\n[Unsafe](javascript:alert(1))\n\n![Tracking](https://example.com/pixel.png)\n\n<script>alert(1)</script><img src=x onerror=alert(1)>",
+          citations: null, toolCalls: null, inputTokens: null, outputTokens: null, stoppedReason: null, createdAt: new Date(0).toISOString(),
+        },
+      })))
+    })
+    assert.equal(container.querySelectorAll("ol > li").length, 2)
+    assert.equal(container.querySelector("td")?.textContent, "Stone | Quartz")
+    assert.equal(container.querySelectorAll("td").length, 2)
+    assert.ok(container.querySelector("pre code")?.textContent?.includes("<private>"))
+    assert.equal(container.querySelector("a")?.getAttribute("rel"), "noopener noreferrer")
+    assert.equal(container.querySelectorAll("a").length, 1)
+    assert.equal(container.querySelectorAll("script, img, iframe").length, 0)
+  })
+
+  test("keeps user messages as literal text", async () => {
+    await act(async () => { root.render(createElement(ChatMessage, { message: { id: "literal", conversationId: "conversation-1", role: "user", content: "**My text** <img src=x>", toolCalls: null, citations: null, inputTokens: null, outputTokens: null, stoppedReason: null, createdAt: new Date(0).toISOString() } })) })
+    assert.ok(container.textContent?.includes("**My text** <img src=x>"))
+    assert.equal(container.querySelectorAll("strong, img").length, 0)
   })
 })

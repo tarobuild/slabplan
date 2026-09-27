@@ -64,6 +64,12 @@ export function initSentry(): void {
     // Keep request bodies / headers off Sentry by default — the PII
     // filter is a defence-in-depth, not the primary control.
     sendDefaultPii: false,
+    beforeSendTransaction(event) {
+      return valueContainsPii(event) ? null : event;
+    },
+    beforeBreadcrumb(breadcrumb) {
+      return valueContainsPii(breadcrumb) ? null : breadcrumb;
+    },
     beforeSend(event, hint) {
       // Drop any event whose serialized payload contains PII patterns.
       // Tested in test/pii-filter.test.ts.

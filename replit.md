@@ -67,6 +67,7 @@ Expected categories:
 
 - **DB:** `SUPABASE_DATABASE_URL` or `DATABASE_URL`
 - **Auth:** `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_UPLOAD_SECRET`; add `SUPABASE_ANON_KEY` only when Supabase Auth login is enabled
+- **Account security:** `ACCOUNT_SECURITY_ENCRYPTION_KEY`, a persistent 64-character hex secret generated from 32 random bytes, encrypts authenticator factors. Configure it before releasing registration or MFA. Never regenerate it on startup or replace it without a key migration. See `docs/account-security-operations.md`.
 - **Email:** `EMAIL_PROVIDER=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`,
   `SMTP_REQUIRE_TLS`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, and
   `SMTP_FROM_NAME`. Production startup fails when this configuration is missing.
@@ -75,6 +76,7 @@ Expected categories:
 - **Upload storage:** `SUPABASE_URL`, `SUPABASE_STORAGE_BUCKET`, `SUPABASE_SERVICE_ROLE_KEY`
 - **Monitoring:** existing Sentry env vars are grandfathered; do not add new Sentry instrumentation without owner approval
 - **Rate limits:** existing login, AI parse, upload, and API rate-limit tunables
+- **Backup alerts:** `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_REPOSITORY` (owner/repository), and the existing `BACKUP_TRIGGER_SECRET`; GitHub Actions also needs `BACKUP_WEBHOOK_URL` and the matching trigger secret. SMTP acceptance and inbox receipt must be tested separately.
 
 Do not copy env values from the original production project. SlabPlan uses
 dedicated Supabase, storage, auth, billing, email, and monitoring secrets.

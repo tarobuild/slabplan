@@ -100,3 +100,33 @@ test("backup webhook accepts a correct secret and resolves the script path", asy
     delete process.env.BACKUP_TRIGGER_SECRET;
   }
 });
+
+test("backup alerts require authentication, fixed recipient and repository, and successful SMTP", async () => {
+  const { __setEmailSenderForTests } = await import("../src/lib/email.ts");
+  const secret = "a".repeat(48);
+  process.env.BACKUP_TRIGGER_SECRET = secret;
+  process.env.SECURITY_ALERT_REPOSITORY = "test-owner/test-repo";
+  process.env.SECURITY_ALERT_EMAIL = "owner@example.test";
+  const sent: Array<{ to: string; text: string }> = [];
+  __setEmailSenderForTests({ send: async (mail) => { sent.push(mail); return { id: "test-alert" }; } });
+  const post = (body: unknown, credential = secret) => fetch(`${baseUrl}/api/internal/backup-alert`, { method: "POST", headers: { "content-type": "application/json", "x-requested-with": "XMLHttpRequest", "x-backup-secret": credential }, body: JSON.stringify(body) });
+  const valid = { runUrl: "https://github.com/test-owner/test-repo/actions/runs/123", test: true };
+  try {
+    assert.equal((await post(valid, "wrong")).status, 401);
+    assert.equal((await post({ runUrl: "https://evil.example/path" })).status, 400);
+    assert.equal((await post({ ...valid, runUrl: `${valid.runUrl}?secret=bad` })).status, 400);
+    assert.equal((await post({ ...valid, to: "attacker@example.test" })).status, 200);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0]!.to, "owner@example.test");
+    assert.match(sent[0]!.text, /No backup failure/);
+    __setEmailSenderForTests({ send: async () => { throw new Error("SMTP unavailable"); } });
+    assert.equal((await post(valid)).status, 503);
+    delete process.env.SECURITY_ALERT_EMAIL;
+    assert.equal((await post(valid)).status, 503);
+  } finally {
+    delete process.env.BACKUP_TRIGGER_SECRET;
+    delete process.env.SECURITY_ALERT_EMAIL;
+    delete process.env.SECURITY_ALERT_REPOSITORY;
+    __setEmailSenderForTests(null);
+  }
+});

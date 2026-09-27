@@ -6,7 +6,7 @@
     "codegen": "node ./scripts/codegen.mjs"
   },
   "devDependencies": {
-    "orval": "^8.5.2",
+    "orval": "8.37.0",
     "yaml": "^2.8.3"
   }
 }

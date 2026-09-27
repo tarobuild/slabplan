@@ -11,6 +11,7 @@ import {
   Bell,
   KeyRound,
   Lock,
+  ShieldCheck,
   Plug,
   CreditCard,
   User,
@@ -30,6 +31,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { to: "/settings/profile", label: "Profile", icon: User },
   { to: "/settings/password", label: "Password", icon: Lock },
+  { to: "/settings/security", label: "Security", icon: ShieldCheck },
   { to: "/settings/notifications", label: "Notifications", icon: Bell },
   { to: "/settings/tokens", label: "API Tokens", icon: KeyRound },
   { to: "/settings/team", label: "Team", icon: UsersIcon, adminOnly: true },

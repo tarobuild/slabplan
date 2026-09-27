@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { authApi } from "@/lib/api"
-import { useAuthStore } from "@/store/auth"
+import { continueAuthentication } from "@/lib/security-flow"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { APP_LOGO_PATH, APP_NAME, APP_TAGLINE } from "@/lib/brand"
 import { toast } from "sonner"
@@ -12,7 +12,6 @@ import { toast } from "sonner"
 export default function LoginPage() {
   useDocumentTitle("Sign in")
   const navigate = useNavigate()
-  const setAuth = useAuthStore((s) => s.setAuth)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
@@ -22,9 +21,9 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const { data } = await authApi.post("/auth/login", { email, password })
-      setAuth(data.user, data.accessToken)
-      navigate("/dashboard", { replace: true })
-      toast.success("Welcome back!")
+      const destination = continueAuthentication(data)
+      navigate(destination, { replace: true })
+      if (destination === "/dashboard") toast.success("Welcome back!")
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Invalid email or password")
     } finally {

@@ -6,6 +6,7 @@ import { Router, type IRouter } from "express";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger";
 import { HttpError, asyncHandler } from "../lib/http";
+import { sendBackupFailureEmail } from "../lib/email";
 
 /**
  * Internal webhook that lets an external scheduler (e.g. a GitHub Actions
@@ -62,6 +63,23 @@ function constantTimeEqual(a: string, b: string): boolean {
   if (ab.length !== bb.length) return false;
   return crypto.timingSafeEqual(ab, bb);
 }
+
+router.post("/internal/backup-alert", asyncHandler(async (req, res) => {
+  const expected = process.env.BACKUP_TRIGGER_SECRET;
+  if (!expected || expected.length < 32) throw new HttpError(503, "Backup alert authentication is not configured.");
+  if (!constantTimeEqual(req.get("x-backup-secret") ?? "", expected)) throw new HttpError(401, "Invalid backup alert credentials.");
+  const recipient = process.env.SECURITY_ALERT_EMAIL?.trim();
+  const repository = process.env.SECURITY_ALERT_REPOSITORY?.trim();
+  if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) || !repository || !/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new HttpError(503, "Backup alert delivery is not configured.");
+  const runUrl = typeof req.body?.runUrl === "string" ? req.body.runUrl : "";
+  const base = `https://github.com/${repository}/actions/runs/`;
+  if (!runUrl.startsWith(base) || !/^\d+$/.test(runUrl.slice(base.length))) throw new HttpError(400, "A repository workflow run URL is required.");
+  try { await sendBackupFailureEmail(recipient, runUrl, req.body?.test === true); }
+  catch { throw new HttpError(503, "Backup alert email could not be sent."); }
+  logger.info({ event: "security.backup_alert.sent", test: req.body?.test === true }, "Backup alert accepted by email provider");
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ success: true });
+}));
 
 router.post(
   "/internal/run-db-backup",

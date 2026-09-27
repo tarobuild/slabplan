@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowUp,
+  ArrowDown,
+  ChevronDown,
   Loader2,
+  Maximize2,
   MessageSquarePlus,
+  Minimize2,
   Pencil,
   Pin,
   PinOff,
   Sparkles,
+  Square,
   Trash2,
   X,
 } from "lucide-react"
@@ -75,18 +80,28 @@ export default function ChatPanel() {
   const [busy, setBusy] = useState(false)
   const [statusText, setStatusText] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [showLatest, setShowLatest] = useState(false)
+  const followLatestRef = useRef(true)
   const streamRef = useRef<StreamHandle | null>(null)
   const streamConversationIdRef = useRef<string | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const messageLoadSeqRef = useRef(0)
   const localMessageSeqRef = useRef(0)
 
-  // Scroll to bottom on new messages.
+  // Streaming must not pull readers away from earlier answers.
   useEffect(() => {
-    if (!open) return
+    if (!open || !followLatestRef.current) return
     const el = scrollRef.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "instant" })
   }, [messages, statusText, open])
+
+  useEffect(() => {
+    followLatestRef.current = true
+    setShowLatest(false)
+    const el = scrollRef.current
+    if (open && el) el.scrollTo({ top: el.scrollHeight, behavior: "instant" })
+  }, [activeConversationId, open])
 
   // Load conversations + usage when opening.
   const refreshConversations = useCallback(async (toastOnError = false) => {
@@ -263,6 +278,8 @@ export default function ChatPanel() {
   function handleSend() {
     const trimmed = draft.trim()
     if (!trimmed || busy || !activeConversationId) return
+    followLatestRef.current = true
+    setShowLatest(false)
     if (usageLoading || usageError || !usage) {
       toast.error("Assistant usage is unavailable. Reload usage before sending.")
       return
@@ -427,11 +444,22 @@ export default function ChatPanel() {
   const usageUnavailable = usageLoading || Boolean(usageError) || !usage
   const composerDisabled = busy || usageUnavailable || usage?.exceeded === true
 
+  function handleStop() {
+    streamRef.current?.abort()
+    setMessages((previous) => previous.map((message) => message.id.startsWith("pending-") ? {
+      ...message, stoppedReason: "aborted",
+      toolCalls: message.toolCalls?.map((call) => call.status === "pending" ? { ...call, status: "error", errorMessage: "Response stopped" } : call) ?? null,
+    } : message))
+  }
+
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent
         side="right"
-        className="flex w-full max-w-md flex-col gap-0 p-0 sm:max-w-md [&>button.absolute]:hidden"
+        className={cn(
+          "flex h-dvh w-full max-w-full flex-col gap-0 overflow-hidden p-0 [&>button.absolute]:hidden",
+          expanded ? "sm:max-w-full" : "sm:max-w-[760px]",
+        )}
       >
         <SheetTitle className="sr-only">
           {activeConversation?.title ?? "Assistant"}
@@ -441,16 +469,19 @@ export default function ChatPanel() {
           logs, schedule items, clients, or activity.
         </SheetDescription>
         {/* Header */}
-        <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2">
+        <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-3 sm:gap-2 sm:px-5">
           <Sparkles className="size-4 text-primary" />
           <div className="flex-1 min-w-0">
             <button
               type="button"
               onClick={() => setShowHistory((v) => !v)}
-              className="block w-full truncate text-left text-sm font-semibold text-slate-800 hover:text-slate-600"
+              aria-expanded={showHistory}
+              aria-controls="assistant-history"
+              className="flex w-full items-center gap-1 text-left text-sm font-semibold text-slate-800 hover:text-slate-600"
               title={activeConversation?.title ?? "Assistant"}
             >
-              {activeConversation?.title ?? "Assistant"}
+              <span className="truncate">{activeConversation?.title ?? "Assistant"}</span>
+              <ChevronDown className="size-4 shrink-0" />
             </button>
             {usage ? (
               <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-400">
@@ -488,10 +519,18 @@ export default function ChatPanel() {
           <TooltipProvider delayDuration={150}>
             <Tooltip>
               <TooltipTrigger asChild>
+                <button type="button" onClick={() => setExpanded((value) => !value)} className="hidden size-10 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-100 sm:flex" aria-label={expanded ? "Restore panel" : "Expand assistant"}>
+                  {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{expanded ? "Restore panel" : "Expand assistant"}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <button
                   type="button"
                   onClick={handleNewChat}
-                  className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                  className="flex size-10 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                   aria-label="New chat"
                 >
                   <MessageSquarePlus className="size-4" />
@@ -504,7 +543,7 @@ export default function ChatPanel() {
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                  className="flex size-10 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                   aria-label="Close"
                 >
                   <X className="size-4" />
@@ -517,7 +556,7 @@ export default function ChatPanel() {
 
         {/* History dropdown */}
         {showHistory ? (
-          <div className="max-h-60 overflow-y-auto border-b border-slate-200 bg-slate-50 px-2 py-2">
+          <div id="assistant-history" className="max-h-60 shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 px-2 py-2">
             {conversations.length === 0 ? (
               <p className="px-2 py-3 text-center text-xs text-slate-500">
                 No previous conversations.
@@ -547,16 +586,18 @@ export default function ChatPanel() {
                   <button
                     type="button"
                     onClick={() => handleRenameConversation(c)}
-                    className="rounded p-0.5 opacity-0 hover:bg-slate-200 group-hover:opacity-100"
+                    className="flex size-8 shrink-0 items-center justify-center rounded hover:bg-slate-200"
                     aria-label="Rename"
+                    title="Rename conversation"
                   >
                     <Pencil className="size-3" />
                   </button>
                   <button
                     type="button"
                     onClick={() => togglePin(c)}
-                    className="rounded p-0.5 opacity-0 hover:bg-slate-200 group-hover:opacity-100"
+                    className="flex size-8 shrink-0 items-center justify-center rounded hover:bg-slate-200"
                     aria-label={c.pinned ? "Unpin" : "Pin"}
+                    title={c.pinned ? "Unpin conversation" : "Pin conversation"}
                   >
                     {c.pinned ? (
                       <PinOff className="size-3" />
@@ -567,8 +608,9 @@ export default function ChatPanel() {
                   <button
                     type="button"
                     onClick={() => handleDeleteConversation(c.id)}
-                    className="rounded p-0.5 opacity-0 hover:bg-red-100 hover:text-red-700 group-hover:opacity-100"
+                    className="flex size-8 shrink-0 items-center justify-center rounded hover:bg-red-100 hover:text-red-700"
                     aria-label="Delete"
+                    title="Delete conversation"
                   >
                     <Trash2 className="size-3" />
                   </button>
@@ -579,17 +621,18 @@ export default function ChatPanel() {
         ) : null}
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-background px-3 py-3">
+        <div ref={scrollRef} onScroll={(event) => {
+          const el = event.currentTarget
+          const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          followLatestRef.current = nearBottom
+          setShowLatest(!nearBottom)
+        }} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain bg-background px-4 py-6 sm:px-7">
+          <div className="mx-auto w-full max-w-4xl space-y-7">
           {messages.length === 0 ? (
             <div className="mx-auto mt-8 max-w-xs space-y-3 text-center text-sm text-slate-500">
               <Sparkles className="mx-auto size-6 text-primary" />
               <p className="font-semibold text-slate-700">
-                Read-only assistant for {APP_NAME}
-              </p>
-              <p className="text-xs">
-                Ask about your jobs, leads, files, daily logs, schedule items,
-                clients, or activity. I can search and summarize, but I can't
-                make changes.
+                What needs your attention today?
               </p>
             </div>
           ) : (
@@ -602,21 +645,28 @@ export default function ChatPanel() {
             ))
           )}
           {statusText ? (
-            <div className="flex items-center gap-2 text-xs text-slate-500">
+            <div role="status" className="flex items-center gap-2 text-xs text-slate-500">
               <Loader2 className="size-3 animate-spin" />
               {statusText}
             </div>
           ) : null}
+          </div>
         </div>
 
+        {showLatest ? <div className="flex justify-center border-t border-border bg-background py-1"><button type="button" title="Latest message" aria-label="Latest message" className="flex size-9 items-center justify-center rounded hover:bg-muted" onClick={() => {
+          followLatestRef.current = true
+          setShowLatest(false)
+          scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
+        }}><ArrowDown className="size-4" /></button></div> : null}
+
         {/* Composer */}
-        <div className="border-t border-slate-200 bg-white p-2">
-          <div className="flex items-end gap-2">
+        <div className="shrink-0 border-t border-border bg-background px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-7">
+          <div className="mx-auto flex max-w-4xl items-end gap-2">
             <Textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   handleSend()
                 }
@@ -631,18 +681,21 @@ export default function ChatPanel() {
                   : "Ask about jobs, leads, files…"
               }
               disabled={composerDisabled}
+              aria-label="Message the assistant"
               rows={2}
-              className="min-h-0 resize-none text-sm"
+              className="min-h-20 max-h-48 resize-y text-sm leading-6"
             />
+            {busy ? <button type="button" onClick={handleStop} className="flex size-11 shrink-0 items-center justify-center rounded-md border border-border hover:bg-muted" aria-label="Stop response" title="Stop response"><Square className="size-4" /></button> : (
             <button
               type="button"
               onClick={handleSend}
               disabled={composerDisabled || !draft.trim()}
               className={cn(
-                "flex size-9 shrink-0 items-center justify-center rounded-md text-white transition-colors",
+                "flex size-11 shrink-0 items-center justify-center rounded-md text-white transition-colors",
                 "bg-primary hover:bg-primary/90 disabled:bg-slate-300",
               )}
               aria-label="Send"
+              title="Send message"
             >
               {busy ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -650,10 +703,8 @@ export default function ChatPanel() {
                 <ArrowUp className="size-4" />
               )}
             </button>
+            )}
           </div>
-          <p className="mt-1 px-1 text-[10px] text-slate-400">
-            Read-only. Press Enter to send, Shift+Enter for newline.
-          </p>
         </div>
       </SheetContent>
     </Sheet>

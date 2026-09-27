@@ -33,7 +33,7 @@ export type EmailSender = {
     subject: string;
     text: string;
     html: string;
-    tag: "invite" | "password-reset";
+    tag: "invite" | "password-reset" | "email-verification" | "security-alert";
   }): Promise<SentMessage>;
 };
 
@@ -299,6 +299,22 @@ export async function sendPasswordReset(
     );
     throw err;
   }
+}
+
+export async function sendEmailVerification(to: string, link: string): Promise<SentMessage> {
+  return getSender().send({
+    to,
+    subject: "Verify your SlabPlan email",
+    text: `Verify your SlabPlan email: ${link}\n\nThis link expires in 1 hour and can only be used once. If you did not request it, ignore this email.`,
+    html: buildEmailHtml({ heading: "Verify your email", greeting: "Hi,", paragraphs: ["Confirm your email address to continue setting up your SlabPlan account.", "This link expires in 1 hour and can only be used once. If you did not request it, ignore this email."], actionLabel: "Verify email", actionUrl: link }),
+    tag: "email-verification",
+  });
+}
+
+export async function sendBackupFailureEmail(to: string, runUrl: string, test = false): Promise<SentMessage> {
+  const subject = test ? "SlabPlan backup alert delivery test" : "SlabPlan database backup needs attention";
+  const message = test ? "This is a delivery test. No backup failure is being reported." : "The scheduled database backup or its verification failed. Review the workflow, resolve the cause, and rerun the backup and restore checks.";
+  return getSender().send({ to, subject, text: `${message}\n\nWorkflow: ${runUrl}`, html: buildEmailHtml({ heading: subject, greeting: "Hi,", paragraphs: [message], actionLabel: "Review workflow", actionUrl: runUrl }), tag: "security-alert" });
 }
 
 /** Truncate a provider error string so it fits in the 500-char DB column. */

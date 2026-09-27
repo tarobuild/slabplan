@@ -69,7 +69,7 @@ export function containsPii(text: string): boolean {
  * as one serialized blob creates false positives because UUID-like
  * values can look phone-ish. We still scan developer-controlled
  * message, breadcrumb, extra, context, and stack-frame values, but we
- * skip known identifier/secret metadata and strip URL query strings.
+ * skip known identifiers and reject secret-bearing fields and URL parameters.
  */
 export function valueContainsPii(value: unknown): boolean {
   const seen = new WeakSet<object>();
@@ -79,17 +79,17 @@ export function valueContainsPii(value: unknown): boolean {
   }
 
   function isSensitiveKey(key: string): boolean {
-    return /(^|_)(token|secret|key|api[_-]?key|dsn|password|credential|authorization)$/i.test(key);
+    return /(token|secret|password|credential|authorization|recovery.?codes|api.?key|^key$|^dsn$)/i.test(key);
   }
 
   function urlContainsPii(text: string): boolean {
     try {
-      const url = new URL(text);
-      for (const [name, rawValue] of url.searchParams.entries()) {
-        if (isSensitiveKey(name)) continue;
+      const url = new URL(text, "https://privacy.invalid");
+      for (const [name, rawValue] of [...url.searchParams, ...new URLSearchParams(url.hash.slice(1))]) {
+        if (isSensitiveKey(name)) return true;
         if (containsPii(name) || containsPii(rawValue)) return true;
       }
-      return containsPii(`${url.origin}${url.pathname}`);
+      return containsPii(`${url.origin}${url.pathname}${url.hash}`);
     } catch {
       return containsPii(text);
     }
@@ -100,7 +100,7 @@ export function valueContainsPii(value: unknown): boolean {
     if (typeof val === "string") {
       if (isSensitiveKey(key)) return true;
       if (isIdentifierKey(key)) return false;
-      if (/url$/i.test(key)) return urlContainsPii(val);
+      if (/url$|^(from|to)$/i.test(key) || /^https?:\/\//i.test(val)) return urlContainsPii(val);
       return containsPii(val);
     }
     if (typeof val !== "object") return false;

@@ -8,76 +8,7 @@ import * as nodePath from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 
-// The patterns are duplicated inside src/lib/sentry.ts (the web
-// runtime can't import from artifacts/api-server), so this test
-// re-implements them and asserts the same behaviour we exercise on
-// the server. The server's pii-filter.test.ts is the source of truth
-// for the matcher behaviour itself.
-
-const PII_PATTERNS = [
-  /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/,
-  /(?:\+\d{1,3}[\s.\-]?)?\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}\b|\+\d{10,15}\b/,
-  /\b\d{1,6}\s+[A-Za-z][A-Za-z0-9\s.'-]{0,60}\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane|Dr|Drive|Ct|Court|Way|Pkwy|Parkway|Hwy|Highway|Pl|Place|Ter|Terrace)\b/i,
-]
-
-function eventContainsPii(event: unknown): boolean {
-  const seen = new WeakSet<object>()
-
-  function isIdentifierKey(key: string): boolean {
-    return /(^|_)(id|uuid|hash)$/i.test(key)
-  }
-
-  function isSensitiveKey(key: string): boolean {
-    return /(^|_)(token|secret|key|api[_-]?key|dsn|password|credential|authorization)$/i.test(key)
-  }
-
-  function urlContainsPii(text: string): boolean {
-    try {
-      const url = new URL(text)
-      for (const [name, rawValue] of url.searchParams.entries()) {
-        if (isSensitiveKey(name)) continue
-        if (PII_PATTERNS.some((re) => re.test(name) || re.test(rawValue))) return true
-      }
-      return PII_PATTERNS.some((re) => re.test(`${url.origin}${url.pathname}`))
-    } catch {
-      return PII_PATTERNS.some((re) => re.test(text))
-    }
-  }
-
-  function visit(value: unknown, key = ""): boolean {
-    if (value === null || value === undefined) return false
-    if (typeof value === "string") {
-      if (isSensitiveKey(key)) return true
-      if (isIdentifierKey(key)) return false
-      if (/url$/i.test(key)) return urlContainsPii(value)
-      return PII_PATTERNS.some((re) => re.test(value))
-    }
-    if (typeof value !== "object") return false
-    if (seen.has(value as object)) return false
-    seen.add(value as object)
-
-    if (value instanceof Error) {
-      return PII_PATTERNS.some((re) => re.test(value.message))
-    }
-
-    if (Array.isArray(value)) return value.some((item) => visit(item, key))
-
-    for (const [childKey, childValue] of Object.entries(
-      value as Record<string, unknown>,
-    )) {
-      if (isSensitiveKey(childKey) && childValue !== null && childValue !== undefined) return true
-      if (isIdentifierKey(childKey)) continue
-      if (visit(childValue, childKey)) return true
-    }
-    return false
-  }
-
-  try {
-    return visit(event)
-  } catch {
-    return true
-  }
-}
+import { eventContainsPii } from "./event-privacy"
 
 test("web PII filter drops events with email addresses", () => {
   assert.equal(
@@ -115,14 +46,14 @@ test("web PII filter passes clean events", () => {
   )
 })
 
-test("web PII filter ignores secret URL query values but scans user data", () => {
+test("web PII filter drops secret URLs and user data", () => {
   assert.equal(
     eventContainsPii({
       request: {
         url: "https://api.example.test/api/_sentry-test?token=555-123-4567",
       },
     }),
-    false,
+    true,
   )
   assert.equal(
     eventContainsPii({
@@ -163,4 +94,16 @@ test("entrypoint initializes Sentry before importing the app module", async () =
     /initSentry\(\)/,
     "initSentry cannot be a main.tsx top-level statement because static imports run first",
   )
+})
+
+test("verification fragments, challenge tokens, and recovery codes never enter telemetry", () => {
+  for (const event of [
+    { request: { url: "https://example.test/verify-email#token=abcdef123456" } },
+    { data: { to: "https://example.test/verify-email#token=abcdef123456" } },
+    { data: { to: "/verify-email#token=abcdef123456" } },
+    { request: { url: "/auth?accessToken=abcdef123456" } },
+    { extra: { challengeToken: "abcdef" } },
+    { extra: { recoveryCodes: ["1234-abcd"] } },
+    { extra: { mfaSecretEncrypted: "ciphertext" } },
+  ]) assert.equal(eventContainsPii(event), true)
 })

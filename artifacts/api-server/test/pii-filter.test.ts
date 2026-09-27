@@ -75,14 +75,14 @@ test("valueContainsPii returns false for clean events", () => {
   assert.equal(valueContainsPii(event), false);
 });
 
-test("valueContainsPii ignores secret URL query values but scans user data", () => {
+test("valueContainsPii drops secret URLs and user data", () => {
   assert.equal(
     valueContainsPii({
       request: {
         url: "https://api.example.test/api/_sentry-test?token=555-123-4567",
       },
     }),
-    false,
+    true,
   );
   assert.equal(
     valueContainsPii({
@@ -97,6 +97,9 @@ test("valueContainsPii ignores secret URL query values but scans user data", () 
 test("valueContainsPii treats secret-bearing fields as sensitive", () => {
   assert.equal(valueContainsPii({ extra: { token: "abc123" } }), true);
   assert.equal(valueContainsPii({ extra: { api_key: "abc123" } }), true);
+  assert.equal(valueContainsPii({ extra: { challengeToken: "abc123" } }), true);
+  assert.equal(valueContainsPii({ extra: { recoveryCodes: ["abc123"] } }), true);
+  assert.equal(valueContainsPii({ request: { url: "https://example.test/verify-email#token=abc123" } }), true);
 });
 
 test("valueContainsPii survives circular references without throwing", () => {
@@ -149,4 +152,10 @@ test("valueContainsPii handles circular Error causes", () => {
   const error = new Error("clean");
   (error as Error & { cause?: unknown }).cause = error;
   assert.equal(valueContainsPii(error), false);
+});
+
+test("valueContainsPii rejects relative URLs containing verification secrets", () => {
+  assert.equal(valueContainsPii({ request: { url: "/auth?accessToken=test-secret" } }), true);
+  assert.equal(valueContainsPii({ data: { to: "/verify-email#token=test-secret" } }), true);
+  assert.equal(valueContainsPii({ request: { url: "/jobs?limit=20" } }), false);
 });

@@ -28,14 +28,14 @@ export default defineConfig({
       },
     },
     output: {
-      workspace: apiClientReactSrc,
-      target: outDir,
+      target: path.join(apiClientReactSrc, outDir, "api.ts"),
       client: "react-query",
       mode: "split",
       baseUrl: "/api",
       clean: true,
-      prettier: true,
+      formatter: "prettier",
       override: {
+        query: { version: 5 },
         fetch: {
           includeHttpResponseReturnType: false,
         },
@@ -54,15 +54,15 @@ export default defineConfig({
       },
     },
     output: {
-      workspace: apiZodSrc,
       client: "zod",
-      target: outDir,
-      schemas: { path: `${outDir}/types`, type: "typescript" },
+      target: path.join(apiZodSrc, outDir, "api.ts"),
+      schemas: { path: path.join(apiZodSrc, outDir, "types"), type: "typescript" },
       mode: "split",
       clean: true,
-      prettier: true,
+      formatter: "prettier",
       override: {
         zod: {
+          version: 3,
           coerce: {
             query: ['boolean', 'number', 'string'],
             param: ['boolean', 'number', 'string'],

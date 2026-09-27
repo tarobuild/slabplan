@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { authApi } from "@/lib/api"
-import { useAuthStore } from "@/store/auth"
+import { continueAuthentication } from "@/lib/security-flow"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { APP_DESCRIPTION, APP_LOGO_PATH, APP_NAME } from "@/lib/brand"
 import { PRIVACY_VERSION, TERMS_VERSION } from "@/lib/legal"
@@ -22,7 +22,6 @@ import { toast } from "sonner"
 export default function RegisterPage() {
   useDocumentTitle("Create account")
   const navigate = useNavigate()
-  const setAuth = useAuthStore((s) => s.setAuth)
   const [organizationName, setOrganizationName] = useState("")
   const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
@@ -42,9 +41,7 @@ export default function RegisterPage() {
         accepted_terms_version: TERMS_VERSION,
         accepted_privacy_version: PRIVACY_VERSION,
       })
-      setAuth(data.user, data.accessToken)
-      navigate("/subscribe", { replace: true })
-      toast.success("Account created. Choose your SlabPlan subscription.")
+      navigate(continueAuthentication(data, "/subscribe"), { replace: true })
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to create account")
     } finally {

@@ -20,19 +20,13 @@ import { APP_NAME } from "@/lib/brand"
 import { PRIVACY_VERSION, TERMS_VERSION } from "@/lib/legal"
 import { validatePayload } from "@/lib/validate-payload"
 import { useAuthStore } from "@/store/auth"
-import type { AuthUser } from "@/store/auth"
-
-type AcceptInviteResponse = {
-  accessToken: string
-  user: AuthUser
-}
+import { continueAuthentication } from "@/lib/security-flow"
 
 export default function AcceptInvitePage({ mode = "invite" }: { mode?: "invite" | "reset" }) {
   useDocumentTitle(mode === "reset" ? "Reset your password" : "Set your password")
   const [searchParams] = useSearchParams()
   const token = useMemo(() => searchParams.get("token")?.trim() ?? "", [searchParams])
   const navigate = useNavigate()
-  const setAuth = useAuthStore((state) => state.setAuth)
   const currentUser = useAuthStore((state) => state.user)
 
   const [password, setPassword] = useState("")
@@ -178,14 +172,14 @@ export default function AcceptInvitePage({ mode = "invite" }: { mode?: "invite" 
     submittingRef.current = true
     setSubmitting(true)
     try {
-      const response = (await authPostAuthAcceptInvite(validated)) as AcceptInviteResponse
-      setAuth(response.user, response.accessToken)
+      const response = await authPostAuthAcceptInvite(validated)
+      const destination = continueAuthentication(response)
       if (mode === "reset") {
         toast.success("Password updated.")
       } else {
-        toast.success(`Welcome to ${APP_NAME}, ${response.user.fullName}.`)
+        toast.success("Account activated.")
       }
-      navigate("/dashboard", { replace: true })
+      navigate(destination, { replace: true })
     } catch (err: unknown) {
       toastApiError(err, "Could not accept invite")
     } finally {

@@ -27,6 +27,10 @@ before(async () => {
   delete process.env.SUPABASE_DATABASE_URL;
   process.env.DATABASE_URL = testDatabaseUrl;
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
+  process.env.ACCOUNT_SECURITY_ENCRYPTION_KEY = "b".repeat(64);
+  process.env.REGISTER_IP_MAX = "100";
+  const { __setEmailSenderForTests } = await import("../src/lib/email.ts");
+  __setEmailSenderForTests({ send: async () => ({ id: "test-verification" }) });
   process.env.SUPABASE_AUTH_LOGIN_ENABLED = "true";
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_ANON_KEY = "test-anon-key";
@@ -116,7 +120,7 @@ after(async () => {
   }
 });
 
-test("public registration provisions and immediately signs into Supabase Auth", async () => {
+test("public registration provisions an unconfirmed Supabase identity without issuing a session", async () => {
   const response = await originalFetch(`${baseUrl}/auth/register`, {
     method: "POST",
     headers: {
@@ -134,21 +138,21 @@ test("public registration provisions and immediately signs into Supabase Auth", 
   });
 
   assert.equal(response.status, 201);
-  const body = (await response.json()) as {
-    accessToken: string;
-    user: { id: string; email: string };
-  };
-  assert.equal(body.accessToken, "supabase-registration-access-token");
-  assert.equal(body.user.email, email);
+  const body = await response.json();
+  assert.equal(body.accessToken, undefined);
+  assert.equal(body.email, email);
+  assert.equal(body.verificationRequired, true);
+  assert.equal(body.emailSent, true);
+  assert.equal(requests.some((request) => request.url.includes("grant_type=password")), false);
 
   const adminCreate = requests.find((request) =>
     request.url.endsWith("/auth/v1/admin/users"),
   );
   assert.ok(adminCreate);
   assert.equal(adminCreate.body.email, email);
-  assert.equal(adminCreate.body.email_confirm, true);
+  assert.equal(adminCreate.body.email_confirm, false);
   const metadata = adminCreate.body.app_metadata as Record<string, unknown>;
-  assert.equal(metadata.cadstone_user_id, body.user.id);
+  assert.equal(typeof metadata.cadstone_user_id, "string");
 
   const { db } = await import("@workspace/db");
   const { users } = await import("@workspace/db/schema");
@@ -163,9 +167,9 @@ test("public registration provisions and immediately signs into Supabase Auth", 
     .from(users)
     .where(eq(users.email, email));
 
-  assert.equal(stored?.id, body.user.id);
+  assert.equal(stored?.id, metadata.cadstone_user_id);
   assert.equal(stored?.supabaseAuthUserId, supabaseUserId);
   assert.equal(stored?.termsVersion, "2026-08-19");
   assert.equal(stored?.privacyVersion, "2026-08-19");
-  assert.notEqual(body.user.id, localUserId);
+  assert.notEqual(stored?.id, localUserId);
 });

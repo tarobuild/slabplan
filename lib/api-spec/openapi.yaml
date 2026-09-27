@@ -367,20 +367,205 @@ paths:
               $ref: "#/components/headers/X-RateLimit-Remaining"
             X-RateLimit-Reset:
               $ref: "#/components/headers/X-RateLimit-Reset"
+  /auth/verify-email:
+    post:
+      operationId: security_verify_email
+      tags: [auth]
+      summary: Verify email ownership
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailVerificationToken"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecuritySuccess"
+        default:
+          description: Validation, authentication, rate limit, or service error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /auth/resend-verification:
+    post:
+      operationId: security_resend_verification
+      tags: [auth]
+      summary: Request email verification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailVerificationRequest"
+      responses:
+        "202":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecuritySuccess"
+        default:
+          description: Validation, authentication, rate limit, or service error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /auth/security:
+    get:
+      operationId: security_security
+      tags: [auth]
+      summary: Read account security status
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountSecurityStatus"
+        default:
+          description: Validation, authentication, rate limit, or service error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /auth/security/setup:
+    post:
+      operationId: security_security_setup
+      tags: [auth]
+      summary: Start authenticator setup after password confirmation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecurityPasswordRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthChallengeResponse"
+        default:
+          description: Validation, authentication, rate limit, or service error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /auth/security/enroll:
+    post:
+      operationId: security_security_enroll
+      tags: [auth]
+      summary: Provision an authenticator using a short-lived setup challenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthChallengeRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityEnrollment"
+        default:
+          description: Validation, authentication, rate limit, or service error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /auth/security/confirm:
+    post:
+      operationId: security_security_confirm
+      tags: [auth]
+      summary: Confirm enrollment and issue one-time recovery codes
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthFactorRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        default:
+          description: Validation, authentication, rate limit, or service error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /auth/mfa/verify:
+    post:
+      operationId: security_mfa_verify
+      tags: [auth]
+      summary: Complete two-step sign-in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthFactorRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        default:
+          description: Validation, authentication, rate limit, or service error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /auth/security/revoke-sessions:
+    post:
+      operationId: security_security_revoke_sessions
+      tags: [auth]
+      summary: Revoke all sessions and personal API tokens
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecuritySuccess"
+        default:
+          description: Validation, authentication, rate limit, or service error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /auth/register:
     post:
       operationId: auth_post_auth_register
       tags:
         - auth
       summary: POST /auth/register
-      description: Route defined in artifacts/api-server/src/routes/auth.ts.
+      description: Creates a workspace pending email verification and mandatory owner authenticator enrollment. Does not issue a session or charge a subscription.
       responses:
         "201":
-          description: Created
+          description: Account created; email delivery status is explicit.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnyValue"
+                $ref: "#/components/schemas/EmailVerificationRequired"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -485,16 +670,16 @@ paths:
       tags:
         - auth
       summary: POST /auth/login
-      description: Route defined in artifacts/api-server/src/routes/auth.ts.
+      description: Checks credentials, then returns email verification, an authenticator challenge, or a full session. Challenges are not API access tokens.
       responses:
         "200":
           description: >-
-            Successful response. Native mobile clients that send `X-Cadstone-Client: mobile`
-            also receive `refreshToken` in the JSON body so they can store it in secure device storage.
+            Full sessions are issued only after required security steps. Native clients must
+            handle verification and setup challenges before treating sign-in as complete.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthResponse"
+                $ref: "#/components/schemas/AuthSignInResponse"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -548,12 +733,11 @@ paths:
       responses:
         "200":
           description: >-
-            Successful response. Native mobile clients that send `X-Cadstone-Client: mobile`
-            also receive `refreshToken` in the JSON body so they can store it in secure device storage.
+            Session cookies cleared.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthResponse"
+                $ref: "#/components/schemas/SecuritySuccess"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -693,14 +877,14 @@ paths:
       tags:
         - auth
       summary: POST /auth/accept-invite
-      description: Public endpoint. Exchanges a one-time setup token (issued by an admin via POST /users) for a real password and immediately logs the user in. The token is single-use and short-lived.
+      description: Exchanges a single-use invitation or password-reset token for a password. Existing MFA is never bypassed; required security challenges precede session issuance.
       responses:
         "200":
           description: Successful response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnyValue"
+                $ref: "#/components/schemas/AuthSignInResponse"
           headers:
             X-RateLimit-Limit:
               $ref: "#/components/headers/X-RateLimit-Limit"
@@ -13950,12 +14134,118 @@ components:
         - role
         - avatarUrl
         - phone
+    SecuritySuccess:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+    EmailVerificationToken:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+    EmailVerificationRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+    SecurityPasswordRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    AuthChallengeRequest:
+      type: object
+      required: [challengeToken]
+      properties:
+        challengeToken:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+    AuthFactorRequest:
+      type: object
+      required: [challengeToken, code]
+      properties:
+        challengeToken:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+    EmailVerificationRequired:
+      type: object
+      required: [verificationRequired, email]
+      properties:
+        verificationRequired:
+          type: boolean
+          enum: [true]
+        email:
+          type: string
+          format: email
+        emailSent:
+          type: boolean
+    AuthChallengeResponse:
+      type: object
+      required: [challengeToken]
+      properties:
+        challengeToken:
+          type: string
+        mfaRequired:
+          type: boolean
+        setupRequired:
+          type: boolean
+    AuthSignInResponse:
+      oneOf:
+        - $ref: "#/components/schemas/AuthResponse"
+        - $ref: "#/components/schemas/EmailVerificationRequired"
+        - $ref: "#/components/schemas/AuthChallengeResponse"
+    AccountSecurityStatus:
+      type: object
+      required: [email, emailVerified, mfaEnabled, mfaRequired, recoveryCodesRemaining]
+      properties:
+        email:
+          type: string
+          format: email
+        emailVerified:
+          type: boolean
+        mfaEnabled:
+          type: boolean
+        mfaRequired:
+          type: boolean
+        recoveryCodesRemaining:
+          type: integer
+          minimum: 0
+    SecurityEnrollment:
+      type: object
+      required: [secret, uri, expiresAt]
+      properties:
+        secret:
+          type: string
+        uri:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
     AuthResponse:
       type: object
       additionalProperties: false
       properties:
         accessToken:
           type: string
+        recoveryCodes:
+          type: array
+          description: Shown once immediately after authenticator enrollment.
+          items:
+            type: string
         refreshToken:
           type: string
           description: >-
@@ -17300,8 +17590,9 @@ components:
         notes:
           type: string
         weatherData:
-          $ref: "#/components/schemas/DailyLogWeather"
           nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DailyLogWeather"
         includeWeather:
           type: boolean
         includeWeatherNotes:
@@ -17397,8 +17688,9 @@ components:
         notes:
           type: string
         weatherData:
-          $ref: "#/components/schemas/DailyLogWeather"
           nullable: true
+          allOf:
+            - $ref: "#/components/schemas/DailyLogWeather"
         includeWeather:
           type: boolean
         includeWeatherNotes:
@@ -18067,8 +18359,9 @@ components:
       type: object
       properties:
         baseline:
-          $ref: "#/components/schemas/ScheduleBaseline"
           nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ScheduleBaseline"
       required:
         - baseline
     ScheduleConflictsResponse:

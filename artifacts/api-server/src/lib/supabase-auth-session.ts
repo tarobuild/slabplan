@@ -4,10 +4,8 @@ import { db } from "@workspace/db";
 import { safeUserColumns, users, type User } from "@workspace/db/schema";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
-  setRefreshTokenCookie,
-  setUploadTokenCookie,
-  signUploadToken,
-  toPublicUser,
+  sendAuthResponse,
+  type SessionProof,
 } from "./auth";
 import { HttpError } from "./http";
 import { resolveSupabaseUrl } from "./supabase-url";
@@ -375,18 +373,9 @@ export function sendSupabaseAuthResponse(
     refreshToken: string;
     user: LocalUser;
   },
-  options: { includeRefreshToken?: boolean } = {},
+  options: { includeRefreshToken?: boolean } & SessionProof = {},
 ): void {
-  const publicUser = toPublicUser(session.user);
-  setRefreshTokenCookie(res, session.refreshToken);
-  setUploadTokenCookie(res, signUploadToken(publicUser));
-
-  res.json({
-    accessToken: session.accessToken,
-    expiresIn: session.expiresIn,
-    ...(options.includeRefreshToken
-      ? { refreshToken: session.refreshToken }
-      : {}),
-    user: publicUser,
-  });
+  // Supabase verifies credentials; application sessions carry SlabPlan's
+  // revocation and second-factor proof consistently across identity providers.
+  sendAuthResponse(res, session.user, options);
 }

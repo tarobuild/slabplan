@@ -114,6 +114,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Trust this job's checked-out repository inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Enable corepack + pnpm
         run: |
           corepack enable

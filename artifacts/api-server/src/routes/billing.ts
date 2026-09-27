@@ -22,17 +22,29 @@ const router: IRouter = Router();
 type BillingDbClient = Pick<typeof db, "select" | "update">;
 
 const checkoutSchema = z.object({
-  planKey: z.string().trim().transform((value) => value.toLowerCase()),
+  planKey: z
+    .string()
+    .trim()
+    .transform((value) => value.toLowerCase()),
 });
 
 function assertCanManageBilling(req: Express.Request) {
   const auth = req.auth;
   if (!auth) {
-    throw new HttpError(401, "Authentication required.", undefined, "unauthorized");
+    throw new HttpError(
+      401,
+      "Authentication required.",
+      undefined,
+      "unauthorized",
+    );
   }
 
   const organizationRole = auth.organizationRole;
-  if (organizationRole === "owner" || organizationRole === "admin" || auth.role === "admin") {
+  if (
+    organizationRole === "owner" ||
+    organizationRole === "admin" ||
+    auth.role === "admin"
+  ) {
     return;
   }
 
@@ -58,7 +70,12 @@ async function loadActiveOrganization(req: Express.Request) {
   const [organization] = await db
     .select()
     .from(organizations)
-    .where(and(eq(organizations.id, organizationId), isNull(organizations.deletedAt)))
+    .where(
+      and(
+        eq(organizations.id, organizationId),
+        isNull(organizations.deletedAt),
+      ),
+    )
     .limit(1);
 
   if (!organization) {
@@ -76,14 +93,17 @@ async function ensureStripeCustomer(params: {
   if (organization.stripeCustomerId) return organization.stripeCustomerId;
 
   const stripe = getStripeClient();
-  const customer = await stripe.customers.create({
-    name: organization.name,
-    email: organization.billingEmail || userEmail,
-    metadata: {
-      organizationId: organization.id,
-      organizationSlug: organization.slug,
+  const customer = await stripe.customers.create(
+    {
+      name: organization.name,
+      email: organization.billingEmail || userEmail,
+      metadata: {
+        organizationId: organization.id,
+        organizationSlug: organization.slug,
+      },
     },
-  });
+    { idempotencyKey: `slabplan-customer-${organization.id}` },
+  );
 
   await db
     .update(organizations)
@@ -136,6 +156,24 @@ router.post(
     }
 
     const organization = await loadActiveOrganization(req);
+    if (
+      organization.stripeSubscriptionId &&
+      [
+        "active",
+        "trialing",
+        "past_due",
+        "unpaid",
+        "incomplete",
+        "paused",
+      ].includes(organization.subscriptionStatus ?? "")
+    ) {
+      throw new HttpError(
+        409,
+        "This workspace already has a subscription. Manage it in the billing portal.",
+        undefined,
+        "subscription-exists",
+      );
+    }
     const plan = billingPlans[parsed.data.planKey];
     const paymentLinkUrl = getStripePaymentLinkUrl({
       organizationId: organization.id,
@@ -213,30 +251,53 @@ router.post(
   }),
 );
 
-export async function updateOrganizationFromStripeSubscription(params: {
-  customerId: string | null;
-  subscriptionId: string | null;
-  status: string | null;
-  planKey: string | null;
-}, database: BillingDbClient = db) {
+export async function updateOrganizationFromStripeSubscription(
+  params: {
+    customerId: string | null;
+    subscriptionId: string | null;
+    status: string | null;
+    planKey: string | null;
+  },
+  database: BillingDbClient = db,
+) {
   if (!params.subscriptionId && !params.customerId) return;
 
   const [bySubscription] = params.subscriptionId
     ? await database
-        .select({ id: organizations.id, stripeCustomerId: organizations.stripeCustomerId })
+        .select({
+          id: organizations.id,
+          stripeCustomerId: organizations.stripeCustomerId,
+        })
         .from(organizations)
-        .where(eq(organizations.stripeSubscriptionId, params.subscriptionId))
+        .where(
+          and(
+            eq(organizations.stripeSubscriptionId, params.subscriptionId),
+            isNull(organizations.deletedAt),
+          ),
+        )
         .limit(1)
     : [];
   const [byCustomer] = params.customerId
     ? await database
-        .select({ id: organizations.id, stripeSubscriptionId: organizations.stripeSubscriptionId })
+        .select({
+          id: organizations.id,
+          stripeSubscriptionId: organizations.stripeSubscriptionId,
+        })
         .from(organizations)
-        .where(eq(organizations.stripeCustomerId, params.customerId))
+        .where(
+          and(
+            eq(organizations.stripeCustomerId, params.customerId),
+            isNull(organizations.deletedAt),
+          ),
+        )
         .limit(1)
     : [];
 
-  if (bySubscription && byCustomer && bySubscription.id !== byCustomer.id) {
+  if (
+    (bySubscription && byCustomer && bySubscription.id !== byCustomer.id) ||
+    (bySubscription?.stripeCustomerId &&
+      bySubscription.stripeCustomerId !== params.customerId)
+  ) {
     throw new HttpError(
       409,
       "Stripe customer and subscription identifiers resolve to different organizations.",
@@ -247,6 +308,14 @@ export async function updateOrganizationFromStripeSubscription(params: {
 
   const target = bySubscription ?? byCustomer;
   if (!target) return;
+  // A late event for an older subscription must not replace the workspace's
+  // current subscription merely because both belong to the same customer.
+  if (
+    !bySubscription &&
+    byCustomer?.stripeSubscriptionId &&
+    byCustomer.stripeSubscriptionId !== params.subscriptionId
+  )
+    return;
 
   await database
     .update(organizations)
@@ -254,7 +323,10 @@ export async function updateOrganizationFromStripeSubscription(params: {
       stripeCustomerId: params.customerId ?? undefined,
       stripeSubscriptionId: params.subscriptionId ?? undefined,
       subscriptionStatus: params.status ?? undefined,
-      planKey: params.planKey && isBillingPlanKey(params.planKey) ? params.planKey : undefined,
+      planKey:
+        params.planKey && isBillingPlanKey(params.planKey)
+          ? params.planKey
+          : undefined,
       updatedAt: new Date(),
     })
     .where(eq(organizations.id, target.id));

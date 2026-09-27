@@ -19,8 +19,9 @@
     "typecheck": "node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm run typecheck:libs && node lib/api-spec/scripts/with-codegen-lock.mjs -- pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "check-api-codegen": "pnpm --filter @workspace/scripts run check-api-codegen",
     "knip": "knip",
+    "check-launch-security": "node --test scripts/check-launch-security.test.mjs && node scripts/check-launch-security.mjs",
     "setup-test-db": "pnpm --filter @workspace/db run setup-test-db",
-    "validate": "pnpm run typecheck && pnpm run check-api-codegen && pnpm run knip && pnpm --filter @workspace/cadstone run check-eager-bundle"
+    "validate": "pnpm run typecheck && pnpm run check-api-codegen && pnpm run knip && pnpm --filter @workspace/cadstone run check-eager-bundle && pnpm run check-launch-security"
   },
   "private": true,
   "devDependencies": {

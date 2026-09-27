@@ -15,7 +15,7 @@ process.env.JWT_REFRESH_SECRET = "security-test-refresh-secret-not-production";
 process.env.JWT_UPLOAD_SECRET = "security-test-upload-secret-not-production";
 
 const { db, pool } = await import("@workspace/db");
-const { users, organizations, organizationMemberships, personalAccessTokens } = await import("@workspace/db/schema");
+const { users, organizations, organizationMemberships, personalAccessTokens, securityEvents } = await import("@workspace/db/schema");
 const { eq, inArray } = await import("drizzle-orm");
 const security = await import("../src/lib/account-security.ts");
 const auth = await import("../src/lib/auth.ts");
@@ -71,6 +71,54 @@ async function activate(userId: string) {
   return { ...result, secret: enrollment.secret, code };
 }
 
+test("security history rejects rewriting and early deletion, while allowing expired retention cleanup", async () => {
+  // Exercise the real migration in a rolled-back transaction, including on a
+  // test database initially provisioned from the Drizzle schema.
+  const { readFile } = await import("node:fs/promises");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "DROP TRIGGER IF EXISTS security_events_append_only ON security_events",
+    );
+    await client.query(
+      await readFile(
+        new URL(
+          "../../../lib/db/migrations/0043_security_events.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const current = crypto.randomUUID();
+    const old = crypto.randomUUID();
+    await client.query(
+      "INSERT INTO security_events (id, event, created_at) VALUES ($1, 'test', now()), ($2, 'test', now() - interval '401 days')",
+      [current, old],
+    );
+    for (const query of [
+      "UPDATE security_events SET event = 'rewritten' WHERE id = $1",
+      "DELETE FROM security_events WHERE id = $1",
+    ]) {
+      await client.query("SAVEPOINT reject_change");
+      await assert.rejects(client.query(query, [current]), /append-only/);
+      await client.query("ROLLBACK TO SAVEPOINT reject_change");
+    }
+    const deleted = await client.query(
+      "DELETE FROM security_events WHERE id = $1",
+      [old],
+    );
+    assert.equal(deleted.rowCount, 1);
+    const permissions = await client.query(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'security_events'::regclass",
+    );
+    assert.equal(permissions.rows[0].relrowsecurity, true);
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
+  }
+});
+
 test("enrollment encrypts factors and hashes recovery codes; old sessions cannot bypass MFA", async () => {
   const user = await fixture(true);
   const before = auth.signAccessToken(user);
@@ -92,6 +140,12 @@ test("enrollment encrypts factors and hashes recovery codes; old sessions cannot
   const body = await status.json();
   assert.deepEqual(Object.keys(body).sort(), ["email", "emailVerified", "mfaEnabled", "mfaRequired", "recoveryCodesRemaining"].sort());
   assert.equal(body.recoveryCodesRemaining, 10);
+  const events = await db.select().from(securityEvents).where(eq(securityEvents.userId, user.id));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event, "security.mfa.enabled");
+  assert.equal(events[0].organizationId, user.defaultOrganizationId);
+  assert.ok(!JSON.stringify(events).includes(enabled.secret));
+  assert.ok(!JSON.stringify(events).includes(enabled.recoveryCodes![0]!));
 });
 
 test("challenge attempts persist and five wrong codes invalidate enrollment", async () => {
@@ -102,6 +156,8 @@ test("challenge attempts persist and five wrong codes invalidate enrollment", as
   const correct = await generate({ secret: enrollment.secret });
   await assert.rejects(security.completeSecurityChallenge(token, correct, "setup"));
   assert.equal((await security.readSecurityUser(user.id)).securityChallengeAttempts, 5);
+  const events = await db.select().from(securityEvents).where(eq(securityEvents.userId, user.id));
+  assert.equal(events.filter((event) => event.event === "security.mfa.failed").length, 5);
 });
 
 test("expired and superseded challenges cannot enroll an authenticator", async () => {
@@ -134,6 +190,8 @@ test("recovery code consumption is atomic and bound to its account", async () =>
   ]);
   assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
   assert.equal((await security.readSecurityUser(user.id)).mfaRecoveryHashes.length, 9);
+  const events = await db.select().from(securityEvents).where(eq(securityEvents.userId, user.id));
+  assert.equal(events.filter((event) => event.event === "security.mfa.recovery_used").length, 1);
   const other = await fixture();
   await activate(other.id);
   const otherToken = await security.issueSecurityChallenge(other.id, "login");

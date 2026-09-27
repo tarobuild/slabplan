@@ -47,6 +47,8 @@ export function getStripeClient(): Stripe {
   }
 
   stripeClient = new Stripe(apiKey, {
+    timeout: 10_000,
+    maxNetworkRetries: 1,
     appInfo: {
       name: "SlabPlan",
     },
@@ -167,8 +169,10 @@ export function getStripePaymentLinkUrl(params: {
 
 export function getStripeCustomerPortalUrl(): string | null {
   return (
-    getHttpsUrlFromEnv("STRIPE_CUSTOMER_PORTAL_URL", "billing.stripe.com")
-      ?.toString() ?? null
+    getHttpsUrlFromEnv(
+      "STRIPE_CUSTOMER_PORTAL_URL",
+      "billing.stripe.com",
+    )?.toString() ?? null
   );
 }
 
@@ -184,7 +188,7 @@ export function getCheckoutSubscriptionStatus(
 export function isStripeCheckoutConfigured(): boolean {
   return Boolean(
     process.env.STRIPE_PAYMENT_LINK_URL?.trim() ||
-      process.env.STRIPE_SECRET_KEY?.trim(),
+    process.env.STRIPE_SECRET_KEY?.trim(),
   );
 }
 

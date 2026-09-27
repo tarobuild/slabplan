@@ -55,6 +55,18 @@ test("backup webhook returns 503 while BACKUP_TRIGGER_SECRET is unset", async ()
   assert.equal(response.status, 503);
 });
 
+test("billing configuration diagnostics are unavailable without the operational secret", async () => {
+  delete process.env.BACKUP_TRIGGER_SECRET;
+  assert.equal((await fetch(`${baseUrl}/api/internal/billing-readiness`)).status, 503);
+  process.env.BACKUP_TRIGGER_SECRET = "x".repeat(48);
+  try {
+    const response = await fetch(`${baseUrl}/api/internal/billing-readiness`);
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal((await fetch(`${baseUrl}/api/internal/billing-readiness`, { headers: { "x-backup-secret": "invalid" } })).status, 401);
+  } finally { delete process.env.BACKUP_TRIGGER_SECRET; }
+});
+
 test("backup webhook rejects a missing or wrong secret with 401 once configured", async () => {
   process.env.BACKUP_TRIGGER_SECRET =
     "x".repeat(48); // 32+ chars per route check

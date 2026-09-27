@@ -46,6 +46,9 @@
 #
 name: E2E (Playwright)
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -120,7 +123,30 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit deployed dependencies and build tooling
+        run: pnpm run check-launch-security
+
+      - name: Typecheck, generated contracts, and unused-code checks
+        run: |
+          pnpm run typecheck
+          pnpm run check-api-codegen
+          pnpm run knip
+
+      - name: Verify frontend tests and production bundle
+        run: |
+          pnpm --filter @workspace/cadstone test
+          pnpm --filter @workspace/cadstone run check-eager-bundle
+
       - name: Recreate test database schema
+        run: pnpm setup-test-db
+
+      - name: Apply and verify production migrations against the test database
+        run: pnpm --filter @workspace/db run migrate
+
+      - name: Verify API security and behavior
+        run: pnpm --filter @workspace/api-server test
+
+      - name: Reset fixtures after API integration tests
         run: pnpm setup-test-db
 
       - name: Seed users + baseline E2E fixture

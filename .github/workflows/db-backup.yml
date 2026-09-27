@@ -34,6 +34,7 @@ on:
       - "artifacts/api-server/scripts/db-backup.mjs"
       - "artifacts/api-server/scripts/db-backup-check.mjs"
       - "artifacts/api-server/scripts/lib/backup-alerts.mjs"
+      - "artifacts/api-server/scripts/lib/backup-size-baseline.mjs"
     tags:
       - "backup-verify-*"
 
@@ -93,6 +94,8 @@ jobs:
 
       - name: Verify today's backup
         env:
+          BACKUP_REVIEWED_BASELINE_DATE: ${{ vars.BACKUP_REVIEWED_BASELINE_DATE }}
+          BACKUP_REVIEWED_BASELINE_BYTES: ${{ vars.BACKUP_REVIEWED_BASELINE_BYTES }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

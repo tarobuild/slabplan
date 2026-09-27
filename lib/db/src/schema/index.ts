@@ -144,6 +144,22 @@ export const organizations = pgTable(
   ],
 );
 
+export const securityEvents = pgTable(
+  "security_events",
+  {
+    id: uuid("id").primaryKey().$defaultFn(createId),
+    event: varchar("event", { length: 100 }).notNull(),
+    userId: uuid("user_id"),
+    organizationId: uuid("organization_id"),
+    createdAt: timestampTz("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("security_events_created_idx").on(table.createdAt),
+    index("security_events_user_created_idx").on(table.userId, table.createdAt),
+    index("security_events_org_created_idx").on(table.organizationId, table.createdAt),
+  ],
+);
+
 export const users = pgTable(
   "users",
   {

@@ -35,6 +35,7 @@
 import pino from "pino";
 import { sendBackupAlert } from "./lib/backup-alerts.mjs";
 import { createSupabaseStorage } from "./lib/supabase-storage.mjs";
+import { selectBackupSizeBaseline } from "./lib/backup-size-baseline.mjs";
 
 const pinoLogger = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -89,14 +90,6 @@ function daysAgoUtc(n) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function median(values) {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 0) return (sorted[mid - 1] + sorted[mid]) / 2;
-  return sorted[mid];
-}
-
 /**
  * Build a date → sizeBytes map of all backup objects under the prefix.
  */
@@ -146,14 +139,15 @@ async function main() {
       const entry = index.get(ds);
       if (entry) trailing.push({ dateStr: ds, sizeBytes: entry.sizeBytes });
     }
-    if (trailing.length < 3) {
+    const baseline = selectBackupSizeBaseline(trailing, process.env, today);
+    if (!baseline) {
       log("info", "size_check_skipped", {
         reason: "insufficient_history",
         haveDays: trailing.length,
         needDays: 3,
       });
     } else {
-      const med = median(trailing.map((t) => t.sizeBytes));
+      const med = baseline.bytes;
       const lower = med * (1 - tolerancePct / 100);
       const upper = med * (1 + tolerancePct / 100);
       const ok =
@@ -161,6 +155,7 @@ async function main() {
       sizeReport = {
         todaySize: todayEntry.sizeBytes,
         median: med,
+        baseline,
         lowerBound: Math.round(lower),
         upperBound: Math.round(upper),
         tolerancePct,
@@ -171,7 +166,7 @@ async function main() {
           todayEntry.sizeBytes < lower ? "smaller" : "larger";
         failures.push({
           code: "size_anomaly",
-          message: `Today's backup is ${direction} than expected: ${todayEntry.sizeBytes} bytes vs trailing ${trailing.length}-day median ${med} bytes (allowed ±${tolerancePct}% → [${Math.round(lower)}, ${Math.round(upper)}]).`,
+          message: `Today's backup is ${direction} than expected: ${todayEntry.sizeBytes} bytes vs ${baseline.source} ${med} bytes (allowed ±${tolerancePct}% → [${Math.round(lower)}, ${Math.round(upper)}]).`,
         });
         log("error", "size_anomaly", sizeReport);
       } else {

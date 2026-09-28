@@ -32,7 +32,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -40,6 +40,8 @@ import { createGzip } from "node:zlib";
 import pino from "pino";
 import { sendBackupAlert } from "./lib/backup-alerts.mjs";
 import { createSupabaseStorage } from "./lib/supabase-storage.mjs";
+import { pgEnvFromDatabaseUrl } from "./lib/backup-tls.mjs";
+import { supabaseRootCa } from "../../../lib/db/src/connection-options.ts";
 
 // Use the same pino logger family as the api-server (`src/lib/logger.ts`).
 // Same line shape (level, time, msg, plus our `event` / `component`
@@ -56,24 +58,6 @@ const backupPrefix = (process.env.BACKUP_PREFIX ?? "backups/db").replace(
   "",
 );
 const pgDumpBin = process.env.PG_DUMP_BIN ?? "pg_dump";
-
-function pgEnvFromDatabaseUrl(databaseUrl) {
-  const url = new URL(databaseUrl);
-  const env = {};
-
-  if (url.hostname) env.PGHOST = url.hostname;
-  if (url.port) env.PGPORT = url.port;
-  if (url.pathname && url.pathname !== "/") {
-    env.PGDATABASE = decodeURIComponent(url.pathname.slice(1));
-  }
-  if (url.username) env.PGUSER = decodeURIComponent(url.username);
-  if (url.password) env.PGPASSWORD = decodeURIComponent(url.password);
-
-  const sslmode = url.searchParams.get("sslmode");
-  if (sslmode) env.PGSSLMODE = sslmode;
-
-  return env;
-}
 
 function log(level, event, extra = {}) {
   const fn = pinoLogger[level] ?? pinoLogger.info;
@@ -158,6 +142,8 @@ async function runBackup() {
   log("info", "backup_start", { objectName, bucket: storage.bucketName });
 
   try {
+    const certificatePath = path.join(tempDir, "supabase-root.crt");
+    await writeFile(certificatePath, supabaseRootCa, { mode: 0o600 });
     const dump = spawn(
       pgDumpBin,
       ["--no-owner", "--no-privileges", "--format=plain"],
@@ -165,7 +151,7 @@ async function runBackup() {
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
-          ...pgEnvFromDatabaseUrl(dbUrl),
+          ...pgEnvFromDatabaseUrl(dbUrl, certificatePath),
         },
       },
     );

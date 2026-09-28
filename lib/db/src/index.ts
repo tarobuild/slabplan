@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
+import { databaseConnectionOptions } from "./connection-options.js";
 import * as schema from "./schema/index.js";
 
 const { Pool } = pg;
@@ -80,7 +81,7 @@ try {
   console.log("[db] connecting (unparseable connection string)");
 }
 
-export const pool = new Pool({ connectionString });
+export const pool = new Pool(databaseConnectionOptions(connectionString, isProduction));
 
 // Wrap pool.query (and every checked-out client's query) so pg
 // DatabaseError instances carry the constraint name (and detail/hint)

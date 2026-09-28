@@ -311,9 +311,11 @@ export async function sendEmailVerification(to: string, link: string): Promise<S
   });
 }
 
+// Shared by every scheduled backup workflow (database and private files), so
+// the wording names no single backup; the workflow run identifies which one.
 export async function sendBackupFailureEmail(to: string, runUrl: string, test = false): Promise<SentMessage> {
-  const subject = test ? "SlabPlan backup alert delivery test" : "SlabPlan database backup needs attention";
-  const message = test ? "This is a delivery test. No backup failure is being reported." : "The scheduled database backup or its verification failed. Review the workflow, resolve the cause, and rerun the backup and restore checks.";
+  const subject = test ? "SlabPlan backup alert delivery test" : "SlabPlan scheduled backup needs attention";
+  const message = test ? "This is a delivery test. No backup failure is being reported." : "A scheduled SlabPlan backup (database or private files) or its verification failed. Open the workflow run to see which backup failed, resolve the cause, and rerun that backup and its restore or verification checks.";
   return getSender().send({ to, subject, text: `${message}\n\nWorkflow: ${runUrl}`, html: buildEmailHtml({ heading: subject, greeting: "Hi,", paragraphs: [message], actionLabel: "Review workflow", actionUrl: runUrl }), tag: "security-alert" });
 }
 

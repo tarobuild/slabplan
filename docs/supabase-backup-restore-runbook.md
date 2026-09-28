@@ -127,6 +127,9 @@ recovery drill must include at least one uploaded file:
   the provider. Do not infer today's tier from historical notes.
 - Configure an access-restricted backup destination independent of the primary
   Supabase project, with versioned retention and bounded operating costs.
+  The encrypted Google Cloud Storage backup job and restore drill in
+  `docs/private-file-backup-runbook.md` implement this; the gate stays open
+  until the destination is provisioned and its evidence checklist is complete.
 - Back up private object contents as well as the database, and restore samples
   from that destination with byte-for-byte verification. A temporary copy within
   the primary bucket does not satisfy this gate.

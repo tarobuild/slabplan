@@ -1,0 +1,652 @@
+#!/usr/bin/env node
+/**
+ * Verify, restore and prune SlabPlan's independent private-file backups.
+ *
+ *   verify  --run latest|<runId> [--sample N] [--organization <id>] [--compare-source]
+ *   restore --run latest|<runId> (--organization <id> | --all) --to-dir <path>
+ *   restore --run latest|<runId> (--organization <id> | --all) --to-supabase [--allow-primary-target]
+ *   db-dump --run latest|<runId> --to <path>
+ *   check-db-files --run latest|<runId> --files-csv <path>
+ *   resolve-run --run latest|<runId> [--out <path>]   (pin one run for a multi-step drill)
+ *   summary --run latest|<runId>   (operator terminal only; prints private counts)
+ *   prune   [--keep-days 90] [--keep-runs 14] [--apply]
+ *
+ * Every restored object is decrypted, authenticated and SHA-256 checked
+ * against the run manifest before it is kept. Restores never overwrite
+ * existing files or objects. Output contains counts and blob labels only.
+ *
+ * Env: FILE_BACKUP_GCS_BUCKET, FILE_BACKUP_ENCRYPTION_KEY and optional
+ * FILE_BACKUP_EXPECTED_KEY_ID / FILE_BACKUP_DEST_ROOT /
+ * GCS_IMPERSONATE_SERVICE_ACCOUNT. --compare-source uses SUPABASE_URL,
+ * SUPABASE_STORAGE_BUCKET and SUPABASE_SERVICE_ROLE_KEY. --to-supabase uses
+ * RESTORE_TARGET_SUPABASE_URL, RESTORE_TARGET_SUPABASE_STORAGE_BUCKET and
+ * RESTORE_TARGET_SUPABASE_SERVICE_ROLE_KEY.
+ *
+ * Documented in docs/private-file-backup-runbook.md.
+ */
+import { randomBytes, randomInt } from "node:crypto";
+import { constants as fsConstants, createWriteStream } from "node:fs";
+import { link, lstat, mkdir, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { PassThrough } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
+import {
+  backupKeyIdHex,
+  createBackupDecryptStream,
+  createDigestPassThrough,
+  parseBackupMasterKey,
+} from "./lib/backup-crypto.mjs";
+import {
+  backupPaths,
+  listRunIds,
+  loadRunSummary,
+  normalizeBackupRoot,
+  readManifestEntries,
+  resolveRun,
+  storageIdentity,
+} from "./lib/file-backup-manifest.mjs";
+import { createGcloudTokenProvider, createGcsBackupStore } from "./lib/gcs-backup-store.mjs";
+import { multipartClosureProblems } from "./lib/multipart-manifest.mjs";
+import { createSupabaseStorage, getRequiredEnv } from "./lib/supabase-storage.mjs";
+
+const ORGANIZATION_ID_PATTERN = /^[0-9A-Za-z-]{1,64}$/;
+
+export function readRestoreConfig(env = process.env) {
+  const masterKey = parseBackupMasterKey(getRequiredEnv("FILE_BACKUP_ENCRYPTION_KEY", env));
+  const keyId = backupKeyIdHex(masterKey);
+  const expectedKeyId = env.FILE_BACKUP_EXPECTED_KEY_ID?.trim();
+  if (expectedKeyId && expectedKeyId.toLowerCase() !== keyId) {
+    throw new Error(`Configured key id ${keyId} does not match FILE_BACKUP_EXPECTED_KEY_ID ${expectedKeyId}.`);
+  }
+  return {
+    masterKey,
+    keyId,
+    gcsBucket: getRequiredEnv("FILE_BACKUP_GCS_BUCKET", env),
+    root: normalizeBackupRoot(env.FILE_BACKUP_DEST_ROOT?.trim() || undefined),
+    impersonateServiceAccount: env.GCS_IMPERSONATE_SERVICE_ACCOUNT?.trim() || "",
+  };
+}
+
+function label(entry) {
+  return `blob:${entry.blobDigest.slice(0, 12)}`;
+}
+
+/** Collect manifest entries matching a scope. */
+export async function selectEntries({ dest, root, masterKey, run, organizationId = null, all = false, category = null, onHeader }) {
+  if (organizationId !== null && !ORGANIZATION_ID_PATTERN.test(organizationId)) {
+    throw new Error("Organization id contains unsupported characters.");
+  }
+  if (!all && organizationId === null && category === null) {
+    throw new Error("Choose --organization <id> or --all.");
+  }
+  const selected = [];
+  for await (const entry of readManifestEntries({ dest, root, runId: run.runId, masterKey, onHeader })) {
+    if (category && entry.category !== category) continue;
+    if (organizationId !== null) {
+      // Require both the recorded tenant and the tenant path prefix.
+      const prefix = `slabplan/uploads/organizations/${organizationId}/`;
+      if (entry.organizationId !== organizationId || !entry.name.startsWith(prefix)) continue;
+    }
+    selected.push(entry);
+  }
+  return selected;
+}
+
+function sampleEntries(entries, sample) {
+  if (!sample || sample >= entries.length) return entries;
+  const pool = [...entries];
+  for (let i = pool.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, sample);
+}
+
+/**
+ * Stream a decrypted blob. `done` rejects if authentication fails; the
+ * digest is final only after `done` resolves.
+ */
+async function openDecrypted({ dest, root, masterKey, entry }) {
+  const plain = new PassThrough();
+  const digest = createDigestPassThrough();
+  const done = pipeline(
+    await dest.downloadStream(backupPaths.blob(root, entry.blobDigest)),
+    createBackupDecryptStream(masterKey),
+    digest.stream,
+    plain,
+  );
+  return { stream: plain, digest: digest.result, done };
+}
+
+function assertMatches(entry, digest) {
+  if (digest.bytes !== entry.size || digest.sha256Hex !== entry.sha256) {
+    throw new Error(`Restored bytes do not match the manifest (size ${digest.bytes}/${entry.size}).`);
+  }
+}
+
+async function hashStream(stream) {
+  const digest = createDigestPassThrough();
+  const sink = new PassThrough();
+  sink.resume();
+  await pipeline(stream, digest.stream, sink);
+  return digest.result;
+}
+
+/** Decrypt and hash-check entries without writing plaintext anywhere. */
+export async function verifyEntries({ dest, root, masterKey, entries, source = null, log = console.log }) {
+  const result = { checked: 0, matched: 0, failed: 0, sourceCompared: 0, sourceMatched: 0, sourceChanged: 0, sourceMissing: 0, bytes: 0, failures: [] };
+  for (const entry of entries) {
+    result.checked += 1;
+    try {
+      const opened = await openDecrypted({ dest, root, masterKey, entry });
+      opened.stream.resume();
+      await opened.done;
+      assertMatches(entry, opened.digest);
+      result.matched += 1;
+      result.bytes += entry.size;
+      if (source) {
+        result.sourceCompared += 1;
+        const info = await source.getObjectInfo(entry.name);
+        if (!info) {
+          result.sourceMissing += 1;
+        } else {
+          const current = await hashStream(await source.downloadStream(entry.name));
+          if (current.sha256Hex === entry.sha256 && current.bytes === entry.size) result.sourceMatched += 1;
+          else result.sourceChanged += 1;
+        }
+      }
+    } catch (error) {
+      result.failed += 1;
+      result.failures.push({ label: label(entry), reason: String(error?.message ?? error).split(entry.name).join(label(entry)).slice(0, 300) });
+    }
+  }
+  log(`[verify] checked=${result.checked} matched=${result.matched} failed=${result.failed}${source ? ` sourceMatched=${result.sourceMatched} sourceChanged=${result.sourceChanged} sourceMissing=${result.sourceMissing}` : ""}`);
+  for (const failure of result.failures.slice(0, 20)) log(`[verify] failure ${failure.label}: ${failure.reason}`);
+  return result;
+}
+
+/** Validate an object name and split it into safe path segments. */
+function objectNameSegments(objectName) {
+  const segments = String(objectName ?? "").split("/");
+  if (
+    !objectName ||
+    objectName.startsWith("/") ||
+    segments.some((segment) => segment === "" || segment === "." || segment === ".." || segment.includes("\0") || segment.includes("\\"))
+  ) {
+    throw new Error("Manifest entry has an unsafe object name.");
+  }
+  return segments;
+}
+
+/** Resolve an object name under a restore directory, rejecting traversal. */
+export function safeRestorePath(outDir, objectName) {
+  const segments = objectNameSegments(objectName);
+  const root = path.resolve(outDir);
+  const target = path.resolve(root, ...segments);
+  if (!target.startsWith(`${root}${path.sep}`)) throw new Error("Manifest entry escapes the restore directory.");
+  return target;
+}
+
+async function exists(filePath) {
+  try {
+    await lstat(filePath);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+const currentUid = () => (typeof process.getuid === "function" ? process.getuid() : null);
+
+/**
+ * Why a directory cannot be trusted for a restore, or null. Trust assumption:
+ * the operator's own account (same UID) is trusted; no other account may be
+ * able to rename, replace or add entries on the path. Directories at or below
+ * the restore root must be owned by the operator and not group/other
+ * writable. Ancestors may also be owned by root and may be shared only when
+ * the sticky bit prevents other users renaming entries they do not own (as in
+ * /tmp).
+ */
+export function untrustedDirectoryReason(info, { uid = currentUid(), ancestor = false } = {}) {
+  if (info.isSymbolicLink?.() || !info.isDirectory()) return "is a symbolic link or not a directory";
+  if (uid !== null && info.uid !== uid && !(ancestor && info.uid === 0)) return "is owned by another user";
+  const sharedWrite = (info.mode & 0o022) !== 0;
+  const sticky = (info.mode & 0o1000) !== 0;
+  if (sharedWrite && !(ancestor && sticky)) return "is writable by group or other users";
+  return null;
+}
+
+/**
+ * Create or validate the restore root and check every ancestor, so only the
+ * operator's own processes could race the containment checks below.
+ */
+export async function prepareRestoreRoot(outDir) {
+  const resolved = path.resolve(outDir);
+  await mkdir(path.dirname(resolved), { recursive: true, mode: 0o700 });
+  try {
+    await mkdir(resolved, { mode: 0o700 });
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+  }
+  const info = await lstat(resolved);
+  if (info.isSymbolicLink() || !info.isDirectory()) {
+    throw new Error("Restore directory must be a real directory, not a symbolic link.");
+  }
+  const rootReason = untrustedDirectoryReason(info);
+  if (rootReason) throw new Error(`Restore directory ${rootReason}.`);
+  const realRoot = await realpath(resolved);
+  for (let ancestor = path.dirname(realRoot); ; ancestor = path.dirname(ancestor)) {
+    const reason = untrustedDirectoryReason(await lstat(ancestor), { ancestor: true });
+    if (reason) throw new Error(`A parent of the restore directory ${reason}; choose a private location.`);
+    if (ancestor === path.dirname(ancestor)) break;
+  }
+  return realRoot;
+}
+
+/** Create or validate each directory below the root, one component at a time. */
+async function ensureContainedDirectory(realRoot, segments) {
+  let current = realRoot;
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    try {
+      await mkdir(current, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+    // Existing descendants get the same trust test as the root, so no other
+    // account can swap a component while an object is being downloaded.
+    const reason = untrustedDirectoryReason(await lstat(current));
+    if (reason) throw new Error(`Restore path component ${reason}.`);
+  }
+  await assertContained(realRoot, current);
+  return current;
+}
+
+/** A directory is contained when its real path is itself and lies under the root. */
+async function assertContained(realRoot, directory) {
+  const real = await realpath(directory);
+  if (real !== directory || (real !== realRoot && !real.startsWith(`${realRoot}${path.sep}`))) {
+    throw new Error("Restore path left the restore directory.");
+  }
+}
+
+// O_EXCL never follows a symbolic link at the final component; O_NOFOLLOW is
+// added where the platform provides it.
+const EXCLUSIVE_CREATE_FLAGS =
+  fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | (fsConstants.O_NOFOLLOW ?? 0);
+
+/** Restore to a local directory; files are kept only after hash verification. */
+export async function restoreToDirectory({ dest, root, masterKey, entries, outDir, log = console.log }) {
+  const result = { restored: 0, failed: 0, skippedExisting: 0, bytes: 0, failures: [] };
+  const realRoot = await prepareRestoreRoot(outDir);
+  for (const entry of entries) {
+    let temporary = null;
+    let linkedTarget = null;
+    try {
+      const segments = objectNameSegments(entry.name);
+      const parent = await ensureContainedDirectory(realRoot, segments.slice(0, -1));
+      const target = path.join(parent, segments.at(-1));
+      if (await exists(target)) {
+        result.skippedExisting += 1;
+        continue;
+      }
+      temporary = path.join(parent, `.restore-${randomBytes(8).toString("hex")}`);
+      const opened = await openDecrypted({ dest, root, masterKey, entry });
+      await Promise.all([
+        pipeline(opened.stream, createWriteStream(temporary, { flags: EXCLUSIVE_CREATE_FLAGS, mode: 0o600 })),
+        opened.done,
+      ]);
+      assertMatches(entry, opened.digest);
+      // Re-check containment immediately before publishing the file; link()
+      // fails if the target appeared meanwhile, so nothing is overwritten.
+      await assertContained(realRoot, parent);
+      await link(temporary, target);
+      linkedTarget = target;
+      await assertContained(realRoot, parent);
+      const [placed, staged] = await Promise.all([lstat(target), lstat(temporary)]);
+      if (!placed.isFile() || placed.ino !== staged.ino || placed.dev !== staged.dev) {
+        throw new Error("Restored file changed while it was being placed.");
+      }
+      linkedTarget = null;
+      await unlink(temporary);
+      temporary = null;
+      result.restored += 1;
+      result.bytes += entry.size;
+    } catch (error) {
+      result.failed += 1;
+      result.failures.push({ label: label(entry), reason: String(error?.message ?? error).split(entry.name).join(label(entry)).slice(0, 300) });
+      if (linkedTarget && temporary) {
+        // Remove only the link this run created, never a pre-existing file.
+        const [placed, staged] = await Promise.all([lstat(linkedTarget).catch(() => null), lstat(temporary).catch(() => null)]);
+        if (placed && staged && placed.ino === staged.ino && placed.dev === staged.dev) await unlink(linkedTarget).catch(() => {});
+      }
+    } finally {
+      if (temporary) await rm(temporary, { force: true });
+    }
+  }
+  log(`[restore] directory restored=${result.restored} skippedExisting=${result.skippedExisting} failed=${result.failed} bytes=${result.bytes}`);
+  return result;
+}
+
+/**
+ * Restore into a Supabase Storage bucket without overwriting. An object that
+ * fails verification after upload is removed again.
+ */
+export async function restoreToStorage({ dest, root, masterKey, entries, target, log = console.log }) {
+  const result = { restored: 0, failed: 0, skippedExisting: 0, bytes: 0, failures: [] };
+  for (const entry of entries) {
+    let uploaded = false;
+    try {
+      if (await target.objectExists(entry.name)) {
+        result.skippedExisting += 1;
+        continue;
+      }
+      const opened = await openDecrypted({ dest, root, masterKey, entry });
+      await Promise.all([
+        target.uploadStream(entry.name, opened.stream, {
+          contentType: entry.contentType ?? "application/octet-stream",
+          cacheControl: entry.cacheControl ?? undefined,
+          contentLengthBytes: entry.size,
+          upsert: false,
+        }).then(() => {
+          uploaded = true;
+        }),
+        opened.done,
+      ]);
+      assertMatches(entry, opened.digest);
+      result.restored += 1;
+      result.bytes += entry.size;
+    } catch (error) {
+      result.failed += 1;
+      result.failures.push({ label: label(entry), reason: String(error?.message ?? error).split(entry.name).join(label(entry)).slice(0, 300) });
+      if (uploaded) await target.deleteObject(entry.name).catch(() => {});
+    }
+  }
+  log(`[restore] storage restored=${result.restored} skippedExisting=${result.skippedExisting} failed=${result.failed} bytes=${result.bytes}`);
+  return result;
+}
+
+/**
+ * Refuse a storage restore into the primary bucket. The primary is taken from
+ * the run's authenticated manifest header, and also from the operator's
+ * SUPABASE_* environment when present. A run that does not record its primary
+ * is treated as unknown and refused without an explicit override. Identity is
+ * the project host plus bucket: always use the canonical
+ * https://<project-ref>.supabase.co URL, because a custom-domain alias of the
+ * primary project cannot be recognized here.
+ */
+export function assertRestoreTargetAllowed({ recordedSource, operatorSourceEnv = {}, targetEnv, allowPrimaryTarget = false }) {
+  const target = storageIdentity(targetEnv?.SUPABASE_URL, targetEnv?.SUPABASE_STORAGE_BUCKET);
+  if (!target) throw new Error("Restore target URL and bucket are required.");
+  if (allowPrimaryTarget) return { target, override: true };
+  const recorded = storageIdentity(recordedSource?.url, recordedSource?.bucket);
+  if (!recorded) {
+    throw new Error("This backup run does not record its primary storage identity. Refusing a storage restore without --allow-primary-target.");
+  }
+  const operator = storageIdentity(operatorSourceEnv.SUPABASE_URL, operatorSourceEnv.SUPABASE_STORAGE_BUCKET);
+  for (const primary of [recorded, operator]) {
+    if (primary && primary.host === target.host && primary.bucket === target.bucket) {
+      throw new Error("Restore target is the primary bucket. Restore elsewhere, or pass --allow-primary-target during an approved incident.");
+    }
+  }
+  return { target, override: false };
+}
+
+/** Remove blobs no retained manifest references. Dry-run unless apply=true. */
+export async function pruneBackups({ dest, root, masterKey, keepDays = 90, keepRuns = 14, apply = false, now = new Date(), log = console.log }) {
+  const runIds = await listRunIds(dest, root);
+  const cutoff = now.getTime() - keepDays * 24 * 60 * 60 * 1000;
+  const runTime = (runId) => Date.parse(`${runId.slice(0, 4)}-${runId.slice(4, 6)}-${runId.slice(6, 8)}T${runId.slice(9, 11)}:${runId.slice(11, 13)}:${runId.slice(13, 15)}Z`);
+  const retained = runIds.filter((runId, index) => index >= runIds.length - keepRuns || runTime(runId) >= cutoff);
+  const expired = runIds.filter((runId) => !retained.includes(runId));
+  if (retained.length === 0) throw new Error("No retained runs; refusing to prune.");
+  const referenced = new Set();
+  for (const runId of retained) {
+    const summary = await loadRunSummary(dest, root, runId);
+    if (!summary.manifestObject) continue;
+    for await (const entry of readManifestEntries({ dest, root, runId, masterKey })) referenced.add(entry.blobDigest);
+  }
+  const blobs = await dest.listObjects(backupPaths.blobPrefix(root));
+  const orphaned = blobs.filter((blob) => {
+    const digest = backupPaths.digestFromBlobName(root, blob.name);
+    return digest && !referenced.has(digest) && Date.parse(blob.timeCreated ?? 0) < cutoff;
+  });
+  const plan = {
+    runs: runIds.length,
+    retainedRuns: retained.length,
+    expiredRuns: expired.length,
+    blobs: blobs.length,
+    orphanedBlobs: orphaned.length,
+    orphanedBytes: orphaned.reduce((sum, blob) => sum + blob.size, 0),
+    applied: apply,
+    deleted: 0,
+    deleteFailures: 0,
+  };
+  if (apply) {
+    const targets = [
+      ...orphaned.map((blob) => ({ name: blob.name, generation: blob.generation })),
+      ...expired.flatMap((runId) => [
+        { name: backupPaths.manifest(root, runId) },
+        { name: backupPaths.run(root, runId) },
+      ]),
+    ];
+    for (const item of targets) {
+      try {
+        await dest.deleteObject(item.name, { generation: item.generation });
+        plan.deleted += 1;
+      } catch {
+        plan.deleteFailures += 1; // e.g. bucket retention policy still applies
+      }
+    }
+  }
+  log(`[prune] ${JSON.stringify(plan)}`);
+  return plan;
+}
+
+/**
+ * Cross-check file rows from a restored database dump against a run
+ * manifest. A row is covered only when the object it names was backed up for
+ * the same organization and is recoverable at the row's size: a native object
+ * must have exactly that size, and a multipart manifest must declare that
+ * total with every part present in the same run at its recorded size. Rows
+ * are read from `psql -At -F,` output: id,organization_id,file_url,file_size.
+ */
+export async function checkDatabaseFiles({ dest, root, masterKey, run, rows, log = console.log }) {
+  const entries = [];
+  for await (const entry of readManifestEntries({ dest, root, runId: run.runId, masterKey })) entries.push(entry);
+  const byName = new Map(entries.map((entry) => [entry.name, entry]));
+  const incompleteMultipart = new Set(multipartClosureProblems(entries).map((problem) => problem.entry.name));
+  const result = {
+    rowsChecked: 0,
+    present: 0,
+    missing: 0,
+    organizationMismatch: 0,
+    sizeMismatch: 0,
+    multipartFiles: 0,
+    multipartIncomplete: 0,
+    sizeUnknown: 0,
+    unprefixedLegacy: 0,
+    invalidUrl: 0,
+  };
+  for (const row of rows) {
+    result.rowsChecked += 1;
+    const match = /^\/uploads\/(.+)$/.exec(row.fileUrl ?? "");
+    if (!match || match[1].split("/").some((segment) => !segment || segment === "." || segment === "..")) {
+      result.invalidUrl += 1;
+      continue;
+    }
+    const entry = byName.get(`slabplan/uploads/${match[1]}`);
+    if (!entry) {
+      result.missing += 1;
+      continue;
+    }
+    result.present += 1;
+    if (entry.organizationId === null) result.unprefixedLegacy += 1;
+    else if (entry.organizationId !== (row.organizationId || null)) result.organizationMismatch += 1;
+    if (entry.invalidMultipart) {
+      result.multipartIncomplete += 1;
+      continue;
+    }
+    if (entry.multipart) {
+      result.multipartFiles += 1;
+      if (incompleteMultipart.has(entry.name)) result.multipartIncomplete += 1;
+    }
+    const recoverableBytes = entry.multipart ? entry.multipart.totalBytes : entry.size;
+    if (row.fileSize === null || row.fileSize === undefined || row.fileSize === "") result.sizeUnknown += 1;
+    else if (Number(row.fileSize) !== recoverableBytes) result.sizeMismatch += 1;
+  }
+  // Failure counts only: total rows would disclose customer volume in public CI logs.
+  log(`[check-db-files] missing=${result.missing} organizationMismatch=${result.organizationMismatch} invalidUrl=${result.invalidUrl} sizeMismatch=${result.sizeMismatch} multipartIncomplete=${result.multipartIncomplete} sizeUnknown=${result.sizeUnknown}`);
+  return {
+    ...result,
+    failed: result.missing + result.organizationMismatch + result.invalidUrl + result.sizeMismatch + result.multipartIncomplete,
+  };
+}
+
+export function parseFileRowsCsv(text) {
+  return text
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => {
+      const [id, organizationId, ...rest] = line.split(",");
+      const fileSize = rest.pop();
+      return { id, organizationId: organizationId || null, fileUrl: rest.join(","), fileSize: fileSize === "" ? null : fileSize };
+    });
+}
+
+export function parseArgs(argv) {
+  const [command, ...rest] = argv;
+  const options = {};
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
+    if (!arg.startsWith("--")) throw new Error(`Unexpected argument ${arg}`);
+    const key = arg.slice(2);
+    if (["all", "compare-source", "to-supabase", "allow-primary-target", "apply"].includes(key)) {
+      options[key] = true;
+    } else {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) throw new Error(`--${key} requires a value`);
+      options[key] = value;
+      i += 1;
+    }
+  }
+  return { command, options };
+}
+
+function destinationFor(config) {
+  return createGcsBackupStore({
+    bucket: config.gcsBucket,
+    getAccessToken: createGcloudTokenProvider({ impersonateServiceAccount: config.impersonateServiceAccount }),
+  });
+}
+
+export async function runCommand({ command, options, config, dest, env = process.env, log = console.log, createStorage = createSupabaseStorage }) {
+  const { masterKey, root } = config;
+  if (command === "prune") {
+    return await pruneBackups({
+      dest,
+      root,
+      masterKey,
+      keepDays: Number(options["keep-days"] ?? 90),
+      keepRuns: Number(options["keep-runs"] ?? 14),
+      apply: Boolean(options.apply),
+      log,
+    });
+  }
+  const run = await resolveRun(dest, root, options.run ?? "latest");
+  if (!run) throw new Error("No backup run with a manifest was found.");
+  if (command === "summary") {
+    // Operator use only: the private summary includes counts and sizes.
+    log(JSON.stringify(run, null, 2));
+    return { runId: run.runId, failed: 0 };
+  }
+  if (run.keyId !== config.keyId) throw new Error(`Run ${run.runId} used key id ${run.keyId}; configured key id is ${config.keyId}.`);
+  if (command === "resolve-run") {
+    // A multi-step drill pins one immutable run here, so a newer backup that
+    // finishes mid-drill cannot change the snapshot under test.
+    if (options.out) await writeFile(options.out, `${run.runId}\n`, { flag: "wx", mode: 0o600 });
+    log(`[resolve-run] ${run.runId} status=${run.status}`);
+    return { runId: run.runId, status: run.status, failed: 0 };
+  }
+  log(`[run] ${run.runId} status=${run.status}`);
+  const organizationId = options.organization ?? null;
+
+  if (command === "verify") {
+    const scoped = await selectEntries({ dest, root, masterKey, run, organizationId, all: organizationId === null });
+    const sample = options.sample ? Number(options.sample) : 0;
+    const chosen = sampleEntries(scoped, sample);
+    const source = options["compare-source"] ? createStorage(env) : null;
+    const result = await verifyEntries({ dest, root, masterKey, entries: chosen, source, log });
+    return { runId: run.runId, scope: organizationId ? "organization" : "all", ...result };
+  }
+  if (command === "restore") {
+    if (options["to-dir"]) {
+      const entries = await selectEntries({ dest, root, masterKey, run, organizationId, all: Boolean(options.all) });
+      return { runId: run.runId, ...(await restoreToDirectory({ dest, root, masterKey, entries, outDir: options["to-dir"], log })) };
+    }
+    if (options["to-supabase"]) {
+      const targetEnv = {
+        SUPABASE_URL: getRequiredEnv("RESTORE_TARGET_SUPABASE_URL", env),
+        SUPABASE_STORAGE_BUCKET: getRequiredEnv("RESTORE_TARGET_SUPABASE_STORAGE_BUCKET", env),
+        SUPABASE_SERVICE_ROLE_KEY: getRequiredEnv("RESTORE_TARGET_SUPABASE_SERVICE_ROLE_KEY", env),
+      };
+      let header = null;
+      const scoped = await selectEntries({ dest, root, masterKey, run, organizationId, all: Boolean(options.all), onHeader: (value) => { header = value; } });
+      assertRestoreTargetAllowed({
+        recordedSource: header?.source,
+        operatorSourceEnv: env,
+        targetEnv,
+        allowPrimaryTarget: Boolean(options["allow-primary-target"]),
+      });
+      const target = createStorage(targetEnv);
+      return { runId: run.runId, ...(await restoreToStorage({ dest, root, masterKey, entries: scoped, target, log })) };
+    }
+    throw new Error("Choose --to-dir <path> or --to-supabase.");
+  }
+  if (command === "db-dump") {
+    if (!options.to) throw new Error("db-dump requires --to <path>.");
+    const destination = path.resolve(options.to);
+    if (await exists(destination)) throw new Error("db-dump --to path already exists; refusing to overwrite.");
+    const entries = await selectEntries({ dest, root, masterKey, run, category: "database" });
+    if (entries.length !== 1) throw new Error(`Run ${run.runId} has ${entries.length} database dumps.`);
+    const staging = path.join(path.dirname(destination), `.db-dump-${randomBytes(6).toString("hex")}`);
+    try {
+      const result = await restoreToDirectory({ dest, root, masterKey, entries, outDir: staging, log });
+      if (result.restored !== 1) throw new Error("Database dump restore failed verification.");
+      await link(safeRestorePath(staging, entries[0].name), destination);
+      return { runId: run.runId, dbDumpDate: /(\d{4}-\d{2}-\d{2})\.sql\.gz$/.exec(entries[0].name)?.[1] ?? null, sha256: entries[0].sha256, ...result };
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+    }
+  }
+  if (command === "check-db-files") {
+    if (!options["files-csv"]) throw new Error("check-db-files requires --files-csv <path>.");
+    const rows = parseFileRowsCsv(await readFile(options["files-csv"], "utf8"));
+    return { runId: run.runId, ...(await checkDatabaseFiles({ dest, root, masterKey, run, rows, log })) };
+  }
+  throw new Error(`Unknown command ${command}. Use verify, restore, db-dump, check-db-files, resolve-run, summary or prune.`);
+}
+
+async function main() {
+  const { command, options } = parseArgs(process.argv.slice(2));
+  const config = readRestoreConfig();
+  const dest = destinationFor(config);
+  const result = await runCommand({ command, options, config, dest });
+  if (result.failed > 0 || result.deleteFailures > 0) process.exitCode = 1;
+  if (result.checked === 0 && command === "verify") {
+    console.error("[verify] no entries were selected");
+    process.exitCode = 1;
+  }
+}
+
+const invokedDirectly =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  main().catch((error) => {
+    console.error(`FILE BACKUP RESTORE FAILED: ${String(error?.message ?? error).slice(0, 500)}`);
+    process.exit(1);
+  });
+}

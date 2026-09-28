@@ -8,13 +8,12 @@
  * small row-count sanity checklist, and drops the database by default.
  */
 import { spawn } from "node:child_process";
-import { createReadStream } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { pipeline } from "node:stream/promises";
-import { createGunzip } from "node:zlib";
+import { fileURLToPath } from "node:url";
 import pino from "pino";
+import { restorePlainSqlDump, verifyRestoredDatabase } from "./lib/pg-restore.mjs";
 import { createSupabaseStorage } from "./lib/supabase-storage.mjs";
 
 const logger = pino({
@@ -48,12 +47,10 @@ const sanityTables = [
   "agent_usage_monthly",
 ];
 
-const allowedRestoreErrorPatterns = [
-  /extension "supabase_vault" is not available/i,
-  /extension "supabase_vault" does not exist/i,
-  /schema "vault" does not exist/i,
-  /relation "vault\.secrets" does not exist/i,
-];
+const migrationsDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../lib/db/migrations",
+);
 
 function log(level, event, extra = {}) {
   const fn = logger[level] ?? logger.info;
@@ -115,26 +112,6 @@ async function runPsql(dbUrl, sql, options = {}) {
   ]);
 }
 
-function restoreErrorLines(stderr) {
-  return stderr
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => /\bERROR:/.test(line));
-}
-
-function assertOnlyAllowedRestoreErrors(stderr) {
-  const errorLines = restoreErrorLines(stderr);
-  const unexpected = errorLines.filter(
-    (line) => !allowedRestoreErrorPatterns.some((pattern) => pattern.test(line)),
-  );
-  if (unexpected.length > 0) {
-    throw new Error(
-      `Restore produced unexpected SQL errors:\n${unexpected.join("\n")}`,
-    );
-  }
-  return errorLines;
-}
-
 async function findBackupObject(storage) {
   if (explicitObjectName) {
     const meta = await storage.getObjectInfo(explicitObjectName);
@@ -172,69 +149,6 @@ async function findBackupObject(storage) {
   return newest;
 }
 
-async function restoreBackup({ backupPath, restoreDatabaseUrl }) {
-  const psql = spawn(psqlBin, [
-    "--dbname",
-    restoreDatabaseUrl,
-    "-X",
-    "-q",
-    "-v",
-    "ON_ERROR_STOP=0",
-  ], {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-
-  let stdout = "";
-  let stderr = "";
-  psql.stdout.on("data", (chunk) => {
-    stdout = tail(stdout + chunk.toString());
-  });
-  psql.stderr.on("data", (chunk) => {
-    stderr = tail(stderr + chunk.toString());
-  });
-
-  const exitPromise = new Promise((resolve, reject) => {
-    psql.on("error", reject);
-    psql.on("close", resolve);
-  });
-
-  await pipeline(createReadStream(backupPath), createGunzip(), psql.stdin);
-  const code = await exitPromise;
-  if (code !== 0) {
-    throw new Error(stderr.trim() || stdout.trim() || `psql exited ${code}`);
-  }
-  return { stdout, stderr };
-}
-
-async function loadSanityCounts(restoreDatabaseUrl) {
-  const selects = sanityTables.map(
-    (name) => `SELECT '${name}' AS table_name, COUNT(*)::bigint AS row_count FROM ${quoteIdentifier(name)}`,
-  );
-  const { stdout } = await run(psqlBin, [
-    "--dbname",
-    restoreDatabaseUrl,
-    "-X",
-    "-q",
-    "-t",
-    "-A",
-    "-F",
-    ",",
-    "-v",
-    "ON_ERROR_STOP=1",
-    "-c",
-    `${selects.join(" UNION ALL ")} ORDER BY table_name;`,
-  ]);
-
-  return stdout
-    .trim()
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => {
-      const [tableName, rowCount] = line.split(",");
-      return { tableName, rowCount: Number(rowCount) };
-    });
-}
-
 async function main() {
   const storage = createSupabaseStorage();
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "slabplan-restore-drill-"));
@@ -266,23 +180,32 @@ async function main() {
     await runPsql(adminDatabaseUrl, `CREATE DATABASE ${quoteIdentifier(drillDb)};`);
     log("info", "database_created", { database: drillDb });
 
-    const restored = await restoreBackup({ backupPath, restoreDatabaseUrl });
-    const allowedErrors = assertOnlyAllowedRestoreErrors(restored.stderr);
+    // Fails on any SQL error outside the explicit Supabase allow-list; every
+    // error line is examined, not only the tail of psql's output.
+    const restored = await restorePlainSqlDump({
+      dumpPath: backupPath,
+      databaseUrl: restoreDatabaseUrl,
+      psqlBin,
+    });
     log("info", "restore_completed", {
       database: drillDb,
-      allowedErrorCount: allowedErrors.length,
-      allowedErrors,
+      allowedErrorCount: restored.allowedErrorCount,
     });
 
-    const counts = await loadSanityCounts(restoreDatabaseUrl);
-    const missingCounts = counts.filter(
-      (row) => !Number.isFinite(row.rowCount) || row.rowCount < 0,
-    );
-    if (missingCounts.length > 0) {
-      throw new Error(`Invalid sanity counts: ${JSON.stringify(missingCounts)}`);
+    // The repository is public: report problems only, never row counts.
+    const verified = await verifyRestoredDatabase({
+      databaseUrl: restoreDatabaseUrl,
+      psqlBin,
+      migrationsDir,
+      requiredTables: [...sanityTables, "workspace_schema_migrations"],
+    });
+    if (!verified.ok) {
+      throw new Error(`Restored database failed verification: ${verified.problems.join("; ")}`);
     }
-
-    log("info", "sanity_counts", { counts });
+    log("info", "sanity_checks", {
+      tablesChecked: sanityTables.length,
+      migrationsNewerThanBackup: verified.migrationsBehind,
+    });
     log("info", "drill_done", {
       status: "ok",
       restoredObject: backup.objectName,

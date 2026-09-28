@@ -321,6 +321,29 @@ test("MCP round-trip: tool list, read+write audit, resource read, stdio audit", 
     // subprocess.
     const { createStdioAuditHook } = await import("@workspace/mcp-server");
     const stdioHook = createStdioAuditHook(baseUrl, patSecret);
+    const listJobsAuditRows = () =>
+      db
+        .select({
+          id: activityLog.id,
+          userId: activityLog.userId,
+          entityType: activityLog.entityType,
+          entityId: activityLog.entityId,
+          action: activityLog.action,
+          metadata: activityLog.metadata,
+        })
+        .from(activityLog)
+        .where(
+          and(
+            eq(activityLog.entityType, "mcp_tool_call"),
+            eq(activityLog.action, "list_jobs"),
+            eq(activityLog.userId, adminUserId),
+          ),
+        );
+    // Rows come back in no guaranteed order, so identify the stdio row by
+    // the ids that existed before the hook ran rather than by position.
+    const auditIdsBeforeStdio = new Set(
+      (await listJobsAuditRows()).map((row) => row.id),
+    );
     const startedAt = new Date();
     await stdioHook({
       toolName: "list_jobs",
@@ -329,30 +352,20 @@ test("MCP round-trip: tool list, read+write audit, resource read, stdio audit", 
       outcome: { ok: true, status: null },
     });
 
-    const stdioAudit = await db
-      .select({
-        id: activityLog.id,
-        userId: activityLog.userId,
-        entityType: activityLog.entityType,
-        entityId: activityLog.entityId,
-        action: activityLog.action,
-        metadata: activityLog.metadata,
-      })
-      .from(activityLog)
-      .where(
-        and(
-          eq(activityLog.entityType, "mcp_tool_call"),
-          eq(activityLog.action, "list_jobs"),
-          eq(activityLog.userId, adminUserId),
-        ),
-      );
+    const stdioAudit = await listJobsAuditRows();
     // We expect at least 2 rows now: one from the in-process tool call above
     // and one written by the stdio audit endpoint we just hit.
     assert.ok(
       stdioAudit.length >= 2,
       `stdio audit POST should produce another mcp_tool_call row, got ${stdioAudit.length}`,
     );
-    const stdioRow = stdioAudit[stdioAudit.length - 1]!;
+    const newStdioRows = stdioAudit.filter((row) => !auditIdsBeforeStdio.has(row.id));
+    assert.equal(
+      newStdioRows.length,
+      1,
+      `stdio audit POST should insert exactly one new mcp_tool_call row, got ${newStdioRows.length}`,
+    );
+    const stdioRow = newStdioRows[0]!;
     const stdioMeta = (stdioRow.metadata ?? {}) as Record<string, unknown>;
     assert.equal(stdioMeta.actorKind, "agent_via_mcp", "stdio audit metadata.actorKind");
     assert.equal(stdioMeta.toolName, "list_jobs", "stdio audit metadata.toolName");

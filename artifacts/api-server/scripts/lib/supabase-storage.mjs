@@ -212,6 +212,19 @@ export function createSupabaseStorage(env = process.env) {
     return Buffer.from(await response.arrayBuffer());
   }
 
+  async function downloadStream(objectName) {
+    const response = await supabaseStorageRequest(
+      config,
+      `/object/${objectPath(objectName)}`,
+      { method: "GET" },
+      new Set([200]),
+    );
+    if (!response.body) {
+      throw new Error(`Supabase Storage returned no body for ${objectName}`);
+    }
+    return Readable.fromWeb(response.body);
+  }
+
   async function deleteObject(objectName) {
     await supabaseStorageRequest(
       config,
@@ -295,12 +308,15 @@ export function createSupabaseStorage(env = process.env) {
 
   return {
     bucketName: config.bucketName,
+    // Project URL only (no credentials); backups record it as the primary's identity.
+    projectUrl: config.url,
     headBucket,
     uploadStream,
     uploadBuffer,
     getObjectInfo,
     objectExists,
     downloadBuffer,
+    downloadStream,
     deleteObject,
     deleteObjects,
     listAllObjects,

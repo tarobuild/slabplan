@@ -1,0 +1,157 @@
+# Manual recovery drill for the independent private-file backup.
+#
+# Uses only the independent Google Cloud Storage copy to:
+#   1. download, decrypt and hash-check a random sample of backed-up objects
+#      and compare them with the current primary objects;
+#   2. restore that run's database dump into a disposable PostgreSQL 17
+#      service database and sanity-check core tables;
+#   3. confirm every live file row in the restored database has a backed-up
+#      object bound to the same organization;
+#   4. optionally restore one organization's files to the runner and verify
+#      every file's SHA-256 against the manifest.
+# Production is never written. This repository is public, so logs report
+# status and failure counts only.
+# See docs/private-file-backup-runbook.md.
+name: Private-file restore drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      run:
+        description: "Backup run id, or latest"
+        required: false
+        default: latest
+        type: string
+      sample:
+        description: "Number of random objects to verify against the primary"
+        required: false
+        default: "25"
+        type: string
+      organization:
+        description: "Optional organization id to restore in full on the runner"
+        required: false
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: private-file-restore-drill
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: private-file-backup
+    permissions:
+      contents: read
+      id-token: write
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      FILE_BACKUP_GCS_BUCKET: ${{ vars.FILE_BACKUP_GCS_BUCKET }}
+      FILE_BACKUP_EXPECTED_KEY_ID: ${{ vars.FILE_BACKUP_EXPECTED_KEY_ID }}
+      FILE_BACKUP_DEST_ROOT: ${{ vars.FILE_BACKUP_DEST_ROOT }}
+      DRILL_RUN: ${{ inputs.run }}
+      DRILL_SAMPLE: ${{ inputs.sample }}
+      DRILL_ORGANIZATION: ${{ inputs.organization }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Validate drill inputs
+        env:
+          HAS_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY != '' }}
+        run: |
+          set -euo pipefail
+          [[ "$DRILL_RUN" == "latest" || "$DRILL_RUN" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::Invalid run id"; exit 1; }
+          [[ "$DRILL_SAMPLE" =~ ^[0-9]{1,4}$ ]] || { echo "::error::Invalid sample size"; exit 1; }
+          [[ -z "$DRILL_ORGANIZATION" || "$DRILL_ORGANIZATION" =~ ^[0-9A-Za-z-]{1,64}$ ]] || { echo "::error::Invalid organization id"; exit 1; }
+          [ -n "$FILE_BACKUP_GCS_BUCKET" ] && [ -n "$FILE_BACKUP_EXPECTED_KEY_ID" ] && [ "$HAS_ENCRYPTION_KEY" = "true" ] || { echo "::error::Private-file backup is not configured"; exit 1; }
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.FILE_BACKUP_WIF_PROVIDER }}
+          service_account: ${{ vars.FILE_BACKUP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Pin one backup run for the whole drill
+        env:
+          FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          # Resolve "latest" exactly once; every later step uses this id, so a
+          # backup finishing mid-drill cannot mix snapshots.
+          node artifacts/api-server/scripts/file-backup-restore.mjs resolve-run --run "$DRILL_RUN" --out "$RUNNER_TEMP/drill-run-id"
+          run_id="$(cat "$RUNNER_TEMP/drill-run-id")"
+          [[ "$run_id" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::Resolved run id is invalid"; exit 1; }
+          echo "DRILL_RUN_ID=$run_id" >> "$GITHUB_ENV"
+
+      - name: Verify a random sample against the manifest and the primary
+        env:
+          FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node artifacts/api-server/scripts/file-backup-restore.mjs verify --run "$DRILL_RUN_ID" --sample "$DRILL_SAMPLE" --compare-source
+
+      - name: Install PostgreSQL 17 psql wrapper
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.github/bin"
+          cat > "$GITHUB_WORKSPACE/.github/bin/psql17" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          docker run --rm --network host -i postgres:17 psql "$@"
+          EOF
+          chmod +x "$GITHUB_WORKSPACE/.github/bin/psql17"
+
+      - name: Restore and verify the run's database dump in a disposable database
+        env:
+          FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
+          PSQL_BIN: ${{ github.workspace }}/.github/bin/psql17
+          RESTORE_ADMIN_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          set -euo pipefail
+          dump="$RUNNER_TEMP/restored.sql.gz"
+          node artifacts/api-server/scripts/file-backup-restore.mjs db-dump --run "$DRILL_RUN_ID" --to "$dump"
+          # Fails on any SQL error outside the explicit Supabase allow-list, a
+          # non-zero psql exit, missing core tables, empty core tables, or
+          # unvalidated constraints. Logs report problems, never row data.
+          node artifacts/api-server/scripts/file-backup-db-verify.mjs --dump "$dump" --files-csv "$RUNNER_TEMP/files.csv"
+
+      - name: Check restored file rows against the backup manifest
+        env:
+          FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
+        run: node artifacts/api-server/scripts/file-backup-restore.mjs check-db-files --run "$DRILL_RUN_ID" --files-csv "$RUNNER_TEMP/files.csv"
+
+      - name: Restore one organization's files on the runner
+        if: ${{ inputs.organization != '' }}
+        env:
+          FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
+        run: node artifacts/api-server/scripts/file-backup-restore.mjs restore --run "$DRILL_RUN_ID" --organization "$DRILL_ORGANIZATION" --to-dir "$RUNNER_TEMP/organization-restore"
+
+      - name: Remove restored material from the runner
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/drill-run-id" "$RUNNER_TEMP/restored.sql.gz" "$RUNNER_TEMP/files.csv" "$RUNNER_TEMP/organization-restore"

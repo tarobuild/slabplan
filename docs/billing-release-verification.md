@@ -31,6 +31,16 @@ Required events are `checkout.session.completed` and
 `customer.subscription.deleted`. Subscribe to
 `checkout.session.async_payment_succeeded` before enabling delayed methods.
 
+The billing portal should use a SlabPlan-only portal configuration (SlabPlan
+terms and privacy links, cancellation at period end, payment-method updates
+and invoice history) rather than the Stripe account's shared default. Set its
+`bpc_...` id as `STRIPE_PORTAL_CONFIGURATION_ID`. The app then creates
+customer-bound portal sessions with that configuration and no longer returns
+the static `STRIPE_CUSTOMER_PORTAL_URL`. That link opens whichever
+configuration owns it, and asks the customer to sign in again by email. An
+invalid id fails closed with 503. Do not edit the shared default
+configuration or account-wide settings for SlabPlan's sake.
+
 An operator can read `/api/internal/billing-readiness` using the existing
 `x-backup-secret` operational credential. It makes read-only Stripe API calls
 using the deployment's own key and returns only readiness booleans. It checks
@@ -65,3 +75,23 @@ card to simulate a sandbox test.
 
 Automated local tests stub provider reads only inside the test process. They
 verify application behavior but do not replace the provider/sandbox checks.
+
+## Evidence Status (2026-09-28)
+
+Restricted evidence records the runs. Summary only:
+
+- Steps 1 to 4: exercised with real Stripe TEST events against the actual
+  application code, including a hosted sandbox checkout and a declined card.
+  In the automated lifecycle run the verification email was captured in
+  process, which proves the token flow but not delivery; real delivery to an
+  owned test inbox was exercised separately in the production release QA.
+- Steps 5 and 6: exercised with Stripe TEST test clocks and provider-signed
+  events: failed renewal, recovery by paying with a new card, payment-method
+  change, cancel at period end, immediate cancellation, retries without
+  payment, replay, tampered and mode-mismatched deliveries, and cross-workspace
+  binding attempts. Portal actions were performed through their equivalent
+  provider API operations, not by clicking through the hosted portal.
+- Access policy observed: `active` grants access; `past_due`, `unpaid` and
+  `canceled` deny it immediately, with no grace period during Stripe retries.
+- Step 7 and the live account's failed-payment, portal, receipt and tax
+  settings still need review. TEST-mode settings are not evidence of live ones.

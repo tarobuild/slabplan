@@ -65,3 +65,20 @@ card to simulate a sandbox test.
 
 Automated local tests stub provider reads only inside the test process. They
 verify application behavior but do not replace the provider/sandbox checks.
+
+## Evidence Status (2026-09-28)
+
+Restricted evidence records the runs. Summary only:
+
+- Steps 1 to 4: exercised with real Stripe TEST events against the actual
+  application code, including a hosted sandbox checkout and a declined card.
+- Steps 5 and 6: exercised with Stripe TEST test clocks and provider-signed
+  events: failed renewal, recovery by paying with a new card, payment-method
+  change, cancel at period end, immediate cancellation, retries without
+  payment, replay, tampered and mode-mismatched deliveries, and cross-workspace
+  binding attempts. Portal actions were performed through their equivalent
+  provider API operations, not by clicking through the hosted portal.
+- Access policy observed: `active` grants access; `past_due`, `unpaid` and
+  `canceled` deny it immediately, with no grace period during Stripe retries.
+- Step 7 and the live account's failed-payment, portal, receipt and tax
+  settings still need review. TEST-mode settings are not evidence of live ones.

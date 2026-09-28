@@ -122,7 +122,11 @@ audit-ready until the following are evidenced:
   storage on September 27. Repeat after production schema changes.
 - A private TEST document passed a byte-for-byte temporary-copy recovery drill
   with cleanup. This does not establish an independent private-file backup or
-  recovery from loss of the primary storage service.
+  recovery from loss of the primary storage service. An encrypted independent
+  backup to a separate provider and its restore drill are implemented and
+  tested with synthetic data ([private-file-backup-runbook.md](private-file-backup-runbook.md)),
+  but they are not operational until the destination is provisioned and a
+  production run and drill succeed.
 - Technical tests and a successful database restore do not establish
   personnel controls, provider MFA, independent review, independent file backup,
   log retention, or incident-response readiness. Maintain explicit evidence
@@ -131,8 +135,14 @@ audit-ready until the following are evidenced:
   demo credentials for customer tenants or privileged provider access.
 - Paid self-service onboarding requires an end-to-end Stripe sandbox result
   and verified live provider configuration. Local signed-webhook tests and a
-  returned checkout URL do not establish either. See
+  returned checkout URL do not establish either. Sandbox lifecycle evidence
+  now exists; the live account's failed-payment, portal, receipt and tax
+  settings still need review. See
   [billing-release-verification.md](billing-release-verification.md).
+- No incident-response or access-review procedure had been written. Drafts
+  now exist ([incident-response-runbook.md](incident-response-runbook.md),
+  [access-review-procedure.md](access-review-procedure.md)); they are not
+  adopted, and no tabletop exercise or access review has been recorded.
 
 ## Auditor Handoff
 

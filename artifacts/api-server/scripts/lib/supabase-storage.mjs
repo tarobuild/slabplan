@@ -308,6 +308,8 @@ export function createSupabaseStorage(env = process.env) {
 
   return {
     bucketName: config.bucketName,
+    // Project URL only (no credentials); backups record it as the primary's identity.
+    projectUrl: config.url,
     headBucket,
     uploadStream,
     uploadBuffer,

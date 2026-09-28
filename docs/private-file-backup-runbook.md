@@ -139,7 +139,17 @@ pnpm --filter @workspace/api-server run restore:files db-dump --run latest --to 
 ```
 
 Restoring into the primary bucket is refused unless `--allow-primary-target`
-is passed during an approved incident. Large objects restored with
+is passed during an approved incident. The primary is identified from the
+run's authenticated manifest (project host and bucket recorded at backup
+time), and also from any `SUPABASE_*` variables in the operator environment; a
+run without a recorded identity is refused. Always give the target as its
+canonical `https://<project-ref>.supabase.co` URL, because a custom-domain
+alias of the primary cannot be recognized.
+
+`--to-dir` must be a real directory owned by the operator and not writable by
+other users. Symbolic links at the root, in any intermediate directory or at a
+file name are refused or skipped, and every file is published with an
+exclusive create plus a containment check. Large objects restored with
 `--to-supabase` use a single streamed request; restore very large files to a
 directory and re-upload them through the resumable path if needed.
 

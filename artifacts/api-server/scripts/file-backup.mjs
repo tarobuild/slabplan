@@ -50,6 +50,7 @@ import {
   readManifestEntries,
   resolveRun,
   RUN_SUMMARY_FORMAT,
+  storageIdentity,
   writeManifest,
 } from "./lib/file-backup-manifest.mjs";
 import { createGcloudTokenProvider, createGcsBackupStore } from "./lib/gcs-backup-store.mjs";
@@ -251,6 +252,11 @@ export async function runFileBackup({
   segmentBytes = DEFAULT_BACKUP_SEGMENT_BYTES,
 }) {
   const { masterKey, keyId, root } = config;
+  // The primary's identity is recorded in the authenticated manifest so a
+  // later storage restore can refuse to target it without an override.
+  const sourceIdentity = storageIdentity(source.projectUrl, source.bucketName);
+  if (!sourceIdentity) throw new Error("Source storage must report its project URL and bucket.");
+  const recordedSource = { url: new URL(source.projectUrl).origin, bucket: source.bucketName };
   const startedAt = now();
   const runId = makeRunId(startedAt);
   // The repository is public, so CI logs carry status only. Counts, sizes
@@ -383,7 +389,7 @@ export async function runFileBackup({
     header: {
       startedAt: startedAt.toISOString(),
       keyId,
-      sourceBucket: source.bucketName,
+      source: recordedSource,
       sourcePrefixes: config.sourcePrefixes,
       dbDumpDate: config.dbDumpDate,
     },
@@ -400,7 +406,7 @@ export async function runFileBackup({
     finishedAt: now().toISOString(),
     keyId,
     previousRunId,
-    sourceBucket: source.bucketName,
+    source: recordedSource,
     sourcePrefixes: config.sourcePrefixes,
     manifestObject: manifest.name,
     manifestPlainSha256: manifest.plainSha256,

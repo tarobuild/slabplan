@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -309,8 +309,10 @@ class FakeSource {
   bucketName: string;
   objects = new Map<string, SourceObject>();
   lieAboutSize = new Set<string>();
-  constructor(bucketName = "slabplan-files") {
+  projectUrl: string;
+  constructor(bucketName = "slabplan-files", projectUrl = "https://primary.example.supabase.co") {
     this.bucketName = bucketName;
+    this.projectUrl = projectUrl;
   }
   put(name: string, data: Buffer, mimetype = "application/octet-stream") {
     this.objects.set(name, { data, eTag: `"${createHash("md5").update(data).digest("hex")}"`, updated: new Date().toISOString(), mimetype, cacheControl: "max-age=3600" });
@@ -536,6 +538,119 @@ describe("independent private-file backup and restore", () => {
       }),
       /primary bucket/,
     );
+
+    // The documented operator environment carries no SUPABASE_* source identity:
+    // the run's authenticated manifest header must still identify the primary.
+    const primaryWrites: string[] = [];
+    await assert.rejects(
+      restore.runCommand({
+        command: "restore",
+        options: { organization: ORG_B, "to-supabase": true },
+        config,
+        dest,
+        env: {
+          RESTORE_TARGET_SUPABASE_URL: "http://primary.example.supabase.co/storage/v1",
+          RESTORE_TARGET_SUPABASE_STORAGE_BUCKET: "slabplan-files",
+          RESTORE_TARGET_SUPABASE_SERVICE_ROLE_KEY: "primary-service-key",
+        },
+        log,
+        createStorage: () => ({ ...target, uploadStream: async (name: string) => { primaryWrites.push(name); } }),
+      }),
+      /primary bucket/,
+    );
+    assert.deepEqual(primaryWrites, [], "nothing may be written to the primary");
+  });
+
+  test("primary-target guard requires a recorded identity and refuses matches without an override", () => {
+    const recordedSource = { url: "https://primary.example.supabase.co", bucket: "slabplan-files" };
+    const other = { SUPABASE_URL: "https://drill.example.supabase.co", SUPABASE_STORAGE_BUCKET: "slabplan-restore-drill" };
+    const primary = { SUPABASE_URL: "https://primary.example.supabase.co", SUPABASE_STORAGE_BUCKET: "slabplan-files" };
+
+    assert.throws(() => restore.assertRestoreTargetAllowed({ recordedSource: undefined, targetEnv: other }), /does not record its primary/);
+    assert.throws(() => restore.assertRestoreTargetAllowed({ recordedSource: { bucket: "slabplan-files" }, targetEnv: other }), /does not record its primary/);
+    assert.throws(() => restore.assertRestoreTargetAllowed({ recordedSource: { url: recordedSource.url }, targetEnv: other }), /does not record its primary/);
+    assert.throws(() => restore.assertRestoreTargetAllowed({ recordedSource: { url: "not a url", bucket: "b" }, targetEnv: other }), /does not record its primary/);
+    assert.throws(() => restore.assertRestoreTargetAllowed({ recordedSource, targetEnv: { SUPABASE_URL: other.SUPABASE_URL } }), /target URL and bucket are required/);
+    assert.throws(() => restore.assertRestoreTargetAllowed({ recordedSource, targetEnv: { SUPABASE_STORAGE_BUCKET: "x" } }), /target URL and bucket are required/);
+
+    for (const url of ["https://primary.example.supabase.co", "https://PRIMARY.example.supabase.co/", "http://primary.example.supabase.co", "https://primary.example.supabase.co/storage/v1"]) {
+      assert.throws(() => restore.assertRestoreTargetAllowed({ recordedSource, targetEnv: { SUPABASE_URL: url, SUPABASE_STORAGE_BUCKET: "slabplan-files" } }), /primary bucket/, url);
+    }
+    // The operator's SUPABASE_* environment is an additional primary identity.
+    assert.throws(() => restore.assertRestoreTargetAllowed({ recordedSource, operatorSourceEnv: other, targetEnv: other }), /primary bucket/);
+
+    assert.deepEqual(restore.assertRestoreTargetAllowed({ recordedSource, targetEnv: other }).override, false);
+    assert.deepEqual(restore.assertRestoreTargetAllowed({ recordedSource, targetEnv: { ...primary, SUPABASE_STORAGE_BUCKET: "slabplan-restore-drill" } }).override, false, "same project, different bucket");
+    assert.deepEqual(restore.assertRestoreTargetAllowed({ recordedSource, targetEnv: primary, allowPrimaryTarget: true }).override, true);
+    assert.deepEqual(restore.assertRestoreTargetAllowed({ recordedSource: undefined, targetEnv: other, allowPrimaryTarget: true }).override, true);
+  });
+
+  test("backups record the primary identity and refuse a source that cannot identify itself", async () => {
+    const config = restore.readRestoreConfig({ FILE_BACKUP_ENCRYPTION_KEY: KEY_HEX, FILE_BACKUP_GCS_BUCKET: fake.bucket });
+    const run = await manifestLib.resolveRun(dest, config.root, "latest");
+    let header: { source?: { url: string; bucket: string } } | null = null;
+    await restore.selectEntries({ dest, root: config.root, masterKey: config.masterKey, run, all: true, onHeader: (value: typeof header) => { header = value; } });
+    assert.deepEqual(header!.source, { url: "https://primary.example.supabase.co", bucket: "slabplan-files" });
+    assert.deepEqual(run.source, header!.source);
+    const anonymous = seedSource().source as unknown as { projectUrl?: string };
+    delete anonymous.projectUrl;
+    await assert.rejects(
+      backup.runFileBackup({ source: anonymous, dest, config: makeConfig({ FILE_BACKUP_DEST_ROOT: "slabplan-file-backup-drill/anonymous" }), now, log }),
+      /project URL and bucket/,
+    );
+  });
+
+  test("directory restores refuse symbolic-link roots, parents and targets", async () => {
+    const config = restore.readRestoreConfig({ FILE_BACKUP_ENCRYPTION_KEY: KEY_HEX, FILE_BACKUP_GCS_BUCKET: fake.bucket });
+    const run = await manifestLib.resolveRun(dest, config.root, "latest");
+    const entries = await restore.selectEntries({ dest, root: config.root, masterKey: config.masterKey, run, organizationId: ORG_A });
+    const scratch = await tempDir();
+    const outside = path.join(scratch, "outside");
+    await mkdir(outside, { mode: 0o700 });
+    const filesUnder = async (dir: string) => (await readdir(dir, { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile() || entry.isSymbolicLink()).map((entry) => path.join(entry.parentPath, entry.name));
+
+    // Root is a symbolic link.
+    const linkedRoot = path.join(scratch, "linked-root");
+    await symlink(outside, linkedRoot, "dir");
+    await assert.rejects(restore.restoreToDirectory({ dest, root: config.root, masterKey: config.masterKey, entries, outDir: linkedRoot, log }), /not a symbolic link/);
+
+    // An intermediate component is a symbolic link to a directory outside the root.
+    const parentCase = path.join(scratch, "parent-case");
+    await mkdir(parentCase, { mode: 0o700 });
+    await symlink(outside, path.join(parentCase, "slabplan"), "dir");
+    const viaParent = await restore.restoreToDirectory({ dest, root: config.root, masterKey: config.masterKey, entries, outDir: parentCase, log });
+    assert.equal(viaParent.restored, 0);
+    assert.equal(viaParent.failed, entries.length);
+    assert.match(viaParent.failures[0].reason, /symbolic link/);
+
+    // A deeper component (organization directory) is a symbolic link.
+    const deepCase = path.join(scratch, "deep-case");
+    await mkdir(path.join(deepCase, "slabplan", "uploads", "organizations"), { recursive: true, mode: 0o700 });
+    await symlink(outside, path.join(deepCase, "slabplan", "uploads", "organizations", ORG_A), "dir");
+    const viaDeep = await restore.restoreToDirectory({ dest, root: config.root, masterKey: config.masterKey, entries, outDir: deepCase, log });
+    assert.equal(viaDeep.restored, 0);
+    assert.equal(viaDeep.failed, entries.length);
+
+    // The final file name is a pre-existing symbolic link: skipped, never followed.
+    const fileCase = path.join(scratch, "file-case");
+    const victim = entries.find((entry: { size: number }) => entry.size > 0)!;
+    const victimPath = path.join(fileCase, ...victim.name.split("/"));
+    await mkdir(path.dirname(victimPath), { recursive: true, mode: 0o700 });
+    const decoy = path.join(outside, "decoy.txt");
+    await writeFile(decoy, "untouched", { mode: 0o600 });
+    await symlink(decoy, victimPath);
+    const viaFile = await restore.restoreToDirectory({ dest, root: config.root, masterKey: config.masterKey, entries, outDir: fileCase, log });
+    assert.equal(viaFile.skippedExisting, 1);
+    assert.equal(viaFile.restored, entries.length - 1);
+    assert.equal(await readFile(decoy, "utf8"), "untouched");
+
+    // Group- or world-writable roots are refused.
+    const shared = path.join(scratch, "shared");
+    await mkdir(shared, { mode: 0o700 });
+    await chmod(shared, 0o777);
+    await assert.rejects(restore.restoreToDirectory({ dest, root: config.root, masterKey: config.masterKey, entries, outDir: shared, log }), /writable by group or other users/);
+
+    assert.deepEqual(await filesUnder(outside), [decoy], "nothing may be written outside the restore root");
   });
 
   test("db-dump restores the day's database dump with hash verification", async () => {

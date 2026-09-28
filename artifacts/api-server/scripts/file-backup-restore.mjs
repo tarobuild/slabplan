@@ -24,8 +24,8 @@
  * Documented in docs/private-file-backup-runbook.md.
  */
 import { randomBytes, randomInt } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { link, lstat, mkdir, readFile, rm, unlink } from "node:fs/promises";
+import { constants as fsConstants, createWriteStream } from "node:fs";
+import { link, lstat, mkdir, readFile, realpath, rm, unlink } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -43,6 +43,7 @@ import {
   normalizeBackupRoot,
   readManifestEntries,
   resolveRun,
+  storageIdentity,
 } from "./lib/file-backup-manifest.mjs";
 import { createGcloudTokenProvider, createGcsBackupStore } from "./lib/gcs-backup-store.mjs";
 import { createSupabaseStorage, getRequiredEnv } from "./lib/supabase-storage.mjs";
@@ -70,7 +71,7 @@ function label(entry) {
 }
 
 /** Collect manifest entries matching a scope. */
-export async function selectEntries({ dest, root, masterKey, run, organizationId = null, all = false, category = null }) {
+export async function selectEntries({ dest, root, masterKey, run, organizationId = null, all = false, category = null, onHeader }) {
   if (organizationId !== null && !ORGANIZATION_ID_PATTERN.test(organizationId)) {
     throw new Error("Organization id contains unsupported characters.");
   }
@@ -78,7 +79,7 @@ export async function selectEntries({ dest, root, masterKey, run, organizationId
     throw new Error("Choose --organization <id> or --all.");
   }
   const selected = [];
-  for await (const entry of readManifestEntries({ dest, root, runId: run.runId, masterKey })) {
+  for await (const entry of readManifestEntries({ dest, root, runId: run.runId, masterKey, onHeader })) {
     if (category && entry.category !== category) continue;
     if (organizationId !== null) {
       // Require both the recorded tenant and the tenant path prefix.
@@ -163,9 +164,9 @@ export async function verifyEntries({ dest, root, masterKey, entries, source = n
   return result;
 }
 
-/** Resolve an object name under a restore directory, rejecting traversal. */
-export function safeRestorePath(outDir, objectName) {
-  const segments = objectName.split("/");
+/** Validate an object name and split it into safe path segments. */
+function objectNameSegments(objectName) {
+  const segments = String(objectName ?? "").split("/");
   if (
     !objectName ||
     objectName.startsWith("/") ||
@@ -173,6 +174,12 @@ export function safeRestorePath(outDir, objectName) {
   ) {
     throw new Error("Manifest entry has an unsafe object name.");
   }
+  return segments;
+}
+
+/** Resolve an object name under a restore directory, rejecting traversal. */
+export function safeRestorePath(outDir, objectName) {
+  const segments = objectNameSegments(objectName);
   const root = path.resolve(outDir);
   const target = path.resolve(root, ...segments);
   if (!target.startsWith(`${root}${path.sep}`)) throw new Error("Manifest entry escapes the restore directory.");
@@ -189,28 +196,97 @@ async function exists(filePath) {
   }
 }
 
+/**
+ * Create or validate the restore root. It must be a real directory (not a
+ * symbolic link) owned by the operator and not writable by other users, so
+ * only the operator's own processes could race the containment checks below.
+ */
+export async function prepareRestoreRoot(outDir) {
+  const resolved = path.resolve(outDir);
+  await mkdir(path.dirname(resolved), { recursive: true, mode: 0o700 });
+  try {
+    await mkdir(resolved, { mode: 0o700 });
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+  }
+  const info = await lstat(resolved);
+  if (info.isSymbolicLink() || !info.isDirectory()) {
+    throw new Error("Restore directory must be a real directory, not a symbolic link.");
+  }
+  if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
+    throw new Error("Restore directory must be owned by the current user.");
+  }
+  if ((info.mode & 0o022) !== 0) {
+    throw new Error("Restore directory must not be writable by group or other users.");
+  }
+  return await realpath(resolved);
+}
+
+/** Create or validate each directory below the root, one component at a time. */
+async function ensureContainedDirectory(realRoot, segments) {
+  let current = realRoot;
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    try {
+      await mkdir(current, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+    const info = await lstat(current);
+    if (info.isSymbolicLink() || !info.isDirectory()) {
+      throw new Error("Restore path contains a symbolic link or a non-directory component.");
+    }
+  }
+  await assertContained(realRoot, current);
+  return current;
+}
+
+/** A directory is contained when its real path is itself and lies under the root. */
+async function assertContained(realRoot, directory) {
+  const real = await realpath(directory);
+  if (real !== directory || (real !== realRoot && !real.startsWith(`${realRoot}${path.sep}`))) {
+    throw new Error("Restore path left the restore directory.");
+  }
+}
+
+// O_EXCL never follows a symbolic link at the final component; O_NOFOLLOW is
+// added where the platform provides it.
+const EXCLUSIVE_CREATE_FLAGS =
+  fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | (fsConstants.O_NOFOLLOW ?? 0);
+
 /** Restore to a local directory; files are kept only after hash verification. */
 export async function restoreToDirectory({ dest, root, masterKey, entries, outDir, log = console.log }) {
   const result = { restored: 0, failed: 0, skippedExisting: 0, bytes: 0, failures: [] };
-  await mkdir(outDir, { recursive: true, mode: 0o700 });
+  const realRoot = await prepareRestoreRoot(outDir);
   for (const entry of entries) {
     let temporary = null;
+    let linkedTarget = null;
     try {
-      const target = safeRestorePath(outDir, entry.name);
+      const segments = objectNameSegments(entry.name);
+      const parent = await ensureContainedDirectory(realRoot, segments.slice(0, -1));
+      const target = path.join(parent, segments.at(-1));
       if (await exists(target)) {
         result.skippedExisting += 1;
         continue;
       }
-      await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-      temporary = `${target}.restore-${randomBytes(6).toString("hex")}`;
+      temporary = path.join(parent, `.restore-${randomBytes(8).toString("hex")}`);
       const opened = await openDecrypted({ dest, root, masterKey, entry });
       await Promise.all([
-        pipeline(opened.stream, createWriteStream(temporary, { flags: "wx", mode: 0o600 })),
+        pipeline(opened.stream, createWriteStream(temporary, { flags: EXCLUSIVE_CREATE_FLAGS, mode: 0o600 })),
         opened.done,
       ]);
       assertMatches(entry, opened.digest);
-      // link() fails if the target appeared meanwhile, so nothing is overwritten.
+      // Re-check containment immediately before publishing the file; link()
+      // fails if the target appeared meanwhile, so nothing is overwritten.
+      await assertContained(realRoot, parent);
       await link(temporary, target);
+      linkedTarget = target;
+      await assertContained(realRoot, parent);
+      const [placed, staged] = await Promise.all([lstat(target), lstat(temporary)]);
+      if (!placed.isFile() || placed.ino !== staged.ino || placed.dev !== staged.dev) {
+        throw new Error("Restored file changed while it was being placed.");
+      }
+      linkedTarget = null;
       await unlink(temporary);
       temporary = null;
       result.restored += 1;
@@ -218,6 +294,11 @@ export async function restoreToDirectory({ dest, root, masterKey, entries, outDi
     } catch (error) {
       result.failed += 1;
       result.failures.push({ label: label(entry), reason: String(error?.message ?? error).split(entry.name).join(label(entry)).slice(0, 300) });
+      if (linkedTarget && temporary) {
+        // Remove only the link this run created, never a pre-existing file.
+        const [placed, staged] = await Promise.all([lstat(linkedTarget).catch(() => null), lstat(temporary).catch(() => null)]);
+        if (placed && staged && placed.ino === staged.ino && placed.dev === staged.dev) await unlink(linkedTarget).catch(() => {});
+      }
     } finally {
       if (temporary) await rm(temporary, { force: true });
     }
@@ -264,13 +345,30 @@ export async function restoreToStorage({ dest, root, masterKey, entries, target,
   return result;
 }
 
-export function assertRestoreTargetAllowed({ sourceEnv, targetEnv, allowPrimaryTarget }) {
-  const normalize = (value) => String(value ?? "").trim().replace(/\/+$/, "").toLowerCase();
-  const sameProject = normalize(sourceEnv.SUPABASE_URL) && normalize(sourceEnv.SUPABASE_URL) === normalize(targetEnv.SUPABASE_URL);
-  const sameBucket = String(sourceEnv.SUPABASE_STORAGE_BUCKET ?? "").trim() === String(targetEnv.SUPABASE_STORAGE_BUCKET ?? "").trim();
-  if (sameProject && sameBucket && !allowPrimaryTarget) {
-    throw new Error("Restore target is the primary bucket. Restore elsewhere, or pass --allow-primary-target during an approved incident.");
+/**
+ * Refuse a storage restore into the primary bucket. The primary is taken from
+ * the run's authenticated manifest header, and also from the operator's
+ * SUPABASE_* environment when present. A run that does not record its primary
+ * is treated as unknown and refused without an explicit override. Identity is
+ * the project host plus bucket: always use the canonical
+ * https://<project-ref>.supabase.co URL, because a custom-domain alias of the
+ * primary project cannot be recognized here.
+ */
+export function assertRestoreTargetAllowed({ recordedSource, operatorSourceEnv = {}, targetEnv, allowPrimaryTarget = false }) {
+  const target = storageIdentity(targetEnv?.SUPABASE_URL, targetEnv?.SUPABASE_STORAGE_BUCKET);
+  if (!target) throw new Error("Restore target URL and bucket are required.");
+  if (allowPrimaryTarget) return { target, override: true };
+  const recorded = storageIdentity(recordedSource?.url, recordedSource?.bucket);
+  if (!recorded) {
+    throw new Error("This backup run does not record its primary storage identity. Refusing a storage restore without --allow-primary-target.");
   }
+  const operator = storageIdentity(operatorSourceEnv.SUPABASE_URL, operatorSourceEnv.SUPABASE_STORAGE_BUCKET);
+  for (const primary of [recorded, operator]) {
+    if (primary && primary.host === target.host && primary.bucket === target.bucket) {
+      throw new Error("Restore target is the primary bucket. Restore elsewhere, or pass --allow-primary-target during an approved incident.");
+    }
+  }
+  return { target, override: false };
 }
 
 /** Remove blobs no retained manifest references. Dry-run unless apply=true. */
@@ -431,8 +529,8 @@ export async function runCommand({ command, options, config, dest, env = process
     return { runId: run.runId, scope: organizationId ? "organization" : "all", ...result };
   }
   if (command === "restore") {
-    const entries = await selectEntries({ dest, root, masterKey, run, organizationId, all: Boolean(options.all) });
     if (options["to-dir"]) {
+      const entries = await selectEntries({ dest, root, masterKey, run, organizationId, all: Boolean(options.all) });
       return { runId: run.runId, ...(await restoreToDirectory({ dest, root, masterKey, entries, outDir: options["to-dir"], log })) };
     }
     if (options["to-supabase"]) {
@@ -441,9 +539,16 @@ export async function runCommand({ command, options, config, dest, env = process
         SUPABASE_STORAGE_BUCKET: getRequiredEnv("RESTORE_TARGET_SUPABASE_STORAGE_BUCKET", env),
         SUPABASE_SERVICE_ROLE_KEY: getRequiredEnv("RESTORE_TARGET_SUPABASE_SERVICE_ROLE_KEY", env),
       };
-      assertRestoreTargetAllowed({ sourceEnv: env, targetEnv, allowPrimaryTarget: Boolean(options["allow-primary-target"]) });
+      let header = null;
+      const scoped = await selectEntries({ dest, root, masterKey, run, organizationId, all: Boolean(options.all), onHeader: (value) => { header = value; } });
+      assertRestoreTargetAllowed({
+        recordedSource: header?.source,
+        operatorSourceEnv: env,
+        targetEnv,
+        allowPrimaryTarget: Boolean(options["allow-primary-target"]),
+      });
       const target = createStorage(targetEnv);
-      return { runId: run.runId, ...(await restoreToStorage({ dest, root, masterKey, entries, target, log })) };
+      return { runId: run.runId, ...(await restoreToStorage({ dest, root, masterKey, entries: scoped, target, log })) };
     }
     throw new Error("Choose --to-dir <path> or --to-supabase.");
   }

@@ -67,6 +67,21 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Host (with any non-default port) plus bucket; null when either is missing. */
+export function storageIdentity(url, bucket) {
+  const rawUrl = String(url ?? "").trim();
+  const rawBucket = String(bucket ?? "").trim();
+  if (!rawUrl || !rawBucket) return null;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (!["https:", "http:"].includes(parsed.protocol) || !parsed.host) return null;
+  return { host: parsed.host.toLowerCase(), bucket: rawBucket };
+}
+
 /** Organization id for tenant-scoped uploads, or null for other objects. */
 export function organizationIdForObject(objectName) {
   const match = /^slabplan\/uploads\/organizations\/([^/]+)\//.exec(objectName);
@@ -109,7 +124,7 @@ export async function writeManifest({ dest, root, runId, masterKey, header, entr
  * Stream a manifest, yielding its object entries only after the header has
  * been validated. Throws if the footer is missing or inconsistent.
  */
-export async function* readManifestEntries({ dest, root, runId, masterKey }) {
+export async function* readManifestEntries({ dest, root, runId, masterKey, onHeader }) {
   const source = await dest.downloadStream(backupPaths.manifest(root, runId));
   const plain = new PassThrough();
   const done = pipeline(source, createBackupDecryptStream(masterKey), plain);
@@ -129,6 +144,7 @@ export async function* readManifestEntries({ dest, root, runId, masterKey }) {
           throw new Error("Backup manifest header does not match the requested run.");
         }
         header = record;
+        onHeader?.(header);
         continue;
       }
       if (record.type === "footer") {

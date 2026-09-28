@@ -26,7 +26,10 @@ before subscription checkout. Existing accounts are not silently marked verified
 or forced into an unannounced lockout. They can verify email and enroll under
 Settings > Account security. Invitations prove mailbox access when their
 single-use password setup link is consumed; invited users are not automatically
-subject to an organization-wide MFA policy.
+subject to an organization-wide MFA policy. New admin invitations and users
+newly promoted to admin require MFA. Promotion revokes the user's existing
+sessions and API tokens so privilege elevation requires a fresh sign-in and
+factor enrollment. Existing demo accounts are not silently opted in.
 
 Every enrolled user's application session must carry factor verification.
 Provider password authentication is exchanged for an application session; raw
@@ -73,6 +76,36 @@ Record receipt separately. Email delivery depends on the application and SMTP;
 the GitHub failure record is the independent fallback, not an independent email
 service. Never put dump contents, customer records or credentials in the public
 repository issue.
+
+When legitimate database growth triggers a size alert, first restore the
+specific backup into an isolated database and review its contents and schema.
+Only after success, record its UTC date and exact compressed size in GitHub
+repository variables `BACKUP_REVIEWED_BASELINE_DATE` and
+`BACKUP_REVIEWED_BASELINE_BYTES`, with the restore-run evidence kept privately.
+The verifier compares against that restored size until three newer daily
+samples establish a rolling median. Missing objects and both downward/upward
+size anomalies still fail; the tolerance is not raised or disabled.
+
+## Durable Security Evidence
+
+Migration `0043_security_events` adds account-security events in the primary
+database. Email verification, MFA enrollment, successful/failed factor checks,
+recovery-code consumption, and account-wide session revocation are recorded
+in the same transaction as the related application change. Records contain
+only event name, timestamp, user ID and workspace ID. They never contain
+passwords, factors, recovery codes, email tokens, request bodies, or files.
+
+The table is not exposed through a customer API. RLS is enabled without public
+policies, and anonymous/authenticated Supabase roles have no table privileges.
+An append-only trigger rejects updates and deletion of records younger than
+400 days. Database owners can still alter database controls; this is not an
+independent, tamper-proof log archive. No automatic purge is currently enabled.
+After the retention period, an authorized operator may remove expired records
+under the approved retention policy, respecting any investigation hold.
+
+The daily logical database backup includes these records. Review evidence in
+restricted storage, never in public GitHub issues. This table covers the events
+listed above, not every provider login, customer action, or infrastructure event.
 
 ## Evidence Still Required
 

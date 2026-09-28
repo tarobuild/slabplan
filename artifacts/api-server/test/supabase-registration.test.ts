@@ -25,7 +25,7 @@ before(async () => {
   process.env.NODE_ENV = "test";
   process.env.LOG_LEVEL = "silent";
   delete process.env.SUPABASE_DATABASE_URL;
-  process.env.DATABASE_URL = testDatabaseUrl;
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? testDatabaseUrl;
   process.env.CORS_ALLOWED_ORIGINS = "https://app.example.com";
   process.env.ACCOUNT_SECURITY_ENCRYPTION_KEY = "b".repeat(64);
   process.env.REGISTER_IP_MAX = "100";

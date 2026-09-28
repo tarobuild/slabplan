@@ -10,6 +10,7 @@ import { sendEmailVerification } from "./email";
 import { logger } from "./logger";
 import { updateSupabaseAuthUser } from "./supabase-auth-session";
 import { clearRefreshTokenCookie, clearUploadTokenCookie } from "./auth";
+import { recordSecurityEvent } from "./security-events";
 
 const CHALLENGE_TTL_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -136,7 +137,11 @@ export async function verifyEmail(token: string): Promise<void> {
       isNull(users.deletedAt),
     );
     const [candidate] = await tx
-      .select({ id: users.id, supabaseAuthUserId: users.supabaseAuthUserId })
+      .select({
+        id: users.id,
+        supabaseAuthUserId: users.supabaseAuthUserId,
+        defaultOrganizationId: users.defaultOrganizationId,
+      })
       .from(users)
       .where(predicate)
       .for("update");
@@ -153,6 +158,7 @@ export async function verifyEmail(token: string): Promise<void> {
         emailVerificationExpiresAt: null,
       })
       .where(eq(users.id, candidate.id));
+    await recordSecurityEvent(tx, "security.email.verified", candidate);
     return candidate;
   });
   if (!user)
@@ -333,6 +339,7 @@ export async function completeSecurityChallenge(
         .update(users)
         .set({ securityChallengeAttempts: user.securityChallengeAttempts + 1 })
         .where(eq(users.id, user.id));
+      await recordSecurityEvent(tx, "security.mfa.failed", user);
       return null;
     }
     const now = new Date();
@@ -372,6 +379,15 @@ export async function completeSecurityChallenge(
             isNull(personalAccessTokens.revokedAt),
           ),
         );
+    await recordSecurityEvent(
+      tx,
+      setup
+        ? "security.mfa.enabled"
+        : /^\d{6}$/.test(code)
+          ? "security.mfa.verified"
+          : "security.mfa.recovery_used",
+      user,
+    );
     return {
       user,
       recoveryCodes,
@@ -397,14 +413,18 @@ export async function completeSecurityChallenge(
 
 export async function revokeAccountSessions(userId: string): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx
+    const [user] = await tx
       .update(users)
       .set({
         sessionsRevokedAt: new Date(),
         securityChallengeHash: null,
         mfaPendingSecretEncrypted: null,
       })
-      .where(activeUser(userId));
+      .where(activeUser(userId))
+      .returning({
+        id: users.id,
+        defaultOrganizationId: users.defaultOrganizationId,
+      });
     await tx
       .update(personalAccessTokens)
       .set({ revokedAt: new Date() })
@@ -414,6 +434,7 @@ export async function revokeAccountSessions(userId: string): Promise<void> {
           isNull(personalAccessTokens.revokedAt),
         ),
       );
+    if (user) await recordSecurityEvent(tx, "security.sessions.revoked", user);
   });
   logger.info(
     { event: "security.sessions.revoked", userId },

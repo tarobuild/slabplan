@@ -1,0 +1,59 @@
+import { billingPlans, getAppPublicUrl, getStripeClient, getStripePriceId } from "./stripe";
+import { HttpError } from "./http";
+
+export async function assertBillingReadyForCheckout() {
+  if (process.env.NODE_ENV !== "production") return;
+  const result = await inspectBillingReadiness();
+  if (!result.ready) throw new HttpError(503, "Subscription checkout is temporarily unavailable. Please contact support before making a payment.", undefined, "billing-unavailable");
+}
+
+export async function inspectBillingReadiness() {
+  const checks: Record<string, boolean> = {
+    liveKeyConfigured: /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY?.trim() ?? ""),
+    signingSecretConfigured: Boolean(process.env.STRIPE_WEBHOOK_SECRET?.trim()),
+    providerReachable: false,
+    chargesEnabled: false,
+    priceActive: false,
+    priceMatchesPlan: false,
+    webhookEnabled: false,
+    webhookEventsConfigured: false,
+    paymentLinkMatchesPlan: !process.env.STRIPE_PAYMENT_LINK_URL?.trim(),
+  };
+  try {
+    const stripe = getStripeClient();
+    const account = await stripe.accounts.retrieve(null);
+    checks.providerReachable = true;
+    checks.chargesEnabled = account.charges_enabled === true;
+    const price = await stripe.prices.retrieve(getStripePriceId("pro"));
+    checks.priceActive = price.active && price.livemode;
+    checks.priceMatchesPlan = price.currency === "usd" && price.unit_amount === billingPlans.pro.monthlyUsd * 100 &&
+      price.type === "recurring" && price.recurring?.interval === "month" && price.recurring.interval_count === 1;
+    const configuredPaymentLink = process.env.STRIPE_PAYMENT_LINK_URL?.trim();
+    if (configuredPaymentLink) {
+      const url = new URL(configuredPaymentLink);
+      if (url.protocol !== "https:" || url.hostname !== "buy.stripe.com" || url.username || url.password) throw new Error("Invalid payment link");
+      for await (const link of stripe.paymentLinks.list({ limit: 100 })) {
+        const providerUrl = new URL(link.url);
+        if (providerUrl.origin !== url.origin || providerUrl.pathname !== url.pathname) continue;
+        const items = await stripe.paymentLinks.listLineItems(link.id, { limit: 100 });
+        checks.paymentLinkMatchesPlan = link.active && link.livemode &&
+          !link.metadata.organizationId && !link.subscription_data?.metadata.organizationId &&
+          !link.optional_items?.length && !items.has_more && items.data.length === 1 &&
+          items.data[0]?.price?.id === getStripePriceId("pro") && items.data[0].quantity === 1 &&
+          !items.data[0].adjustable_quantity?.enabled;
+        break;
+      }
+    }
+    const expectedUrl = new URL("/api/billing/stripe/webhook", getAppPublicUrl()).toString();
+    const required = ["checkout.session.completed", "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"];
+    for await (const endpoint of stripe.webhookEndpoints.list({ limit: 100 })) {
+      if (endpoint.url !== expectedUrl || endpoint.status !== "enabled" || !endpoint.livemode) continue;
+      checks.webhookEnabled = true;
+      checks.webhookEventsConfigured ||= required.every((type) => endpoint.enabled_events.some((enabled) => enabled === type || enabled === "*"));
+    }
+  } catch {
+    // Provider errors can contain account details. Return only bounded booleans;
+    // this health check does not expose credentials, customers, or raw errors.
+  }
+  return { ready: Object.values(checks).every(Boolean), checks, scope: "configuration_only" as const };
+}

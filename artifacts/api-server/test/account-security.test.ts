@@ -13,9 +13,10 @@ process.env.ACCOUNT_SECURITY_ENCRYPTION_KEY = "c".repeat(64);
 process.env.JWT_ACCESS_SECRET = "security-test-access-secret-not-production";
 process.env.JWT_REFRESH_SECRET = "security-test-refresh-secret-not-production";
 process.env.JWT_UPLOAD_SECRET = "security-test-upload-secret-not-production";
+process.env.APP_PUBLIC_URL = "https://app.example.test";
 
 const { db, pool } = await import("@workspace/db");
-const { users, organizations, organizationMemberships, personalAccessTokens } = await import("@workspace/db/schema");
+const { users, organizations, organizationMemberships, personalAccessTokens, securityEvents, activityLog } = await import("@workspace/db/schema");
 const { eq, inArray } = await import("drizzle-orm");
 const security = await import("../src/lib/account-security.ts");
 const auth = await import("../src/lib/auth.ts");
@@ -40,6 +41,7 @@ before(async () => {
 after(async () => {
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   if (ids.length) {
+    await db.delete(activityLog).where(inArray(activityLog.entityId, ids));
     await db.delete(personalAccessTokens).where(inArray(personalAccessTokens.userId, ids));
     await db.delete(organizationMemberships).where(inArray(organizationMemberships.userId, ids));
     await db.delete(users).where(inArray(users.id, ids));
@@ -71,6 +73,93 @@ async function activate(userId: string) {
   return { ...result, secret: enrollment.secret, code };
 }
 
+async function inviteSecurityFixture(owner: Awaited<ReturnType<typeof fixture>>, role: string) {
+  const response = await post("/users", { email: `test-invite-${crypto.randomUUID()}@example.test`, fullName: "TEST Invited User", role }, auth.signAccessToken(owner));
+  const body = await response.json();
+  assert.equal(response.status, 201, JSON.stringify(body));
+  ids.push(body.user.id);
+  return body;
+}
+
+test("new admin invitations require factor enrollment before issuing an application session", async () => {
+  const owner = await fixture();
+  const invitation = await inviteSecurityFixture(owner, "admin");
+  assert.equal((await security.readSecurityUser(invitation.user.id)).mfaRequired, true);
+  const accepted = await post("/auth/accept-invite", { token: invitation.inviteToken, email: invitation.user.email, password, accepted_terms_version: "2026-08-19", accepted_privacy_version: "2026-08-19" });
+  const body = await accepted.json();
+  assert.equal(accepted.status, 200, JSON.stringify(body));
+  assert.equal(body.setupRequired, true);
+  assert.equal(body.accessToken, undefined);
+  const enrollment = await security.beginSecurityEnrollment(body.challengeToken);
+  assert.ok(enrollment.secret);
+});
+
+test("promotion to admin requires MFA and revokes the previously valid session", async () => {
+  const owner = await fixture();
+  const invitation = await inviteSecurityFixture(owner, "crew_member");
+  const accepted = await post("/auth/accept-invite", { token: invitation.inviteToken, email: invitation.user.email, password, accepted_terms_version: "2026-08-19", accepted_privacy_version: "2026-08-19" });
+  const oldSession = await accepted.json();
+  assert.equal(accepted.status, 200, JSON.stringify(oldSession));
+  assert.ok(oldSession.accessToken);
+  const [personalToken] = await db.insert(personalAccessTokens).values({ userId: invitation.user.id, organizationId: owner.defaultOrganizationId, name: "TEST promotion token", tokenHash: crypto.randomBytes(32).toString("hex"), tokenPrefix: "test", lastFour: "test" }).returning();
+  const changed = await fetch(`${baseUrl}/users/${invitation.user.id}`, { method: "PATCH", headers: { "content-type": "application/json", "x-requested-with": "XMLHttpRequest", authorization: `Bearer ${auth.signAccessToken(owner)}` }, body: JSON.stringify({ role: "admin" }) });
+  assert.equal(changed.status, 200);
+  assert.equal((await security.readSecurityUser(invitation.user.id)).mfaRequired, true);
+  const [revokedToken] = await db.select().from(personalAccessTokens).where(eq(personalAccessTokens.id, personalToken!.id));
+  assert.ok(revokedToken!.revokedAt);
+  assert.equal((await fetch(`${baseUrl}/users/me`, { headers: { authorization: `Bearer ${oldSession.accessToken}` } })).status, 401);
+  const nextLogin = await post("/auth/login", { email: invitation.user.email, password });
+  assert.equal((await nextLogin.json()).setupRequired, true);
+});
+
+test("security history rejects rewriting and early deletion, while allowing expired retention cleanup", async () => {
+  // Exercise the real migration in a rolled-back transaction, including on a
+  // test database initially provisioned from the Drizzle schema.
+  const { readFile } = await import("node:fs/promises");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "DROP TRIGGER IF EXISTS security_events_append_only ON security_events",
+    );
+    await client.query(
+      await readFile(
+        new URL(
+          "../../../lib/db/migrations/0043_security_events.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const current = crypto.randomUUID();
+    const old = crypto.randomUUID();
+    await client.query(
+      "INSERT INTO security_events (id, event, created_at) VALUES ($1, 'test', now()), ($2, 'test', now() - interval '401 days')",
+      [current, old],
+    );
+    for (const query of [
+      "UPDATE security_events SET event = 'rewritten' WHERE id = $1",
+      "DELETE FROM security_events WHERE id = $1",
+    ]) {
+      await client.query("SAVEPOINT reject_change");
+      await assert.rejects(client.query(query, [current]), /append-only/);
+      await client.query("ROLLBACK TO SAVEPOINT reject_change");
+    }
+    const deleted = await client.query(
+      "DELETE FROM security_events WHERE id = $1",
+      [old],
+    );
+    assert.equal(deleted.rowCount, 1);
+    const permissions = await client.query(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'security_events'::regclass",
+    );
+    assert.equal(permissions.rows[0].relrowsecurity, true);
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
+  }
+});
+
 test("enrollment encrypts factors and hashes recovery codes; old sessions cannot bypass MFA", async () => {
   const user = await fixture(true);
   const before = auth.signAccessToken(user);
@@ -92,6 +181,12 @@ test("enrollment encrypts factors and hashes recovery codes; old sessions cannot
   const body = await status.json();
   assert.deepEqual(Object.keys(body).sort(), ["email", "emailVerified", "mfaEnabled", "mfaRequired", "recoveryCodesRemaining"].sort());
   assert.equal(body.recoveryCodesRemaining, 10);
+  const events = await db.select().from(securityEvents).where(eq(securityEvents.userId, user.id));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event, "security.mfa.enabled");
+  assert.equal(events[0].organizationId, user.defaultOrganizationId);
+  assert.ok(!JSON.stringify(events).includes(enabled.secret));
+  assert.ok(!JSON.stringify(events).includes(enabled.recoveryCodes![0]!));
 });
 
 test("challenge attempts persist and five wrong codes invalidate enrollment", async () => {
@@ -102,6 +197,8 @@ test("challenge attempts persist and five wrong codes invalidate enrollment", as
   const correct = await generate({ secret: enrollment.secret });
   await assert.rejects(security.completeSecurityChallenge(token, correct, "setup"));
   assert.equal((await security.readSecurityUser(user.id)).securityChallengeAttempts, 5);
+  const events = await db.select().from(securityEvents).where(eq(securityEvents.userId, user.id));
+  assert.equal(events.filter((event) => event.event === "security.mfa.failed").length, 5);
 });
 
 test("expired and superseded challenges cannot enroll an authenticator", async () => {
@@ -134,6 +231,8 @@ test("recovery code consumption is atomic and bound to its account", async () =>
   ]);
   assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
   assert.equal((await security.readSecurityUser(user.id)).mfaRecoveryHashes.length, 9);
+  const events = await db.select().from(securityEvents).where(eq(securityEvents.userId, user.id));
+  assert.equal(events.filter((event) => event.event === "security.mfa.recovery_used").length, 1);
   const other = await fixture();
   await activate(other.id);
   const otherToken = await security.issueSecurityChallenge(other.id, "login");

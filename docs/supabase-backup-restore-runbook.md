@@ -1,6 +1,6 @@
 # SlabPlan Supabase Backup and Restore Runbook
 
-Last updated: 2026-05-17
+Last updated: 2026-09-27
 
 ## Current Position
 
@@ -21,15 +21,14 @@ repository secrets are present as of 2026-05-17:
 - `SUPABASE_STORAGE_BUCKET`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-Earlier failure emails came from workflow runs before those secrets were set.
-The latest manual Daily DB backup workflow run completed successfully on
-2026-05-17.
+The September 27 daily backup workflow completed successfully. Its logical
+backup was restored into a disposable PostgreSQL 17 database, with core-table
+sanity checks passing. Production was not overwritten. This verifies database
+recovery from the tested snapshot, not private-file recovery or a guaranteed
+recovery time.
 
-The latest manual DB restore drill workflow run completed successfully on
-2026-05-17. It restored `backups/db/2026-05-17.sql.gz` into a temporary
-PostgreSQL 17 database and completed the core table sanity checks.
-
-Production dashboard status checked on 2026-05-17:
+Historical production dashboard observation on 2026-05-17 (not a current plan
+or entitlement verification):
 
 - Supabase org: `slabplan`
 - Plan: Pro
@@ -37,9 +36,17 @@ Production dashboard status checked on 2026-05-17:
 - Dashboard status: scheduled physical backup available,
   `2026-05-17 07:52:07 +0000`
 
-That means native Supabase daily backup retention is available for early
-production readiness. SlabPlan still keeps the GitHub/Supabase Storage logical
-backup workflow as the off-site recovery path and restore-drill source.
+The GitHub job stores its logical dump in Supabase Storage. Because that is
+the same provider as the primary database, it must not be described as an
+independent off-site disaster-recovery copy. Current native backup availability
+and retention must be checked in the production project before relying on them.
+
+The size verifier retains missing-object detection and both upward and downward
+anomaly bounds. A reviewed successful restore can establish an explicit baseline
+using `BACKUP_REVIEWED_BASELINE_DATE` and `BACKUP_REVIEWED_BASELINE_BYTES`.
+The reviewed anchor is used until three subsequent daily samples are available;
+the rolling median is then used again. Never change the baseline just to silence
+an alert without investigating and restoring the affected snapshot.
 
 ## Backup Policy
 
@@ -97,8 +104,8 @@ database when the job finishes.
    network restrictions, and edge functions if any are added later.
 5. Recreate/migrate storage bucket objects. Database backup metadata alone is
    not enough to restore private file contents.
-6. Apply SlabPlan environment variables to a temporary Replit Reserved VM
-   deployment pointed at the restored project.
+6. Apply SlabPlan environment variables to an isolated non-production deployment
+   pointed at the restored project. Do not redirect the live deployment.
 7. Run the smoke test checklist against the restored environment.
 8. Tear down the restored project after the drill unless it is being promoted
    to a long-lived environment.
@@ -114,8 +121,14 @@ recovery drill must include at least one uploaded file:
 4. Confirm the app can list, download, and signed-view the file from the
    restored environment.
 
-## Open Owner Action
+## Open Recovery Gates
 
-Upgrade the production Supabase project if native dashboard backups are required
-before paid launch. The 2026-05-17 dashboard check shows the project is still on
-Free with no visible native backups.
+- Verify current native backup retention and project entitlement directly with
+  the provider. Do not infer today's tier from historical notes.
+- Configure an access-restricted backup destination independent of the primary
+  Supabase project, with versioned retention and bounded operating costs.
+- Back up private object contents as well as the database, and restore samples
+  from that destination with byte-for-byte verification. A temporary copy within
+  the primary bucket does not satisfy this gate.
+- Define recovery-point and recovery-time commitments from tested capabilities.
+  Do not advertise near-zero data loss or a recovery SLA without evidence.

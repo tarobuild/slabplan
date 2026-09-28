@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { logger } from "../lib/logger";
 import { HttpError, asyncHandler } from "../lib/http";
 import { sendBackupFailureEmail } from "../lib/email";
+import { inspectBillingReadiness } from "../lib/billing-readiness";
 
 /**
  * Internal webhook that lets an external scheduler (e.g. a GitHub Actions
@@ -63,6 +64,15 @@ function constantTimeEqual(a: string, b: string): boolean {
   if (ab.length !== bb.length) return false;
   return crypto.timingSafeEqual(ab, bb);
 }
+
+router.get("/internal/billing-readiness", asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const expected = process.env.BACKUP_TRIGGER_SECRET;
+  if (!expected || expected.length < 32) throw new HttpError(503, "Operational authentication is not configured.");
+  if (!constantTimeEqual(req.get("x-backup-secret") ?? "", expected)) throw new HttpError(401, "Invalid operational credentials.");
+  const result = await inspectBillingReadiness();
+  res.status(result.ready ? 200 : 503).json(result);
+}));
 
 router.post("/internal/backup-alert", asyncHandler(async (req, res) => {
   const expected = process.env.BACKUP_TRIGGER_SECRET;

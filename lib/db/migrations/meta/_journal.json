@@ -329,6 +329,14 @@
       "tag": "0042_account_security",
       "breakpoints": true,
       "checksum": "29bcd856e907517d061b9bfc2daafa06a1ed2840a290b7045d2cc28a4e1a439d"
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790551404613,
+      "tag": "0043_security_events",
+      "breakpoints": true,
+      "checksum": "32dc4595be8bdd4bae6a24ff3b67942dac385838ee65e43041317936acfa9d7f"
     }
   ]
 }

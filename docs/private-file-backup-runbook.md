@@ -163,7 +163,22 @@ policies (see the Data API containment record) and follow
 independent copy to verify a random sample against the primary, restore the
 run's database dump into a disposable PostgreSQL 17 database, check that every
 live `files` row has a backed-up object bound to the same organization, and
-optionally restore one organization's files on the runner. Proposed cadence:
+optionally restore one organization's files on the runner.
+
+The database step (`artifacts/api-server/scripts/file-backup-db-verify.mjs`,
+shared with the existing database drill through `scripts/lib/pg-restore.mjs`)
+fails closed. Every psql error line is examined and any error outside the
+explicit Supabase Vault allow-list fails. So do a non-zero psql exit, a
+damaged dump, a missing table that the dump's own applied migrations create,
+an empty `organizations`, `users` or migration ledger, and an applied
+migration unknown to the repository. Intentional `NOT VALID` tenant foreign
+keys (migration 0033) are preserved rather than flagged. Do not widen the
+allow-list to make a drill pass; investigate the error first.
+
+```
+RESTORE_ADMIN_DATABASE_URL=<disposable server> \
+  node artifacts/api-server/scripts/file-backup-db-verify.mjs --dump <path>.sql.gz
+``` Proposed cadence:
 after provisioning, after any backup code change, and quarterly. Retain the run
 link and outcome in restricted evidence storage.
 

@@ -45,6 +45,10 @@ test("the restore drill is manual, validates inputs and never writes production"
   assert.doesNotMatch(text, /--to-supabase|--allow-primary-target/);
   assert.match(text, /Validate drill inputs/);
   assert.match(text, /check-db-files/);
+  // Database restores fail closed through the shared verifier.
+  assert.doesNotMatch(text, /\|\|\s*true/, "restore errors must never be waived");
+  assert.doesNotMatch(text, /ON_ERROR_STOP=0/);
+  assert.match(text, /file-backup-db-verify\.mjs --dump "\$dump" --files-csv/);
   // Inputs reach shell only through environment variables.
   assert.doesNotMatch(text, /run: .*\$\{\{\s*inputs\./);
 });
@@ -53,6 +57,8 @@ test("backup scripts depend only on Node built-ins and local helpers", async () 
   const files = [
     "scripts/file-backup.mjs",
     "scripts/file-backup-restore.mjs",
+    "scripts/file-backup-db-verify.mjs",
+    "scripts/lib/pg-restore.mjs",
     "scripts/lib/backup-crypto.mjs",
     "scripts/lib/gcs-backup-store.mjs",
     "scripts/lib/file-backup-manifest.mjs",

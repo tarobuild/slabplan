@@ -54,6 +54,13 @@ import {
   writeManifest,
 } from "./lib/file-backup-manifest.mjs";
 import { createGcloudTokenProvider, createGcsBackupStore } from "./lib/gcs-backup-store.mjs";
+import {
+  classifyStoredObject,
+  createManifestCapture,
+  isMultipartManifestContentType,
+  multipartClosureProblems,
+  multipartSummary,
+} from "./lib/multipart-manifest.mjs";
 import { createSupabaseStorage, getRequiredEnv } from "./lib/supabase-storage.mjs";
 
 export const DEFAULT_SOURCE_PREFIXES = ["slabplan/uploads/"];
@@ -186,19 +193,37 @@ async function loadPreviousIndex({ dest, root, masterKey, log }) {
   const index = new Map();
   if (!previousRun) return { previousRunId: null, index };
   for await (const entry of readManifestEntries({ dest, root, runId: previousRun.runId, masterKey })) {
-    index.set(entry.blobDigest, { sha256: entry.sha256, size: entry.size });
+    index.set(entry.blobDigest, { sha256: entry.sha256, size: entry.size, classification: classificationFromEntry(entry) });
   }
   log(`[backup] previous run ${previousRun.runId}`);
   return { previousRunId: previousRun.runId, index };
 }
 
+function contentTypeOf(object) {
+  return object.metadata?.mimetype ?? object.metadata?.contentType ?? null;
+}
+
+/** Restore the recorded classification of a carried-forward entry. */
+function classificationFromEntry(entry) {
+  if (entry.multipart) return { kind: "multipart", summary: entry.multipart };
+  if (entry.invalidMultipart) return { kind: "invalid", reason: entry.invalidMultipart };
+  return { kind: "native" };
+}
+
+function classify(object, capture) {
+  const result = classifyStoredObject({ objectName: object.name, contentType: contentTypeOf(object), capture });
+  if (result.kind === "multipart") return { kind: "multipart", summary: multipartSummary(result.manifest) };
+  return result;
+}
+
 /** Download and authenticate an existing blob to recover its plaintext hash. */
-async function hashExistingBlob({ dest, blobName, masterKey }) {
+async function hashExistingBlob({ dest, blobName, masterKey, object }) {
   const digest = createDigestPassThrough();
+  const capture = createManifestCapture({ declared: isMultipartManifestContentType(contentTypeOf(object)) });
   const sink = new PassThrough();
   sink.resume();
-  await pipeline(await dest.downloadStream(blobName), createBackupDecryptStream(masterKey), digest.stream, sink);
-  return { sha256: digest.result.sha256Hex, size: digest.result.bytes };
+  await pipeline(await dest.downloadStream(blobName), createBackupDecryptStream(masterKey), digest.stream, capture.stream, sink);
+  return { sha256: digest.result.sha256Hex, size: digest.result.bytes, classification: classify(object, capture.result) };
 }
 
 async function copyObject({ source, dest, object, blobName, masterKey, keyId, segmentBytes }) {
@@ -207,10 +232,14 @@ async function copyObject({ source, dest, object, blobName, masterKey, keyId, se
     throw new Error("Source listing did not report a valid object size.");
   }
   const digest = createDigestPassThrough();
+  // Keep a bounded copy of anything that could be a multipart manifest so
+  // the run can check that every part the file needs was also captured.
+  const capture = createManifestCapture({ declared: isMultipartManifestContentType(contentTypeOf(object)) });
   let stored = null;
   await pipeline(
     await source.downloadStream(object.name),
     digest.stream,
+    capture.stream,
     createExactSizeGuard(expectedBytes),
     createBackupEncryptStream(masterKey, { segmentBytes }),
     async (encrypted) => {
@@ -224,11 +253,12 @@ async function copyObject({ source, dest, object, blobName, masterKey, keyId, se
   if (stored?.size !== expectedStored) {
     throw new Error(`Stored blob is ${stored?.size} bytes, expected ${expectedStored}.`);
   }
-  return { sha256: digest.result.sha256Hex, size: digest.result.bytes };
+  return { sha256: digest.result.sha256Hex, size: digest.result.bytes, classification: classify(object, capture.result) };
 }
 
 function manifestEntryFor(object, category, blobDigest, hashed) {
   const metadata = object.metadata ?? {};
+  const classification = hashed.classification ?? { kind: "native" };
   return {
     name: object.name,
     category,
@@ -240,6 +270,8 @@ function manifestEntryFor(object, category, blobDigest, hashed) {
     sourceETag: metadata.eTag ?? null,
     sourceUpdatedAt: metadata.lastModified ?? object.updated ?? null,
     blobDigest,
+    ...(classification.kind === "multipart" ? { multipart: classification.summary } : {}),
+    ...(classification.kind === "invalid" ? { invalidMultipart: classification.reason } : {}),
   };
 }
 
@@ -301,7 +333,7 @@ export async function runFileBackup({
 
   const entries = [];
   const toCopy = [];
-  const counts = { sourceObjects: candidates.length, excluded, carried: 0, recovered: 0, copied: 0, vanished: 0, failed: 0, deferred: 0 };
+  const counts = { sourceObjects: candidates.length, excluded, carried: 0, recovered: 0, copied: 0, vanished: 0, failed: 0, deferred: 0, multipartFiles: 0, multipartIncomplete: 0 };
   let sourceBytes = 0;
 
   for (const candidate of candidates) {
@@ -325,7 +357,7 @@ export async function runFileBackup({
       continue;
     }
     try {
-      const hashed = await hashExistingBlob({ dest, blobName, masterKey });
+      const hashed = await hashExistingBlob({ dest, blobName, masterKey, object });
       if (hashed.size !== size) throw new Error(`Existing blob holds ${hashed.size} bytes, listed ${size}.`);
       entries.push(manifestEntryFor(object, candidate.category, blobDigest, hashed));
       counts.recovered += 1;
@@ -379,6 +411,24 @@ export async function runFileBackup({
     }
   });
   entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+  // Recovery coverage: a file stored as a multipart manifest is only
+  // recoverable if every part it names is in this same run with its size.
+  for (const entry of entries) {
+    if (entry.multipart) counts.multipartFiles += 1;
+    if (entry.invalidMultipart) {
+      const label = `blob:${entry.blobDigest.slice(0, 12)}`;
+      failures.push({ label, reason: entry.invalidMultipart });
+      counts.multipartIncomplete += 1;
+    }
+  }
+  const incomplete = new Set();
+  for (const problem of multipartClosureProblems(entries)) {
+    const label = `blob:${problem.entry.blobDigest.slice(0, 12)}`;
+    failures.push({ label, reason: problem.reason });
+    incomplete.add(problem.entry.name);
+  }
+  counts.multipartIncomplete += incomplete.size;
 
   const manifest = await writeManifest({
     dest,

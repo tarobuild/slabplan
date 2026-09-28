@@ -46,6 +46,7 @@ run. No recovery-time objective or near-zero data-loss claim is made.
 | Integrity | SHA-256 of every plaintext object in the manifest; exact source size enforced before an upload is finalized; ciphertext MD5 compared with the stored object; every run hash-checks a random sample of ten restored objects. |
 | Memory | Bounded streaming. Local synthetic tests: 1 GiB and 4 GiB objects round-tripped with matching SHA-256 at about 228 MiB and 233 MiB peak process RSS (fake provider in the same process). This is not a provider throughput or 50+ GiB measurement. |
 | Incremental | Unchanged object versions are carried forward from the previous manifest. Changed objects create a new immutable version. |
+| Recovery coverage | Listing is not treated as proof of recoverability. Objects stored as legacy multipart manifests are recognized with the application's own rules (manifest content type, or an undeclared body of at most 1 MiB that parses as a valid manifest for its own path). Each run records every part and fails, as `partial`, when a part is missing, has a different size, points outside the file's own `.parts/` path (and therefore outside its organization) or when a declared manifest cannot be read. Carried-forward files are re-checked on every run. |
 | Cost bounds | `FILE_BACKUP_MAX_NEW_BYTES` (default 100 GiB copied per run; excess is deferred and the run fails for review), `FILE_BACKUP_MAX_OBJECTS` (default 250,000), a Google Cloud budget alert, and operator-run pruning. |
 | Alerts | A failed or partial run fails the workflow, which opens or updates a GitHub issue and emails `SECURITY_ALERT_EMAIL` through `/api/internal/backup-alert`. Missing configuration also fails loudly. |
 | Public logs | The repository is public, so workflow logs show only run id, key id, status, failure/deferral counts and redacted failure reasons. Counts and sizes stay in the private run summary. |
@@ -164,6 +165,17 @@ policies (see the Data API containment record) and follow
 `docs/supabase-backup-restore-runbook.md`.
 
 ## Restore drill
+
+Both layers check recovery coverage: the daily backup rejects incomplete
+multipart files at backup time, and the drill checks again against the
+restored database. A file row counts as covered only when its object was
+backed up for the same organization at the row's size: an ordinary object must
+match the row exactly, and a multipart file must declare that total with every
+part present in the same run. Rows without a recorded size are reported, not
+assumed to match. The drill resolves `latest` once, validates the id and uses
+that one run for every step, so a backup finishing mid-drill cannot mix
+snapshots. The daily job verifies the run it just wrote, read from its own
+private summary.
 
 `.github/workflows/file-restore-drill.yml` (manual) uses only the
 independent copy to verify a random sample against the primary, restore the

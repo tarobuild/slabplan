@@ -97,10 +97,16 @@ jobs:
           FILE_BACKUP_SUMMARY_PATH: ${{ runner.temp }}/file-backup-summary.json
         run: node artifacts/api-server/scripts/file-backup.mjs
 
-      - name: Verify a random restore sample
+      - name: Verify a random restore sample from this run
         env:
           FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
-        run: node artifacts/api-server/scripts/file-backup-restore.mjs verify --run latest --sample 10
+          SUMMARY_PATH: ${{ runner.temp }}/file-backup-summary.json
+        run: |
+          set -euo pipefail
+          # Verify the run this job just wrote, never a fresh "latest" lookup.
+          run_id="$(jq -r '.runId' "$SUMMARY_PATH")"
+          [[ "$run_id" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::Backup run id is invalid"; exit 1; }
+          node artifacts/api-server/scripts/file-backup-restore.mjs verify --run "$run_id" --sample 10
 
       - name: Record run status
         if: always()

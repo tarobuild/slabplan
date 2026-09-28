@@ -36,7 +36,10 @@ test("the scheduled backup runs after the database backup, fails loudly when unc
   assert.match(text, /cron: "30 10 \* \* \*"/);
   assert.match(await workflow("db-backup.yml"), /cron: "0 9 \* \* \*"/);
   assert.match(text, /Private-file backup is not configured; missing/);
-  assert.match(text, /file-backup-restore\.mjs verify --run latest --sample 10/);
+  // The sample check verifies the run this job wrote, never a later "latest".
+  assert.match(text, /run_id="\$\(jq -r '\.runId' "\$SUMMARY_PATH"\)"/);
+  assert.match(text, /file-backup-restore\.mjs verify --run "\$run_id" --sample 10/);
+  assert.doesNotMatch(text, /--run latest/);
   assert.match(text, /needs\.backup\.result == 'failure'/);
   assert.match(text, /\/api\/internal\/backup-alert/);
   assert.match(text, /cancel-in-progress: false/);
@@ -55,6 +58,16 @@ test("the restore drill is manual, validates inputs and never writes production"
   assert.doesNotMatch(text, /\|\|\s*true/, "restore errors must never be waived");
   assert.doesNotMatch(text, /ON_ERROR_STOP=0/);
   assert.match(text, /file-backup-db-verify\.mjs --dump "\$dump" --files-csv/);
+  // One immutable run is resolved once and reused, so a backup finishing
+  // mid-drill cannot mix snapshots between steps.
+  const invocations = [...text.matchAll(/file-backup-restore\.mjs (\S+) --run "\$(\w+)"/g)].map((match) => [match[1], match[2]]);
+  assert.deepEqual(invocations.filter(([command]) => command === "resolve-run"), [["resolve-run", "DRILL_RUN"]]);
+  const pinnedSteps = invocations.filter(([command]) => command !== "resolve-run");
+  assert.deepEqual(pinnedSteps.map(([command]) => command).sort(), ["check-db-files", "db-dump", "restore", "verify"]);
+  assert.ok(pinnedSteps.every(([, variable]) => variable === "DRILL_RUN_ID"), JSON.stringify(pinnedSteps));
+  assert.ok(text.indexOf("resolve-run") < text.indexOf('verify --run "$DRILL_RUN_ID"'));
+  assert.match(text, /echo "DRILL_RUN_ID=\$run_id" >> "\$GITHUB_ENV"/);
+  assert.match(text, /concurrency:\s*\n\s*group: private-file-restore-drill/);
   // Inputs reach shell only through environment variables.
   assert.doesNotMatch(text, /run: .*\$\{\{\s*inputs\./);
 });
@@ -65,6 +78,7 @@ test("backup scripts depend only on Node built-ins and local helpers", async () 
     "scripts/file-backup-restore.mjs",
     "scripts/file-backup-db-verify.mjs",
     "scripts/lib/pg-restore.mjs",
+    "scripts/lib/multipart-manifest.mjs",
     "scripts/lib/backup-crypto.mjs",
     "scripts/lib/gcs-backup-store.mjs",
     "scripts/lib/file-backup-manifest.mjs",

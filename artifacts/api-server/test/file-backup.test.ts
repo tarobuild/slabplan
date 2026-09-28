@@ -740,7 +740,8 @@ describe("independent private-file backup and restore", () => {
     assert.equal(result.missing, 1);
     assert.equal(result.organizationMismatch, 1, "a row may not claim another tenant's object");
     assert.equal(result.invalidUrl, 1);
-    assert.equal(result.sizeDiffers, 0);
+    assert.equal(result.sizeMismatch, 0);
+    assert.equal(result.sizeUnknown, 1, "a row without a recorded size is reported, not assumed to match");
     assert.equal(result.failed, 3);
     assert.ok(!logs.join("\n").includes("contract"));
   });
@@ -897,4 +898,221 @@ describe("backup tooling configuration", () => {
       globalThis.fetch = originalFetch;
     }
   });
+});
+
+const multipartLib = await import("../scripts/lib/multipart-manifest.mjs");
+
+describe("recovery coverage for multipart files and pinned runs", () => {
+  const fake = new FakeGcs();
+  let dest: ReturnType<typeof gcs.createGcsBackupStore>;
+  const log = () => {};
+  let clock = Date.parse(`${DUMP_DATE}T11:00:00Z`);
+  const now = () => new Date((clock += 1000));
+  const MANIFEST_TYPE = "application/vnd.cadstone.multipart-upload+json; charset=utf-8";
+  const ORG_C = "0b6c1d3e-aaaa-4bbb-8ccc-000000000003";
+  let scenario = 0;
+
+  before(async () => {
+    await fake.start();
+    dest = gcs.createGcsBackupStore({ bucket: fake.bucket, getAccessToken: async () => TOKEN, apiOrigin: fake.origin, uploadChunkBytes: 256 * 1024, retryDelayMs: 1 });
+  });
+  after(async () => {
+    await fake.stop();
+  });
+
+  const fileUrlFor = (org: string, name: string) => `/uploads/organizations/${org}/job-mp/documents/${name}`;
+  const manifestFor = (fileUrl: string, partSizes: number[], overrides: Record<string, unknown> = {}) =>
+    Buffer.from(`${JSON.stringify({
+      version: 1,
+      kind: "cadstone-supabase-multipart",
+      totalBytes: partSizes.reduce((sum, size) => sum + size, 0),
+      contentType: "application/pdf",
+      parts: partSizes.map((size, index) => ({ index, fileUrl: `${fileUrl}.parts/${String(index).padStart(6, "0")}`, size })),
+      ...overrides,
+    })}\n`);
+
+  async function backupAndCheck(source: FakeSource, rows: Array<{ id: string; organizationId: string | null; fileUrl: string; fileSize: string | null }>) {
+    scenario += 1;
+    const root = `slabplan-file-backup-coverage/s${scenario}`;
+    const config = makeConfig({ FILE_BACKUP_DEST_ROOT: root, FILE_BACKUP_REQUIRE_DB_DUMP: "false" });
+    const summary = await backup.runFileBackup({ source, dest, config, now, log, segmentBytes: 64 * 1024 });
+    const run = await manifestLib.resolveRun(dest, root, "latest");
+    const coverage = await restore.checkDatabaseFiles({ dest, root, masterKey: config.masterKey, run, rows, log });
+    return { summary, coverage, root, config, run };
+  }
+
+  function sourceWith(objects: Array<[string, Buffer, string?]>) {
+    const source = new FakeSource();
+    for (const [fileUrl, data, type] of objects) source.put(`slabplan${fileUrl}`, data, type);
+    return source;
+  }
+
+  test("backup-side manifest rules match the application's storage module", async () => {
+    const storageSource = await readFile(new URL("../src/lib/storage.ts", import.meta.url), "utf8");
+    assert.match(storageSource, new RegExp(`SUPABASE_MULTIPART_MANIFEST_CONTENT_TYPE =\\s*"${multipartLib.MULTIPART_MANIFEST_CONTENT_TYPE.replace(/[.+]/g, "\\$&")}"`));
+    assert.match(storageSource, new RegExp(`SUPABASE_MULTIPART_MANIFEST_VERSION = ${multipartLib.MULTIPART_MANIFEST_VERSION};`));
+    assert.match(storageSource, new RegExp(`kind: "${multipartLib.MULTIPART_MANIFEST_KIND}"`));
+    assert.match(storageSource, /SUPABASE_MULTIPART_MANIFEST_PROBE_MAX_BYTES = 1024 \* 1024;/);
+    assert.equal(multipartLib.MULTIPART_MANIFEST_PROBE_MAX_BYTES, 1024 * 1024);
+    assert.match(storageSource, /return `\$\{fileUrl\}\.parts\/\$\{String\(index\)\.padStart\(6, "0"\)\}`;/);
+    assert.equal(multipartLib.multipartPartFileUrl("/uploads/a/b.pdf", 7), "/uploads/a/b.pdf.parts/000007");
+    // The same validation clauses the application applies to each part and total.
+    for (const clause of ["part.index !== index", "!Number.isSafeInteger(part.size)", "part.size <= 0", "totalSize !== totalBytes", "parts.length === 0", "shouldContinueAfterFirstChunk: (chunk) => firstNonWhitespaceByte(chunk) === 0x7b"]) {
+      assert.ok(storageSource.includes(clause), clause);
+    }
+  });
+
+  test("intact multipart and native files are covered end to end", async () => {
+    const mp = fileUrlFor(ORG_C, "plans.pdf");
+    const native = fileUrlFor(ORG_C, "photo.jpg");
+    const sniffed = fileUrlFor(ORG_C, "sniffed.bin");
+    const source = sourceWith([
+      [mp, manifestFor(mp, [5, 5]), MANIFEST_TYPE],
+      [`${mp}.parts/000000`, Buffer.from("first")],
+      [`${mp}.parts/000001`, Buffer.from("secnd")],
+      [native, Buffer.from("PLAINTEXT native photo")],
+      // Undeclared content type: detected the way the application sniffs.
+      [sniffed, manifestFor(sniffed, [3]), "application/octet-stream"],
+      [`${sniffed}.parts/000000`, Buffer.from("abc")],
+    ]);
+    const { summary, coverage, run, root, config } = await backupAndCheck(source, [
+      { id: "r1", organizationId: ORG_C, fileUrl: mp, fileSize: "10" },
+      { id: "r2", organizationId: ORG_C, fileUrl: native, fileSize: String("PLAINTEXT native photo".length) },
+      { id: "r3", organizationId: ORG_C, fileUrl: sniffed, fileSize: "3" },
+      { id: "r4", organizationId: ORG_C, fileUrl: native, fileSize: null },
+    ]);
+    assert.equal(summary.status, "complete", JSON.stringify(summary.failures));
+    assert.equal(summary.counts.multipartFiles, 2);
+    assert.equal(summary.counts.multipartIncomplete, 0);
+    assert.equal(coverage.failed, 0, JSON.stringify(coverage));
+    assert.equal(coverage.multipartFiles, 2);
+    assert.equal(coverage.sizeUnknown, 1);
+    const entries = await restore.selectEntries({ dest, root, masterKey: config.masterKey, run, all: true });
+    const recorded = entries.find((entry: { name: string }) => entry.name === `slabplan${mp}`);
+    assert.deepEqual(recorded.multipart, { totalBytes: 10, parts: [{ name: `slabplan${mp}.parts/000000`, size: 5 }, { name: `slabplan${mp}.parts/000001`, size: 5 }] });
+  });
+
+  test("a missing or wrong-size part fails both the backup and the recovery coverage check", async () => {
+    const mp = fileUrlFor(ORG_C, "missing-part.pdf");
+    const missing = await backupAndCheck(
+      sourceWith([[mp, manifestFor(mp, [5, 5]), MANIFEST_TYPE], [`${mp}.parts/000000`, Buffer.from("first")]]),
+      [{ id: "r1", organizationId: ORG_C, fileUrl: mp, fileSize: "10" }],
+    );
+    assert.equal(missing.summary.status, "partial");
+    assert.ok(missing.summary.failures.some((failure: { reason: string }) => /part 1 is missing/.test(failure.reason)));
+    assert.equal(missing.summary.counts.multipartIncomplete, 1);
+    assert.equal(missing.coverage.multipartIncomplete, 1);
+    assert.equal(missing.coverage.failed, 1);
+
+    const wrong = fileUrlFor(ORG_C, "wrong-size.pdf");
+    const resized = await backupAndCheck(
+      sourceWith([[wrong, manifestFor(wrong, [5, 5]), MANIFEST_TYPE], [`${wrong}.parts/000000`, Buffer.from("first")], [`${wrong}.parts/000001`, Buffer.from("shrt")]]),
+      [{ id: "r1", organizationId: ORG_C, fileUrl: wrong, fileSize: "10" }],
+    );
+    assert.equal(resized.summary.status, "partial");
+    assert.ok(resized.summary.failures.some((failure: { reason: string }) => /part 1 is 4 bytes, manifest says 5/.test(failure.reason)));
+    assert.equal(resized.coverage.failed, 1);
+  });
+
+  test("cross-tenant and malformed manifests are not treated as recoverable", async () => {
+    const mine = fileUrlFor(ORG_A, "cross.pdf");
+    const theirs = fileUrlFor(ORG_B, "cross.pdf");
+    // A declared manifest in organization A that points at B's parts is invalid, as in the application.
+    const crossManifest = manifestFor(mine, [5], { parts: [{ index: 0, fileUrl: `${theirs}.parts/000000`, size: 5 }] });
+    const malformed = fileUrlFor(ORG_A, "malformed.pdf");
+    const cross = await backupAndCheck(
+      sourceWith([
+        [mine, crossManifest, MANIFEST_TYPE],
+        [`${theirs}.parts/000000`, Buffer.from("other")],
+        [malformed, Buffer.from("{ not json"), MANIFEST_TYPE],
+      ]),
+      [
+        { id: "r1", organizationId: ORG_A, fileUrl: mine, fileSize: "5" },
+        { id: "r2", organizationId: ORG_A, fileUrl: malformed, fileSize: "5" },
+      ],
+    );
+    assert.equal(cross.summary.status, "partial");
+    assert.equal(cross.summary.counts.multipartIncomplete, 2);
+    assert.ok(cross.summary.failures.every((failure: { reason: string }) => !failure.reason.includes(ORG_A) && !failure.reason.includes(ORG_B)));
+    assert.equal(cross.coverage.multipartIncomplete, 2);
+    assert.equal(cross.coverage.failed, 2);
+
+    // Undeclared JSON that is not a valid manifest for its own path is served as
+    // an ordinary file, so a row claiming the multipart total fails on size.
+    const undeclared = fileUrlFor(ORG_A, "undeclared.pdf");
+    const asNative = await backupAndCheck(
+      sourceWith([[undeclared, manifestFor(undeclared, [5], { parts: [{ index: 0, fileUrl: `${theirs}.parts/000000`, size: 5 }] }), "application/octet-stream"]]),
+      [{ id: "r1", organizationId: ORG_A, fileUrl: undeclared, fileSize: "5" }],
+    );
+    assert.equal(asNative.summary.status, "complete");
+    assert.equal(asNative.coverage.sizeMismatch, 1);
+    assert.equal(asNative.coverage.failed, 1);
+  });
+
+  test("native files whose stored size differs from the database row fail coverage", async () => {
+    const native = fileUrlFor(ORG_C, "short.jpg");
+    const result = await backupAndCheck(sourceWith([[native, Buffer.from("tiny")]]), [
+      { id: "r1", organizationId: ORG_C, fileUrl: native, fileSize: "4096" },
+    ]);
+    assert.equal(result.summary.status, "complete");
+    assert.equal(result.coverage.sizeMismatch, 1);
+    assert.equal(result.coverage.failed, 1);
+  });
+
+  test("carried-forward multipart files are re-checked for closure on every run", async () => {
+    scenario += 1;
+    const root = `slabplan-file-backup-coverage/s${scenario}`;
+    const config = makeConfig({ FILE_BACKUP_DEST_ROOT: root, FILE_BACKUP_REQUIRE_DB_DUMP: "false" });
+    const mp = fileUrlFor(ORG_C, "carried.pdf");
+    const source = sourceWith([[mp, manifestFor(mp, [5, 5]), MANIFEST_TYPE], [`${mp}.parts/000000`, Buffer.from("first")], [`${mp}.parts/000001`, Buffer.from("secnd")]]);
+    const first = await backup.runFileBackup({ source, dest, config, now, log, segmentBytes: 64 * 1024 });
+    assert.equal(first.status, "complete");
+    source.objects.delete(`slabplan${mp}.parts/000001`);
+    const second = await backup.runFileBackup({ source, dest, config, now, log, segmentBytes: 64 * 1024 });
+    assert.equal(second.counts.carried, 2);
+    assert.equal(second.status, "partial", "a part deleted from the primary leaves the file unrecoverable");
+    assert.equal(second.counts.multipartIncomplete, 1);
+  });
+
+  test("a pinned run id keeps every drill step on one snapshot", async () => {
+    scenario += 1;
+    const root = `slabplan-file-backup-coverage/s${scenario}`;
+    const config = makeConfig({ FILE_BACKUP_DEST_ROOT: root, FILE_BACKUP_REQUIRE_DB_DUMP: "false" });
+    const restoreConfig = restore.readRestoreConfig({ FILE_BACKUP_ENCRYPTION_KEY: KEY_HEX, FILE_BACKUP_GCS_BUCKET: fake.bucket, FILE_BACKUP_DEST_ROOT: root });
+    const first = fileUrlFor(ORG_C, "first.txt");
+    const later = fileUrlFor(ORG_C, "later.txt");
+    const source = sourceWith([[first, Buffer.from("first file")]]);
+    await backup.runFileBackup({ source, dest, config, now, log, segmentBytes: 64 * 1024 });
+
+    const dir = await mkdtemp(path.join(os.tmpdir(), "slabplan-pinned-run-"));
+    try {
+      const out = path.join(dir, "run-id");
+      const pinned = await restore.runCommand({ command: "resolve-run", options: { run: "latest", out }, config: restoreConfig, dest, log });
+      assert.equal((await readFile(out, "utf8")).trim(), pinned.runId);
+      assert.equal((await stat(out)).mode & 0o777, 0o600);
+      await assert.rejects(restore.runCommand({ command: "resolve-run", options: { run: "latest", out }, config: restoreConfig, dest, log }), /EEXIST/);
+
+      // A newer backup finishes while the drill is running.
+      source.put(`slabplan${later}`, Buffer.from("added later"));
+      await backup.runFileBackup({ source, dest, config, now, log, segmentBytes: 64 * 1024 });
+      const newest = await manifestLib.resolveRun(dest, root, "latest");
+      assert.notEqual(newest.runId, pinned.runId);
+
+      const rows = [{ id: "r1", organizationId: ORG_C, fileUrl: later, fileSize: String("added later".length) }];
+      const pinnedCoverage = await restore.runCommand({ command: "check-db-files", options: { run: pinned.runId, "files-csv": await writeRows(dir, rows) }, config: restoreConfig, dest, log });
+      assert.equal(pinnedCoverage.runId, pinned.runId);
+      assert.equal(pinnedCoverage.missing, 1, "the pinned snapshot does not silently gain the newer file");
+      const pinnedVerify = await restore.runCommand({ command: "verify", options: { run: pinned.runId }, config: restoreConfig, dest, log });
+      assert.equal(pinnedVerify.runId, pinned.runId);
+      assert.equal(pinnedVerify.checked, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  async function writeRows(dir: string, rows: Array<{ id: string; organizationId: string | null; fileUrl: string; fileSize: string | null }>) {
+    const file = path.join(dir, `rows-${randomBytes(4).toString("hex")}.csv`);
+    await writeFile(file, rows.map((row) => [row.id, row.organizationId ?? "", row.fileUrl, row.fileSize ?? ""].join(",")).join("\n"));
+    return file;
+  }
 });

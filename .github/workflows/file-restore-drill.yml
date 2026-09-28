@@ -35,6 +35,10 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+concurrency:
+  group: private-file-restore-drill
+  cancel-in-progress: false
+
 jobs:
   drill:
     runs-on: ubuntu-latest
@@ -92,13 +96,25 @@ jobs:
           service_account: ${{ vars.FILE_BACKUP_SERVICE_ACCOUNT }}
           create_credentials_file: true
 
+      - name: Pin one backup run for the whole drill
+        env:
+          FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          # Resolve "latest" exactly once; every later step uses this id, so a
+          # backup finishing mid-drill cannot mix snapshots.
+          node artifacts/api-server/scripts/file-backup-restore.mjs resolve-run --run "$DRILL_RUN" --out "$RUNNER_TEMP/drill-run-id"
+          run_id="$(cat "$RUNNER_TEMP/drill-run-id")"
+          [[ "$run_id" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::Resolved run id is invalid"; exit 1; }
+          echo "DRILL_RUN_ID=$run_id" >> "$GITHUB_ENV"
+
       - name: Verify a random sample against the manifest and the primary
         env:
           FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node artifacts/api-server/scripts/file-backup-restore.mjs verify --run "$DRILL_RUN" --sample "$DRILL_SAMPLE" --compare-source
+        run: node artifacts/api-server/scripts/file-backup-restore.mjs verify --run "$DRILL_RUN_ID" --sample "$DRILL_SAMPLE" --compare-source
 
       - name: Install PostgreSQL 17 psql wrapper
         run: |
@@ -119,7 +135,7 @@ jobs:
         run: |
           set -euo pipefail
           dump="$RUNNER_TEMP/restored.sql.gz"
-          node artifacts/api-server/scripts/file-backup-restore.mjs db-dump --run "$DRILL_RUN" --to "$dump"
+          node artifacts/api-server/scripts/file-backup-restore.mjs db-dump --run "$DRILL_RUN_ID" --to "$dump"
           # Fails on any SQL error outside the explicit Supabase allow-list, a
           # non-zero psql exit, missing core tables, empty core tables, or
           # unvalidated constraints. Logs report problems, never row data.
@@ -128,14 +144,14 @@ jobs:
       - name: Check restored file rows against the backup manifest
         env:
           FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
-        run: node artifacts/api-server/scripts/file-backup-restore.mjs check-db-files --run "$DRILL_RUN" --files-csv "$RUNNER_TEMP/files.csv"
+        run: node artifacts/api-server/scripts/file-backup-restore.mjs check-db-files --run "$DRILL_RUN_ID" --files-csv "$RUNNER_TEMP/files.csv"
 
       - name: Restore one organization's files on the runner
         if: ${{ inputs.organization != '' }}
         env:
           FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
-        run: node artifacts/api-server/scripts/file-backup-restore.mjs restore --run "$DRILL_RUN" --organization "$DRILL_ORGANIZATION" --to-dir "$RUNNER_TEMP/organization-restore"
+        run: node artifacts/api-server/scripts/file-backup-restore.mjs restore --run "$DRILL_RUN_ID" --organization "$DRILL_ORGANIZATION" --to-dir "$RUNNER_TEMP/organization-restore"
 
       - name: Remove restored material from the runner
         if: always()
-        run: rm -rf "$RUNNER_TEMP/restored.sql.gz" "$RUNNER_TEMP/files.csv" "$RUNNER_TEMP/organization-restore"
+        run: rm -rf "$RUNNER_TEMP/drill-run-id" "$RUNNER_TEMP/restored.sql.gz" "$RUNNER_TEMP/files.csv" "$RUNNER_TEMP/organization-restore"

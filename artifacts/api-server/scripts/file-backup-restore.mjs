@@ -7,6 +7,7 @@
  *   restore --run latest|<runId> (--organization <id> | --all) --to-supabase [--allow-primary-target]
  *   db-dump --run latest|<runId> --to <path>
  *   check-db-files --run latest|<runId> --files-csv <path>
+ *   resolve-run --run latest|<runId> [--out <path>]   (pin one run for a multi-step drill)
  *   summary --run latest|<runId>   (operator terminal only; prints private counts)
  *   prune   [--keep-days 90] [--keep-runs 14] [--apply]
  *
@@ -25,7 +26,7 @@
  */
 import { randomBytes, randomInt } from "node:crypto";
 import { constants as fsConstants, createWriteStream } from "node:fs";
-import { link, lstat, mkdir, readFile, realpath, rm, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -46,6 +47,7 @@ import {
   storageIdentity,
 } from "./lib/file-backup-manifest.mjs";
 import { createGcloudTokenProvider, createGcsBackupStore } from "./lib/gcs-backup-store.mjs";
+import { multipartClosureProblems } from "./lib/multipart-manifest.mjs";
 import { createSupabaseStorage, getRequiredEnv } from "./lib/supabase-storage.mjs";
 
 const ORGANIZATION_ID_PATTERN = /^[0-9A-Za-z-]{1,64}$/;
@@ -445,16 +447,29 @@ export async function pruneBackups({ dest, root, masterKey, keepDays = 90, keepR
 
 /**
  * Cross-check file rows from a restored database dump against a run
- * manifest: every live row must have a backed-up object, and a tenant-
- * prefixed object must belong to the row's organization. Rows are read from
- * `psql -At -F,` output: id,organization_id,file_url,file_size.
+ * manifest. A row is covered only when the object it names was backed up for
+ * the same organization and is recoverable at the row's size: a native object
+ * must have exactly that size, and a multipart manifest must declare that
+ * total with every part present in the same run at its recorded size. Rows
+ * are read from `psql -At -F,` output: id,organization_id,file_url,file_size.
  */
 export async function checkDatabaseFiles({ dest, root, masterKey, run, rows, log = console.log }) {
-  const byName = new Map();
-  for await (const entry of readManifestEntries({ dest, root, runId: run.runId, masterKey })) {
-    byName.set(entry.name, { organizationId: entry.organizationId, size: entry.size });
-  }
-  const result = { rowsChecked: 0, present: 0, missing: 0, organizationMismatch: 0, sizeDiffers: 0, unprefixedLegacy: 0, invalidUrl: 0 };
+  const entries = [];
+  for await (const entry of readManifestEntries({ dest, root, runId: run.runId, masterKey })) entries.push(entry);
+  const byName = new Map(entries.map((entry) => [entry.name, entry]));
+  const incompleteMultipart = new Set(multipartClosureProblems(entries).map((problem) => problem.entry.name));
+  const result = {
+    rowsChecked: 0,
+    present: 0,
+    missing: 0,
+    organizationMismatch: 0,
+    sizeMismatch: 0,
+    multipartFiles: 0,
+    multipartIncomplete: 0,
+    sizeUnknown: 0,
+    unprefixedLegacy: 0,
+    invalidUrl: 0,
+  };
   for (const row of rows) {
     result.rowsChecked += 1;
     const match = /^\/uploads\/(.+)$/.exec(row.fileUrl ?? "");
@@ -462,8 +477,7 @@ export async function checkDatabaseFiles({ dest, root, masterKey, run, rows, log
       result.invalidUrl += 1;
       continue;
     }
-    const objectName = `slabplan/uploads/${match[1]}`;
-    const entry = byName.get(objectName);
+    const entry = byName.get(`slabplan/uploads/${match[1]}`);
     if (!entry) {
       result.missing += 1;
       continue;
@@ -471,13 +485,24 @@ export async function checkDatabaseFiles({ dest, root, masterKey, run, rows, log
     result.present += 1;
     if (entry.organizationId === null) result.unprefixedLegacy += 1;
     else if (entry.organizationId !== (row.organizationId || null)) result.organizationMismatch += 1;
-    // Legacy multipart rows point at a small manifest object, so a size
-    // difference is reported for review rather than treated as corruption.
-    if (row.fileSize !== null && Number(row.fileSize) !== entry.size) result.sizeDiffers += 1;
+    if (entry.invalidMultipart) {
+      result.multipartIncomplete += 1;
+      continue;
+    }
+    if (entry.multipart) {
+      result.multipartFiles += 1;
+      if (incompleteMultipart.has(entry.name)) result.multipartIncomplete += 1;
+    }
+    const recoverableBytes = entry.multipart ? entry.multipart.totalBytes : entry.size;
+    if (row.fileSize === null || row.fileSize === undefined || row.fileSize === "") result.sizeUnknown += 1;
+    else if (Number(row.fileSize) !== recoverableBytes) result.sizeMismatch += 1;
   }
   // Failure counts only: total rows would disclose customer volume in public CI logs.
-  log(`[check-db-files] missing=${result.missing} organizationMismatch=${result.organizationMismatch} invalidUrl=${result.invalidUrl} sizeDiffers=${result.sizeDiffers}`);
-  return { ...result, failed: result.missing + result.organizationMismatch + result.invalidUrl };
+  log(`[check-db-files] missing=${result.missing} organizationMismatch=${result.organizationMismatch} invalidUrl=${result.invalidUrl} sizeMismatch=${result.sizeMismatch} multipartIncomplete=${result.multipartIncomplete} sizeUnknown=${result.sizeUnknown}`);
+  return {
+    ...result,
+    failed: result.missing + result.organizationMismatch + result.invalidUrl + result.sizeMismatch + result.multipartIncomplete,
+  };
 }
 
 export function parseFileRowsCsv(text) {
@@ -538,6 +563,13 @@ export async function runCommand({ command, options, config, dest, env = process
     return { runId: run.runId, failed: 0 };
   }
   if (run.keyId !== config.keyId) throw new Error(`Run ${run.runId} used key id ${run.keyId}; configured key id is ${config.keyId}.`);
+  if (command === "resolve-run") {
+    // A multi-step drill pins one immutable run here, so a newer backup that
+    // finishes mid-drill cannot change the snapshot under test.
+    if (options.out) await writeFile(options.out, `${run.runId}\n`, { flag: "wx", mode: 0o600 });
+    log(`[resolve-run] ${run.runId} status=${run.status}`);
+    return { runId: run.runId, status: run.status, failed: 0 };
+  }
   log(`[run] ${run.runId} status=${run.status}`);
   const organizationId = options.organization ?? null;
 
@@ -594,7 +626,7 @@ export async function runCommand({ command, options, config, dest, env = process
     const rows = parseFileRowsCsv(await readFile(options["files-csv"], "utf8"));
     return { runId: run.runId, ...(await checkDatabaseFiles({ dest, root, masterKey, run, rows, log })) };
   }
-  throw new Error(`Unknown command ${command}. Use verify, restore, db-dump, check-db-files, summary or prune.`);
+  throw new Error(`Unknown command ${command}. Use verify, restore, db-dump, check-db-files, resolve-run, summary or prune.`);
 }
 
 async function main() {

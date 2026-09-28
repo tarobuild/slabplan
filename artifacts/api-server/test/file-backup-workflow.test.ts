@@ -22,6 +22,12 @@ for (const name of ["file-backup.yml", "file-restore-drill.yml"]) {
     assert.match(text, /persist-credentials: false/);
     assert.doesNotMatch(text, /upload-artifact/, "restored data and credential files must not become artifacts");
     assert.doesNotMatch(text, /pnpm install/, "backup scripts run without the application dependency tree");
+    // The encryption key is scoped to the steps that decrypt or encrypt, never
+    // the job, so the third-party auth action's environment never holds it.
+    const jobEnv = /\n    env:\n((?: {6}.*\n)+)/.exec(text)?.[1] ?? "";
+    assert.doesNotMatch(jobEnv, /FILE_BACKUP_ENCRYPTION_KEY: \$\{\{ secrets\./);
+    const authStep = text.slice(text.indexOf("Authenticate to Google Cloud"), text.indexOf("\n      - name:", text.indexOf("Authenticate to Google Cloud")));
+    assert.doesNotMatch(authStep, /FILE_BACKUP_ENCRYPTION_KEY|SUPABASE_SERVICE_ROLE_KEY/);
   });
 }
 

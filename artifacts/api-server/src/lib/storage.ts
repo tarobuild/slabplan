@@ -453,7 +453,7 @@ export async function createSignedDirectUpload(
   }
 
   return {
-    endpoint: `${supabaseResumableUploadBaseUrl()}/storage/v1/upload/resumable`,
+    endpoint: `${supabaseResumableUploadBaseUrl()}/storage/v1/upload/resumable/sign`,
     bucketName,
     objectName,
     signature,

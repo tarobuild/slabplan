@@ -60,6 +60,7 @@ import {
   isMultipartManifestContentType,
   multipartClosureProblems,
   multipartSummary,
+  safeInvalidManifestReason,
 } from "./lib/multipart-manifest.mjs";
 import { createSupabaseStorage, getRequiredEnv } from "./lib/supabase-storage.mjs";
 
@@ -206,7 +207,7 @@ function contentTypeOf(object) {
 /** Restore the recorded classification of a carried-forward entry. */
 function classificationFromEntry(entry) {
   if (entry.multipart) return { kind: "multipart", summary: entry.multipart };
-  if (entry.invalidMultipart) return { kind: "invalid", reason: entry.invalidMultipart };
+  if (entry.invalidMultipart) return { kind: "invalid", reason: safeInvalidManifestReason(entry.invalidMultipart) };
   return { kind: "native" };
 }
 
@@ -418,7 +419,7 @@ export async function runFileBackup({
     if (entry.multipart) counts.multipartFiles += 1;
     if (entry.invalidMultipart) {
       const label = `blob:${entry.blobDigest.slice(0, 12)}`;
-      failures.push({ label, reason: entry.invalidMultipart });
+      failures.push({ label, reason: safeInvalidManifestReason(entry.invalidMultipart) });
       counts.multipartIncomplete += 1;
     }
   }

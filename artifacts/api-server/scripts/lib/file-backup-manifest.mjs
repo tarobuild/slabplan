@@ -138,7 +138,13 @@ export async function* readManifestEntries({ dest, root, runId, masterKey, onHea
     for await (const line of lines) {
       if (!line) continue;
       if (footer) throw new Error("Backup manifest has data after its footer.");
-      const record = JSON.parse(line);
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        // Parser messages quote input; manifest lines hold file names.
+        throw new Error("Backup manifest contains a line that is not valid JSON.");
+      }
       if (!header) {
         if (record.type !== "header" || record.format !== MANIFEST_FORMAT || record.runId !== runId) {
           throw new Error("Backup manifest header does not match the requested run.");

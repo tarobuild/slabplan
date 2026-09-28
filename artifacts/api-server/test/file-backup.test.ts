@@ -1116,3 +1116,172 @@ describe("recovery coverage for multipart files and pinned runs", () => {
     return file;
   }
 });
+
+describe("manifest capture bounds and safe diagnostics", () => {
+  const SENTINEL = "PRIVATE_SENTINEL_CUSTOMER_CONTENT";
+  const FILE_TOKEN = "confidential-bid-TEST";
+  const ORG_D = "0b6c1d3e-aaaa-4bbb-8ccc-000000000004";
+  const MANIFEST_TYPE = "application/vnd.cadstone.multipart-upload+json; charset=utf-8";
+
+  async function runCapture(pieces: Buffer[], options: { declared: boolean; limit?: number }) {
+    const capture = multipartLib.createManifestCapture(options);
+    const inputHash = createHash("sha256");
+    const outputHash = createHash("sha256");
+    for (const piece of pieces) inputHash.update(piece);
+    await pipeline(Readable.from(pieces, { objectMode: false }), capture.stream, async (source: AsyncIterable<Buffer>) => {
+      for await (const chunk of source) outputHash.update(chunk);
+    });
+    return { ...capture.result, passThroughUnchanged: inputHash.digest("hex") === outputHash.digest("hex") };
+  }
+
+  const validManifest = (fileUrl: string) => Buffer.from(JSON.stringify({ version: 1, kind: "cadstone-supabase-multipart", totalBytes: 3, contentType: "text/plain", parts: [{ index: 0, fileUrl: `${fileUrl}.parts/000000`, size: 3 }] }));
+
+  test("whitespace-only objects cannot grow the capture past its limit", async () => {
+    const chunk = Buffer.alloc(64 * 1024, 0x20);
+    const result = await runCapture(Array.from({ length: 512 }, () => chunk), { declared: false });
+    assert.equal(result.overflow, true);
+    assert.equal(result.captured, null);
+    assert.ok(result.peakRetainedBytes <= multipartLib.MULTIPART_MANIFEST_PROBE_MAX_BYTES, String(result.peakRetainedBytes));
+    assert.equal(result.passThroughUnchanged, true);
+  });
+
+  test("a whitespace prefix longer than the limit disables capture even if JSON follows", async () => {
+    const fileUrl = "/uploads/organizations/x/job/doc.bin";
+    const prefix = Array.from({ length: 17 }, () => Buffer.alloc(64 * 1024, 0x0a));
+    const result = await runCapture([...prefix, validManifest(fileUrl)], { declared: false });
+    assert.equal(result.overflow, true);
+    assert.equal(result.captured, null);
+    assert.equal(result.passThroughUnchanged, true);
+    assert.equal(multipartLib.classifyStoredObject({ objectName: `slabplan${fileUrl}`, contentType: "application/octet-stream", capture: result }).kind, "native");
+  });
+
+  test("short whitespace prefixes and chunk boundaries still capture a small manifest; non-JSON stops capture", async () => {
+    const fileUrl = "/uploads/organizations/x/job/split.bin";
+    const body = Buffer.concat([Buffer.from(" \n\t "), validManifest(fileUrl)]);
+    const pieces = [body.subarray(0, 2), body.subarray(2, 7), body.subarray(7, 11), body.subarray(11)];
+    const split = await runCapture(pieces, { declared: false });
+    assert.equal(split.overflow, false);
+    assert.deepEqual(split.captured, body);
+    assert.equal(split.passThroughUnchanged, true);
+    assert.equal(multipartLib.classifyStoredObject({ objectName: `slabplan${fileUrl}`, contentType: "application/octet-stream", capture: split }).kind, "multipart");
+
+    const plain = await runCapture([Buffer.from("   "), Buffer.from("hello, not json"), Buffer.alloc(2 * 1024 * 1024, 0x61)], { declared: false });
+    assert.equal(plain.captured, null);
+    assert.equal(plain.overflow, false);
+    assert.ok(plain.peakRetainedBytes <= 3);
+    assert.equal(plain.passThroughUnchanged, true);
+
+    const small = await runCapture([validManifest(fileUrl)], { declared: false });
+    assert.deepEqual(small.captured, validManifest(fileUrl));
+  });
+
+  test("declared manifests are captured up to the limit exactly and refused beyond it", async () => {
+    const atLimit = await runCapture([Buffer.alloc(40, 0x7b), Buffer.alloc(24, 0x20)], { declared: true, limit: 64 });
+    assert.equal(atLimit.overflow, false);
+    assert.equal(atLimit.captured?.length, 64);
+    const overLimit = await runCapture([Buffer.alloc(40, 0x7b), Buffer.alloc(25, 0x20)], { declared: true, limit: 64 });
+    assert.equal(overLimit.overflow, true);
+    assert.equal(overLimit.captured, null);
+    assert.ok(overLimit.peakRetainedBytes <= 64);
+    assert.equal(
+      multipartLib.classifyStoredObject({ objectName: "slabplan/uploads/organizations/x/big.bin", contentType: MANIFEST_TYPE, capture: overLimit }).reason,
+      multipartLib.INVALID_MANIFEST_REASONS.tooLarge,
+    );
+  });
+
+  test("invalid declared manifests produce fixed diagnostics that never quote content", () => {
+    const fileUrl = `/uploads/organizations/${ORG_D}/job/${FILE_TOKEN}.pdf`;
+    const classify = (body: string) =>
+      multipartLib.classifyStoredObject({ objectName: `slabplan${fileUrl}`, contentType: MANIFEST_TYPE, capture: { captured: Buffer.from(body) } });
+    const cases: Array<[string, string]> = [
+      [`${SENTINEL} {not json`, multipartLib.INVALID_MANIFEST_REASONS.notJson],
+      [`{"version":1,"kind":"${SENTINEL}"}`, multipartLib.INVALID_MANIFEST_REASONS.invalidStructure],
+      [JSON.stringify({ version: 1, kind: "cadstone-supabase-multipart", totalBytes: 3, contentType: "x", parts: [{ index: 0, fileUrl: `/uploads/${SENTINEL}.parts/000000`, size: 3 }] }), multipartLib.INVALID_MANIFEST_REASONS.invalidPart],
+      [JSON.stringify({ version: 1, kind: "cadstone-supabase-multipart", totalBytes: 99, contentType: SENTINEL, parts: [{ index: 0, fileUrl: `${fileUrl}.parts/000000`, size: 3 }] }), multipartLib.INVALID_MANIFEST_REASONS.sizeMismatch],
+    ];
+    for (const [body, expected] of cases) {
+      const result = classify(body);
+      assert.equal(result.kind, "invalid");
+      assert.equal(result.reason, expected);
+      assert.ok(!result.reason.includes(SENTINEL) && !result.reason.includes(FILE_TOKEN) && !result.reason.includes(ORG_D));
+    }
+    assert.equal(multipartLib.safeInvalidManifestReason(`Unexpected token in ${SENTINEL}`), multipartLib.INVALID_MANIFEST_REASONS.unknown);
+    assert.equal(multipartLib.safeInvalidManifestReason(multipartLib.INVALID_MANIFEST_REASONS.notJson), multipartLib.INVALID_MANIFEST_REASONS.notJson);
+  });
+
+  test("backup logs and summaries never contain stored content, file names or tenant ids", async () => {
+    const fake = new FakeGcs();
+    await fake.start();
+    try {
+      const dest = gcs.createGcsBackupStore({ bucket: fake.bucket, getAccessToken: async () => TOKEN, apiOrigin: fake.origin, uploadChunkBytes: 256 * 1024, retryDelayMs: 1 });
+      const root = "slabplan-file-backup-leak/v1";
+      const config = makeConfig({ FILE_BACKUP_DEST_ROOT: root, FILE_BACKUP_REQUIRE_DB_DUMP: "false" });
+      const base = `/uploads/organizations/${ORG_D}/job-${FILE_TOKEN}/documents`;
+      const source = new FakeSource();
+      source.put(`slabplan${base}/${FILE_TOKEN}-a.pdf`, Buffer.from(`${SENTINEL} {broken json`), MANIFEST_TYPE);
+      source.put(`slabplan${base}/${FILE_TOKEN}-b.pdf`, Buffer.from(JSON.stringify({ version: 1, kind: SENTINEL })), MANIFEST_TYPE);
+      source.put(`slabplan${base}/${FILE_TOKEN}-c.pdf`, Buffer.from(JSON.stringify({ version: 1, kind: "cadstone-supabase-multipart", totalBytes: 3, contentType: SENTINEL, parts: [{ index: 0, fileUrl: `/uploads/${SENTINEL}/x.parts/000000`, size: 3 }] })), MANIFEST_TYPE);
+      const logs: string[] = [];
+      const log = (line: string) => logs.push(line);
+      let clock = Date.parse("2026-09-28T12:00:00Z");
+      const now = () => new Date((clock += 1000));
+
+      const assertClean = async (summary: { runId: string }) => {
+        const stored = await dest.downloadBuffer(manifestLib.backupPaths.run(root, summary.runId));
+        for (const [label, text] of [["logs", logs.join("\n")], ["returned summary", JSON.stringify(summary)], ["stored run summary", stored.toString("utf8")]] as const) {
+          for (const secret of [SENTINEL, FILE_TOKEN, ORG_D]) assert.ok(!text.includes(secret), `${label} leaked ${secret}`);
+        }
+      };
+
+      const first = await backup.runFileBackup({ source, dest, config, now, log, segmentBytes: 64 * 1024 });
+      assert.equal(first.status, "partial");
+      assert.equal(first.counts.multipartIncomplete, 3);
+      await assertClean(first);
+
+      // A manifest written by an older version could carry unsafe reason text;
+      // carried-forward classifications are sanitized before they are logged.
+      const entries: Array<Record<string, unknown>> = [];
+      for await (const entry of manifestLib.readManifestEntries({ dest, root, runId: first.runId, masterKey: config.masterKey })) {
+        entries.push(entry.invalidMultipart ? { ...entry, invalidMultipart: `Unexpected token ${SENTINEL} in ${FILE_TOKEN}` } : entry);
+      }
+      const legacyRunId = manifestLib.makeRunId(now());
+      const manifest = await manifestLib.writeManifest({ dest, root, runId: legacyRunId, masterKey: config.masterKey, header: { keyId: config.keyId }, entries, segmentBytes: 64 * 1024 });
+      await dest.uploadBuffer(
+        manifestLib.backupPaths.run(root, legacyRunId),
+        Buffer.from(JSON.stringify({ format: manifestLib.RUN_SUMMARY_FORMAT, runId: legacyRunId, status: "partial", keyId: config.keyId, manifestObject: manifest.name })),
+        { contentType: "application/json" },
+      );
+      logs.length = 0;
+      const carried = await backup.runFileBackup({ source, dest, config, now, log, segmentBytes: 64 * 1024 });
+      assert.equal(carried.counts.carried, 3);
+      assert.equal(carried.status, "partial");
+      assert.ok(carried.failures.every((failure: { reason: string }) => Object.values(multipartLib.INVALID_MANIFEST_REASONS).includes(failure.reason)));
+      await assertClean(carried);
+    } finally {
+      await fake.stop();
+    }
+  });
+
+  test("a malformed manifest line never echoes its content", async () => {
+    const fake = new FakeGcs();
+    await fake.start();
+    try {
+      const dest = gcs.createGcsBackupStore({ bucket: fake.bucket, getAccessToken: async () => TOKEN, apiOrigin: fake.origin, uploadChunkBytes: 256 * 1024, retryDelayMs: 1 });
+      const root = "slabplan-file-backup-leak/line";
+      const masterKey = crypto.parseBackupMasterKey(KEY_HEX);
+      const runId = manifestLib.makeRunId(new Date("2026-09-28T12:30:00Z"));
+      const lines = [`${JSON.stringify({ type: "header", format: manifestLib.MANIFEST_FORMAT, runId })}\n`, `{"type":"object","name":"${FILE_TOKEN} ${SENTINEL}\n`];
+      await pipeline(Readable.from(lines.map((line) => Buffer.from(line))), crypto.createBackupEncryptStream(masterKey), async (encrypted: AsyncIterable<Buffer>) => {
+        await dest.uploadStream(manifestLib.backupPaths.manifest(root, runId), encrypted);
+      });
+      await assert.rejects(
+        (async () => {
+          for await (const _entry of manifestLib.readManifestEntries({ dest, root, runId, masterKey })) void _entry;
+        })(),
+        (error: Error) => error.message === "Backup manifest contains a line that is not valid JSON." && !error.message.includes(SENTINEL),
+      );
+    } finally {
+      await fake.stop();
+    }
+  });
+});

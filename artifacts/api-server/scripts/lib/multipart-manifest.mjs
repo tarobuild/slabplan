@@ -88,43 +88,57 @@ function firstNonWhitespaceByte(buffer) {
 /**
  * Pass-through that keeps a bounded copy of an object that might be a
  * manifest: declared manifests up to 64 MiB, undeclared bodies up to the
- * application's 1 MiB probe limit and only when they start with "{".
+ * application's 1 MiB probe limit and only when they start with "{". The
+ * limit applies in every state, including a leading run of whitespace; once
+ * it is crossed the copy is released and capture never resumes. Bytes always
+ * pass through unchanged. `result.peakRetainedBytes` records the largest copy
+ * held at any time.
  */
-export function createManifestCapture({ declared }) {
-  const limit = declared ? MULTIPART_DECLARED_MANIFEST_MAX_BYTES : MULTIPART_MANIFEST_PROBE_MAX_BYTES;
-  const result = { captured: null, overflow: false };
+export function createManifestCapture({ declared, limit } = {}) {
+  const cap = limit ?? (declared ? MULTIPART_DECLARED_MANIFEST_MAX_BYTES : MULTIPART_MANIFEST_PROBE_MAX_BYTES);
+  const result = { captured: null, overflow: false, peakRetainedBytes: 0 };
+  // undecided: only whitespace so far; capturing: keeping a copy; off: done.
+  let state = declared ? "capturing" : "undecided";
   let chunks = [];
   let length = 0;
-  let decided = declared;
-  let capturing = declared;
+
+  const release = () => {
+    chunks = [];
+    length = 0;
+  };
+  const keep = (chunk) => {
+    if (length + chunk.length > cap) {
+      state = "off";
+      result.overflow = true;
+      release();
+      return;
+    }
+    chunks.push(chunk);
+    length += chunk.length;
+    result.peakRetainedBytes = Math.max(result.peakRetainedBytes, length);
+  };
+
   const stream = new Transform({
     transform(chunk, _encoding, callback) {
-      if (!decided) {
+      if (state === "undecided") {
         const first = firstNonWhitespaceByte(chunk);
-        if (first !== null) {
-          decided = true;
-          capturing = first === 0x7b;
+        if (first === null) {
+          keep(chunk);
+        } else if (first === 0x7b) {
+          state = "capturing";
+          keep(chunk);
         } else {
-          chunks.push(chunk);
-          length += chunk.length;
+          state = "off";
+          release();
         }
-      }
-      if (capturing) {
-        if (length + chunk.length > limit) {
-          capturing = false;
-          result.overflow = true;
-          chunks = [];
-        } else {
-          chunks.push(chunk);
-          length += chunk.length;
-        }
-      } else if (decided) {
-        chunks = [];
+      } else if (state === "capturing") {
+        keep(chunk);
       }
       callback(null, chunk);
     },
     flush(callback) {
-      if (capturing) result.captured = Buffer.concat(chunks);
+      if (state === "capturing") result.captured = Buffer.concat(chunks, length);
+      release();
       callback();
     },
   });
@@ -136,24 +150,53 @@ export function createManifestCapture({ declared }) {
  * Returns { kind: "native" }, { kind: "multipart", manifest } or
  * { kind: "invalid", reason } for a declared manifest that cannot be read.
  */
+// Diagnostics are fixed strings: parser messages can quote stored content,
+// and these reasons reach public CI logs and run summaries.
+export const INVALID_MANIFEST_REASONS = Object.freeze({
+  tooLarge: "Declared multipart manifest exceeds the backup's validation limit.",
+  notJson: "Declared multipart manifest is not valid JSON.",
+  invalidStructure: "Declared multipart manifest has an invalid structure.",
+  invalidPart: "Declared multipart manifest lists an invalid part.",
+  sizeMismatch: "Declared multipart manifest total does not match its parts.",
+  unknown: "Declared multipart manifest failed validation.",
+});
+const SAFE_REASONS = new Set(Object.values(INVALID_MANIFEST_REASONS));
+const PARSE_ERROR_REASONS = new Map([
+  ["Stored multipart manifest is invalid.", INVALID_MANIFEST_REASONS.invalidStructure],
+  ["Stored multipart manifest contains an invalid part.", INVALID_MANIFEST_REASONS.invalidPart],
+  ["Stored multipart manifest size does not match its parts.", INVALID_MANIFEST_REASONS.sizeMismatch],
+]);
+
+/** Map any reason to an allow-listed diagnostic; unknown text is never echoed. */
+export function safeInvalidManifestReason(reason) {
+  return SAFE_REASONS.has(reason) ? reason : INVALID_MANIFEST_REASONS.unknown;
+}
+
+function parseCapturedManifest(fileUrl, captured) {
+  let value;
+  try {
+    value = JSON.parse(captured.toString("utf8"));
+  } catch {
+    return { kind: "invalid", reason: INVALID_MANIFEST_REASONS.notJson };
+  }
+  try {
+    return { kind: "multipart", manifest: parseMultipartManifestForFile(fileUrl, value) };
+  } catch (error) {
+    return { kind: "invalid", reason: PARSE_ERROR_REASONS.get(error?.message) ?? INVALID_MANIFEST_REASONS.unknown };
+  }
+}
+
 export function classifyStoredObject({ objectName, contentType, capture }) {
   const fileUrl = uploadFileUrlForObject(objectName);
   if (!fileUrl) return { kind: "native" };
   const declared = isMultipartManifestContentType(contentType);
   if (declared) {
-    if (!capture?.captured) return { kind: "invalid", reason: "Declared multipart manifest exceeds the backup's validation limit." };
-    try {
-      return { kind: "multipart", manifest: parseMultipartManifestForFile(fileUrl, JSON.parse(capture.captured.toString("utf8"))) };
-    } catch (error) {
-      return { kind: "invalid", reason: `Declared multipart manifest is unreadable: ${error.message}` };
-    }
+    if (!capture?.captured) return { kind: "invalid", reason: INVALID_MANIFEST_REASONS.tooLarge };
+    return parseCapturedManifest(fileUrl, capture.captured);
   }
   if (!capture?.captured || capture.captured.length > MULTIPART_MANIFEST_PROBE_MAX_BYTES) return { kind: "native" };
-  try {
-    return { kind: "multipart", manifest: parseMultipartManifestForFile(fileUrl, JSON.parse(capture.captured.toString("utf8"))) };
-  } catch {
-    return { kind: "native" };
-  }
+  const parsed = parseCapturedManifest(fileUrl, capture.captured);
+  return parsed.kind === "multipart" ? parsed : { kind: "native" };
 }
 
 /** Compact manifest-entry form: object names and sizes of every part. */

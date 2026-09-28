@@ -196,10 +196,29 @@ async function exists(filePath) {
   }
 }
 
+const currentUid = () => (typeof process.getuid === "function" ? process.getuid() : null);
+
 /**
- * Create or validate the restore root. It must be a real directory (not a
- * symbolic link) owned by the operator and not writable by other users, so
- * only the operator's own processes could race the containment checks below.
+ * Why a directory cannot be trusted for a restore, or null. Trust assumption:
+ * the operator's own account (same UID) is trusted; no other account may be
+ * able to rename, replace or add entries on the path. Directories at or below
+ * the restore root must be owned by the operator and not group/other
+ * writable. Ancestors may also be owned by root and may be shared only when
+ * the sticky bit prevents other users renaming entries they do not own (as in
+ * /tmp).
+ */
+export function untrustedDirectoryReason(info, { uid = currentUid(), ancestor = false } = {}) {
+  if (info.isSymbolicLink?.() || !info.isDirectory()) return "is a symbolic link or not a directory";
+  if (uid !== null && info.uid !== uid && !(ancestor && info.uid === 0)) return "is owned by another user";
+  const sharedWrite = (info.mode & 0o022) !== 0;
+  const sticky = (info.mode & 0o1000) !== 0;
+  if (sharedWrite && !(ancestor && sticky)) return "is writable by group or other users";
+  return null;
+}
+
+/**
+ * Create or validate the restore root and check every ancestor, so only the
+ * operator's own processes could race the containment checks below.
  */
 export async function prepareRestoreRoot(outDir) {
   const resolved = path.resolve(outDir);
@@ -213,13 +232,15 @@ export async function prepareRestoreRoot(outDir) {
   if (info.isSymbolicLink() || !info.isDirectory()) {
     throw new Error("Restore directory must be a real directory, not a symbolic link.");
   }
-  if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
-    throw new Error("Restore directory must be owned by the current user.");
+  const rootReason = untrustedDirectoryReason(info);
+  if (rootReason) throw new Error(`Restore directory ${rootReason}.`);
+  const realRoot = await realpath(resolved);
+  for (let ancestor = path.dirname(realRoot); ; ancestor = path.dirname(ancestor)) {
+    const reason = untrustedDirectoryReason(await lstat(ancestor), { ancestor: true });
+    if (reason) throw new Error(`A parent of the restore directory ${reason}; choose a private location.`);
+    if (ancestor === path.dirname(ancestor)) break;
   }
-  if ((info.mode & 0o022) !== 0) {
-    throw new Error("Restore directory must not be writable by group or other users.");
-  }
-  return await realpath(resolved);
+  return realRoot;
 }
 
 /** Create or validate each directory below the root, one component at a time. */
@@ -232,10 +253,10 @@ async function ensureContainedDirectory(realRoot, segments) {
     } catch (error) {
       if (error?.code !== "EEXIST") throw error;
     }
-    const info = await lstat(current);
-    if (info.isSymbolicLink() || !info.isDirectory()) {
-      throw new Error("Restore path contains a symbolic link or a non-directory component.");
-    }
+    // Existing descendants get the same trust test as the root, so no other
+    // account can swap a component while an object is being downloaded.
+    const reason = untrustedDirectoryReason(await lstat(current));
+    if (reason) throw new Error(`Restore path component ${reason}.`);
   }
   await assertContained(realRoot, current);
   return current;

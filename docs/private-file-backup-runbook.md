@@ -147,9 +147,15 @@ canonical `https://<project-ref>.supabase.co` URL, because a custom-domain
 alias of the primary cannot be recognized.
 
 `--to-dir` must be a real directory owned by the operator and not writable by
-other users. Symbolic links at the root, in any intermediate directory or at a
-file name are refused or skipped, and every file is published with an
-exclusive create plus a containment check. Large objects restored with
+other users. The same applies to every directory that already exists beneath
+it, checked before anything is downloaded. Every parent of the root must be
+owned by the operator or by root and must not be writable by other users,
+unless it carries the sticky bit as `/tmp` does. Symbolic links at the root,
+in any intermediate directory or at a file name are refused or skipped, and
+every file is published with an exclusive create plus a containment check.
+Trust assumption: the operator's own account is trusted. These checks keep
+other accounts from redirecting a restore, but they do not defend against a
+hostile process running as the operator. Large objects restored with
 `--to-supabase` use a single streamed request; restore very large files to a
 directory and re-upload them through the resumable path if needed.
 

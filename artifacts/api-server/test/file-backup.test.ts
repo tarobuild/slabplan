@@ -653,6 +653,63 @@ describe("independent private-file backup and restore", () => {
     assert.deepEqual(await filesUnder(outside), [decoy], "nothing may be written outside the restore root");
   });
 
+  test("directory restores refuse shared descendants and untrusted ancestors before downloading", async () => {
+    const config = restore.readRestoreConfig({ FILE_BACKUP_ENCRYPTION_KEY: KEY_HEX, FILE_BACKUP_GCS_BUCKET: fake.bucket });
+    const run = await manifestLib.resolveRun(dest, config.root, "latest");
+    const entries = await restore.selectEntries({ dest, root: config.root, masterKey: config.masterKey, run, organizationId: ORG_A });
+    const scratch = await tempDir();
+
+    // A pre-existing descendant writable by other users could be swapped while
+    // an object downloads, so it is refused before any download starts.
+    const sharedRoot = path.join(scratch, "shared-descendant");
+    const shared = path.join(sharedRoot, "slabplan", "uploads");
+    await mkdir(shared, { recursive: true, mode: 0o755 });
+    await chmod(sharedRoot, 0o755);
+    await chmod(shared, 0o777);
+    let downloads = 0;
+    const countingDest = { ...dest, downloadStream: async (...args: Parameters<typeof dest.downloadStream>) => { downloads += 1; return dest.downloadStream(...args); } };
+    const viaShared = await restore.restoreToDirectory({ dest: countingDest, root: config.root, masterKey: config.masterKey, entries, outDir: sharedRoot, log });
+    assert.equal(viaShared.restored, 0);
+    assert.equal(viaShared.failed, entries.length);
+    assert.match(viaShared.failures[0].reason, /writable by group or other users/);
+    assert.equal(downloads, 0, "nothing is downloaded into an untrusted path");
+
+    // The same layout without shared write access restores normally.
+    await chmod(shared, 0o755);
+    const repaired = await restore.restoreToDirectory({ dest, root: config.root, masterKey: config.masterKey, entries, outDir: sharedRoot, log });
+    assert.equal(repaired.restored, entries.length);
+
+    // An ancestor that other users can write, without the sticky bit, lets them
+    // rename the restore root itself, so it is refused; with the sticky bit
+    // (as for /tmp) it is accepted.
+    const openParent = path.join(scratch, "open-parent");
+    await mkdir(openParent, { mode: 0o700 });
+    await chmod(openParent, 0o777);
+    await assert.rejects(
+      restore.restoreToDirectory({ dest, root: config.root, masterKey: config.masterKey, entries, outDir: path.join(openParent, "restore"), log }),
+      /parent of the restore directory is writable by group or other users/,
+    );
+    await chmod(openParent, 0o1777);
+    const sticky = await restore.restoreToDirectory({ dest, root: config.root, masterKey: config.masterKey, entries, outDir: path.join(openParent, "restore"), log });
+    assert.equal(sticky.restored, entries.length);
+  });
+
+  test("directory trust rules cover ownership, shared write and the sticky bit", () => {
+    const dir = (mode: number, uid: number) => ({ isDirectory: () => true, isSymbolicLink: () => false, mode: 0o040000 | mode, uid });
+    const me = 501;
+    assert.equal(restore.untrustedDirectoryReason(dir(0o700, me), { uid: me }), null);
+    assert.equal(restore.untrustedDirectoryReason(dir(0o755, me), { uid: me }), null);
+    assert.match(restore.untrustedDirectoryReason(dir(0o700, 502), { uid: me }), /owned by another user/);
+    assert.match(restore.untrustedDirectoryReason(dir(0o700, 0), { uid: me }), /owned by another user/, "root-owned directories are not valid restore descendants");
+    assert.equal(restore.untrustedDirectoryReason(dir(0o755, 0), { uid: me, ancestor: true }), null);
+    assert.match(restore.untrustedDirectoryReason(dir(0o775, me), { uid: me }), /writable by group/);
+    assert.match(restore.untrustedDirectoryReason(dir(0o1777, me), { uid: me }), /writable by group/, "sticky does not excuse shared descendants");
+    assert.equal(restore.untrustedDirectoryReason(dir(0o1777, 0), { uid: me, ancestor: true }), null);
+    assert.match(restore.untrustedDirectoryReason(dir(0o777, 0), { uid: me, ancestor: true }), /writable by group/);
+    assert.match(restore.untrustedDirectoryReason(dir(0o1777, 502), { uid: me, ancestor: true }), /owned by another user/, "a sticky directory's owner can still rename entries");
+    assert.match(restore.untrustedDirectoryReason({ isDirectory: () => true, isSymbolicLink: () => true, mode: 0o120777, uid: me }, { uid: me }), /symbolic link/);
+  });
+
   test("db-dump restores the day's database dump with hash verification", async () => {
     const config = restore.readRestoreConfig({ FILE_BACKUP_ENCRYPTION_KEY: KEY_HEX, FILE_BACKUP_GCS_BUCKET: fake.bucket });
     const dir = await tempDir();

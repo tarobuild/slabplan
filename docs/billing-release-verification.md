@@ -72,6 +72,9 @@ Restricted evidence records the runs. Summary only:
 
 - Steps 1 to 4: exercised with real Stripe TEST events against the actual
   application code, including a hosted sandbox checkout and a declined card.
+  In the automated lifecycle run the verification email was captured in
+  process, which proves the token flow but not delivery; real delivery to an
+  owned test inbox was exercised separately in the production release QA.
 - Steps 5 and 6: exercised with Stripe TEST test clocks and provider-signed
   events: failed renewal, recovery by paying with a new card, payment-method
   change, cancel at period end, immediate cancellation, retries without

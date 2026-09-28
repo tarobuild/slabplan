@@ -14,7 +14,7 @@ import { getChunkedUploadLimits } from "./chunked-upload";
 import { HttpError } from "./http";
 import { logger } from "./logger";
 import { APP_STORAGE_PREFIX } from "./brand";
-import { getRequiredSupabaseUrl } from "./supabase-url";
+import { getRequiredSupabaseUrl, resolveSupabaseResumableUploadUrl as supabaseResumableUploadBaseUrl } from "./supabase-url";
 
 const SUPABASE_UPLOAD_PREFIX = APP_STORAGE_PREFIX;
 const SUPABASE_OBJECT_MISSING_STATUSES = new Set([400, 404]);
@@ -397,28 +397,6 @@ function supabaseObjectPath(fileUrl: string): {
     objectName,
     encodedPath: `${encodeURIComponent(bucketName)}/${encodeStoragePath(objectName)}`,
   };
-}
-
-function supabaseResumableUploadBaseUrl(): string {
-  const explicit = process.env.SUPABASE_STORAGE_DIRECT_URL?.trim();
-  if (explicit) {
-    return explicit.endsWith("/") ? explicit.slice(0, -1) : explicit;
-  }
-
-  const { url } = getSupabaseConfig();
-  const parsed = new URL(url);
-  if (
-    parsed.hostname.endsWith(".supabase.co") &&
-    !parsed.hostname.endsWith(".storage.supabase.co")
-  ) {
-    parsed.hostname = parsed.hostname.replace(
-      /\.supabase\.co$/,
-      ".storage.supabase.co",
-    );
-    return parsed.origin;
-  }
-
-  return url;
 }
 
 export type SignedDirectUpload = {

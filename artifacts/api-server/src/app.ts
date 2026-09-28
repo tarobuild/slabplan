@@ -39,6 +39,7 @@ import {
 } from "./lib/canonical-host";
 import { organizationScopeCondition } from "./lib/tenant-scope";
 import { assertOrganizationBillingAccess } from "./lib/billing-access";
+import { supabaseBrowserConnectSources } from "./lib/supabase-url";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -218,7 +219,7 @@ app.use(
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:"],
         mediaSrc: ["'self'", "blob:"],
-        connectSrc: ["'self'", "wss:", "ws:", "blob:"],
+        connectSrc: ["'self'", "wss:", "ws:", "blob:", ...supabaseBrowserConnectSources()],
         workerSrc: ["'self'", "blob:"],
         objectSrc: ["'none'"],
         frameAncestors: isProd

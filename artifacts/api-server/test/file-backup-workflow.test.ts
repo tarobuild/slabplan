@@ -72,6 +72,23 @@ test("the restore drill is manual, validates inputs and never writes production"
   assert.doesNotMatch(text, /run: .*\$\{\{\s*inputs\./);
 });
 
+test("required CI runs the real PostgreSQL restore fixtures instead of skipping them", async () => {
+  const text = await workflow("e2e.yml");
+  const install = text.indexOf("Install PostgreSQL client for restore-verification tests");
+  const apiTests = text.indexOf("- name: Verify API security and behavior");
+  assert.ok(install > 0 && apiTests > install, "psql is installed before the API tests");
+  const installStep = text.slice(install, apiTests);
+  assert.match(installStep, /apt-get install -y --no-install-recommends postgresql-client/);
+  assert.match(installStep, /psql --version/);
+  const apiStep = text.slice(apiTests, text.indexOf("\n      - name:", apiTests + 1));
+  assert.match(apiStep, /REQUIRE_PSQL_TESTS: "1"/);
+  assert.match(apiStep, /pnpm --filter @workspace\/api-server test/);
+
+  const fixtures = await readFile(path.join(repoRoot, "artifacts/api-server/test/file-backup-db-verify.test.ts"), "utf8");
+  assert.match(fixtures, /process\.env\.REQUIRE_PSQL_TESTS === "1"/);
+  assert.match(fixtures, /psqlAvailable \|\| psqlRequired \? false :/, "a required run never skips the real fixtures");
+});
+
 test("backup scripts depend only on Node built-ins and local helpers", async () => {
   const files = [
     "scripts/file-backup.mjs",

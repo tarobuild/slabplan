@@ -146,7 +146,19 @@ jobs:
       - name: Apply and verify production migrations against the test database
         run: pnpm --filter @workspace/db run migrate
 
+      - name: Install PostgreSQL client for restore-verification tests
+        # Runner-only test tool, not an application dependency: the real
+        # PostgreSQL restore fixtures in file-backup-db-verify.test.ts need psql.
+        run: |
+          set -eu
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client
+          psql --version
+
       - name: Verify API security and behavior
+        env:
+          # Fail, rather than skip, if the restore fixtures cannot find psql.
+          REQUIRE_PSQL_TESTS: "1"
         run: pnpm --filter @workspace/api-server test
 
       - name: Reset fixtures after API integration tests

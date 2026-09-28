@@ -101,12 +101,23 @@ process.stdin.on("end", () => {
 });
 
 const psqlAvailable = spawnSync("psql", ["--version"], { stdio: "ignore" }).status === 0;
+// Required CI sets REQUIRE_PSQL_TESTS=1: the real fixtures must run there and
+// a missing client fails loudly. Locally they stay optional.
+const psqlRequired = process.env.REQUIRE_PSQL_TESTS === "1";
 const adminUrl = (() => {
   const url = new URL(process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? "postgres://cadstone:cadstone@127.0.0.1:5432/cadstone_test");
   url.pathname = "/postgres";
   return url.toString();
 })();
-const skip = psqlAvailable ? false : "psql is not installed in this environment (the fake-psql tests above still run)";
+const skip = psqlAvailable || psqlRequired ? false : "psql is not installed in this environment (the fake-psql tests above still run)";
+
+test(
+  "the PostgreSQL client is present where the real restore fixtures are required",
+  { skip: psqlRequired ? false : "REQUIRE_PSQL_TESTS is not set; the real fixtures are optional locally" },
+  () => {
+    assert.ok(psqlAvailable, "REQUIRE_PSQL_TESTS=1 but psql is not installed, so the real PostgreSQL restore fixtures cannot run.");
+  },
+);
 
 describe("real PostgreSQL restore fixtures", { skip }, () => {
   const migrationsDir = path.join(scratch, "migrations");

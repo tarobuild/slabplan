@@ -164,7 +164,7 @@ describe("Supabase storage provider", () => {
     );
   });
 
-  test("direct uploads expose only an object-scoped signature and use the direct storage hostname", async () => {
+  test("direct uploads use the signed TUS route with only an object-scoped signature", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     mockFetch((input, init) => {
       requests.push({ url: String(input), init });
@@ -198,7 +198,7 @@ describe("Supabase storage provider", () => {
 
     assert.equal(
       prepared.endpoint,
-      "https://example.storage.supabase.co/storage/v1/upload/resumable",
+      "https://example.storage.supabase.co/storage/v1/upload/resumable/sign",
     );
     assert.equal(prepared.bucketName, "cadstone-files");
     assert.equal(

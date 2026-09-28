@@ -15,7 +15,9 @@
     "backfill-comment-attachments": "tsx ./src/scripts/backfill-comment-attachments.ts",
     "backup:db": "node ./scripts/db-backup.mjs",
     "backup:check": "node ./scripts/db-backup-check.mjs",
-    "restore:drill": "node ./scripts/db-restore-drill.mjs"
+    "restore:drill": "node ./scripts/db-restore-drill.mjs",
+    "backup:files": "node ./scripts/file-backup.mjs",
+    "restore:files": "node ./scripts/file-backup-restore.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

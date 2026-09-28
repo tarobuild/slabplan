@@ -1,0 +1,155 @@
+# Daily independent private-file backup -> Google Cloud Storage.
+#
+# Copies private Supabase Storage objects under `slabplan/uploads/` and the
+# day's logical database dump (`backups/db/YYYY-MM-DD.sql.gz`, written by the
+# Daily DB backup workflow at 09:00 UTC) into a separate Google Cloud Storage
+# bucket owned by Taro Build. Objects are encrypted client-side before upload,
+# destination names are keyed digests, and uploads are create-only. After each
+# run a random sample is downloaded, decrypted and hash-checked.
+#
+# Google credentials are short-lived Workload Identity Federation tokens for a
+# dedicated service account; no service-account key exists.
+# See docs/private-file-backup-runbook.md.
+#
+# GitHub environment `private-file-backup` (deployment branches: main only):
+#   secret   FILE_BACKUP_ENCRYPTION_KEY
+#   variable FILE_BACKUP_EXPECTED_KEY_ID
+#   variable FILE_BACKUP_GCS_BUCKET
+#   variable FILE_BACKUP_WIF_PROVIDER
+#   variable FILE_BACKUP_SERVICE_ACCOUNT
+#   variable FILE_BACKUP_DEST_ROOT (optional; default slabplan-file-backup/v1)
+# Existing repository secrets: SUPABASE_URL, SUPABASE_STORAGE_BUCKET,
+# SUPABASE_SERVICE_ROLE_KEY. The job fails, and alerts, until all are set.
+name: Daily private-file backup
+
+on:
+  schedule:
+    # After the 09:00 UTC database backup, so the day's dump is included.
+    - cron: "30 10 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: private-file-backup
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    environment: private-file-backup
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FILE_BACKUP_GCS_BUCKET: ${{ vars.FILE_BACKUP_GCS_BUCKET }}
+      FILE_BACKUP_EXPECTED_KEY_ID: ${{ vars.FILE_BACKUP_EXPECTED_KEY_ID }}
+      FILE_BACKUP_DEST_ROOT: ${{ vars.FILE_BACKUP_DEST_ROOT }}
+      FILE_BACKUP_WIF_PROVIDER: ${{ vars.FILE_BACKUP_WIF_PROVIDER }}
+      FILE_BACKUP_SERVICE_ACCOUNT: ${{ vars.FILE_BACKUP_SERVICE_ACCOUNT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Require backup configuration
+        env:
+          HAS_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY != '' }}
+          HAS_SUPABASE_URL: ${{ secrets.SUPABASE_URL != '' }}
+          HAS_SUPABASE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET != '' }}
+          HAS_SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in FILE_BACKUP_GCS_BUCKET FILE_BACKUP_EXPECTED_KEY_ID FILE_BACKUP_WIF_PROVIDER FILE_BACKUP_SERVICE_ACCOUNT; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          [ "$HAS_ENCRYPTION_KEY" = "true" ] || missing+=("FILE_BACKUP_ENCRYPTION_KEY")
+          [ "$HAS_SUPABASE_URL" = "true" ] || missing+=("SUPABASE_URL")
+          [ "$HAS_SUPABASE_BUCKET" = "true" ] || missing+=("SUPABASE_STORAGE_BUCKET")
+          [ "$HAS_SUPABASE_KEY" = "true" ] || missing+=("SUPABASE_SERVICE_ROLE_KEY")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Private-file backup is not configured; missing: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.FILE_BACKUP_WIF_PROVIDER }}
+          service_account: ${{ vars.FILE_BACKUP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Back up private files and today's database dump
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
+          FILE_BACKUP_SUMMARY_PATH: ${{ runner.temp }}/file-backup-summary.json
+        run: node artifacts/api-server/scripts/file-backup.mjs
+
+      - name: Verify a random restore sample
+        env:
+          FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
+        run: node artifacts/api-server/scripts/file-backup-restore.mjs verify --run latest --sample 10
+
+      - name: Record run status
+        if: always()
+        env:
+          SUMMARY_PATH: ${{ runner.temp }}/file-backup-summary.json
+        run: |
+          set -euo pipefail
+          # This repository is public: record status only. Counts, sizes and
+          # tenant totals stay in the private run summary in the backup bucket.
+          if [ -f "$SUMMARY_PATH" ]; then
+            jq -r '"### Private-file backup \(.runId)\n\n- Status: \(.status)\n- Failed objects: \(.counts.failed); deferred by cost cap: \(.counts.deferred)\n- Database dump \(.dbDump.date): \(if .dbDump.present then "included" else "MISSING" end)\n- Key id: \(.keyId)"' "$SUMMARY_PATH" >> "$GITHUB_STEP_SUMMARY"
+            rm -f "$SUMMARY_PATH"
+          else
+            echo "### Private-file backup did not produce a summary" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  alert:
+    needs: backup
+    if: ${{ always() && needs.backup.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Record failure and notify the owner
+        uses: actions/github-script@v7
+        env:
+          BACKUP_WEBHOOK_URL: ${{ secrets.BACKUP_WEBHOOK_URL }}
+          BACKUP_TRIGGER_SECRET: ${{ secrets.BACKUP_TRIGGER_SECRET }}
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = 'Scheduled private-file backup needs attention';
+            const body = `The independent private-file backup or its restore sample did not succeed. Review [the workflow run](${runUrl}), correct the cause, and rerun the backup. Do not post data, credentials, file names, or private logs in this issue.`;
+            // This record contains only a workflow link. It remains available
+            // if the application or its SMTP provider is unavailable.
+            try {
+              const { data: issues } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', creator: 'github-actions[bot]', per_page: 100 });
+              const existing = issues.find(issue => issue.title === title);
+              if (existing) await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body });
+              else await github.rest.issues.create({ ...context.repo, title, body, assignees: [context.repo.owner] });
+            } catch { core.setFailed('Could not record the backup failure in GitHub.'); }
+            try {
+              const endpoint = new URL(process.env.BACKUP_WEBHOOK_URL);
+              if (endpoint.protocol !== 'https:' || !process.env.BACKUP_TRIGGER_SECRET) throw new Error('Missing configuration');
+              endpoint.pathname = '/api/internal/backup-alert';
+              endpoint.search = ''; endpoint.hash = '';
+              const result = await fetch(endpoint, { method: 'POST', signal: AbortSignal.timeout(20000), headers: { 'content-type': 'application/json', 'x-requested-with': 'XMLHttpRequest', 'x-backup-secret': process.env.BACKUP_TRIGGER_SECRET }, body: JSON.stringify({ runUrl }) });
+              if (!result.ok) throw new Error('Delivery failed');
+              core.info('Backup failure email accepted by the application.');
+            } catch { core.setFailed('Backup failure email could not be delivered. Review the repository failure record.'); }

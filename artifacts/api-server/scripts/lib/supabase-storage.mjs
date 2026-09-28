@@ -212,6 +212,19 @@ export function createSupabaseStorage(env = process.env) {
     return Buffer.from(await response.arrayBuffer());
   }
 
+  async function downloadStream(objectName) {
+    const response = await supabaseStorageRequest(
+      config,
+      `/object/${objectPath(objectName)}`,
+      { method: "GET" },
+      new Set([200]),
+    );
+    if (!response.body) {
+      throw new Error(`Supabase Storage returned no body for ${objectName}`);
+    }
+    return Readable.fromWeb(response.body);
+  }
+
   async function deleteObject(objectName) {
     await supabaseStorageRequest(
       config,
@@ -301,6 +314,7 @@ export function createSupabaseStorage(env = process.env) {
     getObjectInfo,
     objectExists,
     downloadBuffer,
+    downloadStream,
     deleteObject,
     deleteObjects,
     listAllObjects,

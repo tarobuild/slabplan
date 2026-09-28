@@ -46,7 +46,7 @@ For failed uploads, check in this order:
 4. Browser network logs for TUS `POST`, `HEAD`, or `PATCH` failures.
 5. The object path and file row organization IDs.
 
-For database incidents, stop writes if necessary, verify the latest backup, and follow `docs/supabase-backup-restore-runbook.md`.
+For database incidents, stop writes if necessary, verify the latest backup, and follow `docs/supabase-backup-restore-runbook.md`. For lost or corrupted private files, or loss of the Supabase project, use the independent encrypted copy described in `docs/private-file-backup-runbook.md`.
 
 ## Rollback
 

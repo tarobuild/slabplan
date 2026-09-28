@@ -1,0 +1,132 @@
+# Manual recovery drill for the independent private-file backup.
+#
+# Uses only the independent Google Cloud Storage copy to:
+#   1. download, decrypt and hash-check a random sample of backed-up objects
+#      and compare them with the current primary objects;
+#   2. restore that run's database dump into a disposable PostgreSQL 17
+#      service database and sanity-check core tables;
+#   3. confirm every live file row in the restored database has a backed-up
+#      object bound to the same organization;
+#   4. optionally restore one organization's files to the runner and verify
+#      every file's SHA-256 against the manifest.
+# Production is never written. This repository is public, so logs report
+# status and failure counts only.
+# See docs/private-file-backup-runbook.md.
+name: Private-file restore drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      run:
+        description: "Backup run id, or latest"
+        required: false
+        default: latest
+        type: string
+      sample:
+        description: "Number of random objects to verify against the primary"
+        required: false
+        default: "25"
+        type: string
+      organization:
+        description: "Optional organization id to restore in full on the runner"
+        required: false
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: private-file-backup
+    permissions:
+      contents: read
+      id-token: write
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      FILE_BACKUP_GCS_BUCKET: ${{ vars.FILE_BACKUP_GCS_BUCKET }}
+      FILE_BACKUP_EXPECTED_KEY_ID: ${{ vars.FILE_BACKUP_EXPECTED_KEY_ID }}
+      FILE_BACKUP_DEST_ROOT: ${{ vars.FILE_BACKUP_DEST_ROOT }}
+      FILE_BACKUP_ENCRYPTION_KEY: ${{ secrets.FILE_BACKUP_ENCRYPTION_KEY }}
+      DRILL_RUN: ${{ inputs.run }}
+      DRILL_SAMPLE: ${{ inputs.sample }}
+      DRILL_ORGANIZATION: ${{ inputs.organization }}
+      RESTORE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Validate drill inputs
+        run: |
+          set -euo pipefail
+          [[ "$DRILL_RUN" == "latest" || "$DRILL_RUN" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || { echo "::error::Invalid run id"; exit 1; }
+          [[ "$DRILL_SAMPLE" =~ ^[0-9]{1,4}$ ]] || { echo "::error::Invalid sample size"; exit 1; }
+          [[ -z "$DRILL_ORGANIZATION" || "$DRILL_ORGANIZATION" =~ ^[0-9A-Za-z-]{1,64}$ ]] || { echo "::error::Invalid organization id"; exit 1; }
+          [ -n "$FILE_BACKUP_GCS_BUCKET" ] && [ -n "$FILE_BACKUP_EXPECTED_KEY_ID" ] && [ -n "$FILE_BACKUP_ENCRYPTION_KEY" ] || { echo "::error::Private-file backup is not configured"; exit 1; }
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.FILE_BACKUP_WIF_PROVIDER }}
+          service_account: ${{ vars.FILE_BACKUP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Verify a random sample against the manifest and the primary
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node artifacts/api-server/scripts/file-backup-restore.mjs verify --run "$DRILL_RUN" --sample "$DRILL_SAMPLE" --compare-source
+
+      - name: Restore the run's database dump into a disposable database
+        run: |
+          set -euo pipefail
+          dump="$RUNNER_TEMP/restored.sql.gz"
+          node artifacts/api-server/scripts/file-backup-restore.mjs db-dump --run "$DRILL_RUN" --to "$dump"
+          gzip -t "$dump"
+          # Restore output can echo row data, so keep it on the runner and report counts only.
+          gunzip -c "$dump" | docker run --rm -i --network host postgres:17 psql -q "$RESTORE_DATABASE_URL" > "$RUNNER_TEMP/psql.log" 2>&1 || true
+          echo "psql error lines: $(grep -c 'ERROR:' "$RUNNER_TEMP/psql.log" || true)"
+          # Public logs: report presence only, not customer row counts.
+          for table in organizations users jobs folders files; do
+            count=$(docker run --rm --network host postgres:17 psql -At "$RESTORE_DATABASE_URL" -c "select count(*) from public.$table")
+            if [ "$table" != "files" ] && [ "$count" -lt 1 ]; then echo "::error::Restored $table is empty"; exit 1; fi
+            echo "$table restored"
+          done
+
+      - name: Check restored file rows against the backup manifest
+        run: |
+          set -euo pipefail
+          rows="$RUNNER_TEMP/files.csv"
+          docker run --rm --network host postgres:17 psql -At -F, "$RESTORE_DATABASE_URL" \
+            -c "select id, coalesce(organization_id::text, ''), file_url, coalesce(file_size::text, '') from public.files where deleted_at is null and file_url is not null" > "$rows"
+          node artifacts/api-server/scripts/file-backup-restore.mjs check-db-files --run "$DRILL_RUN" --files-csv "$rows"
+
+      - name: Restore one organization's files on the runner
+        if: ${{ inputs.organization != '' }}
+        run: node artifacts/api-server/scripts/file-backup-restore.mjs restore --run "$DRILL_RUN" --organization "$DRILL_ORGANIZATION" --to-dir "$RUNNER_TEMP/organization-restore"
+
+      - name: Remove restored material from the runner
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/restored.sql.gz" "$RUNNER_TEMP/psql.log" "$RUNNER_TEMP/files.csv" "$RUNNER_TEMP/organization-restore"

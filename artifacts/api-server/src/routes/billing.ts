@@ -19,6 +19,7 @@ import {
 import { getActiveOrganizationId } from "../lib/tenant-scope";
 import { hasBillingAccess } from "../lib/billing-access";
 import { assertBillingReadyForCheckout } from "../lib/billing-readiness";
+import { BillingBindingConflictError } from "../lib/billing-conflict-alerts";
 
 const router: IRouter = Router();
 type BillingDbClient = Pick<typeof db, "select" | "update">;
@@ -307,11 +308,17 @@ export async function updateOrganizationFromStripeSubscription(
     (bySubscription?.stripeCustomerId &&
       bySubscription.stripeCustomerId !== params.customerId)
   ) {
-    throw new HttpError(
-      409,
+    throw new BillingBindingConflictError(
+      "identifiers_resolve_to_different_workspaces",
       "Stripe customer and subscription identifiers resolve to different organizations.",
-      { customerId: params.customerId, subscriptionId: params.subscriptionId },
-      "billing-identifier-conflict",
+      {
+        organizationIds: [bySubscription?.id, byCustomer?.id],
+        details: {
+          customerId: params.customerId,
+          subscriptionId: params.subscriptionId,
+        },
+        type: "billing-identifier-conflict",
+      },
     );
   }
 

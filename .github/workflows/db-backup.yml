@@ -35,6 +35,8 @@ on:
       - "artifacts/api-server/scripts/db-backup-check.mjs"
       - "artifacts/api-server/scripts/lib/backup-alerts.mjs"
       - "artifacts/api-server/scripts/lib/backup-size-baseline.mjs"
+      - "artifacts/api-server/scripts/lib/backup-tls.mjs"
+      - "lib/db/src/connection-options.ts"
     tags:
       - "backup-verify-*"
 
@@ -70,12 +72,14 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
           docker run --rm \
+            -v "$PGSSLROOTCERT:$PGSSLROOTCERT:ro" \
             -e PGHOST \
             -e PGPORT \
             -e PGDATABASE \
             -e PGUSER \
             -e PGPASSWORD \
             -e PGSSLMODE \
+            -e PGSSLROOTCERT \
             postgres:17 pg_dump "$@"
           EOF
           chmod +x "$GITHUB_WORKSPACE/.github/bin/pg_dump17"

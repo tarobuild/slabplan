@@ -1,5 +1,27 @@
 # Account Security Operations
 
+## Database Transport
+
+Production application, migration, and scheduled backup connections require TLS with certificate
+and hostname verification. Connection-string flags cannot disable this policy.
+The public Supabase Root 2021 CA is included alongside the Node system roots;
+no database password or client certificate is bundled. Local test databases
+retain their explicit non-production settings.
+
+The backup worker passes `verify-full` and the public CA file to `pg_dump`;
+its disposable Docker wrapper receives that same CA as a read-only mount.
+Neither connection path falls back to plaintext when certificate validation
+fails. Recovery drills still restore into a disposable local test database.
+
+The CA comes from the certificate download URL in the official Supabase Studio
+configuration and expires April 26, 2031. Tests pin its verified fingerprint and
+require at least 90 days of remaining validity. Review and replace the trust
+anchor from the vendor's authenticated HTTPS source before expiration; never
+resolve certificate failures by setting `rejectUnauthorized: false`.
+
+Vendor sources: [SSL enforcement guidance](https://supabase.com/docs/guides/platform/ssl-enforcement)
+and [Studio certificate configuration](https://github.com/supabase/supabase/blob/36371de15127206280d2d40786e8578dfe1b681a/apps/studio/hooks/custom-content/custom-content.json).
+
 ## Release Gate
 
 This change is not a SOC 2 attestation. Keep production enrollment closed if
@@ -22,14 +44,19 @@ its encryption secret or transactional email transport is unavailable.
 ## Enforcement Scope
 
 New public workspace owners must verify their email and enroll an authenticator
-before subscription checkout. Existing accounts are not silently marked verified
-or forced into an unannounced lockout. They can verify email and enroll under
+before subscription checkout. Existing accounts are never silently marked verified.
+Existing non-admin users can verify email and enroll under
 Settings > Account security. Invitations prove mailbox access when their
 single-use password setup link is consumed; invited users are not automatically
 subject to an organization-wide MFA policy. New admin invitations and users
 newly promoted to admin require MFA. Promotion revokes the user's existing
 sessions and API tokens so privilege elevation requires a fresh sign-in and
-factor enrollment. Existing demo accounts are not silently opted in.
+factor enrollment. As part of the September 27 launch hardening, existing active
+non-demo admins were also placed under required email verification and MFA, with
+prior sessions revoked and the policy change recorded in security history. They
+must complete those steps at their next sign-in. The explicitly identified
+synthetic demo workspace is exempt; its shared logins must never access customer
+data or be used as provider-administrator credentials.
 
 Every enrolled user's application session must carry factor verification.
 Provider password authentication is exchanged for an application session; raw

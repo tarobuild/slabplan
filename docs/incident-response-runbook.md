@@ -32,6 +32,7 @@ Response targets are proposals. Do not publish them as commitments until adopted
 - Provider security notices sent to the business inbox (for example Supabase advisories, GitHub secret-scanning alerts, Stripe or Google notices).
 - GitHub issues titled "Scheduled backup needs attention" or "Scheduled private-file backup needs attention", and the matching email to `SECURITY_ALERT_EMAIL`.
 - `security_events` (account-security events: MFA failures, recovery-code use, session revocations) and application logs in Replit.
+- The email "SlabPlan billing conflict needs review" and `security.billing_conflict` log lines: a signed Stripe event was refused because it conflicts with a workspace billing binding, possibly a duplicate charge. Follow `docs/billing-conflict-runbook.md`.
 - Customer or staff reports.
 
 ## Procedure

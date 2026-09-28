@@ -30,6 +30,9 @@ before(async () => {
   process.env.STRIPE_SECRET_KEY = "sk_test_local_webhook_fixture";
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_local_webhook_fixture";
   process.env.STRIPE_PRICE_PRO = "price_test_pro";
+  // Conflict alerts are covered in stripe-webhook-conflict-alerts.test.ts;
+  // here they must never reach a real mailbox.
+  delete process.env.SECURITY_ALERT_EMAIL;
   const { getStripeClient } = await import("../src/lib/stripe.ts");
   stripe = getStripeClient();
   mock.method(stripe.subscriptions, "retrieve", async (id: string) => {
@@ -68,9 +71,19 @@ after(async () => {
   const { db, pool } = await import("@workspace/db");
   const { billingEvents, organizations } = await import("@workspace/db/schema");
   const { inArray } = await import("drizzle-orm");
+  const { billingConflictAlertRowIds } = await import(
+    "../src/lib/billing-conflict-alerts.ts"
+  );
   try {
     if (eventIds.length)
-      await db.delete(billingEvents).where(inArray(billingEvents.id, eventIds));
+      await db
+        .delete(billingEvents)
+        .where(
+          inArray(billingEvents.id, [
+            ...eventIds,
+            ...eventIds.flatMap(billingConflictAlertRowIds),
+          ]),
+        );
     if (organizationIds.length)
       await db
         .delete(organizations)

@@ -317,6 +317,32 @@ export async function sendBackupFailureEmail(to: string, runUrl: string, test = 
   return getSender().send({ to, subject, text: `${message}\n\nWorkflow: ${runUrl}`, html: buildEmailHtml({ heading: subject, greeting: "Hi,", paragraphs: [message], actionLabel: "Review workflow", actionUrl: runUrl }), tag: "security-alert" });
 }
 
+export type BillingConflictAlert = {
+  eventId: string;
+  eventType: string;
+  reason: string;
+  reasonDescription: string;
+  livemode: boolean;
+  dashboardUrl: string;
+};
+
+/**
+ * Operator alert for a refused Stripe binding. It names only the Stripe
+ * event, a fixed reason and the mode: no customer contact, amount or
+ * workspace details, which stay in Stripe and the private database.
+ */
+export async function sendBillingConflictAlertEmail(to: string, alert: BillingConflictAlert): Promise<SentMessage> {
+  const subject = alert.livemode ? "SlabPlan billing conflict needs review" : "SlabPlan billing conflict needs review (TEST mode)";
+  const paragraphs = [
+    "Stripe sent a signed event that SlabPlan did not apply because it conflicts with an existing workspace billing binding. No workspace was changed, and nothing was canceled or refunded automatically.",
+    `Reason: ${alert.reasonDescription} (${alert.reason})`,
+    `Stripe event: ${alert.eventId} (${alert.eventType}, ${alert.livemode ? "live" : "test"} mode)`,
+    "Stripe retries the event on its normal schedule and each retry is refused the same way. Once this email is confirmed sent it is not repeated. If sending could not be confirmed, a later retry may send it again, at most three times for this event, so you may receive a duplicate.",
+    "Follow docs/billing-conflict-runbook.md: diagnose in Stripe, and cancel or refund only through the normal authorized process.",
+  ];
+  return getSender().send({ to, subject, text: `${paragraphs.join("\n\n")}\n\nStripe event: ${alert.dashboardUrl}`, html: buildEmailHtml({ heading: subject, greeting: "Hi,", paragraphs, actionLabel: "Open the event in Stripe", actionUrl: alert.dashboardUrl }), tag: "security-alert" });
+}
+
 /** Truncate a provider error string so it fits in the 500-char DB column. */
 export function truncateEmailError(message: string): string {
   if (message.length <= 500) return message;

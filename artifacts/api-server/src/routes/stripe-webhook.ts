@@ -6,6 +6,10 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { HttpError, asyncHandler } from "../lib/http";
 import {
+  BillingBindingConflictError,
+  alertBillingBindingConflict,
+} from "../lib/billing-conflict-alerts";
+import {
   BILLING_PLAN_KEYS,
   getOrganizationIdFromStripeClientReference,
   getStripeClient,
@@ -91,9 +95,10 @@ async function handleCheckoutCompleted(
     (subscription.metadata.organizationId &&
       subscription.metadata.organizationId !== organizationId)
   ) {
-    throw new HttpError(
-      409,
+    throw new BillingBindingConflictError(
+      "checkout_ownership_mismatch",
       "Checkout and subscription ownership do not match.",
+      { organizationIds: [organizationId] },
     );
   }
   const planKey = getPlanKeyFromSubscription(subscription);
@@ -125,9 +130,15 @@ async function handleCheckoutCompleted(
       ),
     );
   if (bindings.some((binding) => binding.id !== organizationId))
-    throw new HttpError(
-      409,
+    throw new BillingBindingConflictError(
+      "identifiers_bound_to_other_workspace",
       "Stripe identifiers are already bound to another workspace.",
+      {
+        organizationIds: [
+          organizationId,
+          ...bindings.map((binding) => binding.id),
+        ],
+      },
     );
   if (
     organization.stripeSubscriptionId &&
@@ -137,7 +148,11 @@ async function handleCheckoutCompleted(
       organization.stripeSubscriptionId,
     );
     if (!["canceled", "incomplete_expired"].includes(current.status))
-      throw new HttpError(409, "Workspace already has another subscription.");
+      throw new BillingBindingConflictError(
+        "workspace_has_other_subscription",
+        "Workspace already has another subscription.",
+        { organizationIds: [organizationId] },
+      );
     // A delayed checkout for an older subscription cannot replace its successor.
     if (current.created >= subscription.created) return;
   }
@@ -238,37 +253,46 @@ const handleStripeWebhook = asyncHandler(async (req, res) => {
   }
   assertStripeMode(event.livemode);
 
-  const duplicate = await db.transaction(async (tx) => {
-    // Serialize provider reads and writes across autoscale instances so an
-    // earlier request cannot commit stale state after a later request.
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext('slabplan-stripe-webhooks'))`,
-    );
-    const inserted = await tx
-      .insert(billingEvents)
-      .values({
-        id: event.id,
-        provider: "stripe",
-        type: event.type,
-        livemode: event.livemode,
-        payload: {
+  let duplicate: boolean;
+  try {
+    duplicate = await db.transaction(async (tx) => {
+      // Serialize provider reads and writes across autoscale instances so an
+      // earlier request cannot commit stale state after a later request.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext('slabplan-stripe-webhooks'))`,
+      );
+      const inserted = await tx
+        .insert(billingEvents)
+        .values({
           id: event.id,
+          provider: "stripe",
           type: event.type,
-          created: event.created,
           livemode: event.livemode,
-          objectId: "id" in event.data.object ? event.data.object.id : null,
-        },
-      })
-      .onConflictDoNothing()
-      .returning({ id: billingEvents.id });
+          payload: {
+            id: event.id,
+            type: event.type,
+            created: event.created,
+            livemode: event.livemode,
+            objectId: "id" in event.data.object ? event.data.object.id : null,
+          },
+        })
+        .onConflictDoNothing()
+        .returning({ id: billingEvents.id });
 
-    if (inserted.length === 0) {
-      return true;
-    }
+      if (inserted.length === 0) {
+        return true;
+      }
 
-    await processStripeEvent(event, tx);
-    return false;
-  });
+      await processStripeEvent(event, tx);
+      return false;
+    });
+  } catch (error) {
+    // The conflict is still refused with 409 and rolled back so Stripe
+    // retries; the alert only runs after that rollback and never throws.
+    if (error instanceof BillingBindingConflictError)
+      await alertBillingBindingConflict(event, error);
+    throw error;
+  }
 
   if (duplicate) {
     res.json({ received: true, duplicate: true });

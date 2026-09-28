@@ -176,6 +176,25 @@ export function getStripeCustomerPortalUrl(): string | null {
   );
 }
 
+/**
+ * SlabPlan's own customer-portal configuration (terms, privacy, cancellation
+ * rules). Sessions the app creates use it instead of the account's shared
+ * default configuration.
+ */
+export function getStripePortalConfigurationId(): string | null {
+  const value = process.env.STRIPE_PORTAL_CONFIGURATION_ID?.trim();
+  if (!value) return null;
+  if (!/^bpc_[A-Za-z0-9]+$/.test(value)) {
+    throw new HttpError(
+      503,
+      "STRIPE_PORTAL_CONFIGURATION_ID must be a Stripe customer portal configuration id.",
+      undefined,
+      "service-unavailable",
+    );
+  }
+  return value;
+}
+
 export function getCheckoutSubscriptionStatus(
   paymentStatus: Stripe.Checkout.Session["payment_status"] | null,
 ): string | null {

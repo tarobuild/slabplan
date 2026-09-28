@@ -31,6 +31,16 @@ Required events are `checkout.session.completed` and
 `customer.subscription.deleted`. Subscribe to
 `checkout.session.async_payment_succeeded` before enabling delayed methods.
 
+The billing portal should use a SlabPlan-only portal configuration (SlabPlan
+terms and privacy links, cancellation at period end, payment-method updates
+and invoice history) rather than the Stripe account's shared default. Set its
+`bpc_...` id as `STRIPE_PORTAL_CONFIGURATION_ID`. The app then creates
+customer-bound portal sessions with that configuration and no longer returns
+the static `STRIPE_CUSTOMER_PORTAL_URL`. That link opens whichever
+configuration owns it, and asks the customer to sign in again by email. An
+invalid id fails closed with 503. Do not edit the shared default
+configuration or account-wide settings for SlabPlan's sake.
+
 An operator can read `/api/internal/billing-readiness` using the existing
 `x-backup-secret` operational credential. It makes read-only Stripe API calls
 using the deployment's own key and returns only readiness booleans. It checks

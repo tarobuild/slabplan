@@ -11,6 +11,7 @@ import {
   getStripeClient,
   getStripeCustomerPortalUrl,
   getStripePaymentLinkUrl,
+  getStripePortalConfigurationId,
   getStripePriceId,
   isStripeCheckoutConfigured,
   isBillingPlanKey,
@@ -236,7 +237,12 @@ router.post(
       );
     }
 
-    const portalUrl = getStripeCustomerPortalUrl();
+    // An explicit SlabPlan portal configuration takes precedence: the app
+    // then creates a session bound to this workspace's customer with that
+    // configuration. The static login link opens whichever configuration
+    // owns it and makes the customer sign in again by email.
+    const configuration = getStripePortalConfigurationId();
+    const portalUrl = configuration ? null : getStripeCustomerPortalUrl();
     if (portalUrl) {
       res.status(201).json({ url: portalUrl });
       return;
@@ -247,6 +253,7 @@ router.post(
     const session = await stripe.billingPortal.sessions.create({
       customer: organization.stripeCustomerId,
       return_url: `${publicUrl}/settings/billing`,
+      ...(configuration ? { configuration } : {}),
     });
 
     res.status(201).json({ url: session.url });

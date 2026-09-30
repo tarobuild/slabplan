@@ -25,7 +25,7 @@ export function SortableHead({
       <button
         type="button"
         className={cn(
-          "inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-500",
+          "inline-flex items-center gap-1 text-left text-xs font-semibold uppercase text-slate-500",
           isActive && "text-slate-900",
         )}
         onClick={() => onSort(sortKey)}

@@ -25,6 +25,7 @@ import {
 import { apiErrorMessage } from "@/lib/api-errors"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
+import PageHeader from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -303,15 +304,14 @@ export default function CompanyDailyLogsPage() {
 
   return (
     <div className="space-y-5" data-testid="company-daily-logs-page">
-      <div className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Company</div>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-950">Daily Logs</h1>
-        <p className="mt-1 text-sm text-slate-500">All daily logs across every job and client.</p>
-      </div>
+      <PageHeader
+        className="mb-0"
+        title="Daily Logs"
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative max-w-md flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
@@ -328,7 +328,7 @@ export default function CompanyDailyLogsPage() {
       </div>
 
       <div
-        className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5"
         data-testid="daily-logs-filters"
       >
         <div className="space-y-1">
@@ -429,15 +429,15 @@ export default function CompanyDailyLogsPage() {
       {loading ? (
         <div className="space-y-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-40 rounded-xl" />
+            <Skeleton key={i} className="h-40 rounded-lg" />
           ))}
         </div>
       ) : errorMessage ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
           {errorMessage}
         </div>
       ) : logs.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
           <FileText className="mx-auto size-8 text-slate-400" />
           <div className="mt-4 text-lg font-semibold text-slate-900">No daily logs found</div>
           <div className="mt-2 text-sm text-slate-500">Try adjusting your filters.</div>
@@ -447,7 +447,7 @@ export default function CompanyDailyLogsPage() {
           <div className="space-y-6" data-testid="daily-logs-feed">
             {groupedByDate.map(([date, dayLogs]) => (
               <div key={date} data-testid={`daily-logs-day-${date}`}>
-                <div className="sticky top-0 z-[1] bg-slate-50/90 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 backdrop-blur">
+                <div className="sticky top-0 z-[1] bg-background/95 pb-2 pt-1 text-sm font-semibold text-foreground backdrop-blur">
                   {formatDateLabel(date)}
                 </div>
                 <div className="space-y-3">
@@ -456,7 +456,7 @@ export default function CompanyDailyLogsPage() {
                     return (
                       <div
                         key={log.id}
-                        className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                        className="rounded-lg border border-card-border bg-card p-5 shadow-xs"
                         data-testid="daily-log-card"
                       >
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

@@ -139,13 +139,13 @@ export default function NotificationsSection() {
   const hasPendingSave = savingKeys.size > 0
 
   return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-      <div className="px-6 py-5 border-b border-[#E5E7EB] flex items-center gap-2.5">
+    <div>
+      <div className="flex items-center gap-2.5 border-b border-border pb-4">
         <Bell className="size-4 text-slate-500" />
-        <h2 className="text-sm font-semibold text-slate-800">Email notifications</h2>
+        <h2 className="text-base font-semibold text-foreground">Email notifications</h2>
       </div>
 
-      <div className="px-6 py-6">
+      <div className="py-6">
         <p className="text-sm text-slate-600">
           Control which events trigger an email to {""}
           <span className="font-medium text-slate-800">your inbox</span>. Most of these

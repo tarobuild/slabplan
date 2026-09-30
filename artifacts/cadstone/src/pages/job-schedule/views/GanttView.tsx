@@ -155,7 +155,7 @@ export function GanttView(props: GanttViewProps) {
     <TooltipProvider delayDuration={150}>
     <div
       className={cn(
-        "rounded-xl border border-[#E5E7EB] bg-white shadow-sm",
+        "rounded-lg border border-[#E5E7EB] bg-white shadow-sm",
         ganttFullscreen && "fixed inset-4 z-50 flex flex-col",
       )}
     >
@@ -234,29 +234,29 @@ export function GanttView(props: GanttViewProps) {
             }
           />
         ) : (
-          <div className={cn("overflow-hidden rounded-xl border border-[#E5E7EB]", ganttFullscreen && "h-full")}>
+          <div className={cn("overflow-hidden rounded-lg border border-[#E5E7EB]", ganttFullscreen && "h-full")}>
             <div className={cn("flex", ganttFullscreen && "h-full flex-col")}>
               <div className={cn("flex min-w-0 w-full", ganttFullscreen && "min-h-0 flex-1")}>
-                <div className="w-[340px] shrink-0 border-r border-[#E5E7EB]">
-                  <div className="grid grid-cols-[minmax(0,1fr)_108px_88px_72px_72px] border-b border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                <div className="w-32 shrink-0 border-r border-[#E5E7EB] md:w-[440px]" data-testid="gantt-label-pane">
+                  <div className="grid h-[82px] grid-cols-1 items-end border-b border-[#E5E7EB] bg-[#F8FAFC] px-3 py-3 text-xs font-semibold uppercase text-slate-500 md:grid-cols-[minmax(0,1fr)_88px_52px_32px_32px] md:gap-2" data-testid="gantt-label-header">
                     <div>Title</div>
-                    <div>Start</div>
-                    <div>Workdays</div>
-                    <div />
-                    <div />
+                    <div className="hidden md:block">Start</div>
+                    <div className="hidden md:block">Days</div>
+                    <div className="hidden md:block" />
+                    <div className="hidden md:block" />
                   </div>
 
                   <div className={cn("divide-y divide-[#E5E7EB]", ganttFullscreen && "max-h-full overflow-y-auto")}>
                     {ganttRows.map((row) =>
                       row.type === "phase" ? (
-                        <div key={row.key} className="bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                        <div key={row.key} className="flex h-[38px] items-center bg-slate-50 px-3 text-xs font-semibold uppercase text-slate-500">
                           {row.label}
                         </div>
                       ) : (
                         <div
                           key={row.key}
                           className={cn(
-                            "grid w-full grid-cols-[minmax(0,1fr)_108px_88px_72px_72px] items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50",
+                            "grid h-[54px] w-full grid-cols-1 items-center px-3 py-2 text-left transition hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_88px_52px_32px_32px] md:gap-2",
                             activeConflictIds.has(row.item.id) && "bg-rose-50/60",
                           )}
                           role="button"
@@ -277,7 +277,7 @@ export function GanttView(props: GanttViewProps) {
                               />
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <span className="truncate font-medium text-slate-900" title={row.item.title}>{row.item.title}</span>
+                                  <span className="line-clamp-2 text-xs font-medium leading-4 text-slate-900 md:line-clamp-none md:truncate md:text-sm" title={row.item.title}>{row.item.title}</span>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="max-w-xs bg-slate-900 text-white">
                                   {row.item.title}
@@ -285,14 +285,14 @@ export function GanttView(props: GanttViewProps) {
                               </Tooltip>
                             </div>
                           </div>
-                          <div className="text-sm text-slate-500">{fmtDate(row.item.startDate)}</div>
-                          <div className="text-sm text-slate-500">{row.item.workDays}</div>
+                          <div className="hidden text-xs text-slate-500 md:block">{fmtDate(row.item.startDate)}</div>
+                          <div className="hidden text-sm text-slate-500 md:block">{row.item.workDays}</div>
                           {canWrite ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
                                   type="button"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
+                                  className="hidden h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white md:inline-flex"
                                   onClick={(event) => {
                                     event.stopPropagation()
                                     openExistingItem(row.item.id)
@@ -306,14 +306,14 @@ export function GanttView(props: GanttViewProps) {
                               <TooltipContent>Edit schedule item</TooltipContent>
                             </Tooltip>
                           ) : (
-                            <div />
+                            <div className="hidden md:block" />
                           )}
                           {canCreateScheduleItems ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
                                   type="button"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white"
+                                  className="hidden h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] text-slate-500 transition hover:bg-white md:inline-flex"
                                   onClick={(event) => {
                                     event.stopPropagation()
                                     openNewItem()
@@ -326,7 +326,7 @@ export function GanttView(props: GanttViewProps) {
                               </TooltipTrigger>
                               <TooltipContent>Add schedule item</TooltipContent>
                             </Tooltip>
-                          ) : null}
+                          ) : <div className="hidden md:block" />}
                         </div>
                       ),
                     )}
@@ -340,22 +340,22 @@ export function GanttView(props: GanttViewProps) {
                 >
                   <div style={{ width: `${timelineWidth}px` }}>
                     <div className="sticky top-0 z-10 bg-white">
-                      <div className="flex border-b border-[#E5E7EB] bg-[#F8FAFC]">
+                      <div className="flex h-8 border-b border-[#E5E7EB] bg-[#F8FAFC]">
                         {monthGroups.map((group) => (
                           <div
                             key={group.key}
-                            className="border-r border-[#E5E7EB] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 last:border-r-0"
+                            className="flex items-center border-r border-[#E5E7EB] px-3 text-xs font-semibold uppercase text-slate-500 last:border-r-0"
                             style={{ width: `${group.width}px` }}
                           >
                             {group.label}
                           </div>
                         ))}
                       </div>
-                      <div className="relative flex border-b border-[#E5E7EB] bg-white">
+                      <div className="relative flex h-[50px] border-b border-[#E5E7EB] bg-white" data-testid="gantt-day-header">
                         {scaleUnits.map((unit) => (
                           <div
                             key={unit.key}
-                            className="border-r border-[#E5E7EB] px-2 py-2 text-center text-xs font-medium text-slate-500 last:border-r-0"
+                            className="flex items-center justify-center border-r border-[#E5E7EB] px-2 text-center text-xs font-medium text-slate-500 last:border-r-0"
                             style={{ width: `${unit.width}px` }}
                           >
                             {unit.label}

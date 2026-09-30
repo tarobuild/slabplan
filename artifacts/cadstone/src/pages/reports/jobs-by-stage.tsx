@@ -93,7 +93,7 @@ export default function JobsByStageReport() {
                   <col className="w-[10%]" />
                   <col className="w-[10%]" />
                 </colgroup>
-                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
                   <tr>
                     <th className="px-3 py-2 text-left">Client</th>
                     <th className="px-3 py-2 text-center">Stage mix</th>

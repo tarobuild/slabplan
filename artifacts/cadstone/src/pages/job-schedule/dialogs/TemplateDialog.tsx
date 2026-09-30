@@ -38,7 +38,7 @@ export function TemplateDialog({
 
         <div className="grid gap-4 md:grid-cols-2">
           {SCHEDULE_TEMPLATES.map((template) => (
-            <div key={template.id} className="rounded-2xl border border-[#E5E7EB] p-4">
+            <div key={template.id} className="rounded-lg border border-[#E5E7EB] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-900">{template.name}</h3>
@@ -57,12 +57,12 @@ export function TemplateDialog({
                   )}
                 </Button>
               </div>
-              <div className="mt-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+              <div className="mt-4 text-xs font-semibold uppercase text-slate-400">
                 {template.items.length} schedule item{template.items.length === 1 ? "" : "s"}
               </div>
               <div className="mt-3 space-y-2">
                 {template.items.map((item) => (
-                  <div key={`${template.id}-${item.title}`} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  <div key={`${template.id}-${item.title}`} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
                     <span>{item.title}</span>
                     <span>{item.workDays} day{item.workDays === 1 ? "" : "s"}</span>
                   </div>

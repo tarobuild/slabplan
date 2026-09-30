@@ -93,7 +93,7 @@ export function SettingsDialog({
             </div>
           </div>
 
-          <div className="space-y-3 rounded-xl border border-[#E5E7EB] p-4">
+          <div className="space-y-3 rounded-lg border border-[#E5E7EB] p-4">
             {[
               {
                 key: "showTimesOnMonthView",
@@ -127,7 +127,7 @@ export function SettingsDialog({
             ))}
           </div>
 
-          <div className="space-y-4 rounded-xl border border-[#E5E7EB] p-4">
+          <div className="space-y-4 rounded-lg border border-[#E5E7EB] p-4">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900">Phases Management</h3>

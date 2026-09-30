@@ -163,4 +163,8 @@ test("Gantt task labels and icon-only controls expose full hover labels", async 
   const timelineScroller = container.querySelector("[data-testid='gantt-timeline-scroller']")
   assert.match(timelineScroller?.parentElement?.className ?? "", /\bmin-w-0\b/)
   assert.match(timelineScroller?.parentElement?.className ?? "", /\bw-full\b/)
+  assert.match(container.querySelector("[data-testid='gantt-label-pane']")?.className ?? "", /w-32.*md:w-\[440px\]/)
+  assert.match(container.querySelector("[data-testid='gantt-label-header']")?.className ?? "", /h-\[82px\]/)
+  assert.match(container.querySelector("[data-testid='gantt-day-header']")?.className ?? "", /h-\[50px\]/)
+  assert.match(container.querySelector("[role='button']")?.className ?? "", /h-\[54px\]/)
 })

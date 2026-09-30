@@ -1860,7 +1860,7 @@ export default function FileBrowser({
 	          <div className="space-y-5 py-2">
 	            <div className="space-y-2">
 	              <div className="px-1 text-sm font-semibold text-slate-900">Roles</div>
-	              <div className="grid grid-cols-[1fr_72px_72px] items-center gap-3 border-b border-slate-200 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+	 <div className="grid grid-cols-[1fr_72px_72px] items-center gap-3 border-b border-slate-200 px-1 pb-2 text-xs font-semibold uppercase text-slate-500">
 	                <span>Role</span>
 	                <span className="text-center">View</span>
 	                <span className="text-center">Upload</span>
@@ -1913,7 +1913,7 @@ export default function FileBrowser({
 
 	            <div className="space-y-2">
 	              <div className="px-1 text-sm font-semibold text-slate-900">People</div>
-	              <div className="grid grid-cols-[1fr_72px_72px] items-center gap-3 border-b border-slate-200 px-1 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+	 <div className="grid grid-cols-[1fr_72px_72px] items-center gap-3 border-b border-slate-200 px-1 pb-2 text-xs font-semibold uppercase text-slate-500">
 	                <span>Person</span>
 	                <span className="text-center">View</span>
 	                <span className="text-center">Upload</span>
@@ -2190,9 +2190,9 @@ function FolderCard({
 	  onDelete: () => void
 	}) {
   return (
-    <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-xl border border-[#E5E7EB] bg-white hover:border-primary/20 hover:bg-primary/5 transition-colors cursor-pointer select-none">
+    <div className="relative group flex flex-col gap-2 px-4 py-3 rounded-lg border border-[#E5E7EB] bg-white hover:border-primary/20 hover:bg-primary/5 transition-colors cursor-pointer select-none">
       <button
-        className="absolute inset-0 rounded-xl"
+        className="absolute inset-0 rounded-lg"
         onClick={onOpen}
         aria-label={`Open ${folder.title}`}
       />
@@ -2360,7 +2360,7 @@ function AuthPhoto({
     return (
       <div
         ref={containerRef}
-        className="group relative flex flex-col rounded-xl overflow-hidden border border-amber-200 bg-amber-50 text-left"
+        className="group relative flex flex-col rounded-lg overflow-hidden border border-amber-200 bg-amber-50 text-left"
       >
         <div className="flex flex-col text-left">
           <div className="relative aspect-square overflow-hidden bg-amber-50">
@@ -2404,7 +2404,7 @@ function AuthPhoto({
   return (
     <div
       ref={containerRef}
-      className="group relative flex flex-col rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-primary/40 transition-colors text-left"
+      className="group relative flex flex-col rounded-lg overflow-hidden border border-[#E5E7EB] bg-slate-100 hover:border-primary/40 transition-colors text-left"
     >
       <button onClick={onClick} className="flex flex-col text-left">
         <div className="relative aspect-square overflow-hidden bg-slate-100">
@@ -2653,7 +2653,7 @@ function VideoGrid({
           return (
             <div
               key={file.id}
-              className="group relative rounded-xl overflow-hidden border border-amber-200 bg-amber-50 aspect-video text-left"
+              className="group relative rounded-lg overflow-hidden border border-amber-200 bg-amber-50 aspect-video text-left"
             >
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-3 text-center text-amber-700">
                 <AlertTriangle className="size-7" />
@@ -2685,7 +2685,7 @@ function VideoGrid({
         return (
           <div
             key={file.id}
-            className="group relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-primary/40 transition-colors text-left"
+            className="group relative rounded-lg overflow-hidden border border-[#E5E7EB] bg-slate-900 aspect-video hover:border-primary/40 transition-colors text-left"
           >
             <button
               onClick={() => onOpenPlayer(file)}

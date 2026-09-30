@@ -108,13 +108,13 @@ export default function ProfileSection() {
   }
 
   return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-      <div className="px-6 py-5 border-b border-[#E5E7EB] flex items-center gap-2.5">
+    <div>
+      <div className="flex items-center gap-2.5 border-b border-border pb-4">
         <User className="size-4 text-slate-500" />
-        <h2 className="text-sm font-semibold text-slate-800">Profile</h2>
+        <h2 className="text-base font-semibold text-foreground">Profile</h2>
       </div>
 
-      <div className="px-6 py-6">
+      <div className="py-6">
         {loadingProfile ? (
           <div className="space-y-4">
             {Array.from({ length: 3 }).map((_, i) => (

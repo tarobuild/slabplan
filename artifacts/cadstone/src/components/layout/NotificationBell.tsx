@@ -106,19 +106,19 @@ export default function NotificationBell() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="relative ml-1 flex items-center justify-center rounded p-2 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-          aria-label="Open notifications"
+          className="relative inline-flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label={unreadCount > 0 ? `Open notifications, ${unreadCount} unread` : "Open notifications"}
           title="Notifications"
         >
-          <Bell className="size-5" />
+          <Bell className="size-[18px]" />
           {unreadCount > 0 ? (
-            <span className="absolute right-0.5 top-0.5 min-w-4 rounded-full bg-[#E85D04] px-1 text-center text-[10px] font-semibold leading-4 text-white">
+            <span className="absolute right-1 top-1 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-4 text-primary-foreground ring-2 ring-card">
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           ) : null}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="mt-1 w-80 border-[#E5E7EB] p-0 shadow-lg">
+      <DropdownMenuContent align="end" className="mt-1 w-[22rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-lg border-border p-0 shadow-xl">
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5">
           <p className="text-sm font-semibold text-slate-900">Notifications</p>
           <button

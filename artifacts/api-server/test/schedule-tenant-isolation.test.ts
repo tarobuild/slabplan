@@ -12,15 +12,19 @@ const testDatabaseUrl =
 let server: Server;
 let baseUrl: string;
 let orgAAdminToken: string;
+let orgBAdminToken: string;
+let orgADrafterToken: string;
 
 const runId = crypto.randomUUID();
 const orgAId = crypto.randomUUID();
 const orgBId = crypto.randomUUID();
 const orgAAdminId = crypto.randomUUID();
 const orgBAdminId = crypto.randomUUID();
+const orgADrafterId = crypto.randomUUID();
 const orgAJobId = crypto.randomUUID();
 const orgBJobId = crypto.randomUUID();
 const createdScheduleItemIds: string[] = [];
+const companyScheduleItemIds = Array.from({ length: 5 }, () => crypto.randomUUID());
 
 function jsonHeaders(token: string) {
   return {
@@ -42,7 +46,7 @@ before(async () => {
   const { default: app, prepareApp } = await import("../src/app.ts");
   const auth = await import("../src/lib/auth.ts");
   const { db } = await import("@workspace/db");
-  const { jobs, organizationMemberships, organizations, users } =
+  const { jobs, organizationMemberships, organizations, scheduleItems, scheduleItemAssignees, users } =
     await import("@workspace/db/schema");
 
   await prepareApp();
@@ -79,6 +83,14 @@ before(async () => {
       role: "admin",
       defaultOrganizationId: orgBId,
     },
+    {
+      id: orgADrafterId,
+      email: `schedule-drafter-a-${runId}@tenant.local`,
+      passwordHash: "test-not-a-real-hash",
+      fullName: "Schedule Tenant A Drafter",
+      role: "drafter",
+      defaultOrganizationId: orgAId,
+    },
   ]);
 
   await db.insert(organizationMemberships).values([
@@ -92,6 +104,12 @@ before(async () => {
       organizationId: orgBId,
       userId: orgBAdminId,
       role: "admin",
+      isDefault: true,
+    },
+    {
+      organizationId: orgAId,
+      userId: orgADrafterId,
+      role: "drafter",
       isDefault: true,
     },
   ]);
@@ -111,6 +129,24 @@ before(async () => {
     },
   ]);
 
+  await db.insert(scheduleItems).values(companyScheduleItemIds.map((id, index) => ({
+    id,
+    organizationId: index === 2 ? orgBId : index === 3 ? null : orgAId,
+    jobId: index === 2 ? orgBJobId : orgAJobId,
+    title: `Company Schedule Fixture ${index} ${runId}`,
+    startDate: `2040-01-0${index + 1}`,
+    endDate: `2040-01-0${index + 1}`,
+    workDays: 1,
+    createdBy: index === 4 ? orgBAdminId : orgAAdminId,
+    isPersonalTodo: index === 4,
+  })));
+  // A stale foreign assignment must not override the active-company boundary.
+  await db.insert(scheduleItemAssignees).values([0, 2].map((index) => ({
+    scheduleItemId: companyScheduleItemIds[index],
+    organizationId: index === 2 ? orgBId : orgAId,
+    userId: orgADrafterId,
+  })));
+
   orgAAdminToken = auth.signAccessToken({
     id: orgAAdminId,
     email: `schedule-admin-a-${runId}@tenant.local`,
@@ -122,6 +158,13 @@ before(async () => {
     createdAt: new Date(),
     updatedAt: new Date(),
   });
+  const { eq } = await import("drizzle-orm");
+  for (const userId of [orgBAdminId, orgADrafterId]) {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    const token = auth.signAccessToken(user);
+    if (userId === orgBAdminId) orgBAdminToken = token;
+    else orgADrafterToken = token;
+  }
 
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -153,26 +196,27 @@ after(async () => {
   const { inArray } = await import("drizzle-orm");
 
   try {
-    if (createdScheduleItemIds.length > 0) {
+    const allScheduleItemIds = [...createdScheduleItemIds, ...companyScheduleItemIds];
+    if (allScheduleItemIds.length > 0) {
       await db
         .delete(activityLog)
-        .where(inArray(activityLog.entityId, createdScheduleItemIds));
+        .where(inArray(activityLog.entityId, allScheduleItemIds));
       await db
         .delete(scheduleItemPredecessors)
         .where(
           inArray(
             scheduleItemPredecessors.scheduleItemId,
-            createdScheduleItemIds,
+            allScheduleItemIds,
           ),
         );
       await db
         .delete(scheduleItemAssignees)
         .where(
-          inArray(scheduleItemAssignees.scheduleItemId, createdScheduleItemIds),
+          inArray(scheduleItemAssignees.scheduleItemId, allScheduleItemIds),
         );
       await db
         .delete(scheduleItems)
-        .where(inArray(scheduleItems.id, createdScheduleItemIds));
+        .where(inArray(scheduleItems.id, allScheduleItemIds));
     }
     await db
       .delete(scheduleTagSettings)
@@ -187,7 +231,7 @@ after(async () => {
     await db
       .delete(organizationMemberships)
       .where(inArray(organizationMemberships.organizationId, [orgAId, orgBId]));
-    await db.delete(users).where(inArray(users.id, [orgAAdminId, orgBAdminId]));
+    await db.delete(users).where(inArray(users.id, [orgAAdminId, orgBAdminId, orgADrafterId]));
     await db
       .delete(organizations)
       .where(inArray(organizations.id, [orgAId, orgBId]));
@@ -348,4 +392,72 @@ test("legacy phases reject cleanly until the idempotent tenant repair is applied
     },
   );
   assert.equal(repaired.status, 200, await repaired.text());
+});
+
+const companyRange = "from=2040-01-01&to=2040-01-10";
+
+test("company schedule pages, totals, cursors and foreign filters stay within the active organization", async () => {
+  const first = await fetch(`${baseUrl}/schedule?${companyRange}&limit=1`, {
+    headers: jsonHeaders(orgAAdminToken),
+  });
+  assert.equal(first.status, 200);
+  const firstBody = await first.json();
+  assert.equal(firstBody.pagination.totalItems, 2);
+  assert.equal(firstBody.pagination.totalPages, 2);
+  assert.deepEqual(firstBody.data.map((item: { id: string }) => item.id), [companyScheduleItemIds[0]]);
+  assert.equal(firstBody.data[0].jobId, orgAJobId);
+  assert.equal(firstBody.data[0].jobTitle, `Schedule Tenant A Job ${runId}`);
+
+  const second = await fetch(`${baseUrl}/schedule?${companyRange}&limit=1&page=2`, {
+    headers: jsonHeaders(orgAAdminToken),
+  });
+  assert.equal(second.status, 200);
+  assert.deepEqual((await second.json()).data.map((item: { id: string }) => item.id), [companyScheduleItemIds[1]]);
+
+  let cursor = "";
+  const ids: string[] = [];
+  for (let page = 0; page < 3; page++) {
+    const response = await fetch(`${baseUrl}/schedule?${companyRange}&limit=1&cursor=${encodeURIComponent(cursor)}`, {
+      headers: jsonHeaders(orgAAdminToken),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    ids.push(...body.data.map((item: { id: string }) => item.id));
+    if (!body.pagination.hasMore) break;
+    assert.equal(typeof body.pagination.nextCursor, "string");
+    cursor = body.pagination.nextCursor;
+  }
+  assert.deepEqual(ids, companyScheduleItemIds.slice(0, 2));
+
+  for (const cursorMode of [false, true]) {
+    const response = await fetch(`${baseUrl}/schedule?${companyRange}&jobId=${orgBJobId}${cursorMode ? "&cursor=" : ""}`, {
+      headers: jsonHeaders(orgAAdminToken),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.data, []);
+    if (cursorMode) assert.equal(body.pagination.hasMore, false);
+    else assert.equal(body.pagination.totalItems, 0);
+  }
+
+  const otherCompany = await fetch(`${baseUrl}/schedule?${companyRange}`, {
+    headers: jsonHeaders(orgBAdminToken),
+  });
+  assert.equal(otherCompany.status, 200);
+  const otherBody = await otherCompany.json();
+  assert.equal(otherBody.pagination.totalItems, 1);
+  assert.deepEqual(otherBody.data.map((item: { id: string }) => item.id), [companyScheduleItemIds[2]]);
+});
+
+test("drafter company schedule preserves assignment visibility without leaking foreign assignments", async () => {
+  for (const cursorMode of [false, true]) {
+    const response = await fetch(`${baseUrl}/schedule?${companyRange}${cursorMode ? "&cursor=" : ""}`, {
+      headers: jsonHeaders(orgADrafterToken),
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.data.map((item: { id: string }) => item.id), [companyScheduleItemIds[0]]);
+    if (cursorMode) assert.equal(body.pagination.hasMore, false);
+    else assert.equal(body.pagination.totalItems, 1);
+  }
 });

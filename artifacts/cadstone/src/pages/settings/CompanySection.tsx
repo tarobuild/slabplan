@@ -6,13 +6,13 @@ export default function CompanySection() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-        <div className="px-6 py-5 border-b border-[#E5E7EB] flex items-center gap-2.5">
+      <div>
+        <div className="flex items-center gap-2.5 border-b border-border pb-4">
           <Building2 className="size-4 text-slate-500" />
-          <h2 className="text-sm font-semibold text-slate-800">Company defaults</h2>
+          <h2 className="text-base font-semibold text-foreground">Company defaults</h2>
         </div>
 
-        <div className="px-6 py-6 space-y-4">
+        <div className="space-y-4 py-6">
           <p className="text-sm text-slate-600">
             Workspace-wide defaults that apply to new jobs, schedules, and daily logs. Only
             admins can change these.

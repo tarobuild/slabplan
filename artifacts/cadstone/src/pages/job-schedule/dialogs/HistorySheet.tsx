@@ -52,7 +52,7 @@ export function HistorySheet({ open, onOpenChange, loading, entries }: HistorySh
                   const changes = getActivityEntryChanges(entry.metadata)
 
                   return (
-                    <div key={entry.id} className="rounded-xl border border-[#E5E7EB] bg-white px-4 py-4">
+                    <div key={entry.id} className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-medium text-slate-900">{description}</p>

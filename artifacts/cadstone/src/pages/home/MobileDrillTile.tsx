@@ -41,30 +41,22 @@ export function MobileDrillTile({
   const [open, setOpen] = useState(false)
   const tileBody = (
     <>
-      {icon ? (
-        <div className="flex items-center gap-2">
-          {icon}
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            {label}
-          </p>
-        </div>
-      ) : (
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          {label}
-        </p>
-      )}
-      <p
-        className={`text-2xl font-semibold tabular-nums text-slate-900 ${
-          icon ? "mt-2" : "mt-1"
-        }`}
-      >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        {icon ? (
+          <span className="flex size-8 shrink-0 items-center justify-center">
+            {icon}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-2 text-[28px] font-semibold leading-9 tabular-nums text-foreground">
         {value}
       </p>
-      {sub ? <p className="mt-0.5 text-xs text-slate-500">{sub}</p> : null}
+      {sub ? <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p> : null}
     </>
   )
   const cls =
-    "block w-full rounded-lg border border-[#E5E7EB] bg-white p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
+    "block w-full rounded-lg border border-card-border bg-card p-5 text-left shadow-sm transition hover:border-foreground/15 hover:shadow-md"
   return (
     <>
       <button
@@ -261,7 +253,7 @@ function ActiveJobsDrill({ onNavigate }: { onNavigate: () => void }) {
             <Link
               to={`/clients/${g.clientId}`}
               onClick={onNavigate}
-              className="flex items-center justify-between gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:text-primary"
+              className="flex items-center justify-between gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase text-slate-600 hover:text-primary"
             >
               <span className="truncate">{g.clientName}</span>
               <span className="shrink-0 text-[10px] text-slate-400">
@@ -269,7 +261,7 @@ function ActiveJobsDrill({ onNavigate }: { onNavigate: () => void }) {
               </span>
             </Link>
           ) : (
-            <div className="flex items-center justify-between gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="flex items-center justify-between gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
               <span className="truncate">{g.clientName}</span>
               <span className="shrink-0 text-[10px] text-slate-400">
                 {g.jobs.length}

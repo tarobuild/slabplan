@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { NavLink, useLocation, useNavigate } from "react-router-dom"
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom"
 import {
   Briefcase,
   ClipboardList,
@@ -71,7 +71,7 @@ export default function MobileBottomNav() {
     : [
         { label: "Home", to: "/dashboard", icon: Home },
         ...(hasRoleAccess(role, ROLE_GATES.clients)
-          ? [{ label: "Clients", to: "/clients", icon: Users }]
+          ? [{ label: "Clients", to: "/clients", icon: Users, matchPrefixes: ["/jobs"] }]
           : []),
         ...(hasRoleAccess(role, ROLE_GATES.myJobs)
           ? [{ label: "Jobs", to: "/jobs", icon: Briefcase }]
@@ -121,9 +121,9 @@ export default function MobileBottomNav() {
 
   if (!user) return null
 
-  // The "Schedule" tab navigates to a query-param URL; NavLink doesn't
-  // match against query strings, so derive the active state ourselves
-  // from `location.pathname` + `location.search`.
+  // The "Schedule" tab navigates to a query-param URL; router matching
+  // ignores query strings, so derive the active state ourselves from
+  // `location.pathname` + `location.search`.
   const fullPath = `${location.pathname}${location.search}`
 
   return (
@@ -131,7 +131,7 @@ export default function MobileBottomNav() {
       <nav
         data-print-hide="true"
         aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white shadow-[0_-1px_2px_rgba(0,0,0,0.04)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 md:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <ul className="grid grid-cols-4">
@@ -142,20 +142,29 @@ export default function MobileBottomNav() {
                 : isPathActive(location.pathname, tab)
             return (
               <li key={tab.label}>
-                <NavLink
+                {/* Plain Link so our query- and segment-aware state is the
+                    aria-current that actually renders. */}
+                <Link
                   to={tab.to}
                   className={cn(
-                    "flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors",
+                    "flex h-16 flex-col items-center justify-center gap-1 text-[11px] transition-colors",
                     active
-                      ? "text-primary"
-                      : "text-slate-500 hover:text-slate-800",
+                      ? "font-semibold text-foreground"
+                      : "font-medium text-muted-foreground hover:text-foreground",
                   )}
                   aria-label={tab.label}
                   aria-current={active ? "page" : undefined}
                 >
-                  <tab.icon className="size-5" aria-hidden="true" />
+                  <span
+                    className={cn(
+                      "flex h-7 w-14 items-center justify-center rounded-full transition-colors",
+                      active && "bg-accent text-primary",
+                    )}
+                  >
+                    <tab.icon className="size-5" aria-hidden="true" />
+                  </span>
                   <span>{tab.label}</span>
-                </NavLink>
+                </Link>
               </li>
             )
           })}
@@ -164,13 +173,20 @@ export default function MobileBottomNav() {
               type="button"
               onClick={() => setMoreOpen(true)}
               className={cn(
-                "flex h-14 w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-slate-500 hover:text-slate-800",
-                moreOpen && "text-primary",
+                "flex h-16 w-full flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground",
+                moreOpen && "text-foreground",
               )}
               aria-label="More navigation options"
               aria-expanded={moreOpen}
             >
-              <MoreHorizontal className="size-5" aria-hidden="true" />
+              <span
+                className={cn(
+                  "flex h-7 w-14 items-center justify-center rounded-full transition-colors",
+                  moreOpen && "bg-accent text-primary",
+                )}
+              >
+                <MoreHorizontal className="size-5" aria-hidden="true" />
+              </span>
               <span>More</span>
             </button>
           </li>
@@ -180,13 +196,14 @@ export default function MobileBottomNav() {
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
         <SheetContent
           side="bottom"
-          className="rounded-t-xl p-0"
+          className="rounded-t-2xl p-0"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
-          <SheetHeader className="border-b border-slate-100 px-4 py-3 text-left">
+          <div aria-hidden="true" className="mx-auto mt-2 h-1 w-10 rounded-full bg-border" />
+          <SheetHeader className="px-5 pb-2 pt-3 text-left">
             <SheetTitle className="text-base">More</SheetTitle>
           </SheetHeader>
-          <nav aria-label="More navigation" className="flex flex-col gap-0.5 p-2">
+          <nav aria-label="More navigation" className="flex flex-col gap-0.5 px-3 pb-4">
             {visibleMoreItems.map((item) => (
               <NavLink
                 key={item.to}
@@ -194,17 +211,18 @@ export default function MobileBottomNav() {
                 onClick={() => setMoreOpen(false)}
                 className={({ isActive }) =>
                   cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                    "flex min-h-12 items-center gap-3 rounded-lg px-3 text-[15px] font-medium transition-colors",
                     isActive
-                      ? "bg-primary/10 text-primary"
-                      : "text-slate-700 hover:bg-slate-100",
+                      ? "bg-accent text-accent-foreground"
+                      : "text-foreground hover:bg-muted",
                   )
                 }
               >
-                <item.icon className="size-4 text-slate-400" aria-hidden="true" />
+                <item.icon className="size-5 text-muted-foreground" aria-hidden="true" />
                 {item.label}
               </NavLink>
             ))}
+            <div className="my-1 h-px bg-border" />
             <button
               type="button"
               onClick={async () => {
@@ -212,10 +230,10 @@ export default function MobileBottomNav() {
                 await logoutSession()
                 navigate("/login", { replace: true })
               }}
-              className="mt-1 flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-[15px] font-medium text-foreground hover:bg-muted"
             >
-              <LogOut className="size-4 text-slate-400" aria-hidden="true" />
-              Logout
+              <LogOut className="size-5 text-muted-foreground" aria-hidden="true" />
+              Log out
             </button>
           </nav>
         </SheetContent>

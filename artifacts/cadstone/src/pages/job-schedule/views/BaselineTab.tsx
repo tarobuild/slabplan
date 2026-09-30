@@ -55,7 +55,7 @@ export function BaselineTab(props: BaselineTabProps) {
 
   return (
     <div className="space-y-4">
-      <div data-print-hide="true" className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+      <div data-print-hide="true" className="rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2" />
 
@@ -116,7 +116,7 @@ export function BaselineTab(props: BaselineTabProps) {
           onAction={canWrite ? () => void handleSetBaseline() : undefined}
         />
       ) : (
-        <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+        <div className="rounded-lg border border-[#E5E7EB] bg-white shadow-sm">
           <div className="border-b border-[#E5E7EB] px-6 py-5">
             <p className="text-sm font-semibold text-slate-900">Baseline comparison</p>
             <p className="mt-1 text-sm text-slate-500">

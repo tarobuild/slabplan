@@ -39,3 +39,20 @@ test("estimate heading and actions wrap independently on small screens", () => {
   assert.match(estimate, /CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0"/)
   assert.match(estimate, /<div className="flex flex-wrap gap-2">/)
 })
+
+test("whole-page financial sections are unframed and sit on the page gutters", () => {
+  assert.match(source, /const PAGE_SECTION_CLASS =\s*"[^"]*border-0[^"]*bg-transparent[^"]*shadow-none/)
+  for (const marker of [
+    "{/* Estimate / project metadata */}",
+    "{/* SOV section */}",
+    "{/* Change orders */}",
+    "{/* Invoices */}",
+  ]) {
+    const start = source.indexOf(marker)
+    assert.notEqual(start, -1, marker)
+    assert.match(source.slice(start, start + 120), /<Card className=\{PAGE_SECTION_CLASS\}>/, marker)
+  }
+  const progress = source.slice(source.indexOf("{/* Overall % billed bar */}"), source.indexOf("{/* Estimate / project metadata */}"))
+  assert.doesNotMatch(progress, /<Card/)
+  assert.doesNotMatch(source, /<div className="flex flex-col gap-6 p-4 md:p-6">/)
+})

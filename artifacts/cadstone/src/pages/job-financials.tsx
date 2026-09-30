@@ -594,7 +594,7 @@ const SovAreaRow = memo(function SovAreaRow({
       </div>
       {collapsed ? null : (
         <>
-          <div className="px-3 pt-1 text-[10px] uppercase tracking-wide text-slate-400 md:hidden">
+          <div className="px-3 pt-1 text-[10px] uppercase text-slate-400 md:hidden">
             ← swipe to see more →
           </div>
           <div className="overflow-x-auto">
@@ -613,7 +613,7 @@ const SovAreaRow = memo(function SovAreaRow({
                 ))}
                 <col className="w-[56px]" />
               </colgroup>
-              <thead className="border-b border-slate-200 bg-white text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <thead className="border-b border-slate-200 bg-white text-xs font-semibold uppercase text-slate-500">
                 <tr>
                   <th className="px-3 py-2 text-left align-bottom">Status</th>
                   <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left align-bottom shadow-[1px_0_0_0_rgb(226,232,240)] md:shadow-none md:static">
@@ -666,6 +666,12 @@ const SovAreaRow = memo(function SovAreaRow({
     </div>
   )
 })
+
+// Whole-page financial sections sit directly on the page, divided by a
+// hairline, instead of floating as cards. Repeated items (areas, invoices)
+// and tools inside them keep their own frames.
+const PAGE_SECTION_CLASS =
+  "rounded-none border-0 border-t border-border bg-transparent shadow-none [&>[data-slot=card-content]]:px-0 [&>[data-slot=card-footer]]:px-0 [&>[data-slot=card-header]]:px-0"
 
 export default function JobFinancialsPage() {
   const { jobId } = useParams<{ jobId: string }>()
@@ -1456,7 +1462,7 @@ export default function JobFinancialsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-4 md:p-6">
+    <div className="flex flex-col gap-8">
       {!canManage ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           You have read-only access to this financial dashboard.
@@ -1478,8 +1484,8 @@ export default function JobFinancialsPage() {
 
       {/* Overall % billed bar */}
       {totals ? (
-        <Card>
-          <CardContent className="space-y-4 py-4">
+        <section aria-label="Billing progress">
+          <div className="space-y-4">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>Overall progress</span>
               <span className="tabular-nums">
@@ -1528,12 +1534,12 @@ export default function JobFinancialsPage() {
                 </div>
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       ) : null}
 
       {/* Estimate / project metadata */}
-      <Card>
+      <Card className={PAGE_SECTION_CLASS}>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <CardTitle className="flex items-center gap-2 text-lg">
             <FileText className="h-5 w-5" /> Estimate
@@ -1580,7 +1586,7 @@ export default function JobFinancialsPage() {
         {estimateError ? (
           <div
             role="alert"
-            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
+            className="mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
           >
             <div className="min-w-0">
               <div className="font-medium">
@@ -1813,7 +1819,7 @@ export default function JobFinancialsPage() {
       </Card>
 
       {/* SOV section */}
-      <Card>
+      <Card className={PAGE_SECTION_CLASS}>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <CardTitle className="flex items-center gap-2 text-lg">
             <DollarSign className="h-5 w-5" /> Schedule of Values
@@ -1856,7 +1862,7 @@ export default function JobFinancialsPage() {
       </Card>
 
       {/* Change orders */}
-      <Card>
+      <Card className={PAGE_SECTION_CLASS}>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <div className="min-w-0 space-y-1">
             <CardTitle className="text-lg">Change Orders</CardTitle>
@@ -1903,7 +1909,7 @@ export default function JobFinancialsPage() {
         {coParseError ? (
           <div
             role="alert"
-            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
+            className="mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
           >
             <div className="min-w-0">
               <div className="font-medium">
@@ -2018,7 +2024,7 @@ export default function JobFinancialsPage() {
       </Card>
 
       {/* Invoices */}
-      <Card>
+      <Card className={PAGE_SECTION_CLASS}>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Receipt className="h-5 w-5" /> Invoices
@@ -2053,7 +2059,7 @@ export default function JobFinancialsPage() {
         {invoiceError ? (
           <div
             role="alert"
-            className="mx-6 mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
+            className="mb-3 flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary"
           >
             <div className="min-w-0">
               <div className="font-medium">

@@ -21,13 +21,13 @@ export default function DiagnosticsSection() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-        <div className="flex items-center gap-2.5 border-b border-[#E5E7EB] px-6 py-5">
+      <div>
+        <div className="flex items-center gap-2.5 border-b border-border pb-4">
           <Activity className="size-4 text-slate-500" />
-          <h2 className="text-sm font-semibold text-slate-800">Diagnostics</h2>
+          <h2 className="text-base font-semibold text-foreground">Diagnostics</h2>
         </div>
 
-        <div className="space-y-5 px-6 py-6">
+        <div className="space-y-5 py-6">
           <Alert>
             <ShieldAlert className="size-4" />
             <AlertTitle>Admin diagnostics</AlertTitle>

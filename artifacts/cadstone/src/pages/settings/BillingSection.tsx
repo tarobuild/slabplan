@@ -154,11 +154,11 @@ export default function BillingSection({ onboarding = false }: { onboarding?: bo
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-6 py-5">
+      <div>
+        <div className="flex items-center justify-between gap-3 border-b border-border pb-4">
           <div className="flex items-center gap-2.5">
             <CreditCard className="size-4 text-slate-500" />
-            <h2 className="text-sm font-semibold text-slate-800">Billing</h2>
+            <h2 className="text-base font-semibold text-foreground">Billing</h2>
           </div>
           <Button
             type="button"
@@ -174,7 +174,7 @@ export default function BillingSection({ onboarding = false }: { onboarding?: bo
           </Button>
         </div>
 
-        <div className="space-y-6 px-6 py-6">
+        <div className="space-y-6 py-6">
           {statusQuery.isLoading ? (
             <div className="space-y-4">
               <Skeleton className="h-24 w-full" />
@@ -195,7 +195,7 @@ export default function BillingSection({ onboarding = false }: { onboarding?: bo
             <>
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <p className="text-xs font-medium uppercase text-slate-500">
                     Workspace
                   </p>
                   <p className="mt-2 text-sm font-semibold text-slate-900">
@@ -203,7 +203,7 @@ export default function BillingSection({ onboarding = false }: { onboarding?: bo
                   </p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <p className="text-xs font-medium uppercase text-slate-500">
                     Subscription
                   </p>
                   <p className="mt-2 text-sm font-semibold text-slate-900">
@@ -211,7 +211,7 @@ export default function BillingSection({ onboarding = false }: { onboarding?: bo
                   </p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <p className="text-xs font-medium uppercase text-slate-500">
                     Billing email
                   </p>
                   <p className="mt-2 truncate text-sm font-semibold text-slate-900">

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { Calendar, ChevronRight, Loader2, X } from "lucide-react"
-import type { ScheduleItem } from "@workspace/api-client-react"
 import { api } from "@/lib/api"
 import { apiErrorMessage } from "@/lib/api-errors"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
+import PageHeader from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,14 +19,29 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  deriveStatus,
+  getViewWindow,
+  intersectRange,
+  localDateKey,
+  parseAnchor,
+  parseGanttScale,
+  shiftAnchor,
+  type CalendarViewMode,
+  type ScheduleRow,
+} from "./company-schedule/layout"
+import {
+  CompanyGanttView,
+  CompanyMonthView,
+  CompanyWeekView,
+  PeriodNavigator,
+} from "./company-schedule/views"
+import { GANTT_SCALES } from "./job-schedule/constants"
+import type { GanttScale } from "./job-schedule/types"
+
+export { deriveStatus, localDateKey }
 
 const PAGE_LIMIT = 50
-
-type ScheduleRow = ScheduleItem & {
-  jobTitle?: string | null
-  clientId?: string | null
-  clientName?: string | null
-}
 
 type CursorPagination = { limit: number; hasMore: boolean; nextCursor: string | null }
 
@@ -49,6 +64,24 @@ const STATUS_OPTIONS: Array<{ value: string; label: string }> = [
 ]
 
 type OptionRow = { id: string; label: string }
+type OptionCollection = "clients" | "jobs" | "users"
+
+async function loadFilterRows<T>(endpoint: string, collection: OptionCollection, params: Record<string, string | number>, signal: AbortSignal) {
+  const rows: T[] = []
+  let page = 1
+  while (true) {
+    const response = await api.get<Partial<Record<OptionCollection, T[]>> & {
+      pagination?: { totalPages?: number; hasMore?: boolean }
+    }>(endpoint, { params: { ...params, page }, signal })
+    rows.push(...(response.data[collection] ?? []))
+    const pagination = response.data.pagination
+    if (typeof pagination?.totalPages === "number") {
+      if (page >= pagination.totalPages) break
+    } else if (!pagination?.hasMore) break
+    page += 1
+  }
+  return rows
+}
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "—"
@@ -57,22 +90,6 @@ function formatDate(value: string | null | undefined) {
     day: "numeric",
     year: "numeric",
   }).format(new Date(`${value}T12:00:00`))
-}
-
-export function localDateKey(date = new Date()) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
-export function deriveStatus(item: ScheduleRow, today = localDateKey()): { label: string; tone: string } {
-  if (item.isComplete) return { label: "Complete", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" }
-  if (item.endDate && item.endDate < today) return { label: "Overdue", tone: "border-rose-200 bg-rose-50 text-rose-700" }
-  if (item.startDate && item.startDate <= today && item.endDate && item.endDate >= today) {
-    return { label: "In progress", tone: "border-blue-200 bg-blue-50 text-blue-700" }
-  }
-  return { label: "Upcoming", tone: "border-slate-200 bg-slate-50 text-slate-600" }
 }
 
 export default function CompanySchedulePage() {
@@ -85,6 +102,7 @@ export default function CompanySchedulePage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
+  const [filterError, setFilterError] = useState("")
   const [clientOptions, setClientOptions] = useState<OptionRow[]>([])
   const [jobOptions, setJobOptions] = useState<OptionRow[]>([])
   const [assigneeOptions, setAssigneeOptions] = useState<OptionRow[]>([])
@@ -102,9 +120,42 @@ export default function CompanySchedulePage() {
     return out
   }, [searchParams])
 
+  // Gantt, Week and Month show one period at a time (anchored by ?date=) and
+  // request only that period, narrowed by any From/To filter. List keeps the
+  // plain filtered feed.
+  const today = localDateKey()
+  const calendarMode: CalendarViewMode | null = viewMode === "list" ? null : viewMode
+  const anchor = parseAnchor(searchParams.get("date"), today)
+  const ganttScale = parseGanttScale(searchParams.get("scale"))
+  const viewWindow = useMemo(
+    () => (calendarMode ? getViewWindow(calendarMode, anchor, ganttScale) : null),
+    [calendarMode, anchor, ganttScale],
+  )
+  const requestRange = viewWindow ? intersectRange(viewWindow, filters.from, filters.to) : null
+
   function setView(next: ViewMode) {
     const sp = new URLSearchParams(searchParams)
     sp.set("view", next)
+    setSearchParams(sp, { replace: true })
+  }
+
+  function setAnchor(next: string | null) {
+    const sp = new URLSearchParams(searchParams)
+    if (next && next !== today) sp.set("date", next)
+    else sp.delete("date")
+    setSearchParams(sp, { replace: true })
+  }
+
+  function setGanttScale(next: GanttScale) {
+    const sp = new URLSearchParams(searchParams)
+    sp.set("scale", next)
+    setSearchParams(sp, { replace: true })
+  }
+
+  function openWeekOf(day: string) {
+    const sp = new URLSearchParams(searchParams)
+    sp.set("view", "week")
+    sp.set("date", day)
     setSearchParams(sp, { replace: true })
   }
 
@@ -124,62 +175,67 @@ export default function CompanySchedulePage() {
   function clearAllFilters() {
     const sp = new URLSearchParams()
     if (viewMode !== "gantt") sp.set("view", viewMode)
+    const date = searchParams.get("date")
+    if (date) sp.set("date", date)
+    if (ganttScale !== "day") sp.set("scale", ganttScale)
     setSearchParams(sp, { replace: true })
   }
 
-  // Lightweight option lists for filter selects. These tolerate failures
-  // (selects fall back to "All ...") so the page always renders.
   useEffect(() => {
     let cancelled = false
-    api
-      .get<{ clients?: Array<{ id: string; companyName?: string | null; name?: string | null }> }>(
-        "/clients?pageSize=200",
-      )
-      .then((r) => {
+    const controller = new AbortController()
+    setFilterError("")
+    setClientOptions([])
+    setJobOptions([])
+    setAssigneeOptions([])
+    function reportFailure(message: string) {
+      if (!cancelled) setFilterError((current) => current ? `${current} ${message}` : message)
+    }
+    if (!isDrafter) {
+      void loadFilterRows<{ id: string; companyName?: string | null; name?: string | null }>(
+        "/clients", "clients", { pageSize: 100 }, controller.signal,
+      ).then((rows) => {
         if (cancelled) return
-        const rows = (r.data.clients ?? []).map((c) => ({
+        setClientOptions(rows.map((c) => ({
           id: c.id,
           label: c.companyName ?? c.name ?? c.id,
-        }))
-        setClientOptions(rows)
-      })
-      .catch(() => {})
-    api
-      .get<{ jobs?: Array<{ id: string; title?: string | null; clientName?: string | null }> }>(
-        "/jobs?pageSize=200",
-      )
-      .then((r) => {
+        })))
+      }).catch(() => reportFailure("Client filters could not be loaded."))
+      void loadFilterRows<{ id: string; fullName?: string | null; email: string }>(
+        "/users", "users", { roles: "admin,project_manager,crew_member,drafter", limit: 200 }, controller.signal,
+      ).then((rows) => {
         if (cancelled) return
-        const rows = (r.data.jobs ?? []).map((j) => ({
+        setAssigneeOptions(rows.map((u) => ({ id: u.id, label: u.fullName ?? u.email })))
+      }).catch(() => reportFailure("Assignee filters could not be loaded."))
+    }
+    void loadFilterRows<{ id: string; title?: string | null; clientId?: string | null; clientName?: string | null }>(
+      "/jobs", "jobs", { pageSize: 100 }, controller.signal,
+    ).then((rows) => {
+        if (cancelled) return
+        setJobOptions(rows.map((j) => ({
           id: j.id,
           label: j.clientName ? `${j.clientName} · ${j.title ?? j.id}` : (j.title ?? j.id),
-        }))
-        setJobOptions(rows)
-      })
-      .catch(() => {})
-    api
-      .get<{ users?: Array<{ id: string; fullName?: string | null; email: string }> }>(
-        "/users?roles=admin,project_manager,crew_member,drafter&limit=200",
-      )
-      .then((r) => {
-        if (cancelled) return
-        const rows = (r.data.users ?? []).map((u) => ({
-          id: u.id,
-          label: u.fullName ?? u.email,
-        }))
-        setAssigneeOptions(rows)
-      })
-      .catch(() => {})
+        })))
+        if (isDrafter) {
+          const clients = new Map<string, OptionRow>()
+          for (const job of rows) {
+            if (job.clientId && job.clientName) clients.set(job.clientId, { id: job.clientId, label: job.clientName })
+          }
+          setClientOptions(Array.from(clients.values()).sort((a, b) => a.label.localeCompare(b.label)))
+        }
+      }).catch(() => reportFailure("Job filters could not be loaded."))
     return () => {
       cancelled = true
+      controller.abort()
     }
-  }, [])
+  }, [isDrafter])
 
   async function loadItems(cursor: string | null) {
     const isInitial = cursor === null
     const requestId = ++loadRequestIdRef.current
     if (isInitial) {
       setLoading(true)
+      setLoadingMore(false)
       setErrorMessage("")
     } else {
       setLoadingMore(true)
@@ -192,6 +248,17 @@ export default function CompanySchedulePage() {
       for (const key of FILTER_KEYS) {
         const v = filters[key]
         if (v) params[key] = v
+      }
+      if (viewWindow) {
+        // The From/To filters exclude this whole period: nothing to show.
+        if (!requestRange) {
+          setItems([])
+          setHasMore(false)
+          setNextCursor(null)
+          return
+        }
+        params.from = requestRange.from
+        params.to = requestRange.to
       }
       const response = await api.get<ScheduleResponse>("/schedule", { params })
       if (requestId !== loadRequestIdRef.current) return
@@ -221,7 +288,7 @@ export default function CompanySchedulePage() {
     setHasMore(false)
     void loadItems(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(filters)])
+  }, [JSON.stringify(filters), viewWindow?.start, viewWindow?.end])
 
   const activeChips = FILTER_KEYS.filter((k) => filters[k])
 
@@ -233,7 +300,7 @@ export default function CompanySchedulePage() {
     return value
   }
 
-  // Group rows by start-date bucket for gantt/week/month and by job for list.
+  // List remains grouped by job; the calendar modes use their own geometry.
   const groupedByJob = useMemo(() => {
     const map = new Map<string, { jobId: string; jobTitle: string; clientName: string | null; rows: ScheduleRow[] }>()
     for (const it of items) {
@@ -250,24 +317,13 @@ export default function CompanySchedulePage() {
     return Array.from(map.values())
   }, [items])
 
-  const groupedByDate = useMemo(() => {
-    const map = new Map<string, ScheduleRow[]>()
-    for (const it of items) {
-      const key = it.startDate ?? "—"
-      const arr = map.get(key) ?? []
-      arr.push(it)
-      map.set(key, arr)
-    }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
-  }, [items])
 
   return (
     <div className="space-y-5" data-testid="company-schedule-page">
-      <div className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Company</div>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-950">Schedule</h1>
-        <p className="mt-1 text-sm text-slate-500">All schedule items across every job and client.</p>
-      </div>
+      <PageHeader
+        className="mb-0"
+        title="Schedule"
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={viewMode} onValueChange={(v) => setView(v as ViewMode)}>
@@ -286,16 +342,16 @@ export default function CompanySchedulePage() {
       </div>
 
       <div
-        className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-6"
+        className={`grid grid-cols-2 gap-3 lg:grid-cols-3 ${isDrafter ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}
         data-testid="schedule-filters"
       >
         <div className="space-y-1">
-          <Label className="text-xs">Client</Label>
+          <Label htmlFor="schedule-filter-client" className="text-xs">Client</Label>
           <Select
             value={filters.clientId ?? "__all__"}
             onValueChange={(v) => setFilter("clientId", v)}
           >
-            <SelectTrigger data-testid="filter-select-clientId"><SelectValue placeholder="All clients" /></SelectTrigger>
+            <SelectTrigger id="schedule-filter-client" data-testid="filter-select-clientId"><SelectValue placeholder="All clients" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">All clients</SelectItem>
               {clientOptions.map((c) => (
@@ -305,12 +361,12 @@ export default function CompanySchedulePage() {
           </Select>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Job</Label>
+          <Label htmlFor="schedule-filter-job" className="text-xs">Job</Label>
           <Select
             value={filters.jobId ?? "__all__"}
             onValueChange={(v) => setFilter("jobId", v)}
           >
-            <SelectTrigger data-testid="filter-select-jobId"><SelectValue placeholder="All jobs" /></SelectTrigger>
+            <SelectTrigger id="schedule-filter-job" data-testid="filter-select-jobId"><SelectValue placeholder="All jobs" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">All jobs</SelectItem>
               {jobOptions.map((j) => (
@@ -319,13 +375,13 @@ export default function CompanySchedulePage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Assignee</Label>
+        {!isDrafter ? <div className="space-y-1">
+          <Label htmlFor="schedule-filter-assignee" className="text-xs">Assignee</Label>
           <Select
             value={filters.assigneeId ?? "__all__"}
             onValueChange={(v) => setFilter("assigneeId", v)}
           >
-            <SelectTrigger data-testid="filter-select-assigneeId"><SelectValue placeholder="Anyone" /></SelectTrigger>
+            <SelectTrigger id="schedule-filter-assignee" data-testid="filter-select-assigneeId"><SelectValue placeholder="Anyone" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">Anyone</SelectItem>
               {assigneeOptions.map((a) => (
@@ -333,14 +389,14 @@ export default function CompanySchedulePage() {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </div> : null}
         <div className="space-y-1">
-          <Label className="text-xs">Status</Label>
+          <Label htmlFor="schedule-filter-status" className="text-xs">Status</Label>
           <Select
             value={filters.status ?? "__all__"}
             onValueChange={(v) => setFilter("status", v)}
           >
-            <SelectTrigger data-testid="filter-select-status"><SelectValue placeholder="Any status" /></SelectTrigger>
+            <SelectTrigger id="schedule-filter-status" data-testid="filter-select-status"><SelectValue placeholder="Any status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">Any status</SelectItem>
               {STATUS_OPTIONS.map((s) => (
@@ -349,18 +405,20 @@ export default function CompanySchedulePage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">From</Label>
+        <div className="col-span-2 space-y-1 min-[360px]:col-span-1">
+          <Label htmlFor="schedule-filter-from" className="text-xs">From</Label>
           <Input
+            id="schedule-filter-from"
             type="date"
             value={filters.from ?? ""}
             onChange={(e) => setFilter("from", e.target.value)}
             data-testid="filter-input-from"
           />
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">To</Label>
+        <div className="col-span-2 space-y-1 min-[360px]:col-span-1">
+          <Label htmlFor="schedule-filter-to" className="text-xs">To</Label>
           <Input
+            id="schedule-filter-to"
             type="date"
             value={filters.to ?? ""}
             onChange={(e) => setFilter("to", e.target.value)}
@@ -369,21 +427,23 @@ export default function CompanySchedulePage() {
         </div>
       </div>
 
+      {filterError ? <p role="status" className="text-sm text-destructive">{filterError}</p> : null}
+
       {activeChips.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {activeChips.map((key) => (
             <Badge
               key={key}
               variant="outline"
-              className="gap-1 border-primary/20 bg-primary/10 text-primary"
+              className="max-w-full gap-1 border-primary/20 bg-primary/10 text-primary"
               data-testid={`filter-chip-${key}`}
             >
-              {key}: {chipLabel(key, filters[key]!)}
+              <span className="min-w-0 truncate">{key}: {chipLabel(key, filters[key]!)}</span>
               <button
                 type="button"
                 onClick={() => clearFilter(key)}
                 aria-label={`Clear ${key} filter`}
-                className="ml-1 hover:text-primary"
+                className="ml-1 shrink-0 hover:text-primary"
               >
                 <X className="size-3" />
               </button>
@@ -392,29 +452,66 @@ export default function CompanySchedulePage() {
         </div>
       ) : null}
 
+      {calendarMode && viewWindow ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <PeriodNavigator
+            mode={calendarMode}
+            label={viewWindow.label}
+            onPrevious={() => setAnchor(shiftAnchor(calendarMode, anchor, -1, ganttScale))}
+            onNext={() => setAnchor(shiftAnchor(calendarMode, anchor, 1, ganttScale))}
+            onToday={() => setAnchor(null)}
+          />
+          {calendarMode === "gantt" ? (
+            <div className="flex flex-wrap items-center gap-2" data-testid="gantt-scale-control">
+              <span className="text-xs font-medium text-muted-foreground">Timeline</span>
+              <Tabs value={ganttScale} onValueChange={(value) => setGanttScale(value as GanttScale)}>
+                <TabsList aria-label="Gantt timeline scale">
+                  {GANTT_SCALES.map((scale) => (
+                    <TabsTrigger key={scale.value} value={scale.value}>{scale.label}</TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="space-y-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 rounded-xl" />
+            <Skeleton key={i} className="h-32 rounded-lg" />
           ))}
         </div>
       ) : errorMessage ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
           {errorMessage}
         </div>
+      ) : calendarMode === "gantt" && viewWindow ? (
+        <CompanyGanttView rows={items} window={viewWindow} scale={ganttScale} today={today} canOpenJobs={!isDrafter} />
+      ) : calendarMode === "week" && viewWindow ? (
+        <CompanyWeekView rows={items} window={viewWindow} today={today} canOpenJobs={!isDrafter} />
+      ) : calendarMode === "month" && viewWindow ? (
+        <CompanyMonthView
+          rows={items}
+          window={viewWindow}
+          anchor={anchor}
+          today={today}
+          canOpenJobs={!isDrafter}
+          onOpenWeek={openWeekOf}
+        />
       ) : items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
           <Calendar className="mx-auto size-8 text-slate-400" />
           <div className="mt-4 text-lg font-semibold text-slate-900">No schedule items</div>
           <div className="mt-2 text-sm text-slate-500">Try adjusting your filters.</div>
         </div>
       ) : viewMode === "list" ? (
-        <div className="space-y-6" data-testid="schedule-list">
+        <div className="space-y-8" data-testid="schedule-list">
           {groupedByJob.map((group) => (
-            <div key={group.jobId} className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+            <section key={group.jobId}>
+              <div className="flex items-center justify-between gap-3 border-b border-border pb-2">
                 <div className="min-w-0">
-                  <div className="text-xs uppercase tracking-wide text-slate-400">{group.clientName ?? ""}</div>
+                  <div className="text-xs text-muted-foreground">{group.clientName ?? ""}</div>
                   {isDrafter ? (
                     <div className="text-base font-semibold text-slate-900">
                       {group.jobTitle}
@@ -437,12 +534,12 @@ export default function CompanySchedulePage() {
                   </Button>
                 ) : null}
               </div>
-              <div className="divide-y divide-slate-100">
+              <div className="divide-y divide-border">
                 {group.rows.map((it) => {
                   const status = deriveStatus(it)
                   const content = (
                     <>
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 flex-wrap items-center gap-3">
                         <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: it.displayColor || it.phaseColor || "#94a3b8" }} />
                         <span className="font-medium text-slate-900">{it.title}</span>
                         <Badge variant="outline" className={status.tone}>{status.label}</Badge>
@@ -455,7 +552,7 @@ export default function CompanySchedulePage() {
                   return isDrafter ? (
                     <div
                       key={it.id}
-                      className="flex flex-col gap-1 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
                     >
                       {content}
                     </div>
@@ -463,62 +560,17 @@ export default function CompanySchedulePage() {
                     <Link
                       key={it.id}
                       to={it.jobId ? `/jobs/${it.jobId}/schedule?focus=${it.id}` : "/jobs"}
-                      className="flex flex-col gap-1 px-5 py-3 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-1 rounded-sm py-3 outline-offset-2 transition-colors hover:text-primary sm:flex-row sm:items-center sm:justify-between [&:hover_.font-medium]:text-primary"
                     >
                       {content}
                     </Link>
                   )
                 })}
               </div>
-            </div>
+            </section>
           ))}
         </div>
-      ) : (
-        <div className="space-y-4" data-testid={`schedule-${viewMode}`}>
-          {groupedByDate.map(([date, rows]) => (
-            <div key={date} className="rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700">
-                {formatDate(date)}
-              </div>
-              <div className="divide-y divide-slate-100">
-                {rows.map((it) => {
-                  const status = deriveStatus(it)
-                  const content = (
-                    <>
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: it.displayColor || it.phaseColor || "#94a3b8" }} />
-                        <div className="min-w-0">
-                          <div className="truncate font-medium text-slate-900">{it.title}</div>
-                          <div className="truncate text-xs text-slate-500">
-                            {it.clientName ? `${it.clientName} · ` : ""}{it.jobTitle ?? ""}
-                          </div>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className={status.tone}>{status.label}</Badge>
-                    </>
-                  )
-                  return isDrafter ? (
-                    <div
-                      key={it.id}
-                      className="flex items-center justify-between px-5 py-3"
-                    >
-                      {content}
-                    </div>
-                  ) : (
-                    <Link
-                      key={it.id}
-                      to={it.jobId ? `/jobs/${it.jobId}/schedule?focus=${it.id}` : "/jobs"}
-                      className="flex items-center justify-between px-5 py-3 hover:bg-slate-50"
-                    >
-                      {content}
-                    </Link>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      ) : null}
 
       <div className="flex flex-col items-center gap-2 pt-1 sm:flex-row sm:justify-between">
         <div className="text-sm text-slate-500">

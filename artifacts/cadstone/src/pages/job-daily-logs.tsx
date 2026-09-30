@@ -466,9 +466,8 @@ function truncateText(value: string | null | undefined, maxLength = 180) {
 function getInitials(value: string | null | undefined) {
   if (!value) return "?"
   const parts = value
-    .split(" ")
-    .map((part) => part.trim())
-    .filter(Boolean)
+    .split(/\s+/)
+    .filter((part) => /^[\p{L}\p{N}]/u.test(part))
     .slice(0, 2)
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "?"
 }
@@ -865,7 +864,7 @@ function EmptyState({
   onAction?: () => void
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-6 py-14 text-center">
+    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/70 px-6 py-14 text-center">
       <CloudSun className="mx-auto size-10 text-slate-400" />
       <h3 className="mt-4 text-lg font-semibold text-slate-900">{title}</h3>
       <p className="mx-auto mt-2 max-w-xl text-sm text-slate-500">{description}</p>
@@ -1076,7 +1075,7 @@ function CommentAttachmentThumbnail({
     <button
       type="button"
       onClick={onOpen}
-      className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 text-left"
+      className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-left"
     >
       {isImage ? (
         needsBlobFetch ? (
@@ -1455,7 +1454,7 @@ function TagEditor({
   onRemoveTag: (tag: string) => void
 }) {
   return (
-    <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+    <div className="space-y-2 rounded-lg border border-slate-200 p-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium text-slate-900">Tags</div>
         <div className="flex items-center gap-2">
@@ -1514,7 +1513,7 @@ function TeamPicker({
   }, [query, users])
 
   return (
-    <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+    <div className="space-y-3 rounded-lg border border-slate-200 p-4">
       <div className="flex items-center gap-2">
         <div className="text-sm font-semibold text-slate-950">{label}</div>
         {tooltip ? (
@@ -1645,12 +1644,12 @@ function SettingsDialog({
         </DialogHeader>
 
         <div className="space-y-6">
-          <div className="space-y-4 rounded-2xl border border-slate-200 p-4">
+          <div className="space-y-4 rounded-lg border border-slate-200 p-4">
             <div className="space-y-1">
               <div className="text-sm font-semibold text-slate-950">Daily Log Setup</div>
               <div className="text-sm text-slate-500">Choose whether new logs stamp the job address and start with a notes template.</div>
             </div>
-            <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 px-4 py-3">
+            <label className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-slate-700">Stamp Location</span>
                 <Tooltip>
@@ -1681,13 +1680,13 @@ function SettingsDialog({
             </div>
           </div>
 
-          <div className="space-y-4 rounded-2xl border border-slate-200 p-4">
+          <div className="space-y-4 rounded-lg border border-slate-200 p-4">
             <div className="space-y-1">
               <div className="text-sm font-semibold text-slate-950">Default Daily Log Share Settings</div>
               <div className="text-sm text-slate-500">Choose which audiences are shared and notified by default for new logs.</div>
             </div>
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <div className="grid grid-cols-[minmax(0,1fr)_88px_88px] bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="grid grid-cols-[minmax(0,1fr)_88px_88px] bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
                 <div>Audience</div>
                 <div className="text-center">Share</div>
                 <div className="text-center">Notify</div>
@@ -1735,7 +1734,7 @@ function SettingsDialog({
             </div>
           </div>
 
-          <div className="space-y-4 rounded-2xl border border-slate-200 p-4">
+          <div className="space-y-4 rounded-lg border border-slate-200 p-4">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="text-sm font-semibold text-slate-950">Daily Logs Custom Fields</div>
@@ -1748,7 +1747,7 @@ function SettingsDialog({
             </div>
 
             {showNewFieldForm ? (
-              <div className="space-y-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+              <div className="space-y-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Field name</Label>
@@ -1804,13 +1803,13 @@ function SettingsDialog({
             ) : null}
 
             {draftFields.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
                 No custom fields. Custom fields have not been added. Add data to your Daily Logs using custom fields.
               </div>
             ) : (
               <div className="space-y-3">
                 {draftFields.map((field) => (
-                  <div key={field.id} className="space-y-3 rounded-2xl border border-slate-200 p-4">
+                  <div key={field.id} className="space-y-3 rounded-lg border border-slate-200 p-4">
                     <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
                       <div className="space-y-2">
                         <Label>Name</Label>
@@ -2090,7 +2089,7 @@ function FilterSheet({
 
           <div className="space-y-2">
             <Label>Tags</Label>
-            <div className="max-h-48 space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-3">
+            <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border border-slate-200 p-3">
               {availableTags.length === 0 ? (
                 <div className="text-sm text-slate-500">No tags found yet.</div>
               ) : (
@@ -2387,7 +2386,7 @@ function CommentsSheet({
 
   function renderComment(comment: CommentRecord, depth = 0) {
     return (
-      <div key={comment.id} className={cn("space-y-3 rounded-xl border border-slate-200 bg-white p-4", depth > 0 && "ml-6 bg-slate-50")}>
+      <div key={comment.id} className={cn("space-y-3 rounded-lg border border-slate-200 bg-white p-4", depth > 0 && "ml-6 bg-slate-50")}>
         <div className="flex items-start justify-between gap-3">
           <AvatarLabel name={comment.author.fullName} avatarUrl={comment.author.avatarUrl} subtitle={formatDateTime(comment.createdAt)} />
           <Button variant="ghost" size="sm" onClick={() => setReplyTo(comment)}>
@@ -2474,7 +2473,7 @@ function CommentsSheet({
 
         <div className="flex-1 space-y-4 overflow-y-auto py-5">
           {loading ? (
-            Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-xl" />)
+            Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-lg" />)
           ) : comments.length === 0 ? (
             <EmptyState title="No comments yet" description="Start the discussion for this daily log." />
           ) : (
@@ -2566,7 +2565,7 @@ function CommentsSheet({
               placeholder="Add a comment"
             />
             {mentionResults.length > 0 ? (
-              <div className="absolute bottom-full left-0 mb-2 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+              <div className="absolute bottom-full left-0 mb-2 w-full rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
                 {mentionResults.map((user) => (
                   <button
                     key={user.id}
@@ -2992,14 +2991,14 @@ function DailyLogDialog({
 
         {loading ? (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)]">
-            <Skeleton className="h-[620px] rounded-2xl" />
-            <Skeleton className="h-[620px] rounded-2xl" />
+            <Skeleton className="h-[620px] rounded-lg" />
+            <Skeleton className="h-[620px] rounded-lg" />
           </div>
         ) : (
           <>
             <div className="grid gap-6 lg:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)]">
               <div className="space-y-4">
-                <div className="rounded-2xl border border-slate-200 p-4">
+                <div className="rounded-lg border border-slate-200 p-4">
                   <div className="mb-4 text-sm font-semibold text-slate-950">Daily Log Information</div>
                   <div className="space-y-4">
                     <div className="space-y-2">
@@ -3055,7 +3054,7 @@ function DailyLogDialog({
                     />
 
                     {customFields.length > 0 ? (
-                      <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+                      <div className="space-y-3 rounded-lg border border-slate-200 p-3">
                         <div className="text-sm font-medium text-slate-900">Custom Fields</div>
                         <div className="space-y-3">
                           {customFields.map((field) => {
@@ -3137,7 +3136,7 @@ function DailyLogDialog({
                                   </Select>
                                 ) : null}
                                 {field.fieldType === "checkbox" ? (
-                                  <label className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-3">
+                                  <label className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-3">
                                     <span className="text-sm text-slate-700">{field.name}</span>
                                     <Checkbox
                                       checked={currentValue === true}
@@ -3162,7 +3161,7 @@ function DailyLogDialog({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 p-4">
+                <div className="rounded-lg border border-slate-200 p-4">
                   <div className="mb-1 text-sm font-semibold text-slate-950">Permissions</div>
                   <div className="mb-4 text-sm text-slate-500">Share</div>
                   <div className="space-y-3">
@@ -3193,7 +3192,7 @@ function DailyLogDialog({
               </div>
 
               <div className="space-y-4">
-                <div className="space-y-3 rounded-2xl border border-slate-200 p-4">
+                <div className="space-y-3 rounded-lg border border-slate-200 p-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-sm font-semibold text-slate-950">Attachments</div>
@@ -3238,7 +3237,7 @@ function DailyLogDialog({
                   <div
                     {...onDrop.getRootProps()}
                     className={cn(
-                      "cursor-pointer rounded-2xl border-2 border-dashed px-4 py-6 text-center transition-colors",
+                      "cursor-pointer rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors",
                       onDrop.isDragActive ? "border-primary/40 bg-primary/10" : "border-slate-300 bg-slate-50 hover:border-primary/40 hover:bg-primary/10",
                     )}
                   >
@@ -3275,7 +3274,7 @@ function DailyLogDialog({
                         <div
                           key={attachment.key}
                           className={cn(
-                            "flex items-center justify-between rounded-xl border px-3 py-3",
+                            "flex items-center justify-between rounded-lg border px-3 py-3",
                             isMissing
                               ? "border-amber-200 bg-amber-50"
                               : "border-slate-200",
@@ -3327,10 +3326,10 @@ function DailyLogDialog({
                   </div>
                 </div>
 
-                <div className="space-y-2 rounded-2xl border border-slate-200 p-4">
+                <div className="space-y-2 rounded-lg border border-slate-200 p-4">
                   <div className="text-sm font-semibold text-slate-950">Notes</div>
                   {!currentLog && settings.stampLocation && locationStampPreview ? (
-                    <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
+                    <div className="rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
                       Location stamp will be added on publish: <span className="font-medium">{locationStampPreview}</span>
                     </div>
                   ) : null}
@@ -3835,19 +3834,37 @@ export default function JobDailyLogsPage() {
   return (
     <TooltipProvider delayDuration={150}>
       <div className="space-y-5" data-print-root="daily-logs">
-        <div className="hidden rounded-3xl border border-slate-200 bg-white px-5 py-5 shadow-sm" data-print-only="true">
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{job?.title || "Project"}</div>
+        <div className="hidden rounded-lg border border-slate-200 bg-white px-5 py-5" data-print-only="true">
+          <div className="text-xs font-semibold uppercase text-slate-400">{job?.title || "Project"}</div>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">Daily Logs</h1>
           {selectedLog ? (
             <div className="mt-2 text-sm text-slate-500">{titleForLog(selectedLog.logDate, selectedLog.title)}</div>
           ) : null}
         </div>
 
-        <div data-print-hide="true" className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white px-5 py-5 shadow-sm sm:flex-row sm:items-end sm:justify-between">
-          <div className="space-y-1">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{job?.title || "Project"}</div>
-            <h1 className="text-2xl font-semibold text-slate-950">Daily Logs</h1>
-          </div>
+        {/* The job header and tab already name this page, so the toolbar
+            only carries search and actions. */}
+        <div data-print-hide="true" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {!selectedLog ? (
+            <div className="relative w-full sm:max-w-md sm:flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchValue}
+                onChange={(event) => {
+                  const nextValue = event.target.value
+                  setSearchValue(nextValue)
+                  if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+                  searchDebounceRef.current = setTimeout(() => {
+                    setAppliedFilters((current) => ({ ...current, keywords: nextValue }))
+                  }, 250)
+                }}
+                placeholder="Search logs"
+                className="pl-9"
+              />
+            </div>
+          ) : (
+            <div />
+          )}
           <div className="flex flex-wrap items-center gap-2">
             {canEditDailyLogs ? (
               <Button
@@ -3855,14 +3872,16 @@ export default function JobDailyLogsPage() {
                 size="sm"
                 onClick={handleOpenSettings}
                 disabled={!settingsLoaded}
+                aria-label="Daily log settings"
+                title="Daily log settings"
               >
                 <Settings2 className="size-4" />
               </Button>
             ) : null}
-            <Button variant="outline" size="sm" onClick={() => runPrint("list")}>
+            <Button variant="outline" size="sm" onClick={() => runPrint("list")} aria-label="Print daily logs" title="Print daily logs">
               <Printer className="size-4" />
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setFilterOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => setFilterOpen(true)} aria-label="Filter daily logs" title="Filter daily logs">
               <Filter className="size-4" />
               {activeFilterCount(appliedFilters) > 0 ? (
                 <Badge variant="outline" className="ml-1 border-primary/20 bg-primary/10 text-primary">
@@ -3881,27 +3900,11 @@ export default function JobDailyLogsPage() {
 
         {!selectedLog ? (
           <div data-print-list-only="true">
-            <div data-print-hide="true" className="relative max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <Input
-                value={searchValue}
-                onChange={(event) => {
-                  const nextValue = event.target.value
-                  setSearchValue(nextValue)
-                  if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
-                  searchDebounceRef.current = setTimeout(() => {
-                    setAppliedFilters((current) => ({ ...current, keywords: nextValue }))
-                  }, 250)
-                }}
-                placeholder="Search logs"
-                className="pl-9"
-              />
-            </div>
 
             {loading ? (
               <div className="space-y-4">
                 {Array.from({ length: 4 }).map((_, index) => (
-                  <Skeleton key={index} className="h-48 rounded-2xl" />
+                  <Skeleton key={index} className="h-48 rounded-lg" />
                 ))}
               </div>
             ) : logs.length === 0 && !hasMore ? (
@@ -3925,12 +3928,12 @@ export default function JobDailyLogsPage() {
             ) : (
               <>
                 {filteredLogs.length > 0 ? (
-                  <div className="rounded-3xl border border-slate-200 bg-white px-5 shadow-sm">
+                  <div>
                     {groupLogsByDate(filteredLogs).map((group, groupIndex) => (
                       <div key={group.date}>
                         {/* Date section header */}
-                        <div className={cn("border-b border-slate-200 pb-2 pt-5", groupIndex > 0 && "mt-2")}>
-                          <h3 className="text-lg font-bold text-slate-900">{group.label}</h3>
+                        <div className={cn("border-b border-border pb-2", groupIndex > 0 && "mt-8")}>
+                          <h3 className="text-[15px] font-semibold text-foreground">{group.label}</h3>
                         </div>
                         {/* Log entries */}
                         {group.logs.map((log, logIndex) => (
@@ -3948,7 +3951,7 @@ export default function JobDailyLogsPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-500 shadow-sm">
+                  <div className="rounded-lg border border-dashed border-border bg-card px-5 py-10 text-center text-sm text-muted-foreground">
                     {hasMore
                       ? "No daily logs in the loaded batch match your filters. Load more to keep searching."
                       : "No daily logs match your filters."}
@@ -3956,7 +3959,7 @@ export default function JobDailyLogsPage() {
                 )}
 
                 <div data-print-hide="true" className="flex flex-col items-center gap-2 pt-1 sm:flex-row sm:justify-between">
-                  <div className="text-sm text-slate-500">
+                  <div className="text-xs text-muted-foreground">
                     {filteredLogs.length === logs.length
                       ? `${filteredLogs.length} ${filteredLogs.length === 1 ? "item" : "items"} loaded`
                       : `${filteredLogs.length} of ${logs.length} loaded ${logs.length === 1 ? "item" : "items"} match`}
@@ -3985,8 +3988,8 @@ export default function JobDailyLogsPage() {
         ) : (
           <div data-print-detail-only="true" className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
             <div className="space-y-5">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <button data-print-hide="true" type="button" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800" onClick={() => setSelectedLog(null)}>
+              <div>
+                <button data-print-hide="true" type="button" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground" onClick={() => setSelectedLog(null)}>
                   <ChevronLeft className="size-4" />
                   <span>{job?.title || "Project"} / Daily Logs</span>
                 </button>
@@ -4065,19 +4068,19 @@ export default function JobDailyLogsPage() {
                     </div>
 
                     <div className="mt-8 space-y-3">
-                      <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Notes</div>
-                      <div className="whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm leading-7 text-slate-700">
+                      <div className="text-sm font-semibold uppercase text-slate-400">Notes</div>
+                      <div className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-4 py-5 text-sm leading-7 text-slate-700">
                         {selectedLog.notes || "No notes entered for this log."}
                       </div>
                     </div>
 
                     {selectedLogCustomFields.length > 0 ? (
                       <div className="mt-8 space-y-3">
-                        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Custom Fields</div>
+                        <div className="text-sm font-semibold uppercase text-slate-400">Custom Fields</div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           {selectedLogCustomFields.map(({ field, value }) => (
-                            <div key={field.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{field.name}</div>
+                            <div key={field.id} className="rounded-lg border border-slate-200 bg-white px-4 py-4">
+                              <div className="text-xs font-semibold uppercase text-slate-400">{field.name}</div>
                               <div className="mt-2 text-sm font-medium text-slate-800">{formatCustomFieldValue(value)}</div>
                             </div>
                           ))}
@@ -4087,7 +4090,7 @@ export default function JobDailyLogsPage() {
 
                     {selectedLog.attachments.length > 0 ? (
                       <div className="mt-8 space-y-3">
-                        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">Attachments</div>
+                        <div className="text-sm font-semibold uppercase text-slate-400">Attachments</div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           {selectedLog.attachments.map((attachment, idx) => (
                             <DailyLogAttachmentCard
@@ -4237,7 +4240,7 @@ function DailyLogAttachmentCard({
     <button
       type="button"
       onClick={handleClick}
-      className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-primary/40 text-left"
+      className="rounded-lg border border-slate-200 bg-white p-4 hover:border-primary/40 text-left"
     >
       <div className="flex items-center gap-3">
         <FileText className="size-5 text-slate-400" />

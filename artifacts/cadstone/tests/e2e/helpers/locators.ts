@@ -5,6 +5,7 @@ export function visiblePlaceholder(page: Page, placeholder: string | RegExp) {
     .getByPlaceholder(placeholder)
     .and(page.locator(":visible"))
     .and(page.locator(':not([placeholder="Global search"])'))
+    .and(page.locator(':not([aria-label="Global search"])'))
     .first()
 }
 

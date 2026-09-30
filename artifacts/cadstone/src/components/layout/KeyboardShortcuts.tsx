@@ -183,7 +183,7 @@ function KeyboardShortcuts() {
         <div className="space-y-5 pt-1">
           {shortcutGroups.map((group) => (
             <div key={group.heading}>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-400">
                 {group.heading}
               </p>
               <ul className="space-y-1.5">

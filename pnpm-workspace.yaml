@@ -75,16 +75,16 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
-  brace-expansion: 2.1.4
+  brace-expansion: 2.1.7
   lodash: 4.18.1
   path-to-regexp: 8.4.2
   picomatch: 4.0.4
   yaml: 2.8.3
-  fast-uri: 3.1.6
+  fast-uri: 3.1.8
   # ----- audit pins (Task #100) -----
-  # Axios security advisories through 1.17.x include redirect credential
+  # Axios security advisories through 1.19.x include redirect credential
   # leaks, resource exhaustion, and proxy handling flaws. Pin within 1.x.
-  axios: 1.18.0
+  axios: 1.20.0
   # follow-redirects <=1.15.11 — leaks custom auth headers cross-domain.
   # Fixed in 1.16.0; transitive of axios.
   follow-redirects: 1.16.0
@@ -102,7 +102,7 @@ overrides:
   uuid: 14.0.0
   # Build-tool security patches stay on their consumers' supported major lines.
   postcss: 8.5.23
-  "undici@>=7.0.0 <7.29.0": 7.29.0
+  "undici@>=7.0.0 <7.29.1": 7.29.1
   "nanoid@>=3.0.0 <3.3.18": 3.3.18
   browserslist: 4.28.7
   "@babel/core@>=7.0.0 <7.29.6": 7.29.6
@@ -119,17 +119,17 @@ overrides:
   # (GHSA-69xw-7hcm-h432, moderate). Transitive of
   # @modelcontextprotocol/sdk. (Task #384)
   hono: 4.13.5
-  # ip-address <=10.1.0 — XSS in Address6 HTML-emitting methods
-  # (GHSA-v2v4-37r5-5v8g, moderate). Transitive of
+  # ip-address <=10.7.0 — XSS in Address6 HTML-emitting methods.
+  # Transitive of
   # @modelcontextprotocol/sdk via express-rate-limit. (Task #384)
-  ip-address: 10.3.1
+  ip-address: 10.7.1
   # Replit production security audit pins. These stay within the direct
   # consumers' supported major versions and clear deployed high advisories.
   "@hono/node-server": 1.19.15
   "@opentelemetry/core": 2.8.0
   "@remix-run/router": 1.23.3
   body-parser: 2.3.0
-  engine.io: 6.6.7
+  engine.io: 6.6.10
   form-data: 4.0.6
   qs: 6.16.0
   # Keep Mammoth's XML parser on the patched, compatible 0.8.x branch.

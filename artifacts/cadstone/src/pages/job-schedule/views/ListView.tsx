@@ -101,7 +101,7 @@ export function ListView(props: ListViewProps) {
   } = props
 
   return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+    <div className="rounded-lg border border-[#E5E7EB] bg-white shadow-sm">
       <div data-print-hide="true" className="flex flex-col gap-3 border-b border-[#E5E7EB] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-sm font-semibold text-slate-900">
@@ -163,7 +163,7 @@ export function ListView(props: ListViewProps) {
           />
         ) : (
           <>
-            <div className="overflow-hidden rounded-xl border border-[#E5E7EB]">
+            <div className="overflow-hidden rounded-lg border border-[#E5E7EB]">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-[#F8FAFC] hover:bg-[#F8FAFC]">
@@ -198,7 +198,7 @@ export function ListView(props: ListViewProps) {
                     <Fragment key={group.label}>
                       {listDisplayMode === "phases" ? (
                         <TableRow className="hover:bg-white">
-                          <TableCell colSpan={10} className="bg-slate-50 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                          <TableCell colSpan={10} className="bg-slate-50 py-2 text-xs font-semibold uppercase text-slate-500">
                             {group.label}
                           </TableCell>
                         </TableRow>

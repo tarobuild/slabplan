@@ -30,12 +30,30 @@ const SEGMENT_LABELS: Record<string, string> = {
   summary: "Summary",
   "daily-logs": "Daily Logs",
   mine: "Mine",
+  "at-risk": "At risk",
+  "missing-logs": "Missing logs",
+  "pending-change-orders": "Pending change orders",
+  "ar-aging": "A/R aging",
+  revenue: "Revenue",
+  pipeline: "Pipeline",
+  "days-to-payment": "Days to payment",
+  "jobs-by-stage": "Jobs by stage",
+  profile: "Profile",
+  password: "Password",
+  security: "Security",
+  notifications: "Notifications",
+  tokens: "Access tokens",
+  team: "Team",
+  company: "Company",
+  billing: "Billing",
+  integrations: "Integrations",
+  diagnostics: "Diagnostics",
 }
 
 function toLabel(segment: string): string {
   if (SEGMENT_LABELS[segment]) return SEGMENT_LABELS[segment]
   // UUID-ish or numeric — show a generic placeholder; pages should override.
-  if (/^[0-9a-f-]{8,}$/i.test(segment)) return "Detail"
+  if (/^[0-9a-f-]{8,}$/i.test(segment)) return "Details"
   return segment.replace(/(^|-)([a-z])/g, (_, sep, c) => (sep ? " " : "") + c.toUpperCase())
 }
 
@@ -57,7 +75,7 @@ export function deriveFromPath(pathname: string): BreadcrumbItem[] {
   return items
 }
 
-export default function Breadcrumbs() {
+export default function Breadcrumbs({ variant = "bar" }: { variant?: "bar" | "inline" } = {}) {
   const location = useLocation()
   const override = useBreadcrumbsOverride()
   const params = useParams()
@@ -74,6 +92,54 @@ export default function Breadcrumbs() {
     return null
   }
   if (items.length === 0) return null
+
+  if (variant === "inline") {
+    // Compact trail for the context bar: parents are quiet links, the current
+    // page is the only emphasised item, and long names truncate instead of
+    // wrapping the bar.
+    return (
+      <nav aria-label="breadcrumb" data-print-hide="true" className="min-w-0">
+        <ol className="flex min-w-0 items-center gap-0.5 text-sm text-muted-foreground">
+          {items.map((item, idx) => {
+            const isLast = idx === items.length - 1
+            return (
+              <li
+                key={`${item.label}-${idx}`}
+                // Parents keep their (capped) width so short labels such as
+                // "Clients" never collapse; the current page absorbs the squeeze.
+                className={cn(
+                  "inline-flex items-center gap-0.5",
+                  isLast ? "min-w-0" : "min-w-0 max-w-[13rem] shrink-0",
+                )}
+              >
+                {idx > 0 ? (
+                  <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground/60" />
+                ) : null}
+                {item.to && !isLast ? (
+                  <Link
+                    to={item.to}
+                    className="truncate rounded-full px-2 py-1 transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    {item.label}
+                  </Link>
+                ) : (
+                  <span
+                    aria-current={isLast ? "page" : undefined}
+                    className={cn(
+                      "truncate px-1.5 py-1",
+                      isLast ? "font-medium text-foreground" : undefined,
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      </nav>
+    )
+  }
 
   return (
     <nav

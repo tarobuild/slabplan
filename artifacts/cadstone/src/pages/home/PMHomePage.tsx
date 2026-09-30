@@ -1,8 +1,7 @@
 import { Link } from "react-router-dom"
-import { AlertTriangle, Briefcase, CalendarRange, FileText } from "lucide-react"
+import { AlertTriangle, Briefcase, CalendarRange, CheckCircle2, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import PageHeader from "@/components/layout/PageHeader"
 import {
   Tooltip,
   TooltipContent,
@@ -10,6 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { MobileDrillTile } from "./MobileDrillTile"
+import { EmptyHint, HomeListRow, HomeSection } from "./HomeSection"
 import type { PmHome } from "./types"
 
 export default function PMHomePage({ data }: { data: PmHome }) {
@@ -17,31 +17,32 @@ export default function PMHomePage({ data }: { data: PmHome }) {
   const samples = Array.isArray(atRisk.samples)
     ? { overdue: [], missingLogJobs: [], pendingChangeOrders: [] }
     : atRisk.samples
+  const atRiskTotal =
+    atRisk.overdueScheduleItems + atRisk.jobsMissingLogs + atRisk.pendingChangeOrders
 
   return (
-    <div className="space-y-5" data-testid="home-pm">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">This Week</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {prettyRange(week.start, week.end)} · {prettyDate(today)}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link to="/jobs">
-              <Briefcase className="mr-1.5 size-4" /> My Jobs
-            </Link>
-          </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link to="/daily-logs/mine">
-              <FileText className="mr-1.5 size-4" /> Daily Logs
-            </Link>
-          </Button>
-        </div>
-      </div>
+    <div data-testid="home-pm">
+      <PageHeader
+        eyebrow={prettyDate(today)}
+        title="This Week"
+        description={prettyRange(week.start, week.end)}
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <Link to="/jobs">
+                <Briefcase /> My Jobs
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/daily-logs/mine">
+                <FileText /> Daily Logs
+              </Link>
+            </Button>
+          </>
+        }
+      />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <MobileDrillTile
           label="Active jobs"
           value={summary.activeJobs}
@@ -60,26 +61,31 @@ export default function PMHomePage({ data }: { data: PmHome }) {
         />
         <Link
           to="/daily-logs/mine"
-          className="block w-full rounded-lg border border-[#E5E7EB] bg-white p-4 text-left transition hover:border-primary/40 hover:bg-primary/5"
+          className="block w-full rounded-lg border border-card-border bg-card p-5 text-left shadow-sm transition hover:border-foreground/15 hover:shadow-md"
           data-testid="home-pm-summary-team-logs"
         >
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Team logs (24h)
-          </p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+          <p className="text-sm font-medium text-muted-foreground">Team logs (24h)</p>
+          <p className="mt-2 text-[28px] font-semibold leading-9 tabular-nums text-foreground">
             {teamLogs.length}
           </p>
         </Link>
       </div>
 
-      <Card className="border-border" data-testid="home-pm-at-risk">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="size-4 text-amber-600" />
-            At-risk
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
+      <section className="mt-8" data-testid="home-pm-at-risk">
+        <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+            {atRiskTotal > 0 ? (
+              <AlertTriangle className="size-4 text-amber-600" />
+            ) : (
+              <CheckCircle2 className="size-4 text-emerald-600" />
+            )}
+            Needs attention
+          </h2>
+          <span className="text-sm text-muted-foreground">
+            {atRiskTotal > 0 ? `${atRiskTotal} at risk` : "All clear"}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
           <AtRiskTile
             label="Overdue items"
             count={atRisk.overdueScheduleItems}
@@ -105,80 +111,70 @@ export default function PMHomePage({ data }: { data: PmHome }) {
               .join("\n")}
             data-testid="home-pm-at-risk-cos"
           />
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card className="border-border lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarRange className="size-4 text-primary" />
+      <div className="mt-8 grid gap-8 lg:grid-cols-3">
+        <HomeSection
+          className="lg:col-span-2"
+          title={
+            <span className="flex items-center gap-2">
+              <CalendarRange className="size-4 text-muted-foreground" />
               This week's schedule
-            </CardTitle>
-            <Badge variant="secondary">{week.items.length}</Badge>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {week.items.length === 0 ? (
-              <EmptyHint>Nothing scheduled this week.</EmptyHint>
-            ) : (
-              week.items.map((item) => (
-                <Link
-                  key={item.id}
-                  to={`/jobs/${item.jobId}/schedule`}
-                  className="flex items-center gap-2 rounded-md border border-border px-3 py-2 transition hover:border-primary/35 hover:bg-accent/40"
-                >
+            </span>
+          }
+          action={<span className="text-sm tabular-nums text-muted-foreground">{week.items.length}</span>}
+        >
+          {week.items.length === 0 ? (
+            <EmptyHint>Nothing scheduled this week.</EmptyHint>
+          ) : (
+            week.items.map((item) => (
+              <HomeListRow
+                key={item.id}
+                to={`/jobs/${item.jobId}/schedule`}
+                leading={
                   <span
-                    className="size-2 shrink-0 rounded-full"
+                    aria-hidden="true"
+                    className="h-8 w-1 shrink-0 rounded-full"
                     style={{ backgroundColor: item.displayColor }}
                   />
-                  <span className="flex-1 truncate text-sm font-medium text-slate-900">
-                    {item.title}
+                }
+                title={item.title}
+                subtitle={item.jobTitle}
+                trailing={
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {prettyShort(item.startDate)}
+                    {item.endDate !== item.startDate ? ` – ${prettyShort(item.endDate)}` : ""}
                   </span>
-                  <span className="truncate text-xs text-slate-500">
-                    {item.jobTitle}
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    {item.startDate}
-                    {item.endDate !== item.startDate ? ` → ${item.endDate}` : ""}
-                  </span>
-                </Link>
-              ))
-            )}
-          </CardContent>
-        </Card>
+                }
+              />
+            ))
+          )}
+        </HomeSection>
 
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="size-4 text-primary" />
+        <HomeSection
+          title={
+            <span className="flex items-center gap-2">
+              <FileText className="size-4 text-muted-foreground" />
               Team logs (24h)
-            </CardTitle>
-            <Badge variant="secondary">{teamLogs.length}</Badge>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {teamLogs.length === 0 ? (
-              <EmptyHint>No new logs in the last 24 hours.</EmptyHint>
-            ) : (
-              teamLogs.slice(0, 8).map((log) => (
-                <Link
-                  key={log.id}
-                  to={`/jobs/${log.jobId}/daily-logs`}
-                  className="block rounded-md border border-border px-3 py-2 transition hover:border-primary/35 hover:bg-accent/40"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium text-slate-900">
-                      {log.title || log.jobTitle || "Daily log"}
-                    </p>
-                    <span className="shrink-0 text-xs text-slate-500">{log.logDate}</span>
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {log.createdByName ?? "Someone"} · {log.jobTitle}
-                  </p>
-                </Link>
-              ))
-            )}
-          </CardContent>
-        </Card>
+            </span>
+          }
+          action={<span className="text-sm tabular-nums text-muted-foreground">{teamLogs.length}</span>}
+        >
+          {teamLogs.length === 0 ? (
+            <EmptyHint>No new logs in the last 24 hours.</EmptyHint>
+          ) : (
+            teamLogs.slice(0, 8).map((log) => (
+              <HomeListRow
+                key={log.id}
+                to={`/jobs/${log.jobId}/daily-logs`}
+                title={log.title || log.jobTitle || "Daily log"}
+                subtitle={`${log.createdByName ?? "Someone"} · ${log.jobTitle}`}
+                trailing={<span className="shrink-0 text-xs text-muted-foreground">{log.logDate}</span>}
+              />
+            ))
+          )}
+        </HomeSection>
       </div>
     </div>
   )
@@ -200,14 +196,14 @@ function AtRiskTile({
   const danger = count > 0
   const clickable = danger && Boolean(to)
   const baseClass = `block rounded-lg border p-4 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 ${
-    danger ? "border-amber-200 bg-amber-50" : "border-[#E5E7EB] bg-white"
+    danger ? "border-amber-200 bg-amber-50" : "border-card-border bg-card"
   } ${clickable ? "cursor-pointer hover:border-amber-300 hover:bg-amber-100/60" : ""}`
   const inner = (
     <>
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-600">{label}</p>
+      <p className={`text-sm font-medium ${danger ? "text-amber-900" : "text-muted-foreground"}`}>{label}</p>
       <p
-        className={`mt-1 text-2xl font-semibold ${
-          danger ? "text-amber-700" : "text-slate-900"
+        className={`mt-1 text-2xl font-semibold tabular-nums ${
+          danger ? "text-amber-800" : "text-foreground"
         }`}
       >
         {count}
@@ -236,14 +232,6 @@ function AtRiskTile({
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
-  )
-}
-
-function EmptyHint({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-md border border-dashed border-[#E5E7EB] p-3 text-center text-xs text-slate-500">
-      {children}
-    </p>
   )
 }
 

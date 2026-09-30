@@ -90,7 +90,7 @@ export default function CitationChip({
     <>
       <Icon className="size-3.5 shrink-0 text-slate-500" />
       <span className="truncate">{label}</span>
-      <span className="shrink-0 rounded bg-slate-200 px-1 text-[10px] font-medium uppercase tracking-wide text-slate-600">
+      <span className="shrink-0 rounded bg-slate-200 px-1 text-[10px] font-medium uppercase text-slate-600">
         {LABELS[citation.kind]}
       </span>
     </>

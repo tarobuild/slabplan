@@ -30,8 +30,8 @@ export default function HomePage() {
 
   if (error && !data) {
     return (
-      <Card className="border-red-200 bg-red-50">
-        <CardContent className="py-6 text-sm text-red-700">
+      <Card className="border-red-200 bg-red-50" role="alert">
+        <CardContent className="py-6 text-sm text-red-800">
           Home could not be loaded. Please refresh the page or try again in a moment.
         </CardContent>
       </Card>
@@ -40,20 +40,34 @@ export default function HomePage() {
 
   if (isLoading || !data) {
     return (
-      <div className="space-y-4" data-testid="home-loading">
-        <Skeleton className="h-8 w-48" />
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+      <div className="space-y-6" data-testid="home-loading" aria-busy="true" aria-label="Loading Home">
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-8 w-56" />
         </div>
-        <Card className="border-[#E5E7EB]">
-          <CardContent className="space-y-2 py-6">
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-1/2" />
-            <Skeleton className="h-4 w-2/3" />
-          </CardContent>
-        </Card>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Skeleton className="h-[116px] rounded-lg" />
+          <Skeleton className="h-[116px] rounded-lg" />
+          <Skeleton className="h-[116px] rounded-lg" />
+          <Skeleton className="hidden h-[116px] rounded-lg xl:block" />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <CardContent className="space-y-3 py-6">
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-5/6" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="space-y-3 py-6">
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-2/3" />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     )
   }

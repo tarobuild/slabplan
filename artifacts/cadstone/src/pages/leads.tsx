@@ -60,6 +60,7 @@ import { validatePayload } from "@/lib/validate-payload"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import PageHeader from "@/components/layout/PageHeader"
 import {
   Dialog,
   DialogContent,
@@ -1128,30 +1129,31 @@ export default function LeadsPage() {
   return (
     <div className="space-y-4">
       {leadUnsavedChanges.dialog}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Sales Leads</h1>
-        {canCreateLeads ? (
-          <Button
-            size="sm"
-            onClick={() => {
-              resetCreateDialogState()
-              setCreateOpen(true)
-            }}
-          >
-            <Plus className="mr-1.5 size-3.5" />
-            New Lead
-          </Button>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Leads"
+        actions={
+          canCreateLeads ? (
+            <Button
+              onClick={() => {
+                resetCreateDialogState()
+                setCreateOpen(true)
+              }}
+            >
+              <Plus className="size-4" />
+              New Lead
+            </Button>
+          ) : null
+        }
+      />
 
       <div className="flex flex-wrap gap-2">
         <div className="relative min-w-56 flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search leads…"
-            className="pl-8 h-9"
+            className="pl-9"
           />
         </div>
         <Select value={status} onValueChange={handleStatus}>
@@ -1209,17 +1211,17 @@ export default function LeadsPage() {
       </div>
 
       {/* Desktop table */}
-      <div className="hidden md:block rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
+      <div className="hidden overflow-hidden rounded-lg border border-card-border bg-card shadow-xs md:block">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50">
-              <TableHead className="font-semibold text-slate-600">Title</TableHead>
-              <TableHead className="font-semibold text-slate-600">Status</TableHead>
-              <TableHead className="font-semibold text-slate-600">Location</TableHead>
-              <TableHead className="font-semibold text-slate-600">Due date</TableHead>
-              <TableHead className="font-semibold text-slate-600">Contact</TableHead>
-              <TableHead className="font-semibold text-slate-600 text-right">Revenue Est.</TableHead>
-              <TableHead className="font-semibold text-slate-600">Created</TableHead>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Title</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>Due date</TableHead>
+              <TableHead>Contact</TableHead>
+              <TableHead className="text-right">Revenue Est.</TableHead>
+              <TableHead>Created</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -1347,7 +1349,7 @@ export default function LeadsPage() {
       <div className="md:hidden space-y-2">
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="rounded-lg border border-[#E5E7EB] bg-white p-4 space-y-2">
+            <div key={i} className="rounded-lg border border-card-border bg-card p-4 shadow-xs space-y-2">
               <Skeleton className="h-4 w-2/3" />
               <Skeleton className="h-3 w-1/2" />
             </div>
@@ -1360,7 +1362,7 @@ export default function LeadsPage() {
           leads.map(lead => (
             <div
               key={lead.id}
-              className="rounded-lg border border-[#E5E7EB] bg-white p-4 cursor-pointer active:bg-slate-50"
+              className="rounded-lg border border-card-border bg-card p-4 shadow-xs cursor-pointer active:bg-slate-50"
               onClick={() => openSheet(lead.id)}
             >
               <div className="flex items-start justify-between gap-2">

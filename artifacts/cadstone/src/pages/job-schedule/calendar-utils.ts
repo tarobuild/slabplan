@@ -88,10 +88,12 @@ export function formatRangeLabel(start: Date, end: Date) {
     return `${new Intl.DateTimeFormat("en-US", {
       month: "long",
       day: "numeric",
-    }).format(start)}-${new Intl.DateTimeFormat("en-US", {
-      day: "numeric",
-      year: "numeric",
-    }).format(end)}`
+    }).format(start)}-${end.getDate()}, ${end.getFullYear()}`
+  }
+
+  if (start.getFullYear() !== end.getFullYear()) {
+    const formatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" })
+    return `${formatter.format(start)} - ${formatter.format(end)}`
   }
 
   return `${new Intl.DateTimeFormat("en-US", {

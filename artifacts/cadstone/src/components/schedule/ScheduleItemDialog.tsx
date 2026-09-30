@@ -1372,7 +1372,7 @@ export function ScheduleItemDialog({
                       <TabsTrigger value="files">Files</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="predecessors" className="space-y-4 rounded-xl border border-[#E5E7EB] p-4">
+                    <TabsContent value="predecessors" className="space-y-4 rounded-lg border border-[#E5E7EB] p-4">
                       <div>
                         <h3 className="text-sm font-semibold text-slate-900">Predecessors</h3>
                       </div>
@@ -1509,7 +1509,7 @@ export function ScheduleItemDialog({
                       </Button>
                     </TabsContent>
 
-                    <TabsContent value="phases" className="space-y-6 rounded-xl border border-[#E5E7EB] p-4">
+                    <TabsContent value="phases" className="space-y-6 rounded-lg border border-[#E5E7EB] p-4">
                       <section className="space-y-4">
                         <div className="flex items-center justify-between">
                           <div>
@@ -1707,7 +1707,7 @@ export function ScheduleItemDialog({
                       </section>
                     </TabsContent>
 
-                    <TabsContent value="viewing" className="space-y-4 rounded-xl border border-[#E5E7EB] p-4">
+                    <TabsContent value="viewing" className="space-y-4 rounded-lg border border-[#E5E7EB] p-4">
                       <div>
                         <h3 className="text-sm font-semibold text-slate-900">Schedule Viewing</h3>
                       </div>
@@ -1748,7 +1748,7 @@ export function ScheduleItemDialog({
                       ))}
                     </TabsContent>
 
-                    <TabsContent value="notes" className="space-y-4 rounded-xl border border-[#E5E7EB] p-4">
+                    <TabsContent value="notes" className="space-y-4 rounded-lg border border-[#E5E7EB] p-4">
                       <Textarea
                         rows={4}
                         value={noteDraft}
@@ -1773,7 +1773,7 @@ export function ScheduleItemDialog({
                       {item && item.notesStream.length > 0 ? (
                         <div className="space-y-3">
                           {item.notesStream.map((note) => (
-                            <div key={note.id} className="rounded-xl border border-[#E5E7EB] p-4">
+                            <div key={note.id} className="rounded-lg border border-[#E5E7EB] p-4">
                               <div className="mb-2 flex items-center gap-3">
                                 <Avatar className="size-8">
                                   <AvatarImage src={note.authorAvatarUrl || undefined} />
@@ -1801,7 +1801,7 @@ export function ScheduleItemDialog({
                       ) : null}
                     </TabsContent>
 
-                    <TabsContent value="files" className="space-y-4 rounded-xl border border-[#E5E7EB] p-4">
+                    <TabsContent value="files" className="space-y-4 rounded-lg border border-[#E5E7EB] p-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-semibold text-slate-900">Attachments</h3>
                         {item ? (
@@ -1844,7 +1844,7 @@ export function ScheduleItemDialog({
                           <div
                             {...attachmentDropzone.getRootProps()}
                             className={cn(
-                              "relative cursor-pointer rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors",
+                              "relative cursor-pointer rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors",
                               attachmentDropzone.isDragActive
                                 ? "border-primary/40 bg-primary/10"
                                 : "border-slate-300 bg-slate-50 hover:border-primary/40 hover:bg-primary/10",
@@ -1948,7 +1948,7 @@ export function ScheduleItemDialog({
 
                     {/* Right column — Dates, Time, Color, Progress, Reminder */}
                     <div className="space-y-4">
-                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 space-y-3">
+                      <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <Label className="text-xs">Multi-day</Label>
                           <Switch
@@ -2036,7 +2036,7 @@ export function ScheduleItemDialog({
                         ) : null}
                       </div>
 
-                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4 space-y-3">
+                      <div className="rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <Label className="text-xs">Set time range</Label>
                           <Switch
@@ -2156,7 +2156,7 @@ export function ScheduleItemDialog({
                   </div>
                 </TabsContent>
 
-                <TabsContent value="related" className="mt-5 rounded-xl border border-[#E5E7EB] p-4">
+                <TabsContent value="related" className="mt-5 rounded-lg border border-[#E5E7EB] p-4">
                   <h3 className="text-sm font-semibold text-slate-900">Related To-Do&apos;s</h3>
                   {!item ? (
                     <p className="mt-3 text-sm text-slate-500">To-Do&apos;s available after save</p>

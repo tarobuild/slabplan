@@ -86,7 +86,7 @@ export function ScheduleToolbar({
   handlePublishDraft,
 }: ScheduleToolbarProps) {
   return (
-    <div data-print-hide="true" className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+    <div data-print-hide="true" className="rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex overflow-hidden rounded-lg border border-[#D8E0EA] bg-[#F8FAFC]">

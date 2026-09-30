@@ -141,7 +141,7 @@ export function TodosSheet({
           </SheetHeader>
           <ScrollArea className="flex-1">
             <div className="space-y-5 p-6">
-              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-slate-600">What needs to be done?</label>
                   <Input
@@ -216,7 +216,7 @@ export function TodosSheet({
               </div>
 
               {myTodos.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
                   <ListChecks className="mx-auto mb-2 size-6 text-slate-400" />
                   No personal to-do&apos;s yet. Add one above.
                 </div>
@@ -225,7 +225,7 @@ export function TodosSheet({
                   {sortedTodos.map((todo) => (
                     <label
                       key={todo.id}
-                      className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                      className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
                     >
                       <Checkbox
                         checked={!!todo.isComplete}

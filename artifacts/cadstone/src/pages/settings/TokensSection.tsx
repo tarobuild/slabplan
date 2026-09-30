@@ -137,13 +137,13 @@ export default function TokensSection() {
   }
 
   return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-      <div className="px-6 py-5 border-b border-[#E5E7EB] flex items-center gap-2.5">
+    <div>
+      <div className="flex items-center gap-2.5 border-b border-border pb-4">
         <KeyRound className="size-4 text-slate-500" />
-        <h2 className="text-sm font-semibold text-slate-800">API Access Tokens</h2>
+        <h2 className="text-base font-semibold text-foreground">API Access Tokens</h2>
       </div>
 
-      <div className="px-6 py-6 space-y-6">
+      <div className="space-y-6 py-6">
         <p className="text-sm text-slate-600">
           Personal access tokens let scripts and AI agents call the {APP_NAME} API on your behalf.
           Each token starts with <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs">cs_pat_</code>.
@@ -235,7 +235,7 @@ export default function TokensSection() {
         <Separator />
 
         <div className="space-y-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Existing tokens</h3>
+          <h3 className="text-xs font-semibold uppercase text-slate-500">Existing tokens</h3>
           {loadingTokens ? (
             <div className="space-y-2">
               {Array.from({ length: 2 }).map((_, i) => (
@@ -248,7 +248,7 @@ export default function TokensSection() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="text-xs uppercase tracking-wide text-slate-500">
+                  <tr className="text-xs uppercase text-slate-500">
                     <th className="py-2 pr-3">Name</th>
                     <th className="py-2 pr-3">Token</th>
                     <th className="py-2 pr-3">Scope</th>

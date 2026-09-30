@@ -1,48 +1,60 @@
 import { useEffect, useRef, useState } from "react"
 import {
+  Briefcase,
   ChevronDown,
   ClipboardList,
   LogOut,
+  Plus,
   Search,
   Settings,
   Sparkles,
+  TrendingUp,
+  Users,
 } from "lucide-react"
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
+import Breadcrumbs from "./Breadcrumbs"
 import GlobalSearch from "./GlobalSearch"
 import NotificationBell from "./NotificationBell"
 import { api, logoutSession } from "@/lib/api"
 import { useAuthStore } from "@/store/auth"
 import { useAgentPanelStore } from "@/store/agent"
-import { hasRoleAccess, ROLE_GATES, type AppRole } from "@/lib/role-access"
-import { isFeatureEnabled } from "@/lib/features"
-import { cn } from "@/lib/utils"
-import { APP_LOGO_PATH, APP_NAME, APP_SHORT_NAME, APP_STORAGE_NAMESPACE } from "@/lib/brand"
+import { APP_NAME, APP_SHORT_NAME, APP_STORAGE_NAMESPACE } from "@/lib/brand"
 
 function initials(name: string) {
+  // Ignore separators such as "-" so "TEST - Admin" reads "TA", not "T-".
   return name
-    .split(" ")
+    .split(/\s+/)
+    .filter((p) => /^[\p{L}\p{N}]/u.test(p))
     .map((p) => p[0])
     .join("")
     .slice(0, 2)
     .toUpperCase()
 }
 
-type TopNavLink = {
-  label: string
-  to: string
-  allow?: ReadonlyArray<AppRole>
-  hidden?: boolean
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  project_manager: "Project manager",
+  crew_member: "Crew member",
+  drafter: "Drafter",
 }
 
+/**
+ * Context bar above every page: where you are (breadcrumb trail), a way to
+ * find anything (search), a way to start something (Create, for admins),
+ * the Assistant, notifications and your account. Primary destinations live
+ * in the navigation column, not here.
+ */
 export default function TopNav() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -53,39 +65,10 @@ export default function TopNav() {
   const assistantAccessRequestSeq = useRef(0)
 
   const role = user?.role
-  const isFieldUser = role === "project_manager" || role === "crew_member"
+  const isAdmin = role === "admin"
   const isDrafter = role === "drafter"
   const accountLabel = user?.fullName?.split(" ")[0] ?? "Account"
   const currentJobId = location.pathname.match(/^\/jobs\/([^/]+)/)?.[1] ?? null
-
-  // Role-based primary nav. Admins see the office workspace; PMs and crew
-  // share the same field-user view. Reports stays hidden
-  // until the route ships (FEATURES.reports).
-  const navLinks: TopNavLink[] = isFieldUser
-    ? [
-        { label: "Home", to: "/dashboard" },
-        { label: "My Jobs", to: "/jobs" },
-        { label: "Resources", to: "/resources", hidden: isDrafter },
-      ]
-    : [
-        { label: "Home", to: "/dashboard" },
-        { label: "Clients", to: "/clients", allow: ROLE_GATES.clients },
-        { label: "My Jobs", to: "/jobs", allow: ROLE_GATES.myJobs },
-        { label: "Schedule", to: "/schedule", allow: ROLE_GATES.schedule },
-        { label: "Daily Logs", to: "/daily-logs", allow: ROLE_GATES.dailyLogs },
-        { label: "Sales", to: "/sales", allow: ROLE_GATES.sales },
-        {
-          label: "Reports",
-          to: "/reports",
-          allow: ROLE_GATES.reports,
-          hidden: !isFeatureEnabled("reports"),
-        },
-        { label: "Resources", to: "/resources", hidden: isDrafter },
-      ]
-
-  const visibleLinks = navLinks.filter(
-    (item) => !item.hidden && (!item.allow || hasRoleAccess(role, item.allow)),
-  )
 
   useEffect(() => {
     setSearchOpen(false)
@@ -123,7 +106,7 @@ export default function TopNav() {
   }, [currentJobId, user?.id])
 
   // Wire the `/` global keyboard shortcut to either focus the desktop
-  // search input directly or open the mobile search sheet (where the
+  // search input directly or open the search sheet (where the
   // input is auto-focused on mount).
   useEffect(() => {
     function handleFocusSearch() {
@@ -146,100 +129,115 @@ export default function TopNav() {
   }, [])
 
   return (
-    <header className="sticky top-0 z-30 border-b border-white/10 bg-[hsl(var(--nav))] shadow-sm">
-      <div className="flex h-14 items-center gap-1 px-3 lg:h-[3.25rem] lg:px-4">
-        {/* Logo */}
-        <Link to="/dashboard" className="mr-3 flex shrink-0 items-center">
-          <div className="flex items-center rounded-md border border-white/10 bg-white/95 px-2 py-1 shadow-sm">
-            <img
-              src={APP_LOGO_PATH}
-              alt={APP_NAME}
-              className="h-6 w-auto lg:h-7"
-            />
-          </div>
+    <header className="sticky top-0 z-30 border-b border-border bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/75">
+      <div className="flex h-14 items-center gap-1.5 px-3 sm:px-5 lg:px-8">
+        {/* Phones have no navigation column, so the brand lives here. */}
+        <Link
+          to="/dashboard"
+          className="flex shrink-0 items-center gap-2 rounded-lg md:hidden"
+          aria-label={`${APP_NAME} home`}
+        >
+          <img src="/favicon.svg" alt="" className="size-8 rounded-lg" />
+          <span className="text-base font-bold text-foreground">{APP_NAME}</span>
         </Link>
 
-        {/* Primary nav — hidden on mobile (replaced by bottom-tab nav). */}
-        <nav className="hidden items-center gap-1 lg:flex">
-          {visibleLinks.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
-                  isActive
-                    ? "bg-white/10 text-[hsl(var(--nav-foreground))] shadow-[inset_0_-1px_0_hsl(var(--oxide))]"
-                    : "text-[hsl(var(--nav-muted))] hover:bg-white/10 hover:text-[hsl(var(--nav-foreground))]",
-                )
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+        {/* Where am I — the page's trail, replacing the old breadcrumb row. */}
+        <div className="hidden min-w-0 flex-1 md:block">
+          <Breadcrumbs variant="inline" />
+        </div>
+        <div className="flex-1 md:hidden" />
 
-        <div className="flex-1" />
-
-        {/* Global search — desktop only */}
-        <div id="slabplan-topbar-search" className="mr-1 hidden w-64 xl:block 2xl:w-72">
+        {/* Search — inline field on wide screens. */}
+        <div id="slabplan-topbar-search" className="mr-1 hidden w-72 xl:block 2xl:w-80">
           <GlobalSearch />
         </div>
 
-        {/* Search button — compact header widths */}
         <button
-          className="flex items-center justify-center rounded-md p-2 text-[hsl(var(--nav-muted))] transition-colors hover:bg-white/10 hover:text-[hsl(var(--nav-foreground))] xl:hidden"
+          type="button"
+          className="inline-flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground xl:hidden"
           onClick={() => setSearchOpen(true)}
           aria-label="Open search"
+          title="Search"
         >
-          <Search className="size-5" />
+          <Search className="size-[18px]" />
         </button>
+
+        {isAdmin ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="ml-1 hidden h-9 gap-1.5 px-3 sm:inline-flex">
+                <Plus className="size-4" />
+                New
+                <ChevronDown aria-hidden="true" className="size-3.5 opacity-80" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Create</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => navigate("/jobs", { state: { openCreate: true } })}>
+                <Briefcase className="size-4" />
+                Job
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/clients", { state: { openCreate: true } })}>
+                <Users className="size-4" />
+                Client
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/sales/leads", { state: { openCreate: true } })}>
+                <TrendingUp className="size-4" />
+                Lead
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
 
         {canUseAssistant ? (
           <button
             type="button"
             onClick={toggleAgent}
-            className="ml-1 flex items-center justify-center gap-1.5 rounded-md p-2 text-[hsl(var(--nav-muted))] transition-colors hover:bg-white/10 hover:text-[hsl(var(--nav-foreground))]"
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full px-2.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-3.5"
             aria-label="Open assistant"
             title="Assistant"
           >
-            <Sparkles className="size-5 text-[hsl(var(--oxide))]" />
-            <span className="hidden text-sm font-medium md:block">Assistant</span>
+            <Sparkles className="size-[18px] text-brand" />
+            <span className="hidden text-sm font-medium text-foreground lg:block">Assistant</span>
           </button>
         ) : null}
 
         {user ? <NotificationBell /> : null}
 
-        {/* User menu */}
+        {/* Account */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               aria-label={`Open account menu for ${accountLabel}`}
-              className="ml-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[hsl(var(--nav-muted))] outline-none transition-colors hover:bg-white/10 hover:text-[hsl(var(--nav-foreground))]"
+              className="ml-0.5 flex items-center gap-2 rounded-full p-0.5 outline-none transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/30 sm:py-1 sm:pl-1 sm:pr-2.5"
             >
-              <Avatar className="size-7 cursor-pointer border border-white/20">
-                <AvatarFallback
-                  className="text-[10px] font-semibold text-white"
-                  style={{ backgroundColor: "hsl(var(--primary))" }}
-                >
+              <Avatar className="size-8">
+                <AvatarFallback className="bg-foreground text-[11px] font-semibold text-background">
                   {user ? initials(user.fullName) : APP_SHORT_NAME}
                 </AvatarFallback>
               </Avatar>
-              <span className="hidden text-sm font-medium sm:block">
+              <span className="hidden max-w-[9rem] truncate text-sm font-medium text-foreground lg:block">
                 {accountLabel}
               </span>
-              <ChevronDown aria-hidden="true" className="size-3.5 opacity-70" />
+              <ChevronDown aria-hidden="true" className="hidden size-3.5 text-muted-foreground lg:block" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="mt-1 w-56 border-border shadow-lg">
-            <div className="px-2 py-1.5">
-              <p className="text-sm font-medium text-foreground">
-                {user?.fullName ?? "Signed out"}
-              </p>
-              <p className="text-xs capitalize text-muted-foreground">
-                {user?.role?.replaceAll("_", " ") ?? ""}
-              </p>
+          <DropdownMenuContent align="end" className="mt-1 w-60">
+            <div className="flex items-center gap-3 px-2 py-2">
+              <Avatar className="size-9">
+                <AvatarFallback className="bg-foreground text-xs font-semibold text-background">
+                  {user ? initials(user.fullName) : APP_SHORT_NAME}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {user?.fullName ?? "Signed out"}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {role ? ROLE_LABELS[role] ?? role.replaceAll("_", " ") : ""}
+                </p>
+              </div>
             </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate("/settings")}>
@@ -260,13 +258,13 @@ export default function TopNav() {
               }}
             >
               <LogOut className="size-4" />
-              Logout
+              Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      {/* Mobile search sheet */}
+      {/* Search sheet for phones, tablets and narrow desktop windows */}
       <Sheet open={searchOpen} onOpenChange={setSearchOpen}>
         <SheetContent
           side="top"

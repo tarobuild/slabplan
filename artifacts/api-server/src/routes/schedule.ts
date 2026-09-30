@@ -4052,6 +4052,8 @@ router.get(
     }
 
     const filters: SQL[] = [
+      organizationScopeCondition(auth, scheduleItems.organizationId),
+      organizationScopeCondition(auth, jobs.organizationId),
       isNull(scheduleItems.deletedAt),
       isNull(jobs.deletedAt),
     ];

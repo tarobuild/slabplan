@@ -57,13 +57,13 @@ export default function PasswordSection() {
   }
 
   return (
-    <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-      <div className="px-6 py-5 border-b border-[#E5E7EB] flex items-center gap-2.5">
+    <div>
+      <div className="flex items-center gap-2.5 border-b border-border pb-4">
         <Lock className="size-4 text-slate-500" />
-        <h2 className="text-sm font-semibold text-slate-800">Change Password</h2>
+        <h2 className="text-base font-semibold text-foreground">Change Password</h2>
       </div>
 
-      <div className="px-6 py-6">
+      <div className="py-6">
         <form onSubmit={handlePasswordSave} className="space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="current-password">Current Password</Label>

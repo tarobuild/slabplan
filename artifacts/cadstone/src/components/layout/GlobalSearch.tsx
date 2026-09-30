@@ -313,7 +313,7 @@ export default function GlobalSearch({
         <Search
           className={cn(
             "pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2",
-            isPanel ? "text-muted-foreground" : "text-[hsl(var(--nav-muted))]",
+            "text-muted-foreground",
           )}
         />
         <input
@@ -322,7 +322,7 @@ export default function GlobalSearch({
           type="search"
           inputMode="search"
           autoComplete="off"
-          placeholder="Search jobs, leads, clients, files, schedule…"
+          placeholder="Search jobs, clients, leads…"
           value={rawQuery}
           onFocus={() => {
             if (!isPanel) setOpen(true)
@@ -345,10 +345,10 @@ export default function GlobalSearch({
           aria-expanded={showDropdown}
           aria-controls={`${inputId}-results`}
           className={cn(
-            "w-full rounded-md pl-9 pr-9 text-sm outline-none transition-colors",
+            "w-full rounded-lg pl-9 pr-9 text-sm text-foreground outline-none transition-[background-color,border-color,box-shadow] placeholder:text-muted-foreground",
             isPanel
-              ? "h-10 border border-border bg-white text-foreground placeholder:text-muted-foreground focus:border-primary/45 focus:ring-2 focus:ring-primary/20"
-              : "h-9 border border-white/20 bg-white/10 text-[hsl(var(--nav-foreground))] placeholder:text-[hsl(var(--nav-muted))] focus:border-white/40 focus:bg-white/10",
+              ? "h-11 border border-border bg-card focus:border-ring focus:ring-[3px] focus:ring-ring/25"
+              : "h-10 rounded-full border border-input bg-card pl-10 hover:border-foreground/25 focus:border-ring focus:ring-[3px] focus:ring-ring/25",
           )}
         />
         {rawQuery.length > 0 ? (
@@ -358,9 +358,7 @@ export default function GlobalSearch({
             onClick={handleClear}
             className={cn(
               "absolute right-2 top-1/2 -translate-y-1/2 rounded p-1",
-              isPanel
-                ? "text-muted-foreground hover:bg-accent hover:text-foreground"
-                : "text-[hsl(var(--nav-muted))] hover:bg-white/10 hover:text-[hsl(var(--nav-foreground))]",
+              "text-muted-foreground hover:bg-accent hover:text-foreground",
             )}
           >
             <X className="size-3.5" />
@@ -375,8 +373,8 @@ export default function GlobalSearch({
           className={cn(
             "z-40 overflow-hidden bg-white text-foreground",
             isPanel
-              ? "mt-3 flex flex-1 min-h-0 flex-col rounded-md border border-border"
-              : "absolute left-0 right-0 top-full mt-2 max-h-[28rem] rounded-md border border-border shadow-lg",
+              ? "mt-3 flex flex-1 min-h-0 flex-col rounded-lg border border-border"
+              : "absolute left-0 right-0 top-full mt-2 max-h-[28rem] min-w-[22rem] rounded-xl border border-popover-border/80 shadow-xl",
           )}
         >
           <div
@@ -429,7 +427,7 @@ export default function GlobalSearch({
                             <span className="truncate text-sm font-medium text-foreground">
                               {result.title}
                             </span>
-                            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            <span className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground">
                               {meta?.label ?? result.type}
                             </span>
                           </span>
@@ -448,7 +446,7 @@ export default function GlobalSearch({
           </div>
 
           {showPager ? (
-            <div className="flex items-center justify-between gap-2 border-t border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
               <span>
                 Page {response?.pagination.page ?? page}
                 {loading ? " • loading…" : ""}

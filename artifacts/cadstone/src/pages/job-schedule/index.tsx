@@ -94,9 +94,9 @@ function ScheduleExportHeader({
   return (
     <div
       data-schedule-export-header="true"
-      className="hidden rounded-xl border border-[#E5E7EB] bg-white px-5 py-5 shadow-sm"
+      className="hidden rounded-lg border border-[#E5E7EB] bg-white px-5 py-5 shadow-sm"
     >
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{jobTitle}</div>
+      <div className="text-xs font-semibold uppercase text-slate-400">{jobTitle}</div>
       <h1 className="mt-2 text-2xl font-semibold text-slate-950">{title}</h1>
       <div className="mt-2 text-sm text-slate-500">{detail}</div>
     </div>
@@ -1280,8 +1280,8 @@ export default function JobSchedulePage() {
       {ganttFullscreen ? <div className="fixed inset-0 z-40 bg-slate-950/45" /> : null}
 
       <div className="space-y-4" data-print-root="schedule">
-        <div className="hidden rounded-xl border border-[#E5E7EB] bg-white px-5 py-5 shadow-sm" data-print-only="true">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{currentJobTitle}</div>
+        <div className="hidden rounded-lg border border-[#E5E7EB] bg-white px-5 py-5 shadow-sm" data-print-only="true">
+          <div className="text-xs font-semibold uppercase text-slate-400">{currentJobTitle}</div>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">Schedule</h1>
           <div className="mt-2 text-sm text-slate-500">
             {section === "schedule"
@@ -1305,7 +1305,7 @@ export default function JobSchedulePage() {
           onValueChange={(value) => setSection(value as ScheduleSection)}
           className="space-y-4"
         >
-          <TabsList data-print-hide="true" className="h-auto rounded-xl border border-[#E5E7EB] bg-white p-1">
+          <TabsList data-print-hide="true" className="h-auto rounded-lg border border-[#E5E7EB] bg-white p-1">
             <TabsTrigger value="schedule" className="h-9 rounded-lg px-4">
               Schedule
             </TabsTrigger>

@@ -657,12 +657,12 @@ export default function JobSummaryPage() {
         </div>
       ) : null}
       {/* Two-panel layout */}
-      <div className="flex gap-5 items-start">
+      <div className="flex flex-col items-start gap-5 xl:flex-row" data-testid="job-summary-panels">
 
         {/* LEFT — Job information */}
-        <div className="flex-1 min-w-0 space-y-5">
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Job Information</h3>
+        <div className="w-full min-w-0 space-y-5 xl:flex-1">
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase text-slate-400">Job Information</h3>
 
             <div className="space-y-1.5">
               <Label>Title *</Label>
@@ -746,8 +746,8 @@ export default function JobSummaryPage() {
           </div>
 
           {/* Address */}
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Address</h3>
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase text-slate-400">Address</h3>
             <div className="space-y-1.5">
               <Label>Street Address</Label>
               <Input value={job.streetAddress ?? ""} onChange={e => setField("streetAddress", e.target.value || null)} placeholder="123 Main St" disabled={!canEditJob} />
@@ -771,8 +771,8 @@ export default function JobSummaryPage() {
           </div>
 
           {/* Notes */}
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Notes</h3>
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase text-slate-400">Notes</h3>
             <div className="space-y-1.5">
               <Label>Notes for internal users</Label>
               <Textarea
@@ -801,11 +801,11 @@ export default function JobSummaryPage() {
         </div>
 
         {/* RIGHT — Schedule + Additional */}
-        <div className="w-72 shrink-0 space-y-5">
+        <div className="w-full shrink-0 space-y-5 xl:w-72">
 
           {/* Schedule */}
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Schedule</h3>
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase text-slate-400">Schedule</h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Projected Start</Label>
@@ -850,8 +850,8 @@ export default function JobSummaryPage() {
           </div>
 
           {/* Additional Information */}
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Additional Information</h3>
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-5 space-y-4">
+            <h3 className="text-xs font-semibold uppercase text-slate-400">Additional Information</h3>
             <div className="space-y-1.5">
               <Label>Client</Label>
               <Select
@@ -909,9 +909,9 @@ export default function JobSummaryPage() {
             )}
           </div>
 
-          <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-4">
+          <div className="rounded-lg border border-[#E5E7EB] bg-white p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Assigned Workers</h3>
+              <h3 className="text-xs font-semibold uppercase text-slate-400">Assigned Workers</h3>
               {isAdmin ? (
                 <Popover open={assigneePopoverOpen} onOpenChange={setAssigneePopoverOpen}>
                   <PopoverTrigger asChild>
@@ -987,7 +987,7 @@ export default function JobSummaryPage() {
                                 </p>
                               ) : (
                                 <div className="overflow-hidden rounded-md border border-slate-200">
-                                  <div className="grid grid-cols-[1fr_64px_72px] bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                  <div className="grid grid-cols-[1fr_64px_72px] bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase text-slate-400">
                                     <span>Folder</span>
                                     <span className="text-center">View</span>
                                     <span className="text-center">Upload</span>

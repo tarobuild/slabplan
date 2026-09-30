@@ -125,7 +125,7 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
 
   return (
     <div className="space-y-4">
-      <div data-print-hide="true" className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+      <div data-print-hide="true" className="rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2" />
 
@@ -164,7 +164,7 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
       </div>
 
       {workdayEditorOpen ? (
-        <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+        <div className="rounded-lg border border-[#E5E7EB] bg-white shadow-sm">
           <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-6 py-5">
             <div>
               <button
@@ -251,7 +251,7 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
+            <div className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-slate-900">Same every year</p>
                 <p className="text-xs text-slate-500">Repeat this exception annually on the same dates.</p>
@@ -291,7 +291,7 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
                 </SelectContent>
               </Select>
               {categoryEditorOpen ? (
-                <div className="space-y-3 rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+                <div className="space-y-3 rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] p-4">
                   <div className="flex gap-2">
                     <Input
                       value={categoryDraft}
@@ -380,7 +380,7 @@ export function ExceptionsTab(props: ExceptionsTabProps) {
           onAction={canWrite ? openNewWorkdayException : undefined}
         />
       ) : (
-        <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+        <div className="rounded-lg border border-[#E5E7EB] bg-white shadow-sm">
           <div className="border-b border-[#E5E7EB] px-6 py-5">
             <p className="text-sm font-semibold text-slate-900">Workday exceptions</p>
             <p className="mt-1 text-sm text-slate-500">

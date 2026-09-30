@@ -3,12 +3,14 @@ import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "rea
 import { useDropzone } from "react-dropzone"
 import {
   ArrowLeft,
+  Building2,
   CalendarDays,
   ClipboardList,
   DollarSign,
   FileText,
   FolderOpen,
   Loader2,
+  MapPin,
   MoreHorizontal,
   Upload,
   type LucideIcon,
@@ -49,6 +51,9 @@ import {
 import { invalidateAppData, subscribeToDataRefresh } from "@/lib/data-refresh"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/store/auth"
+import { useSetBreadcrumbs } from "@/hooks/use-breadcrumbs"
+import { hasRoleAccess, ROLE_GATES } from "@/lib/role-access"
+import { revealOnFocus } from "@/lib/reveal-on-focus"
 import { toast } from "sonner"
 import { toastApiError } from "@/lib/api-errors"
 
@@ -68,9 +73,9 @@ type Job = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  open: "bg-green-50 text-green-700 border-green-200",
-  closed: "bg-slate-50 text-slate-600 border-slate-200",
-  archived: "bg-slate-50 text-slate-400 border-slate-200",
+  open: "border-transparent bg-emerald-50 text-emerald-800",
+  closed: "border-transparent bg-slate-100 text-slate-700",
+  archived: "border-transparent bg-slate-100 text-slate-500",
 }
 
 type TabDef = {
@@ -93,8 +98,9 @@ export default function JobDetailPage() {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const isAdmin = user?.role === "admin"
-  const isFieldUser =
-    user?.role === "project_manager" || user?.role === "crew_member" || user?.role === "drafter"
+  // Client pages are gated separately from jobs; only link to them (and name
+  // them in the breadcrumb) for roles the clients route actually admits.
+  const canOpenClients = hasRoleAccess(user?.role, ROLE_GATES.clients)
   const [job, setJob] = useState<Job | null>(null)
   const access = job?.access
   const visibleTabs = TABS
@@ -137,6 +143,21 @@ export default function JobDetailPage() {
   }, [])
 
   const isOnFilesTab = location.pathname.includes("/files/")
+
+  // Name the trail with the real client and job instead of "Details".
+  useSetBreadcrumbs(
+    job
+      ? [
+          ...(canOpenClients && job.clientId
+            ? [
+                { label: "Clients", to: "/clients" },
+                { label: job.clientName ?? "Client", to: `/clients/${job.clientId}` },
+              ]
+            : [{ label: "Jobs", to: "/jobs" }]),
+          { label: job.title },
+        ]
+      : null,
+  )
 
   const onPageDrop = useCallback(
     async (droppedFiles: File[]) => {
@@ -319,7 +340,7 @@ export default function JobDetailPage() {
 
 	  if ((error && !job) || (!loading && !job)) {
     return (
-      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 text-center">
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white px-6 text-center">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold text-slate-900">Job not found</h1>
           <p className="text-sm text-slate-500">{error ?? "This job could not be found."}</p>
@@ -347,7 +368,7 @@ export default function JobDetailPage() {
       {/* Page-level drop overlay */}
       {pageDropzone.isDragActive && !isOnFilesTab && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-accent/85 backdrop-blur-sm">
-          <div className="rounded-2xl border-2 border-dashed border-primary/45 bg-white px-12 py-10 text-center shadow-lg">
+          <div className="rounded-lg border-2 border-dashed border-primary/45 bg-white px-12 py-10 text-center shadow-lg">
             <Upload className="mx-auto mb-3 size-10 text-primary" />
             <p className="text-lg font-semibold text-primary">Drop files to upload</p>
             <p className="mt-1 text-sm text-muted-foreground">Files will be saved to Documents</p>
@@ -362,25 +383,14 @@ export default function JobDetailPage() {
         </div>
       )}
 
-      {/* Row 1: back link / breadcrumb */}
-      <div className="mb-2 flex items-center gap-2 text-xs">
-        {!isFieldUser && job?.clientId ? (
-          <>
-            <Link
-              to={`/clients/${job.clientId}`}
-              className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-700 transition-colors"
-            >
-              <ArrowLeft className="size-3.5" />
-              Back to {job.clientName ?? "client"}
-            </Link>
-            <span className="text-slate-300">·</span>
-          </>
-        ) : null}
+      {/* Phones don't show the breadcrumb trail, so give them a way back. */}
+      <div className="mb-2 md:hidden">
         <Link
-          to={isFieldUser || !job?.clientId ? "/jobs" : "/clients"}
-          className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-700 transition-colors"
+          to={!canOpenClients || !job?.clientId ? "/jobs" : `/clients/${job.clientId}`}
+          className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
-          {isFieldUser || !job?.clientId ? "All jobs" : "All clients"}
+          <ArrowLeft className="size-4" />
+          {!canOpenClients || !job?.clientId ? "Jobs" : job.clientName ?? "Client"}
         </Link>
       </div>
 
@@ -388,42 +398,64 @@ export default function JobDetailPage() {
           sticky title bar has docked, and can render the subtle shadow. */}
       <div ref={stickySentinelRef} aria-hidden className="h-px w-full" />
 
-      {/* Sticky header: row 2 (title + status + actions) and the tab bar
-          stay glued to the top of the scrollable region while the user
-          scrolls through long detail pages. */}
+      {/* Sticky header: title block and the tab bar stay glued to the top
+          of the scrollable region while the user scrolls through long
+          detail pages. */}
       <div
         className={cn(
-          "sticky top-0 z-20 -mx-4 bg-background/95 px-4 backdrop-blur transition-shadow supports-[backdrop-filter]:bg-background/85 lg:-mx-6 lg:px-6",
-          isStickyDocked ? "shadow-[0_2px_8px_-4px_rgba(15,23,42,0.18)]" : "",
+          "sticky top-0 z-20 -mx-4 bg-background/95 px-4 backdrop-blur transition-shadow supports-[backdrop-filter]:bg-background/85 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8",
+          isStickyDocked ? "shadow-[0_6px_12px_-10px_rgba(15,23,42,0.35)]" : "",
         )}
       >
-        {/* Row 2: H1 title + status + location + actions */}
-        <div className="flex flex-wrap items-center gap-2 pb-3 pt-2 sm:gap-3">
+        {/* Title block: name + status, then client and location */}
+        <div className="flex items-start gap-3 pb-4 pt-1">
         {loading ? (
-          <Skeleton className="h-8 w-64" />
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-72" />
+            <Skeleton className="h-4 w-48" />
+          </div>
         ) : (
           <>
-            <h1 className="min-w-0 flex-[1_1_100%] truncate text-xl font-semibold text-slate-900 sm:flex-1 sm:text-2xl">
-              {job?.title}
-            </h1>
-            {job?.status && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "capitalize text-xs shrink-0",
-                  STATUS_COLORS[job.status],
+            <div className="min-w-0 flex-1">
+              {/* The full record name always shows; long names wrap. */}
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+                <h1 className="min-w-0 text-xl font-semibold leading-7 text-foreground [overflow-wrap:anywhere] sm:text-[26px] sm:leading-8">
+                  {job?.title}
+                </h1>
+                {job?.status && (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "shrink-0 capitalize",
+                      STATUS_COLORS[job.status],
+                    )}
+                  >
+                    {job.status}
+                  </Badge>
                 )}
-              >
-                {job.status}
-              </Badge>
-            )}
-            {(job?.city || job?.state) && (
-              <span className="text-sm text-slate-500 truncate">
-                {[job.city, job.state].filter(Boolean).join(", ")}
-              </span>
-            )}
+              </div>
+              {(job && ((canOpenClients && job.clientId) || job.city || job.state)) ? (
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  {canOpenClients && job.clientId ? (
+                    <Link
+                      to={`/clients/${job.clientId}`}
+                      className="inline-flex min-w-0 items-center gap-1.5 transition-colors hover:text-foreground"
+                    >
+                      <Building2 className="size-4 shrink-0" />
+                      <span className="truncate">{job.clientName ?? "Client"}</span>
+                    </Link>
+                  ) : null}
+                  {job.city || job.state ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <MapPin className="size-4 shrink-0" />
+                      {[job.city, job.state].filter(Boolean).join(", ")}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             {isAdmin && job && (
-              <div className="ml-auto shrink-0">
+              <div className="shrink-0">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -468,9 +500,12 @@ export default function JobDetailPage() {
         )}
       </div>
 
-        <div className="border-b border-border">
+        {/* Pill tabs. The scroller is padded so the selected pill and the
+            keyboard focus ring are never clipped by its overflow edge. */}
+        <div className="border-b border-border pb-2">
 	          <nav
-              className="-mb-px grid gap-0 md:flex md:overflow-x-auto md:scrollbar-none"
+              aria-label="Job sections"
+              className="scrollbar-none -mx-1.5 grid scroll-px-1.5 gap-1 p-1.5 md:flex md:overflow-x-auto"
               style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
             >
             {visibleTabs.map((tab) => {
@@ -482,14 +517,22 @@ export default function JobDetailPage() {
                 <Link
                   key={tab.path}
                   to={`/jobs/${jobId}/${tab.path}`}
+                  aria-current={isActive ? "page" : undefined}
+                  onFocus={revealOnFocus}
                   className={cn(
-                    "inline-flex min-w-0 shrink-0 flex-col items-center justify-center gap-1 border-b-2 px-1 py-2 text-center text-[11px] font-medium leading-tight transition-colors md:flex-row md:justify-start md:whitespace-nowrap md:px-4 md:py-2.5 md:text-sm",
+                    "group inline-flex min-w-0 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-center text-[11px] leading-tight transition-colors md:flex-row md:justify-start md:gap-2 md:whitespace-nowrap md:rounded-full md:px-4 md:text-sm",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     isActive
-                      ? "border-primary text-primary"
-                      : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900",
+                      ? "bg-accent font-semibold text-accent-foreground"
+                      : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
-                  <Icon className="size-3.5 shrink-0 md:mr-1.5" />
+                  <Icon
+                    className={cn(
+                      "size-4 shrink-0",
+                      isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+                    )}
+                  />
                   <span className="min-w-0">{tab.label}</span>
                 </Link>
               )
@@ -498,7 +541,7 @@ export default function JobDetailPage() {
         </div>
       </div>
 
-      <div className="pt-4">
+      <div className="pt-5">
         <Outlet context={{ job, setJob, jobId }} />
       </div>
 

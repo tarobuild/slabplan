@@ -274,18 +274,139 @@ export default function UsersPage() {
     }
   }
 
+  // One set of per-member controls, laid out as a table on wider screens and
+  // as stacked rows on phones, so handlers and disabled rules live in one place.
+  const renderMemberParts = (user: AdminUser) => {
+    const isSelf = user.id === me?.id
+    const active = user.isActive ?? true
+    const passwordSet = Boolean(user.passwordSetAt)
+    const inviteOutstanding =
+      !passwordSet && Boolean(user.inviteTokenExpiresAt)
+    const inviteExpired =
+      inviteOutstanding &&
+      new Date(user.inviteTokenExpiresAt!).getTime() < Date.now()
+
+    const selfTag = isSelf ? (
+      <span className="ml-2 text-xs font-normal text-muted-foreground">
+        (you)
+      </span>
+    ) : null
+
+    const role = (
+      <Select
+        value={user.role}
+        onValueChange={(value) =>
+          handleRoleChange(user, value as AdminUser["role"])
+        }
+        disabled={pendingPatchId === user.id}
+      >
+        <SelectTrigger
+          className="h-9 w-[160px]"
+          aria-label={`Role for ${user.fullName}`}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {ROLE_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    )
+
+    const status = active ? (
+      <Badge variant="success">Active</Badge>
+    ) : (
+      <Badge variant="secondary">Deactivated</Badge>
+    )
+
+    const setup = passwordSet ? (
+      <span className="text-xs text-muted-foreground">Password set</span>
+    ) : inviteExpired ? (
+      <Badge className="w-fit border-transparent bg-red-50 text-red-700">
+        Invite expired
+      </Badge>
+    ) : inviteOutstanding ? (
+      <div className="flex flex-col gap-0.5">
+        <Badge variant="warning" className="w-fit">
+          Invite pending
+        </Badge>
+        {user.lastInviteEmailSentAt ? (
+          <span className="text-[11px] text-muted-foreground">
+            Last emailed{" "}
+            {new Date(user.lastInviteEmailSentAt).toLocaleString()}
+          </span>
+        ) : user.lastInviteEmailError ? (
+          <span
+            className="text-[11px] text-red-600"
+            title={user.lastInviteEmailError}
+          >
+            Email failed — share link manually
+          </span>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">
+            Not emailed yet
+          </span>
+        )}
+      </div>
+    ) : (
+      <span className="text-xs text-muted-foreground">—</span>
+    )
+
+    const actions = (
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => handleReissue(user)}
+          disabled={reissuingId === user.id || !active}
+          title={
+            active
+              ? "Generate a new one-time setup link"
+              : "Reactivate the user before reissuing a link"
+          }
+        >
+          {reissuingId === user.id ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <RotateCw className="size-3.5" />
+          )}
+          Reissue link
+        </Button>
+        <Button
+          type="button"
+          variant={active ? "ghost" : "default"}
+          size="sm"
+          onClick={() => handleToggleActive(user)}
+          disabled={(isSelf && active) || pendingPatchId === user.id}
+          title={
+            isSelf && active
+              ? "Another admin must deactivate your account"
+              : active
+                ? "Deactivate this account"
+                : "Reactivate this account"
+          }
+        >
+          {pendingPatchId === user.id ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : null}
+          {active ? "Deactivate" : "Reactivate"}
+        </Button>
+      </div>
+    )
+
+    return { selfTag, role, status, setup, actions }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">Team Members</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Invite workers and drafters, change their role, or deactivate accounts. Only
-            admins see this page.
-          </p>
-        </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <h2 className="text-lg font-semibold text-foreground">Team</h2>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-slate-600">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <Switch
               checked={includeInactive}
               onCheckedChange={setIncludeInactive}
@@ -343,174 +464,85 @@ export default function UsersPage() {
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
-        {usersQuery.isLoading ? (
-          <div className="flex items-center justify-center gap-3 py-16">
-            <Spinner className="size-5 text-primary" />
-            <p className="text-sm text-slate-600">Loading team…</p>
+      {usersQuery.isLoading ? (
+        <div className="flex items-center justify-center gap-3 rounded-lg border border-card-border bg-card py-16 shadow-sm">
+          <Spinner className="size-5 text-primary" />
+          <p className="text-sm text-muted-foreground">Loading team…</p>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-lg border border-card-border bg-card py-16 text-center text-sm text-muted-foreground shadow-sm">
+          No users match the current filter.
+        </div>
+      ) : (
+        <>
+          {/* Phones: one stacked row per member so role, status, setup and
+              actions are all visible without sideways scrolling. */}
+          <ul
+            aria-label="Team members"
+            className="divide-y divide-border rounded-lg border border-card-border bg-card shadow-sm md:hidden"
+          >
+            {rows.map((user) => {
+              const member = renderMemberParts(user)
+              return (
+                <li key={user.id} className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground [overflow-wrap:anywhere]">
+                        {user.fullName}
+                        {member.selfTag}
+                      </p>
+                      <p className="mt-0.5 text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                        {user.email}
+                      </p>
+                    </div>
+                    <div className="shrink-0">{member.status}</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    {member.role}
+                    {member.setup}
+                  </div>
+                  {member.actions}
+                </li>
+              )
+            })}
+          </ul>
+
+          <div className="hidden overflow-hidden rounded-lg border border-card-border bg-card shadow-sm md:block">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Setup</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((user) => {
+                  const member = renderMemberParts(user)
+                  return (
+                    <TableRow key={user.id}>
+                      <TableCell className="font-medium text-foreground">
+                        {user.fullName}
+                        {member.selfTag}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {user.email}
+                      </TableCell>
+                      <TableCell>{member.role}</TableCell>
+                      <TableCell>{member.status}</TableCell>
+                      <TableCell>{member.setup}</TableCell>
+                      <TableCell className="text-right">{member.actions}</TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
           </div>
-        ) : rows.length === 0 ? (
-          <div className="py-16 text-center text-sm text-slate-500">
-            No users match the current filter.
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Setup</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((user) => {
-                const isSelf = user.id === me?.id
-                const active = user.isActive ?? true
-                const passwordSet = Boolean(user.passwordSetAt)
-                const inviteOutstanding =
-                  !passwordSet && Boolean(user.inviteTokenExpiresAt)
-                const inviteExpired =
-                  inviteOutstanding &&
-                  new Date(user.inviteTokenExpiresAt!).getTime() < Date.now()
-                return (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium text-slate-800">
-                      {user.fullName}
-                      {isSelf ? (
-                        <span className="ml-2 text-xs text-slate-400">
-                          (you)
-                        </span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-slate-600">
-                      {user.email}
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={user.role}
-                        onValueChange={(value) =>
-                          handleRoleChange(user, value as AdminUser["role"])
-                        }
-                        disabled={pendingPatchId === user.id}
-                      >
-                        <SelectTrigger className="h-8 w-[160px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ROLE_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      {active ? (
-                        <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
-                          Active
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-slate-200 text-slate-700 hover:bg-slate-200">
-                          Deactivated
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {passwordSet ? (
-                        <span className="text-xs text-slate-500">
-                          Password set
-                        </span>
-                      ) : inviteExpired ? (
-                        <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
-                          Invite expired
-                        </Badge>
-                      ) : inviteOutstanding ? (
-                        <div className="flex flex-col gap-0.5">
-                          <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 w-fit">
-                            Invite pending
-                          </Badge>
-                          {user.lastInviteEmailSentAt ? (
-                            <span className="text-[11px] text-slate-500">
-                              Last emailed{" "}
-                              {new Date(
-                                user.lastInviteEmailSentAt,
-                              ).toLocaleString()}
-                            </span>
-                          ) : user.lastInviteEmailError ? (
-                            <span
-                              className="text-[11px] text-red-600"
-                              title={user.lastInviteEmailError}
-                            >
-                              Email failed — share link manually
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-slate-400">
-                              Not emailed yet
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleReissue(user)}
-                          disabled={reissuingId === user.id || !active}
-                          title={
-                            active
-                              ? "Generate a new one-time setup link"
-                              : "Reactivate the user before reissuing a link"
-                          }
-                        >
-                          {reissuingId === user.id ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <RotateCw className="size-3.5" />
-                          )}
-                          <span className="ml-1.5 hidden sm:inline">
-                            Reissue link
-                          </span>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={active ? "ghost" : "default"}
-                          size="sm"
-                          onClick={() => handleToggleActive(user)}
-                          disabled={
-                            (isSelf && active) ||
-                            pendingPatchId === user.id
-                          }
-                          title={
-                            isSelf && active
-                              ? "Another admin must deactivate your account"
-                              : active
-                                ? "Deactivate this account"
-                                : "Reactivate this account"
-                          }
-                        >
-                          {pendingPatchId === user.id ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : null}
-                          {active ? "Deactivate" : "Reactivate"}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </div>
+        </>
+      )}
 
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent>

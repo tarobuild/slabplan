@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { CalendarDays, CheckCircle2, ClipboardList, CloudSun, MapPin } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import PageHeader from "@/components/layout/PageHeader"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
 import { APP_STORAGE_NAMESPACE } from "@/lib/brand"
@@ -125,166 +125,202 @@ export default function MyDayPage({ data }: { data: CrewHome }) {
     (shouldUseDeviceForecast && deviceForecast.status === "ok" ? deviceForecast.data : null)
 
   return (
-    <div className="space-y-5" data-testid="home-my-day">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">My Day</h1>
-        <p className="mt-1 text-sm text-slate-500">{prettyDate(today)}</p>
-      </div>
+    <div data-testid="home-my-day">
+      <PageHeader
+        eyebrow={prettyDate(today)}
+        title="My Day"
+        description={
+          hasWork
+            ? `${[
+                schedule.items.length > 0
+                  ? `${schedule.items.length} stop${schedule.items.length === 1 ? "" : "s"}`
+                  : null,
+                todos.length > 0 ? `${todos.length} to-do${todos.length === 1 ? "" : "s"}` : null,
+              ]
+                .filter(Boolean)
+                .join(" and ")} today.`
+            : "Nothing assigned to you today."
+        }
+      />
 
       {activeForecast ? (
         <ForecastStrip forecast={activeForecast} source={forecast ? "job" : "device"} />
       ) : weather ? (
-        <Card className="border-[#E5E7EB] bg-gradient-to-r from-sky-50 to-white">
-          <CardContent className="flex items-center gap-3 py-3 text-sm">
-            <CloudSun className="size-5 text-sky-600" />
-            <div className="flex-1">
-              <p className="font-medium text-slate-900">
-                Latest weather log{weather.jobTitle ? ` — ${weather.jobTitle}` : ""}
-              </p>
-              <p className="text-slate-600">
-                {summarizeWeather(weather.weatherData) ||
-                  weather.weatherNotes ||
-                  "No weather details captured yet."}
-              </p>
-            </div>
-            <span className="text-xs text-slate-500">{weather.logDate}</span>
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-3 rounded-lg border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm">
+          <CloudSun className="size-5 shrink-0 text-sky-700" />
+          <div className="min-w-0 flex-1">
+            <p className="font-medium text-foreground">
+              Latest weather log{weather.jobTitle ? ` — ${weather.jobTitle}` : ""}
+            </p>
+            <p className="text-muted-foreground">
+              {summarizeWeather(weather.weatherData) ||
+                weather.weatherNotes ||
+                "No weather details captured yet."}
+            </p>
+          </div>
+          <span className="shrink-0 text-xs text-muted-foreground">{weather.logDate}</span>
+        </div>
       ) : deviceForecast.status === "loading" ? (
         <ForecastPlaceholder text="Checking today's weather…" />
       ) : null}
 
-      <div className="grid gap-5 md:grid-cols-2">
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarDays className="size-4 text-primary" />
-              Today's schedule
-            </CardTitle>
-            <Badge variant="secondary">{schedule.items.length}</Badge>
-          </CardHeader>
-          <CardContent className="space-y-2">
+      {hasWork ? (
+        <div className="mt-8 grid gap-8 lg:grid-cols-5">
+          <section className="min-w-0 lg:col-span-3">
+            <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
+              <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                <CalendarDays className="size-4 text-muted-foreground" />
+                Today's schedule
+              </h2>
+              <span className="text-sm tabular-nums text-muted-foreground">{schedule.items.length}</span>
+            </div>
             {schedule.items.length === 0 ? (
               <EmptyHint>You have no scheduled work for today.</EmptyHint>
             ) : (
-              schedule.items.map((item) => (
-                <Link
-                  key={item.id}
-                  to={`/jobs/${item.jobId}/schedule`}
-                  data-testid="home-schedule-item"
-                  className="block rounded-lg border border-border p-3 transition hover:border-primary/35 hover:bg-accent/40"
-                >
-                  <div className="flex items-start gap-2">
-                    <span
-                      aria-hidden
-                      className="mt-1 inline-block size-2 rounded-full"
-                      style={{ backgroundColor: item.displayColor }}
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium text-slate-900">{item.title}</p>
-                        {formatTime(item.startTime) ? (
-                          <span className="text-xs text-slate-500">
-                            {formatTime(item.startTime)}
-                            {formatTime(item.endTime) ? ` – ${formatTime(item.endTime)}` : ""}
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {item.jobTitle ?? "Untitled job"}
-                      </p>
-                      {item.jobAddress || item.jobCity ? (
-                        <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
-                          <MapPin className="size-3" />
-                          {[item.jobAddress, item.jobCity, item.jobState]
-                            .filter(Boolean)
-                            .join(", ")}
-                        </p>
-                      ) : null}
-                      {item.progress > 0 || item.isComplete ? (
-                        <div className="mt-2 flex items-center gap-2">
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                            <div
-                              className={cn(
-                                "h-full rounded-full",
-                                item.isComplete ? "bg-emerald-500" : "bg-primary",
-                              )}
-                              style={{ width: `${item.isComplete ? 100 : item.progress}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-slate-500">
-                            {item.isComplete ? "Done" : `${item.progress}%`}
-                          </span>
+              <ol className="divide-y divide-border">
+                {schedule.items.map((item) => {
+                  const start = formatTime(item.startTime)
+                  const end = formatTime(item.endTime)
+                  const address = [item.jobAddress, item.jobCity, item.jobState].filter(Boolean).join(", ")
+                  return (
+                    <li key={item.id}>
+                      <Link
+                        to={`/jobs/${item.jobId}/schedule`}
+                        data-testid="home-schedule-item"
+                        className="group flex gap-4 rounded-sm py-4 outline-offset-2"
+                      >
+                        <div className="w-16 shrink-0 pt-0.5 text-right">
+                          <p className="text-sm font-semibold tabular-nums text-foreground">{start ?? "All day"}</p>
+                          {start && end ? (
+                            <p className="text-xs tabular-nums text-muted-foreground">{end}</p>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </Link>
-              ))
+                        <span
+                          aria-hidden
+                          className="w-1 shrink-0 self-stretch rounded-full"
+                          style={{ backgroundColor: item.displayColor }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-foreground transition-colors group-hover:text-primary">{item.title}</p>
+                          <p className="mt-0.5 text-sm text-muted-foreground">
+                            {item.jobTitle ?? "Untitled job"}
+                          </p>
+                          {address ? (
+                            <p className="mt-1 flex items-start gap-1 text-xs text-muted-foreground">
+                              <MapPin className="mt-px size-3.5 shrink-0" />
+                              <span>{address}</span>
+                            </p>
+                          ) : null}
+                          {item.progress > 0 || item.isComplete ? (
+                            <div className="mt-2.5 flex items-center gap-2">
+                              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className={cn(
+                                    "h-full rounded-full",
+                                    item.isComplete ? "bg-emerald-500" : "bg-brand",
+                                  )}
+                                  style={{ width: `${item.isComplete ? 100 : item.progress}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                                {item.isComplete ? "Done" : `${item.progress}%`}
+                              </span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ol>
             )}
-          </CardContent>
-        </Card>
+          </section>
 
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ClipboardList className="size-4 text-primary" />
-              My todos
-            </CardTitle>
-            <Badge variant="secondary">{todos.length}</Badge>
-          </CardHeader>
-          <CardContent className="space-y-2">
+          <section className="min-w-0 lg:col-span-2">
+            <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border pb-2">
+              <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                <ClipboardList className="size-4 text-muted-foreground" />
+                My to-dos
+              </h2>
+              <span className="text-sm tabular-nums text-muted-foreground">{todos.length}</span>
+            </div>
             {todos.length === 0 ? (
-              <EmptyHint>Nothing on your plate. Nice.</EmptyHint>
+              <EmptyHint>Nothing on your list.</EmptyHint>
             ) : (
-              todos.map((todo) => (
-                <Link
-                  key={todo.id}
-                  to={todo.jobId ? `/jobs/${todo.jobId}/schedule` : "/jobs"}
-                  data-testid="home-todo"
-                  className="flex items-start gap-2 rounded-lg border border-border p-3 transition hover:border-primary/35 hover:bg-accent/40"
-                >
-                  <CheckCircle2
-                    className={cn(
-                      "mt-0.5 size-4",
-                      todo.isComplete ? "text-emerald-500" : "text-slate-300",
-                    )}
-                  />
-                  <div className="flex-1">
-                    <p className="font-medium text-slate-900">{todo.title}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {todo.jobTitle ?? "Personal"}
-                      {todo.scheduleItemTitle ? ` — ${todo.scheduleItemTitle}` : ""}
-                    </p>
-                  </div>
-                </Link>
-              ))
+              <ul className="divide-y divide-border">
+                {todos.map((todo) => (
+                  <li key={todo.id}>
+                    <Link
+                      to={todo.jobId ? `/jobs/${todo.jobId}/schedule` : "/jobs"}
+                      data-testid="home-todo"
+                      className="group flex items-start gap-3 rounded-sm py-3.5 outline-offset-2"
+                    >
+                      <CheckCircle2
+                        className={cn(
+                          "mt-0.5 size-5 shrink-0",
+                          todo.isComplete ? "text-emerald-600" : "text-muted-foreground/40",
+                        )}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={cn(
+                            "font-medium",
+                            todo.isComplete ? "text-muted-foreground line-through" : "text-foreground",
+                          )}
+                        >
+                          {todo.title}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {todo.jobTitle ?? "Personal"}
+                          {todo.scheduleItemTitle ? ` — ${todo.scheduleItemTitle}` : ""}
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {!hasWork ? (
-        <Card className="border-border">
-          <CardContent className="py-10 text-center text-sm text-slate-500">
-            No assignments today.{" "}
-            {latestLog ? (
-              <>
-                Last activity:{" "}
-                <Link
-                  to={`/jobs/${latestLog.jobId}/daily-logs`}
-                  className="text-primary hover:underline"
-                >
-                  {latestLog.title || latestLog.jobTitle || "daily log"}
-                </Link>
-                .
-              </>
-            ) : (
-              "Browse your jobs to find something to do."
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
+          </section>
+        </div>
+      ) : (
+        // One calm panel on a quiet day instead of two empty lists.
+        <section className="mt-8">
+          <div className="flex min-h-10 items-center gap-2 border-b border-border pb-2">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <CalendarDays className="size-4 text-muted-foreground" />
+              Today's schedule
+            </h2>
+          </div>
+          <div className="flex flex-col items-center px-6 py-12 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+              <CheckCircle2 className="size-6" />
+            </span>
+            <p className="mt-4 text-base font-semibold text-foreground">You're all clear today</p>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              No scheduled work or to-dos are assigned to you.
+              {latestLog ? (
+                <>
+                  {" "}Last activity:{" "}
+                  <Link
+                    to={`/jobs/${latestLog.jobId}/daily-logs`}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {latestLog.title || latestLog.jobTitle || "daily log"}
+                  </Link>
+                </>
+              ) : null}
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Button asChild>
+                <Link to="/jobs">Open my jobs</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/daily-logs/mine">My daily logs</Link>
+              </Button>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   )
 }
@@ -312,40 +348,38 @@ function ForecastStrip({
       : "Your current location"
 
   return (
-    <Card
-      className="border-[#E5E7EB] bg-gradient-to-r from-sky-50 to-white"
+    <div
+      className="flex items-center gap-3 rounded-lg border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm"
       data-testid="home-weather-forecast"
     >
-      <CardContent className="flex items-center gap-3 py-3 text-sm">
-        <CloudSun className="size-5 text-sky-600" />
-        <div className="flex-1">
-          <p className="font-medium text-slate-900">{forecast.condition} — {where}</p>
-          <p className="text-slate-600">
-            {[
-              tempLabel,
-              forecast.windMph !== null ? `${forecast.windMph} mph wind` : null,
-              forecast.precipitation > 0
-                ? `${forecast.precipitation.toFixed(2)}″ precip`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" · ") || "Forecast available"}
-          </p>
-        </div>
-        <span className="text-xs text-slate-500">Today</span>
-      </CardContent>
-    </Card>
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-card text-sky-700 shadow-xs">
+        <CloudSun className="size-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium text-foreground">{forecast.condition} — {where}</p>
+        <p className="text-muted-foreground">
+          {[
+            tempLabel,
+            forecast.windMph !== null ? `${forecast.windMph} mph wind` : null,
+            forecast.precipitation > 0
+              ? `${forecast.precipitation.toFixed(2)}″ precip`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Forecast available"}
+        </p>
+      </div>
+      <span className="shrink-0 text-xs font-medium text-muted-foreground">Today</span>
+    </div>
   )
 }
 
 function ForecastPlaceholder({ text }: { text: string }) {
   return (
-    <Card className="border-[#E5E7EB] bg-gradient-to-r from-slate-50 to-white">
-      <CardContent className="flex items-center gap-3 py-3 text-sm text-slate-500">
-        <CloudSun className="size-5 text-slate-400" />
-        {text}
-      </CardContent>
-    </Card>
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+      <CloudSun className="size-5 text-muted-foreground/70" />
+      {text}
+    </div>
   )
 }
 
@@ -416,7 +450,7 @@ function useDeviceForecastFallback(shouldFetch: boolean): DeviceForecastState {
 }
 
 function EmptyHint({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">{children}</p>
+  return <p className="py-10 text-center text-sm text-muted-foreground">{children}</p>
 }
 
 function prettyDate(iso: string): string {

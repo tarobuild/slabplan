@@ -39,6 +39,7 @@ import { validatePayload } from "@/lib/validate-payload"
 import { useDocumentTitle } from "@/hooks/use-document-title"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import PageHeader from "@/components/layout/PageHeader"
 import {
   Dialog,
   DialogContent,
@@ -544,39 +545,37 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Clients</h1>
-        <Button
-          size="sm"
-          className="w-full justify-center sm:w-auto"
-          onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}
-        >
-          <Plus className="mr-1.5 size-3.5" />
-          New Client
-        </Button>
-      </div>
+      <PageHeader
+        title="Clients"
+        actions={
+          <Button onClick={() => { setClientForm(emptyClientForm); setCreateOpen(true) }}>
+            <Plus className="size-4" />
+            New Client
+          </Button>
+        }
+      />
 
       <div className="grid gap-3 sm:flex sm:flex-wrap sm:items-center">
         <div className="relative min-w-0 sm:max-w-xs sm:flex-1">
-          <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={e => handleSearch(e.target.value)}
             placeholder="Search clients…"
-            className="pl-8 h-9"
+            className="pl-9"
           />
         </div>
-        <div className="grid grid-cols-3 rounded-md border border-[#E5E7EB] bg-white p-0.5 sm:inline-flex">
+        <div className="grid grid-cols-3 rounded-full border border-border bg-card p-1 shadow-xs sm:inline-flex">
           {STATUS_TABS.map(t => (
             <button
               key={t.value}
               type="button"
               onClick={() => { setStatusFilter(t.value); setPage(1) }}
               className={cn(
-                "rounded px-3 py-2 text-xs font-medium transition-colors sm:py-1.5",
+                "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
                 statusFilter === t.value
-                  ? "bg-primary text-white"
-                  : "text-slate-600 hover:bg-slate-100",
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               {t.label}
@@ -586,17 +585,17 @@ export default function ClientsPage() {
       </div>
 
       {/* Desktop table */}
-      <div className="hidden md:block rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
+      <div className="hidden overflow-hidden rounded-lg border border-card-border bg-card shadow-xs md:block">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50">
-              <TableHead className="font-semibold text-slate-600">Company</TableHead>
-              <TableHead className="font-semibold text-slate-600">Primary Contact</TableHead>
-              <TableHead className="font-semibold text-slate-600">Phone</TableHead>
-              <TableHead className="font-semibold text-slate-600">Email</TableHead>
-              <TableHead className="font-semibold text-slate-600 text-center">Active Jobs</TableHead>
-              <TableHead className="font-semibold text-slate-600 text-right">Contract</TableHead>
-              <TableHead className="font-semibold text-slate-600 text-right">Outstanding</TableHead>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Company</TableHead>
+              <TableHead>Primary Contact</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead className="text-center">Active Jobs</TableHead>
+              <TableHead className="text-right">Contract</TableHead>
+              <TableHead className="text-right">Outstanding</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -703,7 +702,7 @@ export default function ClientsPage() {
       <div className="md:hidden space-y-2">
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="rounded-lg border border-[#E5E7EB] bg-white p-4 space-y-2">
+            <div key={i} className="rounded-lg border border-card-border bg-card p-4 shadow-xs space-y-2">
               <Skeleton className="h-4 w-2/3" />
               <Skeleton className="h-3 w-1/2" />
             </div>
@@ -722,7 +721,7 @@ export default function ClientsPage() {
           clients.map(client => (
             <div
               key={client.id}
-              className="rounded-lg border border-[#E5E7EB] bg-white p-4 cursor-pointer active:bg-slate-50"
+              className="rounded-lg border border-card-border bg-card p-4 shadow-xs cursor-pointer active:bg-slate-50"
               onClick={() => navigate(`/clients/${client.id}`)}
             >
               <div className="flex items-start justify-between gap-2">
@@ -923,7 +922,7 @@ export default function ClientsPage() {
                         <>
                           <Separator />
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">Notes</p>
+                            <p className="text-xs font-semibold uppercase text-slate-400 mb-2">Notes</p>
                             <p className="text-sm text-slate-700 whitespace-pre-wrap">{selected.notes}</p>
                           </div>
                         </>

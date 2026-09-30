@@ -16,7 +16,7 @@ export default function SubscribePage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex h-18 max-w-5xl items-center justify-between px-5">
           <img src={APP_LOGO_PATH} alt={APP_NAME} className="h-10 w-auto" />
@@ -28,10 +28,10 @@ export default function SubscribePage() {
       </header>
       <main className="mx-auto max-w-5xl px-5 py-10">
         <div className="mb-7 max-w-2xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-orange-600">
+          <p className="text-sm font-semibold uppercase text-orange-600">
             Finish setting up your workspace
           </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+          <h1 className="mt-3 text-3xl font-semibold text-slate-950">
             Start your SlabPlan subscription
           </h1>
           <p className="mt-3 leading-7 text-slate-600">

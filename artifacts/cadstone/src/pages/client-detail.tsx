@@ -3,16 +3,17 @@ import { Link, useParams, useNavigate } from "react-router-dom"
 import {
   Archive,
   ArrowLeft,
-  Building2,
   ClipboardList,
   FileText,
   Loader2,
+  MapPin,
   Plus,
 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
 import { toastApiError } from "@/lib/api-errors"
 import { useDocumentTitle } from "@/hooks/use-document-title"
+import { useSetBreadcrumbs } from "@/hooks/use-breadcrumbs"
 import { useAuthStore } from "@/store/auth"
 import { subscribeToDataRefresh } from "@/lib/data-refresh"
 import { Badge } from "@/components/ui/badge"
@@ -371,6 +372,9 @@ export default function ClientDetailPage() {
   }, [isAdmin])
 
   useDocumentTitle(client ? client.companyName : "Client")
+  useSetBreadcrumbs(
+    client ? [{ label: "Clients", to: "/clients" }, { label: client.companyName }] : null,
+  )
 
   const refetch = useCallback(async () => {
     if (!clientId) return
@@ -542,34 +546,41 @@ export default function ClientDetailPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <Button variant="ghost" size="icon" className="size-8" onClick={() => navigate("/clients")} aria-label="Back to clients">
-            <ArrowLeft className="size-4" />
-          </Button>
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Building2 className="size-5" />
+      {/* Phones don't show the breadcrumb trail, so give them a way back. */}
+      <Link
+        to="/clients"
+        className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground md:hidden"
+      >
+        <ArrowLeft className="size-4" />
+        Clients
+      </Link>
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+            <h1 className="min-w-0 text-xl font-semibold leading-7 text-foreground [overflow-wrap:anywhere] sm:text-[26px] sm:leading-8">
+              {client.companyName}
+            </h1>
+            {client.archived ? (
+              <Badge variant="secondary" className="shrink-0">Archived</Badge>
+            ) : null}
           </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold text-slate-900">{client.companyName}</h1>
-            <p className="text-xs text-slate-400">
-              {[client.city, client.state].filter(Boolean).join(", ") || "—"}
-              {client.archived && (
-                <Badge variant="outline" className="ml-2 bg-slate-50 text-slate-500 border-slate-200 text-[10px]">
-                  Archived
-                </Badge>
-              )}
+          {client.city || client.state ? (
+            <p className="mt-1.5 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+              <MapPin className="size-4 shrink-0" />
+              {[client.city, client.state].filter(Boolean).join(", ")}
             </p>
-          </div>
+          ) : null}
         </div>
         {isAdmin && !client.archived ? (
           <Button
             type="button"
             variant="outline"
             size="sm"
+            className="shrink-0"
             onClick={() => setArchiveOpen(true)}
           >
-            <Archive className="mr-1.5 size-3.5" />
+            <Archive className="size-4" />
             Archive Client
           </Button>
         ) : null}
@@ -589,24 +600,26 @@ export default function ClientDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-1 border-b border-[#E5E7EB]">
+      <div className="-mx-1.5 flex flex-wrap gap-1 p-1.5">
         {TABS.map((t) => (
           <button
             key={t}
+            type="button"
             onClick={() => setTab(t)}
+            aria-pressed={tab === t}
             className={cn(
-              "px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+              "inline-flex min-h-9 items-center gap-1.5 rounded-full px-4 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               tab === t
-                ? "border-primary/40 text-primary"
-                : "border-transparent text-slate-500 hover:text-slate-800",
+                ? "bg-accent font-semibold text-accent-foreground"
+                : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
             {TAB_LABELS[t]}
             {t === "jobs" && (
-              <span className="ml-1.5 text-xs text-slate-400">({client.jobs.length})</span>
+              <span className="text-xs font-medium tabular-nums text-muted-foreground">{client.jobs.length}</span>
             )}
             {t === "contacts" && (
-              <span className="ml-1.5 text-xs text-slate-400">({client.contacts.length})</span>
+              <span className="text-xs font-medium tabular-nums text-muted-foreground">{client.contacts.length}</span>
             )}
           </button>
         ))}
@@ -706,7 +719,7 @@ export default function ClientDetailPage() {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div>
-                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                        <div className="text-[10px] uppercase text-slate-400">
                           Contract
                         </div>
                         <InlineMoneyInput
@@ -717,7 +730,7 @@ export default function ClientDetailPage() {
                         />
                       </div>
                       <div>
-                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                        <div className="text-[10px] uppercase text-slate-400">
                           Paid
                         </div>
                         <InlineMoneyInput
@@ -728,7 +741,7 @@ export default function ClientDetailPage() {
                         />
                       </div>
                       <div>
-                        <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                        <div className="text-[10px] uppercase text-slate-400">
                           Outstanding
                         </div>
                         <div
@@ -746,7 +759,7 @@ export default function ClientDetailPage() {
                       className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                      <span className="text-[10px] uppercase text-slate-400">
                         Projected
                       </span>
                       <InlineDate
@@ -769,7 +782,7 @@ export default function ClientDetailPage() {
                       className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                      <span className="text-[10px] uppercase text-slate-400">
                         Actual
                       </span>
                       <InlineDate
@@ -790,7 +803,7 @@ export default function ClientDetailPage() {
                       className="mt-1 flex items-center gap-1"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                      <span className="text-[10px] uppercase text-slate-400">
                         PM
                       </span>
                       {isAdmin ? (
@@ -845,7 +858,7 @@ export default function ClientDetailPage() {
                             className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                            <span className="text-[10px] uppercase text-slate-400">
                               Projected
                             </span>
                             <InlineDate
@@ -868,7 +881,7 @@ export default function ClientDetailPage() {
                             className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                            <span className="text-[10px] uppercase text-slate-400">
                               Actual
                             </span>
                             <InlineDate
@@ -891,7 +904,7 @@ export default function ClientDetailPage() {
                             className="mt-1 flex items-center gap-1"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                            <span className="text-[10px] uppercase text-slate-400">
                               PM
                             </span>
                             {isAdmin ? (
@@ -1138,10 +1151,10 @@ function RollupCard({
 }) {
   return (
     <Card>
-      <CardContent className="px-4 py-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</p>
-        <p className={cn("text-lg font-semibold text-slate-900 truncate", accent)}>{value}</p>
-        {sub && <p className="text-[11px] text-slate-400">{sub}</p>}
+      <CardContent className="px-4 py-3.5">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <p className={cn("mt-1 truncate text-xl font-semibold tabular-nums text-foreground", accent)}>{value}</p>
+        {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
       </CardContent>
     </Card>
   )

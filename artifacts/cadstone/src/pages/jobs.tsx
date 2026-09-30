@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { Briefcase, Calendar, Check, ChevronDown, Search, User } from "lucide-react"
+import { Briefcase, Calendar, Check, ChevronDown, Plus, Search, User } from "lucide-react"
 import {
   getJobsGetJobsQueryKey,
   jobsGetJobsId,
@@ -16,6 +16,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { type WorkerOption } from "@/components/WorkerAssignmentPicker"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import PageHeader from "@/components/layout/PageHeader"
 import { Input } from "@/components/ui/input"
 import {
   Popover,
@@ -699,18 +700,27 @@ export default function JobsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Jobs</h1>
-      </div>
+      <PageHeader
+        title={isAdmin ? "Jobs" : "My Jobs"}
+        description={loading ? undefined : `${total} ${total === 1 ? "job" : "jobs"}`}
+        actions={
+          isAdmin ? (
+            <Button onClick={handleNewJobClick}>
+              <Plus className="size-4" />
+              New job
+            </Button>
+          ) : null
+        }
+      />
 
       <div className="flex gap-2">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 size-4 text-slate-400" />
+        <div className="relative flex-1 sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={e => handleSearch(e.target.value)}
             placeholder="Search jobs…"
-            className="pl-8 h-9"
+            className="pl-9"
           />
         </div>
         <Select value={status} onValueChange={handleStatus}>
@@ -727,20 +737,20 @@ export default function JobsPage() {
       </div>
 
       {/* Desktop table */}
-      <div className="hidden md:block rounded-lg border border-[#E5E7EB] bg-white overflow-hidden">
+      <div className="hidden overflow-hidden rounded-lg border border-card-border bg-card shadow-xs md:block">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50">
-              <TableHead className="font-semibold text-slate-600">Title</TableHead>
-              <TableHead className="font-semibold text-slate-600">Client</TableHead>
-              <TableHead className="font-semibold text-slate-600">Location</TableHead>
-              <TableHead className="font-semibold text-slate-600">Type</TableHead>
-              <TableHead className="font-semibold text-slate-600">Project Manager</TableHead>
-              <TableHead className="font-semibold text-slate-600">Status</TableHead>
-              <TableHead className="font-semibold text-slate-600">Start</TableHead>
-              <TableHead className="font-semibold text-slate-600">End</TableHead>
-              <TableHead className="font-semibold text-slate-600 text-right">Contract Price</TableHead>
-              <TableHead className="font-semibold text-slate-600">Created</TableHead>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Title</TableHead>
+              <TableHead>Client</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Project Manager</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Start</TableHead>
+              <TableHead>End</TableHead>
+              <TableHead className="text-right">Contract Price</TableHead>
+              <TableHead>Created</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -786,7 +796,7 @@ export default function JobsPage() {
               jobs.map(job => (
                 <TableRow
                   key={job.id}
-                  className="cursor-pointer hover:bg-slate-50"
+                  className="cursor-pointer hover:bg-muted/50"
                   onClick={() => navigate(`/jobs/${job.id}`)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -904,7 +914,7 @@ export default function JobsPage() {
       <div className="md:hidden space-y-2">
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="rounded-lg border border-[#E5E7EB] bg-white p-4 space-y-2">
+            <div key={i} className="rounded-lg border border-card-border bg-card p-4 shadow-xs space-y-2">
               <Skeleton className="h-4 w-2/3" />
               <Skeleton className="h-3 w-1/2" />
             </div>
@@ -947,7 +957,7 @@ export default function JobsPage() {
                   navigate(`/jobs/${job.id}`)
                 }
               }}
-              className="cursor-pointer rounded-lg border border-[#E5E7EB] bg-white p-4 hover:bg-slate-50"
+              className="cursor-pointer rounded-lg border border-card-border bg-card p-4 shadow-xs hover:bg-slate-50"
             >
               <div className="min-w-0 flex-1">
                 <Link

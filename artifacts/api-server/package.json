@@ -20,7 +20,7 @@
     "restore:files": "node ./scripts/file-backup-restore.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@sentry/node": "^10.51.0",
     "@tokenizer/inflate": "0.4.1",
     "@tokenizer/token": "0.3.0",
